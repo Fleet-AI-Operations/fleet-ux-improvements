@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.18',
+    _version: '5.19',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -476,7 +476,7 @@ const plugin = {
                     <label style="font-size: 12px; color: var(--muted-foreground, #666);" for="wf-plugin-log-${plugin.id}">
                         Module Logging
                     </label>
-                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'moduleLog' })}
+                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small' })}
                 </div>
         ` : '';
         return `
@@ -556,9 +556,8 @@ const plugin = {
         const dataAttr = pluginId ? `data-plugin-id="${pluginId}"` : '';
         const disabledAttr = isDisabled ? 'disabled' : '';
         const isSmall = opts.size === 'small';
-        const isModuleLog = opts.variant === 'moduleLog';
-        // Submodule toggles: 25% smaller; on-color 25% lighter for sub-options, dark grey for module logging
-        const onColor = isModuleLog ? '#6b7280' : '#8986f1'; // dark grey when module log, 25% lighter brand otherwise
+        // Main toggles: original blue. Sub-option toggles (small): 25% lighter blue when on.
+        const onColor = isSmall ? '#8986f1' : 'var(--brand, #4f46e5)';
         const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
