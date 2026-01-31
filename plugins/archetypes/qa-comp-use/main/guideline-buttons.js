@@ -1,8 +1,11 @@
 // ============= guideline-buttons.js =============
 // Modular guideline link buttons below the user prompt. Wraps when panel is narrow.
 
+const QA_GUIDELINES_LINK = 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56';
+
 const BUTTONS = [
-    { id: 'qa-guidelines', title: 'QA Guidelines', link: 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56' },
+    { id: 'qa-guidelines', title: 'QA Guidelines', link: QA_GUIDELINES_LINK },
+    { id: 'copy-qa-guidelines', title: 'Copy Link to QA Guidelines', link: QA_GUIDELINES_LINK, copyLink: true },
     { id: 'meridian-guidelines', title: 'Meridian Guidelines', link: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477' },
     { id: 'problem-creation-guidelines', title: 'Problem Creation Guidelines', link: 'https://fleetai.notion.site/Fleet-Problem-Creation-Guidelines-215fe5dd3fba802683d1c461b6a35c8a' }
 ];
@@ -11,7 +14,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add guideline link buttons below the user prompt. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -87,11 +90,22 @@ const plugin = {
                 btn.type = 'button';
                 btn.className = buttonClass;
                 btn.textContent = b.title;
-                btn.title = `Open ${b.title} in new tab`;
-                btn.addEventListener('click', () => {
-                    window.open(b.link, '_blank');
-                    Logger.log(`Guideline Buttons: opened ${b.title}`);
-                });
+                if (b.copyLink) {
+                    btn.title = `Copy ${b.title} to clipboard`;
+                    btn.addEventListener('click', () => {
+                        navigator.clipboard.writeText(b.link).then(() => {
+                            Logger.log(`Guideline Buttons: copied QA Guidelines link to clipboard`);
+                        }).catch((err) => {
+                            Logger.error('Guideline Buttons: failed to copy QA Guidelines link', err);
+                        });
+                    });
+                } else {
+                    btn.title = `Open ${b.title} in new tab`;
+                    btn.addEventListener('click', () => {
+                        window.open(b.link, '_blank');
+                        Logger.log(`Guideline Buttons: opened ${b.title}`);
+                    });
+                }
                 wrapper.appendChild(btn);
             } else if (!enabled && existing) {
                 existing.remove();

@@ -14,6 +14,7 @@ Many of the original modifications (such as a 3 column layout in the Kinesis tas
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **JSON Editor Online**: Adds a button that links to JSON Editor Online, a powerful JSON manipulation tool
 - **Guideline Buttons**: Quick links to guidelines below the prompt area
+- **Copy Prompt Button**: Copy prompt text to clipboard
 - **Clear Search**: One-click clear for search inputs
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Remember Layout Proportions**: Persists and restores the main panel split positions between sessions
@@ -24,6 +25,7 @@ Many of the original modifications (such as a 3 column layout in the Kinesis tas
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Prompt Scratchpad**: Scratchpad for notes while revising
 - **Guideline Buttons**: Quick links to Fleet guidelines
+- **Copy Prompt Button**: Copy prompt text to clipboard
 - **Clear Search**: One-click clear for search inputs
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 
@@ -48,7 +50,7 @@ Many of the original modifications (such as a 3 column layout in the Kinesis tas
 - **Copy Verifier Output Button**: Copy verifier output to clipboard
 - **QA Scratchpad**: Adds an adjustable height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
 - **JSON Editor Online**: Adds a button that links to JSON Editor Online, a powerful JSON manipulation tool
-- **Guideline Buttons**: Quick links to guidelines below the QA scratchpad
+- **Guideline Buttons**: Quick links to guidelines below the QA scratchpad (includes Copy Link to QA Guidelines)
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Panel Size Memory**: Remembers your preferred panel sizes between sessions
 - **Remember Layout Proportions**: Persists and restores panel split positions between sessions
@@ -58,6 +60,6 @@ Many of the original modifications (such as a 3 column layout in the Kinesis tas
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Copy Prompt Button**: Copy prompt text to clipboard
 - **Copy Verifier Output Button**: Copy verifier output to clipboard
-- **Guideline Buttons**: Quick links to guidelines
+- **Guideline Buttons**: Quick links to guidelines (includes Copy Link to QA Guidelines)
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue
 - **QA Scratchpad**: Adds an adjustable height scratchpad for notes (with option to remember contents)
