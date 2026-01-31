@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.17',
+    _version: '5.18',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -391,7 +391,35 @@ const plugin = {
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled())}
                     ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled())}
-                    ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled)}
+                    <div>
+                        ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled)}
+                        <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
+                            <button id="wf-all-module-logging-on" type="button" style="
+                                flex: 1;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--foreground, #333);
+                                background: var(--card, #fafafa);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            ">All On</button>
+                            <button id="wf-all-module-logging-off" type="button" style="
+                                flex: 1;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--foreground, #333);
+                                background: var(--card, #fafafa);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            ">All Off</button>
+                        </div>
+                    </div>
                     ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled())}
                 </div>
             </div>
@@ -448,7 +476,7 @@ const plugin = {
                     <label style="font-size: 12px; color: var(--muted-foreground, #666);" for="wf-plugin-log-${plugin.id}">
                         Module Logging
                     </label>
-                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled)}
+                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'moduleLog' })}
                 </div>
         ` : '';
         return `
@@ -501,7 +529,7 @@ const plugin = {
                         </label>
                         ${subOption.description ? `<div style="font-size: 11px; color: var(--muted-foreground, #888); margin-top: 2px;">${subOption.description}</div>` : ''}
                     </div>
-                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled)}
+                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small' })}
                 </div>
             `;
         }).join('');
@@ -524,14 +552,25 @@ const plugin = {
         `;
     },
     
-    _createSwitchHTML(id, isEnabled, pluginId = null, isDisabled = false) {
+    _createSwitchHTML(id, isEnabled, pluginId = null, isDisabled = false, opts = {}) {
         const dataAttr = pluginId ? `data-plugin-id="${pluginId}"` : '';
         const disabledAttr = isDisabled ? 'disabled' : '';
-        const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? 'var(--brand, #4f46e5)' : '#ccc');
+        const isSmall = opts.size === 'small';
+        const isModuleLog = opts.variant === 'moduleLog';
+        // Submodule toggles: 25% smaller; on-color 25% lighter for sub-options, dark grey for module logging
+        const onColor = isModuleLog ? '#6b7280' : '#8986f1'; // dark grey when module log, 25% lighter brand otherwise
+        const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
+        const w = isSmall ? 33 : 44;
+        const h = isSmall ? 18 : 24;
+        const knobSize = isSmall ? 13.5 : 18;
+        const knobLeftOn = isSmall ? 17 : 23;
+        const knobLeftOff = 3;
+        const knobBottom = isSmall ? 2 : 3;
+        const onColorAttr = isSmall ? ` data-wf-on-color="${onColor}" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}"` : '';
         return `
-            <label style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; ${isDisabled ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
+            <label style="position: relative; display: inline-block; width: ${w}px; height: ${h}px; flex-shrink: 0; ${isDisabled ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
                 <input type="checkbox" id="${id}" ${dataAttr} ${isEnabled ? 'checked' : ''} ${disabledAttr} style="opacity: 0; width: 0; height: 0; position: absolute;">
                 <span class="wf-toggle-slider" style="
                     position: absolute;
@@ -540,13 +579,13 @@ const plugin = {
                     background-color: ${sliderBg};
                     transition: 0.2s;
                     border-radius: 24px;
-                ">
+                "${onColorAttr}>
                     <span style="
                         position: absolute;
-                        height: 18px;
-                        width: 18px;
-                        left: ${isEnabled ? '23px' : '3px'};
-                        bottom: 3px;
+                        height: ${knobSize}px;
+                        width: ${knobSize}px;
+                        left: ${isEnabled ? knobLeftOn + 'px' : knobLeftOff + 'px'};
+                        bottom: ${knobBottom}px;
                         background-color: ${knobBg};
                         transition: 0.2s;
                         border-radius: 50%;
@@ -731,10 +770,72 @@ const plugin = {
             submoduleToggle.addEventListener('change', (e) => {
                 this._handleToggleChange(e);
                 Logger.setSubmoduleLoggingEnabled(e.target.checked);
+                this._updateAllModuleLoggingButtonsVisibility(modal, e.target.checked);
                 this._renderPluginList(modal, plugins);
                 this._attachPluginToggleListeners(modal, plugins);
                 this._attachPluginReorderListeners(modal, plugins);
+                if (Context.isDevBranch && devPlugins.length > 0) {
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                }
                 this._updateSettingsMessage(modal, plugins);
+            });
+        }
+
+        // All module logging On / Off (only affect log toggles; visible when submodule logging enabled)
+        const allModuleLogOnBtn = Context.dom.query('#wf-all-module-logging-on', {
+            root: modal,
+            context: `${this.id}.allModuleLogOnButton`
+        });
+        if (allModuleLogOnBtn) {
+            allModuleLogOnBtn.addEventListener('click', () => {
+                allPlugins.forEach(plugin => {
+                    Logger.setModuleLoggingEnabled(plugin.id, true);
+                });
+                this._renderPluginList(modal, plugins);
+                if (Context.isDevBranch && devPlugins.length > 0) {
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                }
+                this._attachPluginToggleListeners(modal, plugins);
+                this._updateSettingsMessage(modal, plugins);
+            });
+            allModuleLogOnBtn.addEventListener('mouseenter', () => {
+                allModuleLogOnBtn.style.background = 'var(--hover, #f0f0f0)';
+                allModuleLogOnBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+            });
+            allModuleLogOnBtn.addEventListener('mouseleave', () => {
+                allModuleLogOnBtn.style.background = 'var(--card, #fafafa)';
+                allModuleLogOnBtn.style.borderColor = 'var(--border, #e5e5e5)';
+            });
+        }
+        const allModuleLogOffBtn = Context.dom.query('#wf-all-module-logging-off', {
+            root: modal,
+            context: `${this.id}.allModuleLogOffButton`
+        });
+        if (allModuleLogOffBtn) {
+            allModuleLogOffBtn.addEventListener('click', () => {
+                allPlugins.forEach(plugin => {
+                    Logger.setModuleLoggingEnabled(plugin.id, false);
+                });
+                this._renderPluginList(modal, plugins);
+                if (Context.isDevBranch && devPlugins.length > 0) {
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                }
+                this._attachPluginToggleListeners(modal, plugins);
+                this._updateSettingsMessage(modal, plugins);
+            });
+            allModuleLogOffBtn.addEventListener('mouseenter', () => {
+                allModuleLogOffBtn.style.background = 'var(--hover, #f0f0f0)';
+                allModuleLogOffBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+            });
+            allModuleLogOffBtn.addEventListener('mouseleave', () => {
+                allModuleLogOffBtn.style.background = 'var(--card, #fafafa)';
+                allModuleLogOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
             });
         }
         
@@ -810,10 +911,12 @@ const plugin = {
             context: `${this.id}.toggleKnob`
         });
         const isChecked = e.target.checked;
-        
-        slider.style.backgroundColor = isChecked ? 'var(--brand, #4f46e5)' : '#ccc';
+        const onColor = slider.dataset.wfOnColor || 'var(--brand, #4f46e5)';
+        const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '23px';
+        const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
+        slider.style.backgroundColor = isChecked ? onColor : '#ccc';
         if (knob) {
-            knob.style.left = isChecked ? '23px' : '3px';
+            knob.style.left = isChecked ? knobLeftOn : knobLeftOff;
         }
     },
 
@@ -1340,6 +1443,16 @@ const plugin = {
         
         if (buttonsContainer) {
             buttonsContainer.style.display = globalEnabled ? 'flex' : 'none';
+        }
+    },
+
+    _updateAllModuleLoggingButtonsVisibility(modal, submoduleLoggingEnabled) {
+        const buttonsContainer = Context.dom.query('#wf-all-module-logging-buttons', {
+            root: modal,
+            context: `${this.id}.allModuleLoggingButtonsVisibility`
+        });
+        if (buttonsContainer) {
+            buttonsContainer.style.display = submoduleLoggingEnabled ? 'flex' : 'none';
         }
     },
     
