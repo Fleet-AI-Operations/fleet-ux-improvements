@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.35",
+  "archetypesVersion": "3.36",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -218,7 +218,7 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.2"
+          "version": "3.3"
         }
       ]
     },

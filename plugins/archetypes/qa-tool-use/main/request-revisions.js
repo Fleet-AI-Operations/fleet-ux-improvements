@@ -15,7 +15,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -471,12 +471,12 @@ const plugin = {
         let contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
             const cls = d.getAttribute('class') || '';
             const hasOverflow = cls.includes('overflow-auto') || cls.includes('overflow-y-auto');
-            return hasOverflow && d.textContent.includes('Where are the issues') && d.textContent.includes('what did you try');
+            return hasOverflow && /where are the issues/i.test(d.textContent) && /what did you try/i.test(d.textContent);
         });
         if (!contentContainer) {
             contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
                 const cls = d.getAttribute('class') || '';
-                return cls.includes('space-y-4') && d.textContent.includes('Where are the issues') && d.textContent.includes('what did you try');
+                return cls.includes('space-y-4') && /where are the issues/i.test(d.textContent) && /what did you try/i.test(d.textContent);
             });
         }
         if (!contentContainer) {
