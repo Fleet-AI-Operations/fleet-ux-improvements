@@ -15,7 +15,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.5',
+    _version: '3.6',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -60,7 +60,6 @@ const plugin = {
     initialState: {
         missingLogged: false,
         twoColContentContainerMissingLogged: false,
-        twoColOverlayDivider: null,
         twoColGridPlacementObserver: null,
         promptText: null,
         promptSaved: false,
@@ -105,13 +104,6 @@ const plugin = {
             this.cleanupTaskObservers(state);
             this.cleanupGradingObservers(state);
             state.twoColContentContainerMissingLogged = false;
-            if (state.twoColOverlayDivider && state.twoColOverlayDivider.parentNode === document.body) {
-                if (typeof state.twoColOverlayDivider._cleanupResize === 'function') {
-                    state.twoColOverlayDivider._cleanupResize();
-                }
-                state.twoColOverlayDivider.remove();
-                state.twoColOverlayDivider = null;
-            }
             if (state.twoColGridPlacementObserver) {
                 state.twoColGridPlacementObserver.disconnect();
                 state.twoColGridPlacementObserver = null;
@@ -166,8 +158,7 @@ const plugin = {
         if (twoColEnabled && !requestRevisionsModal.querySelector(`[${TWO_COL_WRAPPER_MARKER}="true"]`)) {
             const split = this.findContentContainerAndSplitPoint(requestRevisionsModal, state);
             if (split) {
-                const savedLeft = Storage.get(this.storageKeys.twoColDividerRatio, 50);
-                this.applyTwoColumnLayout(requestRevisionsModal, split.contentContainer, split.leftNodes, split.rightNodes, savedLeft, state);
+                this.applyTwoColumnLayout(requestRevisionsModal, split.contentContainer, split.leftNodes, split.rightNodes, state);
             }
         }
         
@@ -546,9 +537,9 @@ const plugin = {
         return { contentContainer, leftNodes, rightNodes };
     },
 
-    applyTwoColumnLayout(modal, contentContainer, leftNodes, rightNodes, savedLeftPercent, state) {
-        const leftPercent = Math.max(TWO_COL_MIN_LEFT, Math.min(TWO_COL_MAX_LEFT, Number(savedLeftPercent) || 50));
-        const rightPercent = 100 - leftPercent;
+    applyTwoColumnLayout(modal, contentContainer, leftNodes, rightNodes, state) {
+        const leftPercent = 33;
+        const rightPercent = 67;
         contentContainer.setAttribute('data-fleet-plugin', this.id);
         contentContainer.setAttribute(TWO_COL_WRAPPER_MARKER, 'true');
         contentContainer.style.display = 'grid';
@@ -568,108 +559,10 @@ const plugin = {
             modalContent.style.width = '90vw';
             modalContent.style.maxWidth = '90vw';
         }
-        this.setupTwoColOverlayDivider(modal, contentContainer, leftPercent, state);
-        this.syncTwoColGridPlacement(modal, contentContainer);
-        Logger.log('Request Revisions: two-column layout applied');
-    },
-
-    positionTwoColOverlay(overlay, contentContainer, leftPercent) {
-        const rect = contentContainer.getBoundingClientRect();
-        const leftPx = rect.left + (rect.width * leftPercent / 100);
-        overlay.style.left = `${leftPx}px`;
-        overlay.style.top = `${rect.top}px`;
-        overlay.style.width = '8px';
-        overlay.style.height = `${rect.height}px`;
-    },
-
-    setupTwoColOverlayDivider(modal, contentContainer, leftPercent, state) {
-        if (state.twoColOverlayDivider && state.twoColOverlayDivider.parentNode === document.body) {
-            if (typeof state.twoColOverlayDivider._cleanupResize === 'function') {
-                state.twoColOverlayDivider._cleanupResize();
-            }
-            state.twoColOverlayDivider.remove();
-            state.twoColOverlayDivider = null;
-        }
         if (state.twoColGridPlacementObserver) {
             state.twoColGridPlacementObserver.disconnect();
             state.twoColGridPlacementObserver = null;
         }
-        const overlay = document.createElement('div');
-        overlay.setAttribute('data-fleet-plugin', this.id);
-        overlay.setAttribute('data-fleet-request-revisions-two-col-overlay', 'true');
-        overlay.setAttribute('role', 'separator');
-        overlay.setAttribute('aria-valuenow', String(leftPercent));
-        overlay.setAttribute('aria-valuemin', String(TWO_COL_MIN_LEFT));
-        overlay.setAttribute('aria-valuemax', String(TWO_COL_MAX_LEFT));
-        overlay.style.cssText = 'position: fixed; z-index: 9999; cursor: col-resize; background: var(--border, #e5e5e5); pointer-events: auto;';
-        this.positionTwoColOverlay(overlay, contentContainer, leftPercent);
-        document.body.appendChild(overlay);
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (overlay.isConnected && contentContainer.isConnected) {
-                    const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
-                    this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
-                }
-            });
-        });
-        state.twoColOverlayDivider = overlay;
-        const key = this.storageKeys.twoColDividerRatio;
-        let isResizing = false;
-        let startX = 0;
-        let startLeftPercent = leftPercent;
-        const updateGrid = (newLeftPercent) => {
-            const clamped = Math.max(TWO_COL_MIN_LEFT, Math.min(TWO_COL_MAX_LEFT, newLeftPercent));
-            const rightPercent = 100 - clamped;
-            contentContainer.style.gridTemplateColumns = `${clamped}% 8px ${rightPercent}%`;
-            overlay.setAttribute('aria-valuenow', String(clamped));
-            this.positionTwoColOverlay(overlay, contentContainer, clamped);
-            return clamped;
-        };
-        const handleResize = () => {
-            if (state.twoColOverlayDivider === overlay && contentContainer.isConnected) {
-                const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
-                this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
-            }
-        };
-        const resizeObserver = new ResizeObserver(() => {
-            if (state.twoColOverlayDivider === overlay && contentContainer.isConnected) {
-                const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
-                this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
-            }
-        });
-        resizeObserver.observe(contentContainer);
-        window.addEventListener('resize', handleResize);
-        const stopOutside = (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-        };
-        overlay.addEventListener('mousedown', stopOutside, true);
-        overlay.addEventListener('pointerdown', stopOutside, true);
-        overlay.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startLeftPercent = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
-            const rect = contentContainer.getBoundingClientRect();
-            const deltaX = e.clientX - startX;
-            const deltaPercent = (deltaX / rect.width) * 100;
-            updateGrid(startLeftPercent + deltaPercent);
-        });
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
-                Storage.set(key, currentLeft);
-                Logger.debug(`Request Revisions: saved two-column divider ratio ${currentLeft}`);
-            }
-        });
         let placementScheduled = false;
         const scheduleSyncPlacement = () => {
             if (placementScheduled) return;
@@ -678,6 +571,7 @@ const plugin = {
                 placementScheduled = false;
                 if (contentContainer.isConnected && modal.isConnected) {
                     this.syncTwoColGridPlacement(modal, contentContainer);
+                    this.normalizeGeneralFeedbackHeight(contentContainer);
                 }
             });
         };
@@ -686,12 +580,21 @@ const plugin = {
         });
         placementObserver.observe(contentContainer, { childList: true, subtree: false });
         state.twoColGridPlacementObserver = placementObserver;
-        overlay._cleanupResize = () => {
-            window.removeEventListener('resize', handleResize);
-            resizeObserver.disconnect();
-            placementObserver.disconnect();
-            state.twoColGridPlacementObserver = null;
-        };
+        this.syncTwoColGridPlacement(modal, contentContainer);
+        this.normalizeGeneralFeedbackHeight(contentContainer);
+        Logger.log('Request Revisions: two-column layout applied');
+    },
+
+    normalizeGeneralFeedbackHeight(contentContainer) {
+        const textarea = contentContainer.querySelector('textarea#discard-reason');
+        if (!textarea) return;
+        const value = (textarea.value || '').trim();
+        if (value.length > 0) return;
+        if (textarea.offsetHeight > 300) {
+            textarea.style.height = '136px';
+        } else if (textarea.style.height) {
+            textarea.style.height = '136px';
+        }
     },
 
     // Same search logic as copy-verifier-output.js
