@@ -15,7 +15,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.4',
+    _version: '3.5',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -61,6 +61,7 @@ const plugin = {
         missingLogged: false,
         twoColContentContainerMissingLogged: false,
         twoColOverlayDivider: null,
+        twoColGridPlacementObserver: null,
         promptText: null,
         promptSaved: false,
         taskObservers: new Map(), // Map of modalId -> { observer, taskButton }
@@ -110,6 +111,10 @@ const plugin = {
                 }
                 state.twoColOverlayDivider.remove();
                 state.twoColOverlayDivider = null;
+            }
+            if (state.twoColGridPlacementObserver) {
+                state.twoColGridPlacementObserver.disconnect();
+                state.twoColGridPlacementObserver = null;
             }
             return;
         }
@@ -469,6 +474,45 @@ const plugin = {
         });
     },
 
+    getTwoColSplitIndex(dialog, contentContainer) {
+        const blocks = contentContainer.children.length === 1 && contentContainer.firstElementChild?.tagName === 'FORM'
+            ? Array.from(contentContainer.firstElementChild.children)
+            : Array.from(contentContainer.children);
+        const whatDidYouTryLabel = Array.from(dialog.querySelectorAll('label, div')).find(el => {
+            const t = (el.textContent || '').trim();
+            return /what did you try/i.test(t) && (el.tagName === 'LABEL' || (el.classList?.contains('font-medium') && el.classList?.contains('text-muted-foreground')));
+        });
+        if (!whatDidYouTryLabel) return null;
+        let section = whatDidYouTryLabel;
+        while (section && section !== contentContainer) {
+            if (section.querySelector && section.querySelector('textarea')) {
+                break;
+            }
+            section = section.parentElement;
+        }
+        if (!section || section === contentContainer) return null;
+        const splitIndex = blocks.findIndex(block => block.contains(section));
+        if (splitIndex < 0) return null;
+        if (splitIndex + 1 >= blocks.length) return null;
+        return { splitIndex, blocks };
+    },
+
+    syncTwoColGridPlacement(dialog, contentContainer) {
+        if (contentContainer.getAttribute(TWO_COL_WRAPPER_MARKER) !== 'true') return;
+        const result = this.getTwoColSplitIndex(dialog, contentContainer);
+        if (!result) return;
+        const { splitIndex, blocks } = result;
+        blocks.forEach((node, i) => {
+            if (i <= splitIndex) {
+                node.style.gridColumn = '1';
+                node.style.gridRow = String(i + 1);
+            } else {
+                node.style.gridColumn = '3';
+                node.style.gridRow = String(i - splitIndex);
+            }
+        });
+    },
+
     findContentContainerAndSplitPoint(dialog, state) {
         const logOnceIfMissing = () => {
             if (!state.twoColContentContainerMissingLogged) {
@@ -491,39 +535,14 @@ const plugin = {
             logOnceIfMissing();
             return null;
         }
-        const blocks = contentContainer.children.length === 1 && contentContainer.firstElementChild?.tagName === 'FORM'
-            ? Array.from(contentContainer.firstElementChild.children)
-            : Array.from(contentContainer.children);
-        const whatDidYouTryLabel = Array.from(dialog.querySelectorAll('label, div')).find(el => {
-            const t = (el.textContent || '').trim();
-            return /what did you try/i.test(t) && (el.tagName === 'LABEL' || (el.classList?.contains('font-medium') && el.classList?.contains('text-muted-foreground')));
-        });
-        if (!whatDidYouTryLabel) {
+        const result = this.getTwoColSplitIndex(dialog, contentContainer);
+        if (!result) {
             logOnceIfMissing();
             return null;
         }
-        let section = whatDidYouTryLabel;
-        while (section && section !== contentContainer) {
-            if (section.querySelector && section.querySelector('textarea')) {
-                break;
-            }
-            section = section.parentElement;
-        }
-        if (!section || section === contentContainer) {
-            logOnceIfMissing();
-            return null;
-        }
-        const splitIndex = blocks.findIndex(block => block.contains(section));
-        if (splitIndex < 0) {
-            logOnceIfMissing();
-            return null;
-        }
+        const { splitIndex, blocks } = result;
         const leftNodes = blocks.slice(0, splitIndex + 1);
         const rightNodes = blocks.slice(splitIndex + 1);
-        if (rightNodes.length === 0) {
-            logOnceIfMissing();
-            return null;
-        }
         return { contentContainer, leftNodes, rightNodes };
     },
 
@@ -549,7 +568,8 @@ const plugin = {
             modalContent.style.width = '90vw';
             modalContent.style.maxWidth = '90vw';
         }
-        this.setupTwoColOverlayDivider(contentContainer, leftPercent, state);
+        this.setupTwoColOverlayDivider(modal, contentContainer, leftPercent, state);
+        this.syncTwoColGridPlacement(modal, contentContainer);
         Logger.log('Request Revisions: two-column layout applied');
     },
 
@@ -562,13 +582,17 @@ const plugin = {
         overlay.style.height = `${rect.height}px`;
     },
 
-    setupTwoColOverlayDivider(contentContainer, leftPercent, state) {
+    setupTwoColOverlayDivider(modal, contentContainer, leftPercent, state) {
         if (state.twoColOverlayDivider && state.twoColOverlayDivider.parentNode === document.body) {
             if (typeof state.twoColOverlayDivider._cleanupResize === 'function') {
                 state.twoColOverlayDivider._cleanupResize();
             }
             state.twoColOverlayDivider.remove();
             state.twoColOverlayDivider = null;
+        }
+        if (state.twoColGridPlacementObserver) {
+            state.twoColGridPlacementObserver.disconnect();
+            state.twoColGridPlacementObserver = null;
         }
         const overlay = document.createElement('div');
         overlay.setAttribute('data-fleet-plugin', this.id);
@@ -580,6 +604,14 @@ const plugin = {
         overlay.style.cssText = 'position: fixed; z-index: 9999; cursor: col-resize; background: var(--border, #e5e5e5); pointer-events: auto;';
         this.positionTwoColOverlay(overlay, contentContainer, leftPercent);
         document.body.appendChild(overlay);
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (overlay.isConnected && contentContainer.isConnected) {
+                    const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
+                    this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
+                }
+            });
+        });
         state.twoColOverlayDivider = overlay;
         const key = this.storageKeys.twoColDividerRatio;
         let isResizing = false;
@@ -599,7 +631,20 @@ const plugin = {
                 this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
             }
         };
+        const resizeObserver = new ResizeObserver(() => {
+            if (state.twoColOverlayDivider === overlay && contentContainer.isConnected) {
+                const currentLeft = parseFloat(contentContainer.style.gridTemplateColumns) || 50;
+                this.positionTwoColOverlay(overlay, contentContainer, currentLeft);
+            }
+        });
+        resizeObserver.observe(contentContainer);
         window.addEventListener('resize', handleResize);
+        const stopOutside = (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        };
+        overlay.addEventListener('mousedown', stopOutside, true);
+        overlay.addEventListener('pointerdown', stopOutside, true);
         overlay.addEventListener('mousedown', (e) => {
             isResizing = true;
             startX = e.clientX;
@@ -625,8 +670,27 @@ const plugin = {
                 Logger.debug(`Request Revisions: saved two-column divider ratio ${currentLeft}`);
             }
         });
+        let placementScheduled = false;
+        const scheduleSyncPlacement = () => {
+            if (placementScheduled) return;
+            placementScheduled = true;
+            queueMicrotask(() => {
+                placementScheduled = false;
+                if (contentContainer.isConnected && modal.isConnected) {
+                    this.syncTwoColGridPlacement(modal, contentContainer);
+                }
+            });
+        };
+        const placementObserver = new MutationObserver(() => {
+            scheduleSyncPlacement();
+        });
+        placementObserver.observe(contentContainer, { childList: true, subtree: false });
+        state.twoColGridPlacementObserver = placementObserver;
         overlay._cleanupResize = () => {
             window.removeEventListener('resize', handleResize);
+            resizeObserver.disconnect();
+            placementObserver.disconnect();
+            state.twoColGridPlacementObserver = null;
         };
     },
 
