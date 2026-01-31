@@ -7,17 +7,30 @@ const GUIDELINE_LINKS = {
 };
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
+const TWO_COL_WRAPPER_MARKER = 'data-fleet-request-revisions-two-col';
+const TWO_COL_MIN_LEFT = 20;
+const TWO_COL_MAX_LEFT = 80;
 
 const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     
+    storageKeys: {
+        twoColDividerRatio: 'requestRevisions-two-col-divider-ratio'
+    },
+    
     // ========== SUB-OPTIONS ==========
     subOptions: [
+        {
+            id: 'two-column-layout',
+            name: 'Two-column layout',
+            description: 'Split the modal into two columns with a resizable divider to reduce scrolling. Divider position is remembered.',
+            enabledByDefault: true
+        },
         {
             id: 'auto-paste-prompt-to-task',
             name: 'Auto-paste prompt to Task issue',
@@ -132,6 +145,16 @@ const plugin = {
         
         // Inject guideline copy-link buttons if enabled
         this.injectGuidelineCopyButtons(state, requestRevisionsModal);
+        
+        // Apply two-column layout if enabled and not already applied
+        const twoColEnabled = Storage.getSubOptionEnabled(this.id, 'two-column-layout', true);
+        if (twoColEnabled && !requestRevisionsModal.querySelector(`[${TWO_COL_WRAPPER_MARKER}="true"]`)) {
+            const split = this.findContentContainerAndSplitPoint(requestRevisionsModal);
+            if (split) {
+                const savedLeft = Storage.get(this.storageKeys.twoColDividerRatio, 50);
+                this.applyTwoColumnLayout(requestRevisionsModal, split.contentContainer, split.leftNodes, split.rightNodes, savedLeft);
+            }
+        }
         
         // Set up Task button observer if not already set up and feature is enabled
         if (autoPastePromptEnabled && state.promptText && !state.taskObservers.has(modalId)) {
@@ -433,6 +456,146 @@ const plugin = {
             }, 2500);
         }).catch((err) => {
             Logger.error('Request Revisions: failed to copy guideline link', err);
+        });
+    },
+
+    findContentContainerAndSplitPoint(dialog) {
+        const contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
+            const cls = d.getAttribute('class') || '';
+            const hasOverflow = cls.includes('overflow-auto') || cls.includes('overflow-y-auto');
+            return hasOverflow && d.textContent.includes('Where are the issues') && d.textContent.includes('what did you try');
+        });
+        if (!contentContainer) {
+            Logger.debug('Request Revisions two-column: content container not found');
+            return null;
+        }
+        const blocks = contentContainer.children.length === 1 && contentContainer.firstElementChild?.tagName === 'FORM'
+            ? Array.from(contentContainer.firstElementChild.children)
+            : Array.from(contentContainer.children);
+        const whatDidYouTryLabel = Array.from(dialog.querySelectorAll('label, div')).find(el => {
+            const t = (el.textContent || '').trim();
+            return /what did you try/i.test(t) && (el.tagName === 'LABEL' || (el.classList?.contains('font-medium') && el.classList?.contains('text-muted-foreground')));
+        });
+        if (!whatDidYouTryLabel) {
+            Logger.debug('Request Revisions two-column: "what did you try" label not found');
+            return null;
+        }
+        let section = whatDidYouTryLabel;
+        while (section && section !== contentContainer) {
+            if (section.querySelector && section.querySelector('textarea')) {
+                break;
+            }
+            section = section.parentElement;
+        }
+        if (!section || section === contentContainer) {
+            Logger.debug('Request Revisions two-column: section containing "what did you try" textarea not found');
+            return null;
+        }
+        const splitIndex = blocks.findIndex(block => block.contains(section));
+        if (splitIndex < 0) {
+            Logger.debug('Request Revisions two-column: split block index not found');
+            return null;
+        }
+        const leftNodes = blocks.slice(0, splitIndex + 1);
+        const rightNodes = blocks.slice(splitIndex + 1);
+        if (rightNodes.length === 0) {
+            Logger.debug('Request Revisions two-column: no content for right column');
+            return null;
+        }
+        return { contentContainer, leftNodes, rightNodes };
+    },
+
+    applyTwoColumnLayout(modal, contentContainer, leftNodes, rightNodes, savedLeftPercent) {
+        const leftPercent = Math.max(TWO_COL_MIN_LEFT, Math.min(TWO_COL_MAX_LEFT, Number(savedLeftPercent) || 50));
+        const rightPercent = 100 - leftPercent;
+        const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-fleet-plugin', this.id);
+        wrapper.setAttribute(TWO_COL_WRAPPER_MARKER, 'true');
+        wrapper.style.cssText = 'display: flex; flex-direction: row; width: 100%; min-height: 0;';
+        const leftCol = document.createElement('div');
+        leftCol.setAttribute('data-fleet-request-revisions-left', 'true');
+        leftCol.style.cssText = `flex: ${leftPercent} 1 0px; min-width: 0; overflow-y: auto;`;
+        leftCol.setAttribute('data-panel-size', String(leftPercent));
+        const divider = document.createElement('div');
+        divider.setAttribute('role', 'separator');
+        divider.setAttribute('aria-valuenow', String(leftPercent));
+        divider.setAttribute('aria-valuemin', String(TWO_COL_MIN_LEFT));
+        divider.setAttribute('aria-valuemax', String(TWO_COL_MAX_LEFT));
+        divider.setAttribute('data-fleet-plugin', this.id);
+        divider.style.cssText = 'flex-shrink: 0; width: 8px; cursor: col-resize; background: var(--border, #e5e5e5);';
+        const rightCol = document.createElement('div');
+        rightCol.setAttribute('data-fleet-request-revisions-right', 'true');
+        rightCol.style.cssText = `flex: ${rightPercent} 1 0px; min-width: 0; overflow-y: auto;`;
+        rightCol.setAttribute('data-panel-size', String(rightPercent));
+        for (const node of leftNodes) {
+            leftCol.appendChild(node);
+        }
+        for (const node of rightNodes) {
+            rightCol.appendChild(node);
+        }
+        wrapper.appendChild(leftCol);
+        wrapper.appendChild(divider);
+        wrapper.appendChild(rightCol);
+        if (contentContainer.firstElementChild?.tagName === 'FORM') {
+            contentContainer.firstElementChild.innerHTML = '';
+            contentContainer.firstElementChild.appendChild(wrapper);
+        } else {
+            contentContainer.innerHTML = '';
+            contentContainer.appendChild(wrapper);
+        }
+        const modalContent = modal.querySelector('[class*="max-w"]') || modal;
+        if (modalContent && modalContent !== document.body) {
+            modalContent.style.width = '90vw';
+            modalContent.style.maxWidth = '90vw';
+        }
+        this.setupTwoColDividerResize(divider, leftCol, rightCol);
+        Logger.log('Request Revisions: two-column layout applied');
+    },
+
+    setupTwoColDividerResize(divider, leftCol, rightCol) {
+        let isResizing = false;
+        let startX = 0;
+        let startLeftWidth = 0;
+        let startRightWidth = 0;
+        let totalWidth = 0;
+        const key = this.storageKeys.twoColDividerRatio;
+        divider.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            const parent = divider.parentElement;
+            totalWidth = parent.offsetWidth;
+            const leftFlex = parseFloat(leftCol.style.flex) || 50;
+            const rightFlex = parseFloat(rightCol.style.flex) || 50;
+            startLeftWidth = (leftFlex / 100) * totalWidth;
+            startRightWidth = (rightFlex / 100) * totalWidth;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const deltaX = e.clientX - startX;
+            const newLeftWidth = startLeftWidth + deltaX;
+            const newRightWidth = startRightWidth - deltaX;
+            const leftPercent = (newLeftWidth / totalWidth) * 100;
+            const rightPercent = (newRightWidth / totalWidth) * 100;
+            if (leftPercent >= TWO_COL_MIN_LEFT && leftPercent <= TWO_COL_MAX_LEFT && rightPercent >= 100 - TWO_COL_MAX_LEFT) {
+                leftCol.style.flex = `${leftPercent} 1 0px`;
+                leftCol.setAttribute('data-panel-size', leftPercent.toString());
+                rightCol.style.flex = `${rightPercent} 1 0px`;
+                rightCol.setAttribute('data-panel-size', rightPercent.toString());
+                divider.setAttribute('aria-valuenow', leftPercent.toString());
+            }
+        });
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                const leftPercent = parseFloat(leftCol.getAttribute('data-panel-size')) || parseFloat(leftCol.style.flex) || 50;
+                Storage.set(key, leftPercent);
+                Logger.debug(`Request Revisions: saved two-column divider ratio ${leftPercent}`);
+            }
         });
     },
 
