@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.32",
+  "archetypesVersion": "3.33",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -54,7 +54,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "favorites.js",
@@ -95,7 +95,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "bug-report-expand.js",
@@ -128,7 +128,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "prompt-scratchpad.js",
@@ -153,7 +153,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "bug-report-expand.js",
