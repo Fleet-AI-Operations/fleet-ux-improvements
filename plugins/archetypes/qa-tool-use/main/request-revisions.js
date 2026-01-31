@@ -15,7 +15,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -59,6 +59,7 @@ const plugin = {
     
     initialState: {
         missingLogged: false,
+        twoColContentContainerMissingLogged: false,
         promptText: null,
         promptSaved: false,
         taskObservers: new Map(), // Map of modalId -> { observer, taskButton }
@@ -101,6 +102,7 @@ const plugin = {
             // Clean up observers when no dialogs are open
             this.cleanupTaskObservers(state);
             this.cleanupGradingObservers(state);
+            state.twoColContentContainerMissingLogged = false;
             return;
         }
         
@@ -149,7 +151,7 @@ const plugin = {
         // Apply two-column layout if enabled and not already applied
         const twoColEnabled = Storage.getSubOptionEnabled(this.id, 'two-column-layout', true);
         if (twoColEnabled && !requestRevisionsModal.querySelector(`[${TWO_COL_WRAPPER_MARKER}="true"]`)) {
-            const split = this.findContentContainerAndSplitPoint(requestRevisionsModal);
+            const split = this.findContentContainerAndSplitPoint(requestRevisionsModal, state);
             if (split) {
                 const savedLeft = Storage.get(this.storageKeys.twoColDividerRatio, 50);
                 this.applyTwoColumnLayout(requestRevisionsModal, split.contentContainer, split.leftNodes, split.rightNodes, savedLeft);
@@ -459,14 +461,26 @@ const plugin = {
         });
     },
 
-    findContentContainerAndSplitPoint(dialog) {
-        const contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
+    findContentContainerAndSplitPoint(dialog, state) {
+        const logOnceIfMissing = () => {
+            if (!state.twoColContentContainerMissingLogged) {
+                Logger.debug('Request Revisions two-column: content container or split point not found');
+                state.twoColContentContainerMissingLogged = true;
+            }
+        };
+        let contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
             const cls = d.getAttribute('class') || '';
             const hasOverflow = cls.includes('overflow-auto') || cls.includes('overflow-y-auto');
             return hasOverflow && d.textContent.includes('Where are the issues') && d.textContent.includes('what did you try');
         });
         if (!contentContainer) {
-            Logger.debug('Request Revisions two-column: content container not found');
+            contentContainer = Array.from(dialog.querySelectorAll('div')).find(d => {
+                const cls = d.getAttribute('class') || '';
+                return cls.includes('space-y-4') && d.textContent.includes('Where are the issues') && d.textContent.includes('what did you try');
+            });
+        }
+        if (!contentContainer) {
+            logOnceIfMissing();
             return null;
         }
         const blocks = contentContainer.children.length === 1 && contentContainer.firstElementChild?.tagName === 'FORM'
@@ -477,7 +491,7 @@ const plugin = {
             return /what did you try/i.test(t) && (el.tagName === 'LABEL' || (el.classList?.contains('font-medium') && el.classList?.contains('text-muted-foreground')));
         });
         if (!whatDidYouTryLabel) {
-            Logger.debug('Request Revisions two-column: "what did you try" label not found');
+            logOnceIfMissing();
             return null;
         }
         let section = whatDidYouTryLabel;
@@ -488,18 +502,18 @@ const plugin = {
             section = section.parentElement;
         }
         if (!section || section === contentContainer) {
-            Logger.debug('Request Revisions two-column: section containing "what did you try" textarea not found');
+            logOnceIfMissing();
             return null;
         }
         const splitIndex = blocks.findIndex(block => block.contains(section));
         if (splitIndex < 0) {
-            Logger.debug('Request Revisions two-column: split block index not found');
+            logOnceIfMissing();
             return null;
         }
         const leftNodes = blocks.slice(0, splitIndex + 1);
         const rightNodes = blocks.slice(splitIndex + 1);
         if (rightNodes.length === 0) {
-            Logger.debug('Request Revisions two-column: no content for right column');
+            logOnceIfMissing();
             return null;
         }
         return { contentContainer, leftNodes, rightNodes };
