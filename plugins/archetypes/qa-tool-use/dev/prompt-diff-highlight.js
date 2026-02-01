@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -63,56 +63,7 @@ const plugin = {
                 align-items: center;
                 justify-content: center;
                 margin: 0.25rem 0 0.75rem;
-            }
-            .diff-toggle-text {
-                font-size: 0.875rem;
-                color: rgb(107, 114, 128);
-                cursor: pointer;
-                user-select: none;
-            }
-            .dark .diff-toggle-text {
-                color: rgb(156, 163, 175);
-            }
-            .diff-toggle-switch {
-                position: relative;
-                display: inline-block;
-                width: 44px;
-                height: 24px;
-                flex-shrink: 0;
-            }
-            .diff-toggle-switch input {
-                opacity: 0;
-                width: 0;
-                height: 0;
-                position: absolute;
-            }
-            .diff-toggle-slider {
-                position: absolute;
-                cursor: pointer;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background-color: #ccc;
-                transition: 0.2s;
-                border-radius: 24px;
-            }
-            .diff-toggle-knob {
-                position: absolute;
-                height: 18px;
-                width: 18px;
-                left: 3px;
-                bottom: 3px;
-                background-color: white;
-                transition: 0.2s;
-                border-radius: 50%;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-            }
-            .diff-toggle-switch input:checked + .diff-toggle-slider {
-                background-color: var(--brand, #4f46e5);
-            }
-            .diff-toggle-switch input:checked + .diff-toggle-slider .diff-toggle-knob {
-                left: 23px;
+                width: 100%;
             }
         `;
         document.head.appendChild(style);
@@ -191,26 +142,54 @@ const plugin = {
         // Create toggle container centered under header
         const toggleContainer = document.createElement('div');
         toggleContainer.className = 'diff-toggle-row';
+        toggleContainer.style.gap = '10px';
         
         const toggleId = `${this.id}-toggle`;
         const toggleText = document.createElement('label');
-        toggleText.className = 'diff-toggle-text';
         toggleText.htmlFor = toggleId;
         toggleText.textContent = 'Show edits';
+        toggleText.style.fontSize = '13px';
+        toggleText.style.color = 'var(--muted-foreground, #666)';
+        toggleText.style.cursor = 'pointer';
+        toggleText.style.userSelect = 'none';
         
         const toggleSwitch = document.createElement('label');
-        toggleSwitch.className = 'diff-toggle-switch';
+        toggleSwitch.style.position = 'relative';
+        toggleSwitch.style.display = 'inline-block';
+        toggleSwitch.style.width = '44px';
+        toggleSwitch.style.height = '24px';
+        toggleSwitch.style.flexShrink = '0';
         
         const toggleCheckbox = document.createElement('input');
         toggleCheckbox.type = 'checkbox';
         toggleCheckbox.id = toggleId;
         toggleCheckbox.checked = state.highlightsEnabled;
+        toggleCheckbox.style.opacity = '0';
+        toggleCheckbox.style.width = '0';
+        toggleCheckbox.style.height = '0';
+        toggleCheckbox.style.position = 'absolute';
         
         const toggleSlider = document.createElement('span');
-        toggleSlider.className = 'diff-toggle-slider';
+        toggleSlider.style.position = 'absolute';
+        toggleSlider.style.cursor = 'pointer';
+        toggleSlider.style.top = '0';
+        toggleSlider.style.left = '0';
+        toggleSlider.style.right = '0';
+        toggleSlider.style.bottom = '0';
+        toggleSlider.style.backgroundColor = '#ccc';
+        toggleSlider.style.transition = '0.2s';
+        toggleSlider.style.borderRadius = '24px';
         
         const toggleKnob = document.createElement('span');
-        toggleKnob.className = 'diff-toggle-knob';
+        toggleKnob.style.position = 'absolute';
+        toggleKnob.style.height = '18px';
+        toggleKnob.style.width = '18px';
+        toggleKnob.style.left = '3px';
+        toggleKnob.style.bottom = '3px';
+        toggleKnob.style.backgroundColor = 'white';
+        toggleKnob.style.transition = '0.2s';
+        toggleKnob.style.borderRadius = '50%';
+        toggleKnob.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.2)';
         
         toggleSlider.appendChild(toggleKnob);
         toggleSwitch.appendChild(toggleCheckbox);
@@ -223,7 +202,16 @@ const plugin = {
         title.parentElement.insertAdjacentElement('afterend', toggleContainer);
         
         // Add event listener
-        toggleCheckbox.addEventListener('change', (e) => {
+        const updateToggleStyles = () => {
+            const isOn = toggleCheckbox.checked;
+            toggleSlider.style.backgroundColor = isOn ? 'var(--brand, #4f46e5)' : '#ccc';
+            toggleKnob.style.left = isOn ? '23px' : '3px';
+        };
+        
+        updateToggleStyles();
+        
+        toggleCheckbox.addEventListener('change', () => {
+            updateToggleStyles();
             state.highlightsEnabled = toggleCheckbox.checked;
             state.highlightsApplied = false; // Force re-render
             Logger.debug(`Diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
@@ -266,11 +254,6 @@ const plugin = {
             return false;
         }
         
-        // Check if already highlighted
-        if (beforePre.dataset.diffHighlighted === 'true') {
-            return true;
-        }
-        
         const beforeText = beforePre.textContent;
         const afterText = afterPre.textContent;
         const hasHighlights = Boolean(
@@ -300,9 +283,12 @@ const plugin = {
         beforePre.dataset.originalText = beforeText;
         afterPre.dataset.originalText = afterText;
         
+        const isDark = document.documentElement.classList.contains('dark');
+        const highlightStyles = this.getHighlightStyles(isDark);
+        
         // Render highlighted versions
-        const beforeHtml = this.renderOriginal(diff);
-        const afterHtml = this.renderNew(diff);
+        const beforeHtml = this.renderOriginal(diff, highlightStyles.remove);
+        const afterHtml = this.renderNew(diff, highlightStyles.add);
         
         beforePre.innerHTML = beforeHtml;
         afterPre.innerHTML = afterHtml;
@@ -485,7 +471,19 @@ const plugin = {
         return div.innerHTML;
     },
     
-    renderOriginal(diff) {
+    getHighlightStyles(isDark) {
+        const removeBg = isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.2)';
+        const removeColor = isDark ? 'rgb(254, 202, 202)' : 'rgb(127, 29, 29)';
+        const addBg = isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.2)';
+        const addColor = isDark ? 'rgb(167, 243, 208)' : 'rgb(6, 78, 59)';
+        const base = 'padding:0 0.125rem;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
+        return {
+            remove: `${base}background-color:${removeBg};color:${removeColor};`,
+            add: `${base}background-color:${addBg};color:${addColor};`
+        };
+    },
+    
+    renderOriginal(diff, removeStyle) {
         const groups = this.groupConsecutive(diff, ['equal', 'remove'], 'remove');
         let html = '';
         
@@ -493,14 +491,14 @@ const plugin = {
             let text = group.values.join('');
             if (group.type === 'remove') {
                 if (text === '\n') {
-                    html += `<span class="diff-highlight-remove diff-newline-marker">↵</span>\n`;
+                    html += `<span class="diff-newline-marker" style="${removeStyle}">↵</span>\n`;
                 } else {
                     if (group.trimTrailing) {
                         const trimmed = this.trimTrailingSpace(text);
                         const trailing = text.slice(trimmed.length);
-                        html += `<span class="diff-highlight-remove">${this.escapeHtml(trimmed)}</span>${this.escapeHtml(trailing)}`;
+                        html += `<span style="${removeStyle}">${this.escapeHtml(trimmed)}</span>${this.escapeHtml(trailing)}`;
                     } else {
-                        html += `<span class="diff-highlight-remove">${this.escapeHtml(text)}</span>`;
+                        html += `<span style="${removeStyle}">${this.escapeHtml(text)}</span>`;
                     }
                 }
             } else {
@@ -511,7 +509,7 @@ const plugin = {
         return html;
     },
     
-    renderNew(diff) {
+    renderNew(diff, addStyle) {
         const groups = this.groupConsecutive(diff, ['equal', 'add'], 'add');
         let html = '';
         
@@ -519,14 +517,14 @@ const plugin = {
             let text = group.values.join('');
             if (group.type === 'add') {
                 if (text === '\n') {
-                    html += `<span class="diff-highlight-add diff-newline-marker">↵</span>\n`;
+                    html += `<span class="diff-newline-marker" style="${addStyle}">↵</span>\n`;
                 } else {
                     if (group.trimTrailing) {
                         const trimmed = this.trimTrailingSpace(text);
                         const trailing = text.slice(trimmed.length);
-                        html += `<span class="diff-highlight-add">${this.escapeHtml(trimmed)}</span>${this.escapeHtml(trailing)}`;
+                        html += `<span style="${addStyle}">${this.escapeHtml(trimmed)}</span>${this.escapeHtml(trailing)}`;
                     } else {
-                        html += `<span class="diff-highlight-add">${this.escapeHtml(text)}</span>`;
+                        html += `<span style="${addStyle}">${this.escapeHtml(text)}</span>`;
                     }
                 }
             } else {
