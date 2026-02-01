@@ -5,7 +5,7 @@ This document defines the **step-by-step** workflow for creating, testing, and p
 ## Scope
 
 - Applies to **modules/plugins** stored under `plugins/`.
-- Covers the **branch workflow**: `feature/*` → `test-update` → `main`.
+- Covers the **branch workflow**: `feature/*` → (optional test branch) → `main`. Helper scripts in `utils/` (`checkout.sh`, `test.sh`, `publish.sh`) automate branch creation and `fleet.user.js` sync.
 - Enforces **version sync** across plugin file, `archetypes.json`, and script metadata.
 - Requires **separate userscripts per branch** (dev/test/main).
 
@@ -29,6 +29,10 @@ plugins/
       main/
       dev/
   global/
+utils/
+  checkout.sh   # Create feature branch and sync fleet.user.js for that branch
+  publish.sh    # Merge feature branch into main and sync fleet.user.js for main
+  test.sh       # Create test branch to simulate main userscript update experience
 docs/
   development/
 ```
@@ -58,6 +62,44 @@ const plugin = {
 - Log all critical events with `Logger.*()` and use appropriate log levels.
 - Plugin loading lists come **only** from `archetypes.json`.
 
+## Helper Scripts (utils/)
+
+Three scripts in `utils/` automate branch creation and `fleet.user.js` sync so Tampermonkey installs/updates from the correct branch.
+
+| Script | Purpose |
+|--------|--------|
+| **checkout.sh** | Create a feature branch and sync `fleet.user.js` for that branch. Use when **starting** work on a feature. |
+| **test.sh** | Create a test branch from `main` and sync `fleet.user.js` for that branch. Use to **simulate** how main userscript users would experience an update before releasing. |
+| **publish.sh** | Merge a feature branch into `main`, sync `fleet.user.js` for main, push, then delete the branch locally and on origin. Use when the feature is **ready for release**. |
+
+All three scripts (when they touch `fleet.user.js`) ensure:
+
+- `@name`: branch prefix (e.g. `[my-feature] Fleet`) or no prefix on `main`
+- `@downloadURL` / `@updateURL`: branch segment in the raw GitHub URL
+- `GITHUB_CONFIG.branch`: current branch name
+- `VERSION`: kept in sync with header `@version`
+
+**checkout.sh** — `./utils/checkout.sh <branch>`
+
+- Creates branch from `main` (branch must not exist locally or on origin).
+- Updates `fleet.user.js` for the new branch, commits with message "Sync branch config", pushes.
+- Prints the GitHub tree URL; install the userscript from that URL for development.
+
+**test.sh** — `./utils/test.sh <new_branch_name>`
+
+- Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in `utils/` (or `local-utils/` if symlinked/copied).
+- Fetches `origin/main`, creates branch from `main`, runs `sync-branch-config.sh` to update `fleet.user.js`, commits and pushes.
+- Use to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main with `publish.sh` when satisfied.
+
+**publish.sh** — `./utils/publish.sh <branch>`
+
+- Branch must exist locally and on origin; working tree should be clean.
+- Checks out `main`, merges the branch, updates `fleet.user.js` for main (no branch prefix, main URLs), commits "Sync branch config", pushes `main`.
+- Deletes the branch locally and on origin (remote delete best-effort).
+- After this, the branch-specific userscript can be removed; changes are live on the main userscript.
+
+Run scripts from repo root or from `utils/`.
+
 ## Branch Workflow (Canonical)
 
 ### 1) Feature Branch (Development)
@@ -65,7 +107,7 @@ const plugin = {
 **Goal**: Implement the module and get it working locally.
 
 Steps:
-1. Create branch: `feature/<short-name>`.
+1. Create branch: run `./utils/checkout.sh feature/<short-name>` (or create `feature/<short-name>` manually and keep `fleet.user.js` in sync for that branch).
 2. Add or modify the plugin file under the correct archetype folder:
    - `plugins/archetypes/<archetype-id>/main/<plugin>.js` for production modules.
    - `plugins/archetypes/<archetype-id>/dev/<plugin>.js` for dev-only modules.
@@ -76,30 +118,24 @@ Steps:
 5. Update versions (see **Version Synchronization** below).
 6. Commit changes to the feature branch.
 
-### 2) Test-Update Branch (Pre-Release Testing)
+### 2) Test Branch (Pre-Release Testing)
 
-**Goal**: Test the module while keeping `fleet.user.js` aligned to `main`.
+**Goal**: Test how users on the current main userscript would experience the update before releasing.
 
 Steps:
-1. Merge or cherry-pick your feature branch into `test-update`.
-2. Ensure `fleet.user.js` **matches main** except for:
-   - `@name` (should indicate test branch)
-   - `@downloadURL` / `@updateURL` (should point to `test-update`)
-   - `GITHUB_CONFIG.branch` (set to `test-update`)
-3. Install the **test-update userscript** in Tampermonkey (separate from dev/main).
+1. (Optional) Create a test branch from `main`: run `./utils/test.sh <test-branch-name>`. This creates the branch, syncs `fleet.user.js` for that branch, and prints the install URL.
+2. Or merge/cherry-pick your feature branch into a branch (e.g. `test-update`) and ensure `fleet.user.js` has the correct `@name`, `@downloadURL`/`@updateURL`, and `GITHUB_CONFIG.branch` for that branch.
+3. Install the **test-branch userscript** in Tampermonkey (separate from main).
 4. Validate behavior on the real site for the relevant archetype(s).
-5. If bugs are found, fix them in `test-update` and repeat.
+5. If bugs are found, fix them and repeat.
 
 ### 3) Main Branch (Release)
 
 **Goal**: Publish the module.
 
 Steps:
-1. Merge `test-update` into `main`.
-2. Confirm `fleet.user.js` in `main`:
-   - `@name` reflects production (no dev/test marker).
-   - `@downloadURL` / `@updateURL` point to `main`.
-   - `GITHUB_CONFIG.branch` is `main`.
+1. Merge the feature (or test) branch into `main`: run `./utils/publish.sh <branch>`. This merges into `main`, syncs `fleet.user.js` for main (no branch prefix, main URLs), pushes `main`, and deletes the branch locally and on origin.
+2. Or merge manually and then ensure `fleet.user.js` in `main` has production `@name`, `@downloadURL`/`@updateURL` pointing to `main`, and `GITHUB_CONFIG.branch` set to `main`.
 3. Install or update the **main userscript** in Tampermonkey.
 4. Verify that the module loads and the feature is enabled.
 
@@ -118,19 +154,12 @@ Version increment rules:
 - **Major change**: increment by `1.0`.
 - Not base-10: `1.9 + 0.1 = 1.10`.
 
-### Planned Tooling (Upcoming)
+### Version Update Tooling (Optional)
 
-These scripts are being added and should be used when available:
+Branch-specific sync of `fleet.user.js` is handled by the helper scripts (`checkout.sh`, `test.sh`, `publish.sh`). Plugin version sync is separate:
 
-- `./utils/update-versions.py` or `./utils/update-archetypes.js`
-  - Will auto-update plugin versions in `archetypes.json`.
-  - Will bump `archetypesVersion` automatically.
-- Branch safety checks:
-  - Verify `fleet.user.js` in `main` points to `main`.
-  - Verify `test-update` points to `test-update`.
-  - Validate `@downloadURL` / `@updateURL` match the branch.
-
-Until these exist, **perform version updates manually** and double-check consistency.
+- If available: `./utils/update-versions.py` or `./utils/update-archetypes.js` (or equivalent) can auto-update plugin versions in `archetypes.json` and bump `archetypesVersion`.
+- Otherwise: **perform version updates manually** (plugin `_version`, `archetypes.json` plugin entry, `archetypesVersion`) and double-check consistency.
 
 ## Userscript Installation (Branch-Specific)
 
@@ -145,23 +174,23 @@ This prevents cross-branch contamination and ensures correct plugin loading.
 ## Full Checklist (LLM-Friendly)
 
 **Create module (feature branch)**:
-1. Create `feature/<name>` branch.
+1. Run `./utils/checkout.sh feature/<name>` to create the branch and sync `fleet.user.js` (or create the branch manually).
 2. Add or edit plugin file in `plugins/...`.
 3. Ensure plugin object contract is valid.
 4. Update plugin `_version`.
 5. Update `archetypes.json` plugin entry and `archetypesVersion`.
-6. Commit changes.
+6. Commit changes. Install the branch-specific userscript from the URL printed by `checkout.sh` for development.
 
-**Test (test-update branch)**:
-1. Merge feature → `test-update`.
-2. Keep `fleet.user.js` aligned to `main` except branch metadata.
-3. Install test userscript.
+**Test (test branch)**:
+1. Optionally run `./utils/test.sh <test-branch>` to create a test branch from `main` and sync `fleet.user.js`.
+2. Or merge feature into a test branch and ensure `fleet.user.js` matches that branch.
+3. Install test userscript from the printed URL.
 4. Test behavior on target pages.
 5. Fix issues and repeat.
 
 **Publish (main branch)**:
-1. Merge `test-update` → `main`.
-2. Confirm `fleet.user.js` points to `main` and has production name/URLs.
+1. Run `./utils/publish.sh <branch>` to merge the branch into `main`, sync `fleet.user.js` for main, push, and delete the branch.
+2. Or merge manually and confirm `fleet.user.js` points to `main` with production name/URLs.
 3. Install/update main userscript.
 4. Verify feature in production.
 
