@@ -5,9 +5,10 @@ This document defines the **step-by-step** workflow for creating, testing, and p
 ## Scope
 
 - Applies to **modules/plugins** stored under `plugins/`.
-- Covers the **branch workflow**: `feature/*` → (optional test branch) → `main`. Helper scripts in `utils/` (`checkout.sh`, `test.sh`, `publish.sh`) automate branch creation and `fleet.user.js` sync.
+- Covers the **branch workflow**: `feature/*` → (optional test branch) → `main`. Helper scripts in `utils/` automate branch creation, `fleet.user.js` sync, version bumps, and release.
 - Enforces **version sync** across plugin file, `archetypes.json`, and script metadata.
 - Requires **separate userscripts per branch** (dev/test/main).
+- **Prefer the utils scripts for development.** Using them (instead of manual git and edits) keeps `fleet.user.js`, plugin `_version`, and `archetypes.json` in sync and reduces out-of-sync version issues.
 
 ## Glossary
 
@@ -30,9 +31,11 @@ plugins/
       dev/
   global/
 utils/
-  checkout.sh   # Create feature branch and sync fleet.user.js for that branch
-  publish.sh    # Merge feature branch into main and sync fleet.user.js for main
-  test.sh       # Create test branch to simulate main userscript update experience
+  checkout.sh       # Create feature branch and sync fleet.user.js for that branch
+  push.sh           # Version-aware commit and push (bumps versions, runs update-versions.sh)
+  release.sh        # Merge feature branch into main and sync fleet.user.js for main
+  test.sh           # Create test branch to simulate main userscript update experience
+  update-versions.sh # Sync archetypes.json and fleet.user.js with plugin _version
 docs/
   development/
 ```
@@ -64,41 +67,59 @@ const plugin = {
 
 ## Helper Scripts (utils/)
 
-Three scripts in `utils/` automate branch creation and `fleet.user.js` sync so Tampermonkey installs/updates from the correct branch.
+Scripts in `utils/` automate branch creation, `fleet.user.js` sync, version bumps, and release so Tampermonkey installs/updates from the correct branch and file versions stay in sync.
+
+**Prefer these scripts for development.** Using them (instead of manual git and hand-editing versions) prevents out-of-sync issues between `fleet.user.js`, plugin `_version` fields, and `archetypes.json`.
 
 | Script | Purpose |
 |--------|--------|
 | **checkout.sh** | Create a feature branch and sync `fleet.user.js` for that branch. Use when **starting** work on a feature. |
+| **push.sh** | Version-aware commit and push: bump versions for changed files if needed, run `update-versions.sh`, then commit and push. Use for **committing** on a branch. |
+| **release.sh** | Merge a feature branch into `main`, sync `fleet.user.js` for main, push, then delete the branch locally and on origin. Use when the feature is **ready for release**. |
 | **test.sh** | Create a test branch from `main` and sync `fleet.user.js` for that branch. Use to **simulate** how main userscript users would experience an update before releasing. |
-| **publish.sh** | Merge a feature branch into `main`, sync `fleet.user.js` for main, push, then delete the branch locally and on origin. Use when the feature is **ready for release**. |
+| **update-versions.sh** | Sync `archetypes.json` and `fleet.user.js` with plugin `_version` values; normalize fleet `@version`/const `VERSION`; bump `archetypesVersion`. Used by `push.sh`; can be run standalone. |
 
-All three scripts (when they touch `fleet.user.js`) ensure:
+Scripts that touch `fleet.user.js` (checkout, release, test) ensure:
 
 - `@name`: branch prefix (e.g. `[my-feature] Fleet`) or no prefix on `main`
 - `@downloadURL` / `@updateURL`: branch segment in the raw GitHub URL
 - `GITHUB_CONFIG.branch`: current branch name
 - `VERSION`: kept in sync with header `@version`
 
-**checkout.sh** — `./utils/checkout.sh <branch>`
+**checkout.sh** — `./utils/checkout.sh [--dry-run] <branch>`
 
-- Creates branch from `main` (branch must not exist locally or on origin).
+- Creates branch from `main` (branch must not exist locally or on origin). `--dry-run` prints planned changes without modifying anything.
 - Updates `fleet.user.js` for the new branch, commits with message "Sync branch config", pushes.
 - Prints the GitHub tree URL; install the userscript from that URL for development.
 
-**test.sh** — `./utils/test.sh <new_branch_name>`
+**push.sh** — `./utils/push.sh [--dry-run] ["optional commit message"]`
 
-- Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in `utils/` (or `local-utils/` if symlinked/copied).
-- Fetches `origin/main`, creates branch from `main`, runs `sync-branch-config.sh` to update `fleet.user.js`, commits and pushes.
-- Use to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main with `publish.sh` when satisfied.
+- Lists uncommitted changes; for each changed versioned file (plugins, fleet.user.js, settings-modal docs), bumps version by 0.1 if working tree is not already higher than HEAD. Updates `archetypes.json` settingsModalDocs for .md changes.
+- Runs `./utils/update-versions.sh` to sync archetypes and fleet, then `git add -A`, `git commit`, `git push` (only if there is something to commit). Default message: "push.sh auto commit at <date/time>".
+- Requires `jq`. Use for normal commits on a branch to keep versions in sync automatically.
 
-**publish.sh** — `./utils/publish.sh <branch>`
+**release.sh** — `./utils/release.sh [--dry-run] <branch>`
 
-- Branch must exist locally and on origin; working tree should be clean.
+- Branch must exist locally and on origin; working tree should be clean. `--dry-run` prints planned merge and sync without making changes.
 - Checks out `main`, merges the branch, updates `fleet.user.js` for main (no branch prefix, main URLs), commits "Sync branch config", pushes `main`.
-- Deletes the branch locally and on origin (remote delete best-effort).
-- After this, the branch-specific userscript can be removed; changes are live on the main userscript.
+- Deletes the branch locally and on origin (remote delete best-effort). After this, the branch-specific userscript can be removed; changes are live on the main userscript.
 
-Run scripts from repo root or from `utils/`.
+**test.sh** — `./utils/test.sh [--dry-run] <new_branch_name>`
+
+- Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in `utils/` (or `local-utils/` if symlinked/copied). `--dry-run` prints planned changes without modifying anything.
+- Fetches `origin/main`, creates branch from `main`, runs `sync-branch-config.sh` to update `fleet.user.js`, commits and pushes.
+- Use to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main with `release.sh` when satisfied.
+
+**update-versions.sh** — `./utils/update-versions.sh [--dry-run] [options]`
+
+- Reads `@version` and const `VERSION` from `fleet.user.js`; if they differ, normalizes both to the higher value. Collects `_version` from plugin files, updates `archetypes.json` (corePlugins, devPlugins, archetype plugins, archetypesVersion). Optional args: `--root`, `--plugins-dir`, `--archetypes`, `--fleet`.
+- Requires `jq`. Used by `push.sh`; run standalone when you need to sync versions without committing.
+
+Run all scripts from repo root or from `utils/`.
+
+### GitHub raw cache (Tampermonkey updates)
+
+GitHub caches raw file content (e.g. `raw.githubusercontent.com`) for about **5 minutes**. If you push changes and Tampermonkey checks for updates sooner than that, it may receive the previous cached version. Updating files faster than the cache TTL can cause unexpected behavior (e.g. script or plugin versions not matching what you just pushed) if you are not aware of this. After pushing, wait at least a few minutes before relying on "Check for updates" in Tampermonkey, or reinstall the userscript from the branch URL to force a fresh fetch.
 
 ## Branch Workflow (Canonical)
 
@@ -115,8 +136,8 @@ Steps:
 3. Ensure the plugin has a unique `id` and valid lifecycle hooks.
 4. Update `archetypes.json`:
    - Add the plugin entry or update its version in the correct archetype list.
-5. Update versions (see **Version Synchronization** below).
-6. Commit changes to the feature branch.
+5. Update versions (see **Version Synchronization** below). Prefer `./utils/push.sh ["commit message"]` to commit and push: it bumps versions for changed files and runs `update-versions.sh` so `archetypes.json` and fleet stay in sync.
+6. Commit changes to the feature branch (or use `push.sh` for version-aware commit and push).
 
 ### 2) Test Branch (Pre-Release Testing)
 
@@ -134,7 +155,7 @@ Steps:
 **Goal**: Publish the module.
 
 Steps:
-1. Merge the feature (or test) branch into `main`: run `./utils/publish.sh <branch>`. This merges into `main`, syncs `fleet.user.js` for main (no branch prefix, main URLs), pushes `main`, and deletes the branch locally and on origin.
+1. Merge the feature (or test) branch into `main`: run `./utils/release.sh <branch>`. This merges into `main`, syncs `fleet.user.js` for main (no branch prefix, main URLs), pushes `main`, and deletes the branch locally and on origin.
 2. Or merge manually and then ensure `fleet.user.js` in `main` has production `@name`, `@downloadURL`/`@updateURL` pointing to `main`, and `GITHUB_CONFIG.branch` set to `main`.
 3. Install or update the **main userscript** in Tampermonkey.
 4. Verify that the module loads and the feature is enabled.
@@ -154,12 +175,13 @@ Version increment rules:
 - **Major change**: increment by `1.0`.
 - Not base-10: `1.9 + 0.1 = 1.10`.
 
-### Version Update Tooling (Optional)
+### Version Update Tooling
 
-Branch-specific sync of `fleet.user.js` is handled by the helper scripts (`checkout.sh`, `test.sh`, `publish.sh`). Plugin version sync is separate:
+Branch-specific sync of `fleet.user.js` is handled by the helper scripts (`checkout.sh`, `test.sh`, `release.sh`). Plugin and archetype version sync is handled by:
 
-- If available: `./utils/update-versions.py` or `./utils/update-archetypes.js` (or equivalent) can auto-update plugin versions in `archetypes.json` and bump `archetypesVersion`.
-- Otherwise: **perform version updates manually** (plugin `_version`, `archetypes.json` plugin entry, `archetypesVersion`) and double-check consistency.
+- **`./utils/update-versions.sh`**: Syncs `archetypes.json` with plugin `_version` values and fleet `@version`/const `VERSION`; bumps `archetypesVersion`. Run standalone or via `push.sh`.
+- **`./utils/push.sh`**: Version-aware commit and push: bumps versions for changed files (plugins, fleet, settings-modal docs) if needed, runs `update-versions.sh`, then commits and pushes. **Prefer `push.sh` when committing** to keep versions in sync.
+- Otherwise: perform version updates manually (plugin `_version`, `archetypes.json` plugin entry, `archetypesVersion`) and double-check consistency.
 
 ## Userscript Installation (Branch-Specific)
 
@@ -177,9 +199,9 @@ This prevents cross-branch contamination and ensures correct plugin loading.
 1. Run `./utils/checkout.sh feature/<name>` to create the branch and sync `fleet.user.js` (or create the branch manually).
 2. Add or edit plugin file in `plugins/...`.
 3. Ensure plugin object contract is valid.
-4. Update plugin `_version`.
-5. Update `archetypes.json` plugin entry and `archetypesVersion`.
-6. Commit changes. Install the branch-specific userscript from the URL printed by `checkout.sh` for development.
+4. Update plugin `_version` (or let `push.sh` bump it). Update `archetypes.json` / `archetypesVersion` via `./utils/update-versions.sh` or `./utils/push.sh`.
+5. Prefer `./utils/push.sh ["commit message"]` to commit and push so versions stay in sync.
+6. Install the branch-specific userscript from the URL printed by `checkout.sh` for development.
 
 **Test (test branch)**:
 1. Optionally run `./utils/test.sh <test-branch>` to create a test branch from `main` and sync `fleet.user.js`.
@@ -189,7 +211,7 @@ This prevents cross-branch contamination and ensures correct plugin loading.
 5. Fix issues and repeat.
 
 **Publish (main branch)**:
-1. Run `./utils/publish.sh <branch>` to merge the branch into `main`, sync `fleet.user.js` for main, push, and delete the branch.
+1. Run `./utils/release.sh <branch>` to merge the branch into `main`, sync `fleet.user.js` for main, push, and delete the branch.
 2. Or merge manually and confirm `fleet.user.js` points to `main` with production name/URLs.
 3. Install/update main userscript.
 4. Verify feature in production.
@@ -199,3 +221,4 @@ This prevents cross-branch contamination and ensures correct plugin loading.
 - **Plugin not loading**: confirm plugin entry in `archetypes.json` and version sync.
 - **Wrong branch behavior**: ensure Tampermonkey has separate scripts per branch.
 - **No logs**: check dev script and confirm `Logger` is enabled in dev builds.
+- **Tampermonkey shows old script/plugin after push**: GitHub caches raw content for ~5 minutes. Wait a few minutes before "Check for updates", or reinstall the userscript from the branch URL.
