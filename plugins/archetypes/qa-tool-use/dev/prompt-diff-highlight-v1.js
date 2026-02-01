@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlight',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -237,6 +237,9 @@ const plugin = {
         beforePre.innerHTML = beforeHtml;
         afterPre.innerHTML = afterHtml;
         
+        // Strip colored backgrounds from wrapper divs so highlights are visible
+        this.stripWrapperBackgrounds(beforePre, afterPre);
+        
         // Mark as highlighted
         beforePre.dataset.diffHighlighted = 'true';
         afterPre.dataset.diffHighlighted = 'true';
@@ -264,11 +267,46 @@ const plugin = {
             afterPre.textContent = afterPre.dataset.originalText;
         }
         
+        // Restore wrapper backgrounds
+        this.restoreWrapperBackgrounds(beforePre, afterPre);
+        
         // Remove markers
         delete beforePre.dataset.diffHighlighted;
         delete afterPre.dataset.diffHighlighted;
         
         Logger.debug('Diff highlights removed');
+    },
+    
+    stripWrapperBackgrounds(beforePre, afterPre) {
+        const beforeWrapper = beforePre.parentElement;
+        const afterWrapper = afterPre.parentElement;
+        
+        // Store original className for restoration, then strip the colored backgrounds
+        if (beforeWrapper && !beforeWrapper.dataset.originalClassName) {
+            beforeWrapper.dataset.originalClassName = beforeWrapper.className;
+            beforeWrapper.classList.remove('bg-red-50/50', 'dark:bg-red-950/20');
+        }
+        
+        if (afterWrapper && !afterWrapper.dataset.originalClassName) {
+            afterWrapper.dataset.originalClassName = afterWrapper.className;
+            afterWrapper.classList.remove('bg-emerald-50/50', 'dark:bg-emerald-950/20');
+        }
+    },
+    
+    restoreWrapperBackgrounds(beforePre, afterPre) {
+        const beforeWrapper = beforePre.parentElement;
+        const afterWrapper = afterPre.parentElement;
+        
+        // Restore full className from saved snapshot
+        if (beforeWrapper && beforeWrapper.dataset.originalClassName) {
+            beforeWrapper.className = beforeWrapper.dataset.originalClassName;
+            delete beforeWrapper.dataset.originalClassName;
+        }
+        
+        if (afterWrapper && afterWrapper.dataset.originalClassName) {
+            afterWrapper.className = afterWrapper.dataset.originalClassName;
+            delete afterWrapper.dataset.originalClassName;
+        }
     },
     
     // ========== DIFF ALGORITHM ==========

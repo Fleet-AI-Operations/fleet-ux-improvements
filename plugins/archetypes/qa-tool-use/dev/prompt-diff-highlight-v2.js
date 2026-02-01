@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlight',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -223,6 +223,17 @@ const plugin = {
         const beforeText = beforePre.textContent;
         const afterText = afterPre.textContent;
         
+        // Remove colored backgrounds from parent divs
+        const beforeContainer = beforePre.closest('.rounded-md.border');
+        const afterContainer = afterPre.closest('.rounded-md.border');
+        
+        if (beforeContainer) {
+            this.storeAndRemoveBackground(beforeContainer);
+        }
+        if (afterContainer) {
+            this.storeAndRemoveBackground(afterContainer);
+        }
+        
         // Compute diff
         const diff = this.computeDiff(beforeText, afterText);
         
@@ -244,6 +255,34 @@ const plugin = {
         return true;
     },
     
+    storeAndRemoveBackground(container) {
+        // Store original classes
+        if (!container.dataset.originalClasses) {
+            container.dataset.originalClasses = container.className;
+        }
+        
+        // Remove red and green background classes
+        const classes = container.className.split(' ');
+        const filteredClasses = classes.filter(cls => 
+            !cls.includes('bg-red-') && 
+            !cls.includes('bg-emerald-') &&
+            !cls.includes('bg-green-')
+        );
+        
+        // Add neutral background
+        filteredClasses.push('bg-muted/30');
+        
+        container.className = filteredClasses.join(' ');
+        container.dataset.backgroundRemoved = 'true';
+    },
+    
+    restoreBackground(container) {
+        if (container.dataset.originalClasses && container.dataset.backgroundRemoved === 'true') {
+            container.className = container.dataset.originalClasses;
+            delete container.dataset.backgroundRemoved;
+        }
+    },
+    
     removeHighlights(modal) {
         const gridContainer = modal.querySelector(this.selectors.gridContainer);
         if (!gridContainer) return;
@@ -255,6 +294,17 @@ const plugin = {
         const afterPre = columns[1].querySelector(this.selectors.beforePre);
         
         if (!beforePre || !afterPre) return;
+        
+        // Restore colored backgrounds
+        const beforeContainer = beforePre.closest('.rounded-md.border');
+        const afterContainer = afterPre.closest('.rounded-md.border');
+        
+        if (beforeContainer) {
+            this.restoreBackground(beforeContainer);
+        }
+        if (afterContainer) {
+            this.restoreBackground(afterContainer);
+        }
         
         // Restore original text
         if (beforePre.dataset.originalText) {
