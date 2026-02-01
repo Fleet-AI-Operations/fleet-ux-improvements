@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -30,23 +30,23 @@ const plugin = {
         // Add styles for diff highlighting
         const style = document.createElement('style');
         style.textContent = `
-            .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.2);
-                color: rgb(127, 29, 29);
+            pre .diff-highlight-remove {
+                background-color: rgba(239, 68, 68, 0.2) !important;
+                color: rgb(127, 29, 29) !important;
             }
-            .dark .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.15);
-                color: rgb(254, 202, 202);
+            .dark pre .diff-highlight-remove {
+                background-color: rgba(239, 68, 68, 0.15) !important;
+                color: rgb(254, 202, 202) !important;
             }
-            .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.2);
-                color: rgb(6, 78, 59);
+            pre .diff-highlight-add {
+                background-color: rgba(16, 185, 129, 0.2) !important;
+                color: rgb(6, 78, 59) !important;
             }
-            .dark .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.15);
-                color: rgb(167, 243, 208);
+            .dark pre .diff-highlight-add {
+                background-color: rgba(16, 185, 129, 0.15) !important;
+                color: rgb(167, 243, 208) !important;
             }
-            .diff-newline-marker {
+            pre .diff-newline-marker {
                 opacity: 0.6;
                 font-weight: bold;
             }

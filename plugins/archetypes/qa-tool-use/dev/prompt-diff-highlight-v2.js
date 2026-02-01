@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV2',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -31,20 +31,24 @@ const plugin = {
         const style = document.createElement('style');
         style.textContent = `
             .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.2);
-                color: rgb(127, 29, 29);
+                background-color: rgba(239, 68, 68, 0.3) !important;
+                color: rgb(127, 29, 29) !important;
+                padding: 2px 0;
+                border-radius: 2px;
             }
             .dark .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.15);
-                color: rgb(254, 202, 202);
+                background-color: rgba(239, 68, 68, 0.25) !important;
+                color: rgb(254, 202, 202) !important;
             }
             .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.2);
-                color: rgb(6, 78, 59);
+                background-color: rgba(16, 185, 129, 0.3) !important;
+                color: rgb(6, 78, 59) !important;
+                padding: 2px 0;
+                border-radius: 2px;
             }
             .dark .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.15);
-                color: rgb(167, 243, 208);
+                background-color: rgba(16, 185, 129, 0.25) !important;
+                color: rgb(167, 243, 208) !important;
             }
             .diff-newline-marker {
                 opacity: 0.6;
@@ -223,17 +227,6 @@ const plugin = {
         const beforeText = beforePre.textContent;
         const afterText = afterPre.textContent;
         
-        // Remove colored backgrounds from parent divs
-        const beforeContainer = beforePre.closest('.rounded-md.border');
-        const afterContainer = afterPre.closest('.rounded-md.border');
-        
-        if (beforeContainer) {
-            this.storeAndRemoveBackground(beforeContainer);
-        }
-        if (afterContainer) {
-            this.storeAndRemoveBackground(afterContainer);
-        }
-        
         // Compute diff
         const diff = this.computeDiff(beforeText, afterText);
         
@@ -245,42 +238,22 @@ const plugin = {
         const beforeHtml = this.renderOriginal(diff);
         const afterHtml = this.renderNew(diff);
         
+        Logger.debug(`Diff computed: ${diff.length} operations`);
+        Logger.debug(`Before HTML length: ${beforeHtml.length}, After HTML length: ${afterHtml.length}`);
+        Logger.debug(`Sample before HTML: ${beforeHtml.substring(0, 200)}`);
+        Logger.debug(`Sample after HTML: ${afterHtml.substring(0, 200)}`);
+        
         beforePre.innerHTML = beforeHtml;
         afterPre.innerHTML = afterHtml;
+        
+        // Strip colored backgrounds from wrapper divs so highlights are visible
+        this.stripWrapperBackgrounds(beforePre, afterPre);
         
         // Mark as highlighted
         beforePre.dataset.diffHighlighted = 'true';
         afterPre.dataset.diffHighlighted = 'true';
         
         return true;
-    },
-    
-    storeAndRemoveBackground(container) {
-        // Store original classes
-        if (!container.dataset.originalClasses) {
-            container.dataset.originalClasses = container.className;
-        }
-        
-        // Remove red and green background classes
-        const classes = container.className.split(' ');
-        const filteredClasses = classes.filter(cls => 
-            !cls.includes('bg-red-') && 
-            !cls.includes('bg-emerald-') &&
-            !cls.includes('bg-green-')
-        );
-        
-        // Add neutral background
-        filteredClasses.push('bg-muted/30');
-        
-        container.className = filteredClasses.join(' ');
-        container.dataset.backgroundRemoved = 'true';
-    },
-    
-    restoreBackground(container) {
-        if (container.dataset.originalClasses && container.dataset.backgroundRemoved === 'true') {
-            container.className = container.dataset.originalClasses;
-            delete container.dataset.backgroundRemoved;
-        }
     },
     
     removeHighlights(modal) {
@@ -295,17 +268,6 @@ const plugin = {
         
         if (!beforePre || !afterPre) return;
         
-        // Restore colored backgrounds
-        const beforeContainer = beforePre.closest('.rounded-md.border');
-        const afterContainer = afterPre.closest('.rounded-md.border');
-        
-        if (beforeContainer) {
-            this.restoreBackground(beforeContainer);
-        }
-        if (afterContainer) {
-            this.restoreBackground(afterContainer);
-        }
-        
         // Restore original text
         if (beforePre.dataset.originalText) {
             beforePre.textContent = beforePre.dataset.originalText;
@@ -314,11 +276,46 @@ const plugin = {
             afterPre.textContent = afterPre.dataset.originalText;
         }
         
+        // Restore wrapper backgrounds
+        this.restoreWrapperBackgrounds(beforePre, afterPre);
+        
         // Remove markers
         delete beforePre.dataset.diffHighlighted;
         delete afterPre.dataset.diffHighlighted;
         
         Logger.debug('Diff highlights removed');
+    },
+    
+    stripWrapperBackgrounds(beforePre, afterPre) {
+        const beforeWrapper = beforePre.parentElement;
+        const afterWrapper = afterPre.parentElement;
+        
+        // Store original className for restoration, then strip the colored backgrounds
+        if (beforeWrapper && !beforeWrapper.dataset.originalClassName) {
+            beforeWrapper.dataset.originalClassName = beforeWrapper.className;
+            beforeWrapper.classList.remove('bg-red-50/50', 'dark:bg-red-950/20');
+        }
+        
+        if (afterWrapper && !afterWrapper.dataset.originalClassName) {
+            afterWrapper.dataset.originalClassName = afterWrapper.className;
+            afterWrapper.classList.remove('bg-emerald-50/50', 'dark:bg-emerald-950/20');
+        }
+    },
+    
+    restoreWrapperBackgrounds(beforePre, afterPre) {
+        const beforeWrapper = beforePre.parentElement;
+        const afterWrapper = afterPre.parentElement;
+        
+        // Restore full className from saved snapshot
+        if (beforeWrapper && beforeWrapper.dataset.originalClassName) {
+            beforeWrapper.className = beforeWrapper.dataset.originalClassName;
+            delete beforeWrapper.dataset.originalClassName;
+        }
+        
+        if (afterWrapper && afterWrapper.dataset.originalClassName) {
+            afterWrapper.className = afterWrapper.dataset.originalClassName;
+            delete afterWrapper.dataset.originalClassName;
+        }
     },
     
     // ========== DIFF ALGORITHM ==========
