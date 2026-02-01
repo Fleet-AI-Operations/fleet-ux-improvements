@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.56",
+  "archetypesVersion": "3.57",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -50,7 +50,7 @@
         },
         {
           "name": "json-editor-online.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "guideline-buttons.js",
