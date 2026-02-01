@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -33,6 +33,10 @@ const plugin = {
             pre .diff-highlight-remove {
                 background-color: rgba(239, 68, 68, 0.2) !important;
                 color: rgb(127, 29, 29) !important;
+                padding: 0 0.125rem;
+                border-radius: 3px;
+                box-decoration-break: clone;
+                -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-remove {
                 background-color: rgba(239, 68, 68, 0.15) !important;
@@ -41,6 +45,10 @@ const plugin = {
             pre .diff-highlight-add {
                 background-color: rgba(16, 185, 129, 0.2) !important;
                 color: rgb(6, 78, 59) !important;
+                padding: 0 0.125rem;
+                border-radius: 3px;
+                box-decoration-break: clone;
+                -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-add {
                 background-color: rgba(16, 185, 129, 0.15) !important;
@@ -50,29 +58,61 @@ const plugin = {
                 opacity: 0.6;
                 font-weight: bold;
             }
-            .diff-toggle-container {
+            .diff-toggle-row {
                 display: flex;
                 align-items: center;
-                gap: 0.5rem;
-                margin-right: 0.5rem;
+                justify-content: center;
+                margin: 0.25rem 0 0.75rem;
             }
-            .diff-toggle-label {
+            .diff-toggle-text {
                 font-size: 0.875rem;
                 color: rgb(107, 114, 128);
                 cursor: pointer;
                 user-select: none;
-                display: flex;
-                align-items: center;
-                gap: 0.375rem;
             }
-            .dark .diff-toggle-label {
+            .dark .diff-toggle-text {
                 color: rgb(156, 163, 175);
             }
-            .diff-toggle-checkbox {
-                width: 1rem;
-                height: 1rem;
-                border-radius: 0.25rem;
+            .diff-toggle-switch {
+                position: relative;
+                display: inline-block;
+                width: 44px;
+                height: 24px;
+                flex-shrink: 0;
+            }
+            .diff-toggle-switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+                position: absolute;
+            }
+            .diff-toggle-slider {
+                position: absolute;
                 cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: #ccc;
+                transition: 0.2s;
+                border-radius: 24px;
+            }
+            .diff-toggle-knob {
+                position: absolute;
+                height: 18px;
+                width: 18px;
+                left: 3px;
+                bottom: 3px;
+                background-color: white;
+                transition: 0.2s;
+                border-radius: 50%;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            }
+            .diff-toggle-switch input:checked + .diff-toggle-slider {
+                background-color: var(--brand, #4f46e5);
+            }
+            .diff-toggle-switch input:checked + .diff-toggle-slider .diff-toggle-knob {
+                left: 23px;
             }
         `;
         document.head.appendChild(style);
@@ -137,43 +177,54 @@ const plugin = {
     },
     
     insertToggle(state, modal) {
-        // Find the top-right controls area (where the close button is)
-        const controlsArea = modal.querySelector('.absolute.right-3\\.5.top-3\\.5');
-        if (!controlsArea) {
-            Logger.debug('Could not find controls area for toggle insertion');
+        const title = modal.querySelector(this.selectors.modalTitle);
+        if (!title) {
+            Logger.debug('Could not find modal title for toggle insertion');
             return false;
         }
         
         // Check if toggle already exists
-        if (controlsArea.querySelector('.diff-toggle-container')) {
+        if (modal.querySelector('.diff-toggle-row')) {
             return true;
         }
         
-        // Create toggle container
+        // Create toggle container centered under header
         const toggleContainer = document.createElement('div');
-        toggleContainer.className = 'diff-toggle-container';
+        toggleContainer.className = 'diff-toggle-row';
         
-        const toggleLabel = document.createElement('label');
-        toggleLabel.className = 'diff-toggle-label';
+        const toggleId = `${this.id}-toggle`;
+        const toggleText = document.createElement('label');
+        toggleText.className = 'diff-toggle-text';
+        toggleText.htmlFor = toggleId;
+        toggleText.textContent = 'Show edits';
+        
+        const toggleSwitch = document.createElement('label');
+        toggleSwitch.className = 'diff-toggle-switch';
         
         const toggleCheckbox = document.createElement('input');
         toggleCheckbox.type = 'checkbox';
-        toggleCheckbox.className = 'diff-toggle-checkbox';
+        toggleCheckbox.id = toggleId;
         toggleCheckbox.checked = state.highlightsEnabled;
         
-        const toggleText = document.createElement('span');
-        toggleText.textContent = 'Highlight Changes';
+        const toggleSlider = document.createElement('span');
+        toggleSlider.className = 'diff-toggle-slider';
         
-        toggleLabel.appendChild(toggleCheckbox);
-        toggleLabel.appendChild(toggleText);
-        toggleContainer.appendChild(toggleLabel);
+        const toggleKnob = document.createElement('span');
+        toggleKnob.className = 'diff-toggle-knob';
         
-        // Insert before close button
-        controlsArea.insertBefore(toggleContainer, controlsArea.firstChild);
+        toggleSlider.appendChild(toggleKnob);
+        toggleSwitch.appendChild(toggleCheckbox);
+        toggleSwitch.appendChild(toggleSlider);
+        
+        toggleContainer.appendChild(toggleText);
+        toggleContainer.appendChild(toggleSwitch);
+        
+        // Insert after header/title block
+        title.parentElement.insertAdjacentElement('afterend', toggleContainer);
         
         // Add event listener
         toggleCheckbox.addEventListener('change', (e) => {
-            state.highlightsEnabled = e.target.checked;
+            state.highlightsEnabled = toggleCheckbox.checked;
             state.highlightsApplied = false; // Force re-render
             Logger.debug(`Diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
             
@@ -222,6 +273,25 @@ const plugin = {
         
         const beforeText = beforePre.textContent;
         const afterText = afterPre.textContent;
+        const hasHighlights = Boolean(
+            beforePre.querySelector('.diff-highlight-remove, .diff-highlight-add') ||
+            afterPre.querySelector('.diff-highlight-remove, .diff-highlight-add')
+        );
+        const alreadyHighlighted = beforePre.dataset.diffHighlighted === 'true' && afterPre.dataset.diffHighlighted === 'true';
+        const originalBefore = beforePre.dataset.originalText;
+        const originalAfter = afterPre.dataset.originalText;
+        
+        if (alreadyHighlighted && hasHighlights && originalBefore === beforeText && originalAfter === afterText) {
+            return true;
+        }
+        
+        if (alreadyHighlighted) {
+            Logger.debug('Prompt diff content changed or highlights cleared; reapplying');
+            beforePre.textContent = beforeText;
+            afterPre.textContent = afterText;
+            delete beforePre.dataset.diffHighlighted;
+            delete afterPre.dataset.diffHighlighted;
+        }
         
         // Compute diff
         const diff = this.computeDiff(beforeText, afterText);
