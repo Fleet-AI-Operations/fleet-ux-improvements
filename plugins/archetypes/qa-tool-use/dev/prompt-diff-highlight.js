@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -566,14 +566,14 @@ const plugin = {
     },
     
     getHighlightStyles(isDark) {
-        const removeBg = isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.2)';
-        const removeColor = isDark ? 'rgb(254, 202, 202)' : 'rgb(127, 29, 29)';
-        const addBg = isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.2)';
-        const addColor = isDark ? 'rgb(167, 243, 208)' : 'rgb(6, 78, 59)';
-        const base = 'padding:0 0.125rem;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
+        const removeBg = isDark ? 'rgba(255, 0, 64, 0.55)' : 'rgba(255, 0, 64, 0.6)';
+        const addBg = isDark ? 'rgba(0, 255, 106, 0.5)' : 'rgba(0, 255, 106, 0.6)';
+        const removeGlow = isDark ? 'rgba(255, 0, 64, 0.9)' : 'rgba(255, 0, 64, 0.75)';
+        const addGlow = isDark ? 'rgba(0, 255, 106, 0.9)' : 'rgba(0, 255, 106, 0.75)';
+        const base = 'border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone;color:inherit;';
         return {
-            remove: `${base}background-color:${removeBg};color:${removeColor};`,
-            add: `${base}background-color:${addBg};color:${addColor};`
+            remove: `${base}background-color:${removeBg};box-shadow:0 0 0 2px ${removeGlow},0 0 8px ${removeGlow};`,
+            add: `${base}background-color:${addBg};box-shadow:0 0 0 2px ${addGlow},0 0 8px ${addGlow};`
         };
     },
     
