@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -13,6 +13,7 @@ const plugin = {
         modalObserved: false,
         highlightsApplied: false,
         toggleInserted: false,
+        copyButtonsInserted: false,
         highlightsEnabled: true
     },
     
@@ -62,8 +63,24 @@ const plugin = {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                margin: 0.25rem 0 0.75rem;
+                gap: 12px;
+                margin: 0.4rem 0 0.9rem;
                 width: 100%;
+            }
+            .diff-copy-button {
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: 500;
+                color: var(--foreground, #333);
+                background: var(--card, #fafafa);
+                border: 1px solid var(--border, #e5e5e5);
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .diff-copy-button:hover {
+                background: var(--hover, #f0f0f0);
+                border-color: var(--border-hover, #d1d5db);
             }
         `;
         document.head.appendChild(style);
@@ -80,6 +97,7 @@ const plugin = {
                 state.modalObserved = false;
                 state.highlightsApplied = false;
                 state.toggleInserted = false;
+                state.copyButtonsInserted = false;
                 Logger.debug('Prompt Changes modal closed, resetting state');
             }
             return;
@@ -97,6 +115,14 @@ const plugin = {
             if (toggleInserted) {
                 state.toggleInserted = true;
                 Logger.log('✓ Diff highlight toggle inserted');
+            }
+        }
+        
+        if (!state.copyButtonsInserted) {
+            const copyInserted = this.insertCopyButtons(modal);
+            if (copyInserted) {
+                state.copyButtonsInserted = true;
+                Logger.log('✓ Diff copy buttons inserted');
             }
         }
         
@@ -147,11 +173,14 @@ const plugin = {
         const toggleId = `${this.id}-toggle`;
         const toggleText = document.createElement('label');
         toggleText.htmlFor = toggleId;
-        toggleText.textContent = 'Show edits';
-        toggleText.style.fontSize = '13px';
-        toggleText.style.color = 'var(--muted-foreground, #666)';
+        toggleText.textContent = 'Highlight Differences';
+        toggleText.style.fontSize = '16px';
+        toggleText.style.fontWeight = '500';
+        toggleText.style.color = 'var(--foreground, #333)';
         toggleText.style.cursor = 'pointer';
         toggleText.style.userSelect = 'none';
+        toggleText.style.padding = '4px 8px';
+        toggleText.style.lineHeight = '1.2';
         
         const toggleSwitch = document.createElement('label');
         toggleSwitch.style.position = 'relative';
@@ -159,6 +188,7 @@ const plugin = {
         toggleSwitch.style.width = '44px';
         toggleSwitch.style.height = '24px';
         toggleSwitch.style.flexShrink = '0';
+        toggleSwitch.style.alignSelf = 'center';
         
         const toggleCheckbox = document.createElement('input');
         toggleCheckbox.type = 'checkbox';
@@ -228,6 +258,62 @@ const plugin = {
         CleanupRegistry.registerEventListener(toggleCheckbox, 'change', () => {});
         
         return true;
+    },
+    
+    insertCopyButtons(modal) {
+        const gridContainer = modal.querySelector(this.selectors.gridContainer);
+        if (!gridContainer) {
+            Logger.debug('Could not find grid container for copy buttons');
+            return false;
+        }
+        
+        const columns = gridContainer.querySelectorAll('.flex.flex-col.min-h-0');
+        if (columns.length !== 2) {
+            Logger.debug('Could not find both columns for copy buttons');
+            return false;
+        }
+        
+        const addButton = (column, label) => {
+            const headerRow = column.querySelector('.text-sm.font-medium.text-muted-foreground.mb-2.flex.items-center');
+            if (!headerRow) {
+                Logger.debug(`Missing header row for ${label} copy button`);
+                return false;
+            }
+            if (headerRow.querySelector('.diff-copy-button')) return true;
+            
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'diff-copy-button';
+            button.textContent = 'Copy';
+            button.dataset.diffCopyTarget = label;
+            
+            button.addEventListener('click', async () => {
+                const pre = column.querySelector(this.selectors.beforePre);
+                if (!pre) {
+                    Logger.warn(`Missing ${label} pre element for copy`);
+                    return;
+                }
+                const fallbackText = pre.textContent || '';
+                const sourceText = pre.dataset.originalText || fallbackText;
+                if (!sourceText) {
+                    Logger.warn(`No ${label} text found to copy`);
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(sourceText);
+                    Logger.info(`Copied ${label} prompt to clipboard`);
+                } catch (err) {
+                    Logger.error(`Failed to copy ${label} prompt`, err);
+                }
+            });
+            
+            headerRow.appendChild(button);
+            return true;
+        };
+        
+        const beforeOk = addButton(columns[0], 'before');
+        const afterOk = addButton(columns[1], 'after');
+        return beforeOk && afterOk;
     },
     
     applyDiffHighlights(modal) {
@@ -340,12 +426,16 @@ const plugin = {
         // Store original className for restoration, then strip the colored backgrounds
         if (beforeWrapper && !beforeWrapper.dataset.originalClassName) {
             beforeWrapper.dataset.originalClassName = beforeWrapper.className;
+            beforeWrapper.dataset.originalInlineBg = beforeWrapper.style.backgroundColor || '';
             beforeWrapper.classList.remove('bg-red-50/50', 'dark:bg-red-950/20');
+            beforeWrapper.style.backgroundColor = '#000';
         }
         
         if (afterWrapper && !afterWrapper.dataset.originalClassName) {
             afterWrapper.dataset.originalClassName = afterWrapper.className;
+            afterWrapper.dataset.originalInlineBg = afterWrapper.style.backgroundColor || '';
             afterWrapper.classList.remove('bg-emerald-50/50', 'dark:bg-emerald-950/20');
+            afterWrapper.style.backgroundColor = '#000';
         }
     },
     
@@ -356,12 +446,16 @@ const plugin = {
         // Restore full className from saved snapshot
         if (beforeWrapper && beforeWrapper.dataset.originalClassName) {
             beforeWrapper.className = beforeWrapper.dataset.originalClassName;
+            beforeWrapper.style.backgroundColor = beforeWrapper.dataset.originalInlineBg || '';
             delete beforeWrapper.dataset.originalClassName;
+            delete beforeWrapper.dataset.originalInlineBg;
         }
         
         if (afterWrapper && afterWrapper.dataset.originalClassName) {
             afterWrapper.className = afterWrapper.dataset.originalClassName;
+            afterWrapper.style.backgroundColor = afterWrapper.dataset.originalInlineBg || '';
             delete afterWrapper.dataset.originalClassName;
+            delete afterWrapper.dataset.originalInlineBg;
         }
     },
     
