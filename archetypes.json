@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.47",
+  "archetypesVersion": "3.48",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -311,11 +311,11 @@
         },
         {
           "name": "prompt-diff-highlight-v1.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "prompt-diff-highlight-v2.js",
-          "version": "1.1"
+          "version": "1.2"
         }
       ]
     },

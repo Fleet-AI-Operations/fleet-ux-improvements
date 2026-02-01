@@ -2,10 +2,10 @@
 // Highlights differences in the Prompt Changes modal using LCS diff algorithm
 
 const plugin = {
-    id: 'promptDiffHighlight',
+    id: 'promptDiffHighlightV2',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     
