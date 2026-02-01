@@ -310,7 +310,11 @@
           "version": "1.0"
         },
         {
-          "name": "prompt-diff-highlight.js",
+          "name": "prompt-diff-highlight-v1.js",
+          "version": "1.0"
+        },
+        {
+          "name": "prompt-diff-highlight-v2.js",
           "version": "1.0"
         }
       ]
