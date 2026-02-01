@@ -3,7 +3,10 @@
 # push.sh — Version-aware commit and push
 #
 # Usage:
-#   ./utils/push.sh ["optional commit message"]
+#   ./utils/push.sh [--dry-run] ["optional commit message"]
+#
+# Options:
+#   --dry-run  Print what would be done (version bumps, update-versions.sh, git steps); do not modify files or push.
 #
 # If no message is provided, uses: "push.sh auto commit at <DATE/TIME>".
 #
@@ -30,7 +33,12 @@ archetypes_path="$root/archetypes.json"
 fleet_path="$root/fleet.user.js"
 settings_modal_dir="$root/docs/settings-modal"
 
-# --- Commit message: first argument or default ---
+# --- Options and commit message ---
+dry_run=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  dry_run=true
+  shift
+fi
 commit_msg="${1:-push.sh auto commit at $(date '+%Y-%m-%d %H:%M:%S')}"
 
 # --- Prerequisite: jq ---
@@ -259,19 +267,36 @@ while IFS= read -r rel_path; do
   fi
   [[ -z "$new_version" ]] && continue
 
-  if [[ "$rel_path" == "fleet.user.js" ]]; then
-    bump_fleet_file "$abs_path" "$new_version"
-    echo "[info] Bumped fleet.user.js to $new_version" >&2
-  elif [[ "$rel_path" == *.md ]]; then
-    bump_md_file "$abs_path" "$new_version"
-    echo "[info] Bumped $rel_path to $new_version (and archetypes.json settingsModalDocs)" >&2
+  if [[ "$dry_run" == true ]]; then
+    if [[ "$rel_path" == "fleet.user.js" ]]; then
+      echo "[dry-run] Would bump fleet.user.js: -> $new_version" >&2
+    elif [[ "$rel_path" == *.md ]]; then
+      echo "[dry-run] Would bump $rel_path -> $new_version (and archetypes.json settingsModalDocs)" >&2
+    else
+      echo "[dry-run] Would bump $rel_path -> $new_version" >&2
+    fi
   else
-    bump_plugin_file "$abs_path" "$new_version"
-    echo "[info] Bumped $rel_path to $new_version" >&2
+    if [[ "$rel_path" == "fleet.user.js" ]]; then
+      bump_fleet_file "$abs_path" "$new_version"
+      echo "[info] Bumped fleet.user.js to $new_version" >&2
+    elif [[ "$rel_path" == *.md ]]; then
+      bump_md_file "$abs_path" "$new_version"
+      echo "[info] Bumped $rel_path to $new_version (and archetypes.json settingsModalDocs)" >&2
+    else
+      bump_plugin_file "$abs_path" "$new_version"
+      echo "[info] Bumped $rel_path to $new_version" >&2
+    fi
   fi
 done <<< "$versioned_list"
 
-# Always run update-versions.sh
+# Always run update-versions.sh (with --dry-run if we are dry-running)
+if [[ "$dry_run" == true ]]; then
+  echo "[dry-run] Would run: $script_dir/update-versions.sh --dry-run" >&2
+  "$script_dir/update-versions.sh" --dry-run
+  echo "[dry-run] Would run: git add -A && git commit -m \"$commit_msg\" && git push" >&2
+  exit 0
+fi
+
 "$script_dir/update-versions.sh"
 
 # Commit and push only if there is something to commit
