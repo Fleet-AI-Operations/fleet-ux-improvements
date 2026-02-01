@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# publish.sh — Merge a feature branch into main and remove the branch
+# release.sh — Merge a feature branch into main and remove the branch
 #
 # Usage:
-#   ./utils/publish.sh [--dry-run] <branch>
+#   ./utils/release.sh [--dry-run] <branch>
 #
 # Options:
 #   --dry-run  Print every change that would be made (merge, fleet.user.js, git steps); do not modify anything.
