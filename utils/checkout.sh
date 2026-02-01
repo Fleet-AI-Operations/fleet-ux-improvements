@@ -1,4 +1,32 @@
 #!/bin/bash
+#
+# checkout.sh — Create a feature branch and sync fleet.user.js for branch-specific installs
+#
+# Usage:
+#   ./utils/checkout.sh <branch>
+#
+# Arguments:
+#   branch   Name of the new branch to create (must not already exist).
+#
+# Effects:
+#   1. Checks out main and creates a new branch with the given name.
+#   2. Updates fleet.user.js so it targets this branch:
+#      - @name: prefixed with "[<branch>] " (e.g. "[my-feature] Fleet").
+#      - @downloadURL / @updateURL: branch segment set to <branch> so Tampermonkey
+#        installs/updates from the branch-specific raw URL.
+#      - GITHUB_CONFIG.branch: set to <branch> for in-script behaviour.
+#      - VERSION: kept in sync with the header @version.
+#   3. Commits these changes with message "Sync branch config" and pushes the new
+#      branch to origin.
+#   4. Prints the GitHub tree URL for the branch so you can install the branch-specific
+#      userscript for development and testing.
+#
+# Use this when starting work on a feature: install the script from the printed URL
+# and develop against that branch; publish.sh merges the branch into main when done.
+#
+# Prerequisites: run from repo root or utils/; main must exist; branch name must not
+# exist locally or on origin.
+#
 
 set -e
 

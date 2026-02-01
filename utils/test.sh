@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
-# Create a new test branch from main with fleet.user.js synced for that branch and push to remote.
-# Branch name must not exist locally or on origin.
+#
+# test.sh — Create a test branch to simulate the main userscript update experience
+#
+# Usage:
+#   ./utils/test.sh <new_branch_name>
+#
+# Arguments:
+#   new_branch_name   Name for the new branch. Must not already exist locally or
+#                     on origin, and cannot be "main".
+#
+# Effects:
+#   1. Validates branch name (non-empty, not "main", valid ref format) and ensures
+#      it does not exist locally or on origin. Requires a clean working tree.
+#   2. Fetches origin/main, checks out main, and creates the new branch.
+#   3. Runs sync-branch-config.sh to update fleet.user.js for this branch (@name
+#      prefix, @downloadURL/@updateURL, GITHUB_CONFIG.branch, VERSION).
+#   4. Commits any sync changes (or no-op if already in sync) and pushes the
+#      branch to origin.
+#   5. Prints the GitHub tree URL and explains that this branch is for testing
+#      how users on the current main script would experience an update before
+#      releasing; install from the printed URL to find script-breaking issues.
+#
+# Use this to validate an upcoming main release: install the test-branch script,
+# use it as normal, then merge to main with publish.sh when satisfied.
+#
+# Prerequisites: run from repo root or utils/; sync-branch-config.sh must exist
+# in the same directory (utils/). Working tree must be clean.
+#
 
 set -euo pipefail
 
@@ -10,8 +36,9 @@ Usage: test.sh NEW_BRANCH_NAME
 
   NEW_BRANCH_NAME  Name for the new branch (must not already exist locally or on origin).
 
-Creates the branch from main, copies main's fleet.user.js into it, runs sync-branch-config,
-commits the changes, and pushes to origin.
+Creates the branch from main, syncs fleet.user.js for that branch via sync-branch-config.sh,
+commits any changes, and pushes to origin. Install the script from the printed URL to
+test the update experience before publishing to main.
 EOF
 }
 

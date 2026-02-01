@@ -1,4 +1,32 @@
 #!/bin/bash
+#
+# publish.sh — Merge a feature branch into main and remove the branch
+#
+# Usage:
+#   ./utils/publish.sh <branch>
+#
+# Arguments:
+#   branch   Name of the existing branch to merge into main (must exist locally
+#            and on origin).
+#
+# Effects:
+#   1. Checks that the branch exists locally and on origin, then checks out main
+#      and merges <branch> into main (no ff requirement).
+#   2. Updates fleet.user.js for main: @name without branch prefix, @downloadURL /
+#      @updateURL pointing at main, GITHUB_CONFIG.branch set to "main", VERSION
+#      in sync with header @version.
+#   3. Commits with message "Sync branch config" and pushes main to origin.
+#   4. Deletes the branch locally (-d or -D) and on origin (--delete). Remote
+#      delete is best-effort (|| true).
+#   5. Prints a message that the branch-specific userscript can be removed and
+#      that changes are live on the main userscript.
+#
+# Use this when a feature branch is ready for release: it brings the branch into
+# main and cleans up the branch so only the main userscript remains.
+#
+# Prerequisites: run from repo root or utils/; working tree clean; branch must
+# exist locally and on origin.
+#
 
 set -e  # Exit on error
 
