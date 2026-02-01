@@ -3,7 +3,10 @@
 # checkout.sh — Create a feature branch and sync fleet.user.js for branch-specific installs
 #
 # Usage:
-#   ./utils/checkout.sh <branch>
+#   ./utils/checkout.sh [--dry-run] <branch>
+#
+# Options:
+#   --dry-run  Print every change that would be made (fleet.user.js and git steps); do not modify anything.
 #
 # Arguments:
 #   branch   Name of the new branch to create (must not already exist).
@@ -30,24 +33,38 @@
 
 set -e
 
-BRANCH="$1"
+dry_run=false
+BRANCH=""
+if [[ "${1:-}" == "--dry-run" ]]; then
+  dry_run=true
+  BRANCH="${2:-}"
+else
+  BRANCH="${1:-}"
+fi
+if [[ -z "$BRANCH" ]]; then
+  echo "Usage: $0 [--dry-run] <branch>"
+  exit 1
+fi
 
-git checkout main
-git checkout -b "$BRANCH"
+if [[ "$dry_run" != true ]]; then
+  git checkout main
+  git checkout -b "$BRANCH"
+fi
 
 # Inlined sync-branch-config.sh logic
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 file_path="$root/fleet.user.js"
-dry_run=false
 if [[ ! -f "$file_path" ]]; then
   echo "[error] fleet.user.js not found: $file_path"
   exit 1
 fi
-branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
-echo "[info] Current branch: $branch"
 if [[ "$dry_run" == true ]]; then
-  echo "[info] Dry run mode - no files will be modified"
+  branch="$BRANCH"
+  echo "[info] Dry run - would create branch: $BRANCH (no git or file changes)"
+else
+  branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+  echo "[info] Current branch: $branch"
 fi
 header_version="$(
   awk '/^\/\/ @version[[:space:]]+/ {print $3; exit}' "$file_path"
@@ -119,6 +136,38 @@ if [[ "$new_content" != "$content" ]]; then
     printf "%s" "$new_content" > "$file_path"
   fi
 fi
+
+# Enumerate every change (for dry run or summary)
+print_fleet_changes() {
+  local c="$1" n="$2"
+  if [[ "$name_change" == "1" ]]; then
+    local cur new
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: @name: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$download_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: @downloadURL: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$update_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: @updateURL: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$github_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: GITHUB_CONFIG.branch: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$version_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /const VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /const VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: const VERSION: \"$cur\" -> \"$new\""
+  fi
+}
+
 changed=()
 if [[ "$name_change" == "1" ]]; then changed+=("@name"); fi
 if [[ "$download_change" == "1" ]]; then changed+=("@downloadURL"); fi
@@ -127,12 +176,27 @@ if [[ "$github_change" == "1" ]]; then changed+=("GITHUB_CONFIG.branch"); fi
 if [[ "$version_change" == "1" ]]; then changed+=("VERSION constant"); fi
 if [[ "${#changed[@]}" -gt 0 ]]; then
   if [[ "$dry_run" == true ]]; then
-    echo "[info] Would update: ${changed[*]}"
+    echo "[dry-run] Would update fleet.user.js:"
+    print_fleet_changes "$content" "$new_content"
   else
     echo "[info] Updated: ${changed[*]}"
   fi
 else
-  echo "[info] All values already in sync - no changes needed"
+  if [[ "$dry_run" == true ]]; then
+    echo "[dry-run] fleet.user.js: no changes (all values already in sync for branch $branch)"
+  else
+    echo "[info] All values already in sync - no changes needed"
+  fi
+fi
+
+if [[ "$dry_run" == true ]]; then
+  echo "[dry-run] Would run: git checkout main"
+  echo "[dry-run] Would run: git checkout -b $BRANCH"
+  [[ "${#changed[@]}" -gt 0 ]] && echo "[dry-run] Would run: (write fleet.user.js with above changes)"
+  echo "[dry-run] Would run: git add ."
+  echo "[dry-run] Would run: git commit -m \"Sync branch config\""
+  echo "[dry-run] Would run: git push -u origin $BRANCH"
+  exit 0
 fi
 
 git add .

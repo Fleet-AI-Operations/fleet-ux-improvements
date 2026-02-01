@@ -3,13 +3,14 @@
 # update-versions.sh — Sync archetypes.json versions with plugin files and fleet.user.js
 #
 # Usage:
-#   ./utils/update-versions.sh [--root DIR] [--plugins-dir DIR] [--archetypes PATH] [--fleet PATH]
+#   ./utils/update-versions.sh [--dry-run] [--root DIR] [--plugins-dir DIR] [--archetypes PATH] [--fleet PATH]
 #
 # Options:
-#   --root DIR         Repository root (default: parent of script directory).
+#   --dry-run       Print every change that would be made (fleet.user.js and archetypes.json); do not modify files.
+#   --root DIR      Repository root (default: parent of script directory).
 #   --plugins-dir DIR  Plugins directory (default: <root>/plugins).
 #   --archetypes PATH  Path to archetypes.json (default: <root>/archetypes.json).
-#   --fleet PATH       Path to fleet.user.js (default: <root>/fleet.user.js).
+#   --fleet PATH    Path to fleet.user.js (default: <root>/fleet.user.js).
 #
 # Effects:
 #   1. Reads @version and const VERSION from fleet.user.js; if they differ, normalizes both to the higher value.
@@ -74,9 +75,14 @@ root="$(cd "$script_dir/.." && pwd)"
 plugins_dir=""
 archetypes_path=""
 fleet_path=""
+dry_run=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
     --root)
       root="$(cd "$2" && pwd)"
       shift 2
@@ -142,12 +148,18 @@ const_version="$(get_const_version "$fleet_path")"
 fleet_version="$(max_version "$header_version" "$const_version")"
 tmp_fleet=""
 if [[ -n "$fleet_version" ]] && [[ "$header_version" != "$const_version" ]]; then
-  tmp_fleet="$(mktemp)"
-  sed -e "/^\/\/ @version/s|^\(// @version[[:space:]]*\)[^[:space:]]*|\1$fleet_version|" \
-      -e "s/\(const VERSION = ['\''\"]\)[^'\''\"]*\(['\''\"]\)/\1$fleet_version\2/" \
-      "$fleet_path" > "$tmp_fleet" && mv "$tmp_fleet" "$fleet_path"
-  tmp_fleet=""
-  echo "[info] Normalized fleet.user.js: both version locations set to $fleet_version" >&2
+  if [[ "$dry_run" == true ]]; then
+    echo "[dry-run] Would update fleet.user.js:"
+    echo "  fleet.user.js: @version: \"$header_version\" -> \"$fleet_version\""
+    echo "  fleet.user.js: const VERSION: \"$const_version\" -> \"$fleet_version\""
+  else
+    tmp_fleet="$(mktemp)"
+    sed -e "/^\/\/ @version/s|^\(// @version[[:space:]]*\)[^[:space:]]*|\1$fleet_version|" \
+        -e "s/\(const VERSION = ['\''\"]\)[^'\''\"]*\(['\''\"]\)/\1$fleet_version\2/" \
+        "$fleet_path" > "$tmp_fleet" && mv "$tmp_fleet" "$fleet_path"
+    tmp_fleet=""
+    echo "[info] Normalized fleet.user.js: both version locations set to $fleet_version" >&2
+  fi
 fi
 
 # Version for archetypes.json: never decrease (use max of canonical fleet and current archetypes version)
@@ -239,7 +251,6 @@ tmp_json="$(mktemp)"
 trap 'rm -f "$tmp_json" $tmp_fleet' EXIT
 
 jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
-  def bump_minor: split(".") | (.[1] |= ((tonumber? // 0) + 1 | tostring)) | join(".");
   ($arch[0]) as $a
   | $a
   | .version = (if $v.fleet != "" then $v.fleet else .version end)
@@ -249,11 +260,77 @@ jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
   | (.devArchetypes // []) |= (map(.id as $aid | .plugins |= (map(.name as $n | .version = ($v.plugins[$aid + "/dev/" + $n] // .version)))))
 ' > "$tmp_json"
 
+# When something changed we bump archetypesVersion; compute bumped tmp for comparison
+archetypes_changed=false
+tmp_bumped=""
 if ! cmp -s "$archetypes_path" "$tmp_json"; then
-  # Bump archetypesVersion when something changed
-  jq '.archetypesVersion = (.archetypesVersion | split(".") | (.[1] |= ((tonumber? // 0) + 1 | tostring)) | join("."))' "$tmp_json" > "${tmp_json}.bumped"
-  mv "${tmp_json}.bumped" "$tmp_json"
-  cp "$tmp_json" "$archetypes_path"
+  archetypes_changed=true
+  tmp_bumped="$(mktemp)"
+  trap 'rm -f "$tmp_json" $tmp_fleet $tmp_bumped' EXIT
+  jq '.archetypesVersion = (.archetypesVersion | split(".") | (.[1] |= ((tonumber? // 0) + 1 | tostring)) | join("."))' "$tmp_json" > "$tmp_bumped"
+fi
+
+enumerate_archetypes_changes() {
+  local old_path="$1" new_path="$2"
+  local arch_name="$(basename "$archetypes_path")"
+  local o n
+  o="$(jq -r '.version // ""' "$old_path")"
+  n="$(jq -r '.version // ""' "$new_path")"
+  if [[ "$o" != "$n" ]]; then
+    echo "  $arch_name: version: \"$o\" -> \"$n\""
+  fi
+  while IFS= read -r name; do
+    o="$(jq -r --arg n "$name" '.corePlugins[] | select(.name==$n) | .version' "$old_path")"
+    n="$(jq -r --arg n "$name" '.corePlugins[] | select(.name==$n) | .version' "$new_path")"
+    if [[ "$o" != "$n" ]]; then
+      echo "  $arch_name: corePlugins[\"$name\"].version: \"$o\" -> \"$n\""
+    fi
+  done < <(jq -r '.corePlugins[].name' "$old_path")
+  while IFS= read -r name; do
+    o="$(jq -r --arg n "$name" '.devPlugins[] | select(.name==$n) | .version' "$old_path")"
+    n="$(jq -r --arg n "$name" '.devPlugins[] | select(.name==$n) | .version' "$new_path")"
+    if [[ "$o" != "$n" ]]; then
+      echo "  $arch_name: devPlugins[\"$name\"].version: \"$o\" -> \"$n\""
+    fi
+  done < <(jq -r '.devPlugins[].name' "$old_path")
+  local aid pname
+  jq -r '(.archetypes // [])[] | .id' "$old_path" | while read -r aid; do
+    while IFS= read -r pname; do
+      o="$(jq -r --arg aid "$aid" --arg n "$pname" '(.archetypes[] | select(.id==$aid) | .plugins[] | select(.name==$n) | .version) // empty' "$old_path")"
+      n="$(jq -r --arg aid "$aid" --arg n "$pname" '(.archetypes[] | select(.id==$aid) | .plugins[] | select(.name==$n) | .version) // empty' "$new_path")"
+      if [[ "$o" != "$n" ]]; then
+        echo "  $arch_name: archetypes[\"$aid\"].plugins[\"$pname\"].version: \"$o\" -> \"$n\""
+      fi
+    done < <(jq -r --arg aid "$aid" '(.archetypes[] | select(.id==$aid) | .plugins[].name) // empty' "$old_path")
+  done
+  jq -r '(.devArchetypes // [])[] | .id' "$old_path" | while read -r aid; do
+    while IFS= read -r pname; do
+      o="$(jq -r --arg aid "$aid" --arg n "$pname" '(.devArchetypes[] | select(.id==$aid) | .plugins[] | select(.name==$n) | .version) // empty' "$old_path")"
+      n="$(jq -r --arg aid "$aid" --arg n "$pname" '(.devArchetypes[] | select(.id==$aid) | .plugins[] | select(.name==$n) | .version) // empty' "$new_path")"
+      if [[ "$o" != "$n" ]]; then
+        echo "  $arch_name: devArchetypes[\"$aid\"].plugins[\"$pname\"].version: \"$o\" -> \"$n\""
+      fi
+    done < <(jq -r --arg aid "$aid" '(.devArchetypes[] | select(.id==$aid) | .plugins[].name) // empty' "$old_path")
+  done
+  o="$(jq -r '.archetypesVersion // ""' "$old_path")"
+  n="$(jq -r '.archetypesVersion // ""' "$new_path")"
+  if [[ "$o" != "$n" ]]; then
+    echo "  $arch_name: archetypesVersion: \"$o\" -> \"$n\""
+  fi
+}
+
+if [[ "$dry_run" == true ]]; then
+  if [[ "$archetypes_changed" == true ]]; then
+    echo "[dry-run] Would update $(basename "$archetypes_path"):"
+    enumerate_archetypes_changes "$archetypes_path" "$tmp_bumped"
+  else
+    echo "[dry-run] $(basename "$archetypes_path"): no changes"
+  fi
+  exit 0
+fi
+
+if [[ "$archetypes_changed" == true ]]; then
+  cp "$tmp_bumped" "$archetypes_path"
   echo "[info] Updated plugin version(s) in $(basename "$archetypes_path")"
 else
   echo "[info] No version changes in $(basename "$archetypes_path")"
