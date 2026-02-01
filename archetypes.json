@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.55",
+  "archetypesVersion": "3.56",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -132,7 +132,7 @@
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     },

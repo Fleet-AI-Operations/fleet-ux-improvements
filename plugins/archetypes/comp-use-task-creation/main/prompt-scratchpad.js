@@ -6,7 +6,7 @@ const plugin = {
     id: 'compUsePromptScratchpad',
     name: 'Prompt Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes after the prompt section on comp-use creation',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
