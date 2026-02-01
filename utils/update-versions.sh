@@ -12,10 +12,10 @@
 #   --fleet PATH       Path to fleet.user.js (default: <root>/fleet.user.js).
 #
 # Effects:
-#   1. Collects _version from plugin .js files (core/main, core/dev, archetypes/*/main, archetypes/*/dev).
-#   2. Collects @version from fleet.user.js.
-#   3. Updates archetypes.json: version (from fleet), corePlugins, devPlugins, each archetype's plugins,
-#      each devArchetype's plugins.
+#   1. Reads @version and const VERSION from fleet.user.js; if they differ, normalizes both to the higher value.
+#   2. Collects _version from plugin .js files (core/main, core/dev, archetypes/*/main, archetypes/*/dev).
+#   3. Updates archetypes.json: version (only when fleet canonical is higher than current), corePlugins,
+#      devPlugins, each archetype's plugins, each devArchetype's plugins.
 #   4. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
 #
 # Prerequisites: jq (must be on PATH).
@@ -33,13 +33,39 @@ get_plugin_version() {
   sed -n 's/.*_version[[:space:]]*:[[:space:]]*["'\'']\([^"'\'']*\)["'\''].*/\1/p' "$path" | head -1
 }
 
-# Extract @version from fleet.user.js.
+# Extract @version from fleet.user.js (header).
 get_fleet_version() {
   local path="$1"
   if [[ ! -f "$path" ]]; then
     return 1
   fi
   awk '/^\/\/ @version[[:space:]]+/ { print $3; exit }' "$path"
+}
+
+# Extract const VERSION from fleet.user.js.
+get_const_version() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    return 1
+  fi
+  sed -n "s/.*const VERSION = ['\''\"]\\([^'\''\"]*\\)['\''\"].*/\1/p" "$path" | head -1
+}
+
+# Return the higher of two version strings (x.y.z); empty treated as absent.
+max_version() {
+  local a="$1" b="$2"
+  if [[ -z "$a" ]]; then echo "$b"; return; fi
+  if [[ -z "$b" ]]; then echo "$a"; return; fi
+  awk -v a="$a" -v b="$b" 'BEGIN {
+    n = split(a, aa, "."); m = split(b, bb, ".");
+    for (i = 1; i <= n || i <= m; i++) {
+      va = (i <= n && aa[i] ~ /^[0-9]+$/) ? aa[i]+0 : 0;
+      vb = (i <= m && bb[i] ~ /^[0-9]+$/) ? bb[i]+0 : 0;
+      if (va > vb) { print a; exit; }
+      if (vb > va) { print b; exit; }
+    }
+    print a;
+  }'
 }
 
 # Parse arguments.
@@ -110,8 +136,23 @@ if [[ ! -f "$fleet_path" ]]; then
   exit 1
 fi
 
-# Fleet version
-fleet_version="$(get_fleet_version "$fleet_path")"
+# Fleet version: read both locations, normalize to higher if they differ, use canonical
+header_version="$(get_fleet_version "$fleet_path")"
+const_version="$(get_const_version "$fleet_path")"
+fleet_version="$(max_version "$header_version" "$const_version")"
+tmp_fleet=""
+if [[ -n "$fleet_version" ]] && [[ "$header_version" != "$const_version" ]]; then
+  tmp_fleet="$(mktemp)"
+  sed -e "/^\/\/ @version/s|^\(// @version[[:space:]]*\)[^[:space:]]*|\1$fleet_version|" \
+      -e "s/\(const VERSION = ['\''\"]\)[^'\''\"]*\(['\''\"]\)/\1$fleet_version\2/" \
+      "$fleet_path" > "$tmp_fleet" && mv "$tmp_fleet" "$fleet_path"
+  tmp_fleet=""
+  echo "[info] Normalized fleet.user.js: both version locations set to $fleet_version" >&2
+fi
+
+# Version for archetypes.json: never decrease (use max of canonical fleet and current archetypes version)
+current_arch_version="$(jq -r '.version // ""' "$archetypes_path")"
+version_for_archetypes="$(max_version "$fleet_version" "$current_arch_version")"
 
 # Build core plugin versions JSON (key: filename)
 core_json="{"
@@ -179,7 +220,7 @@ versions_json=$(jq -n \
   --argjson core "$core_json" \
   --argjson dev "$dev_json" \
   --argjson plugins "$plugins_json" \
-  --arg fleet "${fleet_version:-}" \
+  --arg fleet "${version_for_archetypes:-}" \
   '{ core: $core, dev: $dev, plugins: $plugins, fleet: $fleet }')
 
 # Check we have something to do (core_json/dev_json/plugins_json have at least one key if non-empty)
@@ -187,7 +228,7 @@ has_versions=false
 [[ "$core_json" != "{}" ]] && has_versions=true
 [[ "$dev_json" != "{}" ]] && has_versions=true
 [[ "$plugins_json" != "{}" ]] && has_versions=true
-[[ -n "$fleet_version" ]] && has_versions=true
+[[ -n "$version_for_archetypes" ]] && has_versions=true
 if [[ "$has_versions" != "true" ]]; then
   echo "[warn] No plugin versions found to update."
   exit 0
@@ -195,7 +236,7 @@ fi
 
 # Update archetypes.json with jq
 tmp_json="$(mktemp)"
-trap 'rm -f "$tmp_json"' EXIT
+trap 'rm -f "$tmp_json" $tmp_fleet' EXIT
 
 jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
   def bump_minor: split(".") | (.[1] |= ((tonumber? // 0) + 1 | tostring)) | join(".");
