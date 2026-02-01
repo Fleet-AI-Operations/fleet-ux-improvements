@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.44",
+  "archetypesVersion": "3.45",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -307,6 +307,14 @@
         },
         {
           "name": "reorganize-request-revisions.js",
+          "version": "1.0"
+        },
+        {
+          "name": "prompt-diff-highlight.js",
+          "version": "1.0"
+        },
+        {
+          "name": "prompt-diff.js",
           "version": "1.0"
         }
       ]
