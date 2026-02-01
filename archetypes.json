@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.41",
+  "archetypesVersion": "3.42",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -10,7 +10,7 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.3"
+      "version": "2.4"
     }
   ],
   "settingsModalDocs": [
@@ -218,7 +218,7 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.6"
+          "version": "3.7"
         }
       ]
     },
@@ -270,11 +270,11 @@
       "plugins": [
         {
           "name": "source-data-explorer.js",
-          "version": "3.7"
+          "version": "3.8"
         },
         {
           "name": "workflow-integrity-check.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     },
@@ -299,10 +299,14 @@
       "plugins": [
         {
           "name": "source-data-explorer.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "workflow-integrity-check.js",
+          "version": "1.1"
+        },
+        {
+          "name": "reorganize-request-revisions.js",
           "version": "1.0"
         }
       ]

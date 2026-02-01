@@ -3,8 +3,8 @@ const plugin = {
     id: 'workflowIntegrityCheck',
     name: 'Workflow Integrity Check',
     description: 'Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs',
-    _version: '1.0',
-    enabledByDefault: true,
+    _version: '1.1',
+    enabledByDefault: false,
     phase: 'mutation',
     
     // Plugin-specific selectors
