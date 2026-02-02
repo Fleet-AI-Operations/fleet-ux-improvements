@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.62",
+  "archetypesVersion": "3.63",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -75,6 +75,10 @@
         {
           "name": "execute-to-current-tool.js",
           "version": "1.15"
+        },
+        {
+          "name": "toggle-tool-parameters.js",
+          "version": "1.0"
         }
       ]
     },
@@ -107,6 +111,10 @@
         },
         {
           "name": "execute-to-current-tool.js",
+          "version": "1.0"
+        },
+        {
+          "name": "toggle-tool-parameters.js",
           "version": "1.0"
         }
       ]
@@ -217,6 +225,10 @@
           "version": "1.14"
         },
         {
+          "name": "toggle-tool-parameters.js",
+          "version": "1.1"
+        },
+        {
           "name": "request-revisions.js",
           "version": "3.7"
         },
@@ -316,10 +328,6 @@
         {
           "name": "reorganize-request-revisions.js",
           "version": "1.0"
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "1.1"
         }
       ]
     },
