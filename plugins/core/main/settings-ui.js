@@ -3,10 +3,10 @@
 // Core plugin that provides the settings UI - persists across navigation
 
 const plugin = {
-    id: 'settings-ui',
+    id: '1settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.19',
+    _version: '5.20',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -224,6 +224,12 @@ const plugin = {
         this._presenceInterval = setInterval(guard, 1000);
     },
     
+    _hasActiveDevSettings() {
+        if (!Context.isDevBranch) return false;
+        const devPlugins = PluginManager.getDevPlugins();
+        return devPlugins.length > 0;
+    },
+    
     _createModal() {
         const modal = document.createElement('div');
         modal.id = 'wf-settings-modal';
@@ -281,8 +287,65 @@ const plugin = {
             ? this._createUpdateNotificationHTML()
             : '';
         
+        const hasDevSettings = this._hasActiveDevSettings();
         const tabs = this._getSettingsTabs();
         const tabRowHTML = this._createTabRowHTML(tabs);
+        
+        // Build the Dev pane content
+        const devPaneHTML = hasDevSettings ? `
+            <div id="wf-settings-pane-dev" data-tab="dev" class="wf-settings-pane" style="display: none;">
+            <!-- Dev Plugins Section -->
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                    Dev Plugins (${devPlugins.length})
+                </h3>
+                <div id="wf-dev-plugin-list">
+                    ${devPluginTogglesHTML}
+                </div>
+            </div>
+            
+            <!-- Debug Section -->
+            <div style="border-top: 1px solid var(--border, #e5e5e5); padding-top: 16px; margin-bottom: 16px;">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                    Debug Options
+                </h3>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled())}
+                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled())}
+                    <div>
+                        ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled)}
+                        <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
+                            <button id="wf-all-module-logging-on" type="button" style="
+                                flex: 1;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--foreground, #333);
+                                background: var(--card, #fafafa);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            ">All On</button>
+                            <button id="wf-all-module-logging-off" type="button" style="
+                                flex: 1;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--foreground, #333);
+                                background: var(--card, #fafafa);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            ">All Off</button>
+                        </div>
+                    </div>
+                    ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled())}
+                </div>
+            </div>
+            </div>
+        ` : '';
         
         modal.innerHTML = `
             <!-- Sticky Header -->
@@ -370,61 +433,6 @@ const plugin = {
                 </div>
             </div>
             
-            ${Context.isDevBranch && devPlugins.length > 0 ? `
-            <!-- Dev Plugins Section -->
-            <div style="margin-bottom: 20px; border-top: 1px solid var(--border, #e5e5e5); padding-top: 20px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
-                    Dev Plugins (${devPlugins.length})
-                </h3>
-                <div id="wf-dev-plugin-list">
-                    ${devPluginTogglesHTML}
-                </div>
-            </div>
-            ` : ''}
-            
-            ${Context.isDevBranch ? `
-            <!-- Debug Section -->
-            <div style="border-top: 1px solid var(--border, #e5e5e5); padding-top: 16px; margin-bottom: 16px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
-                    Debug Options
-                </h3>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled())}
-                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled())}
-                    <div>
-                        ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled)}
-                        <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                            <button id="wf-all-module-logging-on" type="button" style="
-                                flex: 1;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: var(--foreground, #333);
-                                background: var(--card, #fafafa);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                            ">All On</button>
-                            <button id="wf-all-module-logging-off" type="button" style="
-                                flex: 1;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: var(--foreground, #333);
-                                background: var(--card, #fafafa);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                            ">All Off</button>
-                        </div>
-                    </div>
-                    ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled())}
-                </div>
-            </div>
-            ` : ''}
-            
             <!-- Footer -->
             <div style="font-size: 11px; color: var(--muted-foreground, #888); text-align: center; padding-top: 12px; border-top: 1px solid var(--border, #e5e5e5);">
                 Fleet Workflow Enhancer · 
@@ -447,6 +455,7 @@ const plugin = {
                 ">Clear Cache</button>
             </div>
             </div>
+            ${devPaneHTML}
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             </div>
@@ -1456,11 +1465,17 @@ const plugin = {
     },
     
     _getSettingsTabs() {
-        return [
+        const tabs = [
             { id: 'settings', label: 'Settings' },
+        ];
+        if (this._hasActiveDevSettings()) {
+            tabs.push({ id: 'dev', label: 'Dev' });
+        }
+        tabs.push(
             { id: 'information', label: 'Information', doc: 'information-tab.md' },
             { id: 'features', label: 'Features', doc: 'features-tab.md' }
-        ];
+        );
+        return tabs;
     },
 
     _createTabRowHTML(tabs) {
