@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.61",
+  "archetypesVersion": "3.62",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -319,7 +319,7 @@
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     },

@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -72,6 +72,8 @@ const plugin = {
                 context: `${this.id}.toggleBtn`
             });
 
+            const isCollapsed = collapsibleRoot.getAttribute('data-state') === 'closed';
+
             if (!toggleBtn) {
                 toggleBtn = document.createElement('button');
                 toggleBtn.className = 'wf-param-toggle-btn inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 transition-colors hover:bg-accent hover:text-accent-foreground rounded-sm size-7 h-7 w-7';
@@ -91,6 +93,9 @@ const plugin = {
 
                 togglesAdded++;
             }
+
+            // Hide/show toggle based on collapsed state (toggle is only relevant when open)
+            toggleBtn.style.display = isCollapsed ? 'none' : 'inline-flex';
 
             // Re-enforce hidden state on each mutation to survive React re-renders
             // of collapsible content. The toggle button lives in the header (never
