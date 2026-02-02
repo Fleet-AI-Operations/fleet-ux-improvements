@@ -1,9 +1,10 @@
+
 // ============= execute-to-current-tool.js =============
 const plugin = {
     id: 'executeToCurrentTool',
     name: 'Execute to Current Tool',
     description: 'Adds button to execute all tools from the beginning up to and including the current tool',
-    _version: '1.14',
+    _version: '1.15',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, panelId: null },
@@ -26,7 +27,7 @@ const plugin = {
         
         // Track panel ID to avoid re-processing
         const currentPanelId = panel.getAttribute('data-panel-id');
-        if (state.panelId === currentPanelId && !state.missingLogged) {
+        if (state.panelId === currentPanelId) {
             // Already processed this panel, but continue to check for new tools
         } else {
             state.panelId = currentPanelId;
