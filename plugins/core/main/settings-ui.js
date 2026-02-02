@@ -3,7 +3,7 @@
 // Core plugin that provides the settings UI - persists across navigation
 
 const plugin = {
-    id: '1settings-ui',
+    id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
     _version: '5.20',
