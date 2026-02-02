@@ -1,6 +1,6 @@
 {
   "version": "3.9.2",
-  "archetypesVersion": "3.60",
+  "archetypesVersion": "3.61",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -283,10 +283,6 @@
         {
           "name": "workflow-integrity-check.js",
           "version": "1.1"
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "1.0"
         }
       ]
     },
@@ -319,6 +315,10 @@
         },
         {
           "name": "reorganize-request-revisions.js",
+          "version": "1.0"
+        },
+        {
+          "name": "toggle-tool-parameters.js",
           "version": "1.0"
         }
       ]
