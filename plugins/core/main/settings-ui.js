@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.20',
+    _version: '5.21',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -292,8 +292,48 @@ const plugin = {
         const tabRowHTML = this._createTabRowHTML(tabs);
         
         // Build the Dev pane content
+        const devGlobalEnabled = this._getDevGlobalEnabled();
         const devPaneHTML = hasDevSettings ? `
             <div id="wf-settings-pane-dev" data-tab="dev" class="wf-settings-pane" style="display: none;">
+            <!-- Dev Global Toggle -->
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Dev Plugins</div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
+                            Disables all dev plugins on refresh when turned off.
+                        </div>
+                    </div>
+                    ${this._createSwitchHTML('wf-dev-global-enabled', devGlobalEnabled)}
+                </div>
+                <div id="wf-all-dev-plugins-buttons" style="display: ${devGlobalEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
+                    <button id="wf-all-dev-plugins-on" style="
+                        flex: 1;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: var(--foreground, #333);
+                        background: var(--card, #fafafa);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    ">All On</button>
+                    <button id="wf-all-dev-plugins-off" style="
+                        flex: 1;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: var(--foreground, #333);
+                        background: var(--card, #fafafa);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    ">All Off</button>
+                </div>
+            </div>
+
             <!-- Dev Plugins Section -->
             <div style="margin-bottom: 20px;">
                 <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
@@ -631,7 +671,7 @@ const plugin = {
         };
         document.addEventListener('keydown', handleEscape);
         
-        // Global toggle
+        // Global toggle (regular plugins only)
         const globalToggle = Context.dom.query('#wf-global-enabled', {
             root: modal,
             context: `${this.id}.globalToggle`
@@ -642,52 +682,34 @@ const plugin = {
                 const isEnabled = e.target.checked;
                 this._setGlobalEnabled(isEnabled);
                 if (!isEnabled) {
-                    this._storeGlobalSnapshot(allPlugins);
-                    allPlugins.forEach(plugin => {
+                    this._storeGlobalSnapshot(plugins);
+                    plugins.forEach(plugin => {
                         PluginManager.setEnabled(plugin.id, false);
                     });
                 } else {
-                    this._restoreGlobalSnapshot(allPlugins);
+                    this._restoreGlobalSnapshot(plugins);
                 }
                 this._updateAllPluginsButtonsVisibility(modal, isEnabled);
                 this._renderPluginList(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._renderDevPluginList(modal, devPlugins);
-                }
                 this._attachPluginToggleListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
-                }
                 this._attachPluginReorderListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
-                }
                 this._updateSettingsMessage(modal, plugins);
             });
         }
 
-        // All On / All Off buttons
+        // All On / All Off buttons (regular plugins only)
         const allOnBtn = Context.dom.query('#wf-all-plugins-on', {
             root: modal,
             context: `${this.id}.allOnButton`
         });
         if (allOnBtn) {
             allOnBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                plugins.forEach(plugin => {
                     PluginManager.setEnabled(plugin.id, true);
                 });
                 this._renderPluginList(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._renderDevPluginList(modal, devPlugins);
-                }
                 this._attachPluginToggleListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
-                }
                 this._attachPluginReorderListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
-                }
                 this._updateSettingsMessage(modal, plugins);
             });
             allOnBtn.addEventListener('mouseenter', () => {
@@ -706,21 +728,12 @@ const plugin = {
         });
         if (allOffBtn) {
             allOffBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                plugins.forEach(plugin => {
                     PluginManager.setEnabled(plugin.id, false);
                 });
                 this._renderPluginList(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._renderDevPluginList(modal, devPlugins);
-                }
                 this._attachPluginToggleListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
-                }
                 this._attachPluginReorderListeners(modal, plugins);
-                if (Context.isDevBranch && devPlugins.length > 0) {
-                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
-                }
                 this._updateSettingsMessage(modal, plugins);
             });
             allOffBtn.addEventListener('mouseenter', () => {
@@ -731,6 +744,83 @@ const plugin = {
                 allOffBtn.style.background = 'var(--card, #fafafa)';
                 allOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
             });
+        }
+
+        // Dev global toggle (dev plugins only)
+        if (Context.isDevBranch && devPlugins.length > 0) {
+            const devGlobalToggle = Context.dom.query('#wf-dev-global-enabled', {
+                root: modal,
+                context: `${this.id}.devGlobalToggle`
+            });
+            if (devGlobalToggle) {
+                devGlobalToggle.addEventListener('change', (e) => {
+                    this._handleToggleChange(e);
+                    const isEnabled = e.target.checked;
+                    this._setDevGlobalEnabled(isEnabled);
+                    if (!isEnabled) {
+                        this._storeDevGlobalSnapshot(devPlugins);
+                        devPlugins.forEach(plugin => {
+                            PluginManager.setEnabled(plugin.id, false);
+                        });
+                    } else {
+                        this._restoreDevGlobalSnapshot(devPlugins);
+                    }
+                    this._updateDevPluginsButtonsVisibility(modal, isEnabled);
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                    this._updateSettingsMessage(modal, plugins);
+                });
+            }
+
+            // Dev All On / All Off buttons (dev plugins only)
+            const allDevOnBtn = Context.dom.query('#wf-all-dev-plugins-on', {
+                root: modal,
+                context: `${this.id}.allDevOnButton`
+            });
+            if (allDevOnBtn) {
+                allDevOnBtn.addEventListener('click', () => {
+                    devPlugins.forEach(plugin => {
+                        PluginManager.setEnabled(plugin.id, true);
+                    });
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                    this._updateSettingsMessage(modal, plugins);
+                });
+                allDevOnBtn.addEventListener('mouseenter', () => {
+                    allDevOnBtn.style.background = 'var(--hover, #f0f0f0)';
+                    allDevOnBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                });
+                allDevOnBtn.addEventListener('mouseleave', () => {
+                    allDevOnBtn.style.background = 'var(--card, #fafafa)';
+                    allDevOnBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                });
+            }
+
+            const allDevOffBtn = Context.dom.query('#wf-all-dev-plugins-off', {
+                root: modal,
+                context: `${this.id}.allDevOffButton`
+            });
+            if (allDevOffBtn) {
+                allDevOffBtn.addEventListener('click', () => {
+                    devPlugins.forEach(plugin => {
+                        PluginManager.setEnabled(plugin.id, false);
+                    });
+                    this._renderDevPluginList(modal, devPlugins);
+                    this._attachPluginToggleListeners(modal, devPlugins, 'dev');
+                    this._attachPluginReorderListeners(modal, devPlugins, 'dev');
+                    this._updateSettingsMessage(modal, plugins);
+                });
+                allDevOffBtn.addEventListener('mouseenter', () => {
+                    allDevOffBtn.style.background = 'var(--hover, #f0f0f0)';
+                    allDevOffBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                });
+                allDevOffBtn.addEventListener('mouseleave', () => {
+                    allDevOffBtn.style.background = 'var(--card, #fafafa)';
+                    allDevOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                });
+            }
         }
 
         // Plugin toggles
@@ -957,10 +1047,10 @@ const plugin = {
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
-        const globalEnabled = this._getGlobalEnabled();
+        const devGlobalEnabled = this._getDevGlobalEnabled();
         const orderedDevPlugins = this._getOrderedPlugins(devPlugins, this._settingsArchetypeId, 'dev');
         container.innerHTML = orderedDevPlugins
-            .map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled))
+            .map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, devGlobalEnabled))
             .join('');
     },
 
@@ -1390,6 +1480,53 @@ const plugin = {
                 PluginManager.setEnabled(plugin.id, Boolean(byId.get(plugin.id)));
             }
         });
+    },
+
+    _getDevGlobalEnabled() {
+        return Storage.get('dev-global-plugins-enabled', true);
+    },
+
+    _setDevGlobalEnabled(enabled) {
+        Storage.set('dev-global-plugins-enabled', enabled);
+    },
+
+    _storeDevGlobalSnapshot(devPlugins) {
+        if (!Array.isArray(devPlugins)) return;
+        const snapshot = devPlugins.map(plugin => ({
+            id: plugin.id,
+            enabled: PluginManager.isEnabled(plugin.id)
+        }));
+        Storage.set('dev-global-plugins-previous', JSON.stringify(snapshot));
+    },
+
+    _restoreDevGlobalSnapshot(devPlugins) {
+        if (!Array.isArray(devPlugins)) return;
+        const raw = Storage.get('dev-global-plugins-previous', null);
+        if (!raw) return;
+        let snapshot = null;
+        try {
+            snapshot = JSON.parse(raw);
+        } catch (e) {
+            Logger.error('Failed to parse dev global plugins snapshot:', e);
+            return;
+        }
+        if (!Array.isArray(snapshot)) return;
+        const byId = new Map(snapshot.map(item => [item.id, item.enabled]));
+        devPlugins.forEach(plugin => {
+            if (byId.has(plugin.id)) {
+                PluginManager.setEnabled(plugin.id, Boolean(byId.get(plugin.id)));
+            }
+        });
+    },
+
+    _updateDevPluginsButtonsVisibility(modal, devGlobalEnabled) {
+        const buttonsContainer = Context.dom.query('#wf-all-dev-plugins-buttons', {
+            root: modal,
+            context: `${this.id}.allDevPluginsButtonsVisibility`
+        });
+        if (buttonsContainer) {
+            buttonsContainer.style.display = devGlobalEnabled ? 'flex' : 'none';
+        }
     },
 
     _ensureMessageElement(modal) {
