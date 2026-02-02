@@ -12,7 +12,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -419,7 +419,11 @@ const plugin = {
         wrapper.className = 'flex flex-wrap gap-2 mt-2';
 
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        const linkClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-2 pr-2 text-xs no-underline text-foreground';
 
+        const meridianGroup = document.createElement('span');
+        meridianGroup.className = 'inline-flex items-center gap-1';
+        meridianGroup.setAttribute('data-guideline-group', 'meridian');
         const meridianBtn = document.createElement('button');
         meridianBtn.type = 'button';
         meridianBtn.className = buttonClass;
@@ -427,8 +431,20 @@ const plugin = {
         meridianBtn.setAttribute('data-guideline-copy', 'meridian');
         meridianBtn.textContent = 'Copy Link to Meridian Guidelines';
         meridianBtn.addEventListener('click', () => this.copyGuidelineLink(meridianBtn, 'Copy Link to Meridian Guidelines', GUIDELINE_LINKS.meridian));
-        wrapper.appendChild(meridianBtn);
+        meridianGroup.appendChild(meridianBtn);
+        const meridianOpen = document.createElement('a');
+        meridianOpen.href = GUIDELINE_LINKS.meridian;
+        meridianOpen.target = '_blank';
+        meridianOpen.rel = 'noopener noreferrer';
+        meridianOpen.className = linkClass;
+        meridianOpen.setAttribute('data-fleet-plugin', this.id);
+        meridianOpen.textContent = 'Open';
+        meridianGroup.appendChild(meridianOpen);
+        wrapper.appendChild(meridianGroup);
 
+        const problemGroup = document.createElement('span');
+        problemGroup.className = 'inline-flex items-center gap-1';
+        problemGroup.setAttribute('data-guideline-group', 'problem-creation');
         const problemBtn = document.createElement('button');
         problemBtn.type = 'button';
         problemBtn.className = buttonClass;
@@ -436,7 +452,16 @@ const plugin = {
         problemBtn.setAttribute('data-guideline-copy', 'problem-creation');
         problemBtn.textContent = 'Copy Link to Problem Creation Guidelines';
         problemBtn.addEventListener('click', () => this.copyGuidelineLink(problemBtn, 'Copy Link to Problem Creation Guidelines', GUIDELINE_LINKS.problemCreation));
-        wrapper.appendChild(problemBtn);
+        problemGroup.appendChild(problemBtn);
+        const problemOpen = document.createElement('a');
+        problemOpen.href = GUIDELINE_LINKS.problemCreation;
+        problemOpen.target = '_blank';
+        problemOpen.rel = 'noopener noreferrer';
+        problemOpen.className = linkClass;
+        problemOpen.setAttribute('data-fleet-plugin', this.id);
+        problemOpen.textContent = 'Open';
+        problemGroup.appendChild(problemOpen);
+        wrapper.appendChild(problemGroup);
 
         this.syncGuidelineCopyButtons(wrapper, meridianEnabled, problemCreationEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
@@ -444,10 +469,10 @@ const plugin = {
     },
 
     syncGuidelineCopyButtons(wrapper, meridianEnabled, problemCreationEnabled) {
-        const meridianBtn = wrapper.querySelector('[data-guideline-copy="meridian"]');
-        const problemBtn = wrapper.querySelector('[data-guideline-copy="problem-creation"]');
-        if (meridianBtn) meridianBtn.style.display = meridianEnabled ? '' : 'none';
-        if (problemBtn) problemBtn.style.display = problemCreationEnabled ? '' : 'none';
+        const meridianGroup = wrapper.querySelector('[data-guideline-group="meridian"]');
+        const problemGroup = wrapper.querySelector('[data-guideline-group="problem-creation"]');
+        if (meridianGroup) meridianGroup.style.display = meridianEnabled ? '' : 'none';
+        if (problemGroup) problemGroup.style.display = problemCreationEnabled ? '' : 'none';
     },
 
     copyGuidelineLink(button, originalText, url) {
