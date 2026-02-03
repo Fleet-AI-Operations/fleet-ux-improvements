@@ -3,7 +3,7 @@ const plugin = {
     id: 'executeToCurrentTool',
     name: 'Execute to Current Tool',
     description: 'Adds button to execute all tools from the beginning up to and including the current tool',
-    _version: '1.14',
+    _version: '1.15',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, panelId: null },
@@ -85,7 +85,24 @@ const plugin = {
                 });
 
                 buttonContainer.insertBefore(execToCurrentBtn, buttonContainer.firstChild);
+                const newSpacer = document.createElement('span');
+                newSpacer.className = 'wf-execute-to-current-spacer';
+                buttonContainer.insertBefore(newSpacer, execToCurrentBtn);
                 buttonsAdded++;
+            }
+
+            // Spacer reserves param-toggle space when row is closed so execute-to-current does not shift
+            let spacer = execToCurrentBtn.previousElementSibling?.classList?.contains('wf-execute-to-current-spacer') ? execToCurrentBtn.previousElementSibling : null;
+            if (!spacer) {
+                spacer = document.createElement('span');
+                spacer.className = 'wf-execute-to-current-spacer';
+                buttonContainer.insertBefore(spacer, execToCurrentBtn);
+            }
+            const isCollapsed = collapsibleRoot.getAttribute('data-state') === 'closed';
+            if (isCollapsed) {
+                spacer.style.cssText = 'width:28px;min-width:28px;display:inline-block;visibility:hidden;';
+            } else {
+                spacer.style.cssText = 'width:0;min-width:0;overflow:hidden;display:inline-block;';
             }
 
             // Always visible, regardless of collapsed state
