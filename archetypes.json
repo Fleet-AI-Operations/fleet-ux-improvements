@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.76",
+  "archetypesVersion": "3.77",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -74,7 +74,7 @@
         },
         {
           "name": "execute-to-current-tool.js",
-          "version": "1.17"
+          "version": "1.18"
         },
         {
           "name": "toggle-tool-parameters.js",
@@ -111,7 +111,7 @@
         },
         {
           "name": "execute-to-current-tool.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "toggle-tool-parameters.js",
@@ -222,7 +222,7 @@
         },
         {
           "name": "execute-to-current-tool.js",
-          "version": "1.16"
+          "version": "1.17"
         },
         {
           "name": "toggle-tool-parameters.js",

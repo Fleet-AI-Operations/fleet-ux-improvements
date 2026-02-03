@@ -3,7 +3,7 @@ const plugin = {
     id: 'executeToCurrentTool',
     name: 'Execute to Current Tool',
     description: 'Adds button to execute all tools from the beginning up to and including the current tool',
-    _version: '1.16',
+    _version: '1.17',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, panelId: null, lastToolsContainerMissingLogAt: 0 },
@@ -89,17 +89,22 @@ const plugin = {
                 buttonContainer.insertBefore(execToCurrentBtn, buttonContainer.firstChild);
                 const newSpacer = document.createElement('span');
                 newSpacer.className = 'wf-execute-to-current-spacer';
-                buttonContainer.insertBefore(newSpacer, execToCurrentBtn);
+                buttonContainer.insertBefore(newSpacer, buttonContainer.firstChild);
                 buttonsAdded++;
             }
 
             // Spacer reserves param-toggle space when row is closed so execute-to-current does not shift
-            let spacer = execToCurrentBtn.previousElementSibling?.classList?.contains('wf-execute-to-current-spacer') ? execToCurrentBtn.previousElementSibling : null;
+            let spacer = buttonContainer.querySelector('.wf-execute-to-current-spacer');
             if (!spacer) {
                 spacer = document.createElement('span');
                 spacer.className = 'wf-execute-to-current-spacer';
                 buttonContainer.insertBefore(spacer, execToCurrentBtn);
             }
+            if (spacer.parentNode === buttonContainer && spacer !== buttonContainer.firstChild) {
+                buttonContainer.insertBefore(spacer, buttonContainer.firstChild);
+            }
+            const paramToggle = buttonContainer.querySelector('.wf-param-toggle-btn');
+            buttonContainer.insertBefore(execToCurrentBtn, paramToggle ? paramToggle.nextElementSibling : spacer.nextElementSibling);
             const isCollapsed = collapsibleRoot.getAttribute('data-state') === 'closed';
             if (isCollapsed) {
                 spacer.style.cssText = 'width:28px;min-width:28px;display:inline-block;visibility:hidden;';
