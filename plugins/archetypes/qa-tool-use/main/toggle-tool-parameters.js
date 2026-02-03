@@ -4,10 +4,19 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
+
+    subOptions: [
+        {
+            id: 'auto-collapse-on-execute',
+            name: 'Auto-collapse parameters on execute',
+            description: 'When a tool is executed, collapse its parameters section if it is open (no change if already collapsed)',
+            enabledByDefault: true
+        }
+    ],
 
     selectors: {
         toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30'
@@ -39,6 +48,8 @@ const plugin = {
             }
             return;
         }
+
+        this.ensureExecuteClickDelegate(toolsContainer);
 
         const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
             root: toolsContainer,
@@ -180,5 +191,23 @@ const plugin = {
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
         return scrollable.querySelector('.space-y-3');
+    },
+
+    ensureExecuteClickDelegate(toolsContainer) {
+        if (toolsContainer.dataset.wfAutoCollapseDelegate === '1') return;
+        toolsContainer.dataset.wfAutoCollapseDelegate = '1';
+        toolsContainer.addEventListener('click', (e) => {
+            const btn = e.target?.closest?.('button');
+            if (!btn) return;
+            const text = btn.textContent?.trim?.();
+            if (text !== 'Execute' && text !== 'Re-execute') return;
+            const card = btn.closest('div.rounded-lg.border.transition-colors');
+            if (!card || !toolsContainer.contains(card)) return;
+            if (!Storage.getSubOptionEnabled(this.id, 'auto-collapse-on-execute', true)) return;
+            const toggleBtn = card.querySelector('.wf-param-toggle-btn');
+            if (!toggleBtn || toggleBtn.dataset.paramVisible !== 'true') return;
+            this.handleToggle(card, toggleBtn);
+            Logger.debug('Auto-collapsed parameters after execute');
+        });
     }
 };
