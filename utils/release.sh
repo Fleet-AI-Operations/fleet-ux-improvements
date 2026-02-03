@@ -27,11 +27,15 @@
 # Use this when a feature branch is ready for release: it brings the branch into
 # main and cleans up the branch so only the main userscript remains.
 #
-# Prerequisites: run from repo root or utils/; working tree clean; branch must
-# exist locally and on origin.
+# Prerequisites: run from anywhere inside the repo; working tree clean; branch
+# must exist locally and on origin.
 #
 
 set -e  # Exit on error
+
+# Repo root from script location so git and file paths work regardless of CWD
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/.." && pwd)"
 
 dry_run=false
 BRANCH=""
@@ -46,26 +50,22 @@ if [[ -z "$BRANCH" ]]; then
   exit 1
 fi
 
-cd "../"
-
-if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+if ! git -C "$root" show-ref --verify --quiet "refs/heads/$BRANCH"; then
   echo "Local branch '$BRANCH' does not exist."
   exit 1
 fi
 
-if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+if ! git -C "$root" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
   echo "Remote branch 'origin/$BRANCH' does not exist."
   exit 1
 fi
 
 if [[ "$dry_run" != true ]]; then
-  git checkout main
-  git merge "$BRANCH"
+  git -C "$root" checkout main
+  git -C "$root" merge "$BRANCH"
 fi
 
 # Inlined sync-branch-config.sh logic
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
 file_path="$root/fleet.user.js"
 if [[ ! -f "$file_path" ]]; then
   echo "[error] fleet.user.js not found: $file_path"
@@ -213,12 +213,12 @@ if [[ "$dry_run" == true ]]; then
   exit 0
 fi
 
-git add .
-git commit -m "Sync branch config"
-git push
+git -C "$root" add .
+git -C "$root" commit -m "Sync branch config"
+git -C "$root" push
 
-git branch -d "$BRANCH" || git branch -D "$BRANCH"
-git push origin --delete "$BRANCH" || true
+git -C "$root" branch -d "$BRANCH" || git -C "$root" branch -D "$BRANCH"
+git -C "$root" push origin --delete "$BRANCH" || true
 
 echo "The $BRANCH specific userscript can now safely be deleted."
 echo "All changes are now live on the main userscript."
