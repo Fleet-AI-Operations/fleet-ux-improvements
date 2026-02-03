@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.21',
+    _version: '5.22',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -573,7 +573,7 @@ const plugin = {
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0;">
                     <div style="flex: 1; min-width: 0;">
-                        <label style="font-size: 12px; font-weight: 500; color: var(--foreground, #333); cursor: pointer;" for="${subOptionId}">
+                        <label style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer;" for="${subOptionId}">
                             ${subOption.name || subOption.id}
                         </label>
                         ${subOption.description ? `<div style="font-size: 11px; color: var(--muted-foreground, #888); margin-top: 2px;">${subOption.description}</div>` : ''}
