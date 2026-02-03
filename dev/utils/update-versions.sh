@@ -331,8 +331,9 @@ if [[ "$dry_run" == true ]]; then
 fi
 
 if [[ "$archetypes_changed" == true ]]; then
+  echo "[info] Updated plugin version(s) in $(basename "$archetypes_path"):"
+  enumerate_archetypes_changes "$archetypes_path" "$tmp_bumped"
   cp "$tmp_bumped" "$archetypes_path"
-  echo "[info] Updated plugin version(s) in $(basename "$archetypes_path")"
 else
   echo "[info] No version changes in $(basename "$archetypes_path")"
 fi
