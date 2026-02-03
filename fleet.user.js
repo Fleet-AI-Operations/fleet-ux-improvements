@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.1
+// @version      3.10.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.1';
+    const VERSION = '3.10.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -107,11 +107,29 @@
         link.setAttribute('style', 'color:#2563eb;text-decoration:underline;font-weight:600;');
         p1.appendChild(link);
         p1.appendChild(document.createTextNode(' of this userscript and reload the page.'));
+        const expandTrigger = document.createElement('button');
+        expandTrigger.type = 'button';
+        expandTrigger.textContent = 'Still seeing this message after reinstalling?';
+        expandTrigger.setAttribute('style', 'margin:12px 0 0 0;padding:0;border:none;background:none;cursor:pointer;font-size:14px;color:#2563eb;text-decoration:underline;text-align:left;display:block;');
+        const expandBlock = document.createElement('div');
+        expandBlock.setAttribute('style', 'display:none;margin-top:12px;padding:12px;background:#f3f4f6;border-radius:6px;font-size:14px;line-height:1.6;');
+        expandBlock.innerHTML = 'You may need to uninstall the dev version.<ol style="margin:8px 0 0 0;padding-left:20px;">' +
+            '<li>Go to your userscript extension dashboard</li>' +
+            '<li>Look for any userscript that has a title like <code>[dev] Fleet..</code> or <code>[v1] Fleet...</code></li>' +
+            '<li>Delete any scripts that match this description</li>' +
+            '<li>You should only have one <code>Fleet Workflow Builder UX Enhancer</code> extension, and that is exactly the title it should have.</li>' +
+            '</ol>';
+        expandTrigger.addEventListener('click', function() {
+            const isHidden = expandBlock.style.display === 'none';
+            expandBlock.style.display = isHidden ? 'block' : 'none';
+        });
         const p2 = document.createElement('p');
         p2.setAttribute('style', 'margin:12px 0 0 0;font-size:13px;color:#6b7280;');
         p2.textContent = '(If you are getting this message in error, please contact Nicholas Doherty to resolve this.)';
         box.appendChild(closeBtn);
         box.appendChild(p1);
+        box.appendChild(expandTrigger);
+        box.appendChild(expandBlock);
         box.appendChild(p2);
         overlay.appendChild(box);
         root.appendChild(overlay);
