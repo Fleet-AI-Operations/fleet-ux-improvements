@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.9.2
+// @version      3.9.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.9.2';
+    const VERSION = '3.9.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -69,6 +69,62 @@
         storageKeys: SHARED_STORAGE_KEYS,
         settingsModalDocs: {},
     };
+
+    // ============= DEV-ONLY REDIRECT (GODMODE) =============
+    // If this build is not main and the user does not have the GODMODE userscript, show a modal and stop.
+    const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
+
+    function showNonDevRedirectModal() {
+        const root = document.body || document.documentElement;
+        if (!root) return;
+        const overlay = document.createElement('div');
+        overlay.setAttribute('style',
+            'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;');
+        const box = document.createElement('div');
+        box.setAttribute('style',
+            'background:#fff;color:#1f2937;max-width:480px;padding:24px;border-radius:8px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;');
+        const p1 = document.createElement('p');
+        p1.setAttribute('style', 'margin:0 0 12px 0;');
+        p1.textContent = 'Attention, it appears you are on a dev build of the Fleet Enhancement Userscript, and you are not a dev. Please reinstall the ';
+        const link = document.createElement('a');
+        link.href = MAIN_SCRIPT_RAW_URL;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'main version';
+        link.setAttribute('style', 'color:#2563eb;text-decoration:underline;font-weight:600;');
+        p1.appendChild(link);
+        p1.appendChild(document.createTextNode(' of this userscript and reload the page.'));
+        const p2 = document.createElement('p');
+        p2.setAttribute('style', 'margin:12px 0 0 0;font-size:13px;color:#6b7280;');
+        p2.textContent = '(If you are getting this message in error, please contact Nicholas Doherty to resolve this.)';
+        box.appendChild(p1);
+        box.appendChild(p2);
+        overlay.appendChild(box);
+        root.appendChild(overlay);
+    }
+
+    if (GITHUB_CONFIG.branch !== 'main') {
+        let isDev = false;
+        console.log("[Fleet UX Enhancer] - Checking if dev mode is enabled");
+        try {
+            const pageWindow = Context.getPageWindow();
+            if (pageWindow && pageWindow.localStorage) {
+                isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
+            }
+        } catch (e) {
+            // treat as non-dev
+        }
+        if (!isDev) {
+            if (document.body) {
+                showNonDevRedirectModal();
+                console.log("[Fleet UX Enhancer] - Non-dev redirect modal shown");
+            } else {
+                document.addEventListener('DOMContentLoaded', showNonDevRedirectModal);
+                console.log("[Fleet UX Enhancer] - Non-dev redirect modal listener added");
+            }
+            return;
+        }
+    }
 
     // ============= CLEANUP REGISTRY =============
     const CleanupRegistry = {
