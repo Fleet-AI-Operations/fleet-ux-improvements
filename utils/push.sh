@@ -20,7 +20,7 @@
 #   4. git add -A, git commit -m "<message>", git push (only if there is
 #      something to commit).
 #
-# Prerequisites: jq (required by update-versions.sh). Run from repo root or utils/.
+# Prerequisites: jq (required by update-versions.sh). Run from anywhere inside the repo.
 #
 
 set -e
@@ -207,12 +207,10 @@ collect_versioned_files() {
 }
 
 # --- Main ---
-cd "$root"
-
 # Changed files vs HEAD (staged + unstaged)
 changed_files=""
-if git rev-parse --verify HEAD &>/dev/null; then
-  changed_files="$(git diff HEAD --name-only 2>/dev/null || true)"
+if git -C "$root" rev-parse --verify HEAD &>/dev/null; then
+  changed_files="$(git -C "$root" diff HEAD --name-only 2>/dev/null || true)"
 fi
 
 # If nothing changed at all, we still run update-versions.sh and then try commit
@@ -226,8 +224,8 @@ while IFS= read -r rel_path; do
 
   # Get HEAD version (skip if file is new)
   head_version=""
-  if git rev-parse --verify HEAD &>/dev/null && git show "HEAD:$rel_path" &>/dev/null; then
-    head_content="$(git show "HEAD:$rel_path" 2>/dev/null)" || true
+  if git -C "$root" rev-parse --verify HEAD &>/dev/null && git -C "$root" show "HEAD:$rel_path" &>/dev/null; then
+    head_content="$(git -C "$root" show "HEAD:$rel_path" 2>/dev/null)" || true
     if [[ -n "$head_content" ]]; then
       if [[ "$rel_path" == "fleet.user.js" ]]; then
         head_version="$(echo "$head_content" | get_fleet_version "-")"
@@ -300,11 +298,11 @@ fi
 "$script_dir/update-versions.sh"
 
 # Commit and push only if there is something to commit
-if [[ -z "$(git status --short)" ]]; then
+if [[ -z "$(git -C "$root" status --short)" ]]; then
   echo "[info] Nothing to commit." >&2
   exit 0
 fi
 
-git add -A
-git commit -m "$commit_msg"
-git push
+git -C "$root" add -A
+git -C "$root" commit -m "$commit_msg"
+git -C "$root" push

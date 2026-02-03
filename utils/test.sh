@@ -27,11 +27,15 @@
 # Use this to validate an upcoming main release: install the test-branch script,
 # use it as normal, then merge to main with publish.sh when satisfied.
 #
-# Prerequisites: run from repo root or utils/; sync-branch-config.sh must exist
+# Prerequisites: run from anywhere inside the repo; sync-branch-config.sh must exist
 # in the same directory (utils/). Working tree must be clean.
 #
 
 set -euo pipefail
+
+# Repo root from script location so git and paths work regardless of CWD
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/.." && pwd)"
 
 usage() {
   cat <<'EOF'
@@ -75,22 +79,17 @@ if ! git check-ref-format --branch "$branch" >/dev/null 2>&1; then
   exit 1
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
-
-cd "$root"
-
-if git show-ref --verify "refs/heads/$branch" >/dev/null 2>&1; then
+if git -C "$root" show-ref --verify "refs/heads/$branch" >/dev/null 2>&1; then
   echo "[error] Branch already exists locally: $branch"
   exit 1
 fi
 
-if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+if git -C "$root" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
   echo "[error] Branch already exists on origin: $branch"
   exit 1
 fi
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
+if ! git -C "$root" diff --quiet || ! git -C "$root" diff --cached --quiet; then
   echo "[error] Working tree has uncommitted changes. Commit or stash them first."
   exit 1
 fi
@@ -189,28 +188,28 @@ if [[ "$dry_run" == true ]]; then
 fi
 
 echo "[info] Fetching main..."
-git fetch origin main
+git -C "$root" fetch origin main
 
 echo "[info] Checking out main..."
-git checkout main
+git -C "$root" checkout main
 
 echo "[info] Creating branch: $branch"
-git checkout -b "$branch"
+git -C "$root" checkout -b "$branch"
 
 echo "[info] Syncing branch config in fleet.user.js..."
-"$script_dir/sync-branch-config.sh"
+(cd "$root" && "$script_dir/sync-branch-config.sh")
 
-git add .
-if git diff --cached --quiet; then
+git -C "$root" add .
+if git -C "$root" diff --cached --quiet; then
   echo "[info] No changes after sync (already in sync); pushing anyway."
 else
-  git commit -m "Sync branch config for $branch"
+  git -C "$root" commit -m "Sync branch config for $branch"
 fi
 
 echo "[info] Pushing to origin..."
-git push -u origin "$branch"
+git -C "$root" push -u origin "$branch"
 
-url=$(gh browse --no-browser "$branch")
+url="$(cd "$root" && gh browse --no-browser "$branch")"
 ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
 ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)/}')
 ghfile=$(echo "$url" | perl -nE 'say $1 if m{tree/[^/]+/(.+)}')

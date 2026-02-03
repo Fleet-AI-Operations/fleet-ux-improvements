@@ -19,7 +19,8 @@
 #      devPlugins, each archetype's plugins, each devArchetype's plugins.
 #   4. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
 #
-# Prerequisites: jq (must be on PATH).
+# Prerequisites: jq (must be on PATH). Can be run from anywhere inside the repo
+# (repo root is derived from the script’s location).
 #
 
 set -e

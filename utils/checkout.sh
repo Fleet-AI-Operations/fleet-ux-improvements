@@ -27,11 +27,15 @@
 # Use this when starting work on a feature: install the script from the printed URL
 # and develop against that branch; publish.sh merges the branch into main when done.
 #
-# Prerequisites: run from repo root or utils/; main must exist; branch name must not
-# exist locally or on origin.
+# Prerequisites: run from anywhere inside the repo; main must exist; branch name
+# must not exist locally or on origin.
 #
 
 set -e
+
+# Repo root from script location so git and file paths work regardless of CWD
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/.." && pwd)"
 
 dry_run=false
 BRANCH=""
@@ -47,13 +51,11 @@ if [[ -z "$BRANCH" ]]; then
 fi
 
 if [[ "$dry_run" != true ]]; then
-  git checkout main
-  git checkout -b "$BRANCH"
+  git -C "$root" checkout main
+  git -C "$root" checkout -b "$BRANCH"
 fi
 
 # Inlined sync-branch-config.sh logic
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
 file_path="$root/fleet.user.js"
 if [[ ! -f "$file_path" ]]; then
   echo "[error] fleet.user.js not found: $file_path"
@@ -199,11 +201,11 @@ if [[ "$dry_run" == true ]]; then
   exit 0
 fi
 
-git add .
-git commit -m "Sync branch config"
-git push -u origin "$BRANCH"
+git -C "$root" add .
+git -C "$root" commit -m "Sync branch config"
+git -C "$root" push -u origin "$BRANCH"
 
-url=$(gh browse --no-browser "$1") 
+url="$(cd "$root" && gh browse --no-browser "$BRANCH")" 
 ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}') 
 ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)/}') 
 ghfile=$(echo "$url" | perl -nE 'say $1 if m{tree/[^/]+/(.+)}') 
