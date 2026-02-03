@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -102,11 +102,29 @@ const plugin = {
                 const execBtn = buttonContainer.querySelector('.wf-execute-to-current-btn');
                 buttonContainer.insertBefore(toggleBtn, execBtn || buttonContainer.firstChild);
 
+                const expandLink = document.createElement('button');
+                expandLink.className = 'wf-param-expand-link text-xs font-medium text-muted-foreground hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded px-1.5 py-0.5';
+                expandLink.type = 'button';
+                expandLink.textContent = '[Parameters...]';
+                expandLink.title = 'Show parameters';
+                expandLink.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.handleToggle(card, toggleBtn);
+                });
+                buttonContainer.insertBefore(expandLink, toggleBtn.nextSibling);
+
                 togglesAdded++;
             }
 
             // Hide/show toggle based on collapsed state (toggle is only relevant when open)
             toggleBtn.style.display = isCollapsed ? 'none' : 'inline-flex';
+
+            // [Parameters...] link: visible only when collapsible is open and params are hidden
+            const expandLink = buttonContainer.querySelector('.wf-param-expand-link');
+            if (expandLink) {
+                expandLink.style.display = (!isCollapsed && toggleBtn.dataset.paramVisible === 'false') ? 'inline-flex' : 'none';
+            }
 
             // Re-enforce hidden state on each mutation to survive React re-renders
             // of collapsible content. The toggle button lives in the header (never
@@ -149,6 +167,13 @@ const plugin = {
         if (paramsDiv) {
             paramsDiv.style.display = nowVisible ? '' : 'none';
             Logger.log(`Parameters ${nowVisible ? 'shown' : 'hidden'}`);
+        }
+
+        // Show/hide [Parameters...] link (visible only when params are hidden)
+        const buttonContainer = card.querySelector('div.flex.items-center.gap-1');
+        const expandLink = buttonContainer?.querySelector('.wf-param-expand-link');
+        if (expandLink) {
+            expandLink.style.display = nowVisible ? 'none' : 'inline-flex';
         }
     },
 
