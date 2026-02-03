@@ -3,10 +3,10 @@ const plugin = {
     id: 'executeToCurrentTool',
     name: 'Execute to Current Tool',
     description: 'Adds button to execute all tools from the beginning up to and including the current tool',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
-    initialState: { missingLogged: false, panelId: null },
+    initialState: { missingLogged: false, panelId: null, lastToolsContainerMissingLogAt: 0 },
     
     // Plugin-specific selectors
     selectors: {
@@ -35,9 +35,11 @@ const plugin = {
         
         const toolsContainer = this.findToolsArea(panel);
         if (!toolsContainer) {
-            if (!state.missingLogged) {
+            const now = Date.now();
+            const rateLimitMs = 10000;
+            if (now - state.lastToolsContainerMissingLogAt >= rateLimitMs) {
                 Logger.log('⚠ Tools container not found for execute-to-current-tool');
-                state.missingLogged = true;
+                state.lastToolsContainerMissingLogAt = now;
             }
             return;
         }
