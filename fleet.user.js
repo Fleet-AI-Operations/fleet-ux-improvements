@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.0
+// @version      3.10.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.0';
+    const VERSION = '3.10.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -2193,6 +2193,7 @@
                     isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
                     if (isDev) {
                         pageWindow.localStorage.removeItem('fleet-godmode');
+                        console.log("[Fleet UX Enhancer] - GODMODE detected, removing GODMODE key");
                     }
                 }
             } catch (e) {
