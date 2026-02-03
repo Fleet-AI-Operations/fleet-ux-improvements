@@ -25,9 +25,9 @@
 
 set -e
 
-# --- Paths ---
+# --- Paths (repo root via git so scripts in utils/ or dev/utils/ both work) ---
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
+root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 plugins_dir="$root/plugins"
 archetypes_path="$root/archetypes.json"
 fleet_path="$root/fleet.user.js"

@@ -70,9 +70,9 @@ max_version() {
   }'
 }
 
-# Parse arguments.
+# Parse arguments. Default root = git repo root (so utils/ or dev/utils/ both work)
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
+root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 plugins_dir=""
 archetypes_path=""
 fleet_path=""

@@ -33,9 +33,9 @@
 
 set -e
 
-# Repo root from script location so git and file paths work regardless of CWD
+# Repo root from script location (use git so scripts in utils/ or dev/utils/ both work)
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$script_dir/.." && pwd)"
+root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 
 dry_run=false
 BRANCH=""
