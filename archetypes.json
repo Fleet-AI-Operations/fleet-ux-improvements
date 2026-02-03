@@ -1,6 +1,6 @@
 {
-  "version": "3.10.3",
-  "archetypesVersion": "3.69",
+  "version": "3.10.4",
+  "archetypesVersion": "3.70",
   "corePlugins": [
     {
       "name": "settings-ui.js",

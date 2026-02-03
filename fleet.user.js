@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.3
+// @version      3.10.4
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.3';
+    const VERSION = '3.10.4';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -48,7 +48,9 @@
         devPath: 'dev',
         archetypesPath: 'archetypes.json'
     };
-    const DEV_SCRIPTS_ENABLED = GITHUB_CONFIG.branch !== 'main';
+    // Branches that behave like main: run immediately, no GODMODE check, no dev-only features (test-update simulates main for testing).
+    const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
+    const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
     
     // ============= SHARED CONTEXT =============
     const Context = {
@@ -2207,7 +2209,7 @@
     startup();
     }
 
-    if (GITHUB_CONFIG.branch === 'main') {
+    if (MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch)) {
         runFleet();
     } else {
         setTimeout(function() {
