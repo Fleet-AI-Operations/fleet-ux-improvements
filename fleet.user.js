@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.9.3
+// @version      3.10.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.9.3';
+    const VERSION = '3.10.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -82,9 +82,22 @@
             'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;');
         const box = document.createElement('div');
         box.setAttribute('style',
-            'background:#fff;color:#1f2937;max-width:480px;padding:24px;border-radius:8px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;');
+            'background:#fff;color:#1f2937;max-width:480px;padding:24px;border-radius:8px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;position:relative;');
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = 'Close';
+        closeBtn.setAttribute('style',
+            'position:absolute;top:12px;right:12px;padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#374151;');
+        closeBtn.addEventListener('click', function closeModal() {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        });
+        overlay.addEventListener('click', function onOverlayClick(e) {
+            if (e.target === overlay) {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            }
+        });
         const p1 = document.createElement('p');
-        p1.setAttribute('style', 'margin:0 0 12px 0;');
+        p1.setAttribute('style', 'margin:0 0 12px 0;padding-right:60px;');
         p1.textContent = 'Attention, it appears you are on a dev build of the Fleet Enhancement Userscript, and you are not a dev. Please reinstall the ';
         const link = document.createElement('a');
         link.href = MAIN_SCRIPT_RAW_URL;
@@ -97,34 +110,14 @@
         const p2 = document.createElement('p');
         p2.setAttribute('style', 'margin:12px 0 0 0;font-size:13px;color:#6b7280;');
         p2.textContent = '(If you are getting this message in error, please contact Nicholas Doherty to resolve this.)';
+        box.appendChild(closeBtn);
         box.appendChild(p1);
         box.appendChild(p2);
         overlay.appendChild(box);
         root.appendChild(overlay);
     }
 
-    if (GITHUB_CONFIG.branch !== 'main') {
-        let isDev = false;
-        console.log("[Fleet UX Enhancer] - Checking if dev mode is enabled");
-        try {
-            const pageWindow = Context.getPageWindow();
-            if (pageWindow && pageWindow.localStorage) {
-                isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
-            }
-        } catch (e) {
-            // treat as non-dev
-        }
-        if (!isDev) {
-            if (document.body) {
-                showNonDevRedirectModal();
-                console.log("[Fleet UX Enhancer] - Non-dev redirect modal shown");
-            } else {
-                document.addEventListener('DOMContentLoaded', showNonDevRedirectModal);
-                console.log("[Fleet UX Enhancer] - Non-dev redirect modal listener added");
-            }
-            return;
-        }
-    }
+    function runFleet() {
 
     // ============= CLEANUP REGISTRY =============
     const CleanupRegistry = {
@@ -2186,4 +2179,36 @@
     
     // Start!
     startup();
+    }
+
+    if (GITHUB_CONFIG.branch === 'main') {
+        runFleet();
+    } else {
+        setTimeout(function() {
+            let isDev = false;
+            console.log("[Fleet UX Enhancer] - Checking if dev mode is enabled");
+            try {
+                const pageWindow = Context.getPageWindow();
+                if (pageWindow && pageWindow.localStorage) {
+                    isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
+                    if (isDev) {
+                        pageWindow.localStorage.removeItem('fleet-godmode');
+                    }
+                }
+            } catch (e) {
+                // treat as non-dev
+            }
+            if (!isDev) {
+                if (document.body) {
+                    showNonDevRedirectModal();
+                    console.log("[Fleet UX Enhancer] - Non-dev redirect modal shown");
+                } else {
+                    document.addEventListener('DOMContentLoaded', showNonDevRedirectModal);
+                    console.log("[Fleet UX Enhancer] - Non-dev redirect modal listener added");
+                }
+                return;
+            }
+            runFleet();
+        }, 100);
+    }
 })();
