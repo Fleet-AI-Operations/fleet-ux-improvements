@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.83",
+  "archetypesVersion": "3.84",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -222,7 +222,7 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.3"
+          "version": "1.4"
         },
         {
           "name": "guideline-buttons.js",

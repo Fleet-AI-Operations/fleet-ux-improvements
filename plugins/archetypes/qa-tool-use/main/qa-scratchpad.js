@@ -1,3 +1,4 @@
+
 // ============= qa-scratchpad.js =============
 // Adds an adjustable height scratchpad between the prompt and environment variables sections.
 
@@ -5,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -20,7 +21,6 @@ const plugin = {
     ],
     
     storageKeys: {
-        scratchpadHeight: 'qa-scratchpad-height',
         scratchpadText: 'qa-scratchpad-text'
     },
     
@@ -156,10 +156,7 @@ const plugin = {
         const textareaWrapper = document.createElement('div');
         textareaWrapper.className = 'relative flex flex-col rounded-md overflow-hidden border border-input bg-background shadow-sm';
         textareaWrapper.style.minHeight = '60px';
-        
-        // Restore saved height or use default
-        const savedHeight = Storage.get(this.storageKeys.scratchpadHeight, 150);
-        textareaWrapper.style.height = `${savedHeight}px`;
+        textareaWrapper.style.height = '150px';
         
         const textarea = document.createElement('textarea');
         textarea.className = 'flex-1 w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none';
@@ -254,11 +251,6 @@ const plugin = {
             
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            
-            // Save the new height
-            const currentHeight = textareaWrapper.offsetHeight;
-            Storage.set(this.storageKeys.scratchpadHeight, currentHeight);
-            Logger.debug(`QA Scratchpad: Saved height ${currentHeight}px`);
         };
         
         resizeHandle.addEventListener('mousedown', handleMouseDown);
