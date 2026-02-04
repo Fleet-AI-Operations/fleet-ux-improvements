@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.85",
+  "archetypesVersion": "3.86",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -246,7 +246,7 @@
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     },

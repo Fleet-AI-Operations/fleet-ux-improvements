@@ -6,7 +6,7 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -133,11 +133,44 @@ const plugin = {
         let startY = 0;
         let startHeight = 0;
         const minHeight = 40;
+        let lastClientY = 0;
+        let accumulatedScrollDelta = 0;
+        let animFrameId = null;
+        const scrollContainer = resultDiv.closest('.overflow-y-auto');
+        const edgeThreshold = 50;
+        const maxScrollSpeed = 15;
+
+        const autoScroll = () => {
+            if (!isResizing || !scrollContainer) return;
+
+            const distFromBottom = window.innerHeight - lastClientY;
+            const distFromTop = lastClientY;
+            let scrollAmount = 0;
+
+            if (distFromBottom < edgeThreshold) {
+                scrollAmount = Math.ceil(maxScrollSpeed * (1 - distFromBottom / edgeThreshold));
+            } else if (distFromTop < edgeThreshold) {
+                scrollAmount = -Math.ceil(maxScrollSpeed * (1 - distFromTop / edgeThreshold));
+            }
+
+            if (scrollAmount !== 0) {
+                scrollContainer.scrollTop += scrollAmount;
+                accumulatedScrollDelta += scrollAmount;
+
+                const totalDelta = (lastClientY - startY) + accumulatedScrollDelta;
+                const newHeight = Math.max(minHeight, startHeight + totalDelta);
+                resultDiv.style.maxHeight = `${newHeight}px`;
+            }
+
+            animFrameId = requestAnimationFrame(autoScroll);
+        };
 
         const handleMouseDown = (e) => {
             isResizing = true;
             startY = e.clientY;
             startHeight = resultDiv.offsetHeight;
+            lastClientY = e.clientY;
+            accumulatedScrollDelta = 0;
 
             e.preventDefault();
             e.stopPropagation();
@@ -147,19 +180,27 @@ const plugin = {
 
             document.body.style.cursor = 'ns-resize';
             document.body.style.userSelect = 'none';
+
+            animFrameId = requestAnimationFrame(autoScroll);
         };
 
         const handleMouseMove = (e) => {
             if (!isResizing) return;
 
-            const deltaY = e.clientY - startY;
-            const newHeight = Math.max(minHeight, startHeight + deltaY);
+            lastClientY = e.clientY;
+            const totalDelta = (e.clientY - startY) + accumulatedScrollDelta;
+            const newHeight = Math.max(minHeight, startHeight + totalDelta);
             resultDiv.style.maxHeight = `${newHeight}px`;
         };
 
         const handleMouseUp = () => {
             if (!isResizing) return;
             isResizing = false;
+
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
 
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
