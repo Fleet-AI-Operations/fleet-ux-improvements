@@ -6,7 +6,7 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -51,6 +51,7 @@ const plugin = {
             if (resultDiv.dataset.wfResultResizeAttached === '1') {
                 const nextEl = resultDiv.nextElementSibling;
                 if (nextEl && nextEl.classList.contains('wf-result-resize-handle')) {
+                    this.ensureResetButton(card, resultDiv);
                     return; // Handle present, nothing to do
                 }
                 // Handle was removed (e.g. React re-render), reset flag
@@ -59,6 +60,7 @@ const plugin = {
 
             this.attachResizeHandle(resultDiv);
             resultDiv.dataset.wfResultResizeAttached = '1';
+            this.ensureResetButton(card, resultDiv);
             handlesAdded++;
         });
 
@@ -211,6 +213,48 @@ const plugin = {
 
         resizeHandle.addEventListener('mousedown', handleMouseDown);
         CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
+    },
+
+    ensureResetButton(card, resultDiv) {
+        const buttonContainer = this.findResultButtonContainer(card);
+        if (!buttonContainer) return;
+
+        // Check if button already exists
+        if (buttonContainer.querySelector('.wf-result-reset-btn')) return;
+
+        const resetBtn = document.createElement('button');
+        resetBtn.className = 'wf-result-reset-btn inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground size-7 h-6 w-6';
+        resetBtn.title = 'Reset result box size';
+        // Inward-pointing arrows icon (each arrow from the expand icon rotated 180°)
+        resetBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current h-3 w-3 text-muted-foreground"><path fill-rule="evenodd" clip-rule="evenodd" d="M19 9C19.5523 9 20 9.44772 20 10C20 10.5523 19.5523 11 19 11H14C13.4477 11 13 10.5523 13 10V5C13 4.44772 13.4477 4 14 4C14.5523 4 15 4.44772 15 5V7.58579L19.2929 3.2929C19.6834 2.9024 20.3166 2.9024 20.7071 3.2929C21.0976 3.6834 21.0976 4.31658 20.7071 4.70711L16.4142 9H19ZM4.70711 20.7071C4.31658 21.0976 3.6834 21.0976 3.2929 20.7071C2.9024 20.3166 2.9024 19.6834 3.2929 19.2929L7.58579 15H5C4.44772 15 4 14.5523 4 14C4 13.4477 4.44772 13 5 13H10C10.5523 13 11 13.4477 11 14V19C11 19.5523 10.5523 20 10 20C9.44772 20 9 19.5523 9 19V16.4142L4.70711 20.7071Z"/></svg>';
+
+        resetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            resultDiv.style.maxHeight = '';
+            Logger.log('Result box size reset to default');
+        });
+
+        // Insert after the divider in the result toolbar
+        const divider = buttonContainer.querySelector('.w-px.h-4.bg-border.mx-1');
+        if (divider) {
+            divider.insertAdjacentElement('afterend', resetBtn);
+        } else {
+            buttonContainer.appendChild(resetBtn);
+        }
+    },
+
+    findResultButtonContainer(card) {
+        // Find the Result section's toolbar button row (contains search input, divider, action buttons)
+        const sections = card.querySelectorAll('div.space-y-2');
+        for (const section of sections) {
+            const header = section.querySelector('div.text-xs.font-medium.text-muted-foreground.uppercase');
+            if (header && header.textContent.trim() === 'Result') {
+                const divider = section.querySelector('.w-px.h-4.bg-border.mx-1');
+                if (divider) return divider.parentElement;
+            }
+        }
+        return null;
     },
 
     findWorkflowPanel() {
