@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -96,7 +96,7 @@ const plugin = {
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-feedback-today-env-block', 'true');
-            block.className = 'p-4 pt-0 border-t border-border/50 flex flex-col justify-center';
+            block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
                 '<div class="flex justify-between gap-4">',
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
