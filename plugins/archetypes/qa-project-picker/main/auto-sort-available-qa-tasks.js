@@ -4,7 +4,7 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -125,13 +125,10 @@ const plugin = {
         }));
     },
 
-    selectOption(option) {
-        // Radix Select items respond to pointerup when opened via pointer
-        option.dispatchEvent(new PointerEvent('pointerup', {
-            bubbles: true,
-            cancelable: true,
-            button: 0,
-            pointerType: 'mouse'
+    dispatchKey(target, key) {
+        // Radix Select content handles keydown for navigation and confirmation
+        target.dispatchEvent(new KeyboardEvent('keydown', {
+            key, bubbles: true, cancelable: true
         }));
     },
 
@@ -190,18 +187,17 @@ const plugin = {
         try {
             const teamMap = {};
 
-            // Helper: open dropdown via pointerdown → wait for portal →
-            // find option → select via pointerup → wait for grid update
-            const pickOption = async (name) => {
+            // Helper: open dropdown → wait for listbox → press ArrowDown
+            // once to advance to next option → Enter to confirm selection
+            const advanceAndSelect = async () => {
                 this.openSelect(dropdown);
                 await this.wait(150);
                 const lb = await this.waitForListbox(dropdown);
                 if (!lb) return false;
                 await this.wait(100);
-                const opt = Array.from(lb.querySelectorAll('[role="option"]'))
-                    .find(o => o.textContent.trim() === name);
-                if (!opt) return false;
-                this.selectOption(opt);
+                this.dispatchKey(lb, 'ArrowDown');
+                await this.wait(100);
+                this.dispatchKey(lb, 'Enter');
                 await this.wait(500);
                 return true;
             };
@@ -223,35 +219,39 @@ const plugin = {
 
             if (teamNames.length === 0) {
                 Logger.debug('auto-sort-qa: no team options found in dropdown');
-                // Close the dropdown cleanly
-                const fallback = Array.from(listbox.querySelectorAll('[role="option"]'))
-                    .find(o => o.textContent.trim() === 'All Teams');
-                if (fallback) this.selectOption(fallback);
+                this.dispatchKey(listbox, 'Escape');
                 state.scanFailedAt = Date.now();
                 return;
             }
 
-            // 2. Select the first team straight from the already-open listbox
-            const firstOpt = Array.from(listbox.querySelectorAll('[role="option"]'))
-                .find(o => o.textContent.trim() === teamNames[0]);
-            if (firstOpt) {
-                this.selectOption(firstOpt);
-                await this.wait(500);
-                teamMap[teamNames[0]] = this.readCards(grid);
-            }
+            // 2. From the already-open listbox (on "All Teams"), ArrowDown
+            //    moves highlight to first team, Enter confirms
+            this.dispatchKey(listbox, 'ArrowDown');
+            await this.wait(100);
+            this.dispatchKey(listbox, 'Enter');
+            await this.wait(500);
+            teamMap[teamNames[0]] = this.readCards(grid);
 
-            // 3. Cycle through remaining teams
+            // 3. Each subsequent open → ArrowDown advances one more team
             for (let i = 1; i < teamNames.length; i++) {
-                if (!grid.isConnected) break;           // page navigated away
-                const ok = await pickOption(teamNames[i]);
-                if (ok) {
-                    teamMap[teamNames[i]] = this.readCards(grid);
-                }
+                if (!grid.isConnected) break;
+                const ok = await advanceAndSelect();
+                if (!ok) break;
+                teamMap[teamNames[i]] = this.readCards(grid);
             }
 
-            // 4. Restore "All Teams"
+            // 4. Restore "All Teams": open → Home jumps to top → Enter confirms
             if (grid.isConnected) {
-                await pickOption('All Teams');
+                this.openSelect(dropdown);
+                await this.wait(150);
+                const lb = await this.waitForListbox(dropdown);
+                if (lb) {
+                    await this.wait(100);
+                    this.dispatchKey(lb, 'Home');
+                    await this.wait(100);
+                    this.dispatchKey(lb, 'Enter');
+                    await this.wait(500);
+                }
             }
 
             state.teamMap = teamMap;
