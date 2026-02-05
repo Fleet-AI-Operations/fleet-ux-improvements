@@ -4,7 +4,7 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -116,10 +116,20 @@ const plugin = {
     },
 
     async pressKey(target, key) {
+        const role = target.getAttribute?.('role') ?? '';
+        const id = target.id ? `#${target.id}` : '';
+        const cls = (target.className && typeof target.className === 'string') ? target.className.split(/\s+/).slice(0, 2).join('.') : '';
+        Logger.debug(`auto-sort-qa: pressKey(${key}) target=${target.tagName}${id} role=${role || 'none'} ${cls ? '.' + cls : ''}`);
         const code = key === 'Enter' ? 'Enter' : key === 'ArrowDown' ? 'ArrowDown' : key === 'ArrowUp' ? 'ArrowUp' : key;
         target.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
         await this.wait(20);
         target.dispatchEvent(new KeyboardEvent('keyup', { key, code, bubbles: true, cancelable: true }));
+    },
+
+    getHighlightedOptionText(listbox) {
+        if (!listbox) return null;
+        const opt = listbox.querySelector('[data-highlighted], [role="option"][aria-selected="true"]');
+        return opt ? opt.textContent.trim() : null;
     },
 
     throttledLog(state, level, message, throttleMs = 5000) {
@@ -193,6 +203,8 @@ const plugin = {
             await this.pressKey(dropdown, 'Enter');     // open
             await this.wait(250);
             const listbox = await this.waitForListbox(dropdown);
+            const activeAfterOpen = document.activeElement;
+            Logger.debug(`auto-sort-qa: after open listbox=${!!listbox} options=${listbox ? listbox.querySelectorAll('[role="option"]').length : 0} activeElement=${activeAfterOpen?.tagName} role=${activeAfterOpen?.getAttribute?.('role') || 'none'}`);
             if (!listbox) {
                 this.throttledLog(state, 'error', 'auto-sort-qa: listbox not found after waiting');
                 state.scanFailedAt = Date.now();
@@ -207,16 +219,16 @@ const plugin = {
 
             if (teamNames.length === 0) {
                 Logger.debug('auto-sort-qa: no team options found in dropdown');
-                await this.pressKey(listbox, 'Escape');
+                await this.pressKey(document.activeElement, 'Escape');
                 state.scanFailedAt = Date.now();
                 return;
             }
 
             // Close the initial open without changing selection
-            await this.pressKey(listbox, 'Escape');
+            await this.pressKey(document.activeElement, 'Escape');
             await this.wait(250);
 
-            // 2. Cycle: Enter → Down → Enter for each team
+            // 2. Cycle: Enter → Down → Enter for each team (keys sent to activeElement so Radix receives them)
             for (let i = 0; i < teamNames.length; i++) {
                 if (!grid.isConnected) break;
 
@@ -226,18 +238,28 @@ const plugin = {
                 await this.wait(250);
 
                 const lb = await this.waitForListbox(dropdown);
+                const activeAfterOpen = document.activeElement;
+                Logger.debug(`auto-sort-qa: loop i=${i} after open listbox=${!!lb} activeElement=${activeAfterOpen?.tagName} role=${activeAfterOpen?.getAttribute?.('role') || 'none'}`);
                 if (!lb) break;
                 await this.wait(100);
 
-                await this.pressKey(lb, 'ArrowDown');   // advance one
+                const keyTarget = document.activeElement;
+                await this.pressKey(keyTarget, 'ArrowDown');   // advance one
                 await this.wait(100);
-                await this.pressKey(lb, 'Enter');       // confirm
-                await this.wait(650);                   // wait for grid
+                const highlightedAfterDown = this.getHighlightedOptionText(lb);
+                Logger.debug(`auto-sort-qa: after ArrowDown highlighted=${highlightedAfterDown ?? 'none'} activeElement=${document.activeElement?.tagName}`);
+                await this.pressKey(document.activeElement, 'Enter');  // confirm (focus may have moved to option)
+                await this.wait(650);                           // wait for grid
 
-                teamMap[teamNames[i]] = this.readCards(grid);
+                const triggerValue = dropdown.querySelector('span span')?.textContent?.trim();
+                Logger.debug(`auto-sort-qa: after Enter trigger value="${triggerValue ?? ''}"`);
+                const cards = this.readCards(grid);
+                teamMap[teamNames[i]] = cards;
+                const sample = cards.slice(0, 3).map(c => c.name).join(', ');
+                Logger.debug(`auto-sort-qa: team "${teamNames[i]}" count=${cards.length} sample=[${sample}${cards.length > 3 ? '...' : ''}]`);
             }
 
-            // 3. Restore "All Teams": ArrowUp back to the top
+            // 3. Restore "All Teams": ArrowUp back to the top (keys to activeElement)
             if (grid.isConnected) {
                 dropdown.focus();
                 await this.wait(100);
@@ -247,13 +269,19 @@ const plugin = {
                 const lb = await this.waitForListbox(dropdown);
                 if (lb) {
                     await this.wait(100);
-                    // Press ArrowUp once for each team to get back to "All Teams"
-                    for (let i = 0; i < teamNames.length; i++) {
-                        await this.pressKey(lb, 'ArrowUp');
+                    Logger.debug(`auto-sort-qa: restoring All Teams, ${teamNames.length} ArrowUp(s)`);
+                    for (let j = 0; j < teamNames.length; j++) {
+                        await this.pressKey(document.activeElement, 'ArrowUp');
                         await this.wait(100);
+                        if (j === 0 || j === teamNames.length - 1) {
+                            const hi = this.getHighlightedOptionText(lb);
+                            Logger.debug(`auto-sort-qa: after ArrowUp ${j + 1}/${teamNames.length} highlighted=${hi ?? 'none'}`);
+                        }
                     }
-                    await this.pressKey(lb, 'Enter');   // confirm "All Teams"
+                    await this.pressKey(document.activeElement, 'Enter');   // confirm "All Teams"
                     await this.wait(650);
+                    const triggerAfterRestore = dropdown.querySelector('span span')?.textContent?.trim();
+                    Logger.debug(`auto-sort-qa: after restore Enter trigger value="${triggerAfterRestore ?? ''}"`);
                 }
             }
 
