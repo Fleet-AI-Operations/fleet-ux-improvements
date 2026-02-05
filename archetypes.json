@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.89",
+  "archetypesVersion": "3.90",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -42,6 +42,19 @@
         {
           "name": "feedback-given-today-env.js",
           "version": "1.3"
+        }
+      ]
+    },
+    {
+      "id": "qa-project-picker",
+      "name": "QA Project Picker Page",
+      "description": "Page for picking a QA project",
+      "urlPattern": "work/problems/qa",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "qa-project-picker.js",
+          "version": "1.0"
         }
       ]
     },
