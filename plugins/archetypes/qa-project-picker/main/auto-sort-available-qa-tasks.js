@@ -4,7 +4,7 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -12,7 +12,8 @@ const plugin = {
         scanning: false,
         teamMap: null,
         applied: false,
-        lastLogTime: 0
+        lastLogTime: 0,
+        scanFailedAt: 0
     },
 
     onMutation(state, context) {
@@ -89,8 +90,9 @@ const plugin = {
             return;
         }
 
-        // Nothing scanned yet — kick off the async scan
+        // Nothing scanned yet — kick off the async scan (with cooldown after failures)
         if (!teamsDropdown) return;
+        if (state.scanFailedAt && Date.now() - state.scanFailedAt < 10000) return;
         this.startScan(state, main, teamsDropdown, grid);
     },
 
@@ -111,6 +113,26 @@ const plugin = {
             await this.wait(50);
         }
         return null;
+    },
+
+    openSelect(trigger) {
+        // Radix Select listens for pointerdown to open, not click
+        trigger.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            pointerType: 'mouse'
+        }));
+    },
+
+    selectOption(option) {
+        // Radix Select items respond to pointerup when opened via pointer
+        option.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            pointerType: 'mouse'
+        }));
     },
 
     throttledLog(state, level, message, throttleMs = 5000) {
@@ -168,27 +190,33 @@ const plugin = {
         try {
             const teamMap = {};
 
-            // Helper: open dropdown → wait for listbox → find option by name → click it
-            const selectOption = async (name) => {
-                dropdown.click();
+            // Helper: open dropdown via pointerdown → wait for portal →
+            // find option → select via pointerup → wait for grid update
+            const pickOption = async (name) => {
+                this.openSelect(dropdown);
+                await this.wait(150);
                 const lb = await this.waitForListbox(dropdown);
                 if (!lb) return false;
+                await this.wait(100);
                 const opt = Array.from(lb.querySelectorAll('[role="option"]'))
                     .find(o => o.textContent.trim() === name);
                 if (!opt) return false;
-                opt.click();
-                await this.wait(300);
+                this.selectOption(opt);
+                await this.wait(500);
                 return true;
             };
 
             // 1. Open the dropdown to read all available team names
-            dropdown.click();
+            this.openSelect(dropdown);
+            await this.wait(150);
             const listbox = await this.waitForListbox(dropdown);
             if (!listbox) {
                 this.throttledLog(state, 'error', 'auto-sort-qa: listbox not found after waiting');
+                state.scanFailedAt = Date.now();
                 return;
             }
 
+            await this.wait(100);
             const teamNames = Array.from(listbox.querySelectorAll('[role="option"]'))
                 .map(o => o.textContent.trim())
                 .filter(t => t !== 'All Teams');
@@ -198,7 +226,8 @@ const plugin = {
                 // Close the dropdown cleanly
                 const fallback = Array.from(listbox.querySelectorAll('[role="option"]'))
                     .find(o => o.textContent.trim() === 'All Teams');
-                if (fallback) fallback.click();
+                if (fallback) this.selectOption(fallback);
+                state.scanFailedAt = Date.now();
                 return;
             }
 
@@ -206,15 +235,15 @@ const plugin = {
             const firstOpt = Array.from(listbox.querySelectorAll('[role="option"]'))
                 .find(o => o.textContent.trim() === teamNames[0]);
             if (firstOpt) {
-                firstOpt.click();
-                await this.wait(400);
+                this.selectOption(firstOpt);
+                await this.wait(500);
                 teamMap[teamNames[0]] = this.readCards(grid);
             }
 
             // 3. Cycle through remaining teams
             for (let i = 1; i < teamNames.length; i++) {
                 if (!grid.isConnected) break;           // page navigated away
-                const ok = await selectOption(teamNames[i]);
+                const ok = await pickOption(teamNames[i]);
                 if (ok) {
                     teamMap[teamNames[i]] = this.readCards(grid);
                 }
@@ -222,10 +251,11 @@ const plugin = {
 
             // 4. Restore "All Teams"
             if (grid.isConnected) {
-                await selectOption('All Teams');
+                await pickOption('All Teams');
             }
 
             state.teamMap = teamMap;
+            state.scanFailedAt = 0;
             Logger.log(
                 `auto-sort-qa: mapped ${Object.keys(teamMap).length} team(s): ` +
                 Object.entries(teamMap).map(([t, c]) => `${t} (${c.length})`).join(', ')
