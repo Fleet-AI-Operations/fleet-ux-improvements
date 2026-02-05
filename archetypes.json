@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.95",
+  "archetypesVersion": "3.96",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -54,7 +54,7 @@
       "plugins": [
         {
           "name": "auto-sort-available-qa-tasks.js",
-          "version": "1.4"
+          "version": "1.5"
         }
       ]
     },

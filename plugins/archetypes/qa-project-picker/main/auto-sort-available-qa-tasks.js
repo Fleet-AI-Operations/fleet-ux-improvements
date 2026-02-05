@@ -4,7 +4,7 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -115,13 +115,11 @@ const plugin = {
         return null;
     },
 
-    pressKey(target, key) {
-        for (const type of ['keydown', 'keypress', 'keyup']) {
-            target.dispatchEvent(new KeyboardEvent(type, {
-                key, code: key === 'Enter' ? 'Enter' : key === 'ArrowDown' ? 'ArrowDown' : key === 'ArrowUp' ? 'ArrowUp' : key,
-                bubbles: true, cancelable: true
-            }));
-        }
+    async pressKey(target, key) {
+        const code = key === 'Enter' ? 'Enter' : key === 'ArrowDown' ? 'ArrowDown' : key === 'ArrowUp' ? 'ArrowUp' : key;
+        target.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
+        await this.wait(20);
+        target.dispatchEvent(new KeyboardEvent('keyup', { key, code, bubbles: true, cancelable: true }));
     },
 
     throttledLog(state, level, message, throttleMs = 5000) {
@@ -192,8 +190,8 @@ const plugin = {
             // 1. Focus the trigger, then open to read team names
             dropdown.focus();
             await this.wait(100);
-            this.pressKey(dropdown, 'Enter');           // open
-            await this.wait(200);
+            await this.pressKey(dropdown, 'Enter');     // open
+            await this.wait(250);
             const listbox = await this.waitForListbox(dropdown);
             if (!listbox) {
                 this.throttledLog(state, 'error', 'auto-sort-qa: listbox not found after waiting');
@@ -209,14 +207,14 @@ const plugin = {
 
             if (teamNames.length === 0) {
                 Logger.debug('auto-sort-qa: no team options found in dropdown');
-                this.pressKey(listbox, 'Escape');
+                await this.pressKey(listbox, 'Escape');
                 state.scanFailedAt = Date.now();
                 return;
             }
 
             // Close the initial open without changing selection
-            this.pressKey(listbox, 'Escape');
-            await this.wait(200);
+            await this.pressKey(listbox, 'Escape');
+            await this.wait(250);
 
             // 2. Cycle: Enter → Down → Enter for each team
             for (let i = 0; i < teamNames.length; i++) {
@@ -224,17 +222,17 @@ const plugin = {
 
                 dropdown.focus();
                 await this.wait(100);
-                this.pressKey(dropdown, 'Enter');       // open (on current)
-                await this.wait(200);
+                await this.pressKey(dropdown, 'Enter'); // open (on current)
+                await this.wait(250);
 
                 const lb = await this.waitForListbox(dropdown);
                 if (!lb) break;
                 await this.wait(100);
 
-                this.pressKey(lb, 'ArrowDown');         // advance one
+                await this.pressKey(lb, 'ArrowDown');   // advance one
                 await this.wait(100);
-                this.pressKey(lb, 'Enter');             // confirm
-                await this.wait(500);                   // wait for grid
+                await this.pressKey(lb, 'Enter');       // confirm
+                await this.wait(650);                   // wait for grid
 
                 teamMap[teamNames[i]] = this.readCards(grid);
             }
@@ -243,19 +241,19 @@ const plugin = {
             if (grid.isConnected) {
                 dropdown.focus();
                 await this.wait(100);
-                this.pressKey(dropdown, 'Enter');       // open
-                await this.wait(200);
+                await this.pressKey(dropdown, 'Enter'); // open
+                await this.wait(250);
 
                 const lb = await this.waitForListbox(dropdown);
                 if (lb) {
                     await this.wait(100);
                     // Press ArrowUp once for each team to get back to "All Teams"
                     for (let i = 0; i < teamNames.length; i++) {
-                        this.pressKey(lb, 'ArrowUp');
-                        await this.wait(50);
+                        await this.pressKey(lb, 'ArrowUp');
+                        await this.wait(100);
                     }
-                    this.pressKey(lb, 'Enter');         // confirm "All Teams"
-                    await this.wait(500);
+                    await this.pressKey(lb, 'Enter');   // confirm "All Teams"
+                    await this.wait(650);
                 }
             }
 
