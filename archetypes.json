@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.88",
+  "archetypesVersion": "3.89",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -33,7 +33,7 @@
       "plugins": [
         {
           "name": "progress-prompt-expand.js",
-          "version": "1.5"
+          "version": "1.6"
         },
         {
           "name": "feedback-given-approval-rate.js",

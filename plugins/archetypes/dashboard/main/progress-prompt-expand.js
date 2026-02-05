@@ -1,9 +1,10 @@
+
 // ============= progress-prompt-expand.js =============
 const plugin = {
     id: 'progressPromptExpand',
     name: 'Progress Prompt Expand',
     description: 'Hover over My Progress task items to expand truncated prompts',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
@@ -13,6 +14,12 @@ const plugin = {
             name: 'Click to copy prompt',
             description: 'When expanded, click the prompt text to copy it to the clipboard',
             enabledByDefault: true
+        },
+        {
+            id: 'alwaysExpanded',
+            name: 'Always expand prompts',
+            description: 'Keep all prompts fully expanded without needing to hover',
+            enabledByDefault: false
         }
     ],
 
@@ -50,13 +57,17 @@ const plugin = {
         state.missingLogged = false;
         let modified = 0;
 
+        const alwaysExpanded = Storage.getSubOptionEnabled(this.id, 'alwaysExpanded', false);
+
         for (const { row, cell } of taskCells) {
             if (cell.hasAttribute('data-wf-progress-expand')) continue;
 
             const fragment = document.createDocumentFragment();
             const wrapper = document.createElement('div');
             wrapper.className = 'fleet-progress-prompt-inner';
-            wrapper.style.cssText = 'max-height: 1.5em; overflow: hidden; transition: max-height 0.25s ease-out, background-color 0.15s ease; white-space: normal;';
+            wrapper.style.cssText = alwaysExpanded
+                ? 'overflow: hidden; white-space: normal;'
+                : 'max-height: 1.5em; overflow: hidden; transition: max-height 0.25s ease-out, background-color 0.15s ease; white-space: normal;';
             const inner = document.createElement('div');
             inner.style.cssText = 'transition: background-color 0.15s ease;';
             while (cell.firstChild) inner.appendChild(cell.firstChild);
@@ -94,20 +105,25 @@ const plugin = {
 
             cell.setAttribute('data-wf-progress-expand', 'true');
 
-            const collapse = () => {
-                wrapper.style.maxHeight = '1.5em';
-                row.style.overflow = '';
-            };
-
-            const expand = () => {
-                wrapper.style.maxHeight = '2000px';
-                const fullHeight = wrapper.scrollHeight;
-                wrapper.style.maxHeight = fullHeight + 'px';
+            if (alwaysExpanded) {
+                wrapper.style.maxHeight = 'none';
                 row.style.overflow = 'visible';
-            };
+            } else {
+                const collapse = () => {
+                    wrapper.style.maxHeight = '1.5em';
+                    row.style.overflow = '';
+                };
 
-            row.addEventListener('mouseenter', expand);
-            row.addEventListener('mouseleave', collapse);
+                const expand = () => {
+                    wrapper.style.maxHeight = '2000px';
+                    const fullHeight = wrapper.scrollHeight;
+                    wrapper.style.maxHeight = fullHeight + 'px';
+                    row.style.overflow = 'visible';
+                };
+
+                row.addEventListener('mouseenter', expand);
+                row.addEventListener('mouseleave', collapse);
+            }
 
             modified++;
         }
