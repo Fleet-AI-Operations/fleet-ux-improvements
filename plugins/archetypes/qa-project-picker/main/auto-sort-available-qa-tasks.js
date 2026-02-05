@@ -4,14 +4,15 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         missingLogged: false,
         scanning: false,
         teamMap: null,
-        applied: false
+        applied: false,
+        lastLogTime: 0
     },
 
     onMutation(state, context) {
@@ -99,9 +100,30 @@ const plugin = {
         return new Promise(resolve => setTimeout(resolve, ms));
     },
 
-    getListbox(dropdown) {
+    async waitForListbox(dropdown, maxWait = 2000) {
         const id = dropdown.getAttribute('aria-controls');
-        return id ? document.getElementById(id) : null;
+        if (!id) return null;
+        
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+            const el = document.getElementById(id);
+            if (el) return el;
+            await this.wait(50);
+        }
+        return null;
+    },
+
+    throttledLog(state, level, message, throttleMs = 5000) {
+        const now = Date.now();
+        if (now - state.lastLogTime < throttleMs) return;
+        state.lastLogTime = now;
+        if (level === 'error') {
+            Logger.error(message);
+        } else if (level === 'debug') {
+            Logger.debug(message);
+        } else {
+            Logger.log(message);
+        }
     },
 
     readCards(grid) {
@@ -146,27 +168,24 @@ const plugin = {
         try {
             const teamMap = {};
 
-            // Helper: open dropdown → find option by name → click it
+            // Helper: open dropdown → wait for listbox → find option by name → click it
             const selectOption = async (name) => {
                 dropdown.click();
-                await this.wait(350);
-                const lb = this.getListbox(dropdown);
+                const lb = await this.waitForListbox(dropdown);
                 if (!lb) return false;
                 const opt = Array.from(lb.querySelectorAll('[role="option"]'))
                     .find(o => o.textContent.trim() === name);
                 if (!opt) return false;
                 opt.click();
-                await this.wait(400);
+                await this.wait(300);
                 return true;
             };
 
             // 1. Open the dropdown to read all available team names
             dropdown.click();
-            await this.wait(350);
-
-            const listbox = this.getListbox(dropdown);
+            const listbox = await this.waitForListbox(dropdown);
             if (!listbox) {
-                Logger.error('auto-sort-qa: listbox not found');
+                this.throttledLog(state, 'error', 'auto-sort-qa: listbox not found after waiting');
                 return;
             }
 
