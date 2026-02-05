@@ -4,19 +4,19 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
-    // Timing (ms) — adjust here to tune scan speed vs reliability (halved from original values)
+    // Timing (ms) — adjust here to tune scan speed vs reliability
     _timing: {
-        afterFocus: 50,
-        afterOpen: 125,
-        listboxPoll: 25,
-        keyDownUp: 10,
-        afterListboxReady: 50,
-        afterArrow: 50,
-        forGrid: 325
+        afterFocus: 10,
+        afterOpen: 25,
+        listboxPoll: 5,
+        keyDownUp: 2,
+        afterListboxReady: 10,
+        afterArrow: 10,
+        forGrid: 65
     },
 
     initialState: {
