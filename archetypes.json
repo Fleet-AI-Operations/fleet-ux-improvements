@@ -268,6 +268,10 @@
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.2"
+        },
+        {
+          "name": "workflow-cache.js",
+          "version": "1.0"
         }
       ]
     },
