@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -59,7 +59,7 @@ const plugin = {
         if (toolsContainer && toolsContainer !== state.observedContainer) {
             this.attachContainerObservers(toolsContainer, state);
             state.observedContainer = toolsContainer;
-            Logger.log('Workflow cache: observing workflow');
+            Logger.info('Workflow cache: observing workflow');
         }
     },
 
@@ -90,6 +90,7 @@ const plugin = {
         }
         const snapshot = this.captureSnapshot(state.observedContainer);
         state.workflowSnapshot = snapshot;
+        Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
         Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
     },
 
@@ -258,7 +259,7 @@ const plugin = {
                         if (node.parentElement === stableParent && node !== state.observedContainer) {
                             self.attachContainerObservers(node, state);
                             state.observedContainer = node;
-                            Logger.log('Workflow cache: observing workflow');
+                            Logger.info('Workflow cache: observing workflow');
                         }
                         return;
                     }
@@ -266,7 +267,7 @@ const plugin = {
                 for (const node of m.removedNodes) {
                     if (node === state.observedContainer) {
                         self.disconnectContainerObservers(state);
-                        Logger.log('Workflow cache: all tools removed');
+                        Logger.info('Workflow cache: all tools removed');
                         return;
                     }
                 }
@@ -310,11 +311,11 @@ const plugin = {
                 if (added || removed) break;
             }
             if (added) {
-                Logger.log('Workflow cache: tool added');
+                Logger.info('Workflow cache: tool added');
                 self.captureAndSaveSnapshot(state);
             }
             if (removed) {
-                Logger.log('Workflow cache: tool deleted');
+                Logger.info('Workflow cache: tool deleted');
                 self.captureAndSaveSnapshot(state);
             }
         });
@@ -336,7 +337,7 @@ const plugin = {
                 const hasError = target.classList.contains('border-red-500/50');
                 if (hasSuccess || hasError) {
                     const outcome = hasError ? 'error' : 'success';
-                    Logger.log('Workflow cache: tool executed (' + outcome + ')');
+                    Logger.info('Workflow cache: tool executed (' + outcome + ')');
                     self.captureAndSaveSnapshot(state);
                     break;
                 }

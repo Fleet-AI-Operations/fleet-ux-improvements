@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [workflow-cache] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.5
+// @version      3.10.6
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.5';
+    const VERSION = '3.10.6';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -698,6 +698,8 @@
             let payload;
             if (level === 'debug') {
                 payload = [`${prefix} 🔍 ${msg}`, ...args];
+            } else if (level === 'info') {
+                payload = [`${prefix} ℹ️ ${msg}`, ...args];
             } else if (level === 'warn') {
                 payload = [`${prefix} ⚠️ ${msg}`, ...args];
             } else if (level === 'error') {
@@ -716,6 +718,7 @@
             return {
                 log: (msg, ...args) => this._logModule('log', msg, resolveModuleId(), ...args),
                 debug: (msg, ...args) => this._logModule('debug', msg, resolveModuleId(), ...args),
+                info: (msg, ...args) => this._logModule('info', msg, resolveModuleId(), ...args),
                 warn: (msg, ...args) => this._logModule('warn', msg, resolveModuleId(), ...args),
                 error: (msg, ...args) => this._logModule('error', msg, resolveModuleId(), ...args),
                 isVerboseEnabled: () => this._shouldLogModule(resolveModuleId()),
@@ -737,6 +740,16 @@
                 console.debug(...payload);
                 this._emit('debug', payload);
             }
+        },
+
+        info(msg, ...args) {
+            const payload = [`${LOG_PREFIX} ℹ️ ${msg}`, ...args];
+            if (typeof console.info === 'function') {
+                console.info(...payload);
+            } else {
+                console.log(...payload);
+            }
+            this._emit('info', payload);
         },
         
         warn(msg, ...args) {
