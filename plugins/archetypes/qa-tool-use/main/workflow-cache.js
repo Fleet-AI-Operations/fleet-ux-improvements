@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -84,14 +84,19 @@ const plugin = {
     },
 
     captureAndSaveSnapshot(state) {
+        Logger.info('Workflow cache: snapshot attempt (container: ' + (state.observedContainer ? 'yes' : 'no') + ')');
         if (!state.observedContainer) {
             Logger.warn('Workflow cache: snapshot skipped, no observed container');
             return;
         }
-        const snapshot = this.captureSnapshot(state.observedContainer);
-        state.workflowSnapshot = snapshot;
-        Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
-        Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
+        try {
+            const snapshot = this.captureSnapshot(state.observedContainer);
+            state.workflowSnapshot = snapshot;
+            Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
+            Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
+        } catch (e) {
+            Logger.error('Workflow cache: snapshot failed', e);
+        }
     },
 
     captureSnapshot(container) {
