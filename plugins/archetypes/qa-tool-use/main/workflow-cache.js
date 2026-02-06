@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -167,7 +167,7 @@ const plugin = {
             Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
             return params;
         }
-        const blocks = spaceY3.querySelectorAll('div.flex.flex-col.gap-1.5');
+        const blocks = spaceY3.querySelectorAll('div.flex.flex-col.gap-1\\.5');
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
@@ -239,7 +239,7 @@ const plugin = {
             items.forEach(item => {
                 const innerSpace = item.querySelector('div.space-y-3');
                 if (!innerSpace) return;
-                const innerBlocks = innerSpace.querySelectorAll('div.flex.flex-col.gap-1.5');
+                const innerBlocks = innerSpace.querySelectorAll('div.flex.flex-col.gap-1\\.5');
                 const obj = {};
                 innerBlocks.forEach(innerBlock => {
                     const name = this.getParamNameFromBlock(innerBlock);
