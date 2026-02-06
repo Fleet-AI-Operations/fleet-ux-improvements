@@ -3,18 +3,22 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events (stage 1: triggers and logging)',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         missingLogged: false,
+        observedParent: null,
         observedContainer: null,
-        observers: []
+        parentObserver: null,
+        containerObservers: []
     },
 
     selectors: {
-        toolCard: 'div.rounded-lg.border.transition-colors'
+        toolCard: 'div.rounded-lg.border.transition-colors',
+        stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
+        toolsContainer: '.space-y-3'
     },
 
     onMutation(state, context) {
@@ -27,10 +31,10 @@ const plugin = {
             return;
         }
 
-        const toolsContainer = this.findToolsArea(panel);
-        if (!toolsContainer) {
+        const stableParent = this.findStableParent(panel);
+        if (!stableParent) {
             if (!state.missingLogged) {
-                Logger.debug('Workflow cache: tools container not found');
+                Logger.debug('Workflow cache: stable parent not found');
                 state.missingLogged = true;
             }
             return;
@@ -38,57 +42,113 @@ const plugin = {
 
         state.missingLogged = false;
 
-        if (state.observedContainer === toolsContainer) {
-            return;
-        }
-
-        if (state.observedContainer) {
-            this.disconnectObservers(state);
+        if (state.observedParent !== stableParent) {
+            this.disconnectAllObservers(state);
+            state.observedParent = null;
             state.observedContainer = null;
         }
 
-        this.attachObservers(toolsContainer, state);
-        state.observedContainer = toolsContainer;
-        Logger.log('Workflow cache: observing workflow');
-    },
+        if (!state.parentObserver) {
+            this.attachParentObserver(stableParent, state);
+            state.observedParent = stableParent;
+        }
 
-    disconnectObservers(state) {
-        if (state.observers && state.observers.length) {
-            state.observers.forEach(obs => obs.disconnect());
-            state.observers = [];
+        const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+        if (toolsContainer && toolsContainer !== state.observedContainer) {
+            this.attachContainerObservers(toolsContainer, state);
+            state.observedContainer = toolsContainer;
+            Logger.log('Workflow cache: observing workflow');
         }
     },
 
-    attachObservers(container, state) {
-        const toolCardSelector = this.selectors.toolCard;
+    disconnectAllObservers(state) {
+        if (state.parentObserver) {
+            state.parentObserver.disconnect();
+            state.parentObserver = null;
+        }
+        if (state.containerObservers && state.containerObservers.length) {
+            state.containerObservers.forEach(obs => obs.disconnect());
+            state.containerObservers = [];
+        }
+        state.observedContainer = null;
+    },
 
-        const isToolCard = (node) => {
-            return node && node.nodeType === Node.ELEMENT_NODE &&
-                node.matches && node.matches(toolCardSelector);
-        };
+    disconnectContainerObservers(state) {
+        if (state.containerObservers && state.containerObservers.length) {
+            state.containerObservers.forEach(obs => obs.disconnect());
+            state.containerObservers = [];
+        }
+        state.observedContainer = null;
+    },
 
-        const childListObserver = new MutationObserver((mutations) => {
+    attachParentObserver(stableParent, state) {
+        const self = this;
+        const parentObserver = new MutationObserver((mutations) => {
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
-                    if (isToolCard(node)) {
-                        Logger.log('Workflow cache: tool added');
-                        break;
+                    if (node && node.nodeType === Node.ELEMENT_NODE && node.matches && node.matches(self.selectors.toolsContainer)) {
+                        if (node.parentElement === stableParent && node !== state.observedContainer) {
+                            self.attachContainerObservers(node, state);
+                            state.observedContainer = node;
+                            Logger.log('Workflow cache: observing workflow');
+                        }
+                        return;
                     }
                 }
                 for (const node of m.removedNodes) {
-                    if (isToolCard(node)) {
-                        Logger.log('Workflow cache: tool deleted');
-                        break;
+                    if (node === state.observedContainer) {
+                        self.disconnectContainerObservers(state);
+                        Logger.log('Workflow cache: all tools removed');
+                        return;
                     }
                 }
             }
         });
 
-        childListObserver.observe(container, {
+        parentObserver.observe(stableParent, {
             childList: true,
             subtree: false
         });
-        state.observers.push(childListObserver);
+        state.parentObserver = parentObserver;
+    },
+
+    attachContainerObservers(container, state) {
+        this.disconnectContainerObservers(state);
+
+        const toolCardSelector = this.selectors.toolCard;
+
+        const isToolCardOrWrapper = (node) => {
+            if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.matches) return false;
+            return node.matches(toolCardSelector) || node.querySelector(toolCardSelector);
+        };
+
+        const childListObserver = new MutationObserver((mutations) => {
+            let added = false;
+            let removed = false;
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (isToolCardOrWrapper(node)) {
+                        added = true;
+                        break;
+                    }
+                }
+                for (const node of m.removedNodes) {
+                    if (isToolCardOrWrapper(node)) {
+                        removed = true;
+                        break;
+                    }
+                }
+                if (added || removed) break;
+            }
+            if (added) Logger.log('Workflow cache: tool added');
+            if (removed) Logger.log('Workflow cache: tool deleted');
+        });
+
+        childListObserver.observe(container, {
+            childList: true,
+            subtree: true
+        });
+        state.containerObservers.push(childListObserver);
 
         const classObserver = new MutationObserver((mutations) => {
             for (const m of mutations) {
@@ -112,7 +172,7 @@ const plugin = {
             attributes: true,
             attributeFilter: ['class']
         });
-        state.observers.push(classObserver);
+        state.containerObservers.push(classObserver);
     },
 
     findWorkflowPanel() {
@@ -148,10 +208,13 @@ const plugin = {
         return null;
     },
 
-    findToolsArea(panel) {
+    findStableParent(panel) {
         if (!panel) return null;
-        const scrollable = panel.querySelector('.overflow-y-auto');
-        if (!scrollable) return null;
-        return scrollable.querySelector('.space-y-3');
+        const scrollables = panel.querySelectorAll('.overflow-y-auto');
+        for (const scrollable of scrollables) {
+            const stable = scrollable.querySelector(this.selectors.stableParent);
+            if (stable) return stable;
+        }
+        return null;
     }
 };
