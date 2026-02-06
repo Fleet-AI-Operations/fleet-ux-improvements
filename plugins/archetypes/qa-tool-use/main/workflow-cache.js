@@ -2,8 +2,8 @@
 const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
-    description: 'Observes workflow for tool add/delete/execute events (stage 1: triggers and logging)',
-    _version: '1.1',
+    description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -12,11 +12,13 @@ const plugin = {
         observedParent: null,
         observedContainer: null,
         parentObserver: null,
-        containerObservers: []
+        containerObservers: [],
+        workflowSnapshot: null
     },
 
     selectors: {
         toolCard: 'div.rounded-lg.border.transition-colors',
+        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
         stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
         toolsContainer: '.space-y-3'
     },
@@ -81,6 +83,142 @@ const plugin = {
         state.observedContainer = null;
     },
 
+    captureAndSaveSnapshot(state) {
+        if (!state.observedContainer) return;
+        const snapshot = this.captureSnapshot(state.observedContainer);
+        state.workflowSnapshot = snapshot;
+        Logger.debug('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
+    },
+
+    captureSnapshot(container) {
+        const cards = container.querySelectorAll(this.selectors.toolCard);
+        const out = [];
+        cards.forEach(card => {
+            const name = this.getToolNameFromCard(card);
+            const params = this.getParamsFromCard(card);
+            const entry = { tool: name };
+            Object.keys(params).forEach(k => {
+                const v = params[k];
+                if (this.hasValue(v)) {
+                    entry[k] = v;
+                }
+            });
+            out.push(entry);
+        });
+        return out;
+    },
+
+    hasValue(v) {
+        if (v === null || v === undefined) return false;
+        if (typeof v === 'string') return v.length > 0;
+        if (typeof v === 'number') return !Number.isNaN(v);
+        if (typeof v === 'boolean') return v === true;
+        if (Array.isArray(v)) return v.length > 0;
+        if (typeof v === 'object') return Object.keys(v).length > 0;
+        return true;
+    },
+
+    getToolNameFromCard(card) {
+        const header = card.querySelector(this.selectors.toolHeader);
+        if (!header) return '';
+        const span = header.querySelector('span.font-mono.text-sm.font-medium');
+        return span ? span.textContent.trim() : '';
+    },
+
+    getParamsFromCard(card) {
+        const params = {};
+        const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
+        if (!content) return params;
+        const spaceY3 = content.querySelector('div.space-y-3');
+        if (!spaceY3) return params;
+        const blocks = spaceY3.querySelectorAll('div.flex.flex-col.gap-1.5');
+        blocks.forEach(block => {
+            const name = this.getParamNameFromBlock(block);
+            if (!name) return;
+            const typeLabel = this.getParamTypeFromBlock(block);
+            const value = this.getParamValueFromBlock(block, typeLabel);
+            if (value !== undefined) params[name] = value;
+        });
+        return params;
+    },
+
+    getParamNameFromBlock(block) {
+        const code = block.querySelector('code.text-xs.font-mono');
+        if (code) return code.textContent.trim();
+        const label = block.querySelector('label[for^="param-"]');
+        if (label) return label.textContent.trim();
+        return '';
+    },
+
+    getParamTypeFromBlock(block) {
+        const typeDiv = block.querySelector('div.inline-flex.whitespace-nowrap.rounded-md.border.font-medium');
+        if (!typeDiv) return '';
+        return (typeDiv.textContent || '').trim().toLowerCase();
+    },
+
+    getParamValueFromBlock(block, typeLabel) {
+        if (!typeLabel) return undefined;
+        if (typeLabel === 'string' || typeLabel === 'object') {
+            const input = block.querySelector('input[type="text"]');
+            if (input) return input.value.trim() || undefined;
+            const textarea = block.querySelector('textarea');
+            if (textarea) return textarea.value.trim() || undefined;
+            return undefined;
+        }
+        if (typeLabel === 'integer' || typeLabel === 'number') {
+            const input = block.querySelector('input[type="number"]');
+            if (!input) return undefined;
+            const s = input.value.trim();
+            if (s === '') return undefined;
+            const n = Number(s);
+            return Number.isNaN(n) ? s : n;
+        }
+        if (typeLabel === 'boolean') {
+            const btn = block.querySelector('button[role="checkbox"]');
+            if (!btn) return undefined;
+            return btn.getAttribute('data-state') === 'checked';
+        }
+        if (typeLabel === 'enum') {
+            const btn = block.querySelector('button[role="combobox"]');
+            if (!btn) return undefined;
+            const span = btn.querySelector('span.flex-1.flex') || btn.querySelector('span[style*="pointer-events"]');
+            const text = span ? (span.textContent || '').trim() : '';
+            return text || undefined;
+        }
+        if (typeLabel === 'string[]' || typeLabel.includes('string[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap) return undefined;
+            const inputs = wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="text"]');
+            const arr = [];
+            inputs.forEach(inp => {
+                const v = inp.value.trim();
+                if (v) arr.push(v);
+            });
+            return arr.length ? arr : undefined;
+        }
+        if (typeLabel === 'object[]' || typeLabel.includes('object[]')) {
+            const items = block.querySelectorAll('div.relative.border.rounded-md.p-3[class*="bg-muted"]');
+            if (!items.length) return undefined;
+            const arr = [];
+            items.forEach(item => {
+                const innerSpace = item.querySelector('div.space-y-3');
+                if (!innerSpace) return;
+                const innerBlocks = innerSpace.querySelectorAll('div.flex.flex-col.gap-1.5');
+                const obj = {};
+                innerBlocks.forEach(innerBlock => {
+                    const name = this.getParamNameFromBlock(innerBlock);
+                    if (!name) return;
+                    const innerType = this.getParamTypeFromBlock(innerBlock);
+                    const val = this.getParamValueFromBlock(innerBlock, innerType);
+                    if (val !== undefined && this.hasValue(val)) obj[name] = val;
+                });
+                if (Object.keys(obj).length) arr.push(obj);
+            });
+            return arr.length ? arr : undefined;
+        }
+        return undefined;
+    },
+
     attachParentObserver(stableParent, state) {
         const self = this;
         const parentObserver = new MutationObserver((mutations) => {
@@ -115,6 +253,7 @@ const plugin = {
     attachContainerObservers(container, state) {
         this.disconnectContainerObservers(state);
 
+        const self = this;
         const toolCardSelector = this.selectors.toolCard;
 
         const isToolCardOrWrapper = (node) => {
@@ -140,8 +279,14 @@ const plugin = {
                 }
                 if (added || removed) break;
             }
-            if (added) Logger.log('Workflow cache: tool added');
-            if (removed) Logger.log('Workflow cache: tool deleted');
+            if (added) {
+                Logger.log('Workflow cache: tool added');
+                self.captureAndSaveSnapshot(state);
+            }
+            if (removed) {
+                Logger.log('Workflow cache: tool deleted');
+                self.captureAndSaveSnapshot(state);
+            }
         });
 
         childListObserver.observe(container, {
@@ -162,6 +307,7 @@ const plugin = {
                 if (hasSuccess || hasError) {
                     const outcome = hasError ? 'error' : 'success';
                     Logger.log('Workflow cache: tool executed (' + outcome + ')');
+                    self.captureAndSaveSnapshot(state);
                     break;
                 }
             }
