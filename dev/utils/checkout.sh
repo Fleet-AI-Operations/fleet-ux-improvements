@@ -205,12 +205,14 @@ git -C "$root" add .
 git -C "$root" commit -m "Sync branch config"
 git -C "$root" push -u origin "$BRANCH"
 
-url="$(cd "$root" && gh browse --no-browser "$BRANCH")" 
-ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}') 
-ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)/}') 
-ghfile=$(echo "$url" | perl -nE 'say $1 if m{tree/[^/]+/(.+)}') 
-GITHUB_URL="https://github.com/$ghuser/$ghrepo/tree/$BRANCH/$ghfile" 
+url="$(cd "$root" && gh browse --no-browser "$BRANCH")"
+ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
+ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)(?:/|$)}')
+RAW_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/fleet.user.js"
+BLOB_URL="https://github.com/$ghuser/$ghrepo/blob/$BRANCH/fleet.user.js"
 
 echo "You MUST test and develop using this $BRANCH specific userscript."
-echo "Install it at:"
-echo "$GITHUB_URL"
+echo "Install it at (raw):"
+echo "$RAW_INSTALL_URL"
+echo "View on GitHub:"
+echo "$BLOB_URL"
