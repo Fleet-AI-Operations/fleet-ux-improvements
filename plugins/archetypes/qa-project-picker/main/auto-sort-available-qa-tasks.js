@@ -4,7 +4,7 @@ const plugin = {
     id: 'autoSortAvailableQaTasks',
     name: 'Auto Sort Available QA Tasks',
     description: 'Automatically groups QA review environment cards by team',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -17,6 +17,19 @@ const plugin = {
         afterListboxReady: 10,
         afterArrow: 10,
         forGrid: 65
+    },
+
+    // Style constants for card selection states
+    _cardStyles: {
+        unselected: {
+            classes: 'bg-accent border-border hover:bg-card hover:border-border/80 hover:shadow-sm',
+            removeClasses: 'border-blue-500 dark:border-blue-600 bg-blue-50 dark:bg-blue-950/50 ring-1 ring-blue-500/20 shadow-sm hover:bg-blue-50 dark:hover:bg-blue-950/50'
+        },
+        selected: {
+            classes: 'border-blue-500 dark:border-blue-600 bg-blue-50 dark:bg-blue-950/50 ring-1 ring-blue-500/20 shadow-sm hover:bg-blue-50 dark:hover:bg-blue-950/50',
+            removeClasses: 'bg-accent border-border hover:bg-card hover:border-border/80 hover:shadow-sm'
+        },
+        checkmarkSvg: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current h-6 w-6 text-blue-600 dark:text-blue-400"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM16.7071 10.2071C17.0976 9.81658 17.0976 9.18342 16.7071 8.79289C16.3166 8.40237 15.6834 8.40237 15.2929 8.79289L10 14.0858L8.70711 12.7929C8.31658 12.4024 7.68342 12.4024 7.29289 12.7929C6.90237 13.1834 6.90237 13.8166 7.29289 14.2071L9.29289 16.2071C9.68342 16.5976 10.3166 16.5976 10.7071 16.2071L16.7071 10.2071Z"></path></svg>'
     },
 
     initialState: {
@@ -90,6 +103,8 @@ const plugin = {
                 if (grid.style.display !== 'none') {
                     grid.style.display = 'none';
                 }
+                // Sync selection state from hidden React grid to our clones
+                this.syncSelectionState(grid, sortedContainer);
                 return;
             }
             // Our container was removed by a React re-render, re-apply
@@ -169,6 +184,74 @@ const plugin = {
             });
         }
         return cards;
+    },
+
+    // ── Selection styling helpers ────────────────────────────
+
+    isCardSelected(card) {
+        return card.classList.contains('border-blue-500');
+    },
+
+    applySelectedStyle(clone) {
+        const styles = this._cardStyles;
+        styles.unselected.classes.split(' ').forEach(cls => {
+            if (cls) clone.classList.remove(cls);
+        });
+        styles.selected.classes.split(' ').forEach(cls => {
+            if (cls) clone.classList.add(cls);
+        });
+
+        // Add checkmark if not already present
+        const headerRow = clone.querySelector('.flex.items-start.justify-between');
+        if (headerRow && !clone.querySelector('[data-wf-checkmark]')) {
+            const checkWrap = document.createElement('div');
+            checkWrap.className = 'flex-shrink-0';
+            checkWrap.setAttribute('data-wf-checkmark', 'true');
+            checkWrap.innerHTML = styles.checkmarkSvg;
+            headerRow.appendChild(checkWrap);
+        }
+    },
+
+    applyUnselectedStyle(clone) {
+        const styles = this._cardStyles;
+        styles.selected.classes.split(' ').forEach(cls => {
+            if (cls) clone.classList.remove(cls);
+        });
+        styles.unselected.classes.split(' ').forEach(cls => {
+            if (cls) clone.classList.add(cls);
+        });
+
+        // Remove checkmark
+        const checkmark = clone.querySelector('[data-wf-checkmark]');
+        if (checkmark) checkmark.remove();
+    },
+
+    syncSelectionState(grid, sortedContainer) {
+        // Build a set of selected keys from the hidden React grid
+        const selectedKeys = new Set();
+        for (const card of Array.from(grid.children)) {
+            if (this.isCardSelected(card)) {
+                const h4 = card.querySelector('h4');
+                const typeBadge = h4?.parentElement.querySelector('span');
+                if (h4) {
+                    selectedKeys.add(`${h4.textContent.trim()}|||${typeBadge ? typeBadge.textContent.trim() : ''}`);
+                }
+            }
+        }
+
+        // Apply to our clones
+        for (const clone of sortedContainer.querySelectorAll('[data-wf-card-key]')) {
+            const key = clone.getAttribute('data-wf-card-key');
+            if (selectedKeys.has(key)) {
+                if (!this.isCardSelected(clone)) {
+                    this.applySelectedStyle(clone);
+                }
+            } else {
+                if (this.isCardSelected(clone)) {
+                    this.applyUnselectedStyle(clone);
+                }
+            }
+        }
     },
 
     // ── Scan: cycle through every team option in the dropdown ──
@@ -384,10 +467,28 @@ const plugin = {
                 // Deep-clone for display; forward clicks to the hidden React original
                 // so React's synthetic event system and router navigation stay intact
                 const clone = original.cloneNode(true);
+                clone.setAttribute('data-wf-card-key', key);
+
+                // Apply current selection styling to clone
+                if (this.isCardSelected(original)) {
+                    this.applySelectedStyle(clone);
+                } else {
+                    this.applyUnselectedStyle(clone);
+                }
+
                 clone.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     original.click();
+
+                    // After clicking the hidden original, React will update the
+                    // grid. Use a short delay then sync selection state from
+                    // the React-managed grid back to our sorted clones.
+                    setTimeout(() => {
+                        if (container.isConnected && grid.isConnected) {
+                            this.syncSelectionState(grid, container);
+                        }
+                    }, 50);
                 });
                 teamGrid.appendChild(clone);
             }
@@ -415,11 +516,30 @@ const plugin = {
             const otherGrid = document.createElement('div');
             otherGrid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4';
             for (const card of unplaced) {
+                const key = (() => {
+                    const h4 = card.querySelector('h4');
+                    const typeBadge = h4?.parentElement.querySelector('span');
+                    return `${h4?.textContent.trim() ?? ''}|||${typeBadge ? typeBadge.textContent.trim() : ''}`;
+                })();
+
                 const clone = card.cloneNode(true);
+                clone.setAttribute('data-wf-card-key', key);
+
+                if (this.isCardSelected(card)) {
+                    this.applySelectedStyle(clone);
+                } else {
+                    this.applyUnselectedStyle(clone);
+                }
+
                 clone.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     card.click();
+                    setTimeout(() => {
+                        if (container.isConnected && grid.isConnected) {
+                            this.syncSelectionState(grid, container);
+                        }
+                    }, 50);
                 });
                 otherGrid.appendChild(clone);
             }
