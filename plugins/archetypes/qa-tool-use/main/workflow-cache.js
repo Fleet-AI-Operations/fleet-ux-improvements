@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -84,19 +84,33 @@ const plugin = {
     },
 
     captureAndSaveSnapshot(state) {
-        if (!state.observedContainer) return;
+        if (!state.observedContainer) {
+            Logger.warn('Workflow cache: snapshot skipped, no observed container');
+            return;
+        }
         const snapshot = this.captureSnapshot(state.observedContainer);
         state.workflowSnapshot = snapshot;
-        Logger.debug('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
+        Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
     },
 
     captureSnapshot(container) {
+        if (!container) {
+            Logger.warn('Workflow cache: captureSnapshot called with no container');
+            return [];
+        }
         const cards = container.querySelectorAll(this.selectors.toolCard);
+        if (!cards.length) {
+            Logger.warn('Workflow cache: snapshot found no tool cards in container');
+            return [];
+        }
         const out = [];
-        cards.forEach(card => {
+        cards.forEach((card, index) => {
             const name = this.getToolNameFromCard(card);
+            if (!name) {
+                Logger.warn('Workflow cache: tool card at index ' + index + ' has no tool name (header or span not found)');
+            }
             const params = this.getParamsFromCard(card);
-            const entry = { tool: name };
+            const entry = { tool: name || '(unknown)' };
             Object.keys(params).forEach(k => {
                 const v = params[k];
                 if (this.hasValue(v)) {
@@ -105,6 +119,9 @@ const plugin = {
             });
             out.push(entry);
         });
+        if (out.length === 0) {
+            Logger.warn('Workflow cache: snapshot has no tools after processing cards');
+        }
         return out;
     },
 
@@ -120,17 +137,30 @@ const plugin = {
 
     getToolNameFromCard(card) {
         const header = card.querySelector(this.selectors.toolHeader);
-        if (!header) return '';
+        if (!header) {
+            Logger.warn('Workflow cache: getToolNameFromCard found no header in card');
+            return '';
+        }
         const span = header.querySelector('span.font-mono.text-sm.font-medium');
-        return span ? span.textContent.trim() : '';
+        if (!span) {
+            Logger.warn('Workflow cache: getToolNameFromCard found no tool name span in header');
+            return '';
+        }
+        return span.textContent.trim();
     },
 
     getParamsFromCard(card) {
         const params = {};
         const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
-        if (!content) return params;
+        if (!content) {
+            Logger.warn('Workflow cache: getParamsFromCard found no open parameters content (card may be collapsed)');
+            return params;
+        }
         const spaceY3 = content.querySelector('div.space-y-3');
-        if (!spaceY3) return params;
+        if (!spaceY3) {
+            Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
+            return params;
+        }
         const blocks = spaceY3.querySelectorAll('div.flex.flex-col.gap-1.5');
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
