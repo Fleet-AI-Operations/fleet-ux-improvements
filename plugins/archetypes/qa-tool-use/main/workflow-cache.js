@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -220,6 +220,18 @@ const plugin = {
             const span = btn.querySelector('span.flex-1.flex') || btn.querySelector('span[style*="pointer-events"]');
             const text = span ? (span.textContent || '').trim() : '';
             return text || undefined;
+        }
+        if (typeLabel === 'enum[]' || typeLabel.includes('enum[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap) return undefined;
+            const combos = wrap.querySelectorAll('button[role="combobox"]');
+            const arr = [];
+            combos.forEach(btn => {
+                const span = btn.querySelector('span.flex-1.flex') || btn.querySelector('span[style*="pointer-events"]');
+                const text = span ? (span.textContent || '').trim() : '';
+                if (text) arr.push(text);
+            });
+            return arr.length ? arr : undefined;
         }
         if (typeLabel === 'string[]' || typeLabel.includes('string[]')) {
             const wrap = block.querySelector('div.space-y-2.mt-1');
