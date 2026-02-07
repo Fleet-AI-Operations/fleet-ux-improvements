@@ -6,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -34,7 +34,9 @@ const plugin = {
         textareaObserver: null,
         saveTimeoutId: null,
         searchAttempted: false,
-        insertionFailedLogged: false
+        insertionFailedLogged: false,
+        sessionScratchpadText: '',
+        sessionScratchpadTextSaved: false  // true after removing scratchpad (Notes tab); restored on re-insert, then reset
     },
     
     onMutation(state, context) {
@@ -68,6 +70,12 @@ const plugin = {
 
             if (!this.isTaskTabActive(tabBar)) {
                 contentRoot.querySelectorAll('[data-qa-scratchpad="true"]').forEach((el) => {
+                    const textarea = el.querySelector('[data-qa-scratchpad-textarea="true"]');
+                    if (textarea) {
+                        state.sessionScratchpadText = textarea.value || '';
+                        state.sessionScratchpadTextSaved = true;
+                        Logger.debug('QA Scratchpad: Saved session text before removing (Notes tab active)');
+                    }
                     el.remove();
                     Logger.debug('QA Scratchpad: Removed scratchpad from panel (Notes tab active)');
                 });
@@ -269,17 +277,27 @@ const plugin = {
         textarea.className = 'flex-1 w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none';
         textarea.placeholder = 'Use this space for notes, observations, or any other QA-related content...';
         textarea.dataset.qaScratchpadTextarea = 'true';
-        
-        // Restore saved text if option is enabled
-        const rememberContents = Storage.getSubOptionEnabled(this.id, 'remember-contents', true);
-        if (rememberContents) {
-            const savedText = Storage.get(this.storageKeys.scratchpadText, '');
-            if (savedText) {
-                this.applyTextareaValue(textarea, savedText);
-                Logger.log(`✓ QA Scratchpad: Restored saved text (${savedText.length} chars)`);
+
+        // Session text (from switching back from Notes tab) takes precedence over persisted storage
+        if (state.sessionScratchpadTextSaved) {
+            this.applyTextareaValue(textarea, state.sessionScratchpadText || '');
+            if ((state.sessionScratchpadText || '').length > 0) {
+                Logger.log(`✓ QA Scratchpad: Restored session text (${state.sessionScratchpadText.length} chars)`);
+            }
+            state.sessionScratchpadText = '';
+            state.sessionScratchpadTextSaved = false;
+        } else {
+            // Restore persisted text only when "remember contents" is enabled (page reload)
+            const rememberContents = Storage.getSubOptionEnabled(this.id, 'remember-contents', true);
+            if (rememberContents) {
+                const savedText = Storage.get(this.storageKeys.scratchpadText, '');
+                if (savedText) {
+                    this.applyTextareaValue(textarea, savedText);
+                    Logger.log(`✓ QA Scratchpad: Restored saved text (${savedText.length} chars)`);
+                }
             }
         }
-        
+
         // Set up text saving (always set up observer, it checks the option before saving)
         this.setupTextSaving(state, textarea);
         
