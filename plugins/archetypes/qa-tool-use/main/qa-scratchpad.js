@@ -6,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -59,30 +59,45 @@ const plugin = {
             return;
         }
         
-        // Check if scratchpad already exists
-        let scratchpadContainer = promptSection.nextElementSibling;
-        if (scratchpadContainer && scratchpadContainer.dataset.qaScratchpad === 'true') {
-            // Scratchpad already exists, just attach resize handler if needed
-            if (!state.resizeHandlerAttached) {
-                this.attachResizeHandler(state, scratchpadContainer);
-                state.resizeHandlerAttached = true;
+        // Check if scratchpad already exists among any following siblings (tab switch can
+        // re-order DOM so the scratchpad is no longer the immediate next sibling)
+        const existingScratchpad = this.findExistingScratchpadAmongSiblings(promptSection);
+        if (existingScratchpad) {
+            // Deduplicate: if multiple scratchpads exist, remove extras
+            const allScratchpads = this.findAllScratchpadsAmongSiblings(promptSection);
+            if (allScratchpads.length > 1) {
+                for (let i = 1; i < allScratchpads.length; i++) {
+                    allScratchpads[i].remove();
+                    Logger.log('✓ QA Scratchpad: Removed duplicate scratchpad');
+                }
+            }
+            // Move existing scratchpad to immediately after Prompt if it was re-ordered
+            const remaining = this.findAllScratchpadsAmongSiblings(promptSection);
+            const scratchpadToUse = remaining.length > 0 ? remaining[0] : existingScratchpad;
+            if (scratchpadToUse && scratchpadToUse !== promptSection.nextElementSibling) {
+                promptSection.insertAdjacentElement('afterend', scratchpadToUse);
+                Logger.debug('QA Scratchpad: Moved scratchpad to follow Prompt section');
+            }
+            const container = promptSection.nextElementSibling;
+            if (container && container.dataset.qaScratchpad === 'true' && !container.dataset.qaScratchpadResizeAttached) {
+                this.attachResizeHandler(state, container);
+                container.dataset.qaScratchpadResizeAttached = 'true';
                 Logger.log('✓ QA Scratchpad: Resize handler attached');
             }
             return;
         }
-        
+
         // Insert scratchpad right after the prompt section
         const scratchpad = this.createScratchpad(state);
         promptSection.insertAdjacentElement('afterend', scratchpad);
         state.scratchpadInserted = true;
         state.insertionFailedLogged = false; // Reset on success
         Logger.log('✓ QA Scratchpad: Successfully inserted after Prompt section');
-        
-        // Attach resize handler
-        scratchpadContainer = promptSection.nextElementSibling;
+
+        const scratchpadContainer = promptSection.nextElementSibling;
         if (scratchpadContainer && scratchpadContainer.dataset.qaScratchpad === 'true') {
             this.attachResizeHandler(state, scratchpadContainer);
-            state.resizeHandlerAttached = true;
+            scratchpadContainer.dataset.qaScratchpadResizeAttached = 'true';
             Logger.log('✓ QA Scratchpad: Resize handler attached');
         } else {
             Logger.warn('QA Scratchpad: Inserted but could not find container for resize handler');
@@ -112,7 +127,37 @@ const plugin = {
         
         return null;
     },
-    
+
+    /**
+     * Returns the first following sibling of promptSection that is a QA scratchpad container.
+     * Used to detect an existing scratchpad after tab switch / re-render (when it may no longer be nextElementSibling).
+     */
+    findExistingScratchpadAmongSiblings(promptSection) {
+        let el = promptSection.nextElementSibling;
+        while (el) {
+            if (el.dataset && el.dataset.qaScratchpad === 'true') {
+                return el;
+            }
+            el = el.nextElementSibling;
+        }
+        return null;
+    },
+
+    /**
+     * Returns all following siblings of promptSection that are QA scratchpad containers (for deduplication).
+     */
+    findAllScratchpadsAmongSiblings(promptSection) {
+        const found = [];
+        let el = promptSection.nextElementSibling;
+        while (el) {
+            if (el.dataset && el.dataset.qaScratchpad === 'true') {
+                found.push(el);
+            }
+            el = el.nextElementSibling;
+        }
+        return found;
+    },
+
     createScratchpad(state) {
         const container = document.createElement('div');
         container.className = 'flex flex-col gap-2';
