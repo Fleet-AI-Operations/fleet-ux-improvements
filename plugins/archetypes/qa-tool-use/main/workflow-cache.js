@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -13,14 +13,29 @@ const plugin = {
         observedContainer: null,
         parentObserver: null,
         containerObservers: [],
-        workflowSnapshot: null
+        workflowSnapshot: null,
+        applyInProgress: false,
+        applyControlsAdded: false,
+        toolPanelMissingLogged: false
     },
 
     selectors: {
         toolCard: 'div.rounded-lg.border.transition-colors',
         toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
         stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
-        toolsContainer: '.space-y-3'
+        toolsContainer: '.space-y-3',
+        workflowToolbar: '.border-b.h-9',
+        toolSearchInput: 'input[placeholder="Search tools, descriptions, parameters..."]',
+        toolClearButton: 'button.wf-clear-search-btn',
+        toolTabList: '[role="tablist"]',
+        toolTab: 'button[role="tab"]',
+        toolListRoot: 'div.p-2.space-y-1',
+        toolListItem: 'button.group\\/tool'
+    },
+
+    storageKeys: {
+        latestSnapshot: 'workflow-cache-latest',
+        devJson: 'workflow-cache-dev-json'
     },
 
     onMutation(state, context) {
@@ -43,6 +58,8 @@ const plugin = {
         }
 
         state.missingLogged = false;
+
+        this.ensureApplyControls(state, panel);
 
         if (state.observedParent !== stableParent) {
             this.disconnectAllObservers(state);
@@ -92,6 +109,7 @@ const plugin = {
         try {
             const snapshot = this.captureSnapshot(state.observedContainer);
             state.workflowSnapshot = snapshot;
+            Storage.set(this.storageKeys.latestSnapshot, JSON.stringify(snapshot));
             Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
             Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
         } catch (e) {
@@ -265,6 +283,523 @@ const plugin = {
             return arr.length ? arr : undefined;
         }
         return undefined;
+    },
+
+    ensureApplyControls(state, panel) {
+        if (!panel || panel.querySelector('[data-wf-apply-cache-btn="true"]')) return;
+
+        const positionStyle = window.getComputedStyle(panel).position;
+        if (!positionStyle || positionStyle === 'static') {
+            panel.style.position = 'relative';
+        }
+
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button';
+        applyBtn.setAttribute('data-wf-apply-cache-btn', 'true');
+        applyBtn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-brand !text-white transition-colors hover:brightness-95 border border-brand-accent h-8 rounded-sm pl-3 pr-3 text-xs';
+        applyBtn.textContent = 'Apply cache';
+        applyBtn.style.position = 'absolute';
+        applyBtn.style.right = '16px';
+        applyBtn.style.bottom = '15%';
+        applyBtn.style.zIndex = '50';
+        applyBtn.addEventListener('click', () => {
+            this.applyCachedWorkflow(state, { source: 'latest' });
+        });
+
+        const devPanel = this.createDevPanel(state);
+        if (devPanel) {
+            devPanel.style.position = 'absolute';
+            devPanel.style.right = '16px';
+            devPanel.style.bottom = 'calc(15% + 48px)';
+            devPanel.style.zIndex = '50';
+            panel.appendChild(devPanel);
+        }
+
+        panel.appendChild(applyBtn);
+        Logger.log('✓ Workflow cache: apply controls added');
+    },
+
+    createDevPanel(state) {
+        const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-wf-apply-cache-dev', 'true');
+        wrapper.className = 'flex flex-col gap-2 p-2 rounded-md border border-input bg-background shadow-sm';
+        wrapper.style.width = '280px';
+
+        const label = document.createElement('div');
+        label.className = 'text-[10px] font-medium uppercase tracking-wider text-muted-foreground';
+        label.textContent = 'Dev cache JSON';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand';
+        textarea.rows = 5;
+        textarea.placeholder = 'Paste cache JSON here...';
+        textarea.value = Storage.get(this.storageKeys.devJson, '') || '';
+
+        textarea.addEventListener('input', () => {
+            Storage.set(this.storageKeys.devJson, textarea.value || '');
+        });
+
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button';
+        applyBtn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-7 rounded-sm px-2 text-xs';
+        applyBtn.textContent = 'Apply dev JSON';
+        applyBtn.addEventListener('click', () => {
+            const text = textarea.value || '';
+            Storage.set(this.storageKeys.devJson, text);
+            this.applyCachedWorkflow(state, { source: 'dev', jsonText: text });
+        });
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(textarea);
+        wrapper.appendChild(applyBtn);
+
+        return wrapper;
+    },
+
+    async applyCachedWorkflow(state, options) {
+        if (state.applyInProgress) {
+            Logger.warn('Workflow cache: apply already in progress');
+            return;
+        }
+
+        const panel = this.findWorkflowPanel();
+        const stableParent = this.findStableParent(panel);
+        const toolsContainer = stableParent ? stableParent.querySelector(':scope > ' + this.selectors.toolsContainer) : null;
+        if (!panel || !stableParent || !toolsContainer) {
+            Logger.warn('Workflow cache: cannot apply cache, workflow container not found');
+            return;
+        }
+
+        const toolPanelRoot = this.findToolPanelRoot();
+        if (!toolPanelRoot) {
+            if (!state.toolPanelMissingLogged) {
+                Logger.warn('Workflow cache: tool panel not found');
+                state.toolPanelMissingLogged = true;
+            }
+            return;
+        }
+        state.toolPanelMissingLogged = false;
+
+        const applyBtn = panel.querySelector('[data-wf-apply-cache-btn="true"]');
+        if (applyBtn) applyBtn.disabled = true;
+
+        state.applyInProgress = true;
+        Logger.info('Workflow cache: apply started');
+
+        try {
+            const entries = this.getEntriesForApply(state, options);
+            if (!entries || entries.length === 0) {
+                Logger.warn('Workflow cache: no cache entries to apply');
+                return;
+            }
+
+            this.clearToolSearch(toolPanelRoot);
+
+            const tabInfo = await this.buildToolTabMap(toolPanelRoot);
+            if (!tabInfo || Object.keys(tabInfo.toolToTab).length === 0) {
+                Logger.warn('Workflow cache: no tools found in tool panel');
+                return;
+            }
+
+            await this.clearWorkflowTools(panel, toolsContainer);
+
+            for (const entry of entries) {
+                const toolName = (entry && entry.tool) ? entry.tool.trim() : '';
+                if (!toolName) continue;
+
+                const tabName = tabInfo.toolToTab[toolName];
+                if (!tabName) {
+                    Logger.warn(`Workflow cache: tool not found in panel: ${toolName}`);
+                    continue;
+                }
+
+                await this.switchToToolTab(tabInfo, tabName);
+
+                const callBtn = this.findToolCallButton(toolPanelRoot, toolName);
+                if (!callBtn) {
+                    Logger.warn(`Workflow cache: call button not found for ${toolName}`);
+                    continue;
+                }
+
+                const prevCount = toolsContainer.querySelectorAll(this.selectors.toolCard).length;
+                callBtn.click();
+
+                const newCard = await this.waitForNewToolCard(toolsContainer, prevCount);
+                if (!newCard) {
+                    Logger.warn(`Workflow cache: tool card did not appear for ${toolName}`);
+                    continue;
+                }
+
+                await this.applyParamsToCard(newCard, entry);
+            }
+
+            Logger.info('Workflow cache: apply finished');
+        } catch (e) {
+            Logger.error('Workflow cache: apply failed', e);
+        } finally {
+            state.applyInProgress = false;
+            if (applyBtn) applyBtn.disabled = false;
+        }
+    },
+
+    getEntriesForApply(state, options) {
+        if (options && options.source === 'dev') {
+            const text = (options.jsonText || '').trim();
+            if (!text) return [];
+            try {
+                const parsed = JSON.parse(text);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                Logger.error('Workflow cache: dev JSON parse failed', e);
+                return [];
+            }
+        }
+
+        if (state.workflowSnapshot && Array.isArray(state.workflowSnapshot)) {
+            return state.workflowSnapshot;
+        }
+
+        const stored = Storage.get(this.storageKeys.latestSnapshot, '');
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                Logger.error('Workflow cache: stored snapshot parse failed', e);
+            }
+        }
+
+        return [];
+    },
+
+    findToolPanelRoot() {
+        const input = document.querySelector(this.selectors.toolSearchInput);
+        if (!input) return null;
+        return input.closest('[data-panel-id][data-panel]') || input.closest('[data-panel]') || input.closest('div.flex.flex-col') || input.parentElement;
+    },
+
+    clearToolSearch(toolPanelRoot) {
+        if (!toolPanelRoot) return;
+        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput);
+        if (!input) return;
+        const clearBtn = toolPanelRoot.querySelector(this.selectors.toolClearButton);
+        if (clearBtn && clearBtn.offsetParent !== null) {
+            clearBtn.click();
+            return;
+        }
+        this.setInputValue(input, '');
+    },
+
+    async buildToolTabMap(toolPanelRoot) {
+        const toolToTab = {};
+        const tabButtons = {};
+        const tabList = toolPanelRoot.querySelector(this.selectors.toolTabList);
+        const tabs = tabList ? Array.from(tabList.querySelectorAll(this.selectors.toolTab)) : [];
+
+        if (!tabs.length) {
+            const tools = this.readToolList(toolPanelRoot);
+            tools.forEach(tool => {
+                toolToTab[tool.name] = '(single)';
+            });
+            return { toolToTab, tabButtons };
+        }
+
+        for (const tab of tabs) {
+            const tabName = this.getTabLabel(tab);
+            if (!tabName) continue;
+            tabButtons[tabName] = tab;
+            tab.click();
+            await this.waitForAnimationFrame();
+            const tools = this.readToolList(toolPanelRoot);
+            tools.forEach(tool => {
+                toolToTab[tool.name] = tabName;
+            });
+        }
+
+        return { toolToTab, tabButtons };
+    },
+
+    getTabLabel(tabBtn) {
+        if (!tabBtn) return '';
+        const countEl = tabBtn.querySelector('div.inline-flex.items-center.whitespace-nowrap.rounded-md.border');
+        const countText = countEl ? countEl.textContent.trim() : '';
+        let label = tabBtn.textContent.trim();
+        if (countText) label = label.replace(countText, '').trim();
+        return label;
+    },
+
+    async switchToToolTab(tabInfo, tabName) {
+        if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
+        tabInfo.tabButtons[tabName].click();
+        await this.waitForAnimationFrame();
+    },
+
+    readToolList(toolPanelRoot) {
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        if (!listRoot) return [];
+        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const tools = [];
+        for (const item of items) {
+            const name = this.getToolNameFromListItem(item);
+            if (!name) continue;
+            tools.push({ name, item });
+        }
+        return tools;
+    },
+
+    getToolNameFromListItem(item) {
+        const primary = item.querySelector('span.text-xs.font-medium.text-foreground');
+        const text = primary ? primary.textContent : item.textContent;
+        return (text || '').trim();
+    },
+
+    findToolCallButton(toolPanelRoot, toolName) {
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        if (!listRoot) return null;
+        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        for (const item of items) {
+            const name = this.getToolNameFromListItem(item);
+            if (name !== toolName) continue;
+            const btns = Array.from(item.querySelectorAll('button'));
+            return btns.find(btn => btn.textContent.trim() === 'Call') || null;
+        }
+        return null;
+    },
+
+    async clearWorkflowTools(panel, toolsContainer) {
+        const toolbar = panel.querySelector(this.selectors.workflowToolbar);
+        if (!toolbar) return;
+        const clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
+        if (!clearBtn) return;
+        clearBtn.click();
+        await this.waitForContainerEmpty(toolsContainer);
+        Logger.info('Workflow cache: workflow cleared');
+    },
+
+    async waitForContainerEmpty(container, timeoutMs = 2000) {
+        if (!container) return false;
+        const existing = container.querySelectorAll(this.selectors.toolCard);
+        if (existing.length === 0) return true;
+
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const remaining = container.querySelectorAll(this.selectors.toolCard);
+                if (remaining.length === 0) {
+                    observer.disconnect();
+                    resolve(true);
+                }
+            });
+            observer.observe(container, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(false);
+            }, timeoutMs);
+        });
+    },
+
+    async waitForNewToolCard(container, previousCount, timeoutMs = 2000) {
+        if (!container) return null;
+        const cards = container.querySelectorAll(this.selectors.toolCard);
+        if (cards.length > previousCount) {
+            return cards[cards.length - 1] || null;
+        }
+
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const updated = container.querySelectorAll(this.selectors.toolCard);
+                if (updated.length > previousCount) {
+                    observer.disconnect();
+                    resolve(updated[updated.length - 1] || null);
+                }
+            });
+            observer.observe(container, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(null);
+            }, timeoutMs);
+        });
+    },
+
+    async applyParamsToCard(card, entry) {
+        if (!card || !entry) return;
+        this.ensureCardExpanded(card);
+
+        const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
+        if (!content) return;
+        const spaceY3 = content.querySelector('div.space-y-3');
+        if (!spaceY3) return;
+
+        const blocks = Array.from(spaceY3.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+        const blockMap = {};
+        for (const block of blocks) {
+            const name = this.getParamNameFromBlock(block);
+            if (name) blockMap[name] = block;
+        }
+
+        for (const key of Object.keys(entry)) {
+            if (key === 'tool') continue;
+            const block = blockMap[key];
+            if (!block) {
+                Logger.warn(`Workflow cache: parameter not found: ${key}`);
+                continue;
+            }
+            const typeLabel = this.getParamTypeFromBlock(block);
+            await this.applyValueToBlock(block, typeLabel, entry[key]);
+        }
+    },
+
+    ensureCardExpanded(card) {
+        const openContent = card.querySelector('div[data-state="open"]');
+        if (openContent) return;
+        const header = card.querySelector(this.selectors.toolHeader);
+        if (header) header.click();
+    },
+
+    async applyValueToBlock(block, typeLabel, value) {
+        if (!typeLabel) return;
+
+        if (typeLabel === 'string' || typeLabel === 'object') {
+            const input = block.querySelector('input[type="text"]');
+            const textarea = block.querySelector('textarea');
+            const textValue = (value === null || value === undefined) ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
+            if (input) this.setInputValue(input, textValue);
+            else if (textarea) this.setInputValue(textarea, textValue);
+            return;
+        }
+
+        if (typeLabel === 'integer' || typeLabel === 'number') {
+            const input = block.querySelector('input[type="number"]');
+            if (!input) return;
+            const numValue = (value === null || value === undefined) ? '' : String(value);
+            this.setInputValue(input, numValue);
+            return;
+        }
+
+        if (typeLabel === 'boolean') {
+            const btn = block.querySelector('button[role="checkbox"]');
+            if (!btn) return;
+            const isChecked = btn.getAttribute('data-state') === 'checked' || btn.getAttribute('aria-checked') === 'true';
+            const target = !!value;
+            if (target !== isChecked) btn.click();
+            return;
+        }
+
+        if (typeLabel === 'enum') {
+            const btn = block.querySelector('button[role="combobox"]');
+            if (!btn) return;
+            await this.selectComboboxOption(btn, value);
+            return;
+        }
+
+        if (typeLabel === 'enum[]' || typeLabel.includes('enum[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap || !Array.isArray(value)) return;
+            await this.ensureArrayItems(wrap, value.length);
+            const combos = Array.from(wrap.querySelectorAll('button[role="combobox"]'));
+            for (let i = 0; i < value.length; i++) {
+                await this.selectComboboxOption(combos[i], value[i]);
+            }
+            return;
+        }
+
+        if (typeLabel === 'string[]' || typeLabel.includes('string[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap || !Array.isArray(value)) return;
+            await this.ensureArrayItems(wrap, value.length);
+            const inputs = Array.from(wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="text"]'));
+            for (let i = 0; i < value.length; i++) {
+                if (inputs[i]) this.setInputValue(inputs[i], value[i]);
+            }
+            return;
+        }
+
+        if (typeLabel === 'object[]' || typeLabel.includes('object[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1') || block;
+            if (!Array.isArray(value)) return;
+            await this.ensureArrayItems(wrap, value.length);
+            const items = Array.from(block.querySelectorAll('div.relative.border.rounded-md.p-3[class*="bg-muted"]'));
+            for (let i = 0; i < value.length; i++) {
+                const item = items[i];
+                const obj = value[i];
+                if (!item || !obj || typeof obj !== 'object') continue;
+                const innerBlocks = Array.from(item.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+                const innerMap = {};
+                innerBlocks.forEach(innerBlock => {
+                    const name = this.getParamNameFromBlock(innerBlock);
+                    if (name) innerMap[name] = innerBlock;
+                });
+                for (const key of Object.keys(obj)) {
+                    const innerBlock = innerMap[key];
+                    if (!innerBlock) continue;
+                    const innerType = this.getParamTypeFromBlock(innerBlock);
+                    await this.applyValueToBlock(innerBlock, innerType, obj[key]);
+                }
+            }
+            return;
+        }
+    },
+
+    async ensureArrayItems(wrap, count) {
+        if (!wrap || count <= 0) return;
+        const addBtn = Array.from(wrap.querySelectorAll('button')).find(btn => btn.textContent.trim().startsWith('Add '));
+        if (!addBtn) return;
+
+        const getItemCount = () => {
+            const inputs = wrap.querySelectorAll('input[type="text"], button[role="combobox"], div.relative.border.rounded-md.p-3');
+            return inputs.length;
+        };
+
+        let current = getItemCount();
+        while (current < count) {
+            addBtn.click();
+            await this.waitForAnimationFrame();
+            current = getItemCount();
+        }
+    },
+
+    async selectComboboxOption(btn, value) {
+        if (!btn || value === undefined || value === null) return;
+        const desired = String(value).trim();
+        if (!desired) return;
+        btn.click();
+        const listboxId = btn.getAttribute('aria-controls');
+        if (!listboxId) return;
+        const listbox = await this.waitForElementById(listboxId);
+        if (!listbox) return;
+        const options = Array.from(listbox.querySelectorAll('[role="option"]'));
+        const match = options.find(opt => (opt.textContent || '').trim() === desired);
+        if (match) match.click();
+    },
+
+    waitForElementById(id, timeoutMs = 2000) {
+        const existing = document.getElementById(id);
+        if (existing) return Promise.resolve(existing);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const el = document.getElementById(id);
+                if (el) {
+                    observer.disconnect();
+                    resolve(el);
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(null);
+            }, timeoutMs);
+        });
+    },
+
+    waitForAnimationFrame() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    },
+
+    setInputValue(el, value) {
+        const setter = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value')?.set;
+        if (setter) setter.call(el, value);
+        else el.value = value;
+        el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     },
 
     attachParentObserver(stableParent, state) {
