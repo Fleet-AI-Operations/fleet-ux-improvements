@@ -6,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -38,32 +38,55 @@ const plugin = {
     },
     
     onMutation(state, context) {
-        // Find the prompt section
-        const promptSection = this.findPromptSection();
-        if (!promptSection) {
-            if (!state.searchAttempted) {
-                state.searchAttempted = true;
-                // Log detailed diagnostic information only once
-                const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
-                    context: `${this.id}.diagnostic`
-                });
-                const foundLabels = [];
-                candidates.forEach(candidate => {
-                    const label = candidate.querySelector('label, span.text-sm');
-                    if (label) {
-                        foundLabels.push(label.textContent.trim());
-                    }
-                });
-                Logger.warn(`QA Scratchpad: Prompt section not found. Found ${candidates.length} candidate divs with labels/spans: ${foundLabels.join(', ') || 'none'}`);
+        const tabBars = this.findTaskNotesTabBars();
+
+        if (tabBars.length === 0) {
+            // No Task/Notes tabs: fall back to document-wide behavior (e.g. older or different page)
+            const promptSection = this.findPromptSection();
+            if (!promptSection) {
+                if (!state.searchAttempted) {
+                    state.searchAttempted = true;
+                    const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
+                        context: `${this.id}.diagnostic`
+                    });
+                    const foundLabels = [];
+                    candidates.forEach(candidate => {
+                        const label = candidate.querySelector('label, span.text-sm');
+                        if (label) foundLabels.push(label.textContent.trim());
+                    });
+                    Logger.warn(`QA Scratchpad: Prompt section not found. Found ${candidates.length} candidate divs with labels/spans: ${foundLabels.join(', ') || 'none'}`);
+                }
+                return;
             }
+            this.ensureScratchpadForPromptSection(state, promptSection);
             return;
         }
-        
-        // Check if scratchpad already exists among any following siblings (tab switch can
-        // re-order DOM so the scratchpad is no longer the immediate next sibling)
+
+        for (const tabBar of tabBars) {
+            const contentRoot = this.getPanelContentRoot(tabBar);
+            if (!contentRoot) continue;
+
+            if (!this.isTaskTabActive(tabBar)) {
+                contentRoot.querySelectorAll('[data-qa-scratchpad="true"]').forEach((el) => {
+                    el.remove();
+                    Logger.debug('QA Scratchpad: Removed scratchpad from panel (Notes tab active)');
+                });
+                continue;
+            }
+
+            const promptSection = this.findPromptSection(contentRoot);
+            if (!promptSection) continue;
+
+            this.ensureScratchpadForPromptSection(state, promptSection);
+        }
+    },
+
+    /**
+     * Ensures one scratchpad exists after the given Prompt section: reuses/moves/dedupes existing or inserts new.
+     */
+    ensureScratchpadForPromptSection(state, promptSection) {
         const existingScratchpad = this.findExistingScratchpadAmongSiblings(promptSection);
         if (existingScratchpad) {
-            // Deduplicate: if multiple scratchpads exist, remove extras
             const allScratchpads = this.findAllScratchpadsAmongSiblings(promptSection);
             if (allScratchpads.length > 1) {
                 for (let i = 1; i < allScratchpads.length; i++) {
@@ -71,7 +94,6 @@ const plugin = {
                     Logger.log('✓ QA Scratchpad: Removed duplicate scratchpad');
                 }
             }
-            // Move existing scratchpad to immediately after Prompt if it was re-ordered
             const remaining = this.findAllScratchpadsAmongSiblings(promptSection);
             const scratchpadToUse = remaining.length > 0 ? remaining[0] : existingScratchpad;
             if (scratchpadToUse && scratchpadToUse !== promptSection.nextElementSibling) {
@@ -87,11 +109,10 @@ const plugin = {
             return;
         }
 
-        // Insert scratchpad right after the prompt section
         const scratchpad = this.createScratchpad(state);
         promptSection.insertAdjacentElement('afterend', scratchpad);
         state.scratchpadInserted = true;
-        state.insertionFailedLogged = false; // Reset on success
+        state.insertionFailedLogged = false;
         Logger.log('✓ QA Scratchpad: Successfully inserted after Prompt section');
 
         const scratchpadContainer = promptSection.nextElementSibling;
@@ -104,12 +125,12 @@ const plugin = {
         }
     },
     
-    findPromptSection() {
-        // Find all divs with "flex flex-col gap-2"
-        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
-            context: `${this.id}.findPromptSection`
-        });
-        
+    findPromptSection(scopeRoot) {
+        // Find all divs with "flex flex-col gap-2" (optionally within scopeRoot)
+        const options = { context: `${this.id}.findPromptSection` };
+        if (scopeRoot) options.root = scopeRoot;
+        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
+
         for (const candidate of candidates) {
             // Look for both label and span elements
             const label = candidate.querySelector('label');
@@ -126,6 +147,47 @@ const plugin = {
         }
         
         return null;
+    },
+
+    /**
+     * Returns all tab bar elements that contain both "Task" and "Notes" buttons (one per panel).
+     */
+    findTaskNotesTabBars() {
+        const tabBars = [];
+        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+        for (const el of candidates) {
+            const buttons = el.querySelectorAll('button');
+            let hasTask = false;
+            let hasNotes = false;
+            for (const btn of buttons) {
+                const text = btn.textContent.trim();
+                if (text === 'Task') hasTask = true;
+                if (text === 'Notes') hasNotes = true;
+            }
+            if (hasTask && hasNotes) tabBars.push(el);
+        }
+        return tabBars;
+    },
+
+    /**
+     * Returns true if the "Task" button in this tab bar has the active styling (border-primary / text-primary).
+     */
+    isTaskTabActive(tabBar) {
+        const taskBtn = Array.from(tabBar.querySelectorAll('button')).find(
+            (btn) => btn.textContent.trim() === 'Task'
+        );
+        if (!taskBtn) return false;
+        const c = taskBtn.className || '';
+        return c.includes('border-primary') || c.includes('text-primary');
+    },
+
+    /**
+     * Returns the scrollable content container for this panel (the div that holds Task/Notes content).
+     */
+    getPanelContentRoot(tabBar) {
+        const panel = tabBar.parentElement;
+        if (!panel || !panel.querySelector) return null;
+        return panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto') || null;
     },
 
     /**
