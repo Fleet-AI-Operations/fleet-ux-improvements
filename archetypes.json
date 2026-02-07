@@ -243,11 +243,11 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.4"
+          "version": "1.7"
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.5"
+          "version": "1.6"
         },
         {
           "name": "execute-to-current-tool.js",

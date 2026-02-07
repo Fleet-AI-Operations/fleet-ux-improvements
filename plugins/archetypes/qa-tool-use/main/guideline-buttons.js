@@ -13,7 +13,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add guideline link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -31,24 +31,121 @@ const plugin = {
     },
 
     onMutation(state, context) {
-        const scratchpad = document.querySelector('[data-qa-scratchpad="true"]');
-        if (!scratchpad) {
-            if (!state.missingLogged) {
-                Logger.debug('Guideline Buttons: QA scratchpad not found');
-                state.missingLogged = true;
+        const tabBars = this.findTaskNotesTabBars();
+
+        if (tabBars.length === 0) {
+            const scratchpad = document.querySelector('[data-qa-scratchpad="true"]');
+            if (!scratchpad) {
+                if (!state.missingLogged) {
+                    Logger.debug('Guideline Buttons: QA scratchpad not found');
+                    state.missingLogged = true;
+                }
+                return;
             }
+            state.missingLogged = false;
+            this.ensureWrapperBelowScratchpad(state, scratchpad);
             return;
         }
-        state.missingLogged = false;
 
-        let wrapper = scratchpad.nextElementSibling;
-        if (!wrapper || wrapper.getAttribute('data-fleet-plugin') !== 'guidelineButtons') {
-            wrapper = this.createWrapper();
-            scratchpad.insertAdjacentElement('afterend', wrapper);
-            state.wrapperAdded = true;
-            Logger.log('✓ Guideline Buttons: wrapper added below QA scratchpad');
+        for (const tabBar of tabBars) {
+            const contentRoot = this.getPanelContentRoot(tabBar);
+            if (!contentRoot) continue;
+
+            if (!this.isTaskTabActive(tabBar)) {
+                contentRoot.querySelectorAll('[data-fleet-plugin="guidelineButtons"]').forEach((el) => {
+                    el.remove();
+                    Logger.debug('Guideline Buttons: Removed wrapper from panel (Notes tab active)');
+                });
+                continue;
+            }
+
+            const scratchpad = contentRoot.querySelector('[data-qa-scratchpad="true"]');
+            if (!scratchpad) continue;
+
+            state.missingLogged = false;
+            this.ensureWrapperBelowScratchpad(state, scratchpad);
+        }
+    },
+
+    findTaskNotesTabBars() {
+        const tabBars = [];
+        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+        for (const el of candidates) {
+            const buttons = el.querySelectorAll('button');
+            let hasTask = false;
+            let hasNotes = false;
+            for (const btn of buttons) {
+                const text = btn.textContent.trim();
+                if (text === 'Task') hasTask = true;
+                if (text === 'Notes') hasNotes = true;
+            }
+            if (hasTask && hasNotes) tabBars.push(el);
+        }
+        return tabBars;
+    },
+
+    isTaskTabActive(tabBar) {
+        const taskBtn = Array.from(tabBar.querySelectorAll('button')).find(
+            (btn) => btn.textContent.trim() === 'Task'
+        );
+        if (!taskBtn) return false;
+        const c = taskBtn.className || '';
+        return c.includes('border-primary') || c.includes('text-primary');
+    },
+
+    getPanelContentRoot(tabBar) {
+        const panel = tabBar.parentElement;
+        if (!panel || !panel.querySelector) return null;
+        return panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto') || null;
+    },
+
+    findExistingWrapperAmongSiblings(scratchpad) {
+        let el = scratchpad.nextElementSibling;
+        while (el) {
+            if (el.getAttribute && el.getAttribute('data-fleet-plugin') === 'guidelineButtons') {
+                return el;
+            }
+            el = el.nextElementSibling;
+        }
+        return null;
+    },
+
+    findAllWrappersAmongSiblings(scratchpad) {
+        const found = [];
+        let el = scratchpad.nextElementSibling;
+        while (el) {
+            if (el.getAttribute && el.getAttribute('data-fleet-plugin') === 'guidelineButtons') {
+                found.push(el);
+            }
+            el = el.nextElementSibling;
+        }
+        return found;
+    },
+
+    ensureWrapperBelowScratchpad(state, scratchpad) {
+        const existingWrapper = this.findExistingWrapperAmongSiblings(scratchpad);
+        if (existingWrapper) {
+            const allWrappers = this.findAllWrappersAmongSiblings(scratchpad);
+            if (allWrappers.length > 1) {
+                for (let i = 1; i < allWrappers.length; i++) {
+                    allWrappers[i].remove();
+                    Logger.log('✓ Guideline Buttons: Removed duplicate wrapper');
+                }
+            }
+            const remaining = this.findAllWrappersAmongSiblings(scratchpad);
+            const wrapperToUse = remaining.length > 0 ? remaining[0] : existingWrapper;
+            if (wrapperToUse && wrapperToUse !== scratchpad.nextElementSibling) {
+                scratchpad.insertAdjacentElement('afterend', wrapperToUse);
+                Logger.debug('Guideline Buttons: Moved wrapper to follow scratchpad');
+            }
+            this.syncButtons(scratchpad.nextElementSibling);
+            return;
         }
 
+        const wrapper = this.createWrapper();
+        scratchpad.insertAdjacentElement('afterend', wrapper);
+        state.wrapperAdded = true;
+        Logger.log('✓ Guideline Buttons: wrapper added below QA scratchpad');
         this.syncButtons(wrapper);
     },
 

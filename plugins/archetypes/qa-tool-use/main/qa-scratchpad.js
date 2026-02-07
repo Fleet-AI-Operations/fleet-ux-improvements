@@ -6,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
-    _version: '1.4',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -34,67 +34,111 @@ const plugin = {
         textareaObserver: null,
         saveTimeoutId: null,
         searchAttempted: false,
-        insertionFailedLogged: false
+        insertionFailedLogged: false,
+        sessionScratchpadText: '',
+        sessionScratchpadTextSaved: false  // true after removing scratchpad (Notes tab); restored on re-insert, then reset
     },
     
     onMutation(state, context) {
-        // Find the prompt section
-        const promptSection = this.findPromptSection();
-        if (!promptSection) {
-            if (!state.searchAttempted) {
-                state.searchAttempted = true;
-                // Log detailed diagnostic information only once
-                const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
-                    context: `${this.id}.diagnostic`
-                });
-                const foundLabels = [];
-                candidates.forEach(candidate => {
-                    const label = candidate.querySelector('label, span.text-sm');
-                    if (label) {
-                        foundLabels.push(label.textContent.trim());
-                    }
-                });
-                Logger.warn(`QA Scratchpad: Prompt section not found. Found ${candidates.length} candidate divs with labels/spans: ${foundLabels.join(', ') || 'none'}`);
+        const tabBars = this.findTaskNotesTabBars();
+
+        if (tabBars.length === 0) {
+            // No Task/Notes tabs: fall back to document-wide behavior (e.g. older or different page)
+            const promptSection = this.findPromptSection();
+            if (!promptSection) {
+                if (!state.searchAttempted) {
+                    state.searchAttempted = true;
+                    const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
+                        context: `${this.id}.diagnostic`
+                    });
+                    const foundLabels = [];
+                    candidates.forEach(candidate => {
+                        const label = candidate.querySelector('label, span.text-sm');
+                        if (label) foundLabels.push(label.textContent.trim());
+                    });
+                    Logger.warn(`QA Scratchpad: Prompt section not found. Found ${candidates.length} candidate divs with labels/spans: ${foundLabels.join(', ') || 'none'}`);
+                }
+                return;
             }
+            this.ensureScratchpadForPromptSection(state, promptSection);
             return;
         }
-        
-        // Check if scratchpad already exists
-        let scratchpadContainer = promptSection.nextElementSibling;
-        if (scratchpadContainer && scratchpadContainer.dataset.qaScratchpad === 'true') {
-            // Scratchpad already exists, just attach resize handler if needed
-            if (!state.resizeHandlerAttached) {
-                this.attachResizeHandler(state, scratchpadContainer);
-                state.resizeHandlerAttached = true;
+
+        for (const tabBar of tabBars) {
+            const contentRoot = this.getPanelContentRoot(tabBar);
+            if (!contentRoot) continue;
+
+            if (!this.isTaskTabActive(tabBar)) {
+                contentRoot.querySelectorAll('[data-qa-scratchpad="true"]').forEach((el) => {
+                    const textarea = el.querySelector('[data-qa-scratchpad-textarea="true"]');
+                    if (textarea) {
+                        state.sessionScratchpadText = textarea.value || '';
+                        state.sessionScratchpadTextSaved = true;
+                        Logger.debug('QA Scratchpad: Saved session text before removing (Notes tab active)');
+                    }
+                    el.remove();
+                    Logger.debug('QA Scratchpad: Removed scratchpad from panel (Notes tab active)');
+                });
+                continue;
+            }
+
+            const promptSection = this.findPromptSection(contentRoot);
+            if (!promptSection) continue;
+
+            this.ensureScratchpadForPromptSection(state, promptSection);
+        }
+    },
+
+    /**
+     * Ensures one scratchpad exists after the given Prompt section: reuses/moves/dedupes existing or inserts new.
+     */
+    ensureScratchpadForPromptSection(state, promptSection) {
+        const existingScratchpad = this.findExistingScratchpadAmongSiblings(promptSection);
+        if (existingScratchpad) {
+            const allScratchpads = this.findAllScratchpadsAmongSiblings(promptSection);
+            if (allScratchpads.length > 1) {
+                for (let i = 1; i < allScratchpads.length; i++) {
+                    allScratchpads[i].remove();
+                    Logger.log('✓ QA Scratchpad: Removed duplicate scratchpad');
+                }
+            }
+            const remaining = this.findAllScratchpadsAmongSiblings(promptSection);
+            const scratchpadToUse = remaining.length > 0 ? remaining[0] : existingScratchpad;
+            if (scratchpadToUse && scratchpadToUse !== promptSection.nextElementSibling) {
+                promptSection.insertAdjacentElement('afterend', scratchpadToUse);
+                Logger.debug('QA Scratchpad: Moved scratchpad to follow Prompt section');
+            }
+            const container = promptSection.nextElementSibling;
+            if (container && container.dataset.qaScratchpad === 'true' && !container.dataset.qaScratchpadResizeAttached) {
+                this.attachResizeHandler(state, container);
+                container.dataset.qaScratchpadResizeAttached = 'true';
                 Logger.log('✓ QA Scratchpad: Resize handler attached');
             }
             return;
         }
-        
-        // Insert scratchpad right after the prompt section
+
         const scratchpad = this.createScratchpad(state);
         promptSection.insertAdjacentElement('afterend', scratchpad);
         state.scratchpadInserted = true;
-        state.insertionFailedLogged = false; // Reset on success
+        state.insertionFailedLogged = false;
         Logger.log('✓ QA Scratchpad: Successfully inserted after Prompt section');
-        
-        // Attach resize handler
-        scratchpadContainer = promptSection.nextElementSibling;
+
+        const scratchpadContainer = promptSection.nextElementSibling;
         if (scratchpadContainer && scratchpadContainer.dataset.qaScratchpad === 'true') {
             this.attachResizeHandler(state, scratchpadContainer);
-            state.resizeHandlerAttached = true;
+            scratchpadContainer.dataset.qaScratchpadResizeAttached = 'true';
             Logger.log('✓ QA Scratchpad: Resize handler attached');
         } else {
             Logger.warn('QA Scratchpad: Inserted but could not find container for resize handler');
         }
     },
     
-    findPromptSection() {
-        // Find all divs with "flex flex-col gap-2"
-        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', {
-            context: `${this.id}.findPromptSection`
-        });
-        
+    findPromptSection(scopeRoot) {
+        // Find all divs with "flex flex-col gap-2" (optionally within scopeRoot)
+        const options = { context: `${this.id}.findPromptSection` };
+        if (scopeRoot) options.root = scopeRoot;
+        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
+
         for (const candidate of candidates) {
             // Look for both label and span elements
             const label = candidate.querySelector('label');
@@ -112,7 +156,78 @@ const plugin = {
         
         return null;
     },
-    
+
+    /**
+     * Returns all tab bar elements that contain both "Task" and "Notes" buttons (one per panel).
+     */
+    findTaskNotesTabBars() {
+        const tabBars = [];
+        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+        for (const el of candidates) {
+            const buttons = el.querySelectorAll('button');
+            let hasTask = false;
+            let hasNotes = false;
+            for (const btn of buttons) {
+                const text = btn.textContent.trim();
+                if (text === 'Task') hasTask = true;
+                if (text === 'Notes') hasNotes = true;
+            }
+            if (hasTask && hasNotes) tabBars.push(el);
+        }
+        return tabBars;
+    },
+
+    /**
+     * Returns true if the "Task" button in this tab bar has the active styling (border-primary / text-primary).
+     */
+    isTaskTabActive(tabBar) {
+        const taskBtn = Array.from(tabBar.querySelectorAll('button')).find(
+            (btn) => btn.textContent.trim() === 'Task'
+        );
+        if (!taskBtn) return false;
+        const c = taskBtn.className || '';
+        return c.includes('border-primary') || c.includes('text-primary');
+    },
+
+    /**
+     * Returns the scrollable content container for this panel (the div that holds Task/Notes content).
+     */
+    getPanelContentRoot(tabBar) {
+        const panel = tabBar.parentElement;
+        if (!panel || !panel.querySelector) return null;
+        return panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto') || null;
+    },
+
+    /**
+     * Returns the first following sibling of promptSection that is a QA scratchpad container.
+     * Used to detect an existing scratchpad after tab switch / re-render (when it may no longer be nextElementSibling).
+     */
+    findExistingScratchpadAmongSiblings(promptSection) {
+        let el = promptSection.nextElementSibling;
+        while (el) {
+            if (el.dataset && el.dataset.qaScratchpad === 'true') {
+                return el;
+            }
+            el = el.nextElementSibling;
+        }
+        return null;
+    },
+
+    /**
+     * Returns all following siblings of promptSection that are QA scratchpad containers (for deduplication).
+     */
+    findAllScratchpadsAmongSiblings(promptSection) {
+        const found = [];
+        let el = promptSection.nextElementSibling;
+        while (el) {
+            if (el.dataset && el.dataset.qaScratchpad === 'true') {
+                found.push(el);
+            }
+            el = el.nextElementSibling;
+        }
+        return found;
+    },
+
     createScratchpad(state) {
         const container = document.createElement('div');
         container.className = 'flex flex-col gap-2';
@@ -162,17 +277,27 @@ const plugin = {
         textarea.className = 'flex-1 w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none';
         textarea.placeholder = 'Use this space for notes, observations, or any other QA-related content...';
         textarea.dataset.qaScratchpadTextarea = 'true';
-        
-        // Restore saved text if option is enabled
-        const rememberContents = Storage.getSubOptionEnabled(this.id, 'remember-contents', true);
-        if (rememberContents) {
-            const savedText = Storage.get(this.storageKeys.scratchpadText, '');
-            if (savedText) {
-                this.applyTextareaValue(textarea, savedText);
-                Logger.log(`✓ QA Scratchpad: Restored saved text (${savedText.length} chars)`);
+
+        // Session text (from switching back from Notes tab) takes precedence over persisted storage
+        if (state.sessionScratchpadTextSaved) {
+            this.applyTextareaValue(textarea, state.sessionScratchpadText || '');
+            if ((state.sessionScratchpadText || '').length > 0) {
+                Logger.log(`✓ QA Scratchpad: Restored session text (${state.sessionScratchpadText.length} chars)`);
+            }
+            state.sessionScratchpadText = '';
+            state.sessionScratchpadTextSaved = false;
+        } else {
+            // Restore persisted text only when "remember contents" is enabled (page reload)
+            const rememberContents = Storage.getSubOptionEnabled(this.id, 'remember-contents', true);
+            if (rememberContents) {
+                const savedText = Storage.get(this.storageKeys.scratchpadText, '');
+                if (savedText) {
+                    this.applyTextareaValue(textarea, savedText);
+                    Logger.log(`✓ QA Scratchpad: Restored saved text (${savedText.length} chars)`);
+                }
             }
         }
-        
+
         // Set up text saving (always set up observer, it checks the option before saving)
         this.setupTextSaving(state, textarea);
         
