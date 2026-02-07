@@ -1,6 +1,6 @@
 {
   "version": "3.10.6",
-  "archetypesVersion": "3.110",
+  "archetypesVersion": "3.111",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -271,7 +271,7 @@
         },
         {
           "name": "workflow-cache.js",
-          "version": "1.8"
+          "version": "1.9"
         }
       ]
     },

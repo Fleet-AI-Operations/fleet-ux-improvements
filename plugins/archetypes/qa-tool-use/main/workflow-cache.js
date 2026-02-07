@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -364,9 +364,8 @@ const plugin = {
 
         const panel = this.findWorkflowPanel();
         const stableParent = this.findStableParent(panel);
-        const toolsContainer = stableParent ? stableParent.querySelector(':scope > ' + this.selectors.toolsContainer) : null;
-        if (!panel || !stableParent || !toolsContainer) {
-            Logger.warn('Workflow cache: cannot apply cache, workflow container not found');
+        if (!panel || !stableParent) {
+            Logger.warn('Workflow cache: cannot apply cache, workflow panel not found');
             return;
         }
 
@@ -401,6 +400,7 @@ const plugin = {
                 return;
             }
 
+            const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
             await this.clearWorkflowTools(panel, toolsContainer);
 
             for (const entry of entries) {
@@ -421,10 +421,11 @@ const plugin = {
                     continue;
                 }
 
-                const prevCount = toolsContainer.querySelectorAll(this.selectors.toolCard).length;
+                const currentContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+                const prevCount = currentContainer ? currentContainer.querySelectorAll(this.selectors.toolCard).length : 0;
                 callBtn.click();
 
-                const newCard = await this.waitForNewToolCard(toolsContainer, prevCount);
+                const newCard = await this.waitForNewToolCard(stableParent, prevCount);
                 if (!newCard) {
                     Logger.warn(`Workflow cache: tool card did not appear for ${toolName}`);
                     continue;
@@ -567,6 +568,10 @@ const plugin = {
     },
 
     async clearWorkflowTools(panel, toolsContainer) {
+        if (!toolsContainer) {
+            Logger.debug('Workflow cache: no workflow container (empty), skip clear');
+            return;
+        }
         const toolbar = panel.querySelector(this.selectors.workflowToolbar);
         if (!toolbar) return;
         const clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
@@ -577,7 +582,7 @@ const plugin = {
     },
 
     async waitForContainerEmpty(container, timeoutMs = 2000) {
-        if (!container) return false;
+        if (!container) return true;
         const existing = container.querySelectorAll(this.selectors.toolCard);
         if (existing.length === 0) return true;
 
@@ -597,22 +602,27 @@ const plugin = {
         });
     },
 
-    async waitForNewToolCard(container, previousCount, timeoutMs = 2000) {
-        if (!container) return null;
-        const cards = container.querySelectorAll(this.selectors.toolCard);
-        if (cards.length > previousCount) {
-            return cards[cards.length - 1] || null;
+    async waitForNewToolCard(stableParent, previousCount, timeoutMs = 2000) {
+        if (!stableParent) return null;
+        const container = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+        if (container) {
+            const cards = container.querySelectorAll(this.selectors.toolCard);
+            if (cards.length > previousCount) {
+                return cards[cards.length - 1] || null;
+            }
         }
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const updated = container.querySelectorAll(this.selectors.toolCard);
+                const c = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+                if (!c) return;
+                const updated = c.querySelectorAll(this.selectors.toolCard);
                 if (updated.length > previousCount) {
                     observer.disconnect();
                     resolve(updated[updated.length - 1] || null);
                 }
             });
-            observer.observe(container, { childList: true, subtree: true });
+            observer.observe(stableParent, { childList: true, subtree: true });
             setTimeout(() => {
                 observer.disconnect();
                 resolve(null);
