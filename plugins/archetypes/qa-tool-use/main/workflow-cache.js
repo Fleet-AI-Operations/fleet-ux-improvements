@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.10',
+    _version: '1.11',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -111,7 +111,7 @@ const plugin = {
             state.workflowSnapshot = snapshot;
             Storage.set(this.storageKeys.latestSnapshot, JSON.stringify(snapshot));
             Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
-            Logger.log('Workflow cache: snapshot', JSON.stringify(snapshot, null, 2));
+            Logger.log(JSON.stringify(snapshot, null, 2));
         } catch (e) {
             Logger.error('Workflow cache: snapshot failed', e);
         }
@@ -134,14 +134,15 @@ const plugin = {
                 Logger.warn('Workflow cache: tool card at index ' + index + ' has no tool name (header or span not found)');
             }
             const params = this.getParamsFromCard(card);
-            const entry = { tool: name || '(unknown)' };
+            const filteredParams = {};
             Object.keys(params).forEach(k => {
                 const v = params[k];
                 if (this.hasValue(v)) {
-                    entry[k] = v;
+                    filteredParams[k] = v;
                 }
             });
-            out.push(entry);
+            const toolKey = name || '(unknown)';
+            out.push({ [toolKey]: filteredParams });
         });
         if (out.length === 0) {
             Logger.warn('Workflow cache: snapshot has no tools after processing cards');
@@ -439,8 +440,18 @@ const plugin = {
             await this.clearWorkflowTools(panel, toolsContainer);
 
             for (const entry of entries) {
-                const toolName = (entry && entry.tool) ? entry.tool.trim() : '';
+                if (!entry || typeof entry !== 'object') {
+                    Logger.warn('Workflow cache: invalid entry (not an object)');
+                    continue;
+                }
+                const keys = Object.keys(entry);
+                if (keys.length !== 1) {
+                    Logger.warn('Workflow cache: invalid entry (expected single tool key)');
+                    continue;
+                }
+                const toolName = keys[0].trim();
                 if (!toolName) continue;
+                const params = entry[toolName] || {};
 
                 const tabName = tabInfo.toolToTab[toolName];
                 if (!tabName) {
@@ -466,7 +477,7 @@ const plugin = {
                     continue;
                 }
 
-                await this.applyParamsToCard(newCard, entry);
+                await this.applyParamsToCard(newCard, params);
             }
 
             Logger.info('Workflow cache: apply finished');
@@ -682,7 +693,6 @@ const plugin = {
         }
 
         for (const key of Object.keys(entry)) {
-            if (key === 'tool') continue;
             const block = blockMap[key];
             if (!block) {
                 Logger.warn(`Workflow cache: parameter not found: ${key}`);
