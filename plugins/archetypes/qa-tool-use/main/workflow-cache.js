@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.9',
+    _version: '1.10',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -212,7 +212,16 @@ const plugin = {
 
     getParamValueFromBlock(block, typeLabel) {
         if (!typeLabel) return undefined;
-        if (typeLabel === 'string' || typeLabel === 'object') {
+        if (typeLabel === 'string') {
+            const input = block.querySelector('input[type="text"]');
+            if (input) return input.value.trim() || undefined;
+            const textarea = block.querySelector('textarea');
+            if (textarea) return textarea.value.trim() || undefined;
+            return undefined;
+        }
+        if (typeLabel === 'object') {
+            const obj = this.getObjectValueFromBlock(block);
+            if (obj !== undefined) return obj;
             const input = block.querySelector('input[type="text"]');
             if (input) return input.value.trim() || undefined;
             const textarea = block.querySelector('textarea');
@@ -267,22 +276,48 @@ const plugin = {
             if (!items.length) return undefined;
             const arr = [];
             items.forEach(item => {
-                const innerSpace = item.querySelector('div.space-y-3');
-                if (!innerSpace) return;
-                const innerBlocks = innerSpace.querySelectorAll('div.flex.flex-col.gap-1\\.5');
-                const obj = {};
-                innerBlocks.forEach(innerBlock => {
-                    const name = this.getParamNameFromBlock(innerBlock);
-                    if (!name) return;
-                    const innerType = this.getParamTypeFromBlock(innerBlock);
-                    const val = this.getParamValueFromBlock(innerBlock, innerType);
-                    if (val !== undefined && this.hasValue(val)) obj[name] = val;
-                });
-                if (Object.keys(obj).length) arr.push(obj);
+                const innerBlocks = this.getNestedBlocksFromObjectItem(item);
+                if (!innerBlocks.length) return;
+                const obj = this.buildObjectFromBlocks(innerBlocks);
+                if (this.hasValue(obj)) arr.push(obj);
             });
             return arr.length ? arr : undefined;
         }
         return undefined;
+    },
+
+    getObjectValueFromBlock(block) {
+        const innerBlocks = this.getNestedBlocksFromObjectBlock(block);
+        if (!innerBlocks.length) return undefined;
+        const obj = this.buildObjectFromBlocks(innerBlocks);
+        return this.hasValue(obj) ? obj : undefined;
+    },
+
+    buildObjectFromBlocks(blocks) {
+        const obj = {};
+        blocks.forEach(innerBlock => {
+            const name = this.getParamNameFromBlock(innerBlock);
+            if (!name) return;
+            const innerType = this.getParamTypeFromBlock(innerBlock);
+            const val = this.getParamValueFromBlock(innerBlock, innerType);
+            if (val !== undefined && this.hasValue(val)) obj[name] = val;
+        });
+        return obj;
+    },
+
+    getNestedBlocksFromObjectBlock(block) {
+        const nestedContainer =
+            block.querySelector('div.ml-4.pl-3.border-l-2') ||
+            block.querySelector('div.ml-4.pl-3') ||
+            block.querySelector('div.space-y-3');
+        if (!nestedContainer) return [];
+        return Array.from(nestedContainer.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+    },
+
+    getNestedBlocksFromObjectItem(item) {
+        const innerSpace = item.querySelector('div.space-y-3');
+        if (!innerSpace) return [];
+        return Array.from(innerSpace.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
     },
 
     ensureApplyControls(state, panel) {
@@ -668,7 +703,32 @@ const plugin = {
     async applyValueToBlock(block, typeLabel, value) {
         if (!typeLabel) return;
 
-        if (typeLabel === 'string' || typeLabel === 'object') {
+        if (typeLabel === 'object') {
+            if (!value || typeof value !== 'object') return;
+            const innerBlocks = this.getNestedBlocksFromObjectBlock(block);
+            if (!innerBlocks.length) {
+                const input = block.querySelector('input[type="text"]');
+                const textarea = block.querySelector('textarea');
+                const textValue = (value === null || value === undefined) ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
+                if (input) this.setInputValue(input, textValue);
+                else if (textarea) this.setInputValue(textarea, textValue);
+                return;
+            }
+            const innerMap = {};
+            innerBlocks.forEach(innerBlock => {
+                const name = this.getParamNameFromBlock(innerBlock);
+                if (name) innerMap[name] = innerBlock;
+            });
+            for (const key of Object.keys(value)) {
+                const innerBlock = innerMap[key];
+                if (!innerBlock) continue;
+                const innerType = this.getParamTypeFromBlock(innerBlock);
+                await this.applyValueToBlock(innerBlock, innerType, value[key]);
+            }
+            return;
+        }
+
+        if (typeLabel === 'string') {
             const input = block.querySelector('input[type="text"]');
             const textarea = block.querySelector('textarea');
             const textValue = (value === null || value === undefined) ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
@@ -732,7 +792,7 @@ const plugin = {
                 const item = items[i];
                 const obj = value[i];
                 if (!item || !obj || typeof obj !== 'object') continue;
-                const innerBlocks = Array.from(item.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+                const innerBlocks = this.getNestedBlocksFromObjectItem(item);
                 const innerMap = {};
                 innerBlocks.forEach(innerBlock => {
                     const name = this.getParamNameFromBlock(innerBlock);
