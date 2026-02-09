@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.15',
+    _version: '1.16',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -546,7 +546,14 @@ const plugin = {
     findToolPanelRoot() {
         const input = document.querySelector(this.selectors.toolSearchInput);
         if (!input) return null;
-        return input.closest('[data-panel-id][data-panel]') || input.closest('[data-panel]') || input.closest('div.flex.flex-col') || input.parentElement;
+        let el = input.parentElement;
+        while (el && el !== document.body) {
+            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot)) {
+                return el;
+            }
+            el = el.parentElement;
+        }
+        return input.closest('[data-panel-id][data-panel]') || input.closest('[data-panel]') || input.parentElement;
     },
 
     clearToolSearch(toolPanelRoot) {
@@ -567,10 +574,11 @@ const plugin = {
         const tabList = toolPanelRoot.querySelector(this.selectors.toolTabList);
         const tabs = tabList ? Array.from(tabList.querySelectorAll(this.selectors.toolTab)) : [];
 
-        console.debug('tabs', tabs);
+        Logger.debug('Workflow cache: buildToolTabMap found ' + tabs.length + ' tab(s)');
 
         if (!tabs.length) {
             const tools = this.readToolList(toolPanelRoot);
+            Logger.debug('Workflow cache: single-env mode, indexed ' + tools.length + ' tools');
             tools.forEach(tool => {
                 toolToTab[tool.name] = '(single)';
             });
@@ -591,11 +599,13 @@ const plugin = {
                 await this.waitForAnimationFrame();
             }
             const tools = this.readToolList(toolPanelRoot);
+            Logger.debug('Workflow cache: tab "' + tabName + '" has ' + tools.length + ' tools');
             tools.forEach(tool => {
                 toolToTab[tool.name] = tabName;
             });
         }
 
+        Logger.debug('Workflow cache: total indexed ' + Object.keys(toolToTab).length + ' tools across ' + tabs.length + ' tab(s)');
         return { toolToTab, tabButtons };
     },
 
