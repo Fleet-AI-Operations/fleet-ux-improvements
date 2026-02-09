@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.20',
+    _version: '1.21',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -993,13 +993,19 @@ const plugin = {
         const desired = String(value).trim();
         if (!desired) return;
         btn.click();
+        await this.waitForAnimationFrame();
         const listboxId = btn.getAttribute('aria-controls');
         if (!listboxId) return;
-        const listbox = await this.waitForElementById(listboxId);
+        const listbox = await this.waitForElementById(listboxId, 200);
         if (!listbox) return;
         const options = Array.from(listbox.querySelectorAll('[role="option"]'));
-        const match = options.find(opt => (opt.textContent || '').trim() === desired);
-        if (match) match.click();
+        const norm = (s) => (s || '').trim().replace(/\s+/g, ' ');
+        const match = options.find(opt => norm(opt.textContent) === norm(desired))
+            || options.find(opt => norm(opt.textContent).toLowerCase() === norm(desired).toLowerCase());
+        if (match) {
+            match.scrollIntoView({ block: 'nearest' });
+            match.click();
+        }
     },
 
     waitForElementById(id, timeoutMs = 50) {
