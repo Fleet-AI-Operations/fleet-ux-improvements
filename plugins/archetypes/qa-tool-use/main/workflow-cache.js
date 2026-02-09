@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.18',
+    _version: '1.19',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -210,7 +210,7 @@ const plugin = {
             Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
             return params;
         }
-        const blocks = spaceY3.querySelectorAll('div.flex.flex-col.gap-1\\.5');
+        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
@@ -297,7 +297,8 @@ const plugin = {
             return arr.length ? arr : undefined;
         }
         if (typeLabel === 'object[]' || typeLabel.includes('object[]')) {
-            const items = block.querySelectorAll('div.relative.border.rounded-md.p-3[class*="bg-muted"]');
+            const wrap = block.querySelector('div.space-y-2.mt-1') || block;
+            const items = Array.from(wrap.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.relative.border.rounded-md.p-3[class*="bg-muted"]'));
             if (!items.length) return undefined;
             const arr = [];
             items.forEach(item => {
@@ -336,13 +337,13 @@ const plugin = {
             block.querySelector('div.ml-4.pl-3') ||
             block.querySelector('div.space-y-3');
         if (!nestedContainer) return [];
-        return Array.from(nestedContainer.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+        return Array.from(nestedContainer.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
     },
 
     getNestedBlocksFromObjectItem(item) {
         const innerSpace = item.querySelector('div.space-y-3');
         if (!innerSpace) return [];
-        return Array.from(innerSpace.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+        return Array.from(innerSpace.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
     },
 
     ensureApplyControls(state, panel) {
@@ -795,7 +796,7 @@ const plugin = {
         const spaceY3 = content.querySelector('div.space-y-3');
         if (!spaceY3) return;
 
-        const blocks = Array.from(spaceY3.querySelectorAll('div.flex.flex-col.gap-1\\.5'));
+        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
         const blockMap = {};
         for (const block of blocks) {
             const name = this.getParamNameFromBlock(block);
@@ -907,7 +908,7 @@ const plugin = {
             const wrap = block.querySelector('div.space-y-2.mt-1') || block;
             if (!Array.isArray(value)) return;
             await this.ensureArrayItems(wrap, value.length);
-            const items = Array.from(block.querySelectorAll('div.relative.border.rounded-md.p-3[class*="bg-muted"]'));
+            const items = Array.from(wrap.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.relative.border.rounded-md.p-3[class*="bg-muted"]'));
             for (let i = 0; i < value.length; i++) {
                 const item = items[i];
                 const obj = value[i];
