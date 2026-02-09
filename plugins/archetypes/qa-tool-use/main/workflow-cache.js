@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.12',
+    _version: '1.13',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -575,12 +575,19 @@ const plugin = {
             return { toolToTab, tabButtons };
         }
 
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
         for (const tab of tabs) {
             const tabName = this.getTabLabel(tab);
             if (!tabName) continue;
             tabButtons[tabName] = tab;
+            const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
             tab.click();
-            await this.waitForAnimationFrame();
+            await this.waitForTabActive(tab);
+            if (listRoot) {
+                await this.waitForToolListChange(listRoot, prevNames);
+            } else {
+                await this.waitForAnimationFrame();
+            }
             const tools = this.readToolList(toolPanelRoot);
             tools.forEach(tool => {
                 toolToTab[tool.name] = tabName;
@@ -619,22 +626,74 @@ const plugin = {
     },
 
     getToolNameFromListItem(item) {
-        const primary = item.querySelector('span.text-xs.font-medium.text-foreground');
-        const text = primary ? primary.textContent : item.textContent;
-        return (text || '').trim();
+        const primary = item.querySelector('span.text-xs.font-medium.text-foreground span span');
+        const fallback = item.querySelector('span.text-xs.font-medium.text-foreground');
+        const text = primary ? primary.textContent : (fallback ? fallback.textContent : item.textContent);
+        return this.normalizeToolName(text);
     },
 
     findToolCallButton(toolPanelRoot, toolName) {
         const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
         if (!listRoot) return null;
         const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const target = this.normalizeToolName(toolName);
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
-            if (name !== toolName) continue;
+            if (!name || name !== target) continue;
             const btns = Array.from(item.querySelectorAll('button'));
             return btns.find(btn => btn.textContent.trim() === 'Call') || null;
         }
         return null;
+    },
+
+    normalizeToolName(text) {
+        return (text || '').replace(/\s+/g, ' ').trim();
+    },
+
+    readToolNamesFromList(listRoot) {
+        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        return items.map(item => this.getToolNameFromListItem(item)).filter(Boolean);
+    },
+
+    waitForTabActive(tabBtn, timeoutMs = 2000) {
+        if (!tabBtn) return Promise.resolve(false);
+        const isActive = () =>
+            tabBtn.getAttribute('data-state') === 'active' ||
+            tabBtn.getAttribute('aria-selected') === 'true';
+        if (isActive()) return Promise.resolve(true);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                if (isActive()) {
+                    observer.disconnect();
+                    resolve(true);
+                }
+            });
+            observer.observe(tabBtn, { attributes: true, attributeFilter: ['data-state', 'aria-selected'] });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(isActive());
+            }, timeoutMs);
+        });
+    },
+
+    waitForToolListChange(listRoot, prevNames, timeoutMs = 2000) {
+        if (!listRoot) return Promise.resolve(false);
+        const prevKey = (prevNames || []).join('|');
+        const isChanged = () => this.readToolNamesFromList(listRoot).join('|') !== prevKey;
+        if (isChanged()) return Promise.resolve(true);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                if (isChanged()) {
+                    observer.disconnect();
+                    resolve(true);
+                }
+            });
+            observer.observe(listRoot, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(isChanged());
+            }, timeoutMs);
+        });
     },
 
     async clearWorkflowTools(panel, toolsContainer) {
