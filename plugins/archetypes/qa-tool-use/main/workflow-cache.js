@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.22',
+    _version: '1.23',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -998,22 +998,27 @@ const plugin = {
         await this.wait(25);
         const listbox = await this.waitForListbox(btn, 500);
         if (!listbox) return;
-        await this.wait(10);
+        await this.wait(30);
         const options = Array.from(listbox.querySelectorAll('[role="option"]'));
         const norm = (s) => (s || '').trim().replace(/\s+/g, ' ');
         let targetIndex = options.findIndex(opt => norm(opt.textContent) === norm(desired));
         if (targetIndex < 0) targetIndex = options.findIndex(opt => norm(opt.textContent).toLowerCase() === norm(desired).toLowerCase());
         if (targetIndex < 0) return;
         let currentIndex = this.getHighlightedOptionIndex(listbox);
-        if (currentIndex < 0) currentIndex = 0;
+        let delta;
+        if (currentIndex < 0) {
+            delta = targetIndex + 1;
+        } else {
+            delta = targetIndex - currentIndex;
+        }
         let keyTarget = document.activeElement;
-        const delta = targetIndex - currentIndex;
         for (let k = 0; k < Math.abs(delta); k++) {
             await this.pressKey(keyTarget, delta > 0 ? 'ArrowDown' : 'ArrowUp');
             await this.wait(10);
             keyTarget = document.activeElement;
         }
         await this.pressKey(document.activeElement, 'Enter');
+        await this.wait(30);
     },
 
     wait(ms) {
