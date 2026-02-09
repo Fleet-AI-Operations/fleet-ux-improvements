@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.11',
+    _version: '1.12',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -100,7 +100,11 @@ const plugin = {
         state.observedContainer = null;
     },
 
-    captureAndSaveSnapshot(state) {
+    captureAndSaveSnapshot(state, reason) {
+        if (state.applyInProgress) {
+            Logger.debug('Workflow cache: snapshot skipped (apply in progress)');
+            return;
+        }
         Logger.info('Workflow cache: snapshot attempt (container: ' + (state.observedContainer ? 'yes' : 'no') + ')');
         if (!state.observedContainer) {
             Logger.warn('Workflow cache: snapshot skipped, no observed container');
@@ -108,13 +112,33 @@ const plugin = {
         }
         try {
             const snapshot = this.captureSnapshot(state.observedContainer);
-            state.workflowSnapshot = snapshot;
-            Storage.set(this.storageKeys.latestSnapshot, JSON.stringify(snapshot));
-            Logger.info('Workflow cache: snapshot captured (' + snapshot.length + ' tools)');
-            Logger.log(JSON.stringify(snapshot, null, 2));
+            this.saveSnapshot(state, snapshot, reason || 'current');
         } catch (e) {
             Logger.error('Workflow cache: snapshot failed', e);
         }
+    },
+
+    saveSnapshot(state, snapshot, reason) {
+        if (!snapshot || !Array.isArray(snapshot)) {
+            Logger.warn('Workflow cache: snapshot save skipped (invalid snapshot)');
+            return;
+        }
+        state.workflowSnapshot = snapshot;
+        Storage.set(this.storageKeys.latestSnapshot, JSON.stringify(snapshot));
+        Logger.info('Workflow cache: snapshot saved (' + snapshot.length + ' tools, reason: ' + reason + ')');
+        Logger.log(JSON.stringify(snapshot, null, 2));
+    },
+
+    savePreviousSnapshot(state, reason) {
+        if (state.applyInProgress) {
+            Logger.debug('Workflow cache: previous snapshot skipped (apply in progress)');
+            return;
+        }
+        if (!state.workflowSnapshot || !Array.isArray(state.workflowSnapshot)) {
+            Logger.warn('Workflow cache: no previous snapshot available for deletion');
+            return;
+        }
+        this.saveSnapshot(state, state.workflowSnapshot, reason || 'pre-delete');
     },
 
     captureSnapshot(container) {
@@ -925,6 +949,7 @@ const plugin = {
         };
 
         const childListObserver = new MutationObserver((mutations) => {
+            if (state.applyInProgress) return;
             let added = false;
             let removed = false;
             for (const m of mutations) {
@@ -944,11 +969,11 @@ const plugin = {
             }
             if (added) {
                 Logger.info('Workflow cache: tool added');
-                self.captureAndSaveSnapshot(state);
+                self.captureAndSaveSnapshot(state, 'add');
             }
             if (removed) {
                 Logger.info('Workflow cache: tool deleted');
-                self.captureAndSaveSnapshot(state);
+                self.savePreviousSnapshot(state, 'pre-delete');
             }
         });
 
@@ -959,6 +984,7 @@ const plugin = {
         state.containerObservers.push(childListObserver);
 
         const classObserver = new MutationObserver((mutations) => {
+            if (state.applyInProgress) return;
             for (const m of mutations) {
                 const target = m.target;
                 if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.matches || !target.matches(toolCardSelector)) {
@@ -970,7 +996,7 @@ const plugin = {
                 if (hasSuccess || hasError) {
                     const outcome = hasError ? 'error' : 'success';
                     Logger.info('Workflow cache: tool executed (' + outcome + ')');
-                    self.captureAndSaveSnapshot(state);
+                    self.captureAndSaveSnapshot(state, 'execute');
                     break;
                 }
             }
