@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.13',
+    _version: '1.14',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -483,7 +483,7 @@ const plugin = {
                     continue;
                 }
 
-                await this.switchToToolTab(tabInfo, tabName);
+                await this.switchToToolTab(tabInfo, tabName, toolPanelRoot);
 
                 const callBtn = this.findToolCallButton(toolPanelRoot, toolName);
                 if (!callBtn) {
@@ -606,10 +606,18 @@ const plugin = {
         return label;
     },
 
-    async switchToToolTab(tabInfo, tabName) {
+    async switchToToolTab(tabInfo, tabName, toolPanelRoot) {
         if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
-        tabInfo.tabButtons[tabName].click();
-        await this.waitForAnimationFrame();
+        const tab = tabInfo.tabButtons[tabName];
+        const listRoot = toolPanelRoot ? toolPanelRoot.querySelector(this.selectors.toolListRoot) : null;
+        const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
+        tab.click();
+        await this.waitForTabActive(tab);
+        if (listRoot) {
+            await this.waitForToolListChange(listRoot, prevNames);
+        } else {
+            await this.waitForAnimationFrame();
+        }
     },
 
     readToolList(toolPanelRoot) {
