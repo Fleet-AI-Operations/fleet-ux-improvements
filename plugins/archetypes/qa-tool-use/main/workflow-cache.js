@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.14',
+    _version: '1.15',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -566,6 +566,8 @@ const plugin = {
         const tabButtons = {};
         const tabList = toolPanelRoot.querySelector(this.selectors.toolTabList);
         const tabs = tabList ? Array.from(tabList.querySelectorAll(this.selectors.toolTab)) : [];
+
+        console.debug('tabs', tabs);
 
         if (!tabs.length) {
             const tools = this.readToolList(toolPanelRoot);
