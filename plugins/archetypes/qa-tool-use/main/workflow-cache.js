@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.19',
+    _version: '1.20',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -236,7 +236,11 @@ const plugin = {
     },
 
     getParamValueFromBlock(block, typeLabel) {
-        if (!typeLabel) return undefined;
+        if (!typeLabel) {
+            const inferred = this.getParamValueFromBlockInferred(block);
+            if (inferred !== undefined) return inferred;
+            return undefined;
+        }
         if (typeLabel === 'string') {
             const input = block.querySelector('input[type="text"]');
             if (input) return input.value.trim() || undefined;
@@ -285,7 +289,7 @@ const plugin = {
             });
             return arr.length ? arr : undefined;
         }
-        if (typeLabel === 'string[]' || typeLabel.includes('string[]')) {
+        if (typeLabel === 'string[]' || typeLabel.includes('string[]') || typeLabel === 'any[]' || typeLabel.includes('any[]')) {
             const wrap = block.querySelector('div.space-y-2.mt-1');
             if (!wrap) return undefined;
             const inputs = wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="text"]');
@@ -310,6 +314,39 @@ const plugin = {
             return arr.length ? arr : undefined;
         }
         return undefined;
+    },
+
+    getParamValueFromBlockInferred(block) {
+        const input = block.querySelector('input[type="text"]');
+        if (input) return input.value.trim() || undefined;
+        const textarea = block.querySelector('textarea');
+        if (textarea) return textarea.value.trim() || undefined;
+        const numInput = block.querySelector('input[type="number"]');
+        if (numInput) {
+            const s = numInput.value.trim();
+            if (s === '') return undefined;
+            const n = Number(s);
+            return Number.isNaN(n) ? s : n;
+        }
+        return undefined;
+    },
+
+    async applyValueToBlockInferred(block, value) {
+        const textValue = (value === null || value === undefined) ? '' : (typeof value === 'string' ? value : String(value));
+        const input = block.querySelector('input[type="text"]');
+        if (input) {
+            this.setInputValue(input, textValue);
+            return;
+        }
+        const textarea = block.querySelector('textarea');
+        if (textarea) {
+            this.setInputValue(textarea, textValue);
+            return;
+        }
+        const numInput = block.querySelector('input[type="number"]');
+        if (numInput) {
+            this.setInputValue(numInput, (value === null || value === undefined) ? '' : String(value));
+        }
     },
 
     getObjectValueFromBlock(block) {
@@ -822,7 +859,10 @@ const plugin = {
     },
 
     async applyValueToBlock(block, typeLabel, value) {
-        if (!typeLabel) return;
+        if (!typeLabel) {
+            await this.applyValueToBlockInferred(block, value);
+            return;
+        }
 
         if (typeLabel === 'object') {
             if (!value || typeof value !== 'object') return;
@@ -893,7 +933,7 @@ const plugin = {
             return;
         }
 
-        if (typeLabel === 'string[]' || typeLabel.includes('string[]')) {
+        if (typeLabel === 'string[]' || typeLabel.includes('string[]') || typeLabel === 'any[]' || typeLabel.includes('any[]')) {
             const wrap = block.querySelector('div.space-y-2.mt-1');
             if (!wrap || !Array.isArray(value)) return;
             await this.ensureArrayItems(wrap, value.length);
