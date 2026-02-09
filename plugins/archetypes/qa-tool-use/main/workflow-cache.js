@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.21',
+    _version: '1.22',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -992,20 +992,60 @@ const plugin = {
         if (!btn || value === undefined || value === null) return;
         const desired = String(value).trim();
         if (!desired) return;
-        btn.click();
-        await this.waitForAnimationFrame();
-        const listboxId = btn.getAttribute('aria-controls');
-        if (!listboxId) return;
-        const listbox = await this.waitForElementById(listboxId, 200);
+        btn.focus();
+        await this.wait(10);
+        await this.pressKey(btn, 'Enter');
+        await this.wait(25);
+        const listbox = await this.waitForListbox(btn, 500);
         if (!listbox) return;
+        await this.wait(10);
         const options = Array.from(listbox.querySelectorAll('[role="option"]'));
         const norm = (s) => (s || '').trim().replace(/\s+/g, ' ');
-        const match = options.find(opt => norm(opt.textContent) === norm(desired))
-            || options.find(opt => norm(opt.textContent).toLowerCase() === norm(desired).toLowerCase());
-        if (match) {
-            match.scrollIntoView({ block: 'nearest' });
-            match.click();
+        let targetIndex = options.findIndex(opt => norm(opt.textContent) === norm(desired));
+        if (targetIndex < 0) targetIndex = options.findIndex(opt => norm(opt.textContent).toLowerCase() === norm(desired).toLowerCase());
+        if (targetIndex < 0) return;
+        let currentIndex = this.getHighlightedOptionIndex(listbox);
+        if (currentIndex < 0) currentIndex = 0;
+        let keyTarget = document.activeElement;
+        const delta = targetIndex - currentIndex;
+        for (let k = 0; k < Math.abs(delta); k++) {
+            await this.pressKey(keyTarget, delta > 0 ? 'ArrowDown' : 'ArrowUp');
+            await this.wait(10);
+            keyTarget = document.activeElement;
         }
+        await this.pressKey(document.activeElement, 'Enter');
+    },
+
+    wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    },
+
+    waitForListbox(dropdown, maxWaitMs = 500) {
+        const id = dropdown?.getAttribute('aria-controls');
+        if (!id) return Promise.resolve(null);
+        const start = Date.now();
+        const poll = () => {
+            const el = document.getElementById(id);
+            if (el) return Promise.resolve(el);
+            if (Date.now() - start >= maxWaitMs) return Promise.resolve(null);
+            return this.wait(5).then(poll);
+        };
+        return poll();
+    },
+
+    async pressKey(target, key) {
+        if (!target) return;
+        const code = key === 'Enter' ? 'Enter' : key === 'ArrowDown' ? 'ArrowDown' : key === 'ArrowUp' ? 'ArrowUp' : key === 'Escape' ? 'Escape' : key;
+        target.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
+        await this.wait(2);
+        target.dispatchEvent(new KeyboardEvent('keyup', { key, code, bubbles: true, cancelable: true }));
+    },
+
+    getHighlightedOptionIndex(listbox) {
+        if (!listbox) return -1;
+        const options = Array.from(listbox.querySelectorAll('[role="option"]'));
+        const idx = options.findIndex(opt => opt.hasAttribute('data-highlighted') || opt.getAttribute('aria-selected') === 'true');
+        return idx >= 0 ? idx : -1;
     },
 
     waitForElementById(id, timeoutMs = 50) {
