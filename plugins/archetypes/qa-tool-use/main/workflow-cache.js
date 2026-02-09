@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.16',
+    _version: '1.17',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -591,7 +591,7 @@ const plugin = {
             if (!tabName) continue;
             tabButtons[tabName] = tab;
             const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
-            tab.click();
+            this.activateTab(tab);
             await this.waitForTabActive(tab);
             if (listRoot) {
                 await this.waitForToolListChange(listRoot, prevNames);
@@ -618,12 +618,19 @@ const plugin = {
         return label;
     },
 
+    activateTab(tabBtn) {
+        if (!tabBtn) return;
+        tabBtn.focus();
+        tabBtn.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        tabBtn.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    },
+
     async switchToToolTab(tabInfo, tabName, toolPanelRoot) {
         if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
         const tab = tabInfo.tabButtons[tabName];
         const listRoot = toolPanelRoot ? toolPanelRoot.querySelector(this.selectors.toolListRoot) : null;
         const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
-        tab.click();
+        this.activateTab(tab);
         await this.waitForTabActive(tab);
         if (listRoot) {
             await this.waitForToolListChange(listRoot, prevNames);
