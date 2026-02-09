@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.23',
+    _version: '1.24',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -60,6 +60,7 @@ const plugin = {
         state.missingLogged = false;
 
         this.ensureApplyControls(state, panel);
+        this.ensureEmptyStateSection(state, stableParent);
 
         if (state.observedParent !== stableParent) {
             this.disconnectAllObservers(state);
@@ -417,17 +418,83 @@ const plugin = {
         Logger.log('✓ Workflow cache: apply controls added');
     },
 
+    ensureEmptyStateSection(state, stableParent) {
+        if (!stableParent) return;
+        const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+        const hasSteps = toolsContainer && toolsContainer.children.length > 0;
+        const emptyStateEl = Array.from(stableParent.children).find(el => {
+            const p = el.querySelector('p.text-sm.font-medium, p.font-medium');
+            return p && (p.textContent || '').trim().includes('No steps yet');
+        });
+        const existing = stableParent.querySelector('[data-wf-insert-prev-workflow="true"]');
+        if (hasSteps || !emptyStateEl) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (existing) return;
+
+        const section = document.createElement('div');
+        section.setAttribute('data-wf-insert-prev-workflow', 'true');
+        section.className = 'flex flex-col items-center justify-center text-center pt-6 pb-12';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        btn.textContent = 'Insert Previous Workflow?';
+        btn.addEventListener('click', () => {
+            this.applyCachedWorkflow(state, { source: 'latest' });
+        });
+        section.appendChild(btn);
+        stableParent.appendChild(section);
+    },
+
     createDevPanel(state) {
         const wrapper = document.createElement('div');
         wrapper.setAttribute('data-wf-apply-cache-dev', 'true');
-        wrapper.className = 'flex flex-col gap-2 p-2 rounded-md border border-input bg-background shadow-sm';
+        wrapper.className = 'flex flex-col rounded-md border border-input bg-background shadow-sm';
         wrapper.style.width = '280px';
 
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between gap-2 p-2 border-b border-border';
         const label = document.createElement('div');
         label.className = 'text-[10px] font-medium uppercase tracking-wider text-muted-foreground';
         label.textContent = 'Dev cache JSON';
+        const minBtn = document.createElement('button');
+        minBtn.type = 'button';
+        minBtn.setAttribute('aria-label', 'Minimize');
+        minBtn.className = 'inline-flex items-center justify-center rounded-sm size-6 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+        minBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>';
+        const body = document.createElement('div');
+        body.className = 'flex flex-col gap-2 p-2';
+        body.setAttribute('data-wf-dev-panel-body', 'true');
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.setAttribute('data-wf-dev-resize', 'true');
+        resizeHandle.className = 'flex items-center justify-center cursor-ns-resize border-b border-border py-0.5 hover:bg-muted/30';
+        resizeHandle.style.minHeight = '8px';
+        resizeHandle.innerHTML = '<div style="width:24px;height:3px;border-radius:2px;background:currentColor;opacity:0.3;"></div>';
+        let startY = 0, startRows = 5;
+        resizeHandle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            startY = e.clientY;
+            startRows = parseInt(textarea.getAttribute('data-rows') || '5', 10) || 5;
+            const onMove = (ev) => {
+                const dy = ev.clientY - startY;
+                const line = 16;
+                const deltaRows = Math.round(-dy / line);
+                const newRows = Math.max(2, Math.min(20, startRows + deltaRows));
+                textarea.setAttribute('data-rows', String(newRows));
+                textarea.rows = newRows;
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
 
         const textarea = document.createElement('textarea');
+        textarea.setAttribute('data-rows', '5');
         textarea.className = 'w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand';
         textarea.rows = 5;
         textarea.placeholder = 'Paste cache JSON here...';
@@ -447,9 +514,22 @@ const plugin = {
             this.applyCachedWorkflow(state, { source: 'dev', jsonText: text });
         });
 
-        wrapper.appendChild(label);
-        wrapper.appendChild(textarea);
-        wrapper.appendChild(applyBtn);
+        minBtn.addEventListener('click', () => {
+            const isHidden = body.style.display === 'none';
+            body.style.display = isHidden ? '' : 'none';
+            minBtn.innerHTML = isHidden
+                ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>'
+                : '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+            minBtn.setAttribute('aria-label', isHidden ? 'Minimize' : 'Expand');
+        });
+
+        header.appendChild(label);
+        header.appendChild(minBtn);
+        wrapper.appendChild(header);
+        body.appendChild(resizeHandle);
+        body.appendChild(textarea);
+        body.appendChild(applyBtn);
+        wrapper.appendChild(body);
 
         return wrapper;
     },
@@ -993,8 +1073,9 @@ const plugin = {
         const desired = String(value).trim();
         if (!desired) return;
         btn.focus();
-        await this.wait(10);
+        await this.wait(5);
         await this.pressKey(btn, 'Enter');
+        await this.wait(5);
         await this.wait(25);
         const listbox = await this.waitForListbox(btn, 500);
         if (!listbox) return;
@@ -1014,9 +1095,10 @@ const plugin = {
         let keyTarget = document.activeElement;
         for (let k = 0; k < Math.abs(delta); k++) {
             await this.pressKey(keyTarget, delta > 0 ? 'ArrowDown' : 'ArrowUp');
-            await this.wait(10);
+            await this.wait(5);
             keyTarget = document.activeElement;
         }
+        await this.wait(5);
         await this.pressKey(document.activeElement, 'Enter');
         await this.wait(30);
     },
