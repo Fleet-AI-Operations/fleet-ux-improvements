@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.17',
+    _version: '1.18',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -682,7 +682,7 @@ const plugin = {
         return items.map(item => this.getToolNameFromListItem(item)).filter(Boolean);
     },
 
-    waitForTabActive(tabBtn, timeoutMs = 2000) {
+    waitForTabActive(tabBtn, timeoutMs = 50) {
         if (!tabBtn) return Promise.resolve(false);
         const isActive = () =>
             tabBtn.getAttribute('data-state') === 'active' ||
@@ -703,7 +703,7 @@ const plugin = {
         });
     },
 
-    waitForToolListChange(listRoot, prevNames, timeoutMs = 2000) {
+    waitForToolListChange(listRoot, prevNames, timeoutMs = 50) {
         if (!listRoot) return Promise.resolve(false);
         const prevKey = (prevNames || []).join('|');
         const isChanged = () => this.readToolNamesFromList(listRoot).join('|') !== prevKey;
@@ -737,7 +737,7 @@ const plugin = {
         Logger.info('Workflow cache: workflow cleared');
     },
 
-    async waitForContainerEmpty(container, timeoutMs = 2000) {
+    async waitForContainerEmpty(container, timeoutMs = 50) {
         if (!container) return true;
         const existing = container.querySelectorAll(this.selectors.toolCard);
         if (existing.length === 0) return true;
@@ -758,7 +758,7 @@ const plugin = {
         });
     },
 
-    async waitForNewToolCard(stableParent, previousCount, timeoutMs = 2000) {
+    async waitForNewToolCard(stableParent, previousCount, timeoutMs = 50) {
         if (!stableParent) return null;
         const container = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
         if (container) {
@@ -961,7 +961,7 @@ const plugin = {
         if (match) match.click();
     },
 
-    waitForElementById(id, timeoutMs = 2000) {
+    waitForElementById(id, timeoutMs = 50) {
         const existing = document.getElementById(id);
         if (existing) return Promise.resolve(existing);
         return new Promise((resolve) => {
