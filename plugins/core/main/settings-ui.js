@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.23',
+    _version: '5.24',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -243,7 +243,7 @@ const plugin = {
             border-radius: 12px;
             padding: 24px;
             width: 520px;
-            max-height: calc(100vh - 40px);
+            max-height: calc(100vh - 100px);
             overflow-y: auto;
             z-index: 10000;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
