@@ -8,7 +8,7 @@ const plugin = {
     id: 'toolDescriptionTruncate',
     name: 'Tool description truncation',
     description: 'Limit tool picker descriptions when collapsed; show full when expanded.',
-    _version: '1.1',
+    _version: '1.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
