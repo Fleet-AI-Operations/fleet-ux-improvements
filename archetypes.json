@@ -104,6 +104,10 @@
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.2"
+        },
+        {
+          "name": "tool-description-truncate.js",
+          "version": "1.2"
         }
       ]
     },
@@ -144,6 +148,10 @@
         },
         {
           "name": "tool-results-resize-handle.js",
+          "version": "1.2"
+        },
+        {
+          "name": "tool-description-truncate.js",
           "version": "1.2"
         }
       ]
@@ -267,6 +275,10 @@
         },
         {
           "name": "tool-results-resize-handle.js",
+          "version": "1.2"
+        },
+        {
+          "name": "tool-description-truncate.js",
           "version": "1.2"
         },
         {
