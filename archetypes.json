@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.106",
+  "archetypesVersion": "3.107",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -104,10 +104,6 @@
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.2"
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "1.0"
         }
       ]
     },
@@ -149,10 +145,6 @@
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.2"
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "1.0"
         }
       ]
     },
@@ -276,10 +268,6 @@
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.2"
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "1.1"
         }
       ]
     },
@@ -340,6 +328,10 @@
         {
           "name": "workflow-integrity-check.js",
           "version": "1.1"
+        },
+        {
+          "name": "tool-description-truncate.js",
+          "version": "1.0"
         }
       ]
     },
@@ -353,6 +345,10 @@
         {
           "name": "source-data-explorer.js",
           "version": "1.2"
+        },
+        {
+          "name": "tool-description-truncate.js",
+          "version": "1.0"
         }
       ]
     },
@@ -372,6 +368,10 @@
         },
         {
           "name": "reorganize-request-revisions.js",
+          "version": "1.0"
+        },
+        {
+          "name": "tool-description-truncate.js",
           "version": "1.0"
         }
       ]
