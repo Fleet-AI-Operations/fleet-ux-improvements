@@ -9,7 +9,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -19,7 +19,8 @@ const plugin = {
 
     initialState: {
         promptMissingLogged: false,
-        copyFeedbackTimeoutId: null
+        copyFeedbackTimeoutId: null,
+        executeFeedbackTimeoutId: null
     },
 
     onMutation(state, context) {
@@ -142,6 +143,7 @@ const plugin = {
         const num2 = '\\d{2}';
         const num4 = '\\d{4}';
         const yearShort = '\\d{2,4}';
+        const dayWithOrdinal = '(\\d{1,2})(?:st|nd|rd|th)?';
 
         let dateMatch = null;
         let remainder = raw;
@@ -150,8 +152,8 @@ const plugin = {
             { re: new RegExp(`^(${num4})-(${num1})-(${num1})(?=\\s|$|[^\\d])`, 'i'), order: 'ymd' },
             { re: new RegExp(`^(${num1})/(${num1})/(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
             { re: new RegExp(`^(${num1})-(${num1})-(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
-            { re: new RegExp(`^(${monthNames})${space},?${space}(${num1})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy_name' },
-            { re: new RegExp(`^(${num1})${space}+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
+            { re: new RegExp(`^(${monthNames})${space},?${space}${dayWithOrdinal}${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy_name' },
+            { re: new RegExp(`^${dayWithOrdinal}${space}+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
         ];
 
         for (const { re, order } of datePatterns) {
@@ -280,38 +282,105 @@ const plugin = {
         container.dataset.qaTextSanitizer = 'true';
         container.setAttribute('data-fleet-plugin', this.id);
 
-        const header = document.createElement('div');
-        header.className = 'flex items-center gap-2';
-
-        const label = document.createElement('span');
-        label.className = 'text-sm text-muted-foreground font-medium';
-        label.textContent = 'Text Sanitizer';
-
-        const copyBtn = this.createCopyButton(state);
-        header.appendChild(label);
-        header.appendChild(copyBtn);
-        container.appendChild(header);
+        const ONE_LINE_HEIGHT = 24;
+        const MIN_WRAPPER_HEIGHT = 60;
 
         const textareaWrapper = document.createElement('div');
-        textareaWrapper.className = 'rounded-md overflow-hidden border border-input bg-background shadow-sm';
+        textareaWrapper.className = 'relative flex flex-col rounded-md overflow-hidden border border-input bg-background shadow-sm';
+        textareaWrapper.dataset.qaTextSanitizerWrapper = 'true';
+        textareaWrapper.style.minHeight = ONE_LINE_HEIGHT + 'px';
+        textareaWrapper.style.height = ONE_LINE_HEIGHT + 'px';
 
         const textarea = document.createElement('textarea');
-        textarea.className = 'w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 resize-none overflow-hidden';
+        textarea.className = 'w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 resize-none overflow-y-auto flex-1 min-h-0';
         textarea.placeholder = 'Paste text to sanitize…';
         textarea.rows = 1;
         textarea.dataset.qaTextSanitizerTextarea = 'true';
-        textarea.style.minHeight = '1.5rem';
+        textarea.style.height = ONE_LINE_HEIGHT + 'px';
 
-        const resizeTextarea = () => {
-            textarea.style.height = 'auto';
-            textarea.style.height = Math.max(24, textarea.scrollHeight) + 'px';
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center transition-opacity duration-200 flex-shrink-0';
+        resizeHandle.style.opacity = '0';
+        resizeHandle.style.display = 'none';
+        resizeHandle.style.background = 'transparent';
+        const handleBar = document.createElement('div');
+        handleBar.className = 'w-10 h-1 rounded-sm bg-current opacity-30';
+        resizeHandle.appendChild(handleBar);
+
+        const setWrapperOneLine = () => {
+            textareaWrapper.style.height = ONE_LINE_HEIGHT + 'px';
+            textarea.style.height = ONE_LINE_HEIGHT + 'px';
+            resizeHandle.style.display = 'none';
         };
 
-        textarea.addEventListener('input', resizeTextarea);
-        CleanupRegistry.registerEventListener(textarea, 'input', resizeTextarea);
+        const updateTextareaHeight = () => {
+            const hasMultiLine = (textarea.value || '').includes('\n') || textarea.scrollHeight > ONE_LINE_HEIGHT;
+            if (hasMultiLine) {
+                resizeHandle.style.display = 'flex';
+                resizeHandle.style.opacity = '1';
+                if (parseInt(textareaWrapper.style.height, 10) <= ONE_LINE_HEIGHT) {
+                    textareaWrapper.style.height = '80px';
+                    textarea.style.height = 'calc(80px - 12px)';
+                }
+            } else {
+                resizeHandle.style.display = 'none';
+                resizeHandle.style.opacity = '0';
+                setWrapperOneLine();
+            }
+        };
+
+        const onInput = () => updateTextareaHeight();
+        textarea.addEventListener('input', onInput);
+        CleanupRegistry.registerEventListener(textarea, 'input', onInput);
+
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+        const handleMouseDown = (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = textareaWrapper.offsetHeight;
+            e.preventDefault();
+            e.stopPropagation();
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+        };
+        const handleMouseMove = (e) => {
+            if (!isResizing) return;
+            const deltaY = e.clientY - startY;
+            const newHeight = Math.max(MIN_WRAPPER_HEIGHT, startHeight + deltaY);
+            textareaWrapper.style.height = newHeight + 'px';
+            textarea.style.height = (newHeight - 12) + 'px';
+        };
+        const handleMouseUp = () => {
+            if (!isResizing) return;
+            isResizing = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+        resizeHandle.addEventListener('mousedown', handleMouseDown);
+        CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
+
+        textareaWrapper.addEventListener('mouseenter', () => { if (resizeHandle.style.display === 'flex') resizeHandle.style.opacity = '1'; });
+        textareaWrapper.addEventListener('mouseleave', () => { if (resizeHandle.style.display === 'flex') resizeHandle.style.opacity = '0.6'; });
 
         textareaWrapper.appendChild(textarea);
+        textareaWrapper.appendChild(resizeHandle);
         container.appendChild(textareaWrapper);
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center gap-2';
+        const label = document.createElement('span');
+        label.className = 'text-sm text-muted-foreground font-medium';
+        label.textContent = 'Text Sanitizer';
+        const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
+        header.appendChild(label);
+        header.appendChild(copyBtn);
+        container.insertBefore(header, textareaWrapper);
 
         const actionRow = document.createElement('div');
         actionRow.className = 'flex flex-wrap items-center gap-2';
@@ -353,9 +422,19 @@ const plugin = {
             const input = textarea.value || '';
             const output = action.run(input);
             textarea.value = output;
-            resizeTextarea();
+            updateTextareaHeight();
             Storage.set(this.storageKeys.lastAction, id);
             Logger.log('✓ Text Sanitizer: Executed ' + action.label);
+            executeBtn.textContent = 'Executed';
+            executeBtn.style.backgroundColor = 'rgb(34, 197, 94)';
+            executeBtn.style.color = 'white';
+            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
+            state.executeFeedbackTimeoutId = setTimeout(() => {
+                executeBtn.textContent = 'Execute';
+                executeBtn.style.backgroundColor = '';
+                executeBtn.style.color = '';
+                state.executeFeedbackTimeoutId = null;
+            }, 3000);
         };
         executeBtn.addEventListener('click', onExecute);
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
@@ -367,7 +446,7 @@ const plugin = {
         return container;
     },
 
-    createCopyButton(state) {
+    createCopyButton(state, opts) {
         const button = document.createElement('button');
         button.type = 'button';
         button.setAttribute('data-fleet-plugin', this.id);
@@ -411,8 +490,7 @@ const plugin = {
                     state.copyFeedbackTimeoutId = null;
                 }, 5000);
                 textarea.value = '';
-                textarea.style.height = 'auto';
-                textarea.style.height = '24px';
+                if (opts && opts.onAfterClear) opts.onAfterClear();
             }).catch((err) => {
                 Logger.error('Text Sanitizer: Failed to copy to clipboard', err);
             });
