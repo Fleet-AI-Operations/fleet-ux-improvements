@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -104,11 +104,11 @@ const plugin = {
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
                 '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate.</p>',
                 '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
                 '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
-                '</div>'
+                '</div>',
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>'
             ].join('');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
             if (copyBtn) {
