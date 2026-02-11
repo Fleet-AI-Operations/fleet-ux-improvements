@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.110",
+  "archetypesVersion": "3.111",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -41,7 +41,7 @@
         },
         {
           "name": "feedback-given-today-env.js",
-          "version": "1.6"
+          "version": "1.7"
         }
       ]
     },
