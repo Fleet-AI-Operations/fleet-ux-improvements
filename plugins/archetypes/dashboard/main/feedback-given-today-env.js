@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -163,6 +163,7 @@ const plugin = {
             }
         }
         if (copyBtn) {
+            copyBtn.disabled = todayCount === 0;
             copyBtn.setAttribute('data-wf-copy-uncertain', uncertain ? 'true' : 'false');
             if (!copyBtn._wfCopyResetTimeout) {
                 copyBtn.textContent = 'Copy';
