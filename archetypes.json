@@ -42,6 +42,10 @@
         {
           "name": "feedback-given-today-env.js",
           "version": "1.8"
+        },
+        {
+          "name": "task-creation-today-env.js",
+          "version": "1.0"
         }
       ]
     },
