@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -105,8 +105,8 @@ const plugin = {
                 '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
                 '</div>',
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately.</p>',
-                '<div class="mt-3 flex flex-wrap items-center gap-2" data-wf-copy-section>',
-                '<span class="text-xs text-muted-foreground">Instantly copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
+                '<div class="mt-3 flex justify-between items-center gap-2" data-wf-copy-section>',
+                '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>'
             ].join('');
@@ -115,8 +115,16 @@ const plugin = {
                 copyBtn.addEventListener('click', () => {
                     const text = copyBtn.getAttribute('data-wf-copy-text');
                     if (!text) return;
+                    if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
                         Logger.log('feedback-given-today-env: copied breakdown to clipboard');
+                        copyBtn.textContent = 'Copied!';
+                        copyBtn.classList.add('text-green-600', 'dark:text-green-400');
+                        copyBtn._wfCopyResetTimeout = setTimeout(() => {
+                            copyBtn._wfCopyResetTimeout = null;
+                            copyBtn.textContent = 'Copy';
+                            copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
+                        }, 5000);
                     }).catch((err) => {
                         Logger.error('feedback-given-today-env: failed to copy breakdown', err);
                     });
