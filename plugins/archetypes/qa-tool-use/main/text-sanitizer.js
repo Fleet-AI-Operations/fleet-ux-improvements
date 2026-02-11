@@ -9,7 +9,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -429,14 +429,15 @@ plugin.actions = {
         id: 'removeAllWhitespace',
         label: 'Remove All Whitespace',
         run(input) {
-            return (input || '').replace(/\s+/g, ' ').trim();
+            return (input || '').replace(/\s/g, '');
         }
     },
     trimWhitespace: {
         id: 'trimWhitespace',
         label: 'Trim Whitespace',
         run(input) {
-            return (input || '').trim();
+            const s = (input || '').trim();
+            return s.split(/\n/).filter((line) => line.trim().length > 0).join('\n');
         }
     },
     removeSpecialCharacters: {
