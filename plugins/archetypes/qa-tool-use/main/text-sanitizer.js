@@ -9,7 +9,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -154,7 +154,7 @@ const plugin = {
             { re: new RegExp(`^(${num1})/(${num1})/(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
             { re: new RegExp(`^(${num1})-(${num1})-(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
             { re: new RegExp(`^(${monthNames})${space},?${space}${dayWithOrdinal}${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy_name' },
-            { re: new RegExp(`^${dayWithOrdinal}${space}+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
+            { re: new RegExp(`^${dayWithOrdinal}\\s+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
         ];
 
         for (const { re, order } of datePatterns) {
