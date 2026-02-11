@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Task Creation Today and Environment',
     description: 'Show today\'s task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -68,10 +68,11 @@ const plugin = {
         }
 
         const panel = table.closest('[role="tabpanel"]');
-        const grid = panel && panel.firstElementChild;
-        if (!grid) {
+        const submittedHeading = panel && Array.from(panel.querySelectorAll('h3')).find(h => h.textContent.trim().startsWith('Submitted'));
+        const grid = submittedHeading ? submittedHeading.closest('.grid') : (panel && panel.firstElementChild);
+        if (!grid || !grid.matches('.grid')) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: grid not found in tab panel');
+                Logger.debug('task-creation-today-env: 4-card grid not found in tab panel');
                 state.missingLogged = true;
             }
             return;
@@ -112,7 +113,7 @@ const plugin = {
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-task-creation-today-env-block', 'true');
-            block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
+            block.className = 'rounded-xl text-card-foreground bg-muted-extra border-none shadow-none p-4 pt-4 flex flex-col justify-center mt-3';
             block.innerHTML = [
                 '<div class="flex justify-between gap-4">',
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
