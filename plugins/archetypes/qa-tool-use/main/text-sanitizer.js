@@ -134,10 +134,11 @@ const plugin = {
      * Returns original input on failure or when no date found.
      */
     parseDateThenTimeToIso(text) {
-        const raw = (text || '').trim();
-        if (!raw) return raw;
+        try {
+            const raw = (text || '').trim();
+            if (!raw) return raw;
 
-        const monthNames = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+            const monthNames = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
         const space = '\\s{0,1}';
         const num1 = '\\d{1,2}';
         const num2 = '\\d{2}';
@@ -222,6 +223,10 @@ const plugin = {
         const mm = String(date.getMonth() + 1).padStart(2, '0');
         const dd = String(date.getDate()).padStart(2, '0');
         return `${yy}-${mm}-${dd}`;
+        } catch (e) {
+            Logger.warn('Text Sanitizer: parseDateThenTimeToIso failed', e);
+            return text || '';
+        }
     },
 
     findExistingTextSanitizerAmongSiblings(anchor) {
@@ -376,13 +381,20 @@ const plugin = {
         container.appendChild(textareaWrapper);
 
         const header = document.createElement('div');
-        header.className = 'flex items-center gap-2';
+        header.className = 'flex items-center justify-between gap-2';
         const label = document.createElement('span');
         label.className = 'text-sm text-muted-foreground font-medium';
         label.textContent = 'Text Sanitizer';
+        const copyRightWrapper = document.createElement('div');
+        copyRightWrapper.className = 'flex items-center gap-1';
+        const copyLabel = document.createElement('span');
+        copyLabel.className = 'text-sm text-muted-foreground';
+        copyLabel.textContent = 'Copy and Clear Output:';
         const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
+        copyRightWrapper.appendChild(copyLabel);
+        copyRightWrapper.appendChild(copyBtn);
         header.appendChild(label);
-        header.appendChild(copyBtn);
+        header.appendChild(copyRightWrapper);
         container.insertBefore(header, textareaWrapper);
 
         const actionRow = document.createElement('div');
@@ -418,16 +430,7 @@ const plugin = {
         executeBtn.className = buttonClass;
         executeBtn.setAttribute('data-fleet-plugin', this.id);
         executeBtn.textContent = 'Execute';
-        const onExecute = () => {
-            const id = select.value;
-            const action = this.actions[id];
-            if (!action) return;
-            const input = textarea.value || '';
-            const output = action.run(input);
-            textarea.value = output;
-            updateTextareaHeight();
-            Storage.set(this.storageKeys.lastAction, id);
-            Logger.log('✓ Text Sanitizer: Executed ' + action.label);
+        const showExecuteFeedback = () => {
             executeBtn.textContent = 'Executed';
             executeBtn.style.backgroundColor = 'rgb(34, 197, 94)';
             executeBtn.style.color = 'white';
@@ -438,6 +441,23 @@ const plugin = {
                 executeBtn.style.color = '';
                 state.executeFeedbackTimeoutId = null;
             }, 3000);
+        };
+        const onExecute = () => {
+            const id = select.value;
+            const action = this.actions[id];
+            if (!action) return;
+            const input = textarea.value || '';
+            try {
+                const output = action.run(input);
+                textarea.value = output;
+                updateTextareaHeight();
+                Storage.set(this.storageKeys.lastAction, id);
+                Logger.log('✓ Text Sanitizer: Executed ' + action.label);
+            } catch (e) {
+                Logger.error('Text Sanitizer: Execute failed', e);
+                textarea.value = input;
+            }
+            showExecuteFeedback();
         };
         executeBtn.addEventListener('click', onExecute);
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
@@ -491,7 +511,7 @@ const plugin = {
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     state.copyFeedbackTimeoutId = null;
-                }, 5000);
+                }, 3000);
                 textarea.value = '';
                 if (opts && opts.onAfterClear) opts.onAfterClear();
             }).catch((err) => {
