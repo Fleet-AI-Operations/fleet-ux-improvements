@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -92,6 +92,8 @@ const plugin = {
                 .map(([name, n]) => `${name}: ${n}`)
                 .join(', ');
 
+        const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+
         let block = card.querySelector('[data-wf-feedback-today-env-block]');
         if (!block) {
             block = document.createElement('div');
@@ -102,8 +104,24 @@ const plugin = {
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
                 '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately.</p>'
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately.</p>',
+                '<div class="mt-3 flex flex-wrap items-center gap-2" data-wf-copy-section>',
+                '<span class="text-xs text-muted-foreground">Instantly copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
+                '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
+                '</div>'
             ].join('');
+            const copyBtn = block.querySelector('[data-wf-copy-btn]');
+            if (copyBtn) {
+                copyBtn.addEventListener('click', () => {
+                    const text = copyBtn.getAttribute('data-wf-copy-text');
+                    if (!text) return;
+                    navigator.clipboard.writeText(text).then(() => {
+                        Logger.log('feedback-given-today-env: copied breakdown to clipboard');
+                    }).catch((err) => {
+                        Logger.error('feedback-given-today-env: failed to copy breakdown', err);
+                    });
+                });
+            }
             const existingContent = card.querySelector('.p-4.pt-0.flex.items-end.justify-between');
             if (existingContent && existingContent.nextSibling) {
                 card.insertBefore(block, existingContent.nextSibling);
@@ -117,6 +135,7 @@ const plugin = {
         const todayEl = block.querySelector('[data-wf-today-count]');
         const envEl = block.querySelector('[data-wf-env-breakdown]');
         const msgEl = block.querySelector('[data-wf-scroll-msg]');
+        const copyBtn = block.querySelector('[data-wf-copy-btn]');
         if (todayEl) todayEl.textContent = uncertain ? `${todayCount}? today` : `${todayCount} today`;
         if (envEl) envEl.textContent = envBreakdownText;
         if (msgEl) {
@@ -127,6 +146,16 @@ const plugin = {
                 msgEl.classList.add('hidden');
                 msgEl.classList.remove('block');
             }
+        }
+        if (copyBtn) {
+            copyBtn.disabled = uncertain;
+            const copyLines = [
+                `QA: ${todayCount} tasks.`,
+                ...Object.entries(envCount)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([name, n]) => `${name}: ${n}`)
+            ];
+            copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
         }
         if (uncertain && !state.lastUncertain) {
             Logger.info('feedback-given-today-env: last visible row is today — showing uncertain count and scroll message');
