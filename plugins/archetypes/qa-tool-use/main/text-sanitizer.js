@@ -6,7 +6,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy, remove whitespace, and remove special characters. Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -140,6 +140,15 @@ const plugin = {
     },
 
     ensureTextSanitizerBelowAnchor(state, anchor) {
+        if (anchor.dataset && anchor.dataset.qaTextSanitizer === 'true') {
+            const duplicates = this.findAllTextSanitizersAmongSiblings(anchor);
+            duplicates.forEach((el) => {
+                el.remove();
+                Logger.log('✓ Text Sanitizer: Removed duplicate');
+            });
+            return;
+        }
+
         const existing = this.findExistingTextSanitizerAmongSiblings(anchor);
         if (existing) {
             const all = this.findAllTextSanitizersAmongSiblings(anchor);
