@@ -9,7 +9,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -136,7 +136,11 @@ const plugin = {
     parseDateThenTimeToIso(text) {
         try {
             const raw = (text || '').trim();
-            if (!raw) return raw;
+            Logger.debug('[textSanitizer] Date/Time to ISO: input raw=', JSON.stringify(raw), 'length=', raw.length);
+            if (!raw) {
+                Logger.debug('[textSanitizer] Date/Time to ISO: empty input, returning as-is');
+                return raw;
+            }
 
             const monthNames = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
         const space = '\\s{0,1}';
@@ -162,11 +166,15 @@ const plugin = {
             if (m) {
                 dateMatch = { m, order };
                 remainder = remainder.slice(m[0].length).trim();
+                Logger.debug('[textSanitizer] Date/Time to ISO: date matched order=', order, 'matched=', JSON.stringify(m[0]), 'remainder=', JSON.stringify(remainder));
                 break;
             }
         }
 
-        if (!dateMatch) return text;
+        if (!dateMatch) {
+            Logger.log('[textSanitizer] Date/Time to ISO: no date pattern matched, returning original text. input=', JSON.stringify(raw));
+            return text;
+        }
 
         let y = 0;
         let mo = 1;
@@ -213,16 +221,22 @@ const plugin = {
 
         const date = new Date(y, mo - 1, d, hour, min, sec, 0);
         if (Number.isNaN(date.getTime()) || date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
+            Logger.debug('[textSanitizer] Date/Time to ISO: invalid date (y=', y, 'mo=', mo, 'd=', d, ') or NaN, returning original');
             return text;
         }
 
+        let out;
         if (timeMatch) {
-            return date.toISOString();
+            out = date.toISOString();
+            Logger.debug('[textSanitizer] Date/Time to ISO: returning ISO with time:', out);
+            return out;
         }
         const yy = date.getFullYear();
         const mm = String(date.getMonth() + 1).padStart(2, '0');
         const dd = String(date.getDate()).padStart(2, '0');
-        return `${yy}-${mm}-${dd}`;
+        out = `${yy}-${mm}-${dd}`;
+        Logger.debug('[textSanitizer] Date/Time to ISO: returning date-only:', out);
+        return out;
         } catch (e) {
             Logger.warn('Text Sanitizer: parseDateThenTimeToIso failed', e);
             return text || '';
@@ -385,16 +399,9 @@ const plugin = {
         const label = document.createElement('span');
         label.className = 'text-sm text-muted-foreground font-medium';
         label.textContent = 'Text Sanitizer';
-        const copyRightWrapper = document.createElement('div');
-        copyRightWrapper.className = 'flex items-center gap-1';
-        const copyLabel = document.createElement('span');
-        copyLabel.className = 'text-sm text-muted-foreground';
-        copyLabel.textContent = 'Copy and Clear Output:';
         const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
-        copyRightWrapper.appendChild(copyLabel);
-        copyRightWrapper.appendChild(copyBtn);
         header.appendChild(label);
-        header.appendChild(copyRightWrapper);
+        header.appendChild(copyBtn);
         container.insertBefore(header, textareaWrapper);
 
         const actionRow = document.createElement('div');
@@ -449,6 +456,9 @@ const plugin = {
             const input = textarea.value || '';
             try {
                 const output = action.run(input);
+                if (id === 'dateTimeToIso') {
+                    Logger.log('[textSanitizer] Date/Time to ISO execute: input=', JSON.stringify(input), 'output=', JSON.stringify(output), 'changed=', input !== output);
+                }
                 textarea.value = output;
                 updateTextareaHeight();
                 Storage.set(this.storageKeys.lastAction, id);
@@ -470,26 +480,14 @@ const plugin = {
     },
 
     createCopyButton(state, opts) {
+        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
         const button = document.createElement('button');
         button.type = 'button';
         button.setAttribute('data-fleet-plugin', this.id);
-        button.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground size-7 h-6 w-6';
+        button.className = buttonClass;
+        button.textContent = 'Copy and Clear';
         button.title = 'Copy text and clear';
         button.setAttribute('aria-label', 'Copy text and clear');
-
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '12');
-        svg.setAttribute('height', '12');
-        svg.setAttribute('viewBox', '0 0 24 24');
-        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        svg.className = 'fill-current h-3 w-3 text-muted-foreground';
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('fill', 'currentColor');
-        path.setAttribute('fill-rule', 'evenodd');
-        path.setAttribute('clip-rule', 'evenodd');
-        path.setAttribute('d', 'M2 5C2 3.34315 3.34315 2 5 2H12C13.6569 2 15 3.34315 15 5C15 5.55228 14.5523 6 14 6C13.4477 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4H5C4.44772 4 4 4.44772 4 5V13C4 13.5523 4.44772 14 5 14H6C6.55228 14 7 14.4477 7 15C7 15.5523 6.55228 16 6 16H5C3.34315 16 2 14.6569 2 13V5ZM9 10.8462C9 9.20041 10.42 8 12 8H19C20.58 8 22 9.20041 22 10.8462V19.1538C22 20.7996 20.58 22 19 22H12C10.42 22 9 20.7996 9 19.1538V10.8462ZM12 10C11.3708 10 11 10.4527 11 10.8462V19.1538C11 19.5473 11.3708 20 12 20H19C19.6292 20 20 19.5473 20 19.1538V10.8462C20 10.4527 19.6292 10 19 10H12Z');
-        svg.appendChild(path);
-        button.appendChild(svg);
 
         const handleCopy = () => {
             const container = button.closest('[data-qa-text-sanitizer="true"]');
@@ -502,12 +500,12 @@ const plugin = {
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Text Sanitizer: Copied ${text.length} chars and cleared`);
-                button.style.color = '';
-                button.style.backgroundColor = '';
+                button.textContent = 'Copied';
                 button.style.backgroundColor = 'rgb(34, 197, 94)';
                 button.style.color = 'white';
                 if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
                 state.copyFeedbackTimeoutId = setTimeout(() => {
+                    button.textContent = 'Copy and Clear';
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     state.copyFeedbackTimeoutId = null;
