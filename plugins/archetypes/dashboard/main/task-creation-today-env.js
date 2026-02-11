@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Task Creation Today and Environment',
     description: 'Show today\'s task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -159,9 +159,11 @@ const plugin = {
         const todayEl = block.querySelector('[data-wf-today-count]');
         const envEl = block.querySelector('[data-wf-env-breakdown]');
         const msgEl = block.querySelector('[data-wf-scroll-msg]');
+        const copySectionEl = block.querySelector('[data-wf-copy-section]');
         const copyBtn = block.querySelector('[data-wf-copy-btn]');
         if (todayEl) todayEl.textContent = uncertain ? `${todayCount}? today` : `${todayCount} today`;
         if (envEl) envEl.textContent = envBreakdownText;
+        if (copySectionEl) copySectionEl.classList.toggle('hidden', todayCount === 0);
         if (msgEl) {
             if (uncertain) {
                 msgEl.classList.remove('hidden');
@@ -172,7 +174,6 @@ const plugin = {
             }
         }
         if (copyBtn) {
-            copyBtn.disabled = todayCount === 0;
             copyBtn.setAttribute('data-wf-copy-uncertain', uncertain ? 'true' : 'false');
             if (!copyBtn._wfCopyResetTimeout) {
                 copyBtn.textContent = 'Copy';
