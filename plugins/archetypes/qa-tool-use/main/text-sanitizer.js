@@ -1,14 +1,21 @@
 // ============= text-sanitizer.js =============
 // Adds a Text Sanitizer module in the same area as the QA scratchpad (below it when present).
 // Independent of scratchpad: appears after Prompt section or after scratchpad/guideline buttons.
+// Actions: dropdown + Execute; last action persisted. Date/Time to ISO is RegEx-based, date then time, output ISO 8601.
+
+const DEFAULT_ACTION_ID = 'removeAllWhitespace';
 
 const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
-    description: 'Adds a text sanitizer with copy, remove whitespace, and remove special characters. Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.1',
+    description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
+
+    storageKeys: {
+        lastAction: 'text-sanitizer-last-action'
+    },
 
     initialState: {
         promptMissingLogged: false,
@@ -120,6 +127,101 @@ const plugin = {
         return panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto') || null;
     },
 
+    /**
+     * Parse date then time left-to-right from text; output ISO 8601. Time-only not allowed.
+     * Supports month names/abbrevs (case insensitive), AM/PM, up to one space between numbers and labels.
+     * Returns original input on failure or when no date found.
+     */
+    parseDateThenTimeToIso(text) {
+        const raw = (text || '').trim();
+        if (!raw) return raw;
+
+        const monthNames = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+        const space = '\\s{0,1}';
+        const num1 = '\\d{1,2}';
+        const num2 = '\\d{2}';
+        const num4 = '\\d{4}';
+        const yearShort = '\\d{2,4}';
+
+        let dateMatch = null;
+        let remainder = raw;
+
+        const datePatterns = [
+            { re: new RegExp(`^(${num4})-(${num1})-(${num1})(?=\\s|$|[^\\d])`, 'i'), order: 'ymd' },
+            { re: new RegExp(`^(${num1})/(${num1})/(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
+            { re: new RegExp(`^(${num1})-(${num1})-(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
+            { re: new RegExp(`^(${monthNames})${space},?${space}(${num1})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy_name' },
+            { re: new RegExp(`^(${num1})${space}+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
+        ];
+
+        for (const { re, order } of datePatterns) {
+            const m = remainder.match(re);
+            if (m) {
+                dateMatch = { m, order };
+                remainder = remainder.slice(m[0].length).trim();
+                break;
+            }
+        }
+
+        if (!dateMatch) return text;
+
+        let y = 0;
+        let mo = 1;
+        let d = 1;
+        const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+
+        if (dateMatch.order === 'ymd') {
+            y = parseInt(dateMatch.m[1], 10);
+            mo = parseInt(dateMatch.m[2], 10);
+            d = parseInt(dateMatch.m[3], 10);
+        } else if (dateMatch.order === 'mdy') {
+            mo = parseInt(dateMatch.m[1], 10);
+            d = parseInt(dateMatch.m[2], 10);
+            y = parseInt(dateMatch.m[3], 10);
+            if (y < 100) y += y < 50 ? 2000 : 1900;
+        } else if (dateMatch.order === 'mdy_name') {
+            const monthStr = dateMatch.m[1].toLowerCase().slice(0, 3);
+            mo = months[monthStr] || 1;
+            d = parseInt(dateMatch.m[2], 10);
+            y = parseInt(dateMatch.m[3], 10);
+            if (y < 100) y += y < 50 ? 2000 : 1900;
+        } else if (dateMatch.order === 'dmy_name') {
+            d = parseInt(dateMatch.m[1], 10);
+            const monthStr = dateMatch.m[2].toLowerCase().slice(0, 3);
+            mo = months[monthStr] || 1;
+            y = parseInt(dateMatch.m[3], 10);
+            if (y < 100) y += y < 50 ? 2000 : 1900;
+        }
+
+        let hour = 0;
+        let min = 0;
+        let sec = 0;
+        const timeRe = new RegExp(`^(${num1})${space}:${space}(${num2})(?:${space}:${space}(${num2}))?${space}(AM|PM|am|pm)?(?=\\s|$|[^\\d])`, 'i');
+        const timeMatch = remainder.match(timeRe);
+        if (timeMatch) {
+            hour = parseInt(timeMatch[1], 10);
+            min = parseInt(timeMatch[2], 10);
+            sec = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+            const ampm = (timeMatch[4] || '').toUpperCase();
+            if (ampm === 'PM' && hour < 12) hour += 12;
+            if (ampm === 'AM' && hour === 12) hour = 0;
+        }
+        if (timeMatch) remainder = remainder.slice(timeMatch[0].length).trim();
+
+        const date = new Date(y, mo - 1, d, hour, min, sec, 0);
+        if (Number.isNaN(date.getTime()) || date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
+            return text;
+        }
+
+        if (timeMatch) {
+            return date.toISOString();
+        }
+        const yy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        return `${yy}-${mm}-${dd}`;
+    },
+
     findExistingTextSanitizerAmongSiblings(anchor) {
         let el = anchor.nextElementSibling;
         while (el) {
@@ -211,43 +313,56 @@ const plugin = {
         textareaWrapper.appendChild(textarea);
         container.appendChild(textareaWrapper);
 
-        const buttonRow = document.createElement('div');
-        buttonRow.className = 'flex flex-wrap gap-1';
+        const actionRow = document.createElement('div');
+        actionRow.className = 'flex flex-wrap items-center gap-2';
+
+        const select = document.createElement('select');
+        select.setAttribute('data-fleet-plugin', this.id);
+        select.className = 'h-8 rounded-sm border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+        const actionIds = ['removeAllWhitespace', 'trimWhitespace', 'removeSpecialCharacters', 'dateTimeToIso'];
+        const savedAction = Storage.get(this.storageKeys.lastAction, DEFAULT_ACTION_ID);
+        const initialAction = actionIds.includes(savedAction) ? savedAction : DEFAULT_ACTION_ID;
+        actionIds.forEach((id) => {
+            const action = this.actions[id];
+            if (!action) return;
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = action.label;
+            if (id === initialAction) opt.selected = true;
+            select.appendChild(opt);
+        });
+        select.value = initialAction;
+
+        const onSelectChange = () => {
+            Storage.set(this.storageKeys.lastAction, select.value);
+            Logger.debug('Text Sanitizer: Saved last action ' + select.value);
+        };
+        select.addEventListener('change', onSelectChange);
+        CleanupRegistry.registerEventListener(select, 'change', onSelectChange);
+
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-
-        const onRemoveWhitespace = () => {
-            const val = textarea.value || '';
-            const next = val.replace(/\s+/g, ' ').trim();
-            textarea.value = next;
+        const executeBtn = document.createElement('button');
+        executeBtn.type = 'button';
+        executeBtn.className = buttonClass;
+        executeBtn.setAttribute('data-fleet-plugin', this.id);
+        executeBtn.textContent = 'Execute';
+        const onExecute = () => {
+            const id = select.value;
+            const action = this.actions[id];
+            if (!action) return;
+            const input = textarea.value || '';
+            const output = action.run(input);
+            textarea.value = output;
             resizeTextarea();
-            Logger.log('✓ Text Sanitizer: Removed whitespace');
+            Storage.set(this.storageKeys.lastAction, id);
+            Logger.log('✓ Text Sanitizer: Executed ' + action.label);
         };
-        const removeWhitespaceBtn = document.createElement('button');
-        removeWhitespaceBtn.type = 'button';
-        removeWhitespaceBtn.className = buttonClass;
-        removeWhitespaceBtn.setAttribute('data-fleet-plugin', this.id);
-        removeWhitespaceBtn.textContent = 'Remove Whitespace';
-        removeWhitespaceBtn.addEventListener('click', onRemoveWhitespace);
-        CleanupRegistry.registerEventListener(removeWhitespaceBtn, 'click', onRemoveWhitespace);
+        executeBtn.addEventListener('click', onExecute);
+        CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
 
-        const onRemoveSpecial = () => {
-            const val = textarea.value || '';
-            const next = val.replace(/[^a-zA-Z0-9\s]/g, '');
-            textarea.value = next;
-            resizeTextarea();
-            Logger.log('✓ Text Sanitizer: Removed special characters');
-        };
-        const removeSpecialBtn = document.createElement('button');
-        removeSpecialBtn.type = 'button';
-        removeSpecialBtn.className = buttonClass;
-        removeSpecialBtn.setAttribute('data-fleet-plugin', this.id);
-        removeSpecialBtn.textContent = 'Remove Special Characters';
-        removeSpecialBtn.addEventListener('click', onRemoveSpecial);
-        CleanupRegistry.registerEventListener(removeSpecialBtn, 'click', onRemoveSpecial);
-
-        buttonRow.appendChild(removeWhitespaceBtn);
-        buttonRow.appendChild(removeSpecialBtn);
-        container.appendChild(buttonRow);
+        actionRow.appendChild(select);
+        actionRow.appendChild(executeBtn);
+        container.appendChild(actionRow);
 
         return container;
     },
@@ -306,5 +421,37 @@ const plugin = {
         button.addEventListener('click', handleCopy);
         CleanupRegistry.registerEventListener(button, 'click', handleCopy);
         return button;
+    }
+};
+
+plugin.actions = {
+    removeAllWhitespace: {
+        id: 'removeAllWhitespace',
+        label: 'Remove All Whitespace',
+        run(input) {
+            return (input || '').replace(/\s+/g, ' ').trim();
+        }
+    },
+    trimWhitespace: {
+        id: 'trimWhitespace',
+        label: 'Trim Whitespace',
+        run(input) {
+            return (input || '').trim();
+        }
+    },
+    removeSpecialCharacters: {
+        id: 'removeSpecialCharacters',
+        label: 'Remove Special Characters',
+        run(input) {
+            const step = (input || '').replace(/[^a-zA-Z0-9\s]/g, '');
+            return plugin.actions.trimWhitespace.run(step);
+        }
+    },
+    dateTimeToIso: {
+        id: 'dateTimeToIso',
+        label: 'Date/Time to ISO',
+        run(input) {
+            return plugin.parseDateThenTimeToIso(input || '');
+        }
     }
 };
