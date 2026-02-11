@@ -9,7 +9,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -282,8 +282,9 @@ const plugin = {
         container.dataset.qaTextSanitizer = 'true';
         container.setAttribute('data-fleet-plugin', this.id);
 
-        const ONE_LINE_HEIGHT = 24;
+        const ONE_LINE_HEIGHT = 40;
         const MIN_WRAPPER_HEIGHT = 60;
+        const RESIZE_HANDLE_HEIGHT = 12;
 
         const textareaWrapper = document.createElement('div');
         textareaWrapper.className = 'relative flex flex-col rounded-md overflow-hidden border border-input bg-background shadow-sm';
@@ -320,7 +321,7 @@ const plugin = {
                 resizeHandle.style.opacity = '1';
                 if (parseInt(textareaWrapper.style.height, 10) <= ONE_LINE_HEIGHT) {
                     textareaWrapper.style.height = '80px';
-                    textarea.style.height = 'calc(80px - 12px)';
+                    textarea.style.height = (80 - RESIZE_HANDLE_HEIGHT) + 'px';
                 }
             } else {
                 resizeHandle.style.display = 'none';
@@ -350,9 +351,11 @@ const plugin = {
         const handleMouseMove = (e) => {
             if (!isResizing) return;
             const deltaY = e.clientY - startY;
-            const newHeight = Math.max(MIN_WRAPPER_HEIGHT, startHeight + deltaY);
+            const requested = startHeight + deltaY;
+            const maxHeight = textarea.scrollHeight + RESIZE_HANDLE_HEIGHT;
+            const newHeight = Math.max(MIN_WRAPPER_HEIGHT, Math.min(maxHeight, requested));
             textareaWrapper.style.height = newHeight + 'px';
-            textarea.style.height = (newHeight - 12) + 'px';
+            textarea.style.height = (newHeight - RESIZE_HANDLE_HEIGHT) + 'px';
         };
         const handleMouseUp = () => {
             if (!isResizing) return;

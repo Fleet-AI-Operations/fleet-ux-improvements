@@ -1,6 +1,6 @@
 {
   "version": "3.10.4",
-  "archetypesVersion": "3.119",
+  "archetypesVersion": "3.120",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -263,7 +263,7 @@
         },
         {
           "name": "text-sanitizer.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "execute-to-current-tool.js",
