@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.24',
+    _version: '5.25',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -69,13 +69,13 @@ const plugin = {
                 justify-content: center;
                 cursor: pointer;
                 z-index: 9999;
-                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease' : 'all 0.2s'};
+                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease, color 1s ease' : 'all 0.2s'};
             `;
             
             settingsBtn.style.cssText = baseStyles;
         } else if (isAlreadyPulsing) {
-            // Only update transition if pulsing, don't reset border/box-shadow
-            settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
+            // Only update transition if pulsing, don't reset border/box-shadow/color
+            settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease, color 1s ease';
         }
         
         // Add pulsing animation if outdated or simulate update banner is enabled (dev branch only)
@@ -120,12 +120,13 @@ const plugin = {
             this._pulseInterval = null;
         }
         
-        // Ensure smooth transitions
-        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
+        // Ensure smooth transitions (include color so gear icon flashes with outline)
+        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease, color 1s ease';
         
-        // Set initial state (start with red outline)
+        // Set initial state (start with red outline and red gear icon)
         settingsBtn.style.border = '2px solid #dc2626';
         settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
+        settingsBtn.style.color = '#dc2626';
         
         let isOn = true; // Start with red outline (on state)
         this._pulseInterval = setInterval(() => {
@@ -133,9 +134,11 @@ const plugin = {
             if (isOn) {
                 settingsBtn.style.border = '2px solid #dc2626';
                 settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
+                settingsBtn.style.color = '#dc2626';
             } else {
                 settingsBtn.style.border = '1px solid #60a5fa';
                 settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                settingsBtn.style.color = '#60a5fa';
             }
         }, 1000); // 1 second per state
     },
@@ -149,6 +152,7 @@ const plugin = {
         if (settingsBtn) {
             settingsBtn.style.border = '1px solid #60a5fa';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            settingsBtn.style.color = '';
         }
     },
     
@@ -1861,6 +1865,9 @@ const plugin = {
                                     ? `Your current version of this extension (<strong>${currentVersion}</strong>) is marked as outdated for testing purposes. Use this <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">link to the current script</a> to verify the update flow.`
                                     : `Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).`
                             }
+                        </p>
+                        <p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">
+                            Refresh this page once the update has been applied.
                         </p>
                     </div>
                 </div>
