@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.9',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -159,6 +159,31 @@ const plugin = {
     },
 
     findPromptSection(scopeRoot) {
+        // Revision page (no tab bar): task-revision uses div.space-y-2 and textarea#prompt-editor, not div.flex.flex-col.gap-2.
+        if (!scopeRoot) {
+            const promptTextarea = document.querySelector('textarea#prompt-editor');
+            if (promptTextarea) {
+                const inner = promptTextarea.closest('div.space-y-2.relative');
+                const outer = inner?.parentElement;
+                if (outer && outer.classList && outer.classList.contains('space-y-2')) {
+                    return outer;
+                }
+                return inner || promptTextarea.closest('div.space-y-2') || promptTextarea.parentElement;
+            }
+            const labelCandidates = Context.dom.queryAll('div.text-sm.text-muted-foreground.font-medium', {
+                context: `${this.id}.findPromptSection.labelCandidates`
+            });
+            for (const labelEl of labelCandidates) {
+                const text = (labelEl.textContent || '').trim();
+                if (!text.startsWith('Prompt')) continue;
+                const section = labelEl.closest('div.space-y-2');
+                if (!section) continue;
+                if (section.querySelector('textarea#prompt-editor')) {
+                    return section;
+                }
+            }
+        }
+
         const options = { context: `${this.id}.findPromptSection` };
         if (scopeRoot) options.root = scopeRoot;
         const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
