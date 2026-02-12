@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -326,6 +326,7 @@ const plugin = {
     createContainer(state) {
         const container = document.createElement('div');
         container.className = 'flex flex-col gap-2';
+        container.style.marginTop = '0.75rem';
         container.dataset.qaTextSanitizer = 'true';
         container.setAttribute('data-fleet-plugin', this.id);
 
