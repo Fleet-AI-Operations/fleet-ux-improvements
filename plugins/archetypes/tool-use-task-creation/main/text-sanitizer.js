@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -189,6 +189,7 @@ const plugin = {
     /**
      * Returns the element after which to insert. Walk nextElementSibling while sibling is
      * scratchpad, guideline buttons, or our own container; use last such as anchor.
+     * On task-creation, prefer inserting after the Scratchpad (div.mt-3 with "Scratchpad" label).
      */
     getInsertAnchor(promptSection) {
         let anchor = promptSection;
@@ -200,6 +201,11 @@ const plugin = {
                 anchor = el;
             } else if (el.dataset && el.dataset.qaTextSanitizer === 'true') {
                 anchor = el;
+            } else if (el.classList && el.classList.contains('mt-3')) {
+                const label = el.querySelector('label');
+                if (label && (label.textContent || '').trim().startsWith('Scratchpad')) {
+                    anchor = el;
+                }
             }
             el = el.nextElementSibling;
         }
@@ -304,6 +310,14 @@ const plugin = {
             return;
         }
 
+        // Remove any sanitizer already in this container but in the wrong place (e.g. after prompt when anchor is scratchpad).
+        const parent = anchor.parentElement;
+        if (parent) {
+            parent.querySelectorAll('[data-qa-text-sanitizer="true"]').forEach((el) => {
+                el.remove();
+                Logger.debug('Text Sanitizer: Removed from wrong position');
+            });
+        }
         const container = this.createContainer(state);
         anchor.insertAdjacentElement('afterend', container);
         Logger.log('✓ Text Sanitizer: Inserted below scratchpad area');
