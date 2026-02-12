@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.28',
+    _version: '1.29',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -297,6 +297,19 @@ const plugin = {
             inputs.forEach(inp => {
                 const v = inp.value.trim();
                 if (v) arr.push(v);
+            });
+            return arr.length ? arr : undefined;
+        }
+        if (typeLabel === 'integer[]' || typeLabel.includes('integer[]') || typeLabel === 'number[]' || typeLabel.includes('number[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap) return undefined;
+            const inputs = wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="number"]');
+            const arr = [];
+            inputs.forEach(inp => {
+                const s = inp.value.trim();
+                if (s === '') return;
+                const n = Number(s);
+                arr.push(Number.isNaN(n) ? s : n);
             });
             return arr.length ? arr : undefined;
         }
@@ -757,7 +770,7 @@ const plugin = {
         if (container) {
             const cards = container.querySelectorAll(this.selectors.toolCard);
             if (cards.length > previousCount) {
-                return cards[cards.length - 1] || null;
+                return cards[previousCount] ?? null;
             }
         }
 
@@ -768,7 +781,7 @@ const plugin = {
                 const updated = c.querySelectorAll(this.selectors.toolCard);
                 if (updated.length > previousCount) {
                     observer.disconnect();
-                    resolve(updated[updated.length - 1] || null);
+                    resolve(updated[previousCount] ?? null);
                 }
             });
             observer.observe(stableParent, { childList: true, subtree: true });
@@ -899,6 +912,17 @@ const plugin = {
             return;
         }
 
+        if (typeLabel === 'integer[]' || typeLabel.includes('integer[]') || typeLabel === 'number[]' || typeLabel.includes('number[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap || !Array.isArray(value)) return;
+            await this.ensureArrayItems(wrap, value.length);
+            const inputs = Array.from(wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="number"]'));
+            for (let i = 0; i < value.length; i++) {
+                if (inputs[i]) this.setInputValue(inputs[i], (value[i] === null || value[i] === undefined) ? '' : String(value[i]));
+            }
+            return;
+        }
+
         if (typeLabel === 'object[]' || typeLabel.includes('object[]')) {
             const wrap = block.querySelector('div.space-y-2.mt-1') || block;
             if (!Array.isArray(value)) return;
@@ -931,7 +955,7 @@ const plugin = {
         if (!addBtn) return;
 
         const getItemCount = () => {
-            const inputs = wrap.querySelectorAll('input[type="text"], button[role="combobox"], div.relative.border.rounded-md.p-3');
+            const inputs = wrap.querySelectorAll('input[type="text"], input[type="number"], button[role="combobox"], div.relative.border.rounded-md.p-3');
             return inputs.length;
         };
 
