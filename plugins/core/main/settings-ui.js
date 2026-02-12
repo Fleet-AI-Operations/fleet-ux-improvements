@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.25',
+    _version: '5.22',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -69,13 +69,13 @@ const plugin = {
                 justify-content: center;
                 cursor: pointer;
                 z-index: 9999;
-                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease, color 1s ease' : 'all 0.2s'};
+                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease' : 'all 0.2s'};
             `;
             
             settingsBtn.style.cssText = baseStyles;
         } else if (isAlreadyPulsing) {
-            // Only update transition if pulsing, don't reset border/box-shadow/color
-            settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease, color 1s ease';
+            // Only update transition if pulsing, don't reset border/box-shadow
+            settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
         }
         
         // Add pulsing animation if outdated or simulate update banner is enabled (dev branch only)
@@ -120,13 +120,12 @@ const plugin = {
             this._pulseInterval = null;
         }
         
-        // Ensure smooth transitions (include color so gear icon flashes with outline)
-        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease, color 1s ease';
+        // Ensure smooth transitions
+        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
         
-        // Set initial state (start with red outline and red gear icon)
+        // Set initial state (start with red outline)
         settingsBtn.style.border = '2px solid #dc2626';
         settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-        settingsBtn.style.color = '#dc2626';
         
         let isOn = true; // Start with red outline (on state)
         this._pulseInterval = setInterval(() => {
@@ -134,11 +133,9 @@ const plugin = {
             if (isOn) {
                 settingsBtn.style.border = '2px solid #dc2626';
                 settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-                settingsBtn.style.color = '#dc2626';
             } else {
                 settingsBtn.style.border = '1px solid #60a5fa';
                 settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-                settingsBtn.style.color = '#60a5fa';
             }
         }, 1000); // 1 second per state
     },
@@ -152,7 +149,6 @@ const plugin = {
         if (settingsBtn) {
             settingsBtn.style.border = '1px solid #60a5fa';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-            settingsBtn.style.color = '';
         }
     },
     
@@ -247,7 +243,7 @@ const plugin = {
             border-radius: 12px;
             padding: 24px;
             width: 520px;
-            max-height: calc(100vh - 100px);
+            max-height: 80vh;
             overflow-y: auto;
             z-index: 10000;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
@@ -264,8 +260,7 @@ const plugin = {
         const orderedDevPlugins = this._getOrderedPlugins(devPlugins, archetypeId, 'dev');
         const version = Context.version || 'unknown';
         this._settingsArchetypeId = archetypeId;
-        this._settingsDevPlugins = devPlugins;
-        this._initialSettingsSnapshot = this._getSettingsSnapshot(archetypePlugins, archetypeId, devPlugins);
+        this._initialSettingsSnapshot = this._getSettingsSnapshot(archetypePlugins, archetypeId);
         
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -530,7 +525,7 @@ const plugin = {
                     <label style="font-size: 12px; color: var(--muted-foreground, #666);" for="wf-plugin-log-${plugin.id}">
                         Module Logging
                     </label>
-                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'log' })}
+                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small' })}
                 </div>
         ` : '';
         return `
@@ -583,7 +578,7 @@ const plugin = {
                         </label>
                         ${subOption.description ? `<div style="font-size: 11px; color: var(--muted-foreground, #888); margin-top: 2px;">${subOption.description}</div>` : ''}
                     </div>
-                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small', variant: 'suboption' })}
+                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small' })}
                 </div>
             `;
         }).join('');
@@ -610,16 +605,8 @@ const plugin = {
         const dataAttr = pluginId ? `data-plugin-id="${pluginId}"` : '';
         const disabledAttr = isDisabled ? 'disabled' : '';
         const isSmall = opts.size === 'small';
-        const variant = opts.variant || 'main';
-        // Main toggles: green. Sub-option toggles: blue. Module log toggles: yellow.
-        let onColor;
-        if (variant === 'suboption') {
-            onColor = 'var(--brand, #4f46e5)';
-        } else if (variant === 'log') {
-            onColor = '#ca8a04';
-        } else {
-            onColor = '#16a34a';
-        }
+        // Main toggles: original blue. Sub-option toggles (small): 25% lighter blue when on.
+        const onColor = isSmall ? '#8986f1' : 'var(--brand, #4f46e5)';
         const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
@@ -629,15 +616,7 @@ const plugin = {
         const knobLeftOn = isSmall ? 17 : 23;
         const knobLeftOff = 3;
         const knobBottom = isSmall ? 2 : 3;
-        const dataAttrs = [`data-wf-on-color="${onColor}"`];
-        if (isSmall) {
-            dataAttrs.push(
-                `data-wf-knob-left-on="${knobLeftOn}"`,
-                `data-wf-knob-left-off="${knobLeftOff}"`,
-                `data-wf-knob-bottom="${knobBottom}"`
-            );
-        }
-        const dataAttrString = dataAttrs.length ? ' ' + dataAttrs.join(' ') : '';
+        const onColorAttr = isSmall ? ` data-wf-on-color="${onColor}" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}"` : '';
         return `
             <label style="position: relative; display: inline-block; width: ${w}px; height: ${h}px; flex-shrink: 0; ${isDisabled ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
                 <input type="checkbox" id="${id}" ${dataAttr} ${isEnabled ? 'checked' : ''} ${disabledAttr} style="opacity: 0; width: 0; height: 0; position: absolute;">
@@ -648,7 +627,7 @@ const plugin = {
                     background-color: ${sliderBg};
                     transition: 0.2s;
                     border-radius: 24px;
-                "${dataAttrString}>
+                "${onColorAttr}>
                     <span style="
                         position: absolute;
                         height: ${knobSize}px;
@@ -668,7 +647,6 @@ const plugin = {
     _attachModalListeners(modal, plugins, devPlugins = []) {
         const self = this;
         const allPlugins = [...plugins, ...devPlugins];
-        this._settingsDevPlugins = devPlugins;
         
         // Close button
         const closeBtn = Context.dom.query('#wf-settings-close', {
@@ -1431,11 +1409,11 @@ const plugin = {
         return normalized;
     },
 
-    _getSettingsSnapshot(plugins, archetypeId, devPlugins = null) {
+    _getSettingsSnapshot(plugins, archetypeId) {
         const sortedPlugins = plugins
             .map(plugin => plugin)
             .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-        const snapshot = {
+        return {
             globalEnabled: this._getGlobalEnabled(),
             debug: Logger.isDebugEnabled(),
             verbose: Logger.isVerboseEnabled(),
@@ -1457,28 +1435,6 @@ const plugin = {
             }),
             pluginOrder: this._getStoredPluginOrder(archetypeId, plugins)
         };
-        if (devPlugins && Array.isArray(devPlugins) && devPlugins.length > 0) {
-            const sortedDevPlugins = devPlugins
-                .map(plugin => plugin)
-                .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-            snapshot.devGlobalEnabled = this._getDevGlobalEnabled();
-            snapshot.devPluginStates = sortedDevPlugins.map(plugin => {
-                const state = {
-                    id: plugin.id,
-                    enabled: PluginManager.isEnabled(plugin.id),
-                    moduleLogging: Logger.isModuleLoggingEnabled(plugin.id)
-                };
-                if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
-                    state.subOptions = plugin.subOptions.map(subOption => ({
-                        id: subOption.id,
-                        enabled: Storage.getSubOptionEnabled(plugin.id, subOption.id, subOption.enabledByDefault !== false)
-                    }));
-                }
-                return state;
-            });
-            snapshot.devPluginOrder = this._getStoredPluginOrder(archetypeId, devPlugins, 'dev');
-        }
-        return snapshot;
     },
 
     _getGlobalEnabled() {
@@ -1616,8 +1572,7 @@ const plugin = {
 
     _updateSettingsMessage(modal, plugins) {
         const msg = this._ensureMessageElement(modal);
-        const devPlugins = this._settingsDevPlugins || [];
-        const current = this._getSettingsSnapshot(plugins, this._settingsArchetypeId, devPlugins);
+        const current = this._getSettingsSnapshot(plugins, this._settingsArchetypeId);
         const changed = JSON.stringify(current) !== JSON.stringify(this._initialSettingsSnapshot);
         msg.style.display = changed ? 'block' : 'none';
         if (changed) {
@@ -1835,13 +1790,27 @@ const plugin = {
     
     _createUpdateNotificationHTML() {
         const currentVersion = Context.version || 'unknown';
-        // If simulate update banner is enabled, show a test banner without fabricating a higher version number
+        // If simulate update banner is enabled, simulate update by using current version + 0.1 as latest
         const isOverrideMode = Context.isDevBranch && this._getPulseOverrideEnabled() && !Context.isOutdated;
-        const latestVersion = Context.latestVersion || 'unknown';
+        let latestVersion = Context.latestVersion;
+        
+        if (isOverrideMode) {
+            // Simulate update by making latest version slightly higher
+            // Parse version and increment patch version
+            const versionParts = currentVersion.split('.');
+            if (versionParts.length >= 3) {
+                const patch = parseInt(versionParts[2]) || 0;
+                versionParts[2] = (patch + 1).toString();
+                latestVersion = versionParts.join('.');
+            } else {
+                latestVersion = currentVersion;
+            }
+        } else {
+            latestVersion = Context.latestVersion || 'unknown';
+        }
         
         return `
             <div style="
-                margin-top: 16px;
                 margin-bottom: 20px;
                 padding: 14px;
                 padding-top: 20px;
@@ -1860,14 +1829,7 @@ const plugin = {
                             Extension Update Available
                         </h3>
                         <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            ${
-                                isOverrideMode
-                                    ? `Your current version of this extension (<strong>${currentVersion}</strong>) is marked as outdated for testing purposes. Use this <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">link to the current script</a> to verify the update flow.`
-                                    : `Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).`
-                            }
-                        </p>
-                        <p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">
-                            Refresh this page once the update has been applied.
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
