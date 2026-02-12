@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.9',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -159,10 +159,22 @@ const plugin = {
     },
 
     findPromptSection(scopeRoot) {
-        const options = { context: `${this.id}.findPromptSection` };
-        if (scopeRoot) options.root = scopeRoot;
-        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
+        const root = scopeRoot || document;
+        const options = { context: `${this.id}.findPromptSection`, root };
 
+        // Label-based fallback: find "Prompt" label then climb to section wrapper (resilient to DOM changes).
+        const labelSelectors = ['span.text-sm.text-muted-foreground.font-medium', 'div.text-sm.text-muted-foreground.font-medium'];
+        for (const sel of labelSelectors) {
+            const elements = Context.dom.queryAll(sel, options);
+            for (const el of elements) {
+                const text = (el.textContent || '').trim();
+                if (text !== 'Prompt' && !text.startsWith('Prompt')) continue;
+                const section = el.closest('div.flex.flex-col.gap-2') || el.closest('div.space-y-2');
+                if (section) return section;
+            }
+        }
+
+        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
         for (const candidate of candidates) {
             const label = candidate.querySelector('label');
             const span = candidate.querySelector('span.text-sm.text-muted-foreground.font-medium');
