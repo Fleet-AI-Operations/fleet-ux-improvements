@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.30',
+    _version: '1.31',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -210,7 +210,7 @@ const plugin = {
             Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
             return params;
         }
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
+        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
@@ -802,7 +802,7 @@ const plugin = {
         const spaceY3 = content.querySelector('div.space-y-3');
         if (!spaceY3) return;
 
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
+        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         const blockMap = {};
         for (const block of blocks) {
             const name = this.getParamNameFromBlock(block);
