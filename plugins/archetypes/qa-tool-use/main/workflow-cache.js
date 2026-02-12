@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.29',
+    _version: '1.30',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -232,7 +232,8 @@ const plugin = {
     getParamTypeFromBlock(block) {
         const typeDiv = block.querySelector('div.inline-flex.whitespace-nowrap.rounded-md.border.font-medium');
         if (!typeDiv) return '';
-        return (typeDiv.textContent || '').trim().toLowerCase();
+        const raw = (typeDiv.textContent || '').trim().toLowerCase();
+        return raw.replace(/\s+/g, '');
     },
 
     getParamValueFromBlock(block, typeLabel) {
