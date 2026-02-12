@@ -6,7 +6,7 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '1.0',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -28,13 +28,14 @@ const plugin = {
     initialState: {
         layoutApplied: false,
         resizeHandlerAttached: false,
+        scratchpadResizeHandlerAttached: false,
         scratchpadObserver: null,
         saveTimeoutId: null,
         missingLogged: false
     },
     
     onMutation(state, context) {
-        if (state.layoutApplied && state.resizeHandlerAttached) return;
+        if (state.layoutApplied && state.resizeHandlerAttached && state.scratchpadResizeHandlerAttached) return;
         
         // Find the main container (line 70 in HTML)
         const mainContainer = Context.dom.query('#prompt-editor', {
@@ -99,6 +100,12 @@ const plugin = {
             Logger.log('✓ Resize handler attached');
         }
         
+        // Attach scratchpad resize handle so dragging it resizes the scratchpad and the sanitizer below rises
+        if (!state.scratchpadResizeHandlerAttached) {
+            this.attachScratchpadResizeHandler(state, scratchpadContainer);
+            state.scratchpadResizeHandlerAttached = true;
+        }
+        
         // Restore scratchpad text if option is enabled
         const rememberScratchpad = Storage.getSubOptionEnabled(this.id, 'remember-scratchpad', true);
         if (rememberScratchpad && !scratchpadTextarea.dataset.wfScratchpadRestored) {
@@ -142,6 +149,14 @@ const plugin = {
         scratchpadContainer.style.minHeight = '0';
         scratchpadContainer.style.display = 'flex';
         scratchpadContainer.style.flexDirection = 'column';
+        
+        // Make the wrapper div (around the textarea) fill the scratchpad container so scratchpad loads fully extended
+        const scratchpadWrapper = scratchpadContainer.querySelector('div.flex.flex-col.relative.rounded-md');
+        if (scratchpadWrapper) {
+            scratchpadWrapper.style.flex = '1';
+            scratchpadWrapper.style.minHeight = '0';
+            scratchpadWrapper.style.height = '';
+        }
         
         // Make scratchpad textarea fill its container
         const scratchpadTextarea = scratchpadContainer.querySelector('textarea');
@@ -239,6 +254,60 @@ const plugin = {
         
         // Register cleanup
         CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
+    },
+    
+    attachScratchpadResizeHandler(state, scratchpadContainer) {
+        const scratchpadWrapper = scratchpadContainer.querySelector('div.flex.flex-col.relative.rounded-md');
+        if (!scratchpadWrapper) {
+            Logger.debug('Scratchpad wrapper not found for resize handle');
+            return;
+        }
+        const resizeHandle = scratchpadWrapper.querySelector('div.cursor-ns-resize');
+        if (!resizeHandle) {
+            Logger.debug('Scratchpad resize handle not found');
+            return;
+        }
+        resizeHandle.style.opacity = '1';
+        resizeHandle.style.pointerEvents = 'auto';
+        
+        const minHeight = 60;
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+        
+        const handleMouseDown = (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = scratchpadWrapper.offsetHeight;
+            e.preventDefault();
+            e.stopPropagation();
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+        };
+        
+        const handleMouseMove = (e) => {
+            if (!isResizing) return;
+            const deltaY = e.clientY - startY;
+            const newHeight = Math.max(minHeight, startHeight + deltaY);
+            scratchpadWrapper.style.height = `${newHeight}px`;
+            scratchpadWrapper.style.flex = '0 0 auto';
+            scratchpadContainer.style.flex = '0 0 auto';
+        };
+        
+        const handleMouseUp = () => {
+            if (!isResizing) return;
+            isResizing = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+        
+        resizeHandle.addEventListener('mousedown', handleMouseDown);
+        CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
+        Logger.log('✓ Scratchpad resize handle attached');
     },
     
     restoreScratchpadText(textarea) {

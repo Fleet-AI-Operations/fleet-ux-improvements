@@ -1,9 +1,9 @@
-// ============= feedback-given-today-env.js =============
+// ============= task-creation-today-env.js =============
 const plugin = {
-    id: 'feedbackGivenTodayEnv',
-    name: 'Feedback Given Today and Environment',
-    description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete',
-    _version: '2.0',
+    id: 'taskCreationTodayEnv',
+    name: 'Task Creation Today and Environment',
+    description: 'Show today\'s task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -31,33 +31,48 @@ const plugin = {
         return parsed.month === now.getMonth() + 1 && parsed.day === now.getDate();
     },
 
+    /**
+     * Find the Task Creation tab panel: one that has a table with thead containing "Submitted" and "Environment".
+     * @returns {HTMLTableElement | null}
+     */
+    findTaskCreationTable(main) {
+        const panels = main.querySelectorAll('[role="tabpanel"]');
+        for (const panel of panels) {
+            const table = panel.querySelector('table');
+            if (!table || !table.tHead) continue;
+            const thText = table.tHead.textContent || '';
+            if (thText.includes('Submitted') && thText.includes('Environment')) {
+                return table;
+            }
+        }
+        return null;
+    },
+
     onMutation(state, context) {
         const main = Context.dom.query('main', { context: `${this.id}.main` });
         if (!main) {
             if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: main not found');
+                Logger.debug('task-creation-today-env: main not found');
                 state.missingLogged = true;
             }
             return;
         }
 
-        const feedbackGivenHeading = main.querySelector('h3.tracking-tight.text-base.font-medium.text-primary');
-        if (!feedbackGivenHeading || feedbackGivenHeading.textContent.trim() !== 'Feedback Given') {
-            if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: Feedback Given card not found');
-                state.missingLogged = true;
-            }
-            return;
-        }
-
-        const card = feedbackGivenHeading.closest('.rounded-xl');
-        if (!card) return;
-
-        const panel = card.closest('[role="tabpanel"]');
-        const table = panel ? panel.querySelector('table') : null;
+        const table = this.findTaskCreationTable(main);
         if (!table) {
             if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: table not found in tab panel');
+                Logger.debug('task-creation-today-env: Task Creation table not found');
+                state.missingLogged = true;
+            }
+            return;
+        }
+
+        const panel = table.closest('[role="tabpanel"]');
+        const submittedHeading = panel && Array.from(panel.querySelectorAll('h3')).find(h => h.textContent.trim().startsWith('Submitted'));
+        const grid = submittedHeading ? submittedHeading.closest('.grid') : (panel && panel.firstElementChild);
+        if (!grid || !grid.matches('.grid')) {
+            if (!state.missingLogged) {
+                Logger.debug('task-creation-today-env: 4-card grid not found in tab panel');
                 state.missingLogged = true;
             }
             return;
@@ -94,11 +109,11 @@ const plugin = {
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 
-        let block = card.querySelector('[data-wf-feedback-today-env-block]');
+        let block = panel.querySelector('[data-wf-task-creation-today-env-block]');
         if (!block) {
             block = document.createElement('div');
-            block.setAttribute('data-wf-feedback-today-env-block', 'true');
-            block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
+            block.setAttribute('data-wf-task-creation-today-env-block', 'true');
+            block.className = 'rounded-xl text-card-foreground bg-muted-extra border-none shadow-none p-4 pt-4 flex flex-col justify-center mt-3 mb-3';
             block.innerHTML = [
                 '<div class="flex justify-between gap-4">',
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
@@ -124,7 +139,7 @@ const plugin = {
                     }
                     if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('feedback-given-today-env: copied breakdown to clipboard');
+                        Logger.log('task-creation-today-env: copied breakdown to clipboard');
                         copyBtn.textContent = 'Copied!';
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
@@ -133,18 +148,12 @@ const plugin = {
                             copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
                         }, 5000);
                     }).catch((err) => {
-                        Logger.error('feedback-given-today-env: failed to copy breakdown', err);
+                        Logger.error('task-creation-today-env: failed to copy breakdown', err);
                     });
                 });
             }
-            const existingContent = card.querySelector('.p-4.pt-0.flex.items-end.justify-between');
-            if (existingContent && existingContent.nextSibling) {
-                card.insertBefore(block, existingContent.nextSibling);
-            } else {
-                card.appendChild(block);
-            }
-            card.setAttribute('data-wf-feedback-today-env', 'true');
-            Logger.log('feedback-given-today-env: injected today count and environment breakdown block');
+            grid.insertAdjacentElement('afterend', block);
+            Logger.log('task-creation-today-env: injected today count and environment breakdown block');
         }
 
         const todayEl = block.querySelector('[data-wf-today-count]');
@@ -170,7 +179,7 @@ const plugin = {
                 copyBtn.textContent = 'Copy';
             }
             const copyLines = [
-                `QA: ${todayCount} tasks.`,
+                `Task Creation: ${todayCount} tasks.`,
                 ...Object.entries(envCount)
                     .sort((a, b) => b[1] - a[1])
                     .map(([name, n]) => `${name}: ${n}`)
@@ -178,7 +187,7 @@ const plugin = {
             copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
         }
         if (uncertain && !state.lastUncertain) {
-            Logger.info('feedback-given-today-env: last visible row is today — showing uncertain count and scroll message');
+            Logger.info('task-creation-today-env: last visible row is today — showing uncertain count and scroll message');
         }
         state.lastUncertain = uncertain;
     }
