@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -206,6 +206,8 @@ const plugin = {
         let el = promptSection.nextElementSibling;
         while (el) {
             if (el.dataset && el.dataset.qaScratchpad === 'true') {
+                anchor = el;
+            } else if (el.dataset && el.dataset.promptScratchpad === 'true') {
                 anchor = el;
             } else if (el.getAttribute && el.getAttribute('data-fleet-plugin') === 'guidelineButtons') {
                 anchor = el;
