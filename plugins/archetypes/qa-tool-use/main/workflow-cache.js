@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.24',
+    _version: '1.25',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -431,6 +431,10 @@ const plugin = {
             if (existing) existing.remove();
             return;
         }
+        if (this.getEntriesForApply(state, { source: 'latest' }).length === 0) {
+            if (existing) existing.remove();
+            return;
+        }
         if (existing) return;
 
         const section = document.createElement('div');
@@ -439,7 +443,7 @@ const plugin = {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-        btn.textContent = 'Insert Previous Workflow?';
+        btn.textContent = 'Restore Previous Workflow?';
         btn.addEventListener('click', () => {
             this.applyCachedWorkflow(state, { source: 'latest' });
         });

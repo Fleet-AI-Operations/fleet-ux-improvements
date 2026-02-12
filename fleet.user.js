@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [workflow-cache] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.6
+// @version      3.11.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.6';
+    const VERSION = '3.11.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -2142,6 +2142,7 @@
             
             if (matchesArchetype) {
                 Logger.log('Navigation target matches archetype; refreshing page...');
+                Storage.delete('workflow-cache-latest');
                 location.reload();
                 return;
             }
