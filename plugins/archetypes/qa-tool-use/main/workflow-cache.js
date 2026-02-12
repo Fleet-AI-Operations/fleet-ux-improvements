@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.25',
+    _version: '1.26',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -35,6 +35,7 @@ const plugin = {
 
     storageKeys: {
         latestSnapshot: 'workflow-cache-latest',
+        latestSnapshotUrl: 'workflow-cache-latest-url',
         devJson: 'workflow-cache-dev-json'
     },
 
@@ -126,6 +127,7 @@ const plugin = {
         }
         state.workflowSnapshot = snapshot;
         Storage.set(this.storageKeys.latestSnapshot, JSON.stringify(snapshot));
+        Storage.set(this.storageKeys.latestSnapshotUrl, window.location.href);
         Logger.info('Workflow cache: snapshot saved (' + snapshot.length + ' tools, reason: ' + reason + ')');
         Logger.log(JSON.stringify(snapshot, null, 2));
     },
@@ -646,6 +648,15 @@ const plugin = {
                 Logger.error('Workflow cache: dev JSON parse failed', e);
                 return [];
             }
+        }
+
+        const storedUrl = Storage.get(this.storageKeys.latestSnapshotUrl, '');
+        if (storedUrl && storedUrl !== window.location.href) {
+            Storage.delete(this.storageKeys.latestSnapshot);
+            Storage.delete(this.storageKeys.latestSnapshotUrl);
+            state.workflowSnapshot = null;
+            Logger.info('Workflow cache: URL changed, cleared cache (stored URL no longer matches)');
+            return [];
         }
 
         if (state.workflowSnapshot && Array.isArray(state.workflowSnapshot)) {
