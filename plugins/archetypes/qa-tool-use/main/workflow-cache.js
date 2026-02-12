@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.26',
+    _version: '1.27',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -387,36 +387,22 @@ const plugin = {
     },
 
     ensureApplyControls(state, panel) {
-        if (!panel || panel.querySelector('[data-wf-apply-cache-btn="true"]')) return;
+        if (!panel || panel.querySelector('[data-wf-apply-cache-dev="true"]')) return;
 
         const positionStyle = window.getComputedStyle(panel).position;
         if (!positionStyle || positionStyle === 'static') {
             panel.style.position = 'relative';
         }
 
-        const applyBtn = document.createElement('button');
-        applyBtn.type = 'button';
-        applyBtn.setAttribute('data-wf-apply-cache-btn', 'true');
-        applyBtn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-brand !text-white transition-colors hover:brightness-95 border border-brand-accent h-8 rounded-sm pl-3 pr-3 text-xs';
-        applyBtn.textContent = 'Apply cache';
-        applyBtn.style.position = 'absolute';
-        applyBtn.style.right = '16px';
-        applyBtn.style.bottom = '15%';
-        applyBtn.style.zIndex = '50';
-        applyBtn.addEventListener('click', () => {
-            this.applyCachedWorkflow(state, { source: 'latest' });
-        });
-
         const devPanel = this.createDevPanel(state);
         if (devPanel) {
             devPanel.style.position = 'absolute';
             devPanel.style.right = '16px';
-            devPanel.style.bottom = 'calc(15% + 48px)';
+            devPanel.style.bottom = '15%';
             devPanel.style.zIndex = '50';
             panel.appendChild(devPanel);
         }
 
-        panel.appendChild(applyBtn);
         Logger.log('✓ Workflow cache: apply controls added');
     },
 
@@ -563,9 +549,6 @@ const plugin = {
         }
         state.toolPanelMissingLogged = false;
 
-        const applyBtn = panel.querySelector('[data-wf-apply-cache-btn="true"]');
-        if (applyBtn) applyBtn.disabled = true;
-
         state.applyInProgress = true;
         Logger.info('Workflow cache: apply started');
 
@@ -633,7 +616,6 @@ const plugin = {
             Logger.error('Workflow cache: apply failed', e);
         } finally {
             state.applyInProgress = false;
-            if (applyBtn) applyBtn.disabled = false;
         }
     },
 
