@@ -18,5 +18,6 @@ set -e
 
 branch="${1:?Usage: $0 <branch>}"
 
+git checkout main
 git branch -D "$branch" 2>/dev/null || true
 git push origin --delete "$branch" 2>/dev/null || true
