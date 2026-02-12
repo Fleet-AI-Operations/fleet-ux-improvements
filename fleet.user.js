@@ -1,8 +1,8 @@
 
 // ==UserScript==
-// @name         Fleet Workflow Builder UX Enhancer
+// @name         [workflow-cache] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.10.4
+// @version      3.11.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -14,8 +14,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/workflow-cache/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/workflow-cache/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.10.4';
+    const VERSION = '3.11.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -42,7 +42,7 @@
     const GITHUB_CONFIG = {
         owner: 'adastra1826',
         repo: 'fleet-ux-improvements',
-        branch: 'main',
+        branch: 'workflow-cache',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
@@ -698,6 +698,8 @@
             let payload;
             if (level === 'debug') {
                 payload = [`${prefix} 🔍 ${msg}`, ...args];
+            } else if (level === 'info') {
+                payload = [`${prefix} ℹ️ ${msg}`, ...args];
             } else if (level === 'warn') {
                 payload = [`${prefix} ⚠️ ${msg}`, ...args];
             } else if (level === 'error') {
@@ -716,6 +718,7 @@
             return {
                 log: (msg, ...args) => this._logModule('log', msg, resolveModuleId(), ...args),
                 debug: (msg, ...args) => this._logModule('debug', msg, resolveModuleId(), ...args),
+                info: (msg, ...args) => this._logModule('info', msg, resolveModuleId(), ...args),
                 warn: (msg, ...args) => this._logModule('warn', msg, resolveModuleId(), ...args),
                 error: (msg, ...args) => this._logModule('error', msg, resolveModuleId(), ...args),
                 isVerboseEnabled: () => this._shouldLogModule(resolveModuleId()),
@@ -737,6 +740,16 @@
                 console.debug(...payload);
                 this._emit('debug', payload);
             }
+        },
+
+        info(msg, ...args) {
+            const payload = [`${LOG_PREFIX} ℹ️ ${msg}`, ...args];
+            if (typeof console.info === 'function') {
+                console.info(...payload);
+            } else {
+                console.log(...payload);
+            }
+            this._emit('info', payload);
         },
         
         warn(msg, ...args) {
@@ -1678,7 +1691,7 @@
             }
             
             // Clean up deprecated cached plugins for this archetype
-            this.cleanupDeprecatedCache(pluginList, archetypeId);
+            this.cleanupDeprecatedCache(pluginList, archetypeId, 'main');
             
             Logger.log('Archetype plugin loading complete');
         },
@@ -1766,7 +1779,7 @@
             }
             
             // Clean up deprecated cached plugins for this dev archetype
-            this.cleanupDeprecatedCache(pluginList, archetypeId);
+            this.cleanupDeprecatedCache(pluginList, archetypeId, 'dev');
             
             Logger.log('Dev archetype plugin loading complete');
         },
@@ -1774,11 +1787,14 @@
         /**
          * Clean up deprecated cached plugins for an archetype
          * Compares cached plugins against expected plugins from archetypes.json
-         * and deletes any cached entries that are no longer listed
+         * and deletes any cached entries that are no longer listed.
+         * Only touches cache keys for the given format (main vs dev) so main-only
+         * plugins are not deleted when cleaning after dev load, and vice versa.
          * @param {Array} pluginList - List of expected plugins from archetypes.json
          * @param {string} archetypeId - The archetype ID
+         * @param {string} format - 'main' or 'dev'; which load path we're cleaning for
          */
-        cleanupDeprecatedCache(pluginList, archetypeId) {
+        cleanupDeprecatedCache(pluginList, archetypeId, format) {
             if (!archetypeId) {
                 Logger.debug('Skipping deprecated cache cleanup: no archetype ID');
                 return;
@@ -1788,6 +1804,8 @@
                 Logger.debug('Skipping deprecated cache cleanup: invalid plugin list');
                 return;
             }
+            
+            const effectiveFormat = format === 'dev' ? 'dev' : 'main';
             
             // Extract expected plugin filenames from pluginList
             const expectedFilenames = new Set();
@@ -1819,56 +1837,41 @@
                 return;
             }
             
-            // Delete deprecated cache entries
-            // Try both old format (archetypeId/filename) and new format (archetypes/archetypeId/main/filename and archetypes/archetypeId/dev/filename)
             let deletedCount = 0;
             deprecatedPlugins.forEach(filename => {
-                // Try old format first (for backward compatibility)
-                const oldPluginKey = `${archetypeId}/${filename}`;
-                const oldCacheKey = `plugin-cache-${oldPluginKey}`;
+                const oldCacheKey = `plugin-cache-${archetypeId}/${filename}`;
+                const newMainCacheKey = `plugin-cache-archetypes/${archetypeId}/main/${filename}`;
+                const newDevCacheKey = `plugin-cache-archetypes/${archetypeId}/dev/${filename}`;
                 
-                // Try new format for main plugins
-                const newMainPluginKey = `archetypes/${archetypeId}/main/${filename}`;
-                const newMainCacheKey = `plugin-cache-${newMainPluginKey}`;
-                
-                // Try new format for dev plugins
-                const newDevPluginKey = `archetypes/${archetypeId}/dev/${filename}`;
-                const newDevCacheKey = `plugin-cache-${newDevPluginKey}`;
-                
-                // Check all possible cache key formats
-                const cacheKeys = [
-                    { key: oldCacheKey, format: 'old' },
-                    { key: newMainCacheKey, format: 'new-main' },
-                    { key: newDevCacheKey, format: 'new-dev' }
-                ];
+                const cacheKeys = effectiveFormat === 'main'
+                    ? [
+                        { key: oldCacheKey, format: 'old' },
+                        { key: newMainCacheKey, format: 'new-main' }
+                    ]
+                    : [{ key: newDevCacheKey, format: 'new-dev' }];
                 
                 let deleted = false;
-                for (const { key, format } of cacheKeys) {
+                for (const { key, format: keyFormat } of cacheKeys) {
                     const cacheExists = Storage.get(key, null) !== null;
                     if (cacheExists) {
                         try {
                             Storage.delete(key);
                             deleted = true;
-                            Logger.log(`Deleted deprecated cached plugin: ${filename} (archetype: ${archetypeId}, format: ${format})`);
-                            break; // Only delete once
+                            Logger.log(`Deleted deprecated cached plugin: ${filename} (archetype: ${archetypeId}, format: ${keyFormat})`);
+                            break; // Only delete once per plugin
                         } catch (e) {
-                            Logger.error(`Failed to delete deprecated cache entry for ${filename} (archetype: ${archetypeId}, format: ${format}):`, e);
+                            Logger.error(`Failed to delete deprecated cache entry for ${filename} (archetype: ${archetypeId}, format: ${keyFormat}):`, e);
                         }
                     }
                 }
                 
                 if (deleted) {
                     deletedCount++;
-                }
-                
-                // Always clean up the registry entry
-                try {
-                    Storage.unregisterCachedPlugin(archetypeId, filename);
-                    if (!deleted) {
-                        Logger.debug(`Cleaned up orphaned registry entry for ${filename} (archetype: ${archetypeId})`);
+                    try {
+                        Storage.unregisterCachedPlugin(archetypeId, filename);
+                    } catch (e) {
+                        Logger.error(`Failed to unregister cache entry for ${filename} (archetype: ${archetypeId}):`, e);
                     }
-                } catch (e) {
-                    Logger.error(`Failed to unregister cache entry for ${filename} (archetype: ${archetypeId}):`, e);
                 }
             });
             
@@ -2035,6 +2038,12 @@
             // Wait for DOM
             await waitForBody();
             
+            // When an update is available, do not load archetype plugins (stopgap for future secure loader behavior)
+            if (Context.isOutdated) {
+                Logger.warn('Script is outdated. Archetype plugins are disabled. Please update the script to continue using page-specific features. Open Settings to see the update banner.');
+                return;
+            }
+            
             // Detect archetype using URL + optional disambiguation
             const archetype = await ArchetypeManager.detectArchetype();
             
@@ -2139,6 +2148,8 @@
             
             if (matchesArchetype) {
                 Logger.log('Navigation target matches archetype; refreshing page...');
+                Storage.delete('workflow-cache-latest');
+                Storage.delete('workflow-cache-latest-url');
                 location.reload();
                 return;
             }

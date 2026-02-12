@@ -16,6 +16,8 @@
 
 set -e
 
+git checkout main
+
 branch="${1:?Usage: $0 <branch>}"
 
 git checkout main
