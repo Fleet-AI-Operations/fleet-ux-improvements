@@ -15,9 +15,11 @@
 # Effects:
 #   1. Validates branch name (non-empty, not "main", valid ref format) and ensures
 #      it does not exist locally or on origin. Requires a clean working tree.
-#   2. Fetches origin/main, checks out main, and creates the new branch.
-#   3. Runs sync-branch-config.sh to update fleet.user.js for this branch (@name
-#      prefix, @downloadURL/@updateURL, GITHUB_CONFIG.branch, VERSION).
+#   2. Fetches origin/main. Creates the new branch from the current branch (so
+#      modules and other files stay from the current branch).
+#   3. Replaces fleet.user.js with the version from main, then runs sync-branch-config.sh
+#      to update fleet.user.js for this branch (@name prefix, @downloadURL/@updateURL,
+#      GITHUB_CONFIG.branch, VERSION).
 #   4. Commits any sync changes (or no-op if already in sync) and pushes the
 #      branch to origin.
 #   5. Prints the GitHub tree URL and explains that this branch is for testing
@@ -44,9 +46,10 @@ Usage: test.sh [--dry-run] NEW_BRANCH_NAME
   --dry-run       Print every change that would be made; do not modify anything.
   NEW_BRANCH_NAME Name for the new branch (must not already exist locally or on origin).
 
-Creates the branch from main, syncs fleet.user.js for that branch via sync-branch-config.sh,
-commits any changes, and pushes to origin. Install the script from the printed URL to
-test the update experience before publishing to main.
+Creates the branch from the current branch (modules from current branch), replaces
+fleet.user.js with main's version, syncs fleet.user.js for the new branch via
+sync-branch-config.sh, commits any changes, and pushes to origin. Install the script
+from the printed URL to test the update experience before publishing to main.
 EOF
 }
 
@@ -59,12 +62,7 @@ else
   branch="${1:-}"
 fi
 if [[ -z "${branch// }" ]]; then
-  echo "[error] Branch name required"
-  usage
-  exit 1
-fi
-if [[ -z "${branch// }" ]]; then
-  echo "[error] Branch name cannot be empty"
+  echo "[error] Branch name required (cannot be empty)"
   usage
   exit 1
 fi
@@ -95,18 +93,20 @@ if ! git -C "$root" diff --quiet || ! git -C "$root" diff --cached --quiet; then
 fi
 
 if [[ "$dry_run" == true ]]; then
-  file_path="$root/fleet.user.js"
-  if [[ ! -f "$file_path" ]]; then
-    echo "[error] fleet.user.js not found: $file_path"
+  echo "[info] Fetching main for dry-run..."
+  git -C "$root" fetch origin main
+  if ! git -C "$root" show origin/main:fleet.user.js >/dev/null 2>&1; then
+    echo "[error] fleet.user.js not found on origin/main"
     exit 1
   fi
-  header_version="$(awk '/^\/\/ @version[[:space:]]+/ {print $3; exit}' "$file_path")"
+  content="$(git -C "$root" show origin/main:fleet.user.js)"
+  header_version="$(printf '%s' "$content" | awk '/^\/\/ @version[[:space:]]+/ {print $3; exit}')"
   if [[ -z "$header_version" ]]; then
-    echo "[error] Could not find @version in header"
+    echo "[error] Could not find @version in header of main's fleet.user.js"
     exit 1
   fi
   needs_name_change() {
-    BRANCH="$branch" perl -0ne '
+    printf '%s' "$content" | BRANCH="$branch" perl -0ne '
       if (/^\/\/ \@name\s+(\[[^\]]+\]\s+)?(.+?)(?:\r?\n|\z)/m) {
         my ($tag, $name) = ($1, $2);
         $name =~ s/^\s+|\s+$//g;
@@ -115,18 +115,17 @@ if [[ "$dry_run" == true ]]; then
           print((!defined $tag || $tag ne $expected) ? "1" : "0");
         }
       }
-    ' "$file_path"
+    '
   }
-  needs_download_url_change() { BRANCH="$branch" perl -0ne 'if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }' "$file_path"; }
-  needs_update_url_change() { BRANCH="$branch" perl -0ne 'if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }' "$file_path"; }
-  needs_github_config_change() { BRANCH="$branch" perl -0ne 'if (/branch:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }' "$file_path"; }
-  needs_version_constant_change() { HEADER_VERSION="$header_version" perl -0ne 'if (/const VERSION\s*=\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{HEADER_VERSION} ? "1" : "0"); }' "$file_path"; }
+  needs_download_url_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
+  needs_update_url_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
+  needs_github_config_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/branch:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
+  needs_version_constant_change() { printf '%s' "$content" | HEADER_VERSION="$header_version" perl -0ne 'if (/const VERSION\s*=\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{HEADER_VERSION} ? "1" : "0"); }'; }
   name_change="$(needs_name_change)"
   download_change="$(needs_download_url_change)"
   update_change="$(needs_update_url_change)"
   github_change="$(needs_github_config_change)"
   version_change="$(needs_version_constant_change)"
-  content="$(cat "$file_path")"
   new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header_version" perl -0pe '
     s{(// \@name\s+)(\[[^\]]+\]\s+)?(.+?)(\r?\n|\z)}{
       my ($p, $tag, $name, $eol) = ($1, $2, $3, $4);
@@ -171,15 +170,16 @@ if [[ "$dry_run" == true ]]; then
   [[ "$update_change" == "1" ]] && changed+=("@updateURL")
   [[ "$github_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
   [[ "$version_change" == "1" ]] && changed+=("VERSION constant")
-  echo "[dry-run] Would create branch: $branch from main; would update fleet.user.js:"
+  current_branch="$(git -C "$root" branch --show-current)"
+  echo "[dry-run] Would create branch: $branch from current branch ($current_branch); would replace fleet.user.js with main's, then update fleet.user.js:"
   if [[ "${#changed[@]}" -gt 0 ]]; then
     print_fleet_changes "$content" "$new_content"
   else
     echo "  (no changes - already in sync for branch $branch)"
   fi
   echo "[dry-run] Would run: git fetch origin main"
-  echo "[dry-run] Would run: git checkout main"
   echo "[dry-run] Would run: git checkout -b $branch"
+  echo "[dry-run] Would run: git checkout origin/main -- fleet.user.js"
   echo "[dry-run] Would run: sync-branch-config.sh (or apply above fleet.user.js changes)"
   echo "[dry-run] Would run: git add ."
   echo "[dry-run] Would run: git commit -m \"Sync branch config for $branch\""
@@ -190,11 +190,12 @@ fi
 echo "[info] Fetching main..."
 git -C "$root" fetch origin main
 
-echo "[info] Checking out main..."
-git -C "$root" checkout main
-
-echo "[info] Creating branch: $branch"
+current_branch="$(git -C "$root" branch --show-current)"
+echo "[info] Creating branch: $branch from current branch ($current_branch)"
 git -C "$root" checkout -b "$branch"
+
+echo "[info] Replacing fleet.user.js with main's version..."
+git -C "$root" checkout origin/main -- fleet.user.js
 
 echo "[info] Syncing branch config in fleet.user.js..."
 (cd "$root" && "$script_dir/sync-branch-config.sh")
