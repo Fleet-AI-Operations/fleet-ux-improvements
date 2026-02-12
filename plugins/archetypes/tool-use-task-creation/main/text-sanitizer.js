@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -162,14 +162,16 @@ const plugin = {
         const root = scopeRoot || document;
         const options = { context: `${this.id}.findPromptSection`, root };
 
-        // Label-based fallback: find "Prompt" label then climb to section wrapper (resilient to DOM changes).
+        // Label-based fallback: find "Prompt" or "Problem Description" label then climb to section wrapper (resilient to DOM changes).
         const labelSelectors = ['span.text-sm.text-muted-foreground.font-medium', 'div.text-sm.text-muted-foreground.font-medium'];
         for (const sel of labelSelectors) {
             const elements = Context.dom.queryAll(sel, options);
             for (const el of elements) {
                 const text = (el.textContent || '').trim();
-                if (text !== 'Prompt' && !text.startsWith('Prompt')) continue;
-                const section = el.closest('div.flex.flex-col.gap-2') || el.closest('div.space-y-2');
+                const isPrompt = text === 'Prompt' || text.startsWith('Prompt');
+                const isProblemDesc = text === 'Problem Description' || text.startsWith('Problem Description');
+                if (!isPrompt && !isProblemDesc) continue;
+                const section = el.closest('div.space-y-2.relative') || el.closest('div.space-y-2') || el.closest('div.flex.flex-col.gap-2');
                 if (section) return section;
             }
         }
@@ -233,7 +235,9 @@ const plugin = {
     getPanelContentRoot(tabBar) {
         const panel = tabBar.parentElement;
         if (!panel || !panel.querySelector) return null;
-        return panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto') || null;
+        const found = panel.querySelector('div.flex-1.min-h-0.overflow-auto.p-3') || panel.querySelector('div.overflow-auto');
+        if (found) return found;
+        return panel.parentElement || null;
     },
 
     /**
