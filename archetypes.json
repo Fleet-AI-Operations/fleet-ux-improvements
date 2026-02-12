@@ -1,6 +1,6 @@
 {
   "version": "3.11.2",
-  "archetypesVersion": "3.131",
+  "archetypesVersion": "3.132",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -296,10 +296,6 @@
         {
           "name": "tool-description-truncate.js",
           "version": "1.2"
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "1.28"
         }
       ]
     },
