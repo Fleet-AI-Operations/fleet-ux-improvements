@@ -1,15 +1,111 @@
 // ============= text-sanitizer.js =============
 // Adds a Text Sanitizer module in the same area as the QA scratchpad (below it when present).
 // Independent of scratchpad: appears after Prompt section or after scratchpad/guideline buttons.
-// Actions: dropdown + Execute; last action persisted. Date/Time to ISO is RegEx-based, date then time, output ISO 8601.
+// Actions: dropdown + Execute; last action persisted. Date/Time to ISO uses a working ISO 8601 converter (date + optional time).
 
 const DEFAULT_ACTION_ID = 'removeAllWhitespace';
+
+const MONTHS = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    jan: 1, feb: 2, mar: 3, apr: 4, jun: 6,
+    jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12
+};
+
+const MP = '(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Sept?|Jun|Jul|Aug|Oct|Nov|Dec)\\.?';
+
+/**
+ * Parse date and optional time from normalized input (single spaces, trimmed).
+ * Returns { iso } or null. ISO is local time, no Z suffix.
+ */
+function parseDateInputToIso(text) {
+    let year;
+    let month;
+    let day;
+    let dateStr;
+
+    const patterns = [
+        { re: new RegExp(`(${MP})\\s+(\\d{1,2})\\s*(?:st|nd|rd|th)?\\s*,?\\s*(\\d{4})`, 'i'),
+          parse: m => ({ month: MONTHS[m[1].replace('.', '').toLowerCase()], day: +m[2], year: +m[3] }) },
+        { re: new RegExp(`(\\d{1,2})\\s*(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${MP})\\s*,?\\s*(\\d{4})`, 'i'),
+          parse: m => ({ day: +m[1], month: MONTHS[m[2].replace('.', '').toLowerCase()], year: +m[3] }) },
+        { re: new RegExp(`(\\d{4})\\s+(?:,\\s*)?(${MP})\\s+(\\d{1,2})\\s*(?:st|nd|rd|th)?`, 'i'),
+          parse: m => ({ year: +m[1], month: MONTHS[m[2].replace('.', '').toLowerCase()], day: +m[3] }) },
+        { re: /(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/,
+          parse: m => ({ year: +m[1], month: +m[2], day: +m[3] }) },
+        { re: /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/,
+          parse: m => ({ month: +m[1], day: +m[2], year: +m[3] }) }
+    ];
+
+    for (const p of patterns) {
+        const m = text.match(p.re);
+        if (m) {
+            ({ year, month, day } = p.parse(m));
+            dateStr = m[0];
+            break;
+        }
+    }
+
+    if (year === undefined) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1) return null;
+    const testDate = new Date(year, month - 1, day);
+    if (testDate.getMonth() !== month - 1 || testDate.getDate() !== day) return null;
+
+    let remainder = text.replace(dateStr, ' ');
+    let hours = null;
+    let minutes = null;
+    let seconds = null;
+
+    if (/\bnoon\b/i.test(remainder)) {
+        hours = 12;
+        minutes = 0;
+        seconds = 0;
+    } else if (/\bmidnight\b/i.test(remainder)) {
+        hours = 0;
+        minutes = 0;
+        seconds = 0;
+    }
+
+    if (hours === null) {
+        const tm = remainder.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?/i);
+        if (tm) {
+            hours = +tm[1];
+            minutes = +tm[2];
+            seconds = tm[3] ? +tm[3] : 0;
+            const ap = (tm[4] || '').replace(/\./g, '').toLowerCase();
+            if (ap === 'pm' && hours !== 12) hours += 12;
+            if (ap === 'am' && hours === 12) hours = 0;
+        }
+    }
+
+    if (hours === null) {
+        const tm = remainder.match(/(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)/i);
+        if (tm) {
+            hours = +tm[1];
+            minutes = 0;
+            seconds = 0;
+            const ap = tm[2].replace(/\./g, '').toLowerCase();
+            if (ap === 'pm' && hours !== 12) hours += 12;
+            if (ap === 'am' && hours === 12) hours = 0;
+        }
+    }
+
+    if (hours !== null) {
+        if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+    }
+
+    const pad = (n, w = 2) => String(n).padStart(w, '0');
+    let iso = `${pad(year, 4)}-${pad(month)}-${pad(day)}`;
+    if (hours !== null) iso += `T${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+
+    return { iso };
+}
 
 const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -129,114 +225,16 @@ const plugin = {
     },
 
     /**
-     * Parse date then time left-to-right from text; output ISO 8601. Time-only not allowed.
-     * Supports month names/abbrevs (case insensitive), AM/PM, up to one space between numbers and labels.
-     * Returns original input on failure or when no date found.
+     * Parse date and optional time from text; return ISO 8601 (local time, no Z).
+     * Based on the working ISO 8601 converter. Returns original input on failure or when no date found.
      */
     parseDateThenTimeToIso(text) {
         try {
-            const raw = (text || '').trim();
-            Logger.debug('[textSanitizer] Date/Time to ISO: input raw=', JSON.stringify(raw), 'length=', raw.length);
-            if (!raw) {
-                Logger.debug('[textSanitizer] Date/Time to ISO: empty input, returning as-is');
-                return raw;
-            }
+            const raw = (text || '').trim().replace(/\s+/g, ' ');
+            if (!raw) return text || '';
 
-            const monthNames = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
-        const space = '\\s{0,1}';
-        const num1 = '\\d{1,2}';
-        const num2 = '\\d{2}';
-        const num4 = '\\d{4}';
-        const yearShort = '\\d{2,4}';
-        const dayWithOrdinal = '(\\d{1,2})(?:st|nd|rd|th)?';
-
-        let dateMatch = null;
-        let remainder = raw;
-
-        const datePatterns = [
-            { re: new RegExp(`^(${num4})-(${num1})-(${num1})(?=\\s|$|[^\\d])`, 'i'), order: 'ymd' },
-            { re: new RegExp(`^(${num1})/(${num1})/(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
-            { re: new RegExp(`^(${num1})-(${num1})-(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy' },
-            { re: new RegExp(`^(${monthNames})${space},?${space}${dayWithOrdinal}${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'mdy_name' },
-            { re: new RegExp(`^${dayWithOrdinal}\\s+(${monthNames})${space},?${space}(${yearShort})(?=\\s|$|[^\\d])`, 'i'), order: 'dmy_name' }
-        ];
-
-        for (const { re, order } of datePatterns) {
-            const m = remainder.match(re);
-            if (m) {
-                dateMatch = { m, order };
-                remainder = remainder.slice(m[0].length).trim();
-                Logger.debug('[textSanitizer] Date/Time to ISO: date matched order=', order, 'matched=', JSON.stringify(m[0]), 'remainder=', JSON.stringify(remainder));
-                break;
-            }
-        }
-
-        if (!dateMatch) {
-            Logger.log('[textSanitizer] Date/Time to ISO: no date pattern matched, returning original text. input=', JSON.stringify(raw));
-            return text;
-        }
-
-        let y = 0;
-        let mo = 1;
-        let d = 1;
-        const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-
-        if (dateMatch.order === 'ymd') {
-            y = parseInt(dateMatch.m[1], 10);
-            mo = parseInt(dateMatch.m[2], 10);
-            d = parseInt(dateMatch.m[3], 10);
-        } else if (dateMatch.order === 'mdy') {
-            mo = parseInt(dateMatch.m[1], 10);
-            d = parseInt(dateMatch.m[2], 10);
-            y = parseInt(dateMatch.m[3], 10);
-            if (y < 100) y += y < 50 ? 2000 : 1900;
-        } else if (dateMatch.order === 'mdy_name') {
-            const monthStr = dateMatch.m[1].toLowerCase().slice(0, 3);
-            mo = months[monthStr] || 1;
-            d = parseInt(dateMatch.m[2], 10);
-            y = parseInt(dateMatch.m[3], 10);
-            if (y < 100) y += y < 50 ? 2000 : 1900;
-        } else if (dateMatch.order === 'dmy_name') {
-            d = parseInt(dateMatch.m[1], 10);
-            const monthStr = dateMatch.m[2].toLowerCase().slice(0, 3);
-            mo = months[monthStr] || 1;
-            y = parseInt(dateMatch.m[3], 10);
-            if (y < 100) y += y < 50 ? 2000 : 1900;
-        }
-
-        let hour = 0;
-        let min = 0;
-        let sec = 0;
-        const timeRe = new RegExp(`^(${num1})${space}:${space}(${num2})(?:${space}:${space}(${num2}))?${space}(AM|PM|am|pm)?(?=\\s|$|[^\\d])`, 'i');
-        const timeMatch = remainder.match(timeRe);
-        if (timeMatch) {
-            hour = parseInt(timeMatch[1], 10);
-            min = parseInt(timeMatch[2], 10);
-            sec = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-            const ampm = (timeMatch[4] || '').toUpperCase();
-            if (ampm === 'PM' && hour < 12) hour += 12;
-            if (ampm === 'AM' && hour === 12) hour = 0;
-        }
-        if (timeMatch) remainder = remainder.slice(timeMatch[0].length).trim();
-
-        const date = new Date(y, mo - 1, d, hour, min, sec, 0);
-        if (Number.isNaN(date.getTime()) || date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
-            Logger.debug('[textSanitizer] Date/Time to ISO: invalid date (y=', y, 'mo=', mo, 'd=', d, ') or NaN, returning original');
-            return text;
-        }
-
-        let out;
-        if (timeMatch) {
-            out = date.toISOString();
-            Logger.debug('[textSanitizer] Date/Time to ISO: returning ISO with time:', out);
-            return out;
-        }
-        const yy = date.getFullYear();
-        const mm = String(date.getMonth() + 1).padStart(2, '0');
-        const dd = String(date.getDate()).padStart(2, '0');
-        out = `${yy}-${mm}-${dd}`;
-        Logger.debug('[textSanitizer] Date/Time to ISO: returning date-only:', out);
-        return out;
+            const result = parseDateInputToIso(raw);
+            return result ? result.iso : text;
         } catch (e) {
             Logger.warn('Text Sanitizer: parseDateThenTimeToIso failed', e);
             return text || '';
@@ -456,9 +454,6 @@ const plugin = {
             const input = textarea.value || '';
             try {
                 const output = action.run(input);
-                if (id === 'dateTimeToIso') {
-                    Logger.log('[textSanitizer] Date/Time to ISO execute: input=', JSON.stringify(input), 'output=', JSON.stringify(output), 'changed=', input !== output);
-                }
                 textarea.value = output;
                 updateTextareaHeight();
                 Storage.set(this.storageKeys.lastAction, id);

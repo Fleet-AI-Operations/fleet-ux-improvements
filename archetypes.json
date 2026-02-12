@@ -263,7 +263,7 @@
         },
         {
           "name": "text-sanitizer.js",
-          "version": "1.7"
+          "version": "1.8"
         },
         {
           "name": "execute-to-current-tool.js",
