@@ -74,30 +74,46 @@ If the script doesn't seem to be working:
 
 ## Features
 
-The extension uses an archetype-based plugin system that loads different features depending on which page you're on. 
+The extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`.
 
-Many of the original modifications (such as a 3 column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extenstion were able to enjoy are now part of the main website!
+Many of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!
 
 ### Main Dashboard
-- **Progress Prompt Expand**: Hover over My Progress task items to expand truncated prompts (with the ability to  click the prompt to copy it to the clipboard)
+- **Progress Prompt Expand**: Hover over My Progress task items to expand truncated prompts (with option to click to copy, or keep all expanded)
+- **Feedback Given Approval Rate**: Show approval rate on the Feedback Given stat when both approved and feedback-requested counts exist
+- **Feedback Given Today and Environment**: Show today's feedback count and environment breakdown under Feedback Given; indicate when list may be incomplete
+- **Task Creation Today and Environment**: Show today's task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete
+
+### QA Project Picker Page
+- **Auto Sort Available QA Tasks**: Sort and organize the available QA tasks list for quicker scanning
 
 ### Tool Use Task Creation Page
 - **Favorites**: Star frequently-used tools to help find them quickly (persists between sessions)
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
-- **JSON Editor Online**: Adds a button that links to JSON Editor Online, a powerful JSON manipulation tool
+- **Execute to Current Tool**: Button to execute all tools from the beginning up to and including the current tool
+- **Workflow Cache**: Cache workflow state for faster reloads and recovery
+- **JSON Editor Online**: Button that links to JSON Editor Online for JSON manipulation
 - **Guideline Buttons**: Quick links to guidelines below the prompt area
 - **Clear Search**: One-click clear for search inputs
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Remember Layout Proportions**: Persists and restores the main panel split positions between sessions
 - **Prompt and Notes Areas Layout**: Anchors scratchpad to bottom and makes prompt handle control both areas (with option to remember scratchpad text)
+- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
+- **Tool Results Resize Handle**: Resizable tool results area
+- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
+- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 
 ### Tool Use Task Revision Page
-- **Favorites**: Star frequently-used tools to help find them quickly (persists between sessions)
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Favorites**: Star frequently-used tools (persists between sessions)
+- **Execute to Current Tool**: Execute all tools from the start up to and including the current tool
+- **Workflow Cache**: Cache workflow state for faster reloads and recovery
 - **Prompt Scratchpad**: Scratchpad for notes while revising
 - **Guideline Buttons**: Quick links to Fleet guidelines
 - **Clear Search**: One-click clear for search inputs
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
+- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
+- **Tool Results Resize Handle**: Resizable tool results area
+- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
+- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 
 ### Computer Use Task Creation Page
 - **Prompt Scratchpad**: Scratchpad for notes while creating tasks
@@ -114,25 +130,33 @@ Many of the original modifications (such as a 3 column layout in the Kinesis tas
 
 ### QA Tool Use Review Page
 - **Clear Search**: One-click clear for search inputs
-- **Favorites**: Star frequently-used tools for quick access (persists between sessions)
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
-- **Copy Prompt Button**: Copy prompt text to clipboard
-- **Copy Verifier Output Button**: Copy verifier output to clipboard
-- **QA Scratchpad**: Adds an adjustable height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
-- **JSON Editor Online**: Adds a button that links to JSON Editor Online, a powerful JSON manipulation tool
+- **Favorites**: Star frequently-used tools (persists between sessions)
+- **Execute to Current Tool**: Execute all tools from the start up to and including the current tool
+- **Workflow Cache**: Cache workflow state for faster reloads and recovery
+- **Copy Prompt**: Copy prompt text to clipboard
+- **Copy Verifier Output**: Copy verifier output to clipboard
+- **QA Scratchpad**: Adjustable-height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
+- **JSON Editor Online**: Button that links to JSON Editor Online for JSON manipulation
 - **Guideline Buttons**: Quick links to guidelines below the QA scratchpad
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Panel Size Memory**: Remembers your preferred panel sizes between sessions
 - **Remember Layout Proportions**: Persists and restores panel split positions between sessions
+- **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue (with guideline link shortcuts)
+- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
+- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
+- **Tool Results Resize Handle**: Resizable tool results area
+- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
+- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 
 ### QA Computer Use Review Page
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Copy Prompt Button**: Copy prompt text to clipboard
-- **Copy Verifier Output Button**: Copy verifier output to clipboard
+- **Copy Prompt**: Copy prompt text to clipboard
+- **Copy Verifier Output**: Copy verifier output to clipboard
 - **Guideline Buttons**: Quick links to guidelines
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue
-- **QA Scratchpad**: Adds an adjustable height scratchpad for notes (with option to remember contents)
+- **QA Scratchpad**: Adjustable-height scratchpad for notes (with option to remember contents)
+- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 
 ---
 
@@ -175,16 +199,22 @@ Click the Tampermonkey icon and select "Fleet Workflow Builder UX Enhancer" to a
 
 ## Development
 
-This script uses a modular plugin architecture. Plugins are organized by page archetype:
+This script uses a modular plugin architecture. Plugins are organized by archetype; each archetype has a folder under `plugins/archetypes/` with `main/`, and optionally `dev/` or `deprecated/` subfolders. Core behavior (settings UI, dev-only logger panel) lives under `plugins/core/`.
 
 ```
 plugins/
-├── tool-use-task-creation/   # Tool use creation page plugins
-├── comp-use-task-creation/   # Computer use creation page plugins
-├── qa-tool-use/              # QA tool use review page plugins
-├── qa-comp-use/              # QA computer use review page plugins
-├── dashboard/                # Dashboard plugins
-└── global/                   # Global plugins (all pages)
+├── core/
+│   ├── main/                 # Settings UI (all builds)
+│   └── dev/                  # Logger panel (dev builds only)
+└── archetypes/
+    ├── dashboard/            # Main dashboard (work/create)
+    ├── qa-project-picker/     # QA project picker (work/problems/qa)
+    ├── tool-use-task-creation/
+    ├── tool-use-revision/
+    ├── comp-use-task-creation/
+    ├── comp-use-revision/
+    ├── qa-tool-use/           # QA tool use review
+    └── qa-comp-use/           # QA computer use review
 ```
 
-Plugin configuration and versions are managed in `archetypes.json`.
+Plugin load lists (core, dev, and per-archetype) and versions are defined in `archetypes.json`. Run `./utils/update-archetypes.js` or `./utils/update-versions.py` when plugin versions or archetypes change.
