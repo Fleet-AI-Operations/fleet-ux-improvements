@@ -2,8 +2,7 @@
 // Improvements to the Request Revisions Workflow (qa-comp-use)
 
 const GUIDELINE_LINKS = {
-    meridian: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477',
-    problemCreation: 'https://fleetai.notion.site/Fleet-Problem-Creation-Guidelines-215fe5dd3fba802683d1c461b6a35c8a'
+    meridian: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477'
 };
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
@@ -12,7 +11,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -34,12 +33,6 @@ const plugin = {
             id: 'copy-link-meridian-guidelines',
             name: 'Copy Link to Meridian Guidelines',
             description: 'Show a button under "Where are the issues?" that copies the Meridian Guidelines link to the clipboard',
-            enabledByDefault: true
-        },
-        {
-            id: 'copy-link-problem-creation-guidelines',
-            name: 'Copy Link to Problem Creation Guidelines',
-            description: 'Show a button under "Where are the issues?" that copies the Problem Creation Guidelines link to the clipboard',
             enabledByDefault: true
         }
     ],
@@ -406,10 +399,9 @@ const plugin = {
 
         let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
         const meridianEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-meridian-guidelines', true);
-        const problemCreationEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-problem-creation-guidelines', true);
 
         if (wrapper) {
-            this.syncGuidelineCopyButtons(wrapper, meridianEnabled, problemCreationEnabled);
+            this.syncGuidelineCopyButtons(wrapper, meridianEnabled);
             return;
         }
 
@@ -442,37 +434,14 @@ const plugin = {
         meridianGroup.appendChild(meridianOpen);
         wrapper.appendChild(meridianGroup);
 
-        const problemGroup = document.createElement('span');
-        problemGroup.className = 'inline-flex items-center gap-1';
-        problemGroup.setAttribute('data-guideline-group', 'problem-creation');
-        const problemBtn = document.createElement('button');
-        problemBtn.type = 'button';
-        problemBtn.className = buttonClass;
-        problemBtn.setAttribute('data-fleet-plugin', this.id);
-        problemBtn.setAttribute('data-guideline-copy', 'problem-creation');
-        problemBtn.textContent = 'Copy Link to Problem Creation Guidelines';
-        problemBtn.addEventListener('click', () => this.copyGuidelineLink(problemBtn, 'Copy Link to Problem Creation Guidelines', GUIDELINE_LINKS.problemCreation));
-        problemGroup.appendChild(problemBtn);
-        const problemOpen = document.createElement('a');
-        problemOpen.href = GUIDELINE_LINKS.problemCreation;
-        problemOpen.target = '_blank';
-        problemOpen.rel = 'noopener noreferrer';
-        problemOpen.className = linkClass;
-        problemOpen.setAttribute('data-fleet-plugin', this.id);
-        problemOpen.textContent = 'Open';
-        problemGroup.appendChild(problemOpen);
-        wrapper.appendChild(problemGroup);
-
-        this.syncGuidelineCopyButtons(wrapper, meridianEnabled, problemCreationEnabled);
+        this.syncGuidelineCopyButtons(wrapper, meridianEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline copy-link buttons added');
     },
 
-    syncGuidelineCopyButtons(wrapper, meridianEnabled, problemCreationEnabled) {
+    syncGuidelineCopyButtons(wrapper, meridianEnabled) {
         const meridianGroup = wrapper.querySelector('[data-guideline-group="meridian"]');
-        const problemGroup = wrapper.querySelector('[data-guideline-group="problem-creation"]');
         if (meridianGroup) meridianGroup.style.display = meridianEnabled ? '' : 'none';
-        if (problemGroup) problemGroup.style.display = problemCreationEnabled ? '' : 'none';
     },
 
     copyGuidelineLink(button, originalText, url) {

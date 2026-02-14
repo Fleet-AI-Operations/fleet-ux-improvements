@@ -2,8 +2,7 @@
 // Improvements to the Request Revisions Workflow
 
 const GUIDELINE_LINKS = {
-    kinesis: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d',
-    problemCreation: 'https://fleetai.notion.site/Fleet-Problem-Creation-Guidelines-215fe5dd3fba802683d1c461b6a35c8a'
+    kinesis: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d'
 };
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
@@ -12,7 +11,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.8',
+    _version: '3.9',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -34,12 +33,6 @@ const plugin = {
             id: 'copy-link-kinesis-guidelines',
             name: 'Copy Link to Kinesis Guidelines',
             description: 'Show a button under "Where are the issues?" that copies the Kinesis Guidelines link to the clipboard',
-            enabledByDefault: true
-        },
-        {
-            id: 'copy-link-problem-creation-guidelines',
-            name: 'Copy Link to Problem Creation Guidelines',
-            description: 'Show a button under "Where are the issues?" that copies the Problem Creation Guidelines link to the clipboard',
             enabledByDefault: true
         }
     ],
@@ -380,10 +373,9 @@ const plugin = {
 
         let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
         const kinesisEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-kinesis-guidelines', true);
-        const problemCreationEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-problem-creation-guidelines', true);
 
         if (wrapper) {
-            this.syncGuidelineCopyButtons(wrapper, kinesisEnabled, problemCreationEnabled);
+            this.syncGuidelineCopyButtons(wrapper, kinesisEnabled);
             return;
         }
 
@@ -416,37 +408,14 @@ const plugin = {
         kinesisGroup.appendChild(kinesisOpen);
         wrapper.appendChild(kinesisGroup);
 
-        const problemGroup = document.createElement('span');
-        problemGroup.className = 'inline-flex items-center gap-1';
-        problemGroup.setAttribute('data-guideline-group', 'problem-creation');
-        const problemBtn = document.createElement('button');
-        problemBtn.type = 'button';
-        problemBtn.className = buttonClass;
-        problemBtn.setAttribute('data-fleet-plugin', this.id);
-        problemBtn.setAttribute('data-guideline-copy', 'problem-creation');
-        problemBtn.textContent = 'Copy Link to Problem Creation Guidelines';
-        problemBtn.addEventListener('click', () => this.copyGuidelineLink(problemBtn, 'Copy Link to Problem Creation Guidelines', GUIDELINE_LINKS.problemCreation));
-        problemGroup.appendChild(problemBtn);
-        const problemOpen = document.createElement('a');
-        problemOpen.href = GUIDELINE_LINKS.problemCreation;
-        problemOpen.target = '_blank';
-        problemOpen.rel = 'noopener noreferrer';
-        problemOpen.className = linkClass;
-        problemOpen.setAttribute('data-fleet-plugin', this.id);
-        problemOpen.textContent = 'Open';
-        problemGroup.appendChild(problemOpen);
-        wrapper.appendChild(problemGroup);
-
-        this.syncGuidelineCopyButtons(wrapper, kinesisEnabled, problemCreationEnabled);
+        this.syncGuidelineCopyButtons(wrapper, kinesisEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline copy-link buttons added');
     },
 
-    syncGuidelineCopyButtons(wrapper, kinesisEnabled, problemCreationEnabled) {
+    syncGuidelineCopyButtons(wrapper, kinesisEnabled) {
         const kinesisGroup = wrapper.querySelector('[data-guideline-group="kinesis"]');
-        const problemGroup = wrapper.querySelector('[data-guideline-group="problem-creation"]');
         if (kinesisGroup) kinesisGroup.style.display = kinesisEnabled ? '' : 'none';
-        if (problemGroup) problemGroup.style.display = problemCreationEnabled ? '' : 'none';
     },
 
     copyGuidelineLink(button, originalText, url) {

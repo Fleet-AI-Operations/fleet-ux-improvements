@@ -1,6 +1,6 @@
 {
   "version": "3.11.2",
-  "archetypesVersion": "3.139",
+  "archetypesVersion": "3.140",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -291,7 +291,7 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.8"
+          "version": "3.9"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -340,7 +340,7 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.1"
+          "version": "3.2"
         },
         {
           "name": "qa-scratchpad.js",
