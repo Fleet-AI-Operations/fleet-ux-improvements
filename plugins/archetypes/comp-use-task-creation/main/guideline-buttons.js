@@ -3,15 +3,14 @@
 
 const BUTTONS = [
     { id: 'qa-guidelines', title: 'QA Guidelines', link: 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56' },
-    { id: 'meridian-guidelines', title: 'Meridian Guidelines', link: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477' },
-    { id: 'problem-creation-guidelines', title: 'Problem Creation Guidelines', link: 'https://fleetai.notion.site/Fleet-Problem-Creation-Guidelines-215fe5dd3fba802683d1c461b6a35c8a' }
+    { id: 'meridian-guidelines', title: 'Meridian Guidelines', link: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477' }
 ];
 
 const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
