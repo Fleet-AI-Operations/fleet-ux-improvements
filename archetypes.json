@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.16",
+  "archetypesVersion": "4.17",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -91,7 +91,7 @@
         },
         {
           "name": "remove-textarea-gradient.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "remember-layout-proportions.js",
