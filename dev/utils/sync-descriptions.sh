@@ -21,7 +21,7 @@ set -e
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git -C "$script_dir" rev-parse --show-toplevel)"
-node_script="$script_dir/sync-descriptions.js"
+node_script="$script_dir/z-sync-descriptions.js"
 update_script="$script_dir/update-versions.sh"
 
 dry_run=false
