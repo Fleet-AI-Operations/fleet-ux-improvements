@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.0",
+  "archetypesVersion": "4.1",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -188,6 +188,8 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
+          "name": "env-picker-dropdown-width.js",
+          "version": "1.0"
         }
       ]
     },
