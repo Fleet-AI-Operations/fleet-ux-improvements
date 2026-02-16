@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -140,6 +140,21 @@ const plugin = {
                     paramsDiv.parentNode.insertBefore(expandLink, paramsDiv.nextSibling);
                 }
                 expandLink.style.display = (!isCollapsed && toggleBtn.dataset.paramVisible === 'false') ? 'inline-flex' : 'none';
+
+                // Parameters label: make it a button that collapses the section when open
+                const labelEl = paramsDiv.firstElementChild;
+                if (labelEl && labelEl.textContent.trim() === 'Parameters' && !labelEl.hasAttribute('data-wf-param-label')) {
+                    labelEl.setAttribute('data-wf-param-label', '1');
+                    labelEl.setAttribute('role', 'button');
+                    labelEl.setAttribute('tabindex', '0');
+                    labelEl.setAttribute('title', 'Hide parameters');
+                    labelEl.classList.add('cursor-pointer', 'hover:text-accent-foreground');
+                    labelEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        this.handleToggle(card, toggleBtn);
+                    });
+                }
             }
         });
 
