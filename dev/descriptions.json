@@ -1,0 +1,414 @@
+{
+  "core/main": [
+    {
+      "file": "settings-ui.js",
+      "name": "Settings UI",
+      "description": "Provides the settings panel for managing plugins"
+    }
+  ],
+  "core/dev": [
+    {
+      "file": "logger-panel.js",
+      "name": "Dev Logger Panel",
+      "description": "Floating panel to view Fleet UX Enhancer logs without prefix"
+    }
+  ],
+  "archetypes/comp-use-revision/main": [
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "guideline-buttons.js",
+      "name": "Guideline Buttons",
+      "description": "Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings."
+    },
+    {
+      "file": "hide-testing-environment-banner.js",
+      "name": "Hide Testing Environment Banner",
+      "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
+    },
+    {
+      "file": "prompt-scratchpad.js",
+      "name": "Prompt Scratchpad",
+      "description": "Adds an adjustable height scratchpad for notes after the prompt section"
+    },
+    {
+      "file": "remove-textarea-gradient.js",
+      "name": "Remove Textarea Gradient",
+      "description": "Removes the gradient fade overlay from the prompt textarea"
+    }
+  ],
+  "archetypes/comp-use-task-creation/main": [
+    {
+      "file": "autocorrect-textareas.js",
+      "name": "Disable Prompt Text Area Autocorrect",
+      "description": "Disables autocorrect on the prompt editor"
+    },
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "guideline-buttons.js",
+      "name": "Guideline Buttons",
+      "description": "Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings."
+    },
+    {
+      "file": "hide-testing-environment-banner.js",
+      "name": "Hide Testing Environment Banner",
+      "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
+    },
+    {
+      "file": "prompt-scratchpad.js",
+      "name": "Prompt Scratchpad",
+      "description": "Adds an adjustable height scratchpad for notes after the prompt section on comp-use creation"
+    },
+    {
+      "file": "remove-textarea-gradient.js",
+      "name": "Remove Textarea Gradient",
+      "description": "Removes the gradient fade overlay from the prompt textarea"
+    }
+  ],
+  "archetypes/dashboard/main": [
+    {
+      "file": "feedback-given-approval-rate.js",
+      "name": "Feedback Given Approval Rate",
+      "description": "Show approval rate on the Feedback Given stat when both approved and feedback requested counts exist"
+    },
+    {
+      "file": "feedback-given-today-env.js",
+      "name": "Feedback Given Today and Environment",
+      "description": "Show today's feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete"
+    },
+    {
+      "file": "progress-prompt-expand.js",
+      "name": "Progress Prompt Expand",
+      "description": "Hover over My Progress task items to expand truncated prompts"
+    },
+    {
+      "file": "task-creation-today-env.js",
+      "name": "Task Creation Today and Environment",
+      "description": "Show today's task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete"
+    }
+  ],
+  "archetypes/qa-comp-use/main": [
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "copy-prompt.js",
+      "name": "Copy Prompt",
+      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard."
+    },
+    {
+      "file": "copy-verifier-output.js",
+      "name": "Copy Verifier Output",
+      "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard."
+    },
+    {
+      "file": "guideline-buttons.js",
+      "name": "Guideline Buttons",
+      "description": "Add guideline link buttons below the user prompt. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow."
+    },
+    {
+      "file": "hide-testing-environment-banner.js",
+      "name": "Hide Testing Environment Banner",
+      "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
+    },
+    {
+      "file": "prompt-diff-highlight.js",
+      "name": "Prompt Diff Highlighting",
+      "description": "Highlights word-level changes in the Prompt Changes modal"
+    },
+    {
+      "file": "qa-scratchpad.js",
+      "name": "QA Scratchpad",
+      "description": "Adds an adjustable height scratchpad for notes between prompt and environment variables"
+    },
+    {
+      "file": "request-revisions.js",
+      "name": "Request Revisions Improvements",
+      "description": "Improvements to the Request Revisions Workflow"
+    }
+  ],
+  "archetypes/qa-comp-use/dev": [],
+  "archetypes/qa-project-picker/main": [
+    {
+      "file": "auto-sort-available-qa-tasks.js",
+      "name": "Auto Sort Available QA Tasks",
+      "description": "Automatically groups QA review environment cards by team (using labels shown on each card)"
+    },
+    {
+      "file": "qa-team-filter-width.js",
+      "name": "QA Team Filter Width",
+      "description": "Makes the QA dashboard team filter dropdown width fit its content instead of a fixed 160px"
+    },
+    {
+      "file": "sort-qa-environments-alphabetically.js",
+      "name": "Sort QA Environments Alphabetically",
+      "description": "Sorts QA review environment cards A–Z by environment name. Optional; works with or without team grouping."
+    }
+  ],
+  "archetypes/qa-tool-use/main": [
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "clear-search.js",
+      "name": "Clear Tool Search",
+      "description": "Adds a clear (X) button to the tool search box when it has text"
+    },
+    {
+      "file": "copy-prompt.js",
+      "name": "Copy Prompt",
+      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard."
+    },
+    {
+      "file": "copy-verifier-output.js",
+      "name": "Copy Verifier Output",
+      "description": "Add a copy button after Stdout in the Verifier Output panel. Click copies the verifier output to the clipboard."
+    },
+    {
+      "file": "execute-to-current-tool.js",
+      "name": "Execute to Current Tool",
+      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
+    },
+    {
+      "file": "favorites.js",
+      "name": "Tool Favorites",
+      "description": "Add favorite stars to tools list"
+    },
+    {
+      "file": "prompt-diff-highlight.js",
+      "name": "Prompt Diff Highlighting",
+      "description": "Highlights word-level changes in the Prompt Changes modal"
+    },
+    {
+      "file": "qa-scratchpad.js",
+      "name": "QA Scratchpad",
+      "description": "Adds an adjustable height scratchpad for notes between prompt and environment variables"
+    },
+    {
+      "file": "remember-layout-proportions.js",
+      "name": "Remember Layout Proportions",
+      "description": "Persist and restore the main panel split positions on QA Tool Use pages"
+    },
+    {
+      "file": "request-revisions.js",
+      "name": "Request Revisions Improvements",
+      "description": "Improvements to the Request Revisions Workflow"
+    },
+    {
+      "file": "text-sanitizer.js",
+      "name": "Text Sanitizer",
+      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+    },
+    {
+      "file": "toggle-tool-parameters.js",
+      "name": "Toggle Tool Parameters",
+      "description": "Adds a toggle to each tool header to hide/show its parameters section"
+    },
+    {
+      "file": "tool-description-truncate.js",
+      "name": "Tool description truncation",
+      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+    },
+    {
+      "file": "tool-results-resize-handle.js",
+      "name": "Tool Results Resize Handle",
+      "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
+    },
+    {
+      "file": "useful-links-buttons.js",
+      "name": "Useful Link Buttons",
+      "description": "Add configurable link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow."
+    },
+    {
+      "file": "workflow-cache.js",
+      "name": "Workflow Cache",
+      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+    }
+  ],
+  "archetypes/qa-tool-use/dev": [
+    {
+      "file": "reorganize-request-revisions.js",
+      "name": "Request Revisions Modal Reorganization",
+      "description": "Split the Request Revisions modal into two columns to reduce scrolling."
+    },
+    {
+      "file": "source-data-explorer.js",
+      "name": "Source Data Explorer",
+      "description": "Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded."
+    },
+    {
+      "file": "workflow-cache-dev.js",
+      "name": "Workflow Cache",
+      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+    },
+    {
+      "file": "workflow-integrity-check.js",
+      "name": "Workflow Integrity Check",
+      "description": "Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs"
+    }
+  ],
+  "archetypes/task-creation-env-picker/main": [
+    {
+      "file": "env-picker-dropdown-width.js",
+      "name": "Env Picker Dropdown Width",
+      "description": "Makes the task creation environment picker filter dropdowns (e.g. All Teams, All Types) width fit their content instead of a fixed 160px"
+    },
+    {
+      "file": "sort-environments-alphabetically.js",
+      "name": "Sort Environments Alphabetically",
+      "description": "Sorts environment cards A–Z by name on the task creation environment picker page."
+    }
+  ],
+  "archetypes/tool-use-revision/main": [
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "clear-search.js",
+      "name": "Clear Tool Search",
+      "description": "Adds a clear (X) button to the tool search box when it has text"
+    },
+    {
+      "file": "execute-to-current-tool.js",
+      "name": "Execute to Current Tool",
+      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
+    },
+    {
+      "file": "favorites.js",
+      "name": "Tool Favorites",
+      "description": "Add favorite stars to tools list"
+    },
+    {
+      "file": "guideline-buttons.js",
+      "name": "Guideline Buttons",
+      "description": "Add guideline link buttons to the header bar. Each button can be shown or hidden in Settings."
+    },
+    {
+      "file": "prompt-scratchpad.js",
+      "name": "Prompt Scratchpad",
+      "description": "Adds an adjustable height scratchpad for notes after the prompt section"
+    },
+    {
+      "file": "text-sanitizer.js",
+      "name": "Text Sanitizer",
+      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+    },
+    {
+      "file": "toggle-tool-parameters.js",
+      "name": "Toggle Tool Parameters",
+      "description": "Adds a toggle to each tool header to hide/show its parameters section"
+    },
+    {
+      "file": "tool-description-truncate.js",
+      "name": "Tool description truncation",
+      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+    },
+    {
+      "file": "tool-results-resize-handle.js",
+      "name": "Tool Results Resize Handle",
+      "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
+    },
+    {
+      "file": "workflow-cache.js",
+      "name": "Workflow Cache",
+      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+    }
+  ],
+  "archetypes/tool-use-task-creation/main": [
+    {
+      "file": "bug-report-expand.js",
+      "name": "Bug Report Expand",
+      "description": "Makes bug report cards expandable to see full text"
+    },
+    {
+      "file": "clear-search.js",
+      "name": "Clear Tool Search",
+      "description": "Adds a clear (X) button to the tool search box when it has text"
+    },
+    {
+      "file": "execute-to-current-tool.js",
+      "name": "Execute to Current Tool",
+      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
+    },
+    {
+      "file": "favorites.js",
+      "name": "Tool Favorites",
+      "description": "Add favorite stars to tools list"
+    },
+    {
+      "file": "guideline-buttons.js",
+      "name": "Guideline Buttons",
+      "description": "Add guideline link buttons to the toolbar. Each button can be shown or hidden in Settings."
+    },
+    {
+      "file": "json-editor-online.js",
+      "name": "JSON Editor Online",
+      "description": "Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor."
+    },
+    {
+      "file": "prompt-and-notes-areas.js",
+      "name": "Prompt and Notes Areas Layout",
+      "description": "Anchors scratchpad to bottom and makes prompt handle control both areas"
+    },
+    {
+      "file": "remember-layout-proportions.js",
+      "name": "Remember Layout Proportions",
+      "description": "Persist and restore the main panel split positions on Tool Use Task Creation pages"
+    },
+    {
+      "file": "remove-textarea-gradient.js",
+      "name": "Remove Textarea Gradient",
+      "description": "Removes the gradient fade overlay from the prompt textarea"
+    },
+    {
+      "file": "text-sanitizer.js",
+      "name": "Text Sanitizer",
+      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+    },
+    {
+      "file": "toggle-tool-parameters.js",
+      "name": "Toggle Tool Parameters",
+      "description": "Adds a toggle to each tool header to hide/show its parameters section"
+    },
+    {
+      "file": "tool-description-truncate.js",
+      "name": "Tool description truncation",
+      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+    },
+    {
+      "file": "tool-results-resize-handle.js",
+      "name": "Tool Results Resize Handle",
+      "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
+    },
+    {
+      "file": "workflow-cache.js",
+      "name": "Workflow Cache",
+      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+    }
+  ],
+  "archetypes/tool-use-task-creation/dev": [
+    {
+      "file": "source-data-explorer.js",
+      "name": "Source Data Explorer",
+      "description": "Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded."
+    },
+    {
+      "file": "workflow-integrity-check.js",
+      "name": "Workflow Integrity Check",
+      "description": "Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs"
+    }
+  ]
+}
