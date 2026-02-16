@@ -1,18 +1,19 @@
-// ============= guideline-buttons.js =============
-// Modular guideline link buttons below the QA scratchpad. Wraps when panel is narrow.
+// ============= useful-links-buttons.js =============
+// Modular link buttons below the QA scratchpad. Wraps when panel is narrow.
 
 const QA_GUIDELINES_LINK = 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56';
 
 const BUTTONS = [
     { id: 'qa-guidelines', title: 'QA Guidelines', link: QA_GUIDELINES_LINK },
-    { id: 'kinesis-guidelines', title: 'Kinesis Guidelines', link: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d' }
+    { id: 'kinesis-guidelines', title: 'Kinesis Guidelines', link: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d' },
+    { id: 'json-editor', title: '{ } JSON Editor', link: 'https://jsoneditoronline.org' }
 ];
 
 const plugin = {
     id: 'guidelineButtons',
-    name: 'Guideline Buttons',
-    description: 'Add guideline link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
-    _version: '1.7',
+    name: 'Useful Link Buttons',
+    description: 'Add configurable link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -36,7 +37,7 @@ const plugin = {
             const scratchpad = document.querySelector('[data-qa-scratchpad="true"]');
             if (!scratchpad) {
                 if (!state.missingLogged) {
-                    Logger.debug('Guideline Buttons: QA scratchpad not found');
+                    Logger.debug('Useful Link Buttons: QA scratchpad not found');
                     state.missingLogged = true;
                 }
                 return;
@@ -53,7 +54,7 @@ const plugin = {
             if (!this.isTaskTabActive(tabBar)) {
                 contentRoot.querySelectorAll('[data-fleet-plugin="guidelineButtons"]').forEach((el) => {
                     el.remove();
-                    Logger.debug('Guideline Buttons: Removed wrapper from panel (Notes tab active)');
+                    Logger.debug('Useful Link Buttons: Removed wrapper from panel (Notes tab active)');
                 });
                 continue;
             }
@@ -128,14 +129,14 @@ const plugin = {
             if (allWrappers.length > 1) {
                 for (let i = 1; i < allWrappers.length; i++) {
                     allWrappers[i].remove();
-                    Logger.log('✓ Guideline Buttons: Removed duplicate wrapper');
+                    Logger.log('✓ Useful Link Buttons: Removed duplicate wrapper');
                 }
             }
             const remaining = this.findAllWrappersAmongSiblings(scratchpad);
             const wrapperToUse = remaining.length > 0 ? remaining[0] : existingWrapper;
             if (wrapperToUse && wrapperToUse !== scratchpad.nextElementSibling) {
                 scratchpad.insertAdjacentElement('afterend', wrapperToUse);
-                Logger.debug('Guideline Buttons: Moved wrapper to follow scratchpad');
+                Logger.debug('Useful Link Buttons: Moved wrapper to follow scratchpad');
             }
             this.syncButtons(scratchpad.nextElementSibling);
             return;
@@ -144,7 +145,7 @@ const plugin = {
         const wrapper = this.createWrapper();
         scratchpad.insertAdjacentElement('afterend', wrapper);
         state.wrapperAdded = true;
-        Logger.log('✓ Guideline Buttons: wrapper added below QA scratchpad');
+        Logger.log('✓ Useful Link Buttons: wrapper added below QA scratchpad');
         this.syncButtons(wrapper);
     },
 
@@ -174,16 +175,16 @@ const plugin = {
                     btn.title = `Copy ${b.title} to clipboard`;
                     btn.addEventListener('click', () => {
                         navigator.clipboard.writeText(b.link).then(() => {
-                            Logger.log(`Guideline Buttons: copied QA Guidelines link to clipboard`);
+                            Logger.log(`Useful Link Buttons: copied link to clipboard`);
                         }).catch((err) => {
-                            Logger.error('Guideline Buttons: failed to copy QA Guidelines link', err);
+                            Logger.error('Useful Link Buttons: failed to copy link', err);
                         });
                     });
                 } else {
                     btn.title = `Open ${b.title} in new tab`;
                     btn.addEventListener('click', () => {
                         window.open(b.link, '_blank');
-                        Logger.log(`Guideline Buttons: opened ${b.title}`);
+                        Logger.log(`Useful Link Buttons: opened ${b.title}`);
                     });
                 }
                 wrapper.appendChild(btn);

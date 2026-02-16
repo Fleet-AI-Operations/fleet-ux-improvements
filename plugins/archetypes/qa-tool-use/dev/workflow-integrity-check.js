@@ -65,10 +65,10 @@ const plugin = {
             this.runIntegrityCheck(state);
         });
         
-        // Insert after JSON Editor button if it exists, otherwise append
-        const jsonEditorBtn = center.querySelector('[data-fleet-plugin="jsonEditorOnline"][data-slot="toolbar-button"]');
-        if (jsonEditorBtn) {
-            jsonEditorBtn.insertAdjacentElement('afterend', button);
+        // Insert after Source Data Explorer button if present, otherwise append
+        const sourceDataBtn = center.querySelector('[data-fleet-plugin="sourceDataExplorer"][data-slot="source-data-button"]');
+        if (sourceDataBtn) {
+            sourceDataBtn.insertAdjacentElement('afterend', button);
         } else {
             center.appendChild(button);
         }

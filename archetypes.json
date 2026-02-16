@@ -258,10 +258,6 @@
           "version": "1.0"
         },
         {
-          "name": "json-editor-online.js",
-          "version": "2.0"
-        },
-        {
           "name": "remember-layout-proportions.js",
           "version": "2.1"
         },
@@ -270,8 +266,8 @@
           "version": "1.7"
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "1.7"
+          "name": "useful-links-buttons.js",
+          "version": "1.8"
         },
         {
           "name": "text-sanitizer.js",
