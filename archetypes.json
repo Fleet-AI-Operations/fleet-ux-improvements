@@ -1,6 +1,6 @@
 {
   "version": "3.11.2",
-  "archetypesVersion": "3.143",
+  "archetypesVersion": "3.144",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -259,10 +259,6 @@
         },
         {
           "name": "json-editor-online.js",
-          "version": "2.0"
-        },
-        {
-          "name": "panel-size-memory.js",
           "version": "2.0"
         },
         {
