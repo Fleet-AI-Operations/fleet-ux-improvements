@@ -13,7 +13,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '1.9',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -34,7 +34,9 @@ const plugin = {
         const tabBars = this.findTaskNotesTabBars();
 
         if (tabBars.length === 0) {
-            const scratchpad = document.querySelector('[data-qa-scratchpad="true"]');
+            const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+            const scratchpad = (taskDetailPanel && taskDetailPanel.querySelector('[data-qa-scratchpad="true"]'))
+                || document.querySelector('[data-qa-scratchpad="true"]');
             if (!scratchpad) {
                 if (!state.missingLogged) {
                     Logger.debug('Useful Link Buttons: QA scratchpad not found');
@@ -69,17 +71,22 @@ const plugin = {
 
     findTaskNotesTabBars() {
         const tabBars = [];
-        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
-        for (const el of candidates) {
-            const buttons = el.querySelectorAll('button');
-            let hasTask = false;
-            let hasNotes = false;
-            for (const btn of buttons) {
-                const text = btn.textContent.trim();
-                if (text === 'Task') hasTask = true;
-                if (text === 'Notes') hasNotes = true;
+        const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        const roots = taskDetailPanel ? [taskDetailPanel] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+            for (const el of candidates) {
+                const buttons = el.querySelectorAll('button');
+                let hasTask = false;
+                let hasNotes = false;
+                for (const btn of buttons) {
+                    const text = btn.textContent.trim();
+                    if (text === 'Task') hasTask = true;
+                    if (text === 'Notes') hasNotes = true;
+                }
+                if (hasTask && hasNotes) tabBars.push(el);
             }
-            if (hasTask && hasNotes) tabBars.push(el);
+            if (tabBars.length > 0) break;
         }
         return tabBars;
     },

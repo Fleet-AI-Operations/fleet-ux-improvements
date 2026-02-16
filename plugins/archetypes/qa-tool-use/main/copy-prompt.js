@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyPrompt',
     name: 'Copy Prompt',
     description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -52,15 +52,15 @@ const plugin = {
     },
 
     findPromptSection() {
-        const candidates = document.querySelectorAll('div.flex.flex-col.gap-2');
-        for (const candidate of candidates) {
-            const label = candidate.querySelector('label');
-            const span = candidate.querySelector('span.text-sm.text-muted-foreground.font-medium');
-            if (label && label.textContent.trim() === 'Prompt') {
-                return candidate;
-            }
-            if (span && span.textContent.trim() === 'Prompt') {
-                return candidate;
+        const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        const roots = taskDetailPanel ? [taskDetailPanel, document] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.flex.flex-col.gap-2');
+            for (const candidate of candidates) {
+                const label = candidate.querySelector('label');
+                const span = candidate.querySelector('span.text-sm.text-muted-foreground.font-medium');
+                if (label && label.textContent.trim() === 'Prompt') return candidate;
+                if (span && span.textContent.trim() === 'Prompt') return candidate;
             }
         }
         return null;

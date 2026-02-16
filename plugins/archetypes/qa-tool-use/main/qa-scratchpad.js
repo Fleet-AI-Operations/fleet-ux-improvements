@@ -6,7 +6,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -134,45 +134,49 @@ const plugin = {
     },
     
     findPromptSection(scopeRoot) {
-        // Find all divs with "flex flex-col gap-2" (optionally within scopeRoot)
+        // When no scope given, prefer [data-ui="qa-task-detail-panel"] first, then document-wide
+        if (!scopeRoot) {
+            const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+            if (taskDetailPanel) {
+                const inPanel = this.findPromptSection(taskDetailPanel);
+                if (inPanel) return inPanel;
+            }
+        }
         const options = { context: `${this.id}.findPromptSection` };
         if (scopeRoot) options.root = scopeRoot;
         const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
 
         for (const candidate of candidates) {
-            // Look for both label and span elements
             const label = candidate.querySelector('label');
             const span = candidate.querySelector('span.text-sm.text-muted-foreground.font-medium');
-            
-            // Check if either contains "Prompt" text
-            if (label && label.textContent.trim() === 'Prompt') {
-                return candidate;
-            }
-            
-            if (span && span.textContent.trim() === 'Prompt') {
-                return candidate;
-            }
+            if (label && label.textContent.trim() === 'Prompt') return candidate;
+            if (span && span.textContent.trim() === 'Prompt') return candidate;
         }
-        
         return null;
     },
 
     /**
      * Returns all tab bar elements that contain both "Task" and "Notes" buttons (one per panel).
+     * Prefers scoping to [data-ui="qa-task-detail-panel"] when present.
      */
     findTaskNotesTabBars() {
         const tabBars = [];
-        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
-        for (const el of candidates) {
-            const buttons = el.querySelectorAll('button');
-            let hasTask = false;
-            let hasNotes = false;
-            for (const btn of buttons) {
-                const text = btn.textContent.trim();
-                if (text === 'Task') hasTask = true;
-                if (text === 'Notes') hasNotes = true;
+        const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        const roots = taskDetailPanel ? [taskDetailPanel] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+            for (const el of candidates) {
+                const buttons = el.querySelectorAll('button');
+                let hasTask = false;
+                let hasNotes = false;
+                for (const btn of buttons) {
+                    const text = btn.textContent.trim();
+                    if (text === 'Task') hasTask = true;
+                    if (text === 'Notes') hasNotes = true;
+                }
+                if (hasTask && hasNotes) tabBars.push(el);
             }
-            if (hasTask && hasNotes) tabBars.push(el);
+            if (tabBars.length > 0) break;
         }
         return tabBars;
     },

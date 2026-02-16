@@ -11,7 +11,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -84,16 +84,27 @@ const plugin = {
             return;
         }
         
-        // Find the Request Revisions modal by checking for the heading
+        // Find the Request Revisions modal: heading "Request Revisions"; prefer dialog that contains #feedback-Task / #feedback-Environment
         let requestRevisionsModal = null;
         for (const dialog of dialogs) {
             const heading = Context.dom.query('h2', {
                 root: dialog,
                 context: `${this.id}.heading`
             });
-            if (heading && heading.textContent.includes('Request Revisions')) {
+            if (!heading || !heading.textContent.includes('Request Revisions')) continue;
+            const hasFeedbackId = dialog.querySelector('#feedback-Task, #feedback-Environment, [id^="feedback-"]');
+            if (hasFeedbackId) {
                 requestRevisionsModal = dialog;
                 break;
+            }
+        }
+        if (!requestRevisionsModal) {
+            for (const dialog of dialogs) {
+                const heading = Context.dom.query('h2', { root: dialog, context: `${this.id}.heading` });
+                if (heading && heading.textContent.includes('Request Revisions')) {
+                    requestRevisionsModal = dialog;
+                    break;
+                }
             }
         }
         
@@ -321,11 +332,14 @@ const plugin = {
     },
     
     handleTaskIssuePaste(state, modal, modalId) {
-        // Find the Task feedback textarea - it only exists when Task is selected
-        const taskFeedbackTextarea = Context.dom.query('textarea#feedback-Task', {
-            root: modal,
-            context: `${this.id}.taskFeedbackTextarea`
-        });
+        // Prefer id-based selector (#feedback-Task); fallback for older markup
+        let taskFeedbackTextarea = document.getElementById('feedback-Task');
+        if (!taskFeedbackTextarea || !modal.contains(taskFeedbackTextarea) || taskFeedbackTextarea.tagName !== 'TEXTAREA') {
+            taskFeedbackTextarea = Context.dom.query('textarea#feedback-Task', {
+                root: modal,
+                context: `${this.id}.taskFeedbackTextarea`
+            });
+        }
         
         if (!taskFeedbackTextarea) {
             Logger.debug('Task feedback textarea not found yet, waiting...');
@@ -609,11 +623,14 @@ const plugin = {
     },
     
     handleGradingIssuePaste(state, modal, modalId) {
-        // Find the Grading feedback textarea - it only exists when Grading is selected
-        const gradingFeedbackTextarea = Context.dom.query('textarea#feedback-Grading', {
-            root: modal,
-            context: `${this.id}.gradingFeedbackTextarea`
-        });
+        // Prefer id-based selector (#feedback-Grading); fallback for older markup
+        let gradingFeedbackTextarea = document.getElementById('feedback-Grading');
+        if (!gradingFeedbackTextarea || !modal.contains(gradingFeedbackTextarea) || gradingFeedbackTextarea.tagName !== 'TEXTAREA') {
+            gradingFeedbackTextarea = Context.dom.query('textarea#feedback-Grading', {
+                root: modal,
+                context: `${this.id}.gradingFeedbackTextarea`
+            });
+        }
         
         if (!gradingFeedbackTextarea) {
             Logger.debug('Grading feedback textarea not found yet, waiting...');

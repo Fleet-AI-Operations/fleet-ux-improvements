@@ -15,7 +15,7 @@ const plugin = {
     id: 'qaToolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on QA Tool Use pages',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'init',
     initialState: {
@@ -106,22 +106,29 @@ const plugin = {
         let panel1 = null;
         let outerRight = null;
 
-        // Outer panels: find by walking up from inner group to the horizontal group that has two [data-panel] direct children.
-        const innerAnchor = panel2 || panel3;
-        if (innerAnchor) {
-            const innerGroup = innerAnchor.closest('[data-panel-group]');
-            if (innerGroup) {
-                let el = innerGroup.parentElement;
-                while (el) {
-                    if (el.getAttribute?.('data-panel-group') != null && el.getAttribute?.('data-panel-group-direction') === 'horizontal') {
-                        const directPanels = el.querySelectorAll(':scope > [data-panel]');
-                        if (directPanels.length === 2) {
-                            panel1 = directPanels[0];
-                            outerRight = directPanels[1];
-                            break;
+        const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        if (taskDetailPanel) {
+            const resizablePanel = taskDetailPanel.closest('[data-panel]');
+            if (resizablePanel) panel1 = resizablePanel;
+        }
+
+        if (!panel1) {
+            const innerAnchor = panel2 || panel3;
+            if (innerAnchor) {
+                const innerGroup = innerAnchor.closest('[data-panel-group]');
+                if (innerGroup) {
+                    let el = innerGroup.parentElement;
+                    while (el) {
+                        if (el.getAttribute?.('data-panel-group') != null && el.getAttribute?.('data-panel-group-direction') === 'horizontal') {
+                            const directPanels = el.querySelectorAll(':scope > [data-panel]');
+                            if (directPanels.length === 2) {
+                                panel1 = directPanels[0];
+                                outerRight = directPanels[1];
+                                break;
+                            }
                         }
+                        el = el.parentElement;
                     }
-                    el = el.parentElement;
                 }
             }
         }

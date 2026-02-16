@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -46,11 +46,34 @@ const plugin = {
         Logger.log('Copy Verifier Output: Copy button added');
     },
 
+    getGradingPanelRoot() {
+        const reportGradingBtn = Array.from(document.querySelectorAll('button')).find(
+            (btn) => btn.textContent && btn.textContent.trim().includes('Report Grading Issues')
+        );
+        if (reportGradingBtn) {
+            const panel = reportGradingBtn.closest('[data-panel]');
+            if (panel) return panel;
+        }
+        const instanceContent = document.querySelector('[data-ui="qa-instance-content"]');
+        if (instanceContent) {
+            const instancePanel = instanceContent.closest('[data-panel]');
+            if (instancePanel && instancePanel.parentElement) {
+                const sibling = instancePanel.nextElementSibling || instancePanel.previousElementSibling;
+                if (sibling && sibling.getAttribute?.('data-panel')) return sibling;
+            }
+        }
+        return null;
+    },
+
     findStdoutRow() {
-        const candidates = document.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
-        for (const el of candidates) {
-            if (el.textContent.trim() === 'Stdout') {
-                return el;
+        const gradingPanel = this.getGradingPanelRoot();
+        const roots = gradingPanel ? [gradingPanel, document] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
+            for (const el of candidates) {
+                if (el.textContent.trim() === 'Stdout') {
+                    return el;
+                }
             }
         }
         return null;

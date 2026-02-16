@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -155,6 +155,13 @@ const plugin = {
     },
 
     findPromptSection(scopeRoot) {
+        if (!scopeRoot) {
+            const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+            if (taskDetailPanel) {
+                const inPanel = this.findPromptSection(taskDetailPanel);
+                if (inPanel) return inPanel;
+            }
+        }
         const options = { context: `${this.id}.findPromptSection` };
         if (scopeRoot) options.root = scopeRoot;
         const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
@@ -190,17 +197,22 @@ const plugin = {
 
     findTaskNotesTabBars() {
         const tabBars = [];
-        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
-        for (const el of candidates) {
-            const buttons = el.querySelectorAll('button');
-            let hasTask = false;
-            let hasNotes = false;
-            for (const btn of buttons) {
-                const text = btn.textContent.trim();
-                if (text === 'Task') hasTask = true;
-                if (text === 'Notes') hasNotes = true;
+        const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        const roots = taskDetailPanel ? [taskDetailPanel] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+            for (const el of candidates) {
+                const buttons = el.querySelectorAll('button');
+                let hasTask = false;
+                let hasNotes = false;
+                for (const btn of buttons) {
+                    const text = btn.textContent.trim();
+                    if (text === 'Task') hasTask = true;
+                    if (text === 'Notes') hasNotes = true;
+                }
+                if (hasTask && hasNotes) tabBars.push(el);
             }
-            if (hasTask && hasNotes) tabBars.push(el);
+            if (tabBars.length > 0) break;
         }
         return tabBars;
     },
