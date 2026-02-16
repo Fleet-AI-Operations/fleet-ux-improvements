@@ -15,7 +15,7 @@ const plugin = {
     id: 'qaToolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on QA Tool Use pages',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'init',
     initialState: {
@@ -32,10 +32,11 @@ const plugin = {
     selectors: {
         panel2: '[data-ui="tools-panel"]',
         panel3: '[data-ui="workflow-panel"]',
-        panel1Fallback: '[id=":re:"][data-panel]',
-        panel2Fallback: '[id=":rp:"][data-panel]',
-        panel3Fallback: '[id=":rs:"][data-panel]',
-        outerRightFallback: '[id=":rh:"][data-panel]'
+        // Fallback IDs from current app snapshot; may change with React/version updates.
+        panel1Fallback: '[data-panel-id=":rh:"][data-panel]',
+        panel2Fallback: '[data-panel-id=":rs:"][data-panel]',
+        panel3Fallback: '[data-panel-id=":rv:"][data-panel]',
+        outerRightFallback: '[data-panel-id=":rk:"][data-panel]'
     },
 
     init(state, context) {
@@ -98,17 +99,33 @@ const plugin = {
     },
 
     getPanels() {
-        const panel3 = document.querySelector(this.selectors.panel3) || Context.dom.query(this.selectors.panel3Fallback, { context: `${this.id}.panel3` });
+        // Inner panels: stable data-ui; fallbacks use current app panel IDs.
         const panel2 = document.querySelector(this.selectors.panel2) || Context.dom.query(this.selectors.panel2Fallback, { context: `${this.id}.panel2` });
+        const panel3 = document.querySelector(this.selectors.panel3) || Context.dom.query(this.selectors.panel3Fallback, { context: `${this.id}.panel3` });
+
         let panel1 = null;
         let outerRight = null;
-        if (panel3) {
-            const innerGroup = panel3.closest('[data-panel-group]');
-            if (innerGroup && innerGroup.parentElement) {
-                outerRight = innerGroup.parentElement;
-                panel1 = outerRight.previousElementSibling;
+
+        // Outer panels: find by walking up from inner group to the horizontal group that has two [data-panel] direct children.
+        const innerAnchor = panel2 || panel3;
+        if (innerAnchor) {
+            const innerGroup = innerAnchor.closest('[data-panel-group]');
+            if (innerGroup) {
+                let el = innerGroup.parentElement;
+                while (el) {
+                    if (el.getAttribute?.('data-panel-group') != null && el.getAttribute?.('data-panel-group-direction') === 'horizontal') {
+                        const directPanels = el.querySelectorAll(':scope > [data-panel]');
+                        if (directPanels.length === 2) {
+                            panel1 = directPanels[0];
+                            outerRight = directPanels[1];
+                            break;
+                        }
+                    }
+                    el = el.parentElement;
+                }
             }
         }
+
         if (!panel1) panel1 = Context.dom.query(this.selectors.panel1Fallback, { context: `${this.id}.panel1` });
         if (!outerRight) outerRight = Context.dom.query(this.selectors.outerRightFallback, { context: `${this.id}.outerRight` });
         return { panel1, panel2, panel3, outerRight };

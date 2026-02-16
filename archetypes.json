@@ -1,6 +1,6 @@
 {
   "version": "3.11.2",
-  "archetypesVersion": "3.144",
+  "archetypesVersion": "3.145",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -263,7 +263,7 @@
         },
         {
           "name": "remember-layout-proportions.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "qa-scratchpad.js",
