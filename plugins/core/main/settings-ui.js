@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.22',
+    _version: '5.23',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -394,7 +394,7 @@ const plugin = {
                     <div>
                         <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Settings</h2>
                         <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0;">
-                            v${version} · Archetype: <strong>${archetype ? archetype.name : 'None detected'}</strong>
+                            v${version} · a${Context.archetypesVersion || '?'} · <strong>${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
                         </p>
                     </div>
                     <button id="wf-settings-close" style="

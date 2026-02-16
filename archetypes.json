@@ -1,10 +1,10 @@
 {
-  "version": "3.11.2",
-  "archetypesVersion": "3.145",
+  "version": "3.11.3",
+  "archetypesVersion": "3.147",
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "5.22"
+      "version": "5.23"
     }
   ],
   "devPlugins": [

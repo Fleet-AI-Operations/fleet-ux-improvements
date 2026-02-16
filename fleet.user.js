@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.11.2
+// @version      3.11.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.11.2';
+    const VERSION = '3.11.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -55,6 +55,7 @@
     // ============= SHARED CONTEXT =============
     const Context = {
         version: VERSION,
+        archetypesVersion: null,
         source: null,
         initialized: false,
         currentArchetype: null,
@@ -871,6 +872,7 @@
                                 }
                                 
                                 // Always log archetypes version (cannot be disabled)
+                                Context.archetypesVersion = config.archetypesVersion || null;
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
                                 
                                 Logger.log(`✓ Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
