@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -110,8 +110,8 @@ const plugin = {
                 togglesAdded++;
             }
 
-            // Hide/show toggle based on collapsed state (toggle is only relevant when open)
-            toggleBtn.style.display = isCollapsed ? 'none' : 'inline-flex';
+            // Hide the header toggle; state is controlled by "Hide Parameters" / "Show Parameters" buttons only
+            toggleBtn.style.display = 'none';
 
             // Re-enforce hidden state on each mutation to survive React re-renders
             // of collapsible content. The toggle button lives in the header (never
@@ -131,7 +131,7 @@ const plugin = {
                     expandLink = document.createElement('button');
                     expandLink.className = 'wf-param-expand-link ' + this.paramSectionBtnClass;
                     expandLink.type = 'button';
-                    expandLink.innerHTML = 'PARAMETERS <span class="wf-param-caret">></span>';
+                    expandLink.textContent = 'Show Parameters';
                     expandLink.title = 'Show parameters';
                     expandLink.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -144,14 +144,14 @@ const plugin = {
                 }
                 expandLink.style.display = (!isCollapsed && toggleBtn.dataset.paramVisible === 'false') ? 'inline-flex' : 'none';
 
-                // Parameters label: bordered button "PARAMETERS ▼" that collapses the section when open
+                // Parameters label: bordered button "Hide Parameters" that collapses the section when open
                 const labelEl = paramsDiv.firstElementChild;
                 if (labelEl && !labelEl.hasAttribute('data-wf-param-label')) {
                     const labelText = labelEl.textContent.trim();
                     if (labelText === 'Parameters' || labelText === 'PARAMETERS') {
                         labelEl.setAttribute('data-wf-param-label', '1');
                         labelEl.className = this.paramSectionBtnClass;
-                        labelEl.innerHTML = 'PARAMETERS <span class="wf-param-caret wf-param-caret-down" style="display:inline-block;transform:rotate(90deg)">></span>';
+                        labelEl.textContent = 'Hide Parameters';
                         labelEl.setAttribute('role', 'button');
                         labelEl.setAttribute('tabindex', '0');
                         labelEl.setAttribute('title', 'Hide parameters');
