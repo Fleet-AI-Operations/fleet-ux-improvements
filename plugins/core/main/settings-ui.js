@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.23',
+    _version: '5.24',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -265,9 +265,12 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
+        const noPluginsMsg = Context.isOutdated
+            ? 'No plugins will load until you update the userscript.'
+            : 'No plugins loaded for this page.';
         const pluginTogglesHTML = orderedPlugins.length > 0 
             ? orderedPlugins.map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled)).join('')
-            : '<p style="color: #666; font-size: 13px; font-style: italic;">No plugins loaded for this page.</p>';
+            : `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
         
         // Build dev plugin toggles HTML
         const devPluginTogglesHTML = orderedDevPlugins.length > 0 
@@ -1025,7 +1028,10 @@ const plugin = {
         });
         if (!container) return;
         if (!plugins || plugins.length === 0) {
-            container.innerHTML = '<p style="color: #666; font-size: 13px; font-style: italic;">No plugins loaded for this page.</p>';
+            const noPluginsMsg = Context.isOutdated
+                ? 'No plugins will load until you update the userscript.'
+                : 'No plugins loaded for this page.';
+            container.innerHTML = `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
