@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.24',
+    _version: '5.25',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -659,6 +659,21 @@ const plugin = {
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
                 self._closeModal();
+            });
+        }
+
+        // Update banner: show "Refresh Page with New Version" after newest-version link is clicked
+        const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
+        const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
+        const refreshBtn = Context.dom.query('#wf-update-refresh-btn', { root: modal, context: `${this.id}.updateRefreshBtn` });
+        if (newestLink && refreshRow) {
+            newestLink.addEventListener('click', () => {
+                refreshRow.style.display = 'block';
+            });
+        }
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                window.location.reload();
             });
         }
 
@@ -1816,7 +1831,7 @@ const plugin = {
         }
         
         return `
-            <div style="
+            <div id="wf-update-notification-banner" style="
                 margin-bottom: 20px;
                 padding: 14px;
                 padding-top: 20px;
@@ -1835,9 +1850,21 @@ const plugin = {
                             Extension Update Available
                         </h3>
                         <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
+                </div>
+                <div id="wf-update-refresh-row" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;">
+                    <button type="button" id="wf-update-refresh-btn" style="
+                        padding: 8px 14px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        color: #991b1b;
+                        background: #fef2f2;
+                        border: 1px solid #dc2626;
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">Refresh Page with New Version</button>
                 </div>
             </div>
         `;
