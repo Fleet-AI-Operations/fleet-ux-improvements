@@ -11,7 +11,7 @@ const BUTTONS = [
 const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
-    description: 'Add guideline link buttons below the user prompt. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
+    description: 'Add links to the guidelines on the page',
     _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',

@@ -9,7 +9,7 @@ const BUTTONS = [
 const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
-    description: 'Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings.',
+    description: 'Add links to the guidelines on the page',
     _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',

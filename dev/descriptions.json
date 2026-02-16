@@ -10,19 +10,19 @@
     {
       "file": "logger-panel.js",
       "name": "Dev Logger Panel",
-      "description": "Floating panel to view Fleet UX Enhancer logs without prefix"
+      "description": "Floating panel to view Fleet UX Enhancer logs"
     }
   ],
   "archetypes/comp-use-revision/main": [
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
-      "description": "Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings."
+      "description": "Add links to the guidelines on the page"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -31,8 +31,8 @@
     },
     {
       "file": "prompt-scratchpad.js",
-      "name": "Prompt Scratchpad",
-      "description": "Adds an adjustable height scratchpad for notes after the prompt section"
+      "name": "Scratchpad",
+      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "remove-textarea-gradient.js",
@@ -44,17 +44,17 @@
     {
       "file": "autocorrect-textareas.js",
       "name": "Disable Prompt Text Area Autocorrect",
-      "description": "Disables autocorrect on the prompt editor"
+      "description": "Disables autocorrect in the prompt text box"
     },
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
-      "description": "Add guideline link buttons to the top bar. Each button can be shown or hidden in Settings."
+      "description": "Add links to the guidelines on the page"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -63,8 +63,8 @@
     },
     {
       "file": "prompt-scratchpad.js",
-      "name": "Prompt Scratchpad",
-      "description": "Adds an adjustable height scratchpad for notes after the prompt section on comp-use creation"
+      "name": "Scratchpad",
+      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "remove-textarea-gradient.js",
@@ -81,7 +81,7 @@
     {
       "file": "feedback-given-today-env.js",
       "name": "Feedback Given Today and Environment",
-      "description": "Show today's feedback count and environment breakdown under the Feedback Given stat; indicate when list may be incomplete"
+      "description": "Show today's feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete"
     },
     {
       "file": "progress-prompt-expand.js",
@@ -91,29 +91,29 @@
     {
       "file": "task-creation-today-env.js",
       "name": "Task Creation Today and Environment",
-      "description": "Show today's task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete"
+      "description": "Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete"
     }
   ],
   "archetypes/qa-comp-use/main": [
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "copy-prompt.js",
       "name": "Copy Prompt",
-      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard."
+      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard"
     },
     {
       "file": "copy-verifier-output.js",
       "name": "Copy Verifier Output",
-      "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard."
+      "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard"
     },
     {
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
-      "description": "Add guideline link buttons below the user prompt. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow."
+      "description": "Add links to the guidelines on the page"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -128,7 +128,7 @@
     {
       "file": "qa-scratchpad.js",
       "name": "QA Scratchpad",
-      "description": "Adds an adjustable height scratchpad for notes between prompt and environment variables"
+      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "request-revisions.js",
@@ -151,29 +151,29 @@
     {
       "file": "sort-qa-environments-alphabetically.js",
       "name": "Sort QA Environments Alphabetically",
-      "description": "Sorts QA review environment cards A–Z by environment name. Optional; works with or without team grouping."
+      "description": "Sorts QA review environment cards A–Z by environment name"
     }
   ],
   "archetypes/qa-tool-use/main": [
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "clear-search.js",
       "name": "Clear Tool Search",
-      "description": "Adds a clear (X) button to the tool search box when it has text"
+      "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
       "file": "copy-prompt.js",
       "name": "Copy Prompt",
-      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard."
+      "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard"
     },
     {
       "file": "copy-verifier-output.js",
       "name": "Copy Verifier Output",
-      "description": "Add a copy button after Stdout in the Verifier Output panel. Click copies the verifier output to the clipboard."
+      "description": "Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard"
     },
     {
       "file": "execute-to-current-tool.js",
@@ -193,7 +193,7 @@
     {
       "file": "qa-scratchpad.js",
       "name": "QA Scratchpad",
-      "description": "Adds an adjustable height scratchpad for notes between prompt and environment variables"
+      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "remember-layout-proportions.js",
@@ -208,7 +208,7 @@
     {
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
-      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+      "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
     },
     {
       "file": "toggle-tool-parameters.js",
@@ -217,8 +217,8 @@
     },
     {
       "file": "tool-description-truncate.js",
-      "name": "Tool description truncation",
-      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+      "name": "Tool Description Truncation",
+      "description": "Limits the length tool descriptions to make the tool picker more manageable"
     },
     {
       "file": "tool-results-resize-handle.js",
@@ -228,12 +228,12 @@
     {
       "file": "useful-links-buttons.js",
       "name": "Useful Link Buttons",
-      "description": "Add configurable link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow."
+      "description": "Add useful link buttons to the page"
     },
     {
       "file": "workflow-cache.js",
       "name": "Workflow Cache",
-      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+      "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
     }
   ],
   "archetypes/qa-tool-use/dev": [
@@ -273,13 +273,13 @@
   "archetypes/tool-use-revision/main": [
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "clear-search.js",
       "name": "Clear Tool Search",
-      "description": "Adds a clear (X) button to the tool search box when it has text"
+      "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
       "file": "execute-to-current-tool.js",
@@ -294,17 +294,17 @@
     {
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
-      "description": "Add guideline link buttons to the header bar. Each button can be shown or hidden in Settings."
+      "description": "Add links to the guidelines on the page"
     },
     {
       "file": "prompt-scratchpad.js",
-      "name": "Prompt Scratchpad",
-      "description": "Adds an adjustable height scratchpad for notes after the prompt section"
+      "name": "Scratchpad",
+      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
-      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+      "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
     },
     {
       "file": "toggle-tool-parameters.js",
@@ -313,8 +313,8 @@
     },
     {
       "file": "tool-description-truncate.js",
-      "name": "Tool description truncation",
-      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+      "name": "Tool Description Truncation",
+      "description": "Limits the length tool descriptions to make the tool picker more manageable"
     },
     {
       "file": "tool-results-resize-handle.js",
@@ -324,19 +324,19 @@
     {
       "file": "workflow-cache.js",
       "name": "Workflow Cache",
-      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+      "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
     }
   ],
   "archetypes/tool-use-task-creation/main": [
     {
       "file": "bug-report-expand.js",
-      "name": "Bug Report Expand",
+      "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
     },
     {
       "file": "clear-search.js",
       "name": "Clear Tool Search",
-      "description": "Adds a clear (X) button to the tool search box when it has text"
+      "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
       "file": "execute-to-current-tool.js",
@@ -351,7 +351,7 @@
     {
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
-      "description": "Add guideline link buttons to the toolbar. Each button can be shown or hidden in Settings."
+      "description": "Add links to the guidelines on the page"
     },
     {
       "file": "json-editor-online.js",
@@ -376,7 +376,7 @@
     {
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
-      "description": "Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present."
+      "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
     },
     {
       "file": "toggle-tool-parameters.js",
@@ -385,8 +385,8 @@
     },
     {
       "file": "tool-description-truncate.js",
-      "name": "Tool description truncation",
-      "description": "Limit tool picker descriptions when collapsed; show full when expanded."
+      "name": "Tool Description Truncation",
+      "description": "Limits the length tool descriptions to make the tool picker more manageable"
     },
     {
       "file": "tool-results-resize-handle.js",
@@ -396,7 +396,7 @@
     {
       "file": "workflow-cache.js",
       "name": "Workflow Cache",
-      "description": "Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute"
+      "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
     }
   ],
   "archetypes/tool-use-task-creation/dev": [

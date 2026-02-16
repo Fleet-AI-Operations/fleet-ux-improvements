@@ -12,7 +12,7 @@ const BUTTONS = [
 const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
-    description: 'Add configurable link buttons below the QA scratchpad. Each button can be shown or hidden in Settings. Buttons wrap when the panel is narrow.',
+    description: 'Add useful link buttons to the page',
     _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',

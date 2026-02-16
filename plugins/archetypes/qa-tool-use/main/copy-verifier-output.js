@@ -6,7 +6,7 @@ const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
-    description: 'Add a copy button after Stdout in the Verifier Output panel. Click copies the verifier output to the clipboard.',
+    description: 'Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard',
     _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',

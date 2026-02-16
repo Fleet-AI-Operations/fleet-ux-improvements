@@ -104,7 +104,7 @@ function parseDateInputToIso(text) {
 const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
-    description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
+    description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
     _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',

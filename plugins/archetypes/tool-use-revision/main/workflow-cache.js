@@ -3,7 +3,7 @@
 const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
-    description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
+    description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
     _version: '1.31',
     enabledByDefault: true,
     phase: 'mutation',

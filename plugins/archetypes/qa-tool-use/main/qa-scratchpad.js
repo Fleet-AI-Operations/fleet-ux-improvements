@@ -5,7 +5,7 @@
 const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
-    description: 'Adds an adjustable height scratchpad for notes between prompt and environment variables',
+    description: 'Adds an adjustable height scratchpad to the page',
     _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',

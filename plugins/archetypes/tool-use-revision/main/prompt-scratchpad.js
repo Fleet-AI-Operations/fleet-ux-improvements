@@ -3,8 +3,8 @@
 
 const plugin = {
     id: 'promptScratchpad',
-    name: 'Prompt Scratchpad',
-    description: 'Adds an adjustable height scratchpad for notes after the prompt section',
+    name: 'Scratchpad',
+    description: 'Adds an adjustable height scratchpad to the page',
     _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',

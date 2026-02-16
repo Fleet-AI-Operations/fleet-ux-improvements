@@ -1,7 +1,7 @@
 // ============= bug-report-expand.js =============
 const plugin = {
     id: 'bugReportExpand',
-    name: 'Bug Report Expand',
+    name: 'Bug Report Readability Fix',
     description: 'Makes bug report cards expandable to see full text',
     _version: '1.2',
     enabledByDefault: true,

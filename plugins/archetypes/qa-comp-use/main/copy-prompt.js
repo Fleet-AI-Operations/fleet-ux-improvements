@@ -6,7 +6,7 @@ const COPY_BUTTON_MARKER = 'data-fleet-copy-prompt';
 const plugin = {
     id: 'copyPrompt',
     name: 'Copy Prompt',
-    description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard.',
+    description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard',
     _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',

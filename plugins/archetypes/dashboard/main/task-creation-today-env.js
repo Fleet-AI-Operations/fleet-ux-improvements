@@ -2,7 +2,7 @@
 const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Task Creation Today and Environment',
-    description: 'Show today\'s task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete',
+    description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
     _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
