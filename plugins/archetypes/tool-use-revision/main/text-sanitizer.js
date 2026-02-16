@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -560,7 +560,7 @@ plugin.actions = {
         label: 'Trim Whitespace',
         run(input) {
             const s = (input || '').trim();
-            return s.split(/\n/).filter((line) => line.trim().length > 0).join('\n');
+            return s.split(/\n/).map((line) => line.trim()).filter((line) => line.length > 0).join('\n');
         }
     },
     removeSpecialCharacters: {
