@@ -4,7 +4,7 @@ const plugin = {
     id: 'bugReportExpand',
     name: 'Bug Report Readability Fix',
     description: 'Makes bug report cards expandable to see full text',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },

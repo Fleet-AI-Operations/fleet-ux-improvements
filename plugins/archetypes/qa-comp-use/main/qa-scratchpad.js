@@ -5,7 +5,7 @@ const plugin = {
     id: 'qaScratchpad',
     name: 'QA Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     

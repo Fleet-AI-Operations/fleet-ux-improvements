@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.6",
+  "archetypesVersion": "4.7",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -10,7 +10,7 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.4"
+      "version": "2.5"
     }
   ],
   "settingsModalDocs": [
@@ -41,11 +41,11 @@
         },
         {
           "name": "feedback-given-today-env.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "1.3"
+          "version": "1.4"
         }
       ]
     },
@@ -58,7 +58,7 @@
       "plugins": [
         {
           "name": "sort-qa-environments-alphabetically.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "qa-team-filter-width.js",
@@ -75,7 +75,7 @@
       "plugins": [
         {
           "name": "clear-search.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "json-editor-online.js",
@@ -83,7 +83,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "favorites.js",
@@ -107,7 +107,7 @@
         },
         {
           "name": "workflow-cache.js",
-          "version": "1.31"
+          "version": "1.32"
         },
         {
           "name": "toggle-tool-parameters.js",
@@ -119,11 +119,11 @@
         },
         {
           "name": "tool-description-truncate.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "text-sanitizer.js",
-          "version": "2.3"
+          "version": "2.4"
         }
       ]
     },
@@ -136,7 +136,7 @@
       "plugins": [
         {
           "name": "clear-search.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "favorites.js",
@@ -144,15 +144,15 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "bug-report-expand.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "execute-to-current-tool.js",
@@ -160,7 +160,7 @@
         },
         {
           "name": "workflow-cache.js",
-          "version": "1.31"
+          "version": "1.32"
         },
         {
           "name": "toggle-tool-parameters.js",
@@ -172,11 +172,11 @@
         },
         {
           "name": "tool-description-truncate.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "text-sanitizer.js",
-          "version": "2.1"
+          "version": "2.2"
         }
       ]
     },
@@ -214,11 +214,11 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "1.1"
+          "version": "1.2"
         }
       ]
     },
@@ -239,15 +239,15 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "bug-report-expand.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     },
@@ -260,7 +260,7 @@
       "plugins": [
         {
           "name": "clear-search.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "favorites.js",
@@ -268,15 +268,15 @@
         },
         {
           "name": "bug-report-expand.js",
-          "version": "1.2"
-        },
-        {
-          "name": "copy-prompt.js",
           "version": "1.3"
         },
         {
+          "name": "copy-prompt.js",
+          "version": "1.4"
+        },
+        {
           "name": "copy-verifier-output.js",
-          "version": "1.1"
+          "version": "1.2"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -284,15 +284,15 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.7"
-        },
-        {
-          "name": "useful-links-buttons.js",
           "version": "1.8"
         },
         {
+          "name": "useful-links-buttons.js",
+          "version": "1.9"
+        },
+        {
           "name": "text-sanitizer.js",
-          "version": "2.2"
+          "version": "2.3"
         },
         {
           "name": "execute-to-current-tool.js",
@@ -316,11 +316,11 @@
         },
         {
           "name": "tool-description-truncate.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "workflow-cache.js",
-          "version": "2.0"
+          "version": "2.1"
         }
       ]
     },
@@ -337,19 +337,19 @@
         },
         {
           "name": "bug-report-expand.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "copy-prompt.js",
-          "version": "1.2"
+          "version": "1.3"
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "request-revisions.js",
@@ -357,7 +357,7 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.3"
+          "version": "1.4"
         },
         {
           "name": "prompt-diff-highlight.js",

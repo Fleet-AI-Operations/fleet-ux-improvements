@@ -4,7 +4,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
-    _version: '1.31',
+    _version: '1.32',
     enabledByDefault: true,
     phase: 'mutation',
 

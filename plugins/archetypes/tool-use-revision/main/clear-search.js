@@ -6,7 +6,7 @@ const plugin = {
     id: 'clearSearch',
     name: 'Clear Tool Search',
     description: 'Adds a clear `X` button to the tool search box when it has text',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },

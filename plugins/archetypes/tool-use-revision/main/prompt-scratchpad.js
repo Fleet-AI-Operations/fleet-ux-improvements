@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     

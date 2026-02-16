@@ -4,7 +4,7 @@ const plugin = {
     id: 'autocorrectTextareas',
     name: 'Disable Prompt Text Area Autocorrect',
     description: 'Disables autocorrect in the prompt text box',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

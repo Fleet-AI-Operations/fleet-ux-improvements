@@ -13,7 +13,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 

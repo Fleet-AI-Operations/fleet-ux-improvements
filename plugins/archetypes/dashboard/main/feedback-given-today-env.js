@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenTodayEnv',
     name: 'Feedback Given Today and Environment',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },

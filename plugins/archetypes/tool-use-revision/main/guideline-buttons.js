@@ -10,7 +10,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add links to the guidelines on the page',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 

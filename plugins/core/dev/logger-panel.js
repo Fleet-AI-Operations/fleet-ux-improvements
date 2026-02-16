@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: false,
     phase: 'core',
 

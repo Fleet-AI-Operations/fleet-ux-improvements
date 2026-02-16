@@ -7,7 +7,7 @@ const plugin = {
     id: 'sortQaEnvironmentsAlphabetically',
     name: 'Sort QA Environments Alphabetically',
     description: 'Sorts QA review environment cards A–Z by environment name',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 

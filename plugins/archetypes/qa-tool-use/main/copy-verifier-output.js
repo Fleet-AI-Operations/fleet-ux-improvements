@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
