@@ -57,10 +57,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "auto-sort-available-qa-tasks.js",
-          "version": "2.1"
-        },
-        {
           "name": "sort-qa-environments-alphabetically.js",
           "version": "1.0"
         },
