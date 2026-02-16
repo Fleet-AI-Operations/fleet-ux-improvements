@@ -6,10 +6,16 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '1.2',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
+
+    selectors: {
+        toolCard: '[data-ui="workflow-step"]',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors',
+        stepResult: '[data-ui="step-result"]'
+    },
 
     onMutation(state, context) {
         const panel = this.findWorkflowPanel();
@@ -36,10 +42,8 @@ const plugin = {
             return;
         }
 
-        const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-            root: toolsContainer,
-            context: `${this.id}.toolCards`
-        });
+        const toolCardsByDataUi = toolsContainer.querySelectorAll(this.selectors.toolCard);
+        const toolCards = toolCardsByDataUi.length ? Array.from(toolCardsByDataUi) : Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
 
         let handlesAdded = 0;
 
@@ -70,8 +74,11 @@ const plugin = {
     },
 
     findResultDiv(card) {
-        // Target: the scrollable result content box inside the "Result" section.
-        // Structure: div.space-y-2 > [ Result header, div.p-3.rounded-md.border...overflow-auto ]
+        const stepResult = card.querySelector(this.selectors.stepResult);
+        if (stepResult) {
+            const box = stepResult.querySelector('div.p-3.rounded-md.border.text-xs.font-mono.whitespace-pre-wrap.overflow-auto');
+            if (box) return box;
+        }
         const sections = card.querySelectorAll('div.space-y-2');
         for (const section of sections) {
             const header = section.querySelector('div.text-xs.font-medium.text-muted-foreground.uppercase');
@@ -258,25 +265,23 @@ const plugin = {
     },
 
     findWorkflowPanel() {
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-
+        const byDataUi = document.querySelector('[data-ui="workflow-panel"]');
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector('[data-ui="workflow-toolbar"]') || candidate.querySelector('.border-b.h-9');
             if (toolbar) {
-                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
-                    span => span.textContent.trim() === 'Workflow'
-                );
+                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(span => span.textContent.trim() === 'Workflow');
                 if (workflowText) return candidate;
             }
         }
-
         return null;
     },
 
     findToolsArea(panel) {
         if (!panel) return null;
+        const stepsContainer = panel.querySelector('[data-ui="workflow-steps-container"]');
+        if (stepsContainer) return stepsContainer;
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
         return scrollable.querySelector('.space-y-3');

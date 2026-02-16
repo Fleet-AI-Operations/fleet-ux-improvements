@@ -2,13 +2,10 @@
 // Remembers the last-used split positions for the 3 main panels in QA Tool Use.
 //
 // Panels (from observed DOM):
-// - Panel 1: [id=":re:"] (Task/Notes area) - typically ~25%
-// - Panel 2: [id=":rp:"] (Tools area) - typically ~30%
-// - Panel 3: [id=":rs:"] (Workflow area) - typically ~70%
-//
-// Note: The layout has a nested structure:
-// - Outer split: :re: (left) <-> :rh: (right)
-// - Inner split (inside :rh:): :rp: (tools) <-> :rs: (workflow)
+// - Panel 1: task/notes (left). No stable data-ui; use structure.
+// - Panel 2: [data-ui="tools-panel"]
+// - Panel 3: [data-ui="workflow-panel"]
+// - Outer split: left <-> right; inner split (inside right): tools <-> workflow.
 //
 // Approach:
 // 1. Apply saved sizes ONCE when panels first appear
@@ -18,7 +15,7 @@ const plugin = {
     id: 'qaToolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on QA Tool Use pages',
-    _version: '1.0',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'init',
     initialState: {
@@ -33,10 +30,12 @@ const plugin = {
         panel3: 'qa-tool-use-panel-3-size'
     },
     selectors: {
-        panel1: '[id=":re:"][data-panel]',
-        panel2: '[id=":rp:"][data-panel]',
-        panel3: '[id=":rs:"][data-panel]',
-        outerRight: '[id=":rh:"][data-panel]'
+        panel2: '[data-ui="tools-panel"]',
+        panel3: '[data-ui="workflow-panel"]',
+        panel1Fallback: '[id=":re:"][data-panel]',
+        panel2Fallback: '[id=":rp:"][data-panel]',
+        panel3Fallback: '[id=":rs:"][data-panel]',
+        outerRightFallback: '[id=":rh:"][data-panel]'
     },
 
     init(state, context) {
@@ -99,20 +98,20 @@ const plugin = {
     },
 
     getPanels() {
-        return {
-            panel1: Context.dom.query(this.selectors.panel1, {
-                context: `${this.id}.panel1`
-            }),
-            panel2: Context.dom.query(this.selectors.panel2, {
-                context: `${this.id}.panel2`
-            }),
-            panel3: Context.dom.query(this.selectors.panel3, {
-                context: `${this.id}.panel3`
-            }),
-            outerRight: Context.dom.query(this.selectors.outerRight, {
-                context: `${this.id}.outerRight`
-            })
-        };
+        const panel3 = document.querySelector(this.selectors.panel3) || Context.dom.query(this.selectors.panel3Fallback, { context: `${this.id}.panel3` });
+        const panel2 = document.querySelector(this.selectors.panel2) || Context.dom.query(this.selectors.panel2Fallback, { context: `${this.id}.panel2` });
+        let panel1 = null;
+        let outerRight = null;
+        if (panel3) {
+            const innerGroup = panel3.closest('[data-panel-group]');
+            if (innerGroup && innerGroup.parentElement) {
+                outerRight = innerGroup.parentElement;
+                panel1 = outerRight.previousElementSibling;
+            }
+        }
+        if (!panel1) panel1 = Context.dom.query(this.selectors.panel1Fallback, { context: `${this.id}.panel1` });
+        if (!outerRight) outerRight = Context.dom.query(this.selectors.outerRightFallback, { context: `${this.id}.outerRight` });
+        return { panel1, panel2, panel3, outerRight };
     },
 
     setupPanelWatchers(state, panels) {

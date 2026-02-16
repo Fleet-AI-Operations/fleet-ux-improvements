@@ -2,8 +2,8 @@
 // Remembers the last-used split positions for the 3 main QA Tool Use containers.
 //
 // Panels (from observed DOM):
-// - Outer split:  [id=":re:"] (left)  <->  [id=":rh:"] (right)
-// - Inner split:  [id=":rp:"] (tools) <->  [id=":rs:"] (workflow)
+// - Outer split:  left (task) <-> right (inner area). No stable data-ui for outer; use structure.
+// - Inner split:  [data-ui="tools-panel"] <-> [data-ui="workflow-panel"]
 //
 // Approach:
 // 1. Apply saved sizes ONCE when panels first appear
@@ -13,7 +13,7 @@ const plugin = {
     id: 'qaPanelSizeMemory',
     name: 'Panel Size Memory',
     description: 'Persist and restore the main container split positions on QA Tool Use pages',
-    _version: '1.8',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'init',
     initialState: {
@@ -27,10 +27,12 @@ const plugin = {
         innerTools: 'qa-panel-inner-tools'
     },
     selectors: {
-        outerLeftPanel: '[id=":re:"][data-panel]',
-        outerRightPanel: '[id=":rh:"][data-panel]',
-        innerToolsPanel: '[id=":rp:"][data-panel]',
-        innerWorkflowPanel: '[id=":rs:"][data-panel]'
+        innerToolsPanel: '[data-ui="tools-panel"]',
+        innerWorkflowPanel: '[data-ui="workflow-panel"]',
+        outerLeftPanelFallback: '[id=":re:"][data-panel]',
+        outerRightPanelFallback: '[id=":rh:"][data-panel]',
+        innerToolsPanelFallback: '[id=":rp:"][data-panel]',
+        innerWorkflowPanelFallback: '[id=":rs:"][data-panel]'
     },
 
     init(state, context) {
@@ -90,20 +92,20 @@ const plugin = {
     },
 
     getPanels() {
-        return {
-            outerLeft: Context.dom.query(this.selectors.outerLeftPanel, {
-                context: `${this.id}.outerLeft`
-            }),
-            outerRight: Context.dom.query(this.selectors.outerRightPanel, {
-                context: `${this.id}.outerRight`
-            }),
-            innerTools: Context.dom.query(this.selectors.innerToolsPanel, {
-                context: `${this.id}.innerTools`
-            }),
-            innerWorkflow: Context.dom.query(this.selectors.innerWorkflowPanel, {
-                context: `${this.id}.innerWorkflow`
-            })
-        };
+        const innerWorkflow = document.querySelector(this.selectors.innerWorkflowPanel) || Context.dom.query(this.selectors.innerWorkflowPanelFallback, { context: `${this.id}.innerWorkflow` });
+        const innerTools = document.querySelector(this.selectors.innerToolsPanel) || Context.dom.query(this.selectors.innerToolsPanelFallback, { context: `${this.id}.innerTools` });
+        let outerLeft = null;
+        let outerRight = null;
+        if (innerWorkflow) {
+            const innerGroup = innerWorkflow.closest('[data-panel-group]');
+            if (innerGroup && innerGroup.parentElement) {
+                outerRight = innerGroup.parentElement;
+                outerLeft = outerRight.previousElementSibling;
+            }
+        }
+        if (!outerLeft) outerLeft = Context.dom.query(this.selectors.outerLeftPanelFallback, { context: `${this.id}.outerLeft` });
+        if (!outerRight) outerRight = Context.dom.query(this.selectors.outerRightPanelFallback, { context: `${this.id}.outerRight` });
+        return { outerLeft, outerRight, innerTools, innerWorkflow };
     },
 
     setupPanelWatchers(state, panels) {

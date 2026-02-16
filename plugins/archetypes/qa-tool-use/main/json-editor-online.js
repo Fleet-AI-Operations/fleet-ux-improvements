@@ -5,11 +5,10 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '1.7',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     
-    // ========== SUB-OPTIONS ==========
     subOptions: [
         {
             id: 'show-on-tool',
@@ -19,11 +18,13 @@ const plugin = {
         }
     ],
     
-    // Plugin-specific selectors
     selectors: {
-        actionBarCenter:
-            'body > div.group\\/sidebar-wrapper.flex.min-h-svh.w-full.has-\\[\\[data-variant\\=inset\\]\\]\\:bg-sidebar > main > div > div > div.h-full.w-full.flex.flex-col.overflow-hidden > div.flex-shrink-0.px-1.py-1\\.5 > div > div.flex-1.flex.items-center.justify-center.gap-1.mx-auto',
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30'
+        toolHeader: '[data-ui="step-header"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        toolCard: '[data-ui="workflow-step"]',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors',
+        actionBarCenterFallback:
+            'body > div.group\\/sidebar-wrapper.flex.min-h-svh.w-full.has-\\[\\[data-variant\\=inset\\]\\]\\:bg-sidebar > main > div > div > div.h-full.w-full.flex.flex-col.overflow-hidden > div.flex-shrink-0.px-1.py-1\\.5 > div > div.flex-1.flex.items-center.justify-center.gap-1.mx-auto'
     },
     
     initialState: { 
@@ -45,11 +46,11 @@ const plugin = {
     },
     
     addToolbarButton(state, context) {
-        const center = Context.dom.query(this.selectors.actionBarCenter, {
-            context: `${this.id}.actionBarCenter`
-        });
-        
-        if (!center) {
+        const qaHeader = document.querySelector('[data-ui="qa-header"]');
+        const center = qaHeader ? qaHeader.querySelector('.flex-1.flex.items-center.justify-center.gap-1.mx-auto') : null;
+        const centerResolved = center || Context.dom.query(this.selectors.actionBarCenterFallback, { context: `${this.id}.actionBarCenter` });
+
+        if (!centerResolved) {
             if (!state.missingLogged) {
                 Logger.debug('Action bar center not found for JSON Editor Online button');
                 state.missingLogged = true;
@@ -61,7 +62,7 @@ const plugin = {
         state.missingLogged = false;
         
         // Check if button already exists
-        const existing = center.querySelector('[data-fleet-plugin="jsonEditorOnline"][data-slot="toolbar-button"]');
+        const existing = centerResolved.querySelector('[data-fleet-plugin="jsonEditorOnline"][data-slot="toolbar-button"]');
         if (existing) {
             state.toolbarButtonAdded = true;
             return;
@@ -70,7 +71,6 @@ const plugin = {
         const button = document.createElement('button');
         button.setAttribute('data-fleet-plugin', this.id);
         button.setAttribute('data-slot', 'toolbar-button');
-        // Same style as source data but no outline (remove border classes), normal white text
         button.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
         button.innerHTML = '<span class="whitespace-nowrap text-md font-medium">{ } JSON Editor</span>';
         button.title = 'Open JSON Editor Online in new tab';
@@ -80,12 +80,11 @@ const plugin = {
             Logger.log('Opening JSON Editor Online');
         });
         
-        // Insert after Source Data button if it exists, otherwise append
-        const sourceDataBtn = center.querySelector('[data-fleet-plugin="sourceDataExplorer"][data-slot="source-data-button"]');
+        const sourceDataBtn = centerResolved.querySelector('[data-fleet-plugin="sourceDataExplorer"][data-slot="source-data-button"]');
         if (sourceDataBtn) {
             sourceDataBtn.insertAdjacentElement('afterend', button);
         } else {
-            center.appendChild(button);
+            centerResolved.appendChild(button);
         }
         
         state.toolbarButtonAdded = true;
@@ -108,10 +107,8 @@ const plugin = {
             return;
         }
         
-        const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-            root: toolsContainer,
-            context: `${this.id}.toolCards`
-        });
+        const toolCardsByDataUi = toolsContainer.querySelectorAll(this.selectors.toolCard);
+        const toolCards = toolCardsByDataUi.length ? Array.from(toolCardsByDataUi) : Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
         
         toolCards.forEach(card => {
             // Find the result area
@@ -178,51 +175,34 @@ const plugin = {
     },
     
     findWorkflowPanel() {
-        // Find panels by data-panel-id attribute
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-        
-        // Look for panel containing "Workflow" text in toolbar
+        const byDataUi = document.querySelector('[data-ui="workflow-panel"]');
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector('[data-ui="workflow-toolbar"]') || candidate.querySelector('.border-b.h-9');
             if (toolbar) {
-                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
-                    span => span.textContent.trim() === 'Workflow'
-                );
-                if (workflowText) {
-                    return candidate;
-                }
+                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(span => span.textContent.trim() === 'Workflow');
+                if (workflowText) return candidate;
             }
         }
-        
-        // Fallback: try to find by known ID for qa-tool-use
         const knownPanel = document.querySelector('[id=":rs:"][data-panel]');
         if (knownPanel) {
-            const toolbar = knownPanel.querySelector('.border-b.h-9');
+            const toolbar = knownPanel.querySelector('[data-ui="workflow-toolbar"]') || knownPanel.querySelector('.border-b.h-9');
             if (toolbar) {
-                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
-                    span => span.textContent.trim() === 'Workflow'
-                );
-                if (workflowText) {
-                    return knownPanel;
-                }
+                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(span => span.textContent.trim() === 'Workflow');
+                if (workflowText) return knownPanel;
             }
         }
-        
         return null;
     },
-    
+
     findToolsArea(panel) {
         if (!panel) return null;
-        
-        // Find scrollable container
+        const stepsContainer = panel.querySelector('[data-ui="workflow-steps-container"]');
+        if (stepsContainer) return stepsContainer;
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
-        
-        // Find tools container with space-y-3 class
-        const toolsArea = scrollable.querySelector('.space-y-3');
-        return toolsArea;
+        return scrollable.querySelector('.space-y-3');
     },
     
     findResultArea(card) {

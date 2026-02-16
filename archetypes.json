@@ -1,6 +1,6 @@
 {
   "version": "3.11.2",
-  "archetypesVersion": "3.141",
+  "archetypesVersion": "3.143",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -239,11 +239,11 @@
       "plugins": [
         {
           "name": "clear-search.js",
-          "version": "1.1"
+          "version": "2.0"
         },
         {
           "name": "favorites.js",
-          "version": "3.9"
+          "version": "4.0"
         },
         {
           "name": "bug-report-expand.js",
@@ -259,15 +259,15 @@
         },
         {
           "name": "json-editor-online.js",
-          "version": "1.7"
+          "version": "2.0"
         },
         {
           "name": "panel-size-memory.js",
-          "version": "1.8"
+          "version": "2.0"
         },
         {
           "name": "remember-layout-proportions.js",
-          "version": "1.0"
+          "version": "2.0"
         },
         {
           "name": "qa-scratchpad.js",
@@ -283,15 +283,15 @@
         },
         {
           "name": "execute-to-current-tool.js",
-          "version": "1.18"
+          "version": "2.0"
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "1.4"
+          "version": "2.0"
         },
         {
           "name": "request-revisions.js",
-          "version": "3.9"
+          "version": "4.0"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -299,7 +299,7 @@
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "1.2"
+          "version": "2.0"
         },
         {
           "name": "tool-description-truncate.js",
@@ -307,7 +307,7 @@
         },
         {
           "name": "workflow-cache.js",
-          "version": "1.31"
+          "version": "2.0"
         }
       ]
     },

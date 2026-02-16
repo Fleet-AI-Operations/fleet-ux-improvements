@@ -6,19 +6,18 @@ const plugin = {
     id: 'clearSearch',
     name: 'Clear Tool Search',
     description: 'Adds a clear (X) button to the tool search box when it has text',
-    _version: '1.1',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
 
     selectors: {
-        searchInput: 'input[placeholder="Search tools, descriptions, parameters..."]'
+        searchInput: '[data-ui="tools-search"]',
+        searchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]'
     },
 
     onMutation(state, context) {
-        const searchInput = Context.dom.query(this.selectors.searchInput, {
-            context: `${this.id}.searchInput`
-        });
+        const searchInput = document.querySelector(this.selectors.searchInput) || Context.dom.query(this.selectors.searchInputFallback, { context: `${this.id}.searchInput` });
         if (!searchInput) {
             if (!state.missingLogged) {
                 Logger.debug('Search input not found for clear-search');

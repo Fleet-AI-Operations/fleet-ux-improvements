@@ -11,7 +11,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.9',
+    _version: '4.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -214,16 +214,28 @@ const plugin = {
     },
     
     savePromptText(state) {
-        // Find the task prompt panel by stable root (id or data-panel-id), then relative navigation
-        const panel = document.querySelector('[id=":re:"]') || document.querySelector('[data-panel-id=":re:"]');
+        // Find the task panel: prefer structure (panel containing Prompt section). Radix panel IDs like :re: are unstable.
+        const panel = this.findTaskPanel();
         if (!panel) return;
-        
+
         const promptElement = panel.querySelector('.text-sm.whitespace-pre-wrap');
         if (promptElement) {
             state.promptText = promptElement.textContent.trim();
             state.promptSaved = true;
             Logger.log(`✓ Prompt text saved (${state.promptText.length} chars)`);
         }
+    },
+
+    findTaskPanel() {
+        // Strategy 1: find panel that contains the Prompt label and prompt content
+        const panels = document.querySelectorAll('[data-panel][data-panel-id]');
+        for (const p of panels) {
+            const hasPromptLabel = Array.from(p.querySelectorAll('span, label')).some(el => (el.textContent || '').trim() === 'Prompt');
+            const promptContent = p.querySelector('.text-sm.whitespace-pre-wrap');
+            if (hasPromptLabel && promptContent) return p;
+        }
+        // Strategy 2: fallback to Radix ID (unstable across sessions)
+        return document.querySelector('[id=":re:"]') || document.querySelector('[data-panel-id=":re:"]');
     },
     
     setupTaskButtonObserver(state, modal, modalId) {
