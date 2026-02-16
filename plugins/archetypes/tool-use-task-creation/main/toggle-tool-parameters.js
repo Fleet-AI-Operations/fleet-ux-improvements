@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -17,6 +17,9 @@ const plugin = {
             enabledByDefault: true
         }
     ],
+
+    // Same styling as guideline-buttons.js but with less top/bottom padding (py-1.5)
+    paramSectionBtnClass: 'wf-param-section-btn inline-flex items-center gap-1 justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground rounded-sm text-xs py-1.5 pl-2 pr-2',
 
     selectors: {
         workflowPanel: '[data-ui="workflow-panel"]',
@@ -120,15 +123,15 @@ const plugin = {
                 }
             }
 
-            // [Parameters...] link: create/place after params div (above Execute), show only when params hidden
+            // PARAMETERS > expand button: create/place after params div (above Execute), show only when params hidden
             const paramsDiv = this.findParametersDiv(card);
             if (paramsDiv) {
                 let expandLink = card.querySelector('.wf-param-expand-link');
                 if (!expandLink) {
                     expandLink = document.createElement('button');
-                    expandLink.className = 'wf-param-expand-link text-xs font-medium text-muted-foreground hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded px-1.5 py-0.5';
+                    expandLink.className = 'wf-param-expand-link ' + this.paramSectionBtnClass;
                     expandLink.type = 'button';
-                    expandLink.textContent = '[Parameters...]';
+                    expandLink.innerHTML = 'PARAMETERS <span class="wf-param-caret">></span>';
                     expandLink.title = 'Show parameters';
                     expandLink.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -141,19 +144,23 @@ const plugin = {
                 }
                 expandLink.style.display = (!isCollapsed && toggleBtn.dataset.paramVisible === 'false') ? 'inline-flex' : 'none';
 
-                // Parameters label: make it a button that collapses the section when open
+                // Parameters label: bordered button "PARAMETERS ▼" that collapses the section when open
                 const labelEl = paramsDiv.firstElementChild;
-                if (labelEl && labelEl.textContent.trim() === 'Parameters' && !labelEl.hasAttribute('data-wf-param-label')) {
-                    labelEl.setAttribute('data-wf-param-label', '1');
-                    labelEl.setAttribute('role', 'button');
-                    labelEl.setAttribute('tabindex', '0');
-                    labelEl.setAttribute('title', 'Hide parameters');
-                    labelEl.classList.add('cursor-pointer', 'hover:text-accent-foreground');
-                    labelEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        this.handleToggle(card, toggleBtn);
-                    });
+                if (labelEl && !labelEl.hasAttribute('data-wf-param-label')) {
+                    const labelText = labelEl.textContent.trim();
+                    if (labelText === 'Parameters' || labelText === 'PARAMETERS') {
+                        labelEl.setAttribute('data-wf-param-label', '1');
+                        labelEl.className = this.paramSectionBtnClass;
+                        labelEl.innerHTML = 'PARAMETERS <span class="wf-param-caret wf-param-caret-down" style="display:inline-block;transform:rotate(90deg)">></span>';
+                        labelEl.setAttribute('role', 'button');
+                        labelEl.setAttribute('tabindex', '0');
+                        labelEl.setAttribute('title', 'Hide parameters');
+                        labelEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            this.handleToggle(card, toggleBtn);
+                        });
+                    }
                 }
             }
         });
@@ -203,7 +210,8 @@ const plugin = {
         const candidates = card.querySelectorAll('div.space-y-3');
         for (const div of candidates) {
             const firstChild = div.firstElementChild;
-            if (firstChild && firstChild.textContent.trim() === 'Parameters') {
+            if (!firstChild) continue;
+            if (firstChild.textContent.trim() === 'Parameters' || firstChild.getAttribute('data-wf-param-label') === '1') {
                 return div;
             }
         }
