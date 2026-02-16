@@ -55,6 +55,8 @@ const SINGLE_RE = /\bname\s*:\s*'((?:[^'\\]|\\.)*)'/;
 const DOUBLE_NAME_RE = /\bname\s*:\s*"((?:[^"\\]|\\.)*)"/;
 const SINGLE_DESC_RE = /\bdescription\s*:\s*'((?:[^'\\]|\\.)*)'/;
 const DOUBLE_DESC_RE = /\bdescription\s*:\s*"((?:[^"\\]|\\.)*)"/;
+const VERSION_SINGLE_RE = /_version\s*:\s*'(\d+(?:\.\d+)*)'/;
+const VERSION_DOUBLE_RE = /_version\s*:\s*"(\d+(?:\.\d+)*)"/;
 
 function unescape(s) {
   return s.replace(/\\(.)/g, (_, c) => (c === 'n' ? '\n' : c === 'r' ? '\r' : c === 't' ? '\t' : c));
@@ -110,6 +112,31 @@ function replaceFirstPluginField(content, field, newValue) {
     ? `name: ${m.quote}${escaped}${m.quote}`
     : `description: ${m.quote}${escaped}${m.quote}`;
   return content.replace(m.full, replacement);
+}
+
+// Bump _version by 0.1 (minor): e.g. 5.25 -> 5.26, 1.9 -> 1.10
+function bumpVersion(versionStr) {
+  const parts = versionStr.split('.');
+  const last = parseInt(parts[parts.length - 1], 10) || 0;
+  parts[parts.length - 1] = String(last + 1);
+  return parts.join('.');
+}
+
+function extractVersion(content) {
+  const a = content.match(VERSION_SINGLE_RE);
+  const b = content.match(VERSION_DOUBLE_RE);
+  let idxA = a ? content.indexOf(a[0]) : -1;
+  let idxB = b ? content.indexOf(b[0]) : -1;
+  if (idxA === -1 && idxB === -1) return null;
+  if (idxA === -1) return { full: b[0], version: b[1], quote: '"' };
+  if (idxB === -1) return { full: a[0], version: a[1], quote: "'" };
+  return idxA < idxB
+    ? { full: a[0], version: a[1], quote: "'" }
+    : { full: b[0], version: b[1], quote: '"' };
+}
+
+function replaceVersion(content, fullMatch, newVersion, quote) {
+  return content.replace(fullMatch, `_version: ${quote}${newVersion}${quote}`);
 }
 
 // ——— Resolve absolute path for a folder key + filename ———
@@ -182,25 +209,29 @@ for (const [folderKey, entries] of Object.entries(descriptions)) {
     if (!abs || !fs.existsSync(abs)) continue;
     let content = fs.readFileSync(abs, 'utf8');
     const { name: curName, description: curDesc } = extractFromJs(content);
-    let changed = false;
-    if (curName !== wantName) {
-      log(`${folderKey}/${file}: name "${curName}" -> "${wantName}"`);
-      changed = true;
-      content = replaceFirstPluginField(content, 'name', wantName);
-    }
-    if (curDesc !== wantDesc) {
-      log(`${folderKey}/${file}: description "${curDesc}" -> "${wantDesc}"`);
-      changed = true;
-      content = replaceFirstPluginField(content, 'description', wantDesc);
-    }
-    if (changed && !dryRun) {
+    const nameChanged = curName !== wantName;
+    const descChanged = curDesc !== wantDesc;
+    const changed = nameChanged || descChanged;
+    if (!changed) continue;
+
+    const relPath = `${folderKey}/${file}`;
+    if (dryRun) {
+      if (nameChanged) log(`${relPath}: name "${curName}" -> "${wantName}"`);
+      if (descChanged) log(`${relPath}: description "${curDesc}" -> "${wantDesc}"`);
+      log(`[dry-run] Would update ${relPath}`);
+    } else {
+      const attrs = [nameChanged && 'name', descChanged && 'description'].filter(Boolean).join(', ');
+      log(`${relPath}: ${attrs}`);
+      if (nameChanged) content = replaceFirstPluginField(content, 'name', wantName);
+      if (descChanged) content = replaceFirstPluginField(content, 'description', wantDesc);
+      const versionInfo = extractVersion(content);
+      if (versionInfo) {
+        const newVersion = bumpVersion(versionInfo.version);
+        content = replaceVersion(content, versionInfo.full, newVersion, versionInfo.quote);
+      }
       fs.writeFileSync(abs, content, 'utf8');
-      applyChanged = true;
     }
-    if (changed && dryRun) {
-      log(`[dry-run] Would update ${folderKey}/${file}`);
-      applyChanged = true;
-    }
+    applyChanged = true;
   }
 }
 
