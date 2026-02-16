@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -398,14 +398,10 @@ const plugin = {
         header.appendChild(label);
         container.insertBefore(header, textareaWrapper);
 
-        const copyRow = document.createElement('div');
-        copyRow.className = 'flex justify-end';
-        const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
-        copyRow.appendChild(copyBtn);
-        container.appendChild(copyRow);
-
         const actionRow = document.createElement('div');
         actionRow.className = 'flex flex-wrap items-center gap-2';
+        const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
+        copyBtn.style.marginLeft = 'auto';
 
         const select = document.createElement('select');
         select.setAttribute('data-fleet-plugin', this.id);
@@ -461,6 +457,7 @@ const plugin = {
 
         actionRow.appendChild(select);
         actionRow.appendChild(executeBtn);
+        actionRow.appendChild(copyBtn);
         container.appendChild(actionRow);
 
         return container;
