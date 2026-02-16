@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -294,6 +294,7 @@ const plugin = {
             const button = createCopyIconButton();
             button.dataset.diffCopyTarget = label;
             
+            let copyFeedbackTimeoutId = null;
             button.addEventListener('click', async () => {
                 const pre = column.querySelector(this.selectors.beforePre);
                 if (!pre) {
@@ -309,6 +310,14 @@ const plugin = {
                 try {
                     await navigator.clipboard.writeText(sourceText);
                     Logger.info(`Copied ${label} prompt to clipboard (${sourceText.length} chars)`);
+                    button.style.backgroundColor = 'rgb(34, 197, 94)';
+                    button.style.color = 'white';
+                    if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                    copyFeedbackTimeoutId = setTimeout(() => {
+                        button.style.backgroundColor = '';
+                        button.style.color = '';
+                        copyFeedbackTimeoutId = null;
+                    }, 1000);
                 } catch (err) {
                     Logger.error(`Failed to copy ${label} prompt`, err);
                 }

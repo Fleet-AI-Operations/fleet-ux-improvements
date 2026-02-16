@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after Stdout in the Verifier Output panel. Click copies the verifier output to the clipboard.',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -88,6 +88,7 @@ const plugin = {
         svg.appendChild(path);
         button.appendChild(svg);
 
+        let copyFeedbackTimeoutId = null;
         button.addEventListener('click', () => {
             const text = this.getVerifierOutputText(container);
             if (!text) {
@@ -96,6 +97,14 @@ const plugin = {
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
+                button.style.backgroundColor = 'rgb(34, 197, 94)';
+                button.style.color = 'white';
+                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                copyFeedbackTimeoutId = setTimeout(() => {
+                    button.style.backgroundColor = '';
+                    button.style.color = '';
+                    copyFeedbackTimeoutId = null;
+                }, 1000);
             }).catch((err) => {
                 Logger.error('Copy Verifier Output: Failed to copy to clipboard', err);
             });

@@ -1,9 +1,9 @@
 // ============= text-sanitizer.js =============
 // Adds a Text Sanitizer module in the same area as the QA scratchpad (below it when present).
 // Independent of scratchpad: appears after Prompt section or after scratchpad/guideline buttons.
-// Actions: dropdown + Execute; last action persisted. Date/Time to ISO uses a working ISO 8601 converter (date + optional time).
+// Actions: dropdown + Execute. Date/Time to ISO is first and default. Date/Time to ISO uses a working ISO 8601 converter (date + optional time).
 
-const DEFAULT_ACTION_ID = 'removeAllWhitespace';
+const DEFAULT_ACTION_ID = 'dateTimeToIso';
 
 const MONTHS = {
     january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
@@ -105,13 +105,9 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '1.9',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
-
-    storageKeys: {
-        lastAction: 'text-sanitizer-last-action'
-    },
 
     initialState: {
         promptMissingLogged: false,
@@ -399,10 +395,14 @@ const plugin = {
         const label = document.createElement('span');
         label.className = 'text-sm text-muted-foreground font-medium';
         label.textContent = 'Text Sanitizer';
-        const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
         header.appendChild(label);
-        header.appendChild(copyBtn);
         container.insertBefore(header, textareaWrapper);
+
+        const copyRow = document.createElement('div');
+        copyRow.className = 'flex justify-end';
+        const copyBtn = this.createCopyButton(state, { onAfterClear: setWrapperOneLine });
+        copyRow.appendChild(copyBtn);
+        container.appendChild(copyRow);
 
         const actionRow = document.createElement('div');
         actionRow.className = 'flex flex-wrap items-center gap-2';
@@ -410,26 +410,17 @@ const plugin = {
         const select = document.createElement('select');
         select.setAttribute('data-fleet-plugin', this.id);
         select.className = 'h-8 rounded-sm border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
-        const actionIds = ['removeAllWhitespace', 'trimWhitespace', 'removeSpecialCharacters', 'dateTimeToIso'];
-        const savedAction = Storage.get(this.storageKeys.lastAction, DEFAULT_ACTION_ID);
-        const initialAction = actionIds.includes(savedAction) ? savedAction : DEFAULT_ACTION_ID;
+        const actionIds = ['dateTimeToIso', 'removeAllWhitespace', 'trimWhitespace', 'removeSpecialCharacters'];
         actionIds.forEach((id) => {
             const action = this.actions[id];
             if (!action) return;
             const opt = document.createElement('option');
             opt.value = id;
             opt.textContent = action.label;
-            if (id === initialAction) opt.selected = true;
+            if (id === DEFAULT_ACTION_ID) opt.selected = true;
             select.appendChild(opt);
         });
-        select.value = initialAction;
-
-        const onSelectChange = () => {
-            Storage.set(this.storageKeys.lastAction, select.value);
-            Logger.debug('Text Sanitizer: Saved last action ' + select.value);
-        };
-        select.addEventListener('change', onSelectChange);
-        CleanupRegistry.registerEventListener(select, 'change', onSelectChange);
+        select.value = DEFAULT_ACTION_ID;
 
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
         const executeBtn = document.createElement('button');
@@ -458,7 +449,6 @@ const plugin = {
                 const output = action.run(input);
                 textarea.value = output;
                 updateTextareaHeight();
-                Storage.set(this.storageKeys.lastAction, id);
                 Logger.log('✓ Text Sanitizer: Executed ' + action.label);
             } catch (e) {
                 Logger.error('Text Sanitizer: Execute failed', e);

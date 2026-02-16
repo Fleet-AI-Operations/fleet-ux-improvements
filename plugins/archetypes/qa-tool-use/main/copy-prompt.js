@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyPrompt',
     name: 'Copy Prompt',
     description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -109,6 +109,7 @@ const plugin = {
         svg.appendChild(path);
         button.appendChild(svg);
 
+        let copyFeedbackTimeoutId = null;
         button.addEventListener('click', () => {
             const text = this.getPromptText(promptSection);
             if (!text) {
@@ -117,6 +118,14 @@ const plugin = {
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Copy Prompt: Copied ${text.length} chars to clipboard`);
+                button.style.backgroundColor = 'rgb(34, 197, 94)';
+                button.style.color = 'white';
+                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                copyFeedbackTimeoutId = setTimeout(() => {
+                    button.style.backgroundColor = '';
+                    button.style.color = '';
+                    copyFeedbackTimeoutId = null;
+                }, 1000);
             }).catch((err) => {
                 Logger.error('Copy Prompt: Failed to copy to clipboard', err);
             });
