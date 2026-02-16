@@ -1,24 +1,23 @@
 // ============= clear-search.js =============
 // Adds an X-in-circle button to the tool search input that clears the search when clicked.
-// Selector from deprecated autocorrect-search.js: input[placeholder="Search tools, descriptions, parameters..."]
 
 const plugin = {
     id: 'clearSearch',
     name: 'Clear Tool Search',
     description: 'Adds a clear `X` button to the tool search box when it has text',
-    _version: '1.2',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
 
     selectors: {
-        searchInput: 'input[placeholder="Search tools, descriptions, parameters..."]'
+        searchInput: '[data-ui="tools-search"]',
+        searchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]'
     },
 
     onMutation(state, context) {
-        const searchInput = Context.dom.query(this.selectors.searchInput, {
-            context: `${this.id}.searchInput`
-        });
+        let searchInput = Context.dom.query(this.selectors.searchInput, { context: `${this.id}.searchInput` });
+        if (!searchInput) searchInput = Context.dom.query(this.selectors.searchInputFallback, { context: `${this.id}.searchInput` });
         if (!searchInput) {
             if (!state.missingLogged) {
                 Logger.debug('Search input not found for clear-search');
@@ -31,9 +30,9 @@ const plugin = {
             return;
         }
 
-        const wrapper = searchInput.closest('.relative');
+        const wrapper = searchInput.closest('[data-ui="search-input"]') || searchInput.closest('.relative');
         if (!wrapper) {
-            Logger.warn('Clear search: wrapper .relative not found for search input');
+            Logger.warn('Clear search: wrapper not found for search input');
             return;
         }
 

@@ -10,7 +10,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add links to the guidelines on the page',
-    _version: '1.5',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -51,8 +51,11 @@ const plugin = {
 
     findToolbarContainer() {
         let buttonContainer = null;
+        const workflowEditor = document.querySelector('[data-ui="workflow-editor"]');
+        const headerScope = workflowEditor ? (workflowEditor.previousElementSibling || document) : document;
+        const scopeRoot = headerScope === document ? document : headerScope;
 
-        const candidates = document.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
+        const candidates = scopeRoot.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
         buttonContainer = Array.from(candidates).find(el =>
             el.classList.contains('mr-0') ||
             (el.classList.contains('flex') &&
@@ -62,7 +65,7 @@ const plugin = {
         );
 
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(scopeRoot.querySelectorAll('button'));
             const resetBtn = buttons.find(btn => {
                 const text = btn.textContent.trim();
                 return text === 'Reset Instance' || text.includes('Reset Instance');
@@ -73,7 +76,7 @@ const plugin = {
         }
 
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(scopeRoot.querySelectorAll('button'));
             const saveBtn = buttons.find(btn => btn.textContent.trim() === 'Save');
             if (saveBtn) {
                 const parent = saveBtn.parentElement;
@@ -84,7 +87,7 @@ const plugin = {
         }
 
         if (!buttonContainer) {
-            const sourceDataBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+            const sourceDataBtn = Array.from(scopeRoot.querySelectorAll('button')).find(btn =>
                 btn.textContent.includes('Source Data')
             );
             if (sourceDataBtn) {

@@ -1,20 +1,15 @@
 // ============= remember-layout-proportions.js =============
 // Remembers the last-used split positions for the 3 main panels in Tool Use Task Creation.
 //
-// Panels (from observed DOM):
-// - Panel 1: [id=":r6:"] (Task/Notes area) - typically ~20%
-// - Panel 2: [id=":rc:"] (Tools area) - typically ~25%
-// - Panel 3: [id=":rf:"] (Workflow area) - typically ~55%
-//
-// Approach:
-// 1. Apply saved sizes ONCE when panels first appear
-// 2. Watch panel elements for attribute changes and save (debounced)
-// 3. Never re-apply after init - this avoids fighting React
+// Panels: data-ui first, then legacy id fallback
+// - Panel 1: [data-ui="prompt-panel"] (Task/Notes) - typically ~20%
+// - Panel 2: [data-ui="tools-panel"] (Tools) - typically ~25%
+// - Panel 3: [data-ui="workflow-panel"] (Workflow) - typically ~55%
 const plugin = {
     id: 'toolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on Tool Use Task Creation pages',
-    _version: '1.0',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'init',
     initialState: {
@@ -28,9 +23,12 @@ const plugin = {
         panel3: 'tool-use-panel-3-size'
     },
     selectors: {
-        panel1: '[id=":r6:"][data-panel]',
-        panel2: '[id=":rc:"][data-panel]',
-        panel3: '[id=":rf:"][data-panel]'
+        panel1: '[data-ui="prompt-panel"]',
+        panel2: '[data-ui="tools-panel"]',
+        panel3: '[data-ui="workflow-panel"]',
+        panel1Fallback: '[id=":r6:"][data-panel]',
+        panel2Fallback: '[id=":rc:"][data-panel]',
+        panel3Fallback: '[id=":rf:"][data-panel]'
     },
 
     init(state, context) {
@@ -82,15 +80,12 @@ const plugin = {
 
     getPanels() {
         return {
-            panel1: Context.dom.query(this.selectors.panel1, {
-                context: `${this.id}.panel1`
-            }),
-            panel2: Context.dom.query(this.selectors.panel2, {
-                context: `${this.id}.panel2`
-            }),
-            panel3: Context.dom.query(this.selectors.panel3, {
-                context: `${this.id}.panel3`
-            })
+            panel1: Context.dom.query(this.selectors.panel1, { context: `${this.id}.panel1` })
+                || Context.dom.query(this.selectors.panel1Fallback, { context: `${this.id}.panel1` }),
+            panel2: Context.dom.query(this.selectors.panel2, { context: `${this.id}.panel2` })
+                || Context.dom.query(this.selectors.panel2Fallback, { context: `${this.id}.panel2` }),
+            panel3: Context.dom.query(this.selectors.panel3, { context: `${this.id}.panel3` })
+                || Context.dom.query(this.selectors.panel3Fallback, { context: `${this.id}.panel3` })
         };
     },
 

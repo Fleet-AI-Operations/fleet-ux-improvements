@@ -4,7 +4,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
-    _version: '1.32',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -20,17 +20,31 @@ const plugin = {
     },
 
     selectors: {
-        toolCard: 'div.rounded-lg.border.transition-colors',
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
-        stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
+        workflowPanel: '[data-ui="workflow-panel"]',
+        workflowStepsContainer: '[data-ui="workflow-steps-container"]',
+        workflowStep: '[data-ui="workflow-step"]',
+        stepHeader: '[data-ui="step-header"]',
+        stepParameters: '[data-ui="step-parameters"]',
+        workflowToolbar: '[data-ui="workflow-toolbar"]',
+        workflowClear: '[data-ui="workflow-clear"]',
+        toolCard: '[data-ui="workflow-step"]',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors',
+        toolHeader: '[data-ui="step-header"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        stableParent: '[data-ui="workflow-steps-container"]',
+        stableParentFallback: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
         toolsContainer: '.space-y-3',
-        workflowToolbar: '.border-b.h-9',
-        toolSearchInput: 'input[placeholder="Search tools, descriptions, parameters..."]',
+        workflowToolbarFallback: '.border-b.h-9',
+        toolSearchInput: '[data-ui="tools-search"]',
+        toolSearchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]',
         toolClearButton: 'button.wf-clear-search-btn',
         toolTabList: '[role="tablist"]',
         toolTab: 'button[role="tab"]',
-        toolListRoot: 'div.p-2.space-y-1',
-        toolListItem: 'button.group\\/tool'
+        toolListRoot: '[data-ui="tools-list"]',
+        toolListRootFallback: 'div.p-2.space-y-1',
+        toolListItem: '[data-ui="tool-item"]',
+        toolListItemFallback: 'button.group\\/tool',
+        toolAddToWorkflow: '[data-ui="tool-add-to-workflow"]'
     },
 
     storageKeys: {
@@ -40,6 +54,10 @@ const plugin = {
 
     getToolsContainer(stableParent) {
         if (!stableParent) return null;
+        if (stableParent.getAttribute('data-ui') === 'workflow-steps-container') {
+            const spaceY3 = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+            return spaceY3 || stableParent;
+        }
         return stableParent.querySelector(':scope > ' + this.selectors.toolsContainer) ||
             stableParent.querySelector(this.selectors.toolsContainer);
     },
@@ -153,7 +171,8 @@ const plugin = {
             Logger.warn('Workflow cache: captureSnapshot called with no container');
             return [];
         }
-        const cards = container.querySelectorAll(this.selectors.toolCard);
+        let cards = container.querySelectorAll(this.selectors.toolCard);
+        if (!cards.length) cards = container.querySelectorAll(this.selectors.toolCardFallback);
         if (!cards.length) {
             Logger.warn('Workflow cache: snapshot found no tool cards in container');
             return [];
@@ -192,33 +211,26 @@ const plugin = {
     },
 
     getToolNameFromCard(card) {
-        const header = card.querySelector(this.selectors.toolHeader);
-        if (!header) {
-            Logger.warn('Workflow cache: getToolNameFromCard found no header in card');
-            return '';
-        }
+        const byDataUi = card.getAttribute('data-ui-name');
+        if (byDataUi) return byDataUi.trim();
+        const header = card.querySelector(this.selectors.toolHeader) || card.querySelector(this.selectors.toolHeaderFallback);
+        if (!header) return '';
         const span = header.querySelector('span.font-mono.text-sm.font-medium');
-        if (!span) {
-            Logger.warn('Workflow cache: getToolNameFromCard found no tool name span in header');
-            return '';
-        }
-        return span.textContent.trim();
+        return span ? span.textContent.trim() : '';
     },
 
     getParamsFromCard(card) {
         const params = {};
-        const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
-        if (!content) {
-            Logger.warn('Workflow cache: getParamsFromCard found no open parameters content (card may be collapsed)');
-            return params;
-        }
-        const spaceY3 = content.querySelector('div.space-y-3');
+        let spaceY3 = card.querySelector(this.selectors.stepParameters);
         if (!spaceY3) {
-            Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
-            return params;
+            const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
+            if (!content) return params;
+            spaceY3 = content.querySelector('div.space-y-3');
+            if (!spaceY3) return params;
         }
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
-        blocks.forEach(block => {
+        const blocks = spaceY3.querySelectorAll('[data-param]');
+        const blockList = blocks.length ? Array.from(blocks) : Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
+        blockList.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
             const typeLabel = this.getParamTypeFromBlock(block);
@@ -229,6 +241,8 @@ const plugin = {
     },
 
     getParamNameFromBlock(block) {
+        const byDataParam = block.getAttribute('data-param');
+        if (byDataParam) return byDataParam.trim();
         const code = block.querySelector('code.text-xs.font-mono');
         if (code) return code.textContent.trim();
         const label = block.querySelector('label[for^="param-"]');
@@ -237,6 +251,8 @@ const plugin = {
     },
 
     getParamTypeFromBlock(block) {
+        const byDataParamType = block.getAttribute('data-param-type');
+        if (byDataParamType) return (byDataParamType || '').trim().toLowerCase().replace(/\s+/g, '');
         const typeDiv = block.querySelector('div.inline-flex.whitespace-nowrap.rounded-md.border.font-medium');
         if (!typeDiv) return '';
         const raw = (typeDiv.textContent || '').trim().toLowerCase();
@@ -510,7 +526,7 @@ const plugin = {
                 }
 
                 const currentContainer = this.getToolsContainer(stableParent);
-                const prevCount = currentContainer ? currentContainer.querySelectorAll(this.selectors.toolCard).length : 0;
+                const prevCount = currentContainer ? this._queryToolCards(currentContainer).length : 0;
                 callBtn.click();
 
                 const newCard = await this.waitForNewToolCard(stableParent, prevCount);
@@ -558,11 +574,14 @@ const plugin = {
     },
 
     findToolPanelRoot() {
-        const input = document.querySelector(this.selectors.toolSearchInput);
+        let input = document.querySelector(this.selectors.toolSearchInput);
+        if (!input) input = document.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return null;
+        const toolsPanel = input.closest('[data-ui="tools-panel"]');
+        if (toolsPanel) return toolsPanel;
         let el = input.parentElement;
         while (el && el !== document.body) {
-            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot)) {
+            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot) || el.querySelector(this.selectors.toolListRootFallback)) {
                 return el;
             }
             el = el.parentElement;
@@ -572,7 +591,7 @@ const plugin = {
 
     clearToolSearch(toolPanelRoot) {
         if (!toolPanelRoot) return;
-        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput);
+        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput) || toolPanelRoot.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return;
         const clearBtn = toolPanelRoot.querySelector(this.selectors.toolClearButton);
         if (clearBtn && clearBtn.offsetParent !== null) {
@@ -599,7 +618,7 @@ const plugin = {
             return { toolToTab, tabButtons };
         }
 
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         for (const tab of tabs) {
             const tabName = this.getTabLabel(tab);
             if (!tabName) continue;
@@ -642,7 +661,7 @@ const plugin = {
     async switchToToolTab(tabInfo, tabName, toolPanelRoot) {
         if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
         const tab = tabInfo.tabButtons[tabName];
-        const listRoot = toolPanelRoot ? toolPanelRoot.querySelector(this.selectors.toolListRoot) : null;
+        const listRoot = toolPanelRoot ? (toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback)) : null;
         const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
         this.activateTab(tab);
         await this.waitForTabActive(tab);
@@ -654,9 +673,10 @@ const plugin = {
     },
 
     readToolList(toolPanelRoot) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return [];
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        let items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        if (!items.length) items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItemFallback));
         const tools = [];
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
@@ -667,6 +687,8 @@ const plugin = {
     },
 
     getToolNameFromListItem(item) {
+        const byDataUi = item.getAttribute('data-ui-name');
+        if (byDataUi) return this.normalizeToolName(byDataUi);
         const primary = item.querySelector('span.text-xs.font-medium.text-foreground span span');
         const fallback = item.querySelector('span.text-xs.font-medium.text-foreground');
         const text = primary ? primary.textContent : (fallback ? fallback.textContent : item.textContent);
@@ -674,13 +696,16 @@ const plugin = {
     },
 
     findToolCallButton(toolPanelRoot, toolName) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return null;
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        let items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        if (!items.length) items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItemFallback));
         const target = this.normalizeToolName(toolName);
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
             if (!name || name !== target) continue;
+            const callBtn = item.querySelector(this.selectors.toolAddToWorkflow);
+            if (callBtn) return callBtn;
             const btns = Array.from(item.querySelectorAll('button'));
             return btns.find(btn => btn.textContent.trim() === 'Call') || null;
         }
@@ -692,7 +717,8 @@ const plugin = {
     },
 
     readToolNamesFromList(listRoot) {
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        let items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        if (!items.length) items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItemFallback));
         return items.map(item => this.getToolNameFromListItem(item)).filter(Boolean);
     },
 
@@ -742,24 +768,31 @@ const plugin = {
             Logger.debug('Workflow cache: no workflow container (empty), skip clear');
             return;
         }
-        const toolbar = panel.querySelector(this.selectors.workflowToolbar);
-        if (!toolbar) return;
-        const clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
+        let clearBtn = panel.querySelector(this.selectors.workflowClear);
+        if (!clearBtn) {
+            const toolbar = panel.querySelector(this.selectors.workflowToolbar) || panel.querySelector(this.selectors.workflowToolbarFallback);
+            if (!toolbar) return;
+            clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
+        }
         if (!clearBtn) return;
         clearBtn.click();
         await this.waitForContainerEmpty(toolsContainer);
         Logger.info('Workflow cache: workflow cleared');
     },
 
+    _queryToolCards(container) {
+        let cards = container.querySelectorAll(this.selectors.toolCard);
+        if (!cards.length) cards = container.querySelectorAll(this.selectors.toolCardFallback);
+        return cards;
+    },
+
     async waitForContainerEmpty(container, timeoutMs = 50) {
         if (!container) return true;
-        const existing = container.querySelectorAll(this.selectors.toolCard);
-        if (existing.length === 0) return true;
+        if (this._queryToolCards(container).length === 0) return true;
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const remaining = container.querySelectorAll(this.selectors.toolCard);
-                if (remaining.length === 0) {
+                if (this._queryToolCards(container).length === 0) {
                     observer.disconnect();
                     resolve(true);
                 }
@@ -776,7 +809,7 @@ const plugin = {
         if (!stableParent) return null;
         const container = this.getToolsContainer(stableParent);
         if (container) {
-            const cards = container.querySelectorAll(this.selectors.toolCard);
+            const cards = this._queryToolCards(container);
             if (cards.length > previousCount) {
                 return cards[previousCount] ?? null;
             }
@@ -786,7 +819,7 @@ const plugin = {
             const observer = new MutationObserver(() => {
                 const c = this.getToolsContainer(stableParent);
                 if (!c) return;
-                const updated = c.querySelectorAll(this.selectors.toolCard);
+                const updated = this._queryToolCards(c);
                 if (updated.length > previousCount) {
                     observer.disconnect();
                     resolve(updated[previousCount] ?? null);
@@ -804,12 +837,16 @@ const plugin = {
         if (!card || !entry) return;
         this.ensureCardExpanded(card);
 
-        const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
-        if (!content) return;
-        const spaceY3 = content.querySelector('div.space-y-3');
-        if (!spaceY3) return;
+        let spaceY3 = card.querySelector(this.selectors.stepParameters);
+        if (!spaceY3) {
+            const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
+            if (!content) return;
+            spaceY3 = content.querySelector('div.space-y-3');
+            if (!spaceY3) return;
+        }
 
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
+        const paramBlocks = spaceY3.querySelectorAll('[data-param]');
+        const blocks = paramBlocks.length ? Array.from(paramBlocks) : Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         const blockMap = {};
         for (const block of blocks) {
             const name = this.getParamNameFromBlock(block);
@@ -830,7 +867,7 @@ const plugin = {
     ensureCardExpanded(card) {
         const openContent = card.querySelector('div[data-state="open"]');
         if (openContent) return;
-        const header = card.querySelector(this.selectors.toolHeader);
+        const header = card.querySelector(this.selectors.toolHeader) || card.querySelector(this.selectors.toolHeaderFallback);
         if (header) header.click();
     },
 
@@ -1104,16 +1141,16 @@ const plugin = {
         state.parentObserver = parentObserver;
     },
 
+    _isToolCardOrWrapper(node, container) {
+        if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.matches) return false;
+        return node.matches(this.selectors.toolCard) || node.matches(this.selectors.toolCardFallback) ||
+            node.querySelector(this.selectors.toolCard) || node.querySelector(this.selectors.toolCardFallback);
+    },
+
     attachContainerObservers(container, state) {
         this.disconnectContainerObservers(state);
 
         const self = this;
-        const toolCardSelector = this.selectors.toolCard;
-
-        const isToolCardOrWrapper = (node) => {
-            if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.matches) return false;
-            return node.matches(toolCardSelector) || node.querySelector(toolCardSelector);
-        };
 
         const childListObserver = new MutationObserver((mutations) => {
             if (state.applyInProgress) return;
@@ -1121,13 +1158,13 @@ const plugin = {
             let removed = false;
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
-                    if (isToolCardOrWrapper(node)) {
+                    if (self._isToolCardOrWrapper(node, container)) {
                         added = true;
                         break;
                     }
                 }
                 for (const node of m.removedNodes) {
-                    if (isToolCardOrWrapper(node)) {
+                    if (self._isToolCardOrWrapper(node, container)) {
                         removed = true;
                         break;
                     }
@@ -1154,9 +1191,9 @@ const plugin = {
             if (state.applyInProgress) return;
             for (const m of mutations) {
                 const target = m.target;
-                if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.matches || !target.matches(toolCardSelector)) {
-                    continue;
-                }
+                if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.matches) continue;
+                const isCard = target.matches(self.selectors.toolCard) || target.matches(self.selectors.toolCardFallback);
+                if (!isCard) continue;
                 if (!container.contains(target)) continue;
                 const hasSuccess = target.classList.contains('border-emerald-500/50');
                 const hasError = target.classList.contains('border-red-500/50');
@@ -1178,33 +1215,30 @@ const plugin = {
     },
 
     findWorkflowPanel() {
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-
+        const byDataUi = document.querySelector(this.selectors.workflowPanel);
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector(this.selectors.workflowToolbarFallback);
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
                 );
-                if (workflowText) {
-                    return candidate;
-                }
+                if (workflowText) return candidate;
             }
         }
-
         return null;
     },
 
     findStableParent(panel) {
         if (!panel) return null;
+        const byDataUi = panel.querySelector(this.selectors.stableParent);
+        if (byDataUi) return byDataUi;
         const scrollables = panel.querySelectorAll('.overflow-y-auto');
         for (const scrollable of scrollables) {
-            const stable = scrollable.querySelector(this.selectors.stableParent);
+            const stable = scrollable.querySelector(this.selectors.stableParentFallback);
             if (stable) return stable;
         }
-        // Fallback for creation/revision pages: use first scrollable and find .space-y-3 inside it
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (scrollable && scrollable.querySelector(this.selectors.toolsContainer)) {
             return scrollable;

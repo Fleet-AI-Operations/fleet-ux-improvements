@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '1.3',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -19,7 +19,13 @@ const plugin = {
     ],
 
     selectors: {
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30'
+        workflowPanel: '[data-ui="workflow-panel"]',
+        workflowStepsContainer: '[data-ui="workflow-steps-container"]',
+        workflowStep: '[data-ui="workflow-step"]',
+        stepHeader: '[data-ui="step-header"]',
+        stepParameters: '[data-ui="step-parameters"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors'
     },
 
     onMutation(state, context) {
@@ -51,10 +57,8 @@ const plugin = {
 
         this.ensureExecuteClickDelegate(toolsContainer);
 
-        const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-            root: toolsContainer,
-            context: `${this.id}.toolCards`
-        });
+        let toolCards = Context.dom.queryAll(this.selectors.workflowStep, { root: toolsContainer, context: `${this.id}.toolCards` });
+        if (!toolCards.length) toolCards = Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
 
         let togglesAdded = 0;
 
@@ -65,10 +69,8 @@ const plugin = {
             });
             if (!collapsibleRoot) return;
 
-            const header = Context.dom.query(this.selectors.toolHeader, {
-                root: card,
-                context: `${this.id}.toolHeader`
-            });
+            const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeader` })
+                || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
             if (!header) return;
 
             const buttonContainer = Context.dom.query('div.flex.items-center.gap-1', {
@@ -181,9 +183,8 @@ const plugin = {
     },
 
     findParametersDiv(card) {
-        // Target: the div.space-y-3 whose first child element contains the text "Parameters".
-        // This is the inner wrapper around the parameter inputs, sibling to the Execute button,
-        // so hiding it leaves Execute in place and the card collapses naturally.
+        const byDataUi = card.querySelector(this.selectors.stepParameters);
+        if (byDataUi) return byDataUi;
         const candidates = card.querySelectorAll('div.space-y-3');
         for (const div of candidates) {
             const firstChild = div.firstElementChild;
@@ -195,27 +196,28 @@ const plugin = {
     },
 
     findWorkflowPanel() {
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-
+        const byDataUi = document.querySelector(this.selectors.workflowPanel);
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
             const toolbar = candidate.querySelector('.border-b.h-9');
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
                 );
-                if (workflowText) {
-                    return candidate;
-                }
+                if (workflowText) return candidate;
             }
         }
-
         return null;
     },
 
     findToolsArea(panel) {
         if (!panel) return null;
+        const container = panel.querySelector(this.selectors.workflowStepsContainer);
+        if (container) {
+            const spaceY3 = container.querySelector(':scope > .space-y-3');
+            return spaceY3 || container;
+        }
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
         return scrollable.querySelector('.space-y-3');
@@ -229,7 +231,7 @@ const plugin = {
             if (!btn) return;
             const text = btn.textContent?.trim?.();
             if (text !== 'Execute' && text !== 'Re-execute') return;
-            const card = btn.closest('div.rounded-lg.border.transition-colors');
+            const card = btn.closest(this.selectors.workflowStep) || btn.closest(this.selectors.toolCardFallback);
             if (!card || !toolsContainer.contains(card)) return;
             if (!Storage.getSubOptionEnabled(this.id, 'auto-collapse-on-execute', true)) return;
             const toggleBtn = card.querySelector('.wf-param-toggle-btn');

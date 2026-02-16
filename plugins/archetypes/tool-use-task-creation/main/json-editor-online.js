@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '1.5',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -38,11 +38,11 @@ const plugin = {
     },
     
     addToolbarButton(state, context) {
-        // Find the button container using the same strategies as source-data-explorer
         let buttonContainer = null;
-        
-        // Strategy 1: Find by class combination (flex, gap-1, ml-auto, items-center)
-        const candidates = document.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
+        const workflowEditor = document.querySelector('[data-ui="workflow-editor"]');
+        const headerScope = workflowEditor?.previousElementSibling || document;
+
+        const candidates = headerScope.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
         buttonContainer = Array.from(candidates).find(el => 
             el.classList.contains('mr-0') || 
             (el.classList.contains('flex') && 
@@ -51,9 +51,8 @@ const plugin = {
              getComputedStyle(el).marginLeft === 'auto')
         );
         
-        // Strategy 2: Find by looking for container with Reset Instance button
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(headerScope.querySelectorAll('button'));
             const resetBtn = buttons.find(btn => {
                 const text = btn.textContent.trim();
                 return text === 'Reset Instance' || text.includes('Reset Instance');
@@ -63,9 +62,8 @@ const plugin = {
             }
         }
         
-        // Strategy 3: Find by looking for container with Save button
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(headerScope.querySelectorAll('button'));
             const saveBtn = buttons.find(btn => {
                 const text = btn.textContent.trim();
                 return text === 'Save';

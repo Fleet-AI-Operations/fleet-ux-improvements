@@ -3,13 +3,17 @@ const plugin = {
     id: 'workflowIntegrityCheck',
     name: 'Workflow Integrity Check',
     description: 'Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs',
-    _version: '1.1',
+    _version: '2.0',
     enabledByDefault: false,
     phase: 'mutation',
-    
-    // Plugin-specific selectors
+
     selectors: {
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30'
+        workflowPanel: '[data-ui="workflow-panel"]',
+        workflowStepsContainer: '[data-ui="workflow-steps-container"]',
+        workflowStep: '[data-ui="workflow-step"]',
+        stepHeader: '[data-ui="step-header"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors'
     },
     
     initialState: { 
@@ -154,11 +158,8 @@ const plugin = {
                 return;
             }
             
-            // Get all tool cards
-            const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-                root: toolsContainer,
-                context: `${this.id}.toolCards`
-            });
+            let toolCards = Context.dom.queryAll(this.selectors.workflowStep, { root: toolsContainer, context: `${this.id}.toolCards` });
+            if (!toolCards.length) toolCards = Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
             
             if (toolCards.length === 0) {
                 Logger.log('No tools found');
@@ -191,37 +192,31 @@ const plugin = {
     },
     
     findWorkflowPanel() {
-        // Find panels by data-panel-id attribute
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-        
-        // Look for panel containing "Workflow" text in toolbar
+        const byDataUi = document.querySelector(this.selectors.workflowPanel);
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
             const toolbar = candidate.querySelector('.border-b.h-9');
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
                 );
-                if (workflowText) {
-                    return candidate;
-                }
+                if (workflowText) return candidate;
             }
         }
-        
         return null;
     },
-    
+
     findToolsArea(panel) {
         if (!panel) return null;
-        
-        // Find scrollable container
+        const container = panel.querySelector(this.selectors.workflowStepsContainer);
+        if (container) {
+            const spaceY3 = container.querySelector(':scope > .space-y-3');
+            return spaceY3 || container;
+        }
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
-        
-        // Find tools container with space-y-3 class
-        const toolsArea = scrollable.querySelector('.space-y-3');
-        return toolsArea;
+        return scrollable.querySelector('.space-y-3');
     },
     
     getPromptText() {
@@ -265,10 +260,8 @@ const plugin = {
                 const isCollapsed = collapsibleRoot.getAttribute('data-state') === 'closed';
                 
                 if (isCollapsed) {
-                    const header = Context.dom.query(this.selectors.toolHeader, {
-                        root: card,
-                        context: `${this.id}.toolHeader`
-                    });
+                    const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeader` })
+                        || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
                     
                     if (header) {
                         header.click();
@@ -321,13 +314,12 @@ const plugin = {
     },
     
     getToolName(card) {
-        const header = Context.dom.query(this.selectors.toolHeader, {
-            root: card,
-            context: `${this.id}.toolHeader`
-        });
-        
+        const byDataUi = card.getAttribute('data-ui-name');
+        if (byDataUi) return byDataUi.trim();
+        const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeader` })
+            || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
         if (!header) return 'Unknown Tool';
-        
+
         // Look for tool name in spans
         const spans = header.querySelectorAll('span');
         for (const span of spans) {

@@ -6,7 +6,7 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '1.2',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -37,11 +37,12 @@ const plugin = {
     onMutation(state, context) {
         if (state.layoutApplied && state.resizeHandlerAttached && state.scratchpadResizeHandlerAttached) return;
         
-        // Find the main container (line 70 in HTML)
+        const promptPanel = document.querySelector('[data-ui="prompt-panel"]');
         const mainContainer = Context.dom.query('#prompt-editor', {
-            context: `${this.id}.promptEditor`
+            context: `${this.id}.promptEditor`,
+            root: promptPanel || document
         });
-        
+
         if (!mainContainer) {
             if (!state.missingLogged) {
                 Logger.debug('Prompt editor not found for layout adjustment');

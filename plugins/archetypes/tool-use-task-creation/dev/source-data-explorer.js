@@ -5,7 +5,7 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Source Data Explorer',
     description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '3.8',
+    _version: '4.0',
     enabledByDefault: false,
     phase: 'mutation',
     initialState: { buttonAdded: false, missingLogged: false, interceptionInstalled: false },
@@ -17,12 +17,11 @@ const plugin = {
 
         if (state.buttonAdded) return;
         
-        // Find the button container using robust selectors
-        // Target: div.flex.gap-1.mr-0.ml-auto.items-center
         let buttonContainer = null;
-        
-        // Strategy 1: Find by class combination (flex, gap-1, ml-auto, items-center)
-        const candidates = document.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
+        const workflowEditor = document.querySelector('[data-ui="workflow-editor"]');
+        const headerScope = workflowEditor?.previousElementSibling || document;
+
+        const candidates = headerScope.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
         buttonContainer = Array.from(candidates).find(el => 
             el.classList.contains('mr-0') || 
             (el.classList.contains('flex') && 
@@ -31,9 +30,8 @@ const plugin = {
              getComputedStyle(el).marginLeft === 'auto')
         );
         
-        // Strategy 2: Find by looking for container with Reset Instance button
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(headerScope.querySelectorAll('button'));
             const resetBtn = buttons.find(btn => {
                 const text = btn.textContent.trim();
                 return text === 'Reset Instance' || text.includes('Reset Instance');
@@ -43,9 +41,8 @@ const plugin = {
             }
         }
         
-        // Strategy 3: Find by looking for container with Save button
         if (!buttonContainer) {
-            const buttons = Array.from(document.querySelectorAll('button'));
+            const buttons = Array.from(headerScope.querySelectorAll('button'));
             const saveBtn = buttons.find(btn => {
                 const text = btn.textContent.trim();
                 return text === 'Save';

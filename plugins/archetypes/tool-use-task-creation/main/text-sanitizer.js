@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.4',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -120,10 +120,11 @@ const plugin = {
     },
 
     onMutation(state, context) {
-        const tabBars = this.findTaskNotesTabBars();
+        const promptPanel = document.querySelector('[data-ui="prompt-panel"]');
+        const tabBars = this.findTaskNotesTabBars(promptPanel);
 
         if (tabBars.length === 0) {
-            const promptSection = this.findPromptSection();
+            const promptSection = this.findPromptSection(promptPanel || document);
             if (!promptSection) {
                 if (!state.promptMissingLogged) {
                     state.promptMissingLogged = true;
@@ -160,6 +161,11 @@ const plugin = {
 
     findPromptSection(scopeRoot) {
         const root = scopeRoot || document;
+        if (root.querySelector && root.querySelector('#prompt-editor')) {
+            const promptEditor = root.querySelector('#prompt-editor');
+            const section = promptEditor.closest('div.space-y-2.relative') || promptEditor.closest('div.space-y-2') || promptEditor.closest('div.flex.flex-col.gap-2');
+            if (section) return section;
+        }
         const options = { context: `${this.id}.findPromptSection`, root };
 
         // Label-based fallback: find "Prompt" or "Problem Description" label then climb to section wrapper (resilient to DOM changes).
@@ -212,9 +218,10 @@ const plugin = {
         return anchor;
     },
 
-    findTaskNotesTabBars() {
+    findTaskNotesTabBars(scopeRoot) {
+        const root = scopeRoot || document;
         const tabBars = [];
-        const candidates = document.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
+        const candidates = root.querySelectorAll('div.flex.items-center.gap-1.px-2.border-b');
         for (const el of candidates) {
             const buttons = el.querySelectorAll('button');
             let hasTask = false;

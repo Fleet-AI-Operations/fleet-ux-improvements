@@ -4,14 +4,19 @@ const plugin = {
     id: 'executeToCurrentTool',
     name: 'Execute to Current Tool',
     description: 'Adds button to execute all tools from the beginning up to and including the current tool',
-    _version: '1.19',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, panelId: null, lastToolsContainerMissingLogAt: 0 },
-    
-    // Plugin-specific selectors
+
     selectors: {
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30'
+        workflowPanel: '[data-ui="workflow-panel"]',
+        workflowStepsContainer: '[data-ui="workflow-steps-container"]',
+        workflowStep: '[data-ui="workflow-step"]',
+        stepHeader: '[data-ui="step-header"]',
+        stepExecute: '[data-ui="step-execute"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors'
     },
     
     onMutation(state, context) {
@@ -45,10 +50,8 @@ const plugin = {
             return;
         }
 
-        const toolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-            root: toolsContainer,
-            context: `${this.id}.toolCards`
-        });
+        let toolCards = Context.dom.queryAll(this.selectors.workflowStep, { root: toolsContainer, context: `${this.id}.toolCards` });
+        if (!toolCards.length) toolCards = Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
         let buttonsAdded = 0;
 
         toolCards.forEach(card => {
@@ -58,10 +61,8 @@ const plugin = {
             });
             if (!collapsibleRoot) return;
 
-            const header = Context.dom.query(this.selectors.toolHeader, {
-                root: card,
-                context: `${this.id}.toolHeader`
-            });
+            const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeader` })
+                || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
             if (!header) return;
 
             const buttonContainer = Context.dom.query('div.flex.items-center.gap-1', {
@@ -101,47 +102,38 @@ const plugin = {
     },
     
     findWorkflowPanel() {
-        // Find panels by data-panel-id attribute
-        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
-            context: `${this.id}.panels`
-        });
-        
-        // Look for panel containing "Workflow" text in toolbar
+        const byDataUi = document.querySelector(this.selectors.workflowPanel);
+        if (byDataUi) return byDataUi;
+        const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
             const toolbar = candidate.querySelector('.border-b.h-9');
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
                 );
-                if (workflowText) {
-                    return candidate;
-                }
+                if (workflowText) return candidate;
             }
         }
-        
         return null;
     },
-    
+
     findToolsArea(panel) {
         if (!panel) return null;
-        
-        // Find scrollable container
+        const container = panel.querySelector(this.selectors.workflowStepsContainer);
+        if (container) {
+            const spaceY3 = container.querySelector(':scope > .space-y-3');
+            return spaceY3 || container;
+        }
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
-        
-        // Find tools container with space-y-3 class
-        const toolsArea = scrollable.querySelector('.space-y-3');
-        return toolsArea;
+        return scrollable.querySelector('.space-y-3');
     },
     
     async executeToCurrentTool(currentCard, currentHeader, toolsContainer) {
         Logger.log('Execute to current tool triggered');
         
-        // Get all tool cards in order
-        const allToolCards = Context.dom.queryAll('div.rounded-lg.border.transition-colors', {
-            root: toolsContainer,
-            context: `${this.id}.allToolCards`
-        });
+        let allToolCards = Context.dom.queryAll(this.selectors.workflowStep, { root: toolsContainer, context: `${this.id}.allToolCards` });
+        if (!allToolCards.length) allToolCards = Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.allToolCards` });
         
         // Find the index of the current tool
         const currentIndex = allToolCards.indexOf(currentCard);
@@ -157,10 +149,8 @@ const plugin = {
         // Execute each tool sequentially
         for (let i = 0; i < toolsToExecute.length; i++) {
             const card = toolsToExecute[i];
-            const header = Context.dom.query(this.selectors.toolHeader, {
-                root: card,
-                context: `${this.id}.toolHeaderForExec`
-            });
+            const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeaderForExec` })
+                || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeaderForExec` });
             
             if (!header) {
                 Logger.warn(`Tool ${i + 1} header not found, skipping`);
@@ -199,24 +189,22 @@ const plugin = {
             
             // Function to find and click execute button
             const findAndClickExecute = () => {
-                const collapsibleContent = Context.dom.query('div[data-state="open"] > div[id^="radix-"][data-state="open"]', {
-                    root: card,
-                    context: `${this.id}.collapsibleContent`
-                });
-                if (!collapsibleContent) return false;
-                
-                const buttons = Context.dom.queryAll('div.px-3.pb-3.space-y-3 > button', {
-                    root: collapsibleContent,
-                    context: `${this.id}.executeButtons`
-                });
-                let executeBtn = null;
-                buttons.forEach(btn => {
-                    const btnText = btn.textContent.trim();
-                    if (btnText === 'Execute' || btnText === 'Re-execute') {
-                        executeBtn = btn;
-                    }
-                });
-                
+                let executeBtn = card.querySelector(this.selectors.stepExecute);
+                if (!executeBtn) {
+                    const collapsibleContent = Context.dom.query('div[data-state="open"] > div[id^="radix-"][data-state="open"]', {
+                        root: card,
+                        context: `${this.id}.collapsibleContent`
+                    });
+                    if (!collapsibleContent) return false;
+                    const buttons = Context.dom.queryAll('div.px-3.pb-3.space-y-3 > button', {
+                        root: collapsibleContent,
+                        context: `${this.id}.executeButtons`
+                    });
+                    buttons.forEach(btn => {
+                        const btnText = btn.textContent.trim();
+                        if (btnText === 'Execute' || btnText === 'Re-execute') executeBtn = executeBtn || btn;
+                    });
+                }
                 if (executeBtn) {
                     executeBtn.click();
                     Logger.log('Clicked execute button');
