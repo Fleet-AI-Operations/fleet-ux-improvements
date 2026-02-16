@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer with copy and actions (whitespace, special chars, date/time to ISO). Shown in the same panel area as the scratchpad, below it when present.',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -469,9 +469,9 @@ const plugin = {
         button.type = 'button';
         button.setAttribute('data-fleet-plugin', this.id);
         button.className = buttonClass;
-        button.textContent = 'Copy and Clear';
-        button.title = 'Copy text and clear';
-        button.setAttribute('aria-label', 'Copy text and clear');
+        button.textContent = 'Copy';
+        button.title = 'Copy text';
+        button.setAttribute('aria-label', 'Copy text');
 
         const handleCopy = () => {
             const container = button.closest('[data-qa-text-sanitizer="true"]');
@@ -489,7 +489,7 @@ const plugin = {
                 button.style.color = 'white';
                 if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
                 state.copyFeedbackTimeoutId = setTimeout(() => {
-                    button.textContent = 'Copy and Clear';
+                    button.textContent = 'Copy';
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     state.copyFeedbackTimeoutId = null;
