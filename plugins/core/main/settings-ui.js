@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.25',
+    _version: '5.26',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -260,7 +260,8 @@ const plugin = {
         const orderedDevPlugins = this._getOrderedPlugins(devPlugins, archetypeId, 'dev');
         const version = Context.version || 'unknown';
         this._settingsArchetypeId = archetypeId;
-        this._initialSettingsSnapshot = this._getSettingsSnapshot(archetypePlugins, archetypeId);
+        this._settingsDevPlugins = devPlugins;
+        this._initialSettingsSnapshot = this._getSettingsSnapshot(archetypePlugins, archetypeId, devPlugins);
         
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -353,10 +354,10 @@ const plugin = {
                     Debug Options
                 </h3>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled())}
-                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled())}
+                    ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled(), 'log')}
+                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled(), 'log')}
                     <div>
-                        ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled)}
+                        ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled, 'log')}
                         <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
                             <button id="wf-all-module-logging-on" type="button" style="
                                 flex: 1;
@@ -384,7 +385,7 @@ const plugin = {
                             ">All Off</button>
                         </div>
                     </div>
-                    ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled())}
+                    ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled(), 'sub')}
                 </div>
             </div>
             </div>
@@ -528,7 +529,7 @@ const plugin = {
                     <label style="font-size: 12px; color: var(--muted-foreground, #666);" for="wf-plugin-log-${plugin.id}">
                         Module Logging
                     </label>
-                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small' })}
+                    ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'log' })}
                 </div>
         ` : '';
         return `
@@ -581,7 +582,7 @@ const plugin = {
                         </label>
                         ${subOption.description ? `<div style="font-size: 11px; color: var(--muted-foreground, #888); margin-top: 2px;">${subOption.description}</div>` : ''}
                     </div>
-                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small' })}
+                    ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small', variant: 'sub' })}
                 </div>
             `;
         }).join('');
@@ -595,11 +596,11 @@ const plugin = {
         `;
     },
     
-    _createToggleHTML(id, label, isEnabled) {
+    _createToggleHTML(id, label, isEnabled, variant = 'main') {
         return `
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
                 <label style="font-size: 13px; color: var(--foreground, #333);" for="${id}">${label}</label>
-                ${this._createSwitchHTML(id, isEnabled)}
+                ${this._createSwitchHTML(id, isEnabled, null, false, { variant })}
             </div>
         `;
     },
@@ -608,8 +609,9 @@ const plugin = {
         const dataAttr = pluginId ? `data-plugin-id="${pluginId}"` : '';
         const disabledAttr = isDisabled ? 'disabled' : '';
         const isSmall = opts.size === 'small';
-        // Main toggles: original blue. Sub-option toggles (small): 25% lighter blue when on.
-        const onColor = isSmall ? '#8986f1' : 'var(--brand, #4f46e5)';
+        // Main toggles: green. Sub-options: blue. Log options: yellow.
+        const variant = opts.variant || (isSmall ? 'sub' : 'main');
+        const onColor = variant === 'main' ? '#22c55e' : variant === 'log' ? '#ca8a04' : '#6366f1';
         const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
@@ -619,7 +621,7 @@ const plugin = {
         const knobLeftOn = isSmall ? 17 : 23;
         const knobLeftOff = 3;
         const knobBottom = isSmall ? 2 : 3;
-        const onColorAttr = isSmall ? ` data-wf-on-color="${onColor}" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}"` : '';
+        const onColorAttr = ` data-wf-on-color="${onColor}" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}"`;
         return `
             <label style="position: relative; display: inline-block; width: ${w}px; height: ${h}px; flex-shrink: 0; ${isDisabled ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
                 <input type="checkbox" id="${id}" ${dataAttr} ${isEnabled ? 'checked' : ''} ${disabledAttr} style="opacity: 0; width: 0; height: 0; position: absolute;">
@@ -1430,11 +1432,11 @@ const plugin = {
         return normalized;
     },
 
-    _getSettingsSnapshot(plugins, archetypeId) {
+    _getSettingsSnapshot(plugins, archetypeId, devPlugins = []) {
         const sortedPlugins = plugins
             .map(plugin => plugin)
             .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-        return {
+        const snapshot = {
             globalEnabled: this._getGlobalEnabled(),
             debug: Logger.isDebugEnabled(),
             verbose: Logger.isVerboseEnabled(),
@@ -1456,6 +1458,26 @@ const plugin = {
             }),
             pluginOrder: this._getStoredPluginOrder(archetypeId, plugins)
         };
+        if (devPlugins && devPlugins.length > 0) {
+            snapshot.devGlobalEnabled = this._getDevGlobalEnabled();
+            const sortedDev = devPlugins.slice().sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+            snapshot.devPluginStates = sortedDev.map(plugin => {
+                const state = {
+                    id: plugin.id,
+                    enabled: PluginManager.isEnabled(plugin.id),
+                    moduleLogging: Logger.isModuleLoggingEnabled(plugin.id)
+                };
+                if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
+                    state.subOptions = plugin.subOptions.map(subOption => ({
+                        id: subOption.id,
+                        enabled: Storage.getSubOptionEnabled(plugin.id, subOption.id, subOption.enabledByDefault !== false)
+                    }));
+                }
+                return state;
+            });
+            snapshot.devPluginOrder = this._getStoredPluginOrder(archetypeId, devPlugins, 'dev');
+        }
+        return snapshot;
     },
 
     _getGlobalEnabled() {
@@ -1593,7 +1615,8 @@ const plugin = {
 
     _updateSettingsMessage(modal, plugins) {
         const msg = this._ensureMessageElement(modal);
-        const current = this._getSettingsSnapshot(plugins, this._settingsArchetypeId);
+        const devPlugins = this._settingsDevPlugins || [];
+        const current = this._getSettingsSnapshot(plugins, this._settingsArchetypeId, devPlugins);
         const changed = JSON.stringify(current) !== JSON.stringify(this._initialSettingsSnapshot);
         msg.style.display = changed ? 'block' : 'none';
         if (changed) {
