@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.9",
+  "archetypesVersion": "4.10",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -349,7 +349,7 @@
         },
         {
           "name": "guideline-buttons.js",
-          "version": "1.5"
+          "version": "1.6"
         },
         {
           "name": "request-revisions.js",

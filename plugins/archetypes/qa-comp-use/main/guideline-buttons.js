@@ -12,7 +12,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add links to the guidelines on the page',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -30,6 +30,13 @@ const plugin = {
     },
 
     onMutation(state, context) {
+        // Reuse existing wrapper if present (only one insertion per page)
+        let wrapper = document.querySelector(`div[data-fleet-plugin="${this.id}"]`);
+        if (wrapper) {
+            this.syncButtons(wrapper);
+            return;
+        }
+
         const promptSection = this.findPromptSection();
         if (!promptSection) {
             if (!state.missingLogged) {
@@ -40,13 +47,10 @@ const plugin = {
         }
         state.missingLogged = false;
 
-        let wrapper = promptSection.nextElementSibling;
-        if (!wrapper || wrapper.getAttribute('data-fleet-plugin') !== 'guidelineButtons') {
-            wrapper = this.createWrapper();
-            promptSection.insertAdjacentElement('afterend', wrapper);
-            state.wrapperAdded = true;
-            Logger.log('✓ Guideline Buttons: wrapper added below user prompt (qa-comp-use)');
-        }
+        wrapper = this.createWrapper();
+        promptSection.insertAdjacentElement('afterend', wrapper);
+        state.wrapperAdded = true;
+        Logger.log('✓ Guideline Buttons: wrapper added below user prompt (qa-comp-use)');
 
         this.syncButtons(wrapper);
     },
