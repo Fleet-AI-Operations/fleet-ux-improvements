@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "3.150",
+  "archetypesVersion": "4.0",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -177,6 +177,17 @@
         {
           "name": "text-sanitizer.js",
           "version": "2.1"
+        }
+      ]
+    },
+    {
+      "id": "task-creation-env-picker",
+      "name": "Task Creation Environment Picker Page",
+      "description": "Page for picking an environment for task creation",
+      "urlPattern": "work/problems/create-instance",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
         }
       ]
     },
