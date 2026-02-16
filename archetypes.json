@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.1",
+  "archetypesVersion": "4.2",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -58,7 +58,7 @@
       "plugins": [
         {
           "name": "auto-sort-available-qa-tasks.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "qa-team-filter-width.js",
