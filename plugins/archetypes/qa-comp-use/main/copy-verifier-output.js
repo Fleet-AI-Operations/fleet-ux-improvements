@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -46,11 +46,34 @@ const plugin = {
         Logger.log('Copy Verifier Output: Copy button added');
     },
 
+    getGradingPanelRoot() {
+        const reportGradingBtn = Array.from(document.querySelectorAll('button')).find(
+            (btn) => btn.textContent && btn.textContent.trim().includes('Report Grading Issues')
+        );
+        if (reportGradingBtn) {
+            const panel = reportGradingBtn.closest('[data-panel]');
+            if (panel) return panel;
+        }
+        const instanceContent = document.querySelector('[data-ui="qa-instance-content"]');
+        if (instanceContent) {
+            const instancePanel = instanceContent.closest('[data-panel]');
+            if (instancePanel && instancePanel.parentElement) {
+                const sibling = instancePanel.nextElementSibling || instancePanel.previousElementSibling;
+                if (sibling && sibling.getAttribute?.('data-panel')) return sibling;
+            }
+        }
+        return null;
+    },
+
     findStdoutRow() {
-        const candidates = document.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
-        for (const el of candidates) {
-            if (el.textContent.trim() === 'Stdout') {
-                return el;
+        const gradingPanel = this.getGradingPanelRoot();
+        const roots = gradingPanel ? [gradingPanel, document] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
+            for (const el of candidates) {
+                if (el.textContent.trim() === 'Stdout') {
+                    return el;
+                }
             }
         }
         return null;
@@ -88,6 +111,7 @@ const plugin = {
         svg.appendChild(path);
         button.appendChild(svg);
 
+        let copyFeedbackTimeoutId = null;
         button.addEventListener('click', () => {
             const text = this.getVerifierOutputText(container);
             if (!text) {
@@ -96,6 +120,14 @@ const plugin = {
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
+                button.style.backgroundColor = 'rgb(34, 197, 94)';
+                button.style.color = 'white';
+                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                copyFeedbackTimeoutId = setTimeout(() => {
+                    button.style.backgroundColor = '';
+                    button.style.color = '';
+                    copyFeedbackTimeoutId = null;
+                }, 1000);
             }).catch((err) => {
                 Logger.error('Copy Verifier Output: Failed to copy to clipboard', err);
             });
