@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.11",
+  "archetypesVersion": "4.12",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -99,7 +99,7 @@
         },
         {
           "name": "prompt-and-notes-areas.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "execute-to-current-tool.js",

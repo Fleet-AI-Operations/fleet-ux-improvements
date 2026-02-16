@@ -6,7 +6,7 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -143,6 +143,9 @@ const plugin = {
         contentArea.style.flex = '1';
         contentArea.style.minHeight = '0';
         contentArea.style.padding = '0.75rem';
+        // Reserve bottom space so the Fleet settings button (fixed bottom-left) doesn't cover the text sanitizer
+        const settingsButtonClearancePx = 72; // ~20px offset + 48px button height + small buffer
+        contentArea.style.paddingBottom = `${settingsButtonClearancePx}px`;
         
         // Make scratchpad container flex-1 to fill remaining space
         scratchpadContainer.style.marginTop = '0.75rem';
