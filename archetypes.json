@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.5",
+  "archetypesVersion": "4.6",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -59,6 +59,10 @@
         {
           "name": "auto-sort-available-qa-tasks.js",
           "version": "2.1"
+        },
+        {
+          "name": "sort-qa-environments-alphabetically.js",
+          "version": "1.0"
         },
         {
           "name": "qa-team-filter-width.js",
@@ -189,6 +193,10 @@
       "plugins": [
         {
           "name": "env-picker-dropdown-width.js",
+          "version": "1.0"
+        },
+        {
+          "name": "sort-environments-alphabetically.js",
           "version": "1.0"
         }
       ]
