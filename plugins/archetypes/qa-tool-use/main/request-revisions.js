@@ -11,7 +11,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.1',
+    _version: '4.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -238,14 +238,23 @@ const plugin = {
     },
 
     findTaskPanel() {
-        // Strategy 1: find panel that contains the Prompt label and prompt content
+        // Strategy 1: find panel that contains the Prompt label and prompt content (exact "Prompt" label)
         const panels = document.querySelectorAll('[data-panel][data-panel-id]');
         for (const p of panels) {
             const hasPromptLabel = Array.from(p.querySelectorAll('span, label')).some(el => (el.textContent || '').trim() === 'Prompt');
             const promptContent = p.querySelector('.text-sm.whitespace-pre-wrap');
             if (hasPromptLabel && promptContent) return p;
         }
-        // Strategy 2: fallback to Radix ID (unstable across sessions)
+        // Strategy 2: flexible label (e.g. "Prompt" as substring) and content (primary or fallback class)
+        for (const p of panels) {
+            const hasPromptLabel = Array.from(p.querySelectorAll('span, label')).some(el => {
+                const t = (el.textContent || '').trim();
+                return t === 'Prompt' || (t.length > 0 && t.includes('Prompt'));
+            });
+            const promptContent = p.querySelector('.text-sm.whitespace-pre-wrap') || p.querySelector('[class*="whitespace-pre-wrap"]');
+            if (hasPromptLabel && promptContent && promptContent.textContent.trim().length > 0) return p;
+        }
+        // Strategy 3: fallback to Radix ID (unstable across sessions)
         return document.querySelector('[id=":re:"]') || document.querySelector('[data-panel-id=":re:"]');
     },
     
@@ -307,7 +316,7 @@ const plugin = {
     },
     
     findTaskIssueButton(modal) {
-        // Find button with "Task" text in the issues section
+        // Find button for Task option in the issues section (label-tolerant: "Task", "Problems with Task", etc.)
         const buttons = Context.dom.queryAll('button', {
             root: modal,
             context: `${this.id}.issueButtons`
@@ -315,23 +324,26 @@ const plugin = {
         
         for (const button of buttons) {
             const buttonText = button.textContent.trim();
-            if (buttonText === 'Task') {
-                // Check if any ancestor contains "Where are the issues"
-                // (it's in a sibling div, not the immediate parent)
-                let ancestor = button.parentElement;
-                while (ancestor && ancestor !== modal) {
-                    const ancestorText = ancestor.textContent || '';
-                    if (ancestorText.includes('Where are the issues')) {
-                        return button;
-                    }
-                    ancestor = ancestor.parentElement;
+            // Accept exact "Task" or labels that include "Task" but are not Environment/Grading
+            const isTaskOption = buttonText === 'Task' ||
+                (buttonText.includes('Task') && !buttonText.includes('Environment') && !buttonText.includes('Grading'));
+            if (!isTaskOption) continue;
+            // Check if any ancestor contains "Where are the issues"
+            // (it's in a sibling div, not the immediate parent)
+            let ancestor = button.parentElement;
+            while (ancestor && ancestor !== modal) {
+                const ancestorText = ancestor.textContent || '';
+                if (ancestorText.includes('Where are the issues')) {
+                    return button;
                 }
+                ancestor = ancestor.parentElement;
             }
         }
         return null;
     },
     
     handleTaskIssuePaste(state, modal, modalId) {
+        Logger.log('Request Revisions: handleTaskIssuePaste ran');
         // Prefer id-based selector (#feedback-Task); fallback for older markup
         let taskFeedbackTextarea = document.getElementById('feedback-Task');
         if (!taskFeedbackTextarea || !modal.contains(taskFeedbackTextarea) || taskFeedbackTextarea.tagName !== 'TEXTAREA') {
@@ -342,19 +354,19 @@ const plugin = {
         }
         
         if (!taskFeedbackTextarea) {
-            Logger.debug('Task feedback textarea not found yet, waiting...');
+            Logger.log('Request Revisions: Task paste skipped — no textarea');
             return; // Textarea doesn't exist yet (might appear slightly after button click)
         }
         
         // Check if textarea already has content (trim to handle whitespace-only content)
         const currentValue = taskFeedbackTextarea.value ? taskFeedbackTextarea.value.trim() : '';
         if (currentValue.length > 0) {
-            Logger.debug(`Task issue textarea already has content (${currentValue.length} chars), skipping paste`);
+            Logger.log(`Request Revisions: Task paste skipped — already has content (${currentValue.length} chars)`);
             return; // Don't overwrite existing content
         }
         
         if (!state.promptText) {
-            Logger.warn('Prompt text not available for pasting');
+            Logger.log('Request Revisions: Task paste skipped — no promptText');
             return;
         }
         
