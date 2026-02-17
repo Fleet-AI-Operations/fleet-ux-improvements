@@ -7,11 +7,14 @@ const GUIDELINE_LINKS = {
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
 
+const PROMPT_QUALITY_VALUES = ['Top 10%', 'Average', 'Bottom 10%'];
+const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
+
 const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.3',
+    _version: '3.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -47,7 +50,8 @@ const plugin = {
         verifierElement: null,
         verifierChangeObserver: null,
         gradingObservers: new Map(), // Map of modalId -> { observer, gradingButton }
-        verifierWatchEligibleAt: undefined // defer body observer until this time (or once modal seen)
+        verifierWatchEligibleAt: undefined, // defer body observer until this time (or once modal seen)
+        promptQualityRating: null // persisted Prompt Quality Rating selection for this page instance
     },
     
     onMutation(state, context) {
@@ -136,6 +140,10 @@ const plugin = {
         
         // Inject guideline copy-link buttons if enabled
         this.injectGuidelineCopyButtons(state, requestRevisionsModal);
+        
+        // Persist and restore Prompt Quality Rating selection within this page instance
+        this.capturePromptQualityRating(state, requestRevisionsModal);
+        this.restorePromptQualityRating(state, requestRevisionsModal);
         
         // Set up Task button observer if not already set up and feature is enabled
         if (autoPastePromptEnabled && state.promptText && !state.taskObservers.has(modalId)) {
@@ -468,6 +476,66 @@ const plugin = {
         }).catch((err) => {
             Logger.error('Request Revisions: failed to copy guideline link', err);
         });
+    },
+
+    findPromptQualityRatingSection(modal) {
+        const labels = modal.querySelectorAll('label');
+        for (const label of labels) {
+            if (label.textContent && label.textContent.includes('Prompt Quality Rating')) {
+                const container = label.closest('div.flex.flex-col.gap-2') || label.parentElement;
+                if (container) {
+                    const buttonGroup = container.querySelector('div.flex.gap-2');
+                    if (buttonGroup) return { container, buttonGroup };
+                }
+                break;
+            }
+        }
+        return null;
+    },
+
+    getRatingButtons(buttonGroup) {
+        const buttons = buttonGroup.querySelectorAll('button');
+        const result = {};
+        for (const btn of buttons) {
+            const text = btn.textContent.trim();
+            if (PROMPT_QUALITY_VALUES.includes(text)) result[text] = btn;
+        }
+        return result;
+    },
+
+    isRatingButtonSelected(button) {
+        return button.classList.contains('border-brand') ||
+               button.classList.contains('bg-brand') ||
+               button.classList.contains('bg-brand/5') ||
+               button.classList.contains('bg-gray-50') ||
+               (button.getAttribute('class') || '').includes('dark:bg-gray-800');
+    },
+
+    capturePromptQualityRating(state, modal) {
+        const section = this.findPromptQualityRatingSection(modal);
+        if (!section || section.buttonGroup.getAttribute(PROMPT_QUALITY_LISTENER_MARKER) === 'true') return;
+        section.buttonGroup.setAttribute(PROMPT_QUALITY_LISTENER_MARKER, 'true');
+        section.buttonGroup.setAttribute('data-fleet-plugin', this.id);
+        section.buttonGroup.addEventListener('click', (e) => {
+            const button = e.target.closest('button');
+            if (!button) return;
+            const text = button.textContent.trim();
+            if (PROMPT_QUALITY_VALUES.includes(text)) {
+                state.promptQualityRating = text;
+                Logger.debug(`Request Revisions: prompt quality rating set to "${text}"`);
+            }
+        });
+    },
+
+    restorePromptQualityRating(state, modal) {
+        if (!state.promptQualityRating || !PROMPT_QUALITY_VALUES.includes(state.promptQualityRating)) return;
+        const section = this.findPromptQualityRatingSection(modal);
+        if (!section) return;
+        const buttons = this.getRatingButtons(section.buttonGroup);
+        const targetButton = buttons[state.promptQualityRating];
+        if (!targetButton || this.isRatingButtonSelected(targetButton)) return;
+        targetButton.click();
+        Logger.debug(`Request Revisions: restored prompt quality rating to "${state.promptQualityRating}"`);
     },
 
     // Same search logic as copy-verifier-output.js (qa-comp-use)
