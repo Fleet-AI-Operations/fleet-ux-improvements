@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.21",
+  "archetypesVersion": "4.22",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -197,6 +197,10 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
+          "name": "auto-toggle-fullscreen-mode.js",
+          "version": "1.0"
+        },
+        {
           "name": "remove-textarea-gradient.js",
           "version": "1.3"
         },
@@ -221,6 +225,10 @@
       "urlPattern": "work/problems/respond-feedback/edit*",
       "disambiguationSelectors": [],
       "plugins": [
+        {
+          "name": "auto-toggle-fullscreen-mode.js",
+          "version": "1.0"
+        },
         {
           "name": "remove-textarea-gradient.js",
           "version": "1.3"
@@ -323,6 +331,10 @@
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
       "plugins": [
+        {
+          "name": "auto-toggle-fullscreen-mode.js",
+          "version": "1.0"
+        },
         {
           "name": "hide-testing-environment-banner.js",
           "version": "1.0"
