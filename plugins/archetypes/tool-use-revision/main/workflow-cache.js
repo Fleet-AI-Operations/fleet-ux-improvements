@@ -4,7 +4,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
-    _version: '1.32',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -20,17 +20,25 @@ const plugin = {
     },
 
     selectors: {
-        toolCard: 'div.rounded-lg.border.transition-colors',
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
-        stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
+        toolCard: '[data-ui="workflow-step"]',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors',
+        toolHeader: '[data-ui="step-header"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        stableParent: '[data-ui="workflow-steps-container"]',
+        stableParentFallback: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
         toolsContainer: '.space-y-3',
-        workflowToolbar: '.border-b.h-9',
-        toolSearchInput: 'input[placeholder="Search tools, descriptions, parameters..."]',
+        workflowToolbar: '[data-ui="workflow-toolbar"]',
+        workflowToolbarFallback: '.border-b.h-9',
+        workflowClear: '[data-ui="workflow-clear"]',
+        toolSearchInput: '[data-ui="tools-search"]',
+        toolSearchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]',
         toolClearButton: 'button.wf-clear-search-btn',
         toolTabList: '[role="tablist"]',
         toolTab: 'button[role="tab"]',
-        toolListRoot: 'div.p-2.space-y-1',
-        toolListItem: 'button.group\\/tool'
+        toolListRoot: '[data-ui="tools-list"]',
+        toolListRootFallback: 'div.p-2.space-y-1',
+        toolListItem: '[data-ui="tool-item"]',
+        toolListItemFallback: 'button.group\\/tool'
     },
 
     storageKeys: {
@@ -38,10 +46,18 @@ const plugin = {
         latestSnapshotUrl: 'workflow-cache-latest-url'
     },
 
-    getToolsContainer(stableParent) {
+    getStepsContainer(stableParent) {
         if (!stableParent) return null;
+        if (stableParent.getAttribute('data-ui') === 'workflow-steps-container') return stableParent;
         return stableParent.querySelector(':scope > ' + this.selectors.toolsContainer) ||
             stableParent.querySelector(this.selectors.toolsContainer);
+    },
+
+    getToolCards(container) {
+        if (!container) return [];
+        const byDataUi = container.querySelectorAll(this.selectors.toolCard);
+        if (byDataUi.length) return Array.from(byDataUi);
+        return Array.from(container.querySelectorAll(this.selectors.toolCardFallback));
     },
 
     onMutation(state, context) {
@@ -78,7 +94,7 @@ const plugin = {
             state.observedParent = stableParent;
         }
 
-        const toolsContainer = this.getToolsContainer(stableParent);
+        const toolsContainer = this.getStepsContainer(stableParent);
         if (toolsContainer && toolsContainer !== state.observedContainer) {
             this.attachContainerObservers(toolsContainer, state);
             state.observedContainer = toolsContainer;
@@ -153,7 +169,7 @@ const plugin = {
             Logger.warn('Workflow cache: captureSnapshot called with no container');
             return [];
         }
-        const cards = container.querySelectorAll(this.selectors.toolCard);
+        const cards = this.getToolCards(container);
         if (!cards.length) {
             Logger.warn('Workflow cache: snapshot found no tool cards in container');
             return [];
@@ -192,7 +208,7 @@ const plugin = {
     },
 
     getToolNameFromCard(card) {
-        const header = card.querySelector(this.selectors.toolHeader);
+        const header = card.querySelector(this.selectors.toolHeader) || card.querySelector(this.selectors.toolHeaderFallback);
         if (!header) {
             Logger.warn('Workflow cache: getToolNameFromCard found no header in card');
             return '';
@@ -212,12 +228,15 @@ const plugin = {
             Logger.warn('Workflow cache: getParamsFromCard found no open parameters content (card may be collapsed)');
             return params;
         }
-        const spaceY3 = content.querySelector('div.space-y-3');
+        const spaceY3 = content.querySelector('div.space-y-3') || content.querySelector('[data-ui="step-parameters"]');
         if (!spaceY3) {
             Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
             return params;
         }
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
+        const paramBlocks = spaceY3.querySelectorAll('[data-param]');
+        const blocks = paramBlocks.length
+            ? Array.from(paramBlocks)
+            : Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
@@ -229,6 +248,8 @@ const plugin = {
     },
 
     getParamNameFromBlock(block) {
+        const dataParam = block.getAttribute && block.getAttribute('data-param');
+        if (dataParam) return dataParam.trim();
         const code = block.querySelector('code.text-xs.font-mono');
         if (code) return code.textContent.trim();
         const label = block.querySelector('label[for^="param-"]');
@@ -237,6 +258,8 @@ const plugin = {
     },
 
     getParamTypeFromBlock(block) {
+        const dataType = block.getAttribute && block.getAttribute('data-param-type');
+        if (dataType) return (dataType || '').trim().toLowerCase().replace(/\s+/g, '');
         const typeDiv = block.querySelector('div.inline-flex.whitespace-nowrap.rounded-md.border.font-medium');
         if (!typeDiv) return '';
         const raw = (typeDiv.textContent || '').trim().toLowerCase();
@@ -406,7 +429,7 @@ const plugin = {
 
     ensureEmptyStateSection(state, stableParent) {
         if (!stableParent) return;
-        const toolsContainer = this.getToolsContainer(stableParent);
+        const toolsContainer = this.getStepsContainer(stableParent);
         const hasSteps = toolsContainer && toolsContainer.children.length > 0;
         const emptyStateEl = Array.from(stableParent.children).find(el => {
             const p = el.querySelector('p.text-sm.font-medium, p.font-medium');
@@ -478,7 +501,7 @@ const plugin = {
                 return;
             }
 
-            const toolsContainer = this.getToolsContainer(stableParent);
+            const toolsContainer = this.getStepsContainer(stableParent);
             await this.clearWorkflowTools(panel, toolsContainer);
 
             for (const entry of entries) {
@@ -509,7 +532,7 @@ const plugin = {
                     continue;
                 }
 
-                const currentContainer = this.getToolsContainer(stableParent);
+                const currentContainer = this.getStepsContainer(stableParent);
                 const prevCount = currentContainer ? currentContainer.querySelectorAll(this.selectors.toolCard).length : 0;
                 callBtn.click();
 
@@ -558,11 +581,13 @@ const plugin = {
     },
 
     findToolPanelRoot() {
-        const input = document.querySelector(this.selectors.toolSearchInput);
+        const input = document.querySelector(this.selectors.toolSearchInput) || document.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return null;
+        const toolsPanel = input.closest('[data-ui="tools-panel"]');
+        if (toolsPanel) return toolsPanel;
         let el = input.parentElement;
         while (el && el !== document.body) {
-            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot)) {
+            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot) || el.querySelector(this.selectors.toolListRootFallback)) {
                 return el;
             }
             el = el.parentElement;
@@ -572,7 +597,7 @@ const plugin = {
 
     clearToolSearch(toolPanelRoot) {
         if (!toolPanelRoot) return;
-        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput);
+        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput) || toolPanelRoot.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return;
         const clearBtn = toolPanelRoot.querySelector(this.selectors.toolClearButton);
         if (clearBtn && clearBtn.offsetParent !== null) {
@@ -599,7 +624,7 @@ const plugin = {
             return { toolToTab, tabButtons };
         }
 
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         for (const tab of tabs) {
             const tabName = this.getTabLabel(tab);
             if (!tabName) continue;
@@ -642,7 +667,7 @@ const plugin = {
     async switchToToolTab(tabInfo, tabName, toolPanelRoot) {
         if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
         const tab = tabInfo.tabButtons[tabName];
-        const listRoot = toolPanelRoot ? toolPanelRoot.querySelector(this.selectors.toolListRoot) : null;
+        const listRoot = toolPanelRoot ? (toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback)) : null;
         const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
         this.activateTab(tab);
         await this.waitForTabActive(tab);
@@ -654,9 +679,10 @@ const plugin = {
     },
 
     readToolList(toolPanelRoot) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return [];
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         const tools = [];
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
@@ -667,6 +693,8 @@ const plugin = {
     },
 
     getToolNameFromListItem(item) {
+        const dataName = item.getAttribute && item.getAttribute('data-ui-name');
+        if (dataName) return this.normalizeToolName(dataName);
         const primary = item.querySelector('span.text-xs.font-medium.text-foreground span span');
         const fallback = item.querySelector('span.text-xs.font-medium.text-foreground');
         const text = primary ? primary.textContent : (fallback ? fallback.textContent : item.textContent);
@@ -674,13 +702,16 @@ const plugin = {
     },
 
     findToolCallButton(toolPanelRoot, toolName) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return null;
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         const target = this.normalizeToolName(toolName);
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
             if (!name || name !== target) continue;
+            const callBtn = item.querySelector('[data-ui="tool-add-to-workflow"]');
+            if (callBtn) return callBtn;
             const btns = Array.from(item.querySelectorAll('button'));
             return btns.find(btn => btn.textContent.trim() === 'Call') || null;
         }
@@ -692,7 +723,8 @@ const plugin = {
     },
 
     readToolNamesFromList(listRoot) {
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         return items.map(item => this.getToolNameFromListItem(item)).filter(Boolean);
     },
 
@@ -742,9 +774,9 @@ const plugin = {
             Logger.debug('Workflow cache: no workflow container (empty), skip clear');
             return;
         }
-        const toolbar = panel.querySelector(this.selectors.workflowToolbar);
+        const toolbar = panel.querySelector(this.selectors.workflowToolbar) || panel.querySelector(this.selectors.workflowToolbarFallback);
         if (!toolbar) return;
-        const clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
+        const clearBtn = toolbar.querySelector(this.selectors.workflowClear) || Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
         if (!clearBtn) return;
         clearBtn.click();
         await this.waitForContainerEmpty(toolsContainer);
@@ -753,12 +785,12 @@ const plugin = {
 
     async waitForContainerEmpty(container, timeoutMs = 50) {
         if (!container) return true;
-        const existing = container.querySelectorAll(this.selectors.toolCard);
+        const existing = this.getToolCards(container);
         if (existing.length === 0) return true;
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const remaining = container.querySelectorAll(this.selectors.toolCard);
+                const remaining = this.getToolCards(container);
                 if (remaining.length === 0) {
                     observer.disconnect();
                     resolve(true);
@@ -774,9 +806,9 @@ const plugin = {
 
     async waitForNewToolCard(stableParent, previousCount, timeoutMs = 50) {
         if (!stableParent) return null;
-        const container = this.getToolsContainer(stableParent);
+        const container = this.getStepsContainer(stableParent);
         if (container) {
-            const cards = container.querySelectorAll(this.selectors.toolCard);
+            const cards = this.getToolCards(container);
             if (cards.length > previousCount) {
                 return cards[previousCount] ?? null;
             }
@@ -784,9 +816,9 @@ const plugin = {
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const c = this.getToolsContainer(stableParent);
+                const c = this.getStepsContainer(stableParent);
                 if (!c) return;
-                const updated = c.querySelectorAll(this.selectors.toolCard);
+                const updated = this.getToolCards(c);
                 if (updated.length > previousCount) {
                     observer.disconnect();
                     resolve(updated[previousCount] ?? null);
@@ -1108,11 +1140,11 @@ const plugin = {
         this.disconnectContainerObservers(state);
 
         const self = this;
-        const toolCardSelector = this.selectors.toolCard;
+        const toolCardSelector = this.selectors.toolCard + ',' + this.selectors.toolCardFallback;
 
         const isToolCardOrWrapper = (node) => {
             if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.matches) return false;
-            return node.matches(toolCardSelector) || node.querySelector(toolCardSelector);
+            return node.matches(this.selectors.toolCard) || node.matches(this.selectors.toolCardFallback) || node.querySelector(this.selectors.toolCard) || node.querySelector(this.selectors.toolCardFallback);
         };
 
         const childListObserver = new MutationObserver((mutations) => {
@@ -1178,33 +1210,33 @@ const plugin = {
     },
 
     findWorkflowPanel() {
+        const byDataUi = document.querySelector('[data-ui="workflow-panel"]');
+        if (byDataUi) return byDataUi;
+
         const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
             context: `${this.id}.panels`
         });
-
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector(this.selectors.workflowToolbar) || candidate.querySelector(this.selectors.workflowToolbarFallback);
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
                 );
-                if (workflowText) {
-                    return candidate;
-                }
+                if (workflowText) return candidate;
             }
         }
-
         return null;
     },
 
     findStableParent(panel) {
         if (!panel) return null;
+        const byDataUi = panel.querySelector(this.selectors.stableParent);
+        if (byDataUi) return byDataUi;
         const scrollables = panel.querySelectorAll('.overflow-y-auto');
         for (const scrollable of scrollables) {
-            const stable = scrollable.querySelector(this.selectors.stableParent);
+            const stable = scrollable.querySelector(this.selectors.stableParentFallback);
             if (stable) return stable;
         }
-        // Fallback for creation/revision pages: use first scrollable and find .space-y-3 inside it
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (scrollable && scrollable.querySelector(this.selectors.toolsContainer)) {
             return scrollable;

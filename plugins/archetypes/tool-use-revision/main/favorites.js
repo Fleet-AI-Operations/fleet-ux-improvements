@@ -6,18 +6,16 @@ const plugin = {
     id: 'favorites',
     name: 'Tool Favorites',
     description: 'Add favorite stars to tools list',
-    _version: '3.9',
+    _version: '5.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, containerSelector: null },
 
-    // Plugin-specific selectors - using semantic patterns
     selectors: {
-        // Semantic: Find search input by placeholder text (Pattern 6)
-        searchInput: 'input[placeholder="Search tools, descriptions, parameters..."]',
-        // Tool buttons identified by stable class
-        toolButton: 'button.group\\/tool',
-        // Tool name span within button
+        searchInput: '[data-ui="tools-search"]',
+        searchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]',
+        toolButton: '[data-ui="tool-item"]',
+        toolButtonFallback: 'button.group\\/tool',
         toolTitleSpan: 'span.text-xs.font-medium.text-foreground'
     },
 
@@ -90,11 +88,12 @@ const plugin = {
 
         const favoriteTools = new Set(Storage.get(Context.storageKeys.favoriteTools, []));
 
-        // Find all tool buttons using semantic selector (stable class)
-        const toolButtons = Context.dom.queryAll(this.selectors.toolButton, {
-            root: toolsContainer,
-            context: `${this.id}.toolButtons`
-        });
+        let toolButtons = toolsContainer.querySelectorAll(this.selectors.toolButton);
+        if (toolButtons.length === 0) {
+            toolButtons = Context.dom.queryAll(this.selectors.toolButtonFallback, { root: toolsContainer, context: `${this.id}.toolButtons` });
+        } else {
+            toolButtons = Array.from(toolButtons);
+        }
 
         toolButtons.forEach(button => {
             // Check if star already exists
@@ -143,53 +142,52 @@ const plugin = {
     },
 
     findToolsContainer() {
-        // Strategy 1: Find search input by placeholder (Pattern 6: Placeholder/Label Text)
-        const searchInput = Context.dom.query(this.selectors.searchInput, {
-            context: `${this.id}.searchInput`
-        });
+        const searchInput = document.querySelector(this.selectors.searchInput) || Context.dom.query(this.selectors.searchInputFallback, { context: `${this.id}.searchInput` });
 
         if (searchInput) {
-            // Navigate to scrollable container (Pattern 1: Stable root + relative navigation)
-            // The search input is typically in a border-b container, scrollable area is sibling or parent
             let container = searchInput.closest('.border-b')?.nextElementSibling;
             if (container && container.classList.contains('flex-1') && container.classList.contains('overflow-y-auto')) {
+                const toolsList = container.querySelector('[data-ui="tools-list"]');
+                if (toolsList) return toolsList;
                 const toolsArea = container.querySelector('div.p-2, div.space-y-1, div');
                 if (toolsArea) return toolsArea;
             }
 
-            // Alternative: Find scrollable parent
+            const toolsPanel = searchInput.closest('[data-ui="tools-panel"]');
+            if (toolsPanel) {
+                const toolsList = toolsPanel.querySelector('[data-ui="tools-list"]');
+                if (toolsList) return toolsList;
+            }
+
             container = searchInput.closest('.overflow-y-auto');
             if (container) {
+                const toolsList = container.querySelector('[data-ui="tools-list"]');
+                if (toolsList) return toolsList;
                 const toolsArea = container.querySelector('div.p-2, div.space-y-1, div');
                 if (toolsArea) return toolsArea;
             }
         }
 
-        // Strategy 2: Find by tool buttons directly (Pattern 2: Functional with fallbacks)
-        const toolButtons = Context.dom.queryAll(this.selectors.toolButton, {
-            context: `${this.id}.toolButtonsFallback`
-        });
+        let toolButtons = Context.dom.queryAll(this.selectors.toolButton, { context: `${this.id}.toolButtonsFallback` });
+        if (toolButtons.length === 0) {
+            toolButtons = Context.dom.queryAll(this.selectors.toolButtonFallback, { context: `${this.id}.toolButtonsFallback` });
+        }
         if (toolButtons.length > 0) {
-            // Find common ancestor that contains all tool buttons
+            const sel = toolButtons[0].matches(this.selectors.toolButton) ? this.selectors.toolButton : this.selectors.toolButtonFallback;
             const firstButton = toolButtons[0];
             let parent = firstButton.parentElement;
             while (parent) {
-                // Check if this parent contains all tool buttons
-                const buttonsInParent = parent.querySelectorAll(this.selectors.toolButton);
-                if (buttonsInParent.length === toolButtons.length) {
-                    return parent;
-                }
+                const buttonsInParent = parent.querySelectorAll(sel);
+                if (buttonsInParent.length === toolButtons.length) return parent;
                 parent = parent.parentElement;
             }
-            // Fallback: return parent of first button
             return firstButton.parentElement;
         }
 
-        // Strategy 3: Find scrollable container with space-y-1 or p-2 (Pattern 5: Functional with fallbacks)
         const scrollableContainers = document.querySelectorAll('.overflow-y-auto');
         for (const container of scrollableContainers) {
-            const toolsArea = container.querySelector('div.p-2, div.space-y-1');
-            if (toolsArea && toolsArea.querySelector(this.selectors.toolButton)) {
+            const toolsArea = container.querySelector('[data-ui="tools-list"]') || container.querySelector('div.p-2, div.space-y-1');
+            if (toolsArea && (toolsArea.querySelector(this.selectors.toolButton) || toolsArea.querySelector(this.selectors.toolButtonFallback))) {
                 return toolsArea;
             }
         }
@@ -198,7 +196,8 @@ const plugin = {
     },
 
     getToolNameFromButton(button) {
-        // Find tool name from title span (Pattern 2: Text Content Matching)
+        const dataName = button.getAttribute && button.getAttribute('data-ui-name');
+        if (dataName) return (dataName || '').trim();
         const titleSpan = Context.dom.query(this.selectors.toolTitleSpan, {
             root: button,
             context: `${this.id}.toolTitleSpan`
@@ -279,11 +278,9 @@ const plugin = {
     },
 
     syncToolListStars(toolsContainer, favoriteTools) {
-        const toolButtons = Context.dom.queryAll(this.selectors.toolButton, {
-            root: toolsContainer,
-            context: `${this.id}.toolButtons`
-        });
-        toolButtons.forEach(button => {
+        const toolButtons = toolsContainer.querySelectorAll(this.selectors.toolButton);
+        const list = toolButtons.length ? Array.from(toolButtons) : Context.dom.queryAll(this.selectors.toolButtonFallback, { root: toolsContainer, context: `${this.id}.toolButtons` });
+        list.forEach(button => {
             const toolName = this.getToolNameFromButton(button);
             const star = button.querySelector('.favorite-star');
             if (!toolName || !star) return;

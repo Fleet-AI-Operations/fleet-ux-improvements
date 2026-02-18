@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.0',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     
