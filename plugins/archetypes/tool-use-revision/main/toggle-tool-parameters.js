@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -18,10 +18,16 @@ const plugin = {
         }
     ],
 
+    // Same styling as guideline-buttons.js but with less top/bottom padding (py-1.5)
+    paramSectionBtnClass: 'wf-param-section-btn inline-flex items-center gap-1 justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground rounded-sm text-xs py-1.5 pl-2 pr-2',
+
     selectors: {
-        toolHeader: '[data-ui="step-header"]',
+        workflowPanel: '[data-ui="workflow-panel"]',
+        workflowStepsContainer: '[data-ui="workflow-steps-container"]',
+        workflowStep: '[data-ui="workflow-step"]',
+        stepHeader: '[data-ui="step-header"]',
+        stepParameters: '[data-ui="step-parameters"]',
         toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
-        toolCard: '[data-ui="workflow-step"]',
         toolCardFallback: 'div.rounded-lg.border.transition-colors'
     },
 
@@ -54,8 +60,8 @@ const plugin = {
 
         this.ensureExecuteClickDelegate(toolsContainer);
 
-        const toolCardsByDataUi = toolsContainer.querySelectorAll(this.selectors.toolCard);
-        const toolCards = toolCardsByDataUi.length ? Array.from(toolCardsByDataUi) : Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
+        let toolCards = Context.dom.queryAll(this.selectors.workflowStep, { root: toolsContainer, context: `${this.id}.toolCards` });
+        if (!toolCards.length) toolCards = Context.dom.queryAll(this.selectors.toolCardFallback, { root: toolsContainer, context: `${this.id}.toolCards` });
 
         let togglesAdded = 0;
 
@@ -66,7 +72,8 @@ const plugin = {
             });
             if (!collapsibleRoot) return;
 
-            const header = card.querySelector(this.selectors.toolHeader) || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
+            const header = Context.dom.query(this.selectors.stepHeader, { root: card, context: `${this.id}.toolHeader` })
+                || Context.dom.query(this.selectors.toolHeaderFallback, { root: card, context: `${this.id}.toolHeader` });
             if (!header) return;
 
             const buttonContainer = Context.dom.query('div.flex.items-center.gap-1', {
@@ -103,8 +110,8 @@ const plugin = {
                 togglesAdded++;
             }
 
-            // Hide/show toggle based on collapsed state (toggle is only relevant when open)
-            toggleBtn.style.display = isCollapsed ? 'none' : 'inline-flex';
+            // Hide the header toggle; state is controlled by "Hide Parameters" / "Show Parameters" buttons only
+            toggleBtn.style.display = 'none';
 
             // Re-enforce hidden state on each mutation to survive React re-renders
             // of collapsible content. The toggle button lives in the header (never
@@ -116,15 +123,15 @@ const plugin = {
                 }
             }
 
-            // [Parameters...] link: create/place after params div (above Execute), show only when params hidden
+            // PARAMETERS > expand button: create/place after params div (above Execute), show only when params hidden
             const paramsDiv = this.findParametersDiv(card);
             if (paramsDiv) {
                 let expandLink = card.querySelector('.wf-param-expand-link');
                 if (!expandLink) {
                     expandLink = document.createElement('button');
-                    expandLink.className = 'wf-param-expand-link text-xs font-medium text-muted-foreground hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded px-1.5 py-0.5';
+                    expandLink.className = 'wf-param-expand-link ' + this.paramSectionBtnClass;
                     expandLink.type = 'button';
-                    expandLink.textContent = '[Parameters...]';
+                    expandLink.textContent = 'Show Parameters';
                     expandLink.title = 'Show parameters';
                     expandLink.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -136,6 +143,25 @@ const plugin = {
                     paramsDiv.parentNode.insertBefore(expandLink, paramsDiv.nextSibling);
                 }
                 expandLink.style.display = (!isCollapsed && toggleBtn.dataset.paramVisible === 'false') ? 'inline-flex' : 'none';
+
+                // Parameters label: bordered button "Hide Parameters" that collapses the section when open
+                const labelEl = paramsDiv.firstElementChild;
+                if (labelEl && !labelEl.hasAttribute('data-wf-param-label')) {
+                    const labelText = labelEl.textContent.trim();
+                    if (labelText === 'Parameters' || labelText === 'PARAMETERS') {
+                        labelEl.setAttribute('data-wf-param-label', '1');
+                        labelEl.className = this.paramSectionBtnClass;
+                        labelEl.textContent = 'Hide Parameters';
+                        labelEl.setAttribute('role', 'button');
+                        labelEl.setAttribute('tabindex', '0');
+                        labelEl.setAttribute('title', 'Hide parameters');
+                        labelEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            this.handleToggle(card, toggleBtn);
+                        });
+                    }
+                }
             }
         });
 
@@ -179,12 +205,13 @@ const plugin = {
     },
 
     findParametersDiv(card) {
-        const stepParams = card.querySelector('[data-ui="step-parameters"]');
-        if (stepParams) return stepParams;
+        const byDataUi = card.querySelector(this.selectors.stepParameters);
+        if (byDataUi) return byDataUi;
         const candidates = card.querySelectorAll('div.space-y-3');
         for (const div of candidates) {
             const firstChild = div.firstElementChild;
-            if (firstChild && firstChild.textContent.trim() === 'Parameters') {
+            if (!firstChild) continue;
+            if (firstChild.textContent.trim() === 'Parameters' || firstChild.getAttribute('data-wf-param-label') === '1') {
                 return div;
             }
         }
@@ -192,13 +219,15 @@ const plugin = {
     },
 
     findWorkflowPanel() {
-        const byDataUi = document.querySelector('[data-ui="workflow-panel"]');
+        const byDataUi = document.querySelector(this.selectors.workflowPanel);
         if (byDataUi) return byDataUi;
         const panels = Context.dom.queryAll('[data-panel-id][data-panel]', { context: `${this.id}.panels` });
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('[data-ui="workflow-toolbar"]') || candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector('.border-b.h-9');
             if (toolbar) {
-                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(span => span.textContent.trim() === 'Workflow');
+                const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
+                    span => span.textContent.trim() === 'Workflow'
+                );
                 if (workflowText) return candidate;
             }
         }
@@ -207,8 +236,11 @@ const plugin = {
 
     findToolsArea(panel) {
         if (!panel) return null;
-        const stepsContainer = panel.querySelector('[data-ui="workflow-steps-container"]');
-        if (stepsContainer) return stepsContainer;
+        const container = panel.querySelector(this.selectors.workflowStepsContainer);
+        if (container) {
+            const spaceY3 = container.querySelector(':scope > .space-y-3');
+            return spaceY3 || container;
+        }
         const scrollable = panel.querySelector('.overflow-y-auto');
         if (!scrollable) return null;
         return scrollable.querySelector('.space-y-3');
@@ -222,7 +254,7 @@ const plugin = {
             if (!btn) return;
             const text = btn.textContent?.trim?.();
             if (text !== 'Execute' && text !== 'Re-execute') return;
-            const card = btn.closest(this.selectors.toolCard) || btn.closest(this.selectors.toolCardFallback);
+            const card = btn.closest(this.selectors.workflowStep) || btn.closest(this.selectors.toolCardFallback);
             if (!card || !toolsContainer.contains(card)) return;
             if (!Storage.getSubOptionEnabled(this.id, 'auto-collapse-on-execute', true)) return;
             const toggleBtn = card.querySelector('.wf-param-toggle-btn');

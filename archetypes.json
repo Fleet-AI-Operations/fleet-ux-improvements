@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.30",
+  "archetypesVersion": "4.31",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -156,7 +156,7 @@
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "3.0"
+          "version": "3.1"
         },
         {
           "name": "tool-results-resize-handle.js",
@@ -300,7 +300,7 @@
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "request-revisions.js",
