@@ -3,10 +3,10 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy/scroll warning',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
-    initialState: { missingLogged: false, lastUncertain: false },
+    initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
 
     /** Month name (3-letter) to 1-based month index. */
     MONTH_INDEX: { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 },
@@ -136,6 +136,17 @@ const plugin = {
         const todayTotalAr = todayApproved + todayFeedbackRequested;
         const dayAr = todayTotalAr > 0 ? Math.round((todayApproved / todayTotalAr) * 100) : null;
 
+        const sortedEnvsForPayload = Object.entries(envCount)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, n]) => {
+                const a = envApproved[name] || 0;
+                const f = envFeedbackRequested[name] || 0;
+                const total = a + f;
+                const ar = total > 0 ? Math.round((a / total) * 100) : null;
+                return [name, n, ar];
+            });
+        const statsPayload = JSON.stringify({ todayCount, dayAr, uncertain, env: sortedEnvsForPayload });
+
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 
         let block = card.querySelector('[data-wf-feedback-stats-block]');
@@ -145,7 +156,7 @@ const plugin = {
             block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
                 '<div class="flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
+                '<div class="text-sm text-blue-600 dark:text-blue-400" data-wf-today-count></div>',
                 '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
                 '</div>',
                 '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
@@ -190,6 +201,11 @@ const plugin = {
             Logger.log('feedback-given-stats: injected stats block');
         }
 
+        if (statsPayload === state.lastStatsPayload) {
+            state.lastUncertain = uncertain;
+            return;
+        }
+
         const todayEl = block.querySelector('[data-wf-today-count]');
         const envBreakdownEl = block.querySelector('[data-wf-env-breakdown]');
         const msgEl = block.querySelector('[data-wf-scroll-msg]');
@@ -202,19 +218,14 @@ const plugin = {
         }
 
         if (envBreakdownEl) {
-            const sortedEnvs = Object.entries(envCount).sort((a, b) => b[1] - a[1]);
             envBreakdownEl.textContent = '';
-            envBreakdownEl.className = 'text-sm text-muted-foreground text-right ml-2';
-            if (sortedEnvs.length === 0) {
+            envBreakdownEl.className = 'text-sm text-right ml-2';
+            if (sortedEnvsForPayload.length === 0) {
                 envBreakdownEl.textContent = '—';
             } else {
-                for (const [name, n] of sortedEnvs) {
-                    const a = envApproved[name] || 0;
-                    const f = envFeedbackRequested[name] || 0;
-                    const total = a + f;
-                    const ar = total > 0 ? Math.round((a / total) * 100) : null;
+                for (const [name, n, ar] of sortedEnvsForPayload) {
                     const line = document.createElement('div');
-                    line.className = 'text-sm text-muted-foreground';
+                    line.className = 'text-sm text-orange-600 dark:text-orange-400';
                     line.textContent = ar != null ? `${name}: ${n} (${ar}% AR)` : `${name}: ${n}`;
                     envBreakdownEl.appendChild(line);
                 }
@@ -248,5 +259,6 @@ const plugin = {
             Logger.info('feedback-given-stats: last visible row is today — showing uncertain count and scroll message');
         }
         state.lastUncertain = uncertain;
+        state.lastStatsPayload = statsPayload;
     }
 };
