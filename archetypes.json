@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.27",
+  "archetypesVersion": "4.28",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -169,6 +169,10 @@
         {
           "name": "text-sanitizer.js",
           "version": "2.4"
+        },
+        {
+          "name": "prompt-diff-highlight.js",
+          "version": "1.0"
         }
       ]
     },

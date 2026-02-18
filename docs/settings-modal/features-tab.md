@@ -42,6 +42,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Resizable tool results area
 - **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
+- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 
 ### Computer Use Task Creation Page
 - **Prompt Scratchpad**: Scratchpad for notes while creating tasks
