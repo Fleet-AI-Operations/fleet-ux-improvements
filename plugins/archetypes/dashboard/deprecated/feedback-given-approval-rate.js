@@ -1,4 +1,5 @@
 // ============= feedback-given-approval-rate.js =============
+// Deprecated: functionality merged into feedback-given-stats.js
 const plugin = {
     id: 'feedbackGivenApprovalRate',
     name: 'Feedback Given Approval Rate',

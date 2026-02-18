@@ -84,14 +84,9 @@
   ],
   "archetypes/dashboard/main": [
     {
-      "file": "feedback-given-approval-rate.js",
-      "name": "Feedback Given Approval Rate",
-      "description": "Show approval rate on the Feedback Given stat when both approved and feedback requested counts exist"
-    },
-    {
-      "file": "feedback-given-today-env.js",
-      "name": "Daily Feedback Breakdown",
-      "description": "Show today's feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete"
+      "file": "feedback-given-stats.js",
+      "name": "Feedback Given Stats",
+      "description": "Show overall approval rate, today's feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning"
     },
     {
       "file": "progress-prompt-expand.js",

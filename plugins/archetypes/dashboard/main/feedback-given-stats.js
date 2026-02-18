@@ -1,9 +1,9 @@
-// ============= feedback-given-today-env.js =============
+// ============= feedback-given-stats.js =============
 const plugin = {
-    id: 'feedbackGivenTodayEnv',
-    name: 'Daily Feedback Breakdown',
-    description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete',
-    _version: '2.2',
+    id: 'feedbackGivenStats',
+    name: 'Feedback Given Stats',
+    description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy/scroll warning',
+    _version: '1.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -31,11 +31,20 @@ const plugin = {
         return parsed.month === now.getMonth() + 1 && parsed.day === now.getDate();
     },
 
+    /** @returns {'approved'|'feedback-requested'|null} */
+    classifyFeedback(cell) {
+        if (!cell) return null;
+        const text = (cell.textContent || '').trim();
+        if (/approved/i.test(text)) return 'approved';
+        if (/feedback\s+requested/i.test(text)) return 'feedback-requested';
+        return null;
+    },
+
     onMutation(state, context) {
         const main = Context.dom.query('main', { context: `${this.id}.main` });
         if (!main) {
             if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: main not found');
+                Logger.debug('feedback-given-stats: main not found');
                 state.missingLogged = true;
             }
             return;
@@ -44,7 +53,7 @@ const plugin = {
         const feedbackGivenHeading = main.querySelector('h3.tracking-tight.text-base.font-medium.text-primary');
         if (!feedbackGivenHeading || feedbackGivenHeading.textContent.trim() !== 'Feedback Given') {
             if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: Feedback Given card not found');
+                Logger.debug('feedback-given-stats: Feedback Given card not found');
                 state.missingLogged = true;
             }
             return;
@@ -53,11 +62,31 @@ const plugin = {
         const card = feedbackGivenHeading.closest('.rounded-xl');
         if (!card) return;
 
+        // 1. Overall approval rate on card subtext (once)
+        if (!card.hasAttribute('data-wf-feedback-stats')) {
+            const subtextEl = card.querySelector('p.text-sm.text-muted-foreground');
+            if (subtextEl && /approved.*feedback requested|feedback requested.*approved/i.test(subtextEl.textContent)) {
+                const text = subtextEl.textContent.trim();
+                const match = text.match(/(\d+)\s+approved,\s*(\d+)\s+feedback\s+requested/i);
+                if (match) {
+                    const approved = parseInt(match[1], 10);
+                    const feedbackRequested = parseInt(match[2], 10);
+                    const total = approved + feedbackRequested;
+                    if (total > 0 && !subtextEl.textContent.includes('approval rate)')) {
+                        const rate = Math.round((approved / total) * 100);
+                        subtextEl.textContent = text + ` (${rate}% approval rate)`;
+                        Logger.log('feedback-given-stats: added overall approval rate to Feedback Given stat', { approved, feedbackRequested, rate });
+                    }
+                }
+            }
+            card.setAttribute('data-wf-feedback-stats', 'true');
+        }
+
         const panel = card.closest('[role="tabpanel"]');
         const table = panel ? panel.querySelector('table') : null;
         if (!table) {
             if (!state.missingLogged) {
-                Logger.debug('feedback-given-today-env: table not found in tab panel');
+                Logger.debug('feedback-given-stats: table not found in tab panel');
                 state.missingLogged = true;
             }
             return;
@@ -66,43 +95,58 @@ const plugin = {
 
         const rows = Array.from(table.querySelectorAll('tbody tr'));
         let todayCount = 0;
+        let todayApproved = 0;
+        let todayFeedbackRequested = 0;
         const envCount = Object.create(null);
+        const envApproved = Object.create(null);
+        const envFeedbackRequested = Object.create(null);
         let lastRowIsToday = false;
 
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
             const dateCell = tr.cells[0];
             const envCell = tr.cells[2];
+            const feedbackCell = tr.cells[3];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             const rowIsToday = this.isToday(parsed);
             if (rowIsToday) {
                 todayCount++;
-                if (env) envCount[env] = (envCount[env] || 0) + 1;
+                if (env) {
+                    envCount[env] = (envCount[env] || 0) + 1;
+                }
+                const feedback = this.classifyFeedback(feedbackCell);
+                if (feedback === 'approved') {
+                    todayApproved++;
+                    if (env) {
+                        envApproved[env] = (envApproved[env] || 0) + 1;
+                    }
+                } else if (feedback === 'feedback-requested') {
+                    todayFeedbackRequested++;
+                    if (env) {
+                        envFeedbackRequested[env] = (envFeedbackRequested[env] || 0) + 1;
+                    }
+                }
             }
             if (i === rows.length - 1) lastRowIsToday = rowIsToday;
         }
 
         const uncertain = rows.length > 0 && lastRowIsToday;
-        const envBreakdownText = Object.keys(envCount).length === 0
-            ? '—'
-            : Object.entries(envCount)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, n]) => `${name}: ${n}`)
-                .join(', ');
+        const todayTotalAr = todayApproved + todayFeedbackRequested;
+        const dayAr = todayTotalAr > 0 ? Math.round((todayApproved / todayTotalAr) * 100) : null;
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 
-        let block = card.querySelector('[data-wf-feedback-today-env-block]');
+        let block = card.querySelector('[data-wf-feedback-stats-block]');
         if (!block) {
             block = document.createElement('div');
-            block.setAttribute('data-wf-feedback-today-env-block', 'true');
+            block.setAttribute('data-wf-feedback-stats-block', 'true');
             block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
-                '<div class="flex justify-between gap-4">',
+                '<div class="flex flex-col gap-1">',
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
+                '<div class="text-sm text-muted-foreground" data-wf-env-breakdown></div>',
                 '</div>',
                 '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
                 '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
@@ -124,7 +168,7 @@ const plugin = {
                     }
                     if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('feedback-given-today-env: copied breakdown to clipboard');
+                        Logger.log('feedback-given-stats: copied breakdown to clipboard');
                         copyBtn.textContent = 'Copied!';
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
@@ -133,7 +177,7 @@ const plugin = {
                             copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
                         }, 5000);
                     }).catch((err) => {
-                        Logger.error('feedback-given-today-env: failed to copy breakdown', err);
+                        Logger.error('feedback-given-stats: failed to copy breakdown', err);
                     });
                 });
             }
@@ -143,17 +187,40 @@ const plugin = {
             } else {
                 card.appendChild(block);
             }
-            card.setAttribute('data-wf-feedback-today-env', 'true');
-            Logger.log('feedback-given-today-env: injected today count and environment breakdown block');
+            Logger.log('feedback-given-stats: injected stats block');
         }
 
         const todayEl = block.querySelector('[data-wf-today-count]');
-        const envEl = block.querySelector('[data-wf-env-breakdown]');
+        const envBreakdownEl = block.querySelector('[data-wf-env-breakdown]');
         const msgEl = block.querySelector('[data-wf-scroll-msg]');
         const copySectionEl = block.querySelector('[data-wf-copy-section]');
         const copyBtn = block.querySelector('[data-wf-copy-btn]');
-        if (todayEl) todayEl.textContent = uncertain ? `${todayCount}? today` : `${todayCount} today`;
-        if (envEl) envEl.textContent = envBreakdownText;
+
+        const todayLabel = uncertain ? `${todayCount}? today` : `${todayCount} today`;
+        if (todayEl) {
+            todayEl.textContent = dayAr != null ? `${todayLabel} (${dayAr}% AR)` : todayLabel;
+        }
+
+        if (envBreakdownEl) {
+            const sortedEnvs = Object.entries(envCount).sort((a, b) => b[1] - a[1]);
+            envBreakdownEl.textContent = '';
+            envBreakdownEl.className = 'text-sm text-muted-foreground';
+            if (sortedEnvs.length === 0) {
+                envBreakdownEl.textContent = '—';
+            } else {
+                for (const [name, n] of sortedEnvs) {
+                    const a = envApproved[name] || 0;
+                    const f = envFeedbackRequested[name] || 0;
+                    const total = a + f;
+                    const ar = total > 0 ? Math.round((a / total) * 100) : null;
+                    const line = document.createElement('div');
+                    line.className = 'text-sm text-muted-foreground';
+                    line.textContent = ar != null ? `${name}: ${n} (${ar}% AR)` : `${name}: ${n}`;
+                    envBreakdownEl.appendChild(line);
+                }
+            }
+        }
+
         if (copySectionEl) copySectionEl.classList.toggle('hidden', todayCount === 0);
         if (msgEl) {
             if (uncertain) {
@@ -178,7 +245,7 @@ const plugin = {
             copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
         }
         if (uncertain && !state.lastUncertain) {
-            Logger.info('feedback-given-today-env: last visible row is today — showing uncertain count and scroll message');
+            Logger.info('feedback-given-stats: last visible row is today — showing uncertain count and scroll message');
         }
         state.lastUncertain = uncertain;
     }
