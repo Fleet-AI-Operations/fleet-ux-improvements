@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy/scroll warning',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -144,9 +144,9 @@ const plugin = {
             block.setAttribute('data-wf-feedback-stats-block', 'true');
             block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
-                '<div class="flex flex-col gap-1">',
+                '<div class="flex justify-between gap-4">',
                 '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
-                '<div class="text-sm text-muted-foreground" data-wf-env-breakdown></div>',
+                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
                 '</div>',
                 '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
                 '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
@@ -204,7 +204,7 @@ const plugin = {
         if (envBreakdownEl) {
             const sortedEnvs = Object.entries(envCount).sort((a, b) => b[1] - a[1]);
             envBreakdownEl.textContent = '';
-            envBreakdownEl.className = 'text-sm text-muted-foreground';
+            envBreakdownEl.className = 'text-sm text-muted-foreground text-right ml-2';
             if (sortedEnvs.length === 0) {
                 envBreakdownEl.textContent = '—';
             } else {
