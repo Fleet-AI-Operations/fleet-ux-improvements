@@ -7,6 +7,8 @@
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
 // @match        https://fleetai.com/*
+// @updateURL    https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/dev/fleet-godmode.user.js
+// @downloadURL  https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/dev/fleet-godmode.user.js
 // @run-at       document-start
 // ==/UserScript==
 
