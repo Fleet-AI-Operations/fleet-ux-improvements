@@ -1,9 +1,9 @@
 // ============= feedback-given-today-env.js =============
 const plugin = {
     id: 'feedbackGivenTodayEnv',
-    name: 'Feedback Given Today and Environment',
+    name: 'Daily Feedback Breakdown',
     description: 'Show today\'s feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },

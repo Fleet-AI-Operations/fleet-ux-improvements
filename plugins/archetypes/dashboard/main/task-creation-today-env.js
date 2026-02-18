@@ -1,9 +1,9 @@
 // ============= task-creation-today-env.js =============
 const plugin = {
     id: 'taskCreationTodayEnv',
-    name: 'Task Creation Today and Environment',
+    name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },

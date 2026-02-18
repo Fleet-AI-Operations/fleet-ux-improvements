@@ -15,6 +15,11 @@
   ],
   "archetypes/comp-use-revision/main": [
     {
+      "file": "auto-toggle-fullscreen-mode.js",
+      "name": "Auto Toggle Fullscreen Mode",
+      "description": "Clicks the fullscreen (monitor) toggle button once when the page loads to enter fullscreen mode"
+    },
+    {
       "file": "bug-report-expand.js",
       "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
@@ -41,6 +46,11 @@
     }
   ],
   "archetypes/comp-use-task-creation/main": [
+    {
+      "file": "auto-toggle-fullscreen-mode.js",
+      "name": "Auto Toggle Fullscreen Mode",
+      "description": "Clicks the fullscreen (monitor) toggle button once when the page loads to enter fullscreen mode"
+    },
     {
       "file": "autocorrect-textareas.js",
       "name": "Disable Prompt Text Area Autocorrect",
@@ -80,21 +90,26 @@
     },
     {
       "file": "feedback-given-today-env.js",
-      "name": "Feedback Given Today and Environment",
+      "name": "Daily Feedback Breakdown",
       "description": "Show today's feedback count and environment breakdown under the Feedback Given stat, with a warning when list may be incomplete"
     },
     {
       "file": "progress-prompt-expand.js",
-      "name": "Progress Prompt Expand",
-      "description": "Hover over My Progress task items to expand truncated prompts"
+      "name": "Expanded Submitted Prompts",
+      "description": "Hover over task items to expand truncated prompts"
     },
     {
       "file": "task-creation-today-env.js",
-      "name": "Task Creation Today and Environment",
+      "name": "Daily Task Creation Breakdown",
       "description": "Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete"
     }
   ],
   "archetypes/qa-comp-use/main": [
+    {
+      "file": "auto-toggle-fullscreen-mode.js",
+      "name": "Auto Toggle Fullscreen Mode",
+      "description": "Clicks the fullscreen (monitor) toggle button once when the page loads to enter fullscreen mode"
+    },
     {
       "file": "bug-report-expand.js",
       "name": "Bug Report Readability Fix",

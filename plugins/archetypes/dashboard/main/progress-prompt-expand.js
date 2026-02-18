@@ -2,9 +2,9 @@
 // ============= progress-prompt-expand.js =============
 const plugin = {
     id: 'progressPromptExpand',
-    name: 'Progress Prompt Expand',
-    description: 'Hover over My Progress task items to expand truncated prompts',
-    _version: '1.6',
+    name: 'Expanded Submitted Prompts',
+    description: 'Hover over task items to expand truncated prompts',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },

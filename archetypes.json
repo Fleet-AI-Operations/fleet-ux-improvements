@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.22",
+  "archetypesVersion": "4.23",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -33,7 +33,7 @@
       "plugins": [
         {
           "name": "progress-prompt-expand.js",
-          "version": "1.6"
+          "version": "1.7"
         },
         {
           "name": "feedback-given-approval-rate.js",
@@ -41,11 +41,11 @@
         },
         {
           "name": "feedback-given-today-env.js",
-          "version": "2.1"
+          "version": "2.2"
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "1.4"
+          "version": "1.5"
         }
       ]
     },
@@ -87,7 +87,7 @@
         },
         {
           "name": "remove-textarea-gradient.js",
-          "version": "2.1"
+          "version": "2.2"
         },
         {
           "name": "remember-layout-proportions.js",
