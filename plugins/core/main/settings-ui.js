@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.30',
+    _version: '5.31',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -547,7 +547,7 @@ const plugin = {
                             <label style="font-size: 14px; font-weight: 500; cursor: pointer; color: var(--foreground, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" for="wf-plugin-${plugin.id}">
                                 ${plugin.name || plugin.id}
                             </label>
-                            ${plugin._version ? `<span style="font-size: 11px; font-weight: 400; color: var(--foreground, #333); flex-shrink: 0;">(${plugin._version})</span>` : ''}
+                            ${plugin._version ? `<span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #666); flex-shrink: 0;">(${plugin._version})</span>` : ''}
                         </div>
                     </div>
                     ${this._createSwitchHTML(`wf-plugin-${plugin.id}`, isEnabled, plugin.id, isDisabled)}
