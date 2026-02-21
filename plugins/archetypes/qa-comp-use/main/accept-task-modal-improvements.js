@@ -47,7 +47,7 @@ const plugin = {
     id: 'acceptTaskModalImprovements',
     name: 'Accept Task Modal Improvements',
     description: 'Auto-check QA checkboxes and add a button to paste a positive comment',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -69,6 +69,7 @@ const plugin = {
     initialState: {
         missingLogged: false,
         lastProcessedDialog: null,
+        lastAutoCheckedDialog: null,
         motivateButtonAdded: false
     },
 
@@ -89,6 +90,7 @@ const plugin = {
         if (!approveModal) {
             if (state.lastProcessedDialog) {
                 state.lastProcessedDialog = null;
+                state.lastAutoCheckedDialog = null;
                 state.motivateButtonAdded = false;
             }
             if (!state.missingLogged) {
@@ -101,8 +103,12 @@ const plugin = {
         state.missingLogged = false;
 
         const autoCheckEnabled = Storage.getSubOptionEnabled(this.id, 'auto-check-checkboxes', false);
-        if (autoCheckEnabled) {
-            this.autoCheckCheckboxes(approveModal);
+        if (autoCheckEnabled && state.lastAutoCheckedDialog !== approveModal) {
+            state.lastAutoCheckedDialog = approveModal;
+            const self = this;
+            setTimeout(() => {
+                self.autoCheckCheckboxes(approveModal);
+            }, 80);
         }
 
         const motivateEnabled = Storage.getSubOptionEnabled(this.id, 'motivate-worker-button', true);
@@ -119,7 +125,7 @@ const plugin = {
         let checked = 0;
         checkboxes.forEach(btn => {
             if (btn.getAttribute('data-state') === 'unchecked' || btn.getAttribute('aria-checked') === 'false') {
-                btn.click();
+                btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                 checked++;
             }
         });
@@ -163,8 +169,7 @@ const plugin = {
         btn.title = 'Insert a random positive feedback blurb into the optional comments box';
         btn.addEventListener('click', () => {
             const blurb = ENCOURAGEMENT_BLURBS[Math.floor(Math.random() * ENCOURAGEMENT_BLURBS.length)];
-            const current = textarea.value.trim();
-            textarea.value = current ? `${current} ${blurb}` : blurb;
+            textarea.value = blurb;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
             Logger.log('Accept Task Modal Improvements: inserted positive comment');
         });
