@@ -47,7 +47,7 @@ const plugin = {
     id: 'acceptTaskModalImprovements',
     name: 'Accept Task Modal Improvements',
     description: 'Auto-check QA checkboxes and add a button to paste a positive comment',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -108,7 +108,7 @@ const plugin = {
             const self = this;
             setTimeout(() => {
                 self.autoCheckCheckboxes(approveModal);
-            }, 80);
+            }, 150);
         }
 
         const motivateEnabled = Storage.getSubOptionEnabled(this.id, 'motivate-worker-button', true);
@@ -129,14 +129,18 @@ const plugin = {
         toCheck.forEach((btn, i) => {
             setTimeout(() => {
                 if (!document.contains(btn)) return;
+                btn.scrollIntoView({ block: 'nearest', behavior: 'auto' });
                 btn.focus();
                 const checkedBefore = btn.getAttribute('data-state') === 'checked';
-                btn.click();
-                const checkedAfter = btn.getAttribute('data-state') === 'checked';
-                if (!checkedBefore && !checkedAfter) {
-                    this.invokeCheckboxHandler(btn);
-                }
-            }, i * 60);
+                requestAnimationFrame(() => {
+                    if (!document.contains(btn)) return;
+                    btn.click();
+                    const checkedAfter = btn.getAttribute('data-state') === 'checked';
+                    if (!checkedBefore && !checkedAfter) {
+                        this.invokeCheckboxHandler(btn);
+                    }
+                });
+            }, i * 80);
         });
         Logger.log(`Accept Task Modal Improvements: auto-checked ${toCheck.length} QA checklist item(s)`);
     },
