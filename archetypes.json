@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.38",
+  "archetypesVersion": "4.39",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -321,6 +321,10 @@
         {
           "name": "workflow-cache.js",
           "version": "2.1"
+        },
+        {
+          "name": "accept-task-modal-improvements.js",
+          "version": "1.5"
         }
       ]
     },
@@ -369,7 +373,7 @@
         },
         {
           "name": "accept-task-modal-improvements.js",
-          "version": "1.4"
+          "version": "1.5"
         }
       ]
     }
