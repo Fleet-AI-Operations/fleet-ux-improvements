@@ -12,9 +12,9 @@ const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
 
 const plugin = {
     id: 'requestRevisions',
-    name: 'Request Revisions Improvements',
+    name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.3',
+    _version: '4.4',
     enabledByDefault: true,
     phase: 'mutation',
     

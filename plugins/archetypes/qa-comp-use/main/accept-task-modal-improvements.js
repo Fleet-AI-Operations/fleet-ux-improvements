@@ -45,9 +45,9 @@ const ENCOURAGEMENT_BLURBS = [
 
 const plugin = {
     id: 'acceptTaskModalImprovements',
-    name: 'Accept Task Modal Improvements',
+    name: '"Accept Task" Modal Improvements',
     description: 'Add a button above the optional comments box to paste a positive blurb',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 

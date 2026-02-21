@@ -2,8 +2,8 @@
 const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
-    description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy/scroll warning',
-    _version: '1.2',
+    description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },

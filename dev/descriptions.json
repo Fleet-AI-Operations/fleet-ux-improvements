@@ -40,6 +40,11 @@
       "description": "Adds an adjustable height scratchpad to the page"
     },
     {
+      "file": "remember-layout-proportions.js",
+      "name": "Remember Layout Proportions",
+      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
+    },
+    {
       "file": "remove-textarea-gradient.js",
       "name": "Remove Textarea Gradient",
       "description": "Removes the gradient fade overlay from the prompt textarea"
@@ -77,6 +82,11 @@
       "description": "Adds an adjustable height scratchpad to the page"
     },
     {
+      "file": "remember-layout-proportions.js",
+      "name": "Remember Layout Proportions",
+      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
+    },
+    {
       "file": "remove-textarea-gradient.js",
       "name": "Remove Textarea Gradient",
       "description": "Removes the gradient fade overlay from the prompt textarea"
@@ -100,6 +110,11 @@
     }
   ],
   "archetypes/qa-comp-use/main": [
+    {
+      "file": "accept-task-modal-improvements.js",
+      "name": "\"Accept Task\" Modal Improvements",
+      "description": "Add a button above the optional comments box to paste a positive blurb"
+    },
     {
       "file": "auto-toggle-fullscreen-mode.js",
       "name": "Auto Toggle Fullscreen Mode",
@@ -141,6 +156,11 @@
       "description": "Adds an adjustable height scratchpad to the page"
     },
     {
+      "file": "remember-layout-proportions.js",
+      "name": "Remember Layout Proportions",
+      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
+    },
+    {
       "file": "request-revisions.js",
       "name": "Request Revisions Improvements",
       "description": "Improvements to the Request Revisions Workflow"
@@ -165,6 +185,11 @@
     }
   ],
   "archetypes/qa-tool-use/main": [
+    {
+      "file": "accept-task-modal-improvements.js",
+      "name": "\"Accept Task\" Modal Improvements",
+      "description": "Add a button above the optional comments box to paste a positive blurb"
+    },
     {
       "file": "bug-report-expand.js",
       "name": "Bug Report Readability Fix",
@@ -212,7 +237,7 @@
     },
     {
       "file": "request-revisions.js",
-      "name": "Request Revisions Improvements",
+      "name": "\"Request Revisions\" Modal Improvements",
       "description": "Improvements to the Request Revisions Workflow"
     },
     {
@@ -249,7 +274,7 @@
   "archetypes/qa-tool-use/dev": [
     {
       "file": "reorganize-request-revisions.js",
-      "name": "Request Revisions Modal Reorganization",
+      "name": "\"Request Revisions\" Modal Reorganization",
       "description": "Split the Request Revisions modal into two columns to reduce scrolling."
     },
     {

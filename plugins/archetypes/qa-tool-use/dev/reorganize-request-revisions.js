@@ -5,9 +5,9 @@ const TWO_COL_WRAPPER_MARKER = 'data-fleet-request-revisions-two-col';
 
 const plugin = {
     id: 'reorganizeRequestRevisions',
-    name: 'Request Revisions Modal Reorganization',
+    name: '"Request Revisions" Modal Reorganization',
     description: 'Split the Request Revisions modal into two columns to reduce scrolling.',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: false,
     phase: 'mutation',
 
