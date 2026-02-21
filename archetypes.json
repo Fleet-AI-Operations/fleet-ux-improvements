@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.39",
+  "archetypesVersion": "4.40",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -374,6 +374,10 @@
         {
           "name": "accept-task-modal-improvements.js",
           "version": "1.5"
+        },
+        {
+          "name": "remember-layout-proportions.js",
+          "version": "1.0"
         }
       ]
     }
