@@ -47,7 +47,7 @@ const plugin = {
     id: 'acceptTaskModalImprovements',
     name: 'Accept Task Modal Improvements',
     description: 'Auto-check QA checkboxes and add a button to paste a positive comment',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -122,16 +122,20 @@ const plugin = {
 
     autoCheckCheckboxes(dialog) {
         const checkboxes = dialog.querySelectorAll('button[role="checkbox"]');
-        let checked = 0;
-        checkboxes.forEach(btn => {
-            if (btn.getAttribute('data-state') === 'unchecked' || btn.getAttribute('aria-checked') === 'false') {
-                btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                checked++;
-            }
+        const toCheck = Array.from(checkboxes).filter(
+            btn => btn.getAttribute('data-state') === 'unchecked' || btn.getAttribute('aria-checked') === 'false'
+        );
+        if (toCheck.length === 0) return;
+        toCheck.forEach((btn, i) => {
+            setTimeout(() => {
+                if (!document.contains(btn)) return;
+                btn.focus();
+                const opts = { key: ' ', code: 'Space', keyCode: 32, which: 32, bubbles: true, cancelable: true, view: window };
+                btn.dispatchEvent(new KeyboardEvent('keydown', opts));
+                btn.dispatchEvent(new KeyboardEvent('keyup', opts));
+            }, i * 60);
         });
-        if (checked > 0) {
-            Logger.log(`Accept Task Modal Improvements: auto-checked ${checked} QA checklist item(s)`);
-        }
+        Logger.log(`Accept Task Modal Improvements: sent Space to ${toCheck.length} QA checklist item(s)`);
     },
 
     ensureMotivateButton(dialog, state) {
@@ -169,15 +173,31 @@ const plugin = {
         btn.title = 'Insert a random positive feedback blurb into the optional comments box';
         btn.addEventListener('click', () => {
             const blurb = ENCOURAGEMENT_BLURBS[Math.floor(Math.random() * ENCOURAGEMENT_BLURBS.length)];
-            textarea.value = blurb;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            Logger.log('Accept Task Modal Improvements: inserted positive comment');
+            this.simulateTyping(textarea, blurb);
+            Logger.log('Accept Task Modal Improvements: simulated typing positive comment');
         });
         wrapper.appendChild(btn);
 
         textarea.insertAdjacentElement('beforebegin', wrapper);
         state.motivateButtonAdded = true;
         Logger.log('Accept Task Modal Improvements: motivate button added');
+    },
+
+    simulateTyping(textarea, text) {
+        textarea.focus();
+        textarea.value = '';
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: '' }));
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const start = textarea.value.length;
+            textarea.value = textarea.value + char;
+            textarea.setSelectionRange(start + 1, start + 1);
+            textarea.dispatchEvent(new InputEvent('input', {
+                bubbles: true,
+                inputType: 'insertText',
+                data: char
+            }));
+        }
     },
 
     findOptionalNotesSection(dialog) {
