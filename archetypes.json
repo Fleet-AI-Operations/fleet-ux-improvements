@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.33",
+  "archetypesVersion": "4.34",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -366,6 +366,10 @@
         {
           "name": "prompt-diff-highlight.js",
           "version": "1.9"
+        },
+        {
+          "name": "accept-task-modal-improvements.js",
+          "version": "1.0"
         }
       ]
     }
