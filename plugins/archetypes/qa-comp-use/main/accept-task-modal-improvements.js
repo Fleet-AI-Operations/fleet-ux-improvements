@@ -47,7 +47,7 @@ const plugin = {
     id: 'acceptTaskModalImprovements',
     name: 'Accept Task Modal Improvements',
     description: 'Auto-check QA checkboxes and add a button to paste a positive comment',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -55,7 +55,7 @@ const plugin = {
         {
             id: 'auto-check-checkboxes',
             name: 'Auto-check QA checkboxes',
-            description: 'When the Approve Task modal opens, check all QA checklist checkboxes if they are not already checked',
+            description: 'When the Approve Task modal opens, check all QA checklist checkboxes if they are not already checked. May not work on all sites (app may ignore programmatic events); if so, use Tab + Space manually.',
             enabledByDefault: false
         },
         {
@@ -130,12 +130,31 @@ const plugin = {
             setTimeout(() => {
                 if (!document.contains(btn)) return;
                 btn.focus();
-                const opts = { key: ' ', code: 'Space', keyCode: 32, which: 32, bubbles: true, cancelable: true, view: window };
-                btn.dispatchEvent(new KeyboardEvent('keydown', opts));
-                btn.dispatchEvent(new KeyboardEvent('keyup', opts));
+                const checkedBefore = btn.getAttribute('data-state') === 'checked';
+                btn.click();
+                const checkedAfter = btn.getAttribute('data-state') === 'checked';
+                if (!checkedBefore && !checkedAfter) {
+                    this.invokeCheckboxHandler(btn);
+                }
             }, i * 60);
         });
-        Logger.log(`Accept Task Modal Improvements: sent Space to ${toCheck.length} QA checklist item(s)`);
+        Logger.log(`Accept Task Modal Improvements: auto-checked ${toCheck.length} QA checklist item(s)`);
+    },
+
+    invokeCheckboxHandler(btn) {
+        try {
+            const key = Object.keys(btn).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$'));
+            const fiberOrProps = key ? btn[key] : null;
+            if (!fiberOrProps) return;
+            const props = fiberOrProps.memoizedProps || fiberOrProps;
+            const handler = props.onClick || props.onKeyDown;
+            if (typeof handler === 'function') {
+                const ev = { target: btn, preventDefault: () => {}, nativeEvent: {} };
+                handler(ev);
+            }
+        } catch (_) {
+            Logger.debug('Accept Task Modal Improvements: could not invoke checkbox handler');
+        }
     },
 
     ensureMotivateButton(dialog, state) {
@@ -173,8 +192,8 @@ const plugin = {
         btn.title = 'Insert a random positive feedback blurb into the optional comments box';
         btn.addEventListener('click', () => {
             const blurb = ENCOURAGEMENT_BLURBS[Math.floor(Math.random() * ENCOURAGEMENT_BLURBS.length)];
-            this.simulateTyping(textarea, blurb);
-            Logger.log('Accept Task Modal Improvements: simulated typing positive comment');
+            this.setTextareaValueReactFriendly(textarea, blurb);
+            Logger.log('Accept Task Modal Improvements: set positive comment (React-friendly)');
         });
         wrapper.appendChild(btn);
 
@@ -183,21 +202,23 @@ const plugin = {
         Logger.log('Accept Task Modal Improvements: motivate button added');
     },
 
-    simulateTyping(textarea, text) {
+    setTextareaValueReactFriendly(textarea, blurb) {
         textarea.focus();
-        textarea.value = '';
-        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: '' }));
-        for (let i = 0; i < text.length; i++) {
-            const char = text[i];
-            const start = textarea.value.length;
-            textarea.value = textarea.value + char;
-            textarea.setSelectionRange(start + 1, start + 1);
-            textarea.dispatchEvent(new InputEvent('input', {
-                bubbles: true,
-                inputType: 'insertText',
-                data: char
-            }));
+        const previousValue = textarea.value;
+        const proto = Object.getPrototypeOf(textarea);
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(textarea, blurb);
+        } else {
+            textarea.value = blurb;
         }
+        if (textarea._valueTracker && typeof textarea._valueTracker.setValue === 'function') {
+            try {
+                textarea._valueTracker.setValue(previousValue);
+            } catch (_) { /* ignore */ }
+        }
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
     },
 
     findOptionalNotesSection(dialog) {
