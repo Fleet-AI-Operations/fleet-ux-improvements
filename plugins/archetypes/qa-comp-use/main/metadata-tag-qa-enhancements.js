@@ -20,7 +20,7 @@ const plugin = {
     id: 'metadataTagQAEnhancements',
     name: 'Metadata Tag QA Enhancements',
     description: 'Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -74,14 +74,20 @@ const plugin = {
         const header = this.ensureHeader(section, titleSpan, contentDiv, innerContent, showHideEnabled, suggestedChangesEnabled, state);
         if (!header) return;
 
+        let tagTogglesApplied = false;
         if (suggestedChangesEnabled) {
             state.tagState = [];
-            this.buildTagToggles(innerContent, header, state);
+            tagTogglesApplied = this.buildTagToggles(innerContent, header, state);
             this.updateCopyButtonState(header, state);
         }
 
-        state.writerMetadataEnhanced = true;
-        Logger.log('✓ Metadata Tag QA Enhancements: show/hide and/or suggested tag changes applied');
+        // Only mark enhanced when tag toggles were applied (or not needed), so we retry if DOM wasn't ready
+        if (!suggestedChangesEnabled || tagTogglesApplied) {
+            state.writerMetadataEnhanced = true;
+            Logger.log('✓ Metadata Tag QA Enhancements: show/hide and/or suggested tag changes applied');
+        } else if (suggestedChangesEnabled) {
+            Logger.debug('Metadata Tag QA Enhancements: no tag containers found yet, will retry on next mutation');
+        }
     },
 
     findMetadataSection() {
@@ -231,17 +237,19 @@ const plugin = {
     },
 
     buildTagToggles(innerContent, header, state) {
-        const subsections = innerContent.querySelectorAll(':scope > .space-y-1');
+        // Direct children with space-y-1 (avoid :scope for broader support)
+        const subsections = Array.from(innerContent.children).filter(el => el.classList && el.classList.contains('space-y-1'));
+        let anyTogglesAdded = false;
         for (const subsection of subsections) {
             const label = subsection.querySelector('label');
-            const tagContainer = subsection.querySelector('.flex.flex-wrap.gap-1');
+            const tagContainer = subsection.querySelector('div.flex.flex-wrap.gap-1') || subsection.querySelector('div[class*="flex"][class*="gap-1"]');
             if (!label || !tagContainer) continue;
 
             const sectionKey = (label.textContent || '').trim();
             const isSingleSelect = SINGLE_SELECT_SECTIONS.includes(sectionKey);
 
             let workerSelectedCount = 0;
-            const tagDivs = Array.from(tagContainer.children).filter(el => el.classList.contains('inline-flex') && el.classList.contains('rounded-md'));
+            const tagDivs = Array.from(tagContainer.children).filter(el => el && el.tagName === 'DIV' && el.classList && el.classList.contains('inline-flex') && el.classList.contains('rounded-md'));
             for (const tagEl of tagDivs) {
                 const workerSelected = tagEl.classList.contains('bg-primary');
                 if (workerSelected) workerSelectedCount++;
@@ -275,6 +283,7 @@ const plugin = {
 
                 tagEl.style.display = 'none';
                 tagContainer.insertBefore(btn, tagEl.nextSibling);
+                anyTogglesAdded = true;
             }
 
             if (workerSelectedCount === 0) {
@@ -284,6 +293,7 @@ const plugin = {
                 subsection.style.borderRadius = '0.375rem';
             }
         }
+        return anyTogglesAdded;
     },
 
     applyTagBorder(item) {
