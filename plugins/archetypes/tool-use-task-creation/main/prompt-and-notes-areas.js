@@ -6,7 +6,7 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '2.1',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -154,12 +154,13 @@ const plugin = {
         scratchpadContainer.style.display = 'flex';
         scratchpadContainer.style.flexDirection = 'column';
         
-        // Make the wrapper div (around the textarea) fill the scratchpad container so scratchpad loads fully extended
+        // Scratchpad starts at 2 lines (no height persistence)
+        const TWO_LINE_HEIGHT_PX = 44;
         const scratchpadWrapper = scratchpadContainer.querySelector('div.flex.flex-col.relative.rounded-md');
         if (scratchpadWrapper) {
-            scratchpadWrapper.style.flex = '1';
-            scratchpadWrapper.style.minHeight = '0';
-            scratchpadWrapper.style.height = '';
+            scratchpadWrapper.style.flex = '0 0 auto';
+            scratchpadWrapper.style.minHeight = `${TWO_LINE_HEIGHT_PX}px`;
+            scratchpadWrapper.style.height = `${TWO_LINE_HEIGHT_PX}px`;
         }
         
         // Make scratchpad textarea fill its container
@@ -274,7 +275,7 @@ const plugin = {
         resizeHandle.style.opacity = '1';
         resizeHandle.style.pointerEvents = 'auto';
         
-        const minHeight = 60;
+        const minHeight = 44;
         let isResizing = false;
         let startY = 0;
         let startHeight = 0;

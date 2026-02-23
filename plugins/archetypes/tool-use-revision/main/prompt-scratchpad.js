@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '1.3',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -129,14 +129,12 @@ const plugin = {
         
         header.appendChild(label);
         
-        // Textarea container with resize handle
+        // Textarea container with resize handle (default 2 lines, no height persistence)
+        const TWO_LINE_HEIGHT_PX = 44;
         const textareaWrapper = document.createElement('div');
         textareaWrapper.className = 'relative flex flex-col rounded-md overflow-hidden border border-input bg-background shadow-sm';
-        textareaWrapper.style.minHeight = '60px';
-        
-        // Restore saved height or use default
-        const savedHeight = Storage.get(this.storageKeys.scratchpadHeight, 150);
-        textareaWrapper.style.height = `${savedHeight}px`;
+        textareaWrapper.style.minHeight = `${TWO_LINE_HEIGHT_PX}px`;
+        textareaWrapper.style.height = `${TWO_LINE_HEIGHT_PX}px`;
         
         const textarea = document.createElement('textarea');
         textarea.className = 'flex-1 w-full border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none';
@@ -182,7 +180,7 @@ const plugin = {
         let isResizing = false;
         let startY = 0;
         let startHeight = 0;
-        const minHeight = 60;
+        const minHeight = 44;
         
         const handleMouseDown = (e) => {
             isResizing = true;
@@ -218,11 +216,6 @@ const plugin = {
             
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            
-            // Save the new height
-            const currentHeight = textareaWrapper.offsetHeight;
-            Storage.set(this.storageKeys.scratchpadHeight, currentHeight);
-            Logger.debug(`Prompt Scratchpad: Saved height ${currentHeight}px`);
         };
         
         resizeHandle.addEventListener('mousedown', handleMouseDown);
