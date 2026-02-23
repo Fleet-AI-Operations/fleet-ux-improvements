@@ -1,3 +1,4 @@
+// DEPRECATED: Use metadata-tag-qa-enhancements.js (suboption "Show/Hide metadata section") instead.
 // ============= toggle-writer-metadata.js =============
 // Toggle show/hide for the metadata section (label containing "metadata"). Button pulses yellow when hidden.
 

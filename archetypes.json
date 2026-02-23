@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.47",
+  "archetypesVersion": "4.48",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -392,8 +392,8 @@
           "version": "1.0"
         },
         {
-          "name": "toggle-writer-metadata.js",
-          "version": "1.1"
+          "name": "metadata-tag-qa-enhancements.js",
+          "version": "2.0"
         }
       ]
     }
