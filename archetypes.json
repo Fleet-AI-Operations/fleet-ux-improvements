@@ -364,12 +364,16 @@
           "version": "1.2"
         },
         {
+          "name": "copy-result-params.js",
+          "version": "1.0"
+        },
+        {
           "name": "guideline-buttons.js",
           "version": "1.6"
         },
         {
           "name": "request-revisions.js",
-          "version": "3.4"
+          "version": "3.5"
         },
         {
           "name": "qa-scratchpad.js",

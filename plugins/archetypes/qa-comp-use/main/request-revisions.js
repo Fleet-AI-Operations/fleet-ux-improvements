@@ -6,6 +6,8 @@ const GUIDELINE_LINKS = {
 };
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
+const COPY_RESULT_PARAMS_CONFIRMATION_MS = 3000;
+const COPY_RESULT_PARAMS_GREEN_BG = 'rgb(34, 197, 94)';
 
 const PROMPT_QUALITY_VALUES = ['Top 10%', 'Average', 'Bottom 10%'];
 const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
@@ -14,7 +16,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.4',
+    _version: '3.5',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -456,6 +458,15 @@ const plugin = {
         meridianGroup.appendChild(meridianOpen);
         wrapper.appendChild(meridianGroup);
 
+        const copyResultParamsBtn = document.createElement('button');
+        copyResultParamsBtn.type = 'button';
+        copyResultParamsBtn.className = buttonClass;
+        copyResultParamsBtn.setAttribute('data-fleet-plugin', this.id);
+        copyResultParamsBtn.textContent = 'Copy Result Params and Inputs';
+        copyResultParamsBtn.title = 'Copy parameter labels and values to clipboard';
+        copyResultParamsBtn.addEventListener('click', () => this.handleCopyResultParamsClick(copyResultParamsBtn));
+        wrapper.appendChild(copyResultParamsBtn);
+
         this.syncGuidelineCopyButtons(wrapper, meridianEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline copy-link buttons added');
@@ -475,6 +486,66 @@ const plugin = {
             }, 2500);
         }).catch((err) => {
             Logger.error('Request Revisions: failed to copy guideline link', err);
+        });
+    },
+
+    findYourAnswerSection(root = document) {
+        const headings = root.querySelectorAll('h4');
+        for (const h of headings) {
+            if (h.textContent && h.textContent.trim() === 'Your Answer') {
+                const blueBox = h.closest('.rounded-lg.border');
+                if (blueBox && (blueBox.classList.contains('border-blue-200') || blueBox.classList.contains('dark:border-blue-800'))) {
+                    return blueBox;
+                }
+                return h.closest('div.space-y-4') || h.closest('div[class*="border-blue"]') || h.parentElement?.parentElement;
+            }
+        }
+        return null;
+    },
+
+    getResultParamsTextFromPage() {
+        const section = this.findYourAnswerSection();
+        if (!section) return '';
+        const grid = section.querySelector('.grid.grid-cols-1.gap-4') || section.querySelector('.grid');
+        if (!grid) return '';
+        const lines = [];
+        const rows = grid.querySelectorAll('.space-y-2');
+        for (const row of rows) {
+            const label = row.querySelector('label');
+            const input = row.querySelector('input, textarea');
+            if (!label || !input) continue;
+            const labelText = label.textContent.replace(/\s+/g, ' ').trim();
+            const value = (input.value != null && input.value !== undefined) ? String(input.value).trim() : '';
+            lines.push(`${labelText}: ${value}`);
+        }
+        return lines.join('\n');
+    },
+
+    showCopyResultParamsConfirmation(button, originalText) {
+        button.textContent = 'Copied!';
+        button.style.backgroundColor = COPY_RESULT_PARAMS_GREEN_BG;
+        button.style.color = 'white';
+        if (button._copyResultParamsTimeout) clearTimeout(button._copyResultParamsTimeout);
+        button._copyResultParamsTimeout = setTimeout(() => {
+            button.textContent = originalText;
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            button._copyResultParamsTimeout = null;
+        }, COPY_RESULT_PARAMS_CONFIRMATION_MS);
+    },
+
+    handleCopyResultParamsClick(button) {
+        const originalText = button.textContent;
+        const text = this.getResultParamsTextFromPage();
+        if (!text) {
+            Logger.warn('Request Revisions: No result params to copy');
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => {
+            Logger.log(`Request Revisions: Copied result params to clipboard (${text.length} chars)`);
+            this.showCopyResultParamsConfirmation(button, originalText);
+        }).catch((err) => {
+            Logger.error('Request Revisions: Failed to copy result params', err);
         });
     },
 
