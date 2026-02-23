@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.46",
+  "archetypesVersion": "4.47",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -91,7 +91,7 @@
         },
         {
           "name": "prompt-and-notes-areas.js",
-          "version": "3.0"
+          "version": "3.1"
         },
         {
           "name": "execute-to-current-tool.js",
@@ -144,7 +144,7 @@
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "execute-to-current-tool.js",
@@ -214,7 +214,7 @@
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -251,7 +251,7 @@
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -292,7 +292,7 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "2.0"
+          "version": "2.2"
         },
         {
           "name": "useful-links-buttons.js",
@@ -373,7 +373,7 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.5"
+          "version": "1.6"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -389,7 +389,7 @@
         },
         {
           "name": "toggle-writer-metadata.js",
-          "version": "1.0"
+          "version": "1.1"
         }
       ]
     }

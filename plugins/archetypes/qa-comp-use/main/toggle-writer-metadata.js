@@ -14,7 +14,7 @@ const plugin = {
     id: 'toggleWriterMetadata',
     name: 'Toggle Writer Metadata',
     description: 'Adds a Hide/Show button to collapse or expand the metadata section; button pulses yellow when hidden',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -44,6 +44,11 @@ const plugin = {
             Logger.warn('Toggle Writer Metadata: expected span + content div structure not found');
             return;
         }
+        const innerContent = contentDiv.querySelector('.space-y-3') || contentDiv.firstElementChild;
+        if (!innerContent) {
+            Logger.warn('Toggle Writer Metadata: no inner content (space-y-3) found');
+            return;
+        }
 
         const header = document.createElement('div');
         header.className = 'flex flex-wrap items-center justify-between gap-2';
@@ -57,6 +62,7 @@ const plugin = {
         btn.title = 'Hide metadata';
 
         let hidden = false;
+        let placeholderEl = null;
 
         const startPulse = () => {
             if (this._pulseInterval) return;
@@ -87,16 +93,27 @@ const plugin = {
 
         btn.addEventListener('click', () => {
             hidden = !hidden;
-            contentDiv.style.display = hidden ? 'none' : '';
-            btn.textContent = hidden ? 'Show' : 'Hide';
-            btn.title = hidden ? 'Show metadata' : 'Hide metadata';
             if (hidden) {
+                innerContent.style.display = 'none';
+                if (!placeholderEl) {
+                    placeholderEl = document.createElement('span');
+                    placeholderEl.setAttribute('data-fleet-plugin', this.id);
+                    placeholderEl.className = 'text-xs text-muted-foreground';
+                    placeholderEl.textContent = '[Metadata…]';
+                }
+                contentDiv.appendChild(placeholderEl);
                 startPulse();
                 Logger.log('Toggle Writer Metadata: metadata hidden');
             } else {
+                innerContent.style.display = '';
+                if (placeholderEl && placeholderEl.parentNode) {
+                    placeholderEl.remove();
+                }
                 stopPulse();
                 Logger.log('Toggle Writer Metadata: metadata shown');
             }
+            btn.textContent = hidden ? 'Show' : 'Hide';
+            btn.title = hidden ? 'Show metadata' : 'Hide metadata';
         });
 
         header.appendChild(labelSpan);

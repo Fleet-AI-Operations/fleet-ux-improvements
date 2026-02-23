@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -130,7 +130,7 @@ const plugin = {
         header.appendChild(label);
 
         // Textarea container with resize handle (default 2 lines, no height persistence)
-        const TWO_LINE_HEIGHT_PX = 44;
+        const TWO_LINE_HEIGHT_PX = 55;
         const textareaWrapper = document.createElement('div');
         textareaWrapper.className = 'relative flex flex-col rounded-md overflow-hidden border border-input bg-background shadow-sm';
         textareaWrapper.style.minHeight = `${TWO_LINE_HEIGHT_PX}px`;
@@ -180,7 +180,7 @@ const plugin = {
         let isResizing = false;
         let startY = 0;
         let startHeight = 0;
-        const minHeight = 44;
+        const minHeight = 55;
 
         const handleMouseDown = (e) => {
             isResizing = true;
