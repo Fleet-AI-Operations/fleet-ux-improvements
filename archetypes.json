@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.43",
+  "archetypesVersion": "4.44",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -373,7 +373,7 @@
         },
         {
           "name": "qa-scratchpad.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -385,6 +385,10 @@
         },
         {
           "name": "remember-layout-proportions.js",
+          "version": "1.0"
+        },
+        {
+          "name": "toggle-writer-metadata.js",
           "version": "1.0"
         }
       ]
