@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.64",
+  "archetypesVersion": "5.0",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -42,19 +42,6 @@
         {
           "name": "task-creation-today-env.js",
           "version": "1.5"
-        }
-      ]
-    },
-    {
-      "id": "qa-project-picker",
-      "name": "QA Project Picker Page",
-      "description": "Page for picking a QA project",
-      "urlPattern": "work/problems/qa",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "sort-qa-environments-alphabetically.js",
-          "version": "1.1"
         }
       ]
     },
@@ -173,19 +160,6 @@
         {
           "name": "prompt-diff-highlight.js",
           "version": "2.0"
-        }
-      ]
-    },
-    {
-      "id": "task-creation-env-picker",
-      "name": "Task Creation Environment Picker Page",
-      "description": "Page for picking an environment for task creation",
-      "urlPattern": "work/problems/create-instance",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "sort-environments-alphabetically.js",
-          "version": "1.0"
         }
       ]
     },
