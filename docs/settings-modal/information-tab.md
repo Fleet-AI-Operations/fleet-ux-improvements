@@ -1,9 +1,7 @@
-1.4
-
+1.5
 ## Information
 
-#### Environment Codennames 
-
+#### Environment Codennames
 | Environment Codename       | Real App Name          |
 |---------------------------|------------------------|
 | Agora                     | Reddit                 |
