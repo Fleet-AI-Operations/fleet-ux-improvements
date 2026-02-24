@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.34',
+    _version: '5.35',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -44,7 +44,7 @@ const plugin = {
     _applySettingsButtonBehavior(settingsBtn) {
         if (!settingsBtn) return;
         settingsBtn.type = 'button';
-        settingsBtn.title = 'Fleet Enhancer Settings';
+        settingsBtn.title = 'Fleet Enhancer Extension';
         
         // Check if we should pulse before setting base styles
         const shouldPulse = Context.isOutdated || (Context.isDevBranch && this._getPulseOverrideEnabled());
@@ -396,7 +396,7 @@ const plugin = {
             <div style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: var(--background, white); border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
-                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Settings</h2>
+                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Extension</h2>
                         <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0;">
                             v${version} · a${Context.archetypesVersion || '?'} · <strong>${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
                         </p>
