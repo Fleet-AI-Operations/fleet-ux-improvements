@@ -1,6 +1,43 @@
-1.3
+1.4
 
 ## Information
+
+#### Environment Codennames 
+
+| Environment Codename       | Real App Name          |
+|---------------------------|------------------------|
+| Agora                     | Reddit                 |
+| Aisle                     | Walmart                |
+| Atlas                     | Google Maps            |
+| Chorus                    | Teams                  |
+| Docket                    | Dropbox                |
+| Float                     | Ramp                   |
+| Focusign                  | Docusign               |
+| Foundry                   | Github                 |
+| Jetstream                 | Google Flights         |
+| Kernel                    | Jira / RevOps          |
+| KeyRing                   | Booking                |
+| Latch Calendar/Mail/Tasks | Outlook                |
+| Ledger                    | Quickbooks             |
+| LedgerGov                 | DMV                    |
+| Lumen                     | Datadog                |
+| Nest                      | Zillow                 |
+| Portal                    | Ticketmaster           |
+| Relay                     | Hubspot                |
+| Seal                      | Docusign               |
+| Sentinel                  | Vanta                  |
+| Signal                    | Sentry                 |
+| Torch                     | PagerDuty              |
+| Vault                     | Confluence             |
+| Ward                      | Synk                   |
+| Forums Homes              | -                      |
+| FosOperations             | -                      |
+| RevOps                    | -                      |
+| SRE                       | -                      |
+| Docs                      | OpenOffice Writer      |
+| Sheets                    | OpenOffice Calc        |
+| Slides                    | OpenOffice Impress     |
+| Diagrams                  | OpenOffice Draw        |
 
 #### Guidelines
 - [Tool Use (Kinesis) Guidelines](https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d)
