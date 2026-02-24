@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.54",
+  "archetypesVersion": "4.55",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -37,7 +37,7 @@
         },
         {
           "name": "feedback-given-stats.js",
-          "version": "1.4"
+          "version": "1.5"
         },
         {
           "name": "task-creation-today-env.js",

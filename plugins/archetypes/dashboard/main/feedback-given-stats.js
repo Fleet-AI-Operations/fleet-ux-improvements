@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -214,7 +214,14 @@ const plugin = {
 
         const todayLabel = uncertain ? `${todayCount}? today` : `${todayCount} today`;
         if (todayEl) {
-            todayEl.textContent = dayAr != null ? `${todayLabel} (${dayAr}% AR)` : todayLabel;
+            todayEl.textContent = '';
+            todayEl.appendChild(document.createTextNode(todayLabel));
+            if (dayAr != null) {
+                const arSpan = document.createElement('span');
+                arSpan.className = 'text-muted-foreground';
+                arSpan.textContent = ` (${dayAr}% AR)`;
+                todayEl.appendChild(arSpan);
+            }
         }
 
         if (envBreakdownEl) {
@@ -229,11 +236,14 @@ const plugin = {
                     const nameSpan = document.createElement('span');
                     nameSpan.className = 'text-orange-600 dark:text-orange-400';
                     nameSpan.textContent = name;
-                    const mutedSpan = document.createElement('span');
-                    mutedSpan.className = 'text-muted-foreground';
-                    mutedSpan.textContent = ar != null ? `: ${n} (${ar}% AR)` : `: ${n}`;
                     line.appendChild(nameSpan);
-                    line.appendChild(mutedSpan);
+                    line.appendChild(document.createTextNode(`: ${n}`));
+                    if (ar != null) {
+                        const arSpan = document.createElement('span');
+                        arSpan.className = 'text-muted-foreground';
+                        arSpan.textContent = ` (${ar}% AR)`;
+                        line.appendChild(arSpan);
+                    }
                     envBreakdownEl.appendChild(line);
                 }
             }
