@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.31',
+    _version: '5.32',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -502,6 +502,51 @@ const plugin = {
             ${devPaneHTML}
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
+            <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
+                <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0 0 16px 0; line-height: 1.5;">
+                    We’d love to hear from you. Send feedback, suggest a feature, or report a bug—your input helps improve the extension.
+                </p>
+                <div style="margin-bottom: 12px;">
+                    <label for="wf-feedback-title" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Title</label>
+                    <input type="text" id="wf-feedback-title" placeholder="Short summary" maxlength="256" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                    ">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label for="wf-feedback-description" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Description</label>
+                    <textarea id="wf-feedback-description" placeholder="Describe your feedback, feature request, or bug in as much detail as you’d like." rows="5" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        resize: vertical;
+                        box-sizing: border-box;
+                        font-family: inherit;
+                    "></textarea>
+                </div>
+                <button type="button" id="wf-feedback-submit" style="
+                    width: 100%;
+                    padding: 10px 16px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: white;
+                    background: var(--brand, #4f46e5);
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                ">Create GitHub Issue</button>
+            </div>
             </div>
         `;
         
@@ -1021,6 +1066,35 @@ const plugin = {
             clearCacheBtn.addEventListener('mouseleave', () => {
                 clearCacheBtn.style.background = 'transparent';
                 clearCacheBtn.style.borderColor = '#dc2626';
+            });
+        }
+
+        // Feedback: Create GitHub Issue
+        const feedbackSubmitBtn = Context.dom.query('#wf-feedback-submit', {
+            root: modal,
+            context: `${this.id}.feedbackSubmit`
+        });
+        if (feedbackSubmitBtn) {
+            feedbackSubmitBtn.addEventListener('click', () => {
+                const titleEl = Context.dom.query('#wf-feedback-title', { root: modal, context: `${this.id}.feedbackTitle` });
+                const descEl = Context.dom.query('#wf-feedback-description', { root: modal, context: `${this.id}.feedbackDescription` });
+                const title = (titleEl && titleEl.value && titleEl.value.trim()) ? titleEl.value.trim() : 'Feedback';
+                let body = (descEl && descEl.value) ? descEl.value.trim() : '';
+                const version = Context.version || 'unknown';
+                const archetypeId = Context.currentArchetype ? Context.currentArchetype.id : 'global';
+                if (body) body += '\n\n';
+                body += '---\n*Fleet Enhancer v' + version + ' · ' + archetypeId + '*';
+                const owner = Context.githubOwner || 'adastra1826';
+                const repo = Context.githubRepo || 'fleet-ux-improvements';
+                const url = 'https://github.com/' + owner + '/' + repo + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
+                window.open(url, '_blank', 'noopener,noreferrer');
+                Logger.log('Opened GitHub issue draft: ' + title);
+            });
+            feedbackSubmitBtn.addEventListener('mouseenter', () => {
+                feedbackSubmitBtn.style.background = 'var(--brand-hover, #4338ca)';
+            });
+            feedbackSubmitBtn.addEventListener('mouseleave', () => {
+                feedbackSubmitBtn.style.background = 'var(--brand, #4f46e5)';
             });
         }
     },
@@ -1657,7 +1731,8 @@ const plugin = {
         }
         tabs.push(
             { id: 'information', label: 'Information', doc: 'information-tab.md' },
-            { id: 'features', label: 'Features', doc: 'features-tab.md' }
+            { id: 'features', label: 'Features', doc: 'features-tab.md' },
+            { id: 'feedback', label: 'Feedback' }
         );
         return tabs;
     },

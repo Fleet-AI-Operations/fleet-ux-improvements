@@ -4,7 +4,7 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "5.31"
+      "version": "5.32"
     }
   ],
   "devPlugins": [
