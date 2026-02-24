@@ -1,4 +1,4 @@
-1.6
+1.7
 
 ## Features
 
@@ -44,18 +44,25 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 
+### Task Creation Environment Picker Page
+- **Sort Environments Alphabetically**: Sort environment cards A–Z by name within each project section
+
 ### Computer Use Task Creation Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Prompt Scratchpad**: Scratchpad for notes while creating tasks
 - **Guideline Buttons**: Quick links to project guidelines
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
 
 ### Computer Use Task Revision Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Prompt Scratchpad**: Scratchpad for notes while revising
 - **Guideline Buttons**: Quick links to guidelines
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
 
 ### QA Tool Use Review Page
 - **Clear Search**: One-click clear for search inputs
@@ -65,10 +72,8 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Prompt**: Copy prompt text to clipboard
 - **Copy Verifier Output**: Copy verifier output to clipboard
 - **QA Scratchpad**: Adjustable-height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
-- **JSON Editor Online**: Button that links to JSON Editor Online for JSON manipulation
-- **Guideline Buttons**: Quick links to guidelines below the QA scratchpad
+- **Useful Link Buttons**: Quick links to QA/Kinesis guidelines and JSON Editor Online below the scratchpad
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Panel Size Memory**: Remembers your preferred panel sizes between sessions
 - **Remember Layout Proportions**: Persists and restores panel split positions between sessions
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue (with guideline link shortcuts)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
@@ -76,13 +81,19 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Resizable tool results area
 - **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
+- **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
 
 ### QA Computer Use Review Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Copy Prompt**: Copy prompt text to clipboard
 - **Copy Verifier Output**: Copy verifier output to clipboard
+- **Copy Result Params and Inputs**: Button under Your Answer to copy parameter labels and values to clipboard
 - **Guideline Buttons**: Quick links to guidelines
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue
 - **QA Scratchpad**: Adjustable-height scratchpad for notes (with option to remember contents)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
+- **Metadata Tag QA Enhancements**: Show/hide Writer Metadata section; suggested tag changes as toggles with "Copy Suggested Changes" for feedback
+- **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
