@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.33',
+    _version: '5.34',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1802,6 +1802,8 @@ const plugin = {
         const lines = md.trim().split(/\r?\n/);
         const out = [];
         let inList = false;
+        let inTable = false;
+        let tableRowIndex = 0;
         const escape = (s) => String(s)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -1811,15 +1813,50 @@ const plugin = {
         const replaceLinks = (s) => escape(s).replace(linkRe, (_, text, href) => `<a href="${escape(href)}" target="_blank" rel="noopener noreferrer" style="color: var(--brand, #4f46e5); text-decoration: none;">${escape(text)}</a>`);
         const replaceBold = (s) => s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         const processInlines = (s) => replaceBold(replaceLinks(s));
+        const isTableRow = (s) => /^\s*\|.+\|/.test(s);
+        const parseTableCells = (s) => {
+            const a = s.split('|').map(c => c.trim());
+            let start = 0, end = a.length;
+            while (start < end && a[start] === '') start++;
+            while (end > start && a[end - 1] === '') end--;
+            return a.slice(start, end);
+        };
+        const isTableSeparator = (cells) => cells.length > 0 && cells.every(c => /^[\s\-:]+$/.test(c));
+        const tableCellStyle = 'padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid var(--border, #e5e5e5);';
+        const tableStyle = 'border-collapse: collapse; width: 100%; margin: 8px 0 12px 0; font-size: 13px;';
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const trimmed = line.trim();
-            if (inList && trimmed !== '' && !/^\s*-\s+/.test(line)) {
+            if (inTable && (!trimmed || !isTableRow(line))) {
+                inTable = false;
+                out.push('</tbody></table>');
+            }
+            if (inList && trimmed !== '' && !/^\s*-\s+/.test(line) && !isTableRow(line)) {
                 inList = false;
                 out.push('</ul>');
             }
             if (trimmed === '') {
-                out.push('<br>');
+                if (!inTable) out.push('<br>');
+                continue;
+            }
+            if (isTableRow(line)) {
+                const cells = parseTableCells(line);
+                if (cells.length === 0) continue;
+                if (!inTable) {
+                    inTable = true;
+                    tableRowIndex = 0;
+                    out.push(`<table style="${tableStyle}"><thead><tr>`);
+                }
+                if (tableRowIndex === 0) {
+                    out.push(cells.map(c => `<th style="${tableCellStyle} font-weight: 600;">${processInlines(c)}</th>`).join(''));
+                    out.push('</tr></thead><tbody>');
+                    tableRowIndex = 1;
+                } else if (tableRowIndex === 1 && isTableSeparator(cells)) {
+                    tableRowIndex = 2;
+                } else {
+                    if (tableRowIndex === 1) tableRowIndex = 2;
+                    out.push('<tr>' + cells.map(c => `<td style="${tableCellStyle}">${processInlines(c)}</td>`).join('') + '</tr>');
+                }
                 continue;
             }
             const h4 = /^####\s+(.+)$/.exec(trimmed);
@@ -1838,6 +1875,7 @@ const plugin = {
             }
             out.push(`<p style="margin: 6px 0; font-size: 13px; line-height: 1.5;">${processInlines(trimmed)}</p>`);
         }
+        if (inTable) out.push('</tbody></table>');
         if (inList) out.push('</ul>');
         return out.join('');
     },
