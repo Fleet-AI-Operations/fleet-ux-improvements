@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.32',
+    _version: '5.33',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -424,7 +424,7 @@ const plugin = {
             </div>
             
             <div id="wf-settings-tab-panes">
-            <div id="wf-settings-pane-settings" data-tab="settings" class="wf-settings-pane" style="display: block;">
+            <div id="wf-settings-pane-settings" data-tab="settings" class="wf-settings-pane" style="display: none;">
             <!-- Global Toggle -->
             <div style="margin-bottom: 20px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
@@ -500,7 +500,7 @@ const plugin = {
             </div>
             </div>
             ${devPaneHTML}
-            <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
+            <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: block; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
                 <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0 0 16px 0; line-height: 1.5;">
@@ -729,6 +729,7 @@ const plugin = {
 
         // Tab buttons
         this._attachTabListeners(modal);
+        this._switchSettingsTab(modal, 'information');
 
         // Close on Escape key
         const handleEscape = (e) => {
@@ -1724,13 +1725,13 @@ const plugin = {
     
     _getSettingsTabs() {
         const tabs = [
+            { id: 'information', label: 'Information', doc: 'information-tab.md' },
             { id: 'settings', label: 'Settings' },
         ];
         if (this._hasActiveDevSettings()) {
             tabs.push({ id: 'dev', label: 'Dev' });
         }
         tabs.push(
-            { id: 'information', label: 'Information', doc: 'information-tab.md' },
             { id: 'features', label: 'Features', doc: 'features-tab.md' },
             { id: 'feedback', label: 'Feedback' }
         );
@@ -1738,7 +1739,7 @@ const plugin = {
     },
 
     _createTabRowHTML(tabs) {
-        const activeTab = 'settings';
+        const activeTab = 'information';
         const buttons = tabs.map(t => {
             const isActive = t.id === activeTab;
             return `<button type="button" class="wf-settings-tab" data-tab="${t.id}" style="
