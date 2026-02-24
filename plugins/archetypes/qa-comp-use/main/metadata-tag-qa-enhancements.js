@@ -12,7 +12,7 @@ const BORDER_SUGGEST_DESELECT = '2px solid rgb(239, 68, 68)';
 const BORDER_SUGGEST_SELECT = '2px solid rgb(34, 197, 94)';
 
 const BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-const COPY_BTN_DISABLED_CLASS = 'opacity-50 cursor-not-allowed';
+const COPY_BTN_DISABLED_CLASSES = ['opacity-50', 'cursor-not-allowed'];
 
 const SINGLE_SELECT_SECTIONS = ['goal_type', 'complexity_level'];
 
@@ -20,7 +20,7 @@ const plugin = {
     id: 'metadataTagQAEnhancements',
     name: 'Metadata Tag QA Enhancements',
     description: 'Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -44,49 +44,58 @@ const plugin = {
     initialState: {
         writerMetadataEnhanced: false,
         missingLogged: false,
+        mutationErrorLogged: false,
         tagState: [] // { el, workerSelected, qaToggled, sectionKey, tagLabel }
     },
 
     onMutation(state, context) {
         if (state.writerMetadataEnhanced) return;
 
-        const found = this.findMetadataSection();
-        if (!found) {
-            if (!state.missingLogged) {
-                Logger.debug('Metadata Tag QA Enhancements: section with label containing "metadata" not found');
-                state.missingLogged = true;
+        try {
+            const found = this.findMetadataSection();
+            if (!found) {
+                if (!state.missingLogged) {
+                    Logger.debug('Metadata Tag QA Enhancements: section with label containing "metadata" not found');
+                    state.missingLogged = true;
+                }
+                return;
             }
-            return;
-        }
-        state.missingLogged = false;
+            state.missingLogged = false;
 
-        const { section, titleSpan, contentDiv } = found;
-        const innerContent = contentDiv.querySelector('.space-y-3') || contentDiv.firstElementChild;
-        if (!innerContent) {
-            Logger.warn('Metadata Tag QA Enhancements: no inner content (space-y-3) found');
-            return;
-        }
+            const { section, titleSpan, contentDiv } = found;
+            const innerContent = contentDiv.querySelector('.space-y-3') || contentDiv.firstElementChild;
+            if (!innerContent) {
+                Logger.warn('Metadata Tag QA Enhancements: no inner content (space-y-3) found');
+                return;
+            }
 
-        const showHideEnabled = Storage.getSubOptionEnabled(this.id, 'show-hide-metadata', true);
-        const suggestedChangesEnabled = Storage.getSubOptionEnabled(this.id, 'suggested-tag-changes', true);
-        if (!showHideEnabled && !suggestedChangesEnabled) return;
+            const showHideEnabled = Storage.getSubOptionEnabled(this.id, 'show-hide-metadata', true);
+            const suggestedChangesEnabled = Storage.getSubOptionEnabled(this.id, 'suggested-tag-changes', true);
+            if (!showHideEnabled && !suggestedChangesEnabled) return;
 
-        const header = this.ensureHeader(section, titleSpan, contentDiv, innerContent, showHideEnabled, suggestedChangesEnabled, state);
-        if (!header) return;
+            const header = this.ensureHeader(section, titleSpan, contentDiv, innerContent, showHideEnabled, suggestedChangesEnabled, state);
+            if (!header) return;
 
-        let tagTogglesApplied = false;
-        if (suggestedChangesEnabled) {
-            state.tagState = [];
-            tagTogglesApplied = this.buildTagToggles(innerContent, header, state);
-            this.updateCopyButtonState(header, state);
-        }
+            let tagTogglesApplied = false;
+            if (suggestedChangesEnabled) {
+                state.tagState = [];
+                tagTogglesApplied = this.buildTagToggles(innerContent, header, state);
+                this.updateCopyButtonState(header, state);
+            }
 
-        // Only mark enhanced when tag toggles were applied (or not needed), so we retry if DOM wasn't ready
-        if (!suggestedChangesEnabled || tagTogglesApplied) {
+            // Only mark enhanced when tag toggles were applied (or not needed), so we retry if DOM wasn't ready
+            if (!suggestedChangesEnabled || tagTogglesApplied) {
+                state.writerMetadataEnhanced = true;
+                Logger.log('✓ Metadata Tag QA Enhancements: show/hide and/or suggested tag changes applied');
+            } else if (suggestedChangesEnabled) {
+                Logger.debug('Metadata Tag QA Enhancements: no tag containers found yet, will retry on next mutation');
+            }
+        } catch (err) {
+            if (!state.mutationErrorLogged) {
+                Logger.error('Metadata Tag QA Enhancements: mutation failed', err);
+                state.mutationErrorLogged = true;
+            }
             state.writerMetadataEnhanced = true;
-            Logger.log('✓ Metadata Tag QA Enhancements: show/hide and/or suggested tag changes applied');
-        } else if (suggestedChangesEnabled) {
-            Logger.debug('Metadata Tag QA Enhancements: no tag containers found yet, will retry on next mutation');
         }
     },
 
@@ -223,7 +232,7 @@ const plugin = {
         btn.textContent = 'Copy Suggested Changes?';
         btn.title = 'Copy suggested metadata tag changes to clipboard';
         btn.disabled = true;
-        btn.classList.add(COPY_BTN_DISABLED_CLASS);
+        btn.classList.add(...COPY_BTN_DISABLED_CLASSES);
 
         btn.addEventListener('click', () => {
             const text = this.buildCopyText(state);
@@ -316,8 +325,8 @@ const plugin = {
         if (!copyBtn) return;
         const hasAny = state.tagState.some(t => t.qaToggled);
         copyBtn.disabled = !hasAny;
-        if (hasAny) copyBtn.classList.remove(COPY_BTN_DISABLED_CLASS);
-        else copyBtn.classList.add(COPY_BTN_DISABLED_CLASS);
+        if (hasAny) copyBtn.classList.remove(...COPY_BTN_DISABLED_CLASSES);
+        else copyBtn.classList.add(...COPY_BTN_DISABLED_CLASSES);
     },
 
     buildCopyText(state) {
