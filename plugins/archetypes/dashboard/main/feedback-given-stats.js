@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -225,8 +225,15 @@ const plugin = {
             } else {
                 for (const [name, n, ar] of sortedEnvsForPayload) {
                     const line = document.createElement('div');
-                    line.className = 'text-sm text-orange-600 dark:text-orange-400';
-                    line.textContent = ar != null ? `${name}: ${n} (${ar}% AR)` : `${name}: ${n}`;
+                    line.className = 'text-sm';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'text-orange-600 dark:text-orange-400';
+                    nameSpan.textContent = name;
+                    const mutedSpan = document.createElement('span');
+                    mutedSpan.className = 'text-muted-foreground';
+                    mutedSpan.textContent = ar != null ? `: ${n} (${ar}% AR)` : `: ${n}`;
+                    line.appendChild(nameSpan);
+                    line.appendChild(mutedSpan);
                     envBreakdownEl.appendChild(line);
                 }
             }
