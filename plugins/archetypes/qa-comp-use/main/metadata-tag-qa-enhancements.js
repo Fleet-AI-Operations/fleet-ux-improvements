@@ -22,7 +22,7 @@ const plugin = {
     id: 'metadataTagQAEnhancements',
     name: 'Metadata Tag QA Enhancements',
     description: 'Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -323,6 +323,14 @@ const plugin = {
                         if (workerSelectedInSection) {
                             workerSelectedInSection.qaToggled = true;
                             this.applyTagBorder(workerSelectedInSection);
+                        }
+                    }
+                    if (isSingleSelect && item.workerSelected && item.qaToggled) {
+                        for (const o of state.tagState) {
+                            if (o.sectionKey === sectionKey && o !== item && o.qaToggled && !o.workerSelected) {
+                                o.qaToggled = false;
+                                this.applyTagBorder(o);
+                            }
                         }
                     }
                     item.qaToggled = !item.qaToggled;

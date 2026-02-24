@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.51",
+  "archetypesVersion": "4.52",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -393,7 +393,7 @@
         },
         {
           "name": "metadata-tag-qa-enhancements.js",
-          "version": "2.4"
+          "version": "2.5"
         }
       ]
     }
