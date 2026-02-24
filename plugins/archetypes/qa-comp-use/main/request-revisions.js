@@ -16,7 +16,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.5',
+    _version: '3.6',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -479,11 +479,8 @@ const plugin = {
 
     copyGuidelineLink(button, originalText, url) {
         navigator.clipboard.writeText(url).then(() => {
-            button.textContent = 'Copied!';
             Logger.log(`Request Revisions: copied ${originalText} to clipboard`);
-            setTimeout(() => {
-                button.textContent = originalText;
-            }, 2500);
+            this.showCopyResultParamsConfirmation(button, originalText);
         }).catch((err) => {
             Logger.error('Request Revisions: failed to copy guideline link', err);
         });

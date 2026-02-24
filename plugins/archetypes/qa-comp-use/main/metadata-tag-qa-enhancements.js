@@ -10,6 +10,8 @@ const NORMAL_BORDER = '1px solid var(--border, #d4d4d4)';
 const NORMAL_BOX_SHADOW = '0 2px 8px rgba(0, 0, 0, 0.1)';
 const BORDER_SUGGEST_DESELECT = '2px solid rgb(239, 68, 68)';
 const BORDER_SUGGEST_SELECT = '2px solid rgb(34, 197, 94)';
+const COPY_CONFIRMATION_MS = 3000;
+const COPY_CONFIRMATION_GREEN_BG = 'rgb(34, 197, 94)';
 
 const BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 const COPY_BTN_DISABLED_CLASSES = ['opacity-50', 'cursor-not-allowed'];
@@ -20,7 +22,7 @@ const plugin = {
     id: 'metadataTagQAEnhancements',
     name: 'Metadata Tag QA Enhancements',
     description: 'Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)',
-    _version: '2.2',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -49,6 +51,10 @@ const plugin = {
     },
 
     onMutation(state, context) {
+        try {
+            this.maybeInjectModalCopyButton(state);
+        } catch (_) { /* ignore modal injection errors */ }
+
         if (state.writerMetadataEnhanced) return;
 
         try {
@@ -144,19 +150,30 @@ const plugin = {
             header.insertBefore(titleSpan, header.firstChild);
         }
 
+        let buttonGroup = header.querySelector('[data-fleet-metadata-btn-group]');
+        if (!buttonGroup) {
+            buttonGroup = document.createElement('div');
+            buttonGroup.setAttribute('data-fleet-metadata-btn-group', '1');
+            buttonGroup.className = 'flex flex-wrap items-center gap-2 ml-auto';
+            const existingHide = header.querySelector('[data-fleet-metadata-hide]');
+            const existingCopy = header.querySelector('[data-fleet-metadata-copy]');
+            if (existingHide) buttonGroup.appendChild(existingHide);
+            if (existingCopy) buttonGroup.appendChild(existingCopy);
+            header.appendChild(buttonGroup);
+        }
         const hideBtn = header.querySelector('[data-fleet-metadata-hide]');
         const copyBtn = header.querySelector('[data-fleet-metadata-copy]');
 
         if (showHideEnabled && !hideBtn) {
             const btn = this.createHideShowButton(innerContent, contentDiv, state);
-            header.appendChild(btn);
+            buttonGroup.appendChild(btn);
         } else if (!showHideEnabled && hideBtn) {
             hideBtn.remove();
         }
 
         if (suggestedChangesEnabled && !copyBtn) {
             const btn = this.createCopyButton(header, state);
-            header.appendChild(btn);
+            buttonGroup.appendChild(btn);
         } else if (!suggestedChangesEnabled && copyBtn) {
             copyBtn.remove();
         }
@@ -236,13 +253,28 @@ const plugin = {
 
         btn.addEventListener('click', () => {
             const text = this.buildCopyText(state);
+            const originalText = btn.textContent;
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log('Metadata Tag QA Enhancements: suggested changes copied to clipboard');
+                this.showCopyConfirmation(btn, originalText);
             }).catch((err) => {
                 Logger.error('Metadata Tag QA Enhancements: failed to copy suggested changes', err);
             });
         });
         return btn;
+    },
+
+    showCopyConfirmation(button, originalText) {
+        button.textContent = 'Copied!';
+        button.style.backgroundColor = COPY_CONFIRMATION_GREEN_BG;
+        button.style.color = 'white';
+        if (button._copyConfirmationTimeout) clearTimeout(button._copyConfirmationTimeout);
+        button._copyConfirmationTimeout = setTimeout(() => {
+            button.textContent = originalText;
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            button._copyConfirmationTimeout = null;
+        }, COPY_CONFIRMATION_MS);
     },
 
     buildTagToggles(innerContent, header, state) {
@@ -272,6 +304,9 @@ const plugin = {
                 btn.setAttribute('data-section', sectionKey);
                 btn.className = tagEl.className;
                 btn.textContent = tagLabel;
+                btn.style.outline = 'none';
+                btn.addEventListener('focus', () => { btn.style.boxShadow = 'none'; });
+                btn.addEventListener('blur', () => { btn.style.boxShadow = ''; });
 
                 const item = { el: btn, workerSelected, qaToggled: false, sectionKey, tagLabel };
                 state.tagState.push(item);
@@ -284,9 +319,15 @@ const plugin = {
                                 this.applyTagBorder(o);
                             }
                         }
+                        const workerSelectedInSection = state.tagState.find(o => o.sectionKey === sectionKey && o.workerSelected);
+                        if (workerSelectedInSection) {
+                            workerSelectedInSection.qaToggled = true;
+                            this.applyTagBorder(workerSelectedInSection);
+                        }
                     }
                     item.qaToggled = !item.qaToggled;
                     this.applyTagBorder(item);
+                    if (isSingleSelect) this.updateSingleSelectSectionBorder(sectionKey, state);
                     this.updateCopyButtonState(header, state);
                 });
 
@@ -317,6 +358,26 @@ const plugin = {
             el.style.borderColor = 'rgb(239, 68, 68)';
         } else {
             el.style.borderColor = 'rgb(34, 197, 94)';
+        }
+    },
+
+    updateSingleSelectSectionBorder(sectionKey, state) {
+        const sectionItems = state.tagState.filter(o => o.sectionKey === sectionKey);
+        if (sectionItems.length === 0) return;
+        const subsection = sectionItems[0].el.closest('.space-y-1');
+        if (!subsection) return;
+        const hasWorkerDeselect = sectionItems.some(o => o.workerSelected && o.qaToggled);
+        const hasAnySelect = sectionItems.some(o => !o.workerSelected && o.qaToggled);
+        if (hasWorkerDeselect && !hasAnySelect) {
+            subsection.style.borderWidth = '2px';
+            subsection.style.borderStyle = 'solid';
+            subsection.style.borderColor = 'rgb(239, 68, 68)';
+            subsection.style.borderRadius = '0.375rem';
+        } else {
+            subsection.style.borderWidth = '';
+            subsection.style.borderStyle = '';
+            subsection.style.borderColor = '';
+            subsection.style.borderRadius = '';
         }
     },
 
@@ -353,6 +414,47 @@ const plugin = {
             lines.push('');
         }
         return lines.join('\n').replace(/\n+$/, '');
+    },
+
+    findRequestRevisionsModal() {
+        const dialogs = document.querySelectorAll('div[role="dialog"][data-state="open"]');
+        for (const dialog of dialogs) {
+            const heading = dialog.querySelector('h2');
+            if (heading && heading.textContent.includes('Request Revisions')) return dialog;
+        }
+        return null;
+    },
+
+    maybeInjectModalCopyButton(state) {
+        if (!state.tagState || state.tagState.length === 0) return;
+        const modal = this.findRequestRevisionsModal();
+        if (!modal) return;
+        const wrapper = modal.querySelector('[data-fleet-guideline-copy-links="true"]');
+        if (!wrapper) return;
+        if (wrapper.querySelector('[data-fleet-metadata-modal-copy]')) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = BUTTON_CLASS;
+        btn.setAttribute('data-fleet-plugin', this.id);
+        btn.setAttribute('data-fleet-metadata-modal-copy', '1');
+        btn.textContent = 'Copy Suggested Metadata Tag Changes?';
+        btn.title = 'Copy suggested metadata tag changes to clipboard';
+        const hasAny = state.tagState.some(t => t.qaToggled);
+        btn.disabled = !hasAny;
+        if (!hasAny) btn.classList.add(...COPY_BTN_DISABLED_CLASSES);
+        btn.addEventListener('click', () => {
+            const text = this.buildCopyText(state);
+            const originalText = btn.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                Logger.log('Metadata Tag QA Enhancements: suggested changes copied to clipboard (modal)');
+                this.showCopyConfirmation(btn, originalText);
+            }).catch((err) => {
+                Logger.error('Metadata Tag QA Enhancements: failed to copy suggested changes', err);
+            });
+        });
+        wrapper.appendChild(btn);
+        Logger.debug('Metadata Tag QA Enhancements: modal copy button injected');
     },
 
     destroy() {
