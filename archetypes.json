@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.52",
+  "archetypesVersion": "4.53",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -198,7 +198,7 @@
       "plugins": [
         {
           "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "remove-textarea-gradient.js",
@@ -231,7 +231,7 @@
       "plugins": [
         {
           "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "remove-textarea-gradient.js",
@@ -345,7 +345,7 @@
       "plugins": [
         {
           "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.0"
+          "version": "1.1"
         },
         {
           "name": "hide-testing-environment-banner.js",
