@@ -15,9 +15,10 @@
 # Effects:
 #   1. Reads @version and const VERSION from fleet.user.js; if they differ, normalizes both to the higher value.
 #   2. Collects _version from plugin .js files (core/main, core/dev, archetypes/*/main, archetypes/*/dev).
-#   3. Updates archetypes.json: version (only when fleet canonical is higher than current), corePlugins,
-#      devPlugins, each archetype's plugins, each devArchetype's plugins.
-#   4. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
+#   3. Collects version (first line) from docs/settings-modal/*.md (information-tab.md, features-tab.md).
+#   4. Updates archetypes.json: version (only when fleet canonical is higher than current), corePlugins,
+#      devPlugins, settingsModalDocs, each archetype's plugins, each devArchetype's plugins.
+#   5. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
 #
 # Prerequisites: jq (must be on PATH). Can be run from anywhere inside the repo
 # (repo root is derived from the script’s location).
@@ -51,6 +52,15 @@ get_const_version() {
     return 1
   fi
   sed -n "s/.*const VERSION = ['\''\"]\\([^'\''\"]*\\)['\''\"].*/\1/p" "$path" | head -1
+}
+
+# Extract version from a settings-modal .md file (first line only).
+get_md_version() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    return 1
+  fi
+  head -1 "$path"
 }
 
 # Return the higher of two version strings (x.y.z); empty treated as absent.
@@ -114,6 +124,7 @@ fleet_path="${fleet_path:-$root/fleet.user.js}"
 core_dir="$plugins_dir/core/main"
 dev_dir="$plugins_dir/core/dev"
 archetypes_dir="$plugins_dir/archetypes"
+settings_modal_dir="$root/docs/settings-modal"
 
 # Prerequisite: jq
 if ! command -v jq &>/dev/null; then
@@ -229,18 +240,39 @@ if [[ -d "$archetypes_dir" ]]; then
 fi
 plugins_json+="}"
 
+# Build settings-modal doc versions JSON (key: filename, value: first-line version)
+settings_modal_json="{"
+first_md=1
+if [[ -d "$settings_modal_dir" ]]; then
+  for f in "$settings_modal_dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$f")"
+    ver="$(get_md_version "$f")"
+    if [[ -z "$ver" ]]; then
+      echo "[warn] No version (first line) found in docs/settings-modal/$name" >&2
+      continue
+    fi
+    [[ $first_md -eq 1 ]] || settings_modal_json+=","
+    first_md=0
+    settings_modal_json+="$(printf '%s' "$name" | jq -Rs .): $(printf '%s' "$ver" | jq -Rs .)"
+  done
+fi
+settings_modal_json+="}"
+
 versions_json=$(jq -n \
   --argjson core "$core_json" \
   --argjson dev "$dev_json" \
   --argjson plugins "$plugins_json" \
+  --argjson settingsModal "$settings_modal_json" \
   --arg fleet "${version_for_archetypes:-}" \
-  '{ core: $core, dev: $dev, plugins: $plugins, fleet: $fleet }')
+  '{ core: $core, dev: $dev, plugins: $plugins, settingsModal: $settingsModal, fleet: $fleet }')
 
-# Check we have something to do (core_json/dev_json/plugins_json have at least one key if non-empty)
+# Check we have something to do (core/dev/plugins/settingsModal/fleet)
 has_versions=false
 [[ "$core_json" != "{}" ]] && has_versions=true
 [[ "$dev_json" != "{}" ]] && has_versions=true
 [[ "$plugins_json" != "{}" ]] && has_versions=true
+[[ "$settings_modal_json" != "{}" ]] && has_versions=true
 [[ -n "$version_for_archetypes" ]] && has_versions=true
 if [[ "$has_versions" != "true" ]]; then
   echo "[warn] No plugin versions found to update."
@@ -257,6 +289,7 @@ jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
   | .version = (if $v.fleet != "" then $v.fleet else .version end)
   | .corePlugins |= (map(.name as $n | .version = ($v.core[$n] // .version)))
   | .devPlugins |= (map(.name as $n | .version = ($v.dev[$n] // .version)))
+  | (.settingsModalDocs // []) |= (map(.name as $n | .version = ($v.settingsModal[$n] // .version)))
   | (.archetypes // []) |= (map(.id as $aid | .plugins |= (map(.name as $n | .version = ($v.plugins[$aid + "/main/" + $n] // .version)))))
   | (.devArchetypes // []) |= (map(.id as $aid | .plugins |= (map(.name as $n | .version = ($v.plugins[$aid + "/dev/" + $n] // .version)))))
 ' > "$tmp_json"
@@ -294,6 +327,13 @@ enumerate_archetypes_changes() {
       echo "  $arch_name: devPlugins[\"$name\"].version: \"$o\" -> \"$n\""
     fi
   done < <(jq -r '.devPlugins[].name' "$old_path")
+  while IFS= read -r name; do
+    o="$(jq -r --arg n "$name" '(.settingsModalDocs // [])[] | select(.name==$n) | .version' "$old_path")"
+    n="$(jq -r --arg n "$name" '(.settingsModalDocs // [])[] | select(.name==$n) | .version' "$new_path")"
+    if [[ "$o" != "$n" ]]; then
+      echo "  $arch_name: settingsModalDocs[\"$name\"].version: \"$o\" -> \"$n\""
+    fi
+  done < <(jq -r '(.settingsModalDocs // [])[].name' "$old_path")
   local aid pname
   jq -r '(.archetypes // [])[] | .id' "$old_path" | while read -r aid; do
     while IFS= read -r pname; do
