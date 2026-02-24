@@ -1,6 +1,6 @@
 {
   "version": "3.11.3",
-  "archetypesVersion": "4.55",
+  "archetypesVersion": "4.56",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -16,11 +16,11 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
       "name": "features-tab.md",
-      "version": "1.6"
+      "version": "1.7"
     }
   ],
   "archetypes": [
