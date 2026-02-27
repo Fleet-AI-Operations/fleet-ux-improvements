@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [dev] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      3.11.3
+// @version      4.2.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '3.11.3';
+    const VERSION = '4.2.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
