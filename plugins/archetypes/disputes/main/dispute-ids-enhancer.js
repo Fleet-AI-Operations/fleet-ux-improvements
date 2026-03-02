@@ -1,11 +1,11 @@
 // ============= dispute-ids-enhancer.js =============
-// Intercepts /api/disputes response and surfaces dispute id, feedback_id, user_id, eval_task_id, team_id on each card.
+// Intercepts /api/disputes response and surfaces dispute id and eval_task_id at top of each card as copy buttons.
 
 const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
-    description: 'Surface API IDs (dispute, feedback, task, team, user) on dispute review cards by intercepting the disputes API response.',
-    _version: '1.0',
+    description: 'Surface Dispute and Task IDs at top of dispute cards as copy buttons with green confirmation.',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { interceptionInstalled: false },
@@ -98,6 +98,7 @@ const plugin = {
     },
 
     injectDisputeIds(context) {
+        this.ensureCopyConfirmationStyle();
         const cards = document.querySelectorAll('[data-ui="dispute-card"]');
         const disputes = context.disputesData;
         if (!Array.isArray(disputes) || disputes.length === 0) return;
@@ -113,7 +114,7 @@ const plugin = {
                 Logger.debug('Dispute IDs Enhancer: no container found for card', i);
                 return;
             }
-            container.appendChild(row);
+            container.insertBefore(row, container.firstChild);
             injected++;
         });
         if (injected > 0) {
@@ -121,19 +122,55 @@ const plugin = {
         }
     },
 
+    ensureCopyConfirmationStyle() {
+        if (document.getElementById('fleet-dispute-ids-copy-style')) return;
+        const style = document.createElement('style');
+        style.id = 'fleet-dispute-ids-copy-style';
+        style.textContent = '.fleet-dispute-id-copied { background-color: rgb(22 163 74) !important; color: white !important; border-color: rgb(22 163 74) !important; }';
+        (document.head || document.documentElement).appendChild(style);
+    },
+
+    buildCopyButton(label, value) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-7 rounded-sm pl-2 pr-2 text-xs font-mono';
+        btn.textContent = value;
+        btn.title = `Copy ${value}`;
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(value).then(() => {
+                btn.classList.add('fleet-dispute-id-copied');
+                Logger.log(`Dispute IDs Enhancer: copied ${label} to clipboard`);
+                setTimeout(() => btn.classList.remove('fleet-dispute-id-copied'), 3000);
+            }).catch((err) => {
+                Logger.error('Dispute IDs Enhancer: failed to copy', err);
+            });
+        });
+        return btn;
+    },
+
     buildIdsRow(dispute) {
-        const div = document.createElement('div');
-        div.setAttribute('data-fleet-dispute-ids', '');
-        div.className = 'mt-1.5 text-xs text-muted-foreground font-mono break-all';
-        const parts = [];
-        if (dispute.id != null) parts.push(`Dispute: ${dispute.id}`);
-        if (dispute.feedback_id != null) parts.push(`Feedback: ${dispute.feedback_id}`);
-        if (dispute.eval_task_id) parts.push(`Task: ${dispute.eval_task_id}`);
-        if (dispute.team_id) parts.push(`Team: ${dispute.team_id}`);
-        if (dispute.user_id) parts.push(`User: ${dispute.user_id}`);
-        if (parts.length === 0) return null;
-        div.textContent = parts.join(' · ');
-        div.title = parts.join('\n');
-        return div;
+        const hasDispute = dispute.id != null;
+        const hasTask = dispute.eval_task_id;
+        if (!hasDispute && !hasTask) return null;
+
+        const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-fleet-dispute-ids', '');
+        wrapper.className = 'flex flex-wrap gap-2 items-center mb-2';
+
+        if (hasDispute) {
+            const label = document.createElement('span');
+            label.className = 'text-xs text-muted-foreground font-medium';
+            label.textContent = 'Dispute:';
+            wrapper.appendChild(label);
+            wrapper.appendChild(this.buildCopyButton('Dispute ID', String(dispute.id)));
+        }
+        if (hasTask) {
+            const label = document.createElement('span');
+            label.className = 'text-xs text-muted-foreground font-medium';
+            label.textContent = 'Task:';
+            wrapper.appendChild(label);
+            wrapper.appendChild(this.buildCopyButton('Task ID', dispute.eval_task_id));
+        }
+        return wrapper;
     }
 };
