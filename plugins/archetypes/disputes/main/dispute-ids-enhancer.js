@@ -1,14 +1,14 @@
 // ============= dispute-ids-enhancer.js =============
 // Intercepts /api/disputes response and surfaces dispute id and eval_task_id at top of each card as copy buttons.
 
-const DISPUTE_BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+const DISPUTE_BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 pl-4 pr-4 py-2';
 const IGNORE_CACHE_PREFIX = 'fleet-disputes-ignore-v1:';
 
 const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -566,12 +566,21 @@ const plugin = {
 
     ensureShowHideToggle(idsRow, isIgnored) {
         const existing = idsRow && idsRow.querySelector('[data-fleet-dispute-toggle]');
+        const existingLabel = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-label]');
         if (!isIgnored) {
             if (existing) existing.remove();
+            if (existingLabel) existingLabel.remove();
             return null;
         }
         if (existing) return existing;
         if (!idsRow) return null;
+        if (!existingLabel) {
+            const label = document.createElement('span');
+            label.setAttribute('data-fleet-dispute-ignored-label', '1');
+            label.className = 'text-xs text-muted-foreground font-medium';
+            label.textContent = 'Ignored';
+            idsRow.appendChild(label);
+        }
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.setAttribute('data-fleet-dispute-toggle', '1');
@@ -601,10 +610,12 @@ const plugin = {
 
         if (toggle && !toggle._fleetToggleBound) {
             toggle._fleetToggleBound = true;
+            const self = this;
             toggle.addEventListener('click', () => {
                 const currentlyHidden = collapsible && collapsible.style.display === 'none';
                 if (currentlyHidden) {
                     setCollapsed(false);
+                    self.restoreResolutionTextFromCache(idsRow);
                     Logger.debug('Dispute IDs Enhancer: dispute content shown via toggle');
                 } else {
                     setCollapsed(true);
@@ -612,6 +623,40 @@ const plugin = {
                 }
             });
         }
+    },
+
+    setTextareaValueReactFriendly(textarea, text) {
+        if (!textarea) return;
+        textarea.focus();
+        const previousValue = textarea.value;
+        const proto = Object.getPrototypeOf(textarea);
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(textarea, text);
+        } else {
+            textarea.value = text;
+        }
+        if (textarea._valueTracker && typeof textarea._valueTracker.setValue === 'function') {
+            try {
+                textarea._valueTracker.setValue(previousValue);
+            } catch (_) { /* ignore */ }
+        }
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+
+    restoreResolutionTextFromCache(idsRow) {
+        if (!idsRow) return;
+        const disputeId = idsRow.getAttribute('data-fleet-dispute-id');
+        if (!disputeId) return;
+        const entry = this.getIgnoreEntry(disputeId);
+        if (!entry || typeof entry.resolutionText !== 'string') return;
+        const card = idsRow.closest('[data-ui="dispute-card"]');
+        if (!card) return;
+        const textarea = this.findResolutionTextarea(card);
+        if (!textarea) return;
+        this.setTextareaValueReactFriendly(textarea, entry.resolutionText);
+        Logger.debug(`Dispute IDs Enhancer: restored resolution text for dispute ${disputeId} (expand)`);
     },
 
     applyIgnoreUI(card, dispute, idsRow) {
@@ -649,10 +694,8 @@ const plugin = {
 
         const resolutionTextarea = this.findResolutionTextarea(card);
         if (isIgnored && existing && typeof existing.resolutionText === 'string' && resolutionTextarea) {
-            if (!resolutionTextarea.value) {
-                resolutionTextarea.value = existing.resolutionText;
-                Logger.debug(`Dispute IDs Enhancer: restored resolution text for ignored dispute ${disputeId}`);
-            }
+            this.setTextareaValueReactFriendly(resolutionTextarea, existing.resolutionText);
+            Logger.debug(`Dispute IDs Enhancer: restored resolution text for ignored dispute ${disputeId}`);
         }
 
         this.collapseCardForIgnoredState(card, idsRow, isIgnored);
@@ -676,8 +719,8 @@ const plugin = {
                     Logger.info(`Dispute IDs Enhancer: dispute ${disputeId} marked as ignored`);
                     this.collapseCardForIgnoredState(card, idsRow, true);
                     applyLabel(true);
-                    if (textarea && currentText && updatedStore) {
-                        textarea.value = currentText;
+                    if (textarea && currentText) {
+                        this.setTextareaValueReactFriendly(textarea, currentText);
                     }
                 } else {
                     this.setIgnoreEntry(disputeId, { ignored: false });
@@ -722,6 +765,7 @@ const plugin = {
 
         const wrapper = document.createElement('div');
         wrapper.setAttribute('data-fleet-dispute-ids', '');
+        wrapper.setAttribute('data-fleet-dispute-id', String(dispute.id));
         wrapper.className = 'flex flex-wrap gap-2 items-center mb-2';
 
         if (hasDispute) {
