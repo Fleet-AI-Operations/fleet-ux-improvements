@@ -116,18 +116,25 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 
+### Task Creation Environment Picker Page
+- **Sort Environments Alphabetically**: Sort environment cards A–Z by name within each project section
+
 ### Computer Use Task Creation Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Prompt Scratchpad**: Scratchpad for notes while creating tasks
 - **Guideline Buttons**: Quick links to project guidelines
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
 
 ### Computer Use Task Revision Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Prompt Scratchpad**: Scratchpad for notes while revising
 - **Guideline Buttons**: Quick links to guidelines
 - **Remove Textarea Gradient**: Cleaner textarea appearance
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
 
 ### QA Tool Use Review Page
 - **Clear Search**: One-click clear for search inputs
@@ -137,10 +144,8 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Prompt**: Copy prompt text to clipboard
 - **Copy Verifier Output**: Copy verifier output to clipboard
 - **QA Scratchpad**: Adjustable-height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
-- **JSON Editor Online**: Button that links to JSON Editor Online for JSON manipulation
-- **Guideline Buttons**: Quick links to guidelines below the QA scratchpad
+- **Useful Link Buttons**: Quick links to QA/Kinesis guidelines and JSON Editor Online below the scratchpad
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Panel Size Memory**: Remembers your preferred panel sizes between sessions
 - **Remember Layout Proportions**: Persists and restores panel split positions between sessions
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue (with guideline link shortcuts)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
@@ -150,14 +155,19 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
 
 ### QA Computer Use Review Page
+- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
 - **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Copy Prompt**: Copy prompt text to clipboard
 - **Copy Verifier Output**: Copy verifier output to clipboard
+- **Copy Result Params and Inputs**: Button under Your Answer to copy parameter labels and values to clipboard
 - **Guideline Buttons**: Quick links to guidelines
 - **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue
 - **QA Scratchpad**: Adjustable-height scratchpad for notes (with option to remember contents)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
+- **Metadata Tag QA Enhancements**: Show/hide Writer Metadata section; suggested tag changes as toggles with "Copy Suggested Changes" for feedback
+- **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
+- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
 
 ---
 
@@ -195,27 +205,3 @@ Click the Tampermonkey icon and select "Fleet Workflow Builder UX Enhancer" to a
 **Permission errors:**
 - Grant cross-origin request permissions when Tampermonkey prompts
 - In Tampermonkey settings, ensure "Allow requests to `raw.githubusercontent.com`" is permitted
-
----
-
-## Development
-
-This script uses a modular plugin architecture. Plugins are organized by archetype; each archetype has a folder under `plugins/archetypes/` with `main/`, and optionally `dev/` or `deprecated/` subfolders. Core behavior (settings UI, dev-only logger panel) lives under `plugins/core/`.
-
-```
-plugins/
-├── core/
-│   ├── main/                 # Settings UI (all builds)
-│   └── dev/                  # Logger panel (dev builds only)
-└── archetypes/
-    ├── dashboard/            # Main dashboard (work/create)
-    ├── qa-project-picker/     # QA project picker (work/problems/qa)
-    ├── tool-use-task-creation/
-    ├── tool-use-revision/
-    ├── comp-use-task-creation/
-    ├── comp-use-revision/
-    ├── qa-tool-use/           # QA tool use review
-    └── qa-comp-use/           # QA computer use review
-```
-
-Plugin load lists (core, dev, and per-archetype) and versions are defined in `archetypes.json`. Run `./utils/update-archetypes.js` or `./utils/update-versions.py` when plugin versions or archetypes change.

@@ -2,7 +2,7 @@
 
 ## Features
 
-The extension uses an archetype-based plugin system that loads different features depending on which page you're on.
+The extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`.
 
 Many of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!
 
@@ -81,7 +81,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Resizable tool results area
 - **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
 - **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
-- **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
 
 ### QA Computer Use Review Page
 - **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
