@@ -2,6 +2,7 @@
 // Intercepts /api/disputes response and surfaces dispute id and eval_task_id at top of each card as copy buttons.
 
 const DISPUTE_BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+const IGNORE_CACHE_PREFIX = 'fleet-disputes-ignore-v1:';
 
 const plugin = {
     id: 'disputeIdsEnhancer',
@@ -31,6 +32,10 @@ const plugin = {
     onMutation(state, context) {
         if (!state.interceptionInstalled) {
             this.installDisputesInterception(context, state);
+        }
+        const ignoreEnabled = typeof Storage.getSubOptionEnabled === 'function' && Storage.getSubOptionEnabled(plugin.id, 'ignore-disputes', true);
+        if (ignoreEnabled) {
+            this.ensureSyncUI(context, state);
         }
         if (context.disputesData && Array.isArray(context.disputesData)) {
             if (this.isInjectionComplete(context)) return;
@@ -180,6 +185,121 @@ const plugin = {
         }
         this.saveIgnoreStore(currentStore);
         return currentStore;
+    },
+
+    findSyncContainer() {
+        const link = document.querySelector('a[href*="/work/problems"]');
+        if (!link || !link.closest) return null;
+        const container = link.closest('.mb-6');
+        return container || null;
+    },
+
+    ensureSyncUI(context, state) {
+        if (document.querySelector('[data-fleet-dispute-sync]')) return;
+        const container = this.findSyncContainer();
+        if (!container) return;
+
+        const row = document.createElement('div');
+        row.setAttribute('data-fleet-dispute-sync', '1');
+        row.className = 'flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-border';
+
+        const help = document.createElement('p');
+        help.className = 'text-xs text-muted-foreground max-w-xl';
+        help.textContent = 'Share ignore list: copy your list to clipboard and paste elsewhere for another QA to copy; they can paste here to add those ignored disputes to their list (existing entries are kept).';
+        row.appendChild(help);
+
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'flex items-center gap-2 shrink-0';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = DISPUTE_BUTTON_CLASS;
+        copyBtn.textContent = 'Copy ignore list';
+        copyBtn.title = 'Copy your ignored disputes list to clipboard';
+        copyBtn.addEventListener('click', () => this.copyIgnoreCache());
+
+        const pasteBtn = document.createElement('button');
+        pasteBtn.type = 'button';
+        pasteBtn.className = DISPUTE_BUTTON_CLASS;
+        pasteBtn.textContent = 'Paste ignore list';
+        pasteBtn.title = 'Paste and merge an ignore list from clipboard';
+        pasteBtn.addEventListener('click', () => this.pasteIgnoreCache(context, state));
+
+        btnGroup.appendChild(copyBtn);
+        btnGroup.appendChild(pasteBtn);
+        row.appendChild(btnGroup);
+        container.appendChild(row);
+        Logger.log('Dispute IDs Enhancer: sync ignore UI added');
+    },
+
+    copyIgnoreCache() {
+        try {
+            const store = this.loadIgnoreStore();
+            const payload = IGNORE_CACHE_PREFIX + JSON.stringify(store);
+            navigator.clipboard.writeText(payload).then(() => {
+                const n = Object.keys(store).length;
+                Logger.log(`Dispute IDs Enhancer: copied ignore list to clipboard (${n} entr${n === 1 ? 'y' : 'ies'})`);
+            }).catch((err) => {
+                Logger.error('Dispute IDs Enhancer: failed to copy ignore list', err);
+            });
+        } catch (e) {
+            Logger.error('Dispute IDs Enhancer: copy ignore list failed', e);
+        }
+    },
+
+    parsePastedIgnoreCache(raw) {
+        if (typeof raw !== 'string') return null;
+        const trimmed = raw.replace(/^\s+|\s+$/g, '').replace(/\uFEFF/g, '');
+        if (!trimmed.startsWith(IGNORE_CACHE_PREFIX)) return null;
+        const json = trimmed.slice(IGNORE_CACHE_PREFIX.length).trim();
+        try {
+            const parsed = JSON.parse(json);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    pasteIgnoreCache(context, state) {
+        navigator.clipboard.readText().then((text) => {
+            const pasted = this.parsePastedIgnoreCache(text);
+            if (!pasted) {
+                Logger.warn('Dispute IDs Enhancer: clipboard does not contain a valid ignore list (paste a list copied from this page).');
+                return;
+            }
+            const current = this.loadIgnoreStore();
+            let added = 0;
+            for (const [id, entry] of Object.entries(pasted)) {
+                if (!id || !entry || typeof entry !== 'object' || !entry.ignored) continue;
+                if (current[id] && current[id].ignored) continue;
+                current[id] = {
+                    ignored: true,
+                    resolutionText: typeof entry.resolutionText === 'string' ? entry.resolutionText.trim() : '',
+                    updatedAt: entry.updatedAt || Date.now()
+                };
+                added++;
+            }
+            this.saveIgnoreStore(current);
+            Logger.log(`Dispute IDs Enhancer: merged ignore list from clipboard (${added} new entr${added === 1 ? 'y' : 'ies'})`);
+            this.reapplyIgnoreState(context, state);
+        }).catch((err) => {
+            Logger.error('Dispute IDs Enhancer: failed to read clipboard', err);
+        });
+    },
+
+    reapplyIgnoreState(context, state) {
+        const cards = document.querySelectorAll('[data-ui="dispute-card"]');
+        const disputes = context && context.disputesData && Array.isArray(context.disputesData) ? context.disputesData : [];
+        if (cards.length === 0 || disputes.length === 0) return;
+        cards.forEach((card, i) => {
+            const dispute = disputes[i];
+            if (!dispute || dispute.id == null) return;
+            const idsRow = card.querySelector('[data-fleet-dispute-ids]');
+            if (!idsRow) return;
+            const isIgnored = !!this.getIgnoreEntry(String(dispute.id));
+            this.collapseCardForIgnoredState(card, idsRow, isIgnored);
+        });
+        Logger.debug('Dispute IDs Enhancer: reapplied ignore state to cards');
     },
 
     updateDisputesCache(disputes) {
