@@ -1,11 +1,13 @@
 // ============= dispute-ids-enhancer.js =============
 // Intercepts /api/disputes response and surfaces dispute id and eval_task_id at top of each card as copy buttons.
 
+const DISPUTE_BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+
 const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '1.7',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -351,6 +353,7 @@ const plugin = {
                 return;
             }
             container.insertBefore(row, container.firstChild);
+            this.hideNativeExpandButton(card);
             if (ignoreEnabled) {
                 try {
                     this.applyIgnoreUI(card, dispute, row);
@@ -362,6 +365,22 @@ const plugin = {
         });
         if (injected > 0) {
             Logger.log(`Dispute IDs Enhancer: injected IDs for ${injected} dispute card(s)`);
+        }
+    },
+
+    hideNativeExpandButton(card) {
+        if (!card) return;
+        try {
+            const buttons = card.querySelectorAll('[data-ui="dispute-expand"]');
+            if (!buttons || buttons.length === 0) return;
+            buttons.forEach((btn) => {
+                if (!btn || btn._fleetExpandHidden) return;
+                btn._fleetExpandHidden = true;
+                btn.style.display = 'none';
+            });
+            Logger.debug('Dispute IDs Enhancer: hid native dispute expand button(s) to avoid DOM conflicts');
+        } catch (e) {
+            Logger.debug('Dispute IDs Enhancer: failed to hide native expand button', e);
         }
     },
 
@@ -425,15 +444,19 @@ const plugin = {
         return collapsible;
     },
 
-    ensureShowHideToggle(idsRow) {
-        if (!idsRow || idsRow.querySelector('[data-fleet-dispute-toggle]')) {
-            return idsRow && idsRow.querySelector('[data-fleet-dispute-toggle]');
+    ensureShowHideToggle(idsRow, isIgnored) {
+        const existing = idsRow && idsRow.querySelector('[data-fleet-dispute-toggle]');
+        if (!isIgnored) {
+            if (existing) existing.remove();
+            return null;
         }
+        if (existing) return existing;
+        if (!idsRow) return null;
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.setAttribute('data-fleet-dispute-toggle', '1');
-        toggle.className = 'ml-auto inline-flex items-center justify-center whitespace-nowrap text-[11px] font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-6 rounded-sm px-2';
-        toggle.textContent = 'Show Content?';
+        toggle.className = `ml-auto ${DISPUTE_BUTTON_CLASS}`;
+        toggle.textContent = 'Show Content';
         idsRow.appendChild(toggle);
         return toggle;
     },
@@ -441,13 +464,13 @@ const plugin = {
     collapseCardForIgnoredState(card, idsRow, isIgnored) {
         const headerWrapper = this.ensureHeaderContentWrapped(card, idsRow);
         const collapsible = this.ensureCollapsibleContainer(card, idsRow);
-        const toggle = this.ensureShowHideToggle(idsRow);
-        if (!toggle) return;
+        const toggle = this.ensureShowHideToggle(idsRow, isIgnored);
+        if (isIgnored && !toggle) return;
 
         const setCollapsed = (hidden) => {
             if (headerWrapper) headerWrapper.style.display = hidden ? 'none' : '';
             if (collapsible) collapsible.style.display = hidden ? 'none' : '';
-            toggle.textContent = hidden ? 'Show Content?' : 'Hide Content';
+            if (toggle) toggle.textContent = hidden ? 'Show Content' : 'Hide Content';
         };
 
         if (isIgnored) {
@@ -456,7 +479,7 @@ const plugin = {
             setCollapsed(false);
         }
 
-        if (!toggle._fleetToggleBound) {
+        if (toggle && !toggle._fleetToggleBound) {
             toggle._fleetToggleBound = true;
             toggle.addEventListener('click', () => {
                 const currentlyHidden = collapsible && collapsible.style.display === 'none';
@@ -490,7 +513,7 @@ const plugin = {
             ignoreBtn = document.createElement('button');
             ignoreBtn.type = 'button';
             ignoreBtn.setAttribute('data-fleet-dispute-ignore', disputeId);
-            ignoreBtn.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-xs font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border bg-background transition-colors hover:text-accent-foreground h-8 px-3 text-muted-foreground';
+            ignoreBtn.className = DISPUTE_BUTTON_CLASS;
 
             const rejectBtn = footer.querySelector('[data-ui="dispute-reject"]');
             if (rejectBtn && rejectBtn.parentNode === footer) {
