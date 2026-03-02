@@ -1,6 +1,6 @@
 {
   "version": "4.2.0",
-  "archetypesVersion": "5.2",
+  "archetypesVersion": "5.3",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -368,6 +368,19 @@
         {
           "name": "metadata-tag-qa-enhancements.js",
           "version": "2.5"
+        }
+      ]
+    },
+    {
+      "id": "disputes",
+      "name": "Dispute Review Page",
+      "description": "Page for reviewing writer disputes",
+      "urlPattern": "work/problems/disputes",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "dispute-ids-enhancer.js",
+          "version": "1.0"
         }
       ]
     }
