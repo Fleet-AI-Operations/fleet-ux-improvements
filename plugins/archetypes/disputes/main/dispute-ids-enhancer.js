@@ -5,18 +5,29 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards as copy buttons with green confirmation.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
-    initialState: { interceptionInstalled: false },
+    initialState: { interceptionInstalled: false, loggedNoCardsYet: false },
 
     onMutation(state, context) {
         if (!state.interceptionInstalled) {
             this.installDisputesInterception(context, state);
         }
         if (context.disputesData && Array.isArray(context.disputesData)) {
-            this.injectDisputeIds(context);
+            this.injectDisputeIds(context, state);
         }
+    },
+
+    scheduleInjectionRetries(context) {
+        const self = this;
+        const delays = [0, 150, 400, 800];
+        delays.forEach((delayMs, k) => {
+            setTimeout(() => {
+                Logger.debug(`Dispute IDs Enhancer: retry inject (attempt ${k + 1}/${delays.length})`);
+                self.injectDisputeIds(context, self.state);
+            }, delayMs);
+        });
     },
 
     installDisputesInterception(context, state) {
@@ -50,7 +61,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API`);
-                                setTimeout(() => self.injectDisputeIds(context), 0);
+                                self.scheduleInjectionRetries(context);
                             }
                         } catch (e) {
                             Logger.debug('Dispute IDs Enhancer: failed to parse disputes response', e);
@@ -82,7 +93,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API (XHR)`);
-                                setTimeout(() => self.injectDisputeIds(context), 0);
+                                self.scheduleInjectionRetries(context);
                             }
                         }
                     } catch (e) {
@@ -97,11 +108,15 @@ const plugin = {
         Logger.log('Dispute IDs Enhancer: network interception installed');
     },
 
-    injectDisputeIds(context) {
+    injectDisputeIds(context, state) {
         this.ensureCopyConfirmationStyle();
         const cards = document.querySelectorAll('[data-ui="dispute-card"]');
         const disputes = context.disputesData;
         if (!Array.isArray(disputes) || disputes.length === 0) return;
+        if (cards.length === 0 && state && !state.loggedNoCardsYet) {
+            state.loggedNoCardsYet = true;
+            Logger.log('Dispute IDs Enhancer: have data but no cards yet (will retry)');
+        }
         let injected = 0;
         cards.forEach((card, i) => {
             if (card.querySelector('[data-fleet-dispute-ids]')) return;
