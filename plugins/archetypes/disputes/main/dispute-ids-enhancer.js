@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -374,6 +374,27 @@ const plugin = {
         return textarea;
     },
 
+    ensureHeaderContentWrapped(card, idsRow) {
+        if (!card || !idsRow) return null;
+        const container = idsRow.parentElement;
+        if (!container) return null;
+        let wrapper = card.querySelector('[data-fleet-dispute-collapsible-header]');
+        if (wrapper) return wrapper;
+
+        const toWrap = [];
+        for (let i = 0; i < container.children.length; i++) {
+            const child = container.children[i];
+            if (child !== idsRow) toWrap.push(child);
+        }
+        if (toWrap.length === 0) return null;
+
+        wrapper = document.createElement('div');
+        wrapper.setAttribute('data-fleet-dispute-collapsible-header', '1');
+        toWrap.forEach((el) => wrapper.appendChild(el));
+        container.appendChild(wrapper);
+        return wrapper;
+    },
+
     ensureCollapsibleContainer(card, idsRow) {
         if (!card) return null;
         let collapsible = card.querySelector('[data-fleet-dispute-collapsible]');
@@ -389,10 +410,6 @@ const plugin = {
         const toWrap = [];
         let sibling = mainInner.nextElementSibling;
         while (sibling) {
-            if (sibling === idsRow) {
-                sibling = sibling.nextElementSibling;
-                continue;
-            }
             toWrap.push(sibling);
             sibling = sibling.nextElementSibling;
         }
@@ -422,29 +439,32 @@ const plugin = {
     },
 
     collapseCardForIgnoredState(card, idsRow, isIgnored) {
+        const headerWrapper = this.ensureHeaderContentWrapped(card, idsRow);
         const collapsible = this.ensureCollapsibleContainer(card, idsRow);
         const toggle = this.ensureShowHideToggle(idsRow);
-        if (!collapsible || !toggle) return;
+        if (!toggle) return;
+
+        const setCollapsed = (hidden) => {
+            if (headerWrapper) headerWrapper.style.display = hidden ? 'none' : '';
+            if (collapsible) collapsible.style.display = hidden ? 'none' : '';
+            toggle.textContent = hidden ? 'Show Content?' : 'Hide Content';
+        };
 
         if (isIgnored) {
-            collapsible.style.display = 'none';
-            toggle.textContent = 'Show Content?';
+            setCollapsed(true);
         } else {
-            collapsible.style.display = '';
-            toggle.textContent = 'Hide Content';
+            setCollapsed(false);
         }
 
         if (!toggle._fleetToggleBound) {
             toggle._fleetToggleBound = true;
             toggle.addEventListener('click', () => {
-                const currentlyHidden = collapsible.style.display === 'none';
+                const currentlyHidden = collapsible && collapsible.style.display === 'none';
                 if (currentlyHidden) {
-                    collapsible.style.display = '';
-                    toggle.textContent = 'Hide Content';
+                    setCollapsed(false);
                     Logger.debug('Dispute IDs Enhancer: dispute content shown via toggle');
                 } else {
-                    collapsible.style.display = 'none';
-                    toggle.textContent = 'Show Content?';
+                    setCollapsed(true);
                     Logger.debug('Dispute IDs Enhancer: dispute content hidden via toggle');
                 }
             });

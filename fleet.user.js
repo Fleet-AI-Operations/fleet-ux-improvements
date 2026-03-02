@@ -507,15 +507,19 @@
                     this.delete(`plugin-cache-${pluginKey}`);
                     clearedCount++;
                 }
+                // Clear plugin-specific data stores (e.g. dispute-ids-enhancer ignore list)
+                this.delete(`${plugin.id}-ignored`);
+                clearedCount++;
             });
             
-            // Clear global settings
+            // Clear global settings and known plugin data caches
             const globalKeys = [
                 'global-plugins-enabled',
                 'global-plugins-previous',
                 'debug',
                 'verbose',
-                'submodule-logging'
+                'submodule-logging',
+                'disputes-cache'
             ];
             globalKeys.forEach(key => {
                 this.delete(key);
