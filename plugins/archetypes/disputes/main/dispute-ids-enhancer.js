@@ -8,7 +8,7 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -294,10 +294,21 @@ const plugin = {
         cards.forEach((card, i) => {
             const dispute = disputes[i];
             if (!dispute || dispute.id == null) return;
+            const disputeId = String(dispute.id);
             const idsRow = card.querySelector('[data-fleet-dispute-ids]');
             if (!idsRow) return;
-            const isIgnored = !!this.getIgnoreEntry(String(dispute.id));
+            const isIgnored = !!this.getIgnoreEntry(disputeId);
             this.collapseCardForIgnoredState(card, idsRow, isIgnored);
+
+            const ignoreBtn = card.querySelector('[data-fleet-dispute-ignore]');
+            if (ignoreBtn) {
+                ignoreBtn.textContent = isIgnored ? 'Un-Ignore' : 'Ignore';
+                ignoreBtn.title = isIgnored ? 'Un-ignore this dispute (show full content)' : 'Ignore this dispute (collapse content)';
+            }
+
+            if (isIgnored) {
+                this.restoreResolutionTextFromCache(idsRow);
+            }
         });
         Logger.debug('Dispute IDs Enhancer: reapplied ignore state to cards');
     },
