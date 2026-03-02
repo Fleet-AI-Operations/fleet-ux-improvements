@@ -4,8 +4,8 @@
 const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
-    description: 'Surface Dispute and Task IDs at top of dispute cards as copy buttons with green confirmation.',
-    _version: '1.4',
+    description: 'Surface Dispute and Task IDs at top of dispute cards.',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

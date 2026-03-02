@@ -131,6 +131,11 @@
       "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard"
     },
     {
+      "file": "copy-result-params.js",
+      "name": "Copy Result Params and Inputs",
+      "description": "Add a button under Your Answer that copies all parameter labels and values to the clipboard"
+    },
+    {
       "file": "copy-verifier-output.js",
       "name": "Copy Verifier Output",
       "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard"
@@ -144,6 +149,11 @@
       "file": "hide-testing-environment-banner.js",
       "name": "Hide Testing Environment Banner",
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
+    },
+    {
+      "file": "metadata-tag-qa-enhancements.js",
+      "name": "Metadata Tag QA Enhancements",
+      "description": "Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)"
     },
     {
       "file": "prompt-diff-highlight.js",
@@ -449,6 +459,13 @@
       "file": "workflow-integrity-check.js",
       "name": "Workflow Integrity Check",
       "description": "Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs"
+    }
+  ],
+  "archetypes/disputes/main": [
+    {
+      "file": "dispute-ids-enhancer.js",
+      "name": "Dispute IDs Enhancer",
+      "description": "Surface Dispute and Task IDs at top of dispute cards."
     }
   ]
 }
