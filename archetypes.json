@@ -380,7 +380,7 @@
       "plugins": [
         {
           "name": "dispute-ids-enhancer.js",
-          "version": "1.5"
+          "version": "1.6"
         }
       ]
     }

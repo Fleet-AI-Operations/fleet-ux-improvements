@@ -96,3 +96,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Metadata Tag QA Enhancements**: Show/hide Writer Metadata section; suggested tag changes as toggles with "Copy Suggested Changes" for feedback
 - **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
 - **Remember Layout Proportions**: Persist and restore panel split positions between sessions
+
+### Dispute Review Page
+- **Dispute IDs Enhancer**: Surface Dispute and Task IDs at the top of each dispute card, with an optional ignore mode that lets you mark disputes as ignored by ID, collapse all inner content, and restore your saved "Your Resolution" text when you revisit the page.
