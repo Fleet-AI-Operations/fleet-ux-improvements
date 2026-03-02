@@ -8,7 +8,7 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -565,28 +565,32 @@ const plugin = {
     },
 
     ensureShowHideToggle(idsRow, isIgnored) {
+        const wrapper = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-group]');
         const existing = idsRow && idsRow.querySelector('[data-fleet-dispute-toggle]');
-        const existingLabel = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-label]');
         if (!isIgnored) {
+            if (wrapper) wrapper.remove();
             if (existing) existing.remove();
-            if (existingLabel) existingLabel.remove();
+            const orphanLabel = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-label]');
+            if (orphanLabel) orphanLabel.remove();
             return null;
         }
         if (existing) return existing;
         if (!idsRow) return null;
-        if (!existingLabel) {
-            const label = document.createElement('span');
-            label.setAttribute('data-fleet-dispute-ignored-label', '1');
-            label.className = 'text-xs text-muted-foreground font-medium';
-            label.textContent = 'Ignored';
-            idsRow.appendChild(label);
-        }
+        const group = document.createElement('div');
+        group.setAttribute('data-fleet-dispute-ignored-group', '1');
+        group.className = 'ml-auto flex items-center gap-2';
+        const label = document.createElement('span');
+        label.setAttribute('data-fleet-dispute-ignored-label', '1');
+        label.className = 'text-xs text-muted-foreground font-medium';
+        label.textContent = 'Ignored';
+        group.appendChild(label);
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.setAttribute('data-fleet-dispute-toggle', '1');
-        toggle.className = `ml-auto ${DISPUTE_BUTTON_CLASS}`;
+        toggle.className = DISPUTE_BUTTON_CLASS;
         toggle.textContent = 'Show Content';
-        idsRow.appendChild(toggle);
+        group.appendChild(toggle);
+        idsRow.appendChild(group);
         return toggle;
     },
 
