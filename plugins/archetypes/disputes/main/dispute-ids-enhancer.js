@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards as copy buttons with green confirmation.',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -27,10 +27,13 @@ const plugin = {
             return;
         }
 
-        // If initial request was missed, do one bounded fallback request.
+        // If initial request was missed, prefer cached disputes, then bounded fallback request.
         const cards = document.querySelectorAll('[data-ui="dispute-card"]');
         if (cards.length > 0 && !state.fallbackRequested) {
-            this.requestDisputesFallback(context, state);
+            const usedCache = this.loadCachedDisputes(context, state);
+            if (!usedCache) {
+                this.requestDisputesFallback(context, state);
+            }
         }
     },
 
@@ -79,6 +82,42 @@ const plugin = {
             if (!card.querySelector('[data-fleet-dispute-ids]')) return false;
         }
         return true;
+    },
+
+    loadCachedDisputes(context, state) {
+        try {
+            const cached = Storage.get('disputes-cache', null);
+            if (!cached) return false;
+            let parsed;
+            try {
+                parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+            } catch (e) {
+                Logger.warn('Dispute IDs Enhancer: failed to parse disputes cache, clearing', e);
+                Storage.delete('disputes-cache');
+                return false;
+            }
+            const disputes = Array.isArray(parsed.disputes) ? parsed.disputes : null;
+            if (!disputes || disputes.length === 0) return false;
+
+            context.disputesData = disputes;
+            Logger.log(`Dispute IDs Enhancer: loaded ${disputes.length} disputes from cache`);
+            this.scheduleInjectionRetries(context, state);
+            return true;
+        } catch (e) {
+            Logger.warn('Dispute IDs Enhancer: error while loading disputes cache', e);
+            return false;
+        }
+    },
+
+    updateDisputesCache(disputes) {
+        try {
+            if (!Array.isArray(disputes) || disputes.length === 0) return;
+            const payload = { disputes, cachedAt: Date.now() };
+            Storage.set('disputes-cache', JSON.stringify(payload));
+            Logger.debug(`Dispute IDs Enhancer: updated disputes cache with ${disputes.length} items`);
+        } catch (e) {
+            Logger.warn('Dispute IDs Enhancer: failed to update disputes cache', e);
+        }
     },
 
     getFallbackDisputesUrl(context) {
@@ -166,6 +205,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API`);
+                                self.updateDisputesCache(data.disputes);
                                 self.scheduleInjectionRetries(context, state);
                             }
                         } catch (e) {
@@ -198,6 +238,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API (XHR)`);
+                                self.updateDisputesCache(data.disputes);
                                 self.scheduleInjectionRetries(context, state);
                             }
                         }
