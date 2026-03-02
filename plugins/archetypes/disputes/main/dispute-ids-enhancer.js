@@ -5,29 +5,134 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards as copy buttons with green confirmation.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
-    initialState: { interceptionInstalled: false, loggedNoCardsYet: false },
+    initialState: {
+        interceptionInstalled: false,
+        loggedNoCardsYet: false,
+        fallbackRequested: false,
+        fallbackInFlight: false,
+        fallbackAttempts: 0,
+        pendingRetryTimeouts: []
+    },
 
     onMutation(state, context) {
         if (!state.interceptionInstalled) {
             this.installDisputesInterception(context, state);
         }
         if (context.disputesData && Array.isArray(context.disputesData)) {
+            if (this.isInjectionComplete(context)) return;
             this.injectDisputeIds(context, state);
+            return;
+        }
+
+        // If initial request was missed, do one bounded fallback request.
+        const cards = document.querySelectorAll('[data-ui="dispute-card"]');
+        if (cards.length > 0 && !state.fallbackRequested) {
+            this.requestDisputesFallback(context, state);
         }
     },
 
-    scheduleInjectionRetries(context) {
+    scheduleInjectionRetries(context, state) {
+        if (!state) return;
+        this.clearPendingRetries(state);
+
         const self = this;
         const delays = [0, 150, 400, 800];
+        state.pendingRetryTimeouts = [];
+
         delays.forEach((delayMs, k) => {
-            setTimeout(() => {
+            const timeoutId = setTimeout(() => {
+                if (self.isInjectionComplete(context)) {
+                    self.clearPendingRetries(state);
+                    return;
+                }
                 Logger.debug(`Dispute IDs Enhancer: retry inject (attempt ${k + 1}/${delays.length})`);
-                self.injectDisputeIds(context, self.state);
+                self.injectDisputeIds(context, state);
+
+                if (self.isInjectionComplete(context)) {
+                    self.clearPendingRetries(state);
+                }
             }, delayMs);
+            state.pendingRetryTimeouts.push(timeoutId);
         });
+    },
+
+    clearPendingRetries(state) {
+        if (!state || !Array.isArray(state.pendingRetryTimeouts)) return;
+        state.pendingRetryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+        state.pendingRetryTimeouts = [];
+    },
+
+    isInjectionComplete(context) {
+        const disputes = context.disputesData;
+        if (!Array.isArray(disputes) || disputes.length === 0) return false;
+
+        const cards = document.querySelectorAll('[data-ui="dispute-card"]');
+        if (cards.length === 0) return false;
+
+        for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            const dispute = disputes[i];
+            if (!dispute) return false;
+            if (!card.querySelector('[data-fleet-dispute-ids]')) return false;
+        }
+        return true;
+    },
+
+    getFallbackDisputesUrl(context) {
+        const pageWindow = context.getPageWindow();
+        try {
+            const resources = pageWindow.performance.getEntriesByType('resource') || [];
+            for (let i = resources.length - 1; i >= 0; i--) {
+                const name = resources[i] && resources[i].name;
+                if (name && name.includes('/api/disputes')) {
+                    return name;
+                }
+            }
+        } catch (e) {
+            Logger.debug('Dispute IDs Enhancer: performance resource scan failed', e);
+        }
+        // Fallback if no previously seen disputes URL is available.
+        return `${pageWindow.location.origin}/api/disputes?limit=50&offset=0`;
+    },
+
+    requestDisputesFallback(context, state) {
+        if (!state || state.fallbackInFlight || state.fallbackAttempts >= 2) return;
+
+        state.fallbackRequested = true;
+        state.fallbackInFlight = true;
+        state.fallbackAttempts += 1;
+
+        const attemptNumber = state.fallbackAttempts;
+        const url = this.getFallbackDisputesUrl(context);
+        Logger.log(`Dispute IDs Enhancer: fallback disputes fetch attempt ${attemptNumber}/2`);
+        Logger.debug(`Dispute IDs Enhancer: fallback URL ${url}`);
+
+        fetch(url, { method: 'GET', credentials: 'same-origin' })
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data || !Array.isArray(data.disputes)) {
+                    throw new Error('Invalid disputes payload');
+                }
+
+                context.disputesData = data.disputes;
+                Logger.log(`Dispute IDs Enhancer: fallback captured ${data.disputes.length} disputes`);
+                this.scheduleInjectionRetries(context, state);
+            })
+            .catch((err) => {
+                Logger.warn(`Dispute IDs Enhancer: fallback fetch failed (attempt ${attemptNumber}/2)`, err);
+                if (state.fallbackAttempts < 2) {
+                    setTimeout(() => this.requestDisputesFallback(context, state), 500);
+                }
+            })
+            .finally(() => {
+                state.fallbackInFlight = false;
+            });
     },
 
     installDisputesInterception(context, state) {
@@ -61,7 +166,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API`);
-                                self.scheduleInjectionRetries(context);
+                                self.scheduleInjectionRetries(context, state);
                             }
                         } catch (e) {
                             Logger.debug('Dispute IDs Enhancer: failed to parse disputes response', e);
@@ -93,7 +198,7 @@ const plugin = {
                             if (data && Array.isArray(data.disputes)) {
                                 context.disputesData = data.disputes;
                                 Logger.log(`Dispute IDs Enhancer: captured ${data.disputes.length} disputes from API (XHR)`);
-                                self.scheduleInjectionRetries(context);
+                                self.scheduleInjectionRetries(context, state);
                             }
                         }
                     } catch (e) {
