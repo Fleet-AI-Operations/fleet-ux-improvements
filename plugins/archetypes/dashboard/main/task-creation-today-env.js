@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -284,7 +284,7 @@ const plugin = {
                 const stats = this.getStatsForDate(liveRows, ref.month, ref.day);
                 const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
                 const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
-                pastCountEl.textContent = `Task Creation: ${stats.count}${uncertainPast ? '?' : ''}`;
+                pastCountEl.textContent = `${stats.count}${uncertainPast ? '?' : ''}`;
                 const envBreakdownTextPast = Object.keys(stats.envCount).length === 0
                     ? '—'
                     : Object.entries(stats.envCount)
@@ -297,7 +297,8 @@ const plugin = {
                     msgElPast.classList.toggle('block', uncertainPast);
                 }
                 block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
+                const dateLabel = this.formatDateLabel(ref);
+                block.setAttribute('data-wf-past-day-copy-text', dateLabel + '\n' + textForCopy);
             };
             const pastDown = block.querySelector('[data-wf-past-day-down]');
             const pastInput = block.querySelector('[data-wf-past-day-input]');

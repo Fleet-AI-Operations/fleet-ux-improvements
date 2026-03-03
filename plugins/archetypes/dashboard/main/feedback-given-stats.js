@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -70,29 +70,54 @@ const plugin = {
     getStatsForDate(rows, targetMonth, targetDay) {
         let count = 0;
         const envCount = Object.create(null);
+        const envApproved = Object.create(null);
+        const envFeedbackRequested = Object.create(null);
         for (const tr of rows) {
             const dateCell = tr.cells[0];
             const envCell = tr.cells[2];
+            const feedbackCell = tr.cells[3];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
                 count++;
-                if (env) envCount[env] = (envCount[env] || 0) + 1;
+                if (env) {
+                    envCount[env] = (envCount[env] || 0) + 1;
+                    const feedback = this.classifyFeedback(feedbackCell);
+                    if (feedback === 'approved') envApproved[env] = (envApproved[env] || 0) + 1;
+                    else if (feedback === 'feedback-requested') envFeedbackRequested[env] = (envFeedbackRequested[env] || 0) + 1;
+                }
             }
         }
-        return { count, envCount };
+        return { count, envCount, envApproved, envFeedbackRequested };
     },
 
     buildCopyTextForDate(stats, uncertain) {
         const count = stats && typeof stats.count === 'number' ? stats.count : 0;
         const envCount = (stats && stats.envCount) || Object.create(null);
+        const envApproved = (stats && stats.envApproved) || Object.create(null);
+        const envFeedbackRequested = (stats && stats.envFeedbackRequested) || Object.create(null);
         const suffix = uncertain ? '?' : '';
+        const dayAr = count > 0 ? (() => {
+            let a = 0, f = 0;
+            for (const k of Object.keys(envCount)) {
+                a += envApproved[k] || 0;
+                f += envFeedbackRequested[k] || 0;
+            }
+            const total = a + f;
+            return total > 0 ? Math.round((a / total) * 100) : null;
+        })() : null;
         const lines = [
             `QA: ${count}${suffix} tasks.`,
             ...Object.entries(envCount)
                 .sort((a, b) => b[1] - a[1])
-                .map(([name, n]) => `${name}: ${n}`)
+                .map(([name, n]) => {
+                    const a = envApproved[name] || 0;
+                    const f = envFeedbackRequested[name] || 0;
+                    const total = a + f;
+                    const ar = total > 0 ? Math.round((a / total) * 100) : null;
+                    return ar != null ? `${name}: ${n} (${ar}% AR)` : `${name}: ${n}`;
+                })
         ];
         return lines.join('\n');
     },
@@ -324,10 +349,19 @@ const plugin = {
                 const stats = this.getStatsForDate(liveRows, ref.month, ref.day);
                 const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
                 const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
-                pastCountEl.textContent = `QA: ${stats.count}${uncertainPast ? '?' : ''}`;
+                const dayArPast = (() => {
+                    let a = 0, f = 0;
+                    for (const k of Object.keys(stats.envCount || {})) {
+                        a += (stats.envApproved && stats.envApproved[k]) || 0;
+                        f += (stats.envFeedbackRequested && stats.envFeedbackRequested[k]) || 0;
+                    }
+                    const total = a + f;
+                    return total > 0 ? Math.round((a / total) * 100) : null;
+                })();
+                pastCountEl.textContent = `${stats.count}${uncertainPast ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
                 breakdownEl.textContent = '';
                 breakdownEl.className = 'text-sm text-right ml-2';
-                const sortedPastEnvs = Object.entries(stats.envCount).sort((a, b) => b[1] - a[1]);
+                const sortedPastEnvs = Object.entries(stats.envCount || {}).sort((a, b) => b[1] - a[1]);
                 if (sortedPastEnvs.length === 0) {
                     breakdownEl.textContent = '—';
                 } else {
@@ -343,6 +377,16 @@ const plugin = {
                         countSpan.textContent = `: ${count}`;
                         line.appendChild(nameSpan);
                         line.appendChild(countSpan);
+                        const a = (stats.envApproved && stats.envApproved[name]) || 0;
+                        const f = (stats.envFeedbackRequested && stats.envFeedbackRequested[name]) || 0;
+                        const total = a + f;
+                        const ar = total > 0 ? Math.round((a / total) * 100) : null;
+                        if (ar != null) {
+                            const arSpan = document.createElement('span');
+                            arSpan.className = 'text-muted-foreground';
+                            arSpan.textContent = ` (${ar}% AR)`;
+                            line.appendChild(arSpan);
+                        }
                         breakdownEl.appendChild(line);
                     }
                 }
@@ -351,7 +395,8 @@ const plugin = {
                     msgElPast.classList.toggle('block', uncertainPast);
                 }
                 block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
+                const dateLabel = this.formatDateLabel(ref);
+                block.setAttribute('data-wf-past-day-copy-text', dateLabel + '\n' + textForCopy);
             };
             const pastDown = block.querySelector('[data-wf-past-day-down]');
             const pastInput = block.querySelector('[data-wf-past-day-input]');

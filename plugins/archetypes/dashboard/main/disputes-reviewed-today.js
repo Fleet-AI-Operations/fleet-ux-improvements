@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -114,7 +114,7 @@ const plugin = {
         const dayAr = count > 0 ? Math.round((approved / count) * 100) : null;
         const lines = [
             `Disputes Reviewed: ${count}${suffix} tasks.`,
-            `Approved: ${approved}, Rejected: ${rejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+            `${approved} approved, ${rejected} rejected` + (dayAr != null ? ` (${dayAr}% AR)` : '')
         ];
         return lines.join('\n');
     },
@@ -298,14 +298,15 @@ const plugin = {
                 const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
                 const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
                 const dayArPast = stats.count > 0 ? Math.round((stats.approved / stats.count) * 100) : null;
-                pastCountEl.textContent = `Disputes Reviewed: ${stats.count}${uncertainPast ? '?' : ''}`;
-                breakdownEl.textContent = `Approved: ${stats.approved}, Rejected: ${stats.rejected}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                pastCountEl.textContent = `${stats.count}${uncertainPast ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                breakdownEl.textContent = `${stats.approved} approved, ${stats.rejected} rejected` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
                 if (msgElPast) {
                     msgElPast.classList.toggle('hidden', !uncertainPast);
                     msgElPast.classList.toggle('block', uncertainPast);
                 }
                 block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
+                const dateLabel = this.formatDateLabel(ref);
+                block.setAttribute('data-wf-past-day-copy-text', dateLabel + '\n' + textForCopy);
             };
             const pastDown = block.querySelector('[data-wf-past-day-down]');
             const pastInput = block.querySelector('[data-wf-past-day-input]');
@@ -371,7 +372,9 @@ const plugin = {
         const msgEl = block.querySelector('[data-wf-scroll-msg]');
         const copySectionEl = block.querySelector('[data-wf-copy-section]');
         const copyBtn = block.querySelector('[data-wf-copy-btn]');
-        if (todayEl) todayEl.textContent = uncertain ? `${todayCount}? today` : `${todayCount} today`;
+        if (todayEl) {
+            todayEl.textContent = (uncertain ? `${todayCount}? today` : `${todayCount} today`) + (dayAr != null ? ` (${dayAr}% AR)` : '');
+        }
         if (breakdownEl) breakdownEl.textContent = breakdownText;
         if (copySectionEl) copySectionEl.classList.toggle('hidden', todayCount === 0);
         if (msgEl) {
@@ -390,7 +393,7 @@ const plugin = {
             }
             const copyLines = [
                 `Disputes Reviewed: ${todayCount} tasks.`,
-                `Approved: ${todayApproved}, Rejected: ${todayRejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+                `${todayApproved} approved, ${todayRejected} rejected` + (dayAr != null ? ` (${dayAr}% AR)` : '')
             ];
             copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
         }
