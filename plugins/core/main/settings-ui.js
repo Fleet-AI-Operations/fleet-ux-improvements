@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '5.35',
+    _version: '6.0',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1085,7 +1085,7 @@ const plugin = {
                 const archetypeId = Context.currentArchetype ? Context.currentArchetype.id : 'global';
                 if (body) body += '\n\n';
                 body += '---\n*Fleet Enhancer v' + version + ' · ' + archetypeId + '*';
-                const owner = Context.githubOwner || 'adastra1826';
+                const owner = Context.githubOwner || 'Fleet-AI-Operations';
                 const repo = Context.githubRepo || 'fleet-ux-improvements';
                 const url = 'https://github.com/' + owner + '/' + repo + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
                 window.open(url, '_blank', 'noopener,noreferrer');
@@ -1990,7 +1990,7 @@ const plugin = {
                             Extension Update Available
                         </h3>
                         <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="https://raw.githubusercontent.com/${Context.githubOwner || 'adastra1826'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="https://raw.githubusercontent.com/${Context.githubOwner || 'Fleet-AI-Operations'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
