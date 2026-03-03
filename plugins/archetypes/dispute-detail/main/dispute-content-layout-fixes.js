@@ -7,7 +7,7 @@ const plugin = {
     id: 'disputeContentLayoutFixes',
     name: 'Dispute Content Layout Fixes',
     description: 'Fixes text whitespace handling and action button visibility in dispute detail panel',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -32,6 +32,17 @@ const plugin = {
         }
 
         style.textContent = `
+            /* Dispute detail header row: wrap when panel is narrow so nothing goes off screen */
+            .p-4 > .flex.items-center.justify-between.mb-2 {
+                flex-wrap: wrap !important;
+                gap: 0.5rem !important;
+                min-width: 0 !important;
+            }
+            .p-4 > .flex.items-center.justify-between.mb-2 > .flex.items-center.gap-2 {
+                flex-wrap: wrap !important;
+                min-width: 0 !important;
+            }
+
             /* Preserve whitespace/newlines in disputed QA feedback text */
             [data-state="open"] .rounded-lg.border.bg-muted\\/50 .space-y-2.text-sm > p,
             [data-state="open"] .rounded-lg.border.bg-muted\\/50 .space-y-2.text-sm > div {
