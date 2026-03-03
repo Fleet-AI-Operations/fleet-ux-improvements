@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      4.2.0
+// @version      5.0.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -14,8 +14,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/fleet.user.js
+// @downloadURL  https://github.com/Fleet-AI-Operations/fleet-ux-improvements/raw/refs/heads/main/fleet.user.js
+// @updateURL    https://github.com/Fleet-AI-Operations/fleet-ux-improvements/raw/refs/heads/main/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '4.2.0';
+    const VERSION = '5.0.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -40,7 +40,7 @@
     
     // GitHub repository configuration
     const GITHUB_CONFIG = {
-        owner: 'adastra1826',
+        owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
         branch: 'main',
         pluginsPath: 'plugins',
