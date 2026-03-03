@@ -2009,6 +2009,7 @@
     let mainObserver = null;
     let mutationRafId = null;
     let corePluginsLoaded = false;
+    let navigationHandlerActive = false;
     
     async function initializeCorePlugins() {
         if (corePluginsLoaded) {
@@ -2128,22 +2129,37 @@
             Logger.log('URL is the same, skipping...');
             return;
         }
-        
+
         // Check if task_project_target_id matches - if so, don't reload
         // This prevents reload when only instance_id changes (e.g., backend reset)
         const previousProjectId = getQueryParam(previousUrl, 'task_project_target_id');
         const newProjectId = getQueryParam(newUrl, 'task_project_target_id');
-        
+
         if (previousProjectId && newProjectId && previousProjectId === newProjectId) {
             Logger.log(`Navigation has same task_project_target_id (${newProjectId}), skipping reload...`);
             return;
         }
 
+        // Prevent concurrent invocations from racing each other. A prior call is still
+        // awaiting the GitHub fetch, so drop this one rather than risk a stale reload.
+        if (navigationHandlerActive) {
+            Logger.log('Navigation handler already active, skipping...');
+            return;
+        }
+        navigationHandlerActive = true;
+
         Logger.log('Handling navigation, checking archetype match...');
-        
+
         try {
             await ArchetypeManager.loadArchetypes();
-            
+
+            // If further navigation occurred while we were fetching, the URL we were
+            // called with is now stale. Reloading here would fire on the wrong page.
+            if (window.location.href !== newUrl) {
+                Logger.log('URL changed during archetype fetch, skipping reload...');
+                return;
+            }
+
             const newPath = UrlMatcher.getPathFromUrl(newUrl);
             const matchesArchetype = ArchetypeManager.archetypes.some(archetype => {
                 if (!archetype.urlPattern) {
@@ -2151,7 +2167,7 @@
                 }
                 return UrlMatcher.matches(newPath, archetype.urlPattern);
             });
-            
+
             if (matchesArchetype) {
                 Logger.log('Navigation target matches archetype; refreshing page...');
                 Storage.delete('workflow-cache-latest');
@@ -2161,6 +2177,8 @@
             }
         } catch (error) {
             Logger.error('Failed to check archetype match on navigation:', error);
+        } finally {
+            navigationHandlerActive = false;
         }
         
         Logger.log('Handling navigation, reinitializing...');
