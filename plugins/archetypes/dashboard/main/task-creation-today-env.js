@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '2.0',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -17,9 +17,18 @@ const plugin = {
      */
     parseDateText(text) {
         const t = (text || '').trim();
-        const match = t.match(/^([A-Za-z]{3})\s+(\d{1,2})$/);
+        if (/^today$/i.test(t)) {
+            const now = new Date();
+            return { month: now.getMonth() + 1, day: now.getDate() };
+        }
+        if (/^yesterday$/i.test(t)) {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            return { month: d.getMonth() + 1, day: d.getDate() };
+        }
+        const match = t.match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s+\d{4})?$/);
         if (!match) return null;
-        const month = this.MONTH_INDEX[match[1]];
+        const month = this.MONTH_INDEX[match[1].slice(0, 3)];
         const day = parseInt(match[2], 10);
         if (month == null || Number.isNaN(day) || day < 1 || day > 31) return null;
         return { month, day };
@@ -219,7 +228,10 @@ const plugin = {
                 '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
                 '</div>',
                 '</div>',
-                '<div class="mt-2 text-xs text-muted-foreground text-right whitespace-pre-line" data-wf-past-day-breakdown></div>',
+                '<div class="mt-2 flex justify-between gap-4">',
+                '<div class="text-sm text-muted-foreground" data-wf-past-day-count></div>',
+                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-past-day-breakdown></div>',
+                '</div>',
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-past-day-scroll-msg>Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.</p>',
                 '</div>'
             ].join('');
@@ -254,9 +266,10 @@ const plugin = {
                 const inputEl = block.querySelector('[data-wf-past-day-input]');
                 const labelEl = block.querySelector('[data-wf-past-day-label]');
                 const dateEl = block.querySelector('[data-wf-past-day-date]');
+                const pastCountEl = block.querySelector('[data-wf-past-day-count]');
                 const breakdownEl = block.querySelector('[data-wf-past-day-breakdown]');
                 const msgElPast = block.querySelector('[data-wf-past-day-scroll-msg]');
-                if (!inputEl || !labelEl || !dateEl || !breakdownEl) return;
+                if (!inputEl || !labelEl || !dateEl || !pastCountEl || !breakdownEl) return;
                 let n = parseInt(inputEl.value, 10);
                 if (Number.isNaN(n) || n < 1) {
                     n = 1;
@@ -265,10 +278,20 @@ const plugin = {
                 labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
                 const ref = this.dateNDaysAgo(n);
                 dateEl.textContent = this.formatDateLabel(ref);
-                const stats = this.getStatsForDate(rows, ref.month, ref.day);
-                const uncertainPast = this.isPastDayUncertain(rows, ref.month, ref.day, stats);
+                const panelEl = block.closest('[role="tabpanel"]');
+                const tableEl = panelEl ? panelEl.querySelector('table') : null;
+                const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
+                const stats = this.getStatsForDate(liveRows, ref.month, ref.day);
+                const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
                 const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
-                breakdownEl.textContent = textForCopy;
+                pastCountEl.textContent = `Task Creation: ${stats.count}${uncertainPast ? '?' : ''}`;
+                const envBreakdownTextPast = Object.keys(stats.envCount).length === 0
+                    ? '—'
+                    : Object.entries(stats.envCount)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([name, count]) => `${name}: ${count}`)
+                        .join(', ');
+                breakdownEl.textContent = envBreakdownTextPast;
                 if (msgElPast) {
                     msgElPast.classList.toggle('hidden', !uncertainPast);
                     msgElPast.classList.toggle('block', uncertainPast);
