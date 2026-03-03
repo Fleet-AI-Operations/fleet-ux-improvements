@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         GODMODE - Fleet UX Enhancer - (dev identifier)
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      2.0
 // @description  Dev-only key: allows using dev builds of Fleet UX Enhancer. Install only if you are a dev.
 // @icon         https://github.com/favicon.ico
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
 // @match        https://fleetai.com/*
-// @updateURL    https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/dev/fleet-godmode.user.js
-// @downloadURL  https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/dev/fleet-godmode.user.js
+// @connect      raw.githubusercontent.com
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/dev/fleet-godmode.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/dev/fleet-godmode.user.js
 // @run-at       document-start
 // ==/UserScript==
 
