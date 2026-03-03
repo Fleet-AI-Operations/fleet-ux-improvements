@@ -49,4 +49,4 @@
 #### Community
 - [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)
 - [Environment Gists](https://fleetai-env-gists.vercel.app)
-- [This Extension](https://github.com/adastra1826/fleet-ux-improvements)
+- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)

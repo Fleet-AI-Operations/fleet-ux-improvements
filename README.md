@@ -46,7 +46,7 @@ Some browsers require developer mode to be enabled and may prompt for Tampermonk
 **Option A: Direct Install (Recommended)**
 
 Click the link below to install the script directly:
-- [Install Fleet UX Enhancer](https://raw.githubusercontent.com/adastra1826/fleet-ux-improvements/main/fleet.user.js)
+- [Install Fleet UX Enhancer](https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js)
 
 Tampermonkey will open an installation prompt. Click **Install** to add the script.
 
