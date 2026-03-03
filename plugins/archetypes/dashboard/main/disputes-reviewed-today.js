@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -29,6 +29,24 @@ const plugin = {
         if (!parsed) return false;
         const now = new Date();
         return parsed.month === now.getMonth() + 1 && parsed.day === now.getDate();
+    },
+
+    /** Return { month, day, year } for n days ago (n >= 1). */
+    dateNDaysAgo(n) {
+        const d = new Date();
+        d.setDate(d.getDate() - n);
+        return { month: d.getMonth() + 1, day: d.getDate(), year: d.getFullYear() };
+    },
+
+    MONTH_NAMES: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+
+    formatDateLabel(ref) {
+        if (!ref || ref.month == null) return '—';
+        return `${this.MONTH_NAMES[ref.month - 1]} ${ref.day}, ${ref.year}`;
+    },
+
+    sameDate(parsed, target) {
+        return parsed && target && parsed.month === target.month && parsed.day === target.day;
     },
 
     /** @returns {'approved'|'rejected'|null} */
@@ -58,6 +76,34 @@ const plugin = {
             }
         }
         return null;
+    },
+
+    getStatsForDate(rows, targetMonth, targetDay) {
+        let count = 0;
+        let approved = 0;
+        let rejected = 0;
+        for (const tr of rows) {
+            const dateCell = tr.cells[0];
+            const outcomeCell = tr.cells[2];
+            const dateText = dateCell ? dateCell.textContent.trim() : '';
+            const parsed = this.parseDateText(dateText);
+            if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
+                count++;
+                const outcome = this.classifyOutcome(outcomeCell);
+                if (outcome === 'approved') approved++;
+                else if (outcome === 'rejected') rejected++;
+            }
+        }
+        return { count, approved, rejected };
+    },
+
+    buildCopyTextForDate(stats) {
+        const dayAr = stats.count > 0 ? Math.round((stats.approved / stats.count) * 100) : null;
+        const lines = [
+            `Disputes Reviewed: ${stats.count} tasks.`,
+            `Approved: ${stats.approved}, Rejected: ${stats.rejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+        ];
+        return lines.join('\n');
     },
 
     onMutation(state, context) {
@@ -134,7 +180,21 @@ const plugin = {
                 '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s reviews have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>'
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s reviews have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>',
+                '<div class="mt-4 pt-4 border-t border-border/50" data-wf-past-day-section>',
+                '<div class="flex flex-wrap items-center gap-2">',
+                '<span class="text-xs text-muted-foreground">Copy the breakdown from</span>',
+                '<span class="inline-flex items-center border border-input rounded-sm overflow-hidden bg-background">',
+                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-down aria-label="Decrease days">−</button>',
+                '<input type="number" min="1" value="1" class="w-11 h-8 text-center text-sm border-0 bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" data-wf-past-day-input inputmode="numeric">',
+                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-up aria-label="Increase days">+</button>',
+                '</span>',
+                '<span class="text-xs text-muted-foreground" data-wf-past-day-label>day ago:</span>',
+                '<span class="text-xs font-medium text-muted-foreground" data-wf-past-day-date></span>',
+                '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
+                '</div>',
+                '<p class="text-xs text-muted-foreground mt-2">Copy your breakdown for the day? (Perfect for reporting time in Deel) Please scroll down to ensure all reviews for that day have been loaded before copying.</p>',
+                '</div>'
             ].join('');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
             if (copyBtn) {
@@ -163,6 +223,69 @@ const plugin = {
                     });
                 });
             }
+            const updatePastDayUI = () => {
+                const inputEl = block.querySelector('[data-wf-past-day-input]');
+                const labelEl = block.querySelector('[data-wf-past-day-label]');
+                const dateEl = block.querySelector('[data-wf-past-day-date]');
+                if (!inputEl || !labelEl || !dateEl) return;
+                let n = parseInt(inputEl.value, 10);
+                if (Number.isNaN(n) || n < 1) {
+                    n = 1;
+                    inputEl.value = n;
+                }
+                labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
+                dateEl.textContent = this.formatDateLabel(this.dateNDaysAgo(n));
+            };
+            const pastDown = block.querySelector('[data-wf-past-day-down]');
+            const pastInput = block.querySelector('[data-wf-past-day-input]');
+            const pastUp = block.querySelector('[data-wf-past-day-up]');
+            const pastCopyBtn = block.querySelector('[data-wf-past-day-copy-btn]');
+            if (pastDown) {
+                pastDown.addEventListener('click', () => {
+                    const n = Math.max(1, (parseInt(pastInput.value, 10) || 1) - 1);
+                    pastInput.value = n;
+                    updatePastDayUI();
+                });
+            }
+            if (pastUp) {
+                pastUp.addEventListener('click', () => {
+                    const n = (parseInt(pastInput.value, 10) || 1) + 1;
+                    pastInput.value = n;
+                    updatePastDayUI();
+                });
+            }
+            if (pastInput) {
+                pastInput.addEventListener('input', updatePastDayUI);
+                pastInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'e' || e.key === '-' || e.key === '+') e.preventDefault();
+                });
+            }
+            if (pastCopyBtn) {
+                pastCopyBtn.addEventListener('click', () => {
+                    const panel = block.closest('[role="tabpanel"]');
+                    const tbl = panel ? panel.querySelector('table') : null;
+                    if (!tbl) return;
+                    const rows = Array.from(tbl.querySelectorAll('tbody tr'));
+                    const n = Math.max(1, parseInt(pastInput.value, 10) || 1);
+                    const ref = this.dateNDaysAgo(n);
+                    const stats = this.getStatsForDate(rows, ref.month, ref.day);
+                    const text = this.buildCopyTextForDate(stats);
+                    if (pastCopyBtn._wfCopyResetTimeout) clearTimeout(pastCopyBtn._wfCopyResetTimeout);
+                    navigator.clipboard.writeText(text).then(() => {
+                        Logger.log('disputes-reviewed-today: copied past-day breakdown to clipboard', { daysAgo: n });
+                        pastCopyBtn.textContent = 'Copied!';
+                        pastCopyBtn.classList.add('text-green-600', 'dark:text-green-400');
+                        pastCopyBtn._wfCopyResetTimeout = setTimeout(() => {
+                            pastCopyBtn._wfCopyResetTimeout = null;
+                            pastCopyBtn.textContent = 'Copy';
+                            pastCopyBtn.classList.remove('text-green-600', 'dark:text-green-400');
+                        }, 5000);
+                    }).catch((err) => {
+                        Logger.error('disputes-reviewed-today: failed to copy past-day breakdown', err);
+                    });
+                });
+            }
+            updatePastDayUI();
             grid.insertAdjacentElement('afterend', block);
             Logger.log('disputes-reviewed-today: injected today breakdown and copy block');
         }

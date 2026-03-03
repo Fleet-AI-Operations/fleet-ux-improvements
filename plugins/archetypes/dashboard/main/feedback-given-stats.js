@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -31,6 +31,24 @@ const plugin = {
         return parsed.month === now.getMonth() + 1 && parsed.day === now.getDate();
     },
 
+    /** Return { month, day, year } for n days ago (n >= 1). */
+    dateNDaysAgo(n) {
+        const d = new Date();
+        d.setDate(d.getDate() - n);
+        return { month: d.getMonth() + 1, day: d.getDate(), year: d.getFullYear() };
+    },
+
+    MONTH_NAMES: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+
+    formatDateLabel(ref) {
+        if (!ref || ref.month == null) return '—';
+        return `${this.MONTH_NAMES[ref.month - 1]} ${ref.day}, ${ref.year}`;
+    },
+
+    sameDate(parsed, target) {
+        return parsed && target && parsed.month === target.month && parsed.day === target.day;
+    },
+
     /** @returns {'approved'|'feedback-requested'|null} */
     classifyFeedback(cell) {
         if (!cell) return null;
@@ -38,6 +56,33 @@ const plugin = {
         if (/approved/i.test(text)) return 'approved';
         if (/feedback\s+requested/i.test(text)) return 'feedback-requested';
         return null;
+    },
+
+    getStatsForDate(rows, targetMonth, targetDay) {
+        let count = 0;
+        const envCount = Object.create(null);
+        for (const tr of rows) {
+            const dateCell = tr.cells[0];
+            const envCell = tr.cells[2];
+            const dateText = dateCell ? dateCell.textContent.trim() : '';
+            const env = envCell ? envCell.textContent.trim() : '';
+            const parsed = this.parseDateText(dateText);
+            if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
+                count++;
+                if (env) envCount[env] = (envCount[env] || 0) + 1;
+            }
+        }
+        return { count, envCount };
+    },
+
+    buildCopyTextForDate(stats) {
+        const lines = [
+            `QA: ${stats.count} tasks.`,
+            ...Object.entries(stats.envCount)
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, n]) => `${name}: ${n}`)
+        ];
+        return lines.join('\n');
     },
 
     onMutation(state, context) {
@@ -163,7 +208,21 @@ const plugin = {
                 '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>'
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>',
+                '<div class="mt-4 pt-4 border-t border-border/50" data-wf-past-day-section>',
+                '<div class="flex flex-wrap items-center gap-2">',
+                '<span class="text-xs text-muted-foreground">Copy the breakdown from</span>',
+                '<span class="inline-flex items-center border border-input rounded-sm overflow-hidden bg-background">',
+                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-down aria-label="Decrease days">−</button>',
+                '<input type="number" min="1" value="1" class="w-11 h-8 text-center text-sm border-0 bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" data-wf-past-day-input inputmode="numeric">',
+                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-up aria-label="Increase days">+</button>',
+                '</span>',
+                '<span class="text-xs text-muted-foreground" data-wf-past-day-label>day ago:</span>',
+                '<span class="text-xs font-medium text-muted-foreground" data-wf-past-day-date></span>',
+                '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
+                '</div>',
+                '<p class="text-xs text-muted-foreground mt-2">Copy your breakdown for the day? (Perfect for reporting time in Deel) Please scroll down to ensure all submissions for that day have been loaded before copying.</p>',
+                '</div>'
             ].join('');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
             if (copyBtn) {
@@ -192,6 +251,69 @@ const plugin = {
                     });
                 });
             }
+            const updatePastDayUI = () => {
+                const inputEl = block.querySelector('[data-wf-past-day-input]');
+                const labelEl = block.querySelector('[data-wf-past-day-label]');
+                const dateEl = block.querySelector('[data-wf-past-day-date]');
+                if (!inputEl || !labelEl || !dateEl) return;
+                let n = parseInt(inputEl.value, 10);
+                if (Number.isNaN(n) || n < 1) {
+                    n = 1;
+                    inputEl.value = n;
+                }
+                labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
+                dateEl.textContent = this.formatDateLabel(this.dateNDaysAgo(n));
+            };
+            const pastDown = block.querySelector('[data-wf-past-day-down]');
+            const pastInput = block.querySelector('[data-wf-past-day-input]');
+            const pastUp = block.querySelector('[data-wf-past-day-up]');
+            const pastCopyBtn = block.querySelector('[data-wf-past-day-copy-btn]');
+            if (pastDown) {
+                pastDown.addEventListener('click', () => {
+                    const n = Math.max(1, (parseInt(pastInput.value, 10) || 1) - 1);
+                    pastInput.value = n;
+                    updatePastDayUI();
+                });
+            }
+            if (pastUp) {
+                pastUp.addEventListener('click', () => {
+                    const n = (parseInt(pastInput.value, 10) || 1) + 1;
+                    pastInput.value = n;
+                    updatePastDayUI();
+                });
+            }
+            if (pastInput) {
+                pastInput.addEventListener('input', updatePastDayUI);
+                pastInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'e' || e.key === '-' || e.key === '+') e.preventDefault();
+                });
+            }
+            if (pastCopyBtn) {
+                pastCopyBtn.addEventListener('click', () => {
+                    const panel = block.closest('[role="tabpanel"]');
+                    const tbl = panel ? panel.querySelector('table') : null;
+                    if (!tbl) return;
+                    const rows = Array.from(tbl.querySelectorAll('tbody tr'));
+                    const n = Math.max(1, parseInt(pastInput.value, 10) || 1);
+                    const ref = this.dateNDaysAgo(n);
+                    const stats = this.getStatsForDate(rows, ref.month, ref.day);
+                    const text = this.buildCopyTextForDate(stats);
+                    if (pastCopyBtn._wfCopyResetTimeout) clearTimeout(pastCopyBtn._wfCopyResetTimeout);
+                    navigator.clipboard.writeText(text).then(() => {
+                        Logger.log('feedback-given-stats: copied past-day breakdown to clipboard', { daysAgo: n });
+                        pastCopyBtn.textContent = 'Copied!';
+                        pastCopyBtn.classList.add('text-green-600', 'dark:text-green-400');
+                        pastCopyBtn._wfCopyResetTimeout = setTimeout(() => {
+                            pastCopyBtn._wfCopyResetTimeout = null;
+                            pastCopyBtn.textContent = 'Copy';
+                            pastCopyBtn.classList.remove('text-green-600', 'dark:text-green-400');
+                        }, 5000);
+                    }).catch((err) => {
+                        Logger.error('feedback-given-stats: failed to copy past-day breakdown', err);
+                    });
+                });
+            }
+            updatePastDayUI();
             const existingContent = card.querySelector('.p-4.pt-0.flex.items-end.justify-between');
             if (existingContent && existingContent.nextSibling) {
                 card.insertBefore(block, existingContent.nextSibling);
