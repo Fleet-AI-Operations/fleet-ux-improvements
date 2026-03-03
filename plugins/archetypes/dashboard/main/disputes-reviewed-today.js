@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -111,10 +111,9 @@ const plugin = {
         const approved = stats && typeof stats.approved === 'number' ? stats.approved : 0;
         const rejected = stats && typeof stats.rejected === 'number' ? stats.rejected : 0;
         const suffix = uncertain ? '?' : '';
-        const dayAr = count > 0 ? Math.round((approved / count) * 100) : null;
         const lines = [
             `Disputes Reviewed: ${count}${suffix} tasks.`,
-            `${approved} approved, ${rejected} rejected` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+            `${approved} approved, ${rejected} rejected`
         ];
         return lines.join('\n');
     },
@@ -305,8 +304,7 @@ const plugin = {
                     msgElPast.classList.toggle('block', uncertainPast);
                 }
                 block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                const dateLabel = this.formatDateLabel(ref);
-                block.setAttribute('data-wf-past-day-copy-text', dateLabel + '\n' + textForCopy);
+                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
             };
             const pastDown = block.querySelector('[data-wf-past-day-down]');
             const pastInput = block.querySelector('[data-wf-past-day-input]');
@@ -393,7 +391,7 @@ const plugin = {
             }
             const copyLines = [
                 `Disputes Reviewed: ${todayCount} tasks.`,
-                `${todayApproved} approved, ${todayRejected} rejected` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+                `${todayApproved} approved, ${todayRejected} rejected`
             ];
             copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
         }
