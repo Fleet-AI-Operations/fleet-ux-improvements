@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '1.1',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -97,13 +97,48 @@ const plugin = {
         return { count, approved, rejected };
     },
 
-    buildCopyTextForDate(stats) {
-        const dayAr = stats.count > 0 ? Math.round((stats.approved / stats.count) * 100) : null;
+    buildCopyTextForDate(stats, uncertain) {
+        const count = stats && typeof stats.count === 'number' ? stats.count : 0;
+        const approved = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+        const rejected = stats && typeof stats.rejected === 'number' ? stats.rejected : 0;
+        const suffix = uncertain ? '?' : '';
+        const dayAr = count > 0 ? Math.round((approved / count) * 100) : null;
         const lines = [
-            `Disputes Reviewed: ${stats.count} tasks.`,
-            `Approved: ${stats.approved}, Rejected: ${stats.rejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
+            `Disputes Reviewed: ${count}${suffix} tasks.`,
+            `Approved: ${approved}, Rejected: ${rejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
         ];
         return lines.join('\n');
+    },
+
+    isPastDayUncertain(rows, targetMonth, targetDay, stats) {
+        if (!rows || rows.length === 0) return true;
+        if (!stats) return true;
+        if (stats.count === 0) return true;
+        if (stats.count !== 10) return false;
+
+        let lastIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+            const tr = rows[i];
+            const dateCell = tr.cells[0];
+            const dateText = dateCell ? dateCell.textContent.trim() : '';
+            const parsed = this.parseDateText(dateText);
+            if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
+                lastIndex = i;
+            }
+        }
+        if (lastIndex === -1 || lastIndex === rows.length - 1) {
+            return true;
+        }
+        for (let i = lastIndex + 1; i < rows.length; i++) {
+            const tr = rows[i];
+            const dateCell = tr.cells[0];
+            const dateText = dateCell ? dateCell.textContent.trim() : '';
+            const parsed = this.parseDateText(dateText);
+            if (parsed && !this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
+                return false;
+            }
+        }
+        return true;
     },
 
     onMutation(state, context) {
@@ -177,11 +212,12 @@ const plugin = {
                 '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-breakdown></div>',
                 '</div>',
                 '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
-                '<span class="text-xs text-muted-foreground">Copy your breakdown for the day? (Perfect for reporting time in Deel)</span>',
+                '<span class="text-xs text-muted-foreground">Copy today\'s breakdown.</span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>',
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s reviews have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>',
                 '<div class="mt-4 pt-4 border-t border-border/50" data-wf-past-day-section>',
+                '<div class="flex flex-wrap items-center gap-2 justify-between">',
                 '<div class="flex flex-wrap items-center gap-2">',
                 '<span class="text-xs text-muted-foreground">Copy the breakdown from</span>',
                 '<span class="inline-flex items-center border border-input rounded-sm overflow-hidden bg-background">',
@@ -190,10 +226,14 @@ const plugin = {
                 '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-up aria-label="Increase days">+</button>',
                 '</span>',
                 '<span class="text-xs text-muted-foreground" data-wf-past-day-label>day ago:</span>',
+                '</div>',
+                '<div class="ml-auto flex items-center gap-2">',
                 '<span class="text-xs font-medium text-muted-foreground" data-wf-past-day-date></span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2">Copy your breakdown for the day? (Perfect for reporting time in Deel) Please scroll down to ensure all reviews for that day have been loaded before copying.</p>',
+                '</div>',
+                '<div class="mt-2 text-xs text-muted-foreground text-right whitespace-pre-line" data-wf-past-day-breakdown></div>',
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-past-day-scroll-msg>Please scroll down to ensure all reviews for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.</p>',
                 '</div>'
             ].join('');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
@@ -227,14 +267,27 @@ const plugin = {
                 const inputEl = block.querySelector('[data-wf-past-day-input]');
                 const labelEl = block.querySelector('[data-wf-past-day-label]');
                 const dateEl = block.querySelector('[data-wf-past-day-date]');
-                if (!inputEl || !labelEl || !dateEl) return;
+                const breakdownEl = block.querySelector('[data-wf-past-day-breakdown]');
+                const msgElPast = block.querySelector('[data-wf-past-day-scroll-msg]');
+                if (!inputEl || !labelEl || !dateEl || !breakdownEl) return;
                 let n = parseInt(inputEl.value, 10);
                 if (Number.isNaN(n) || n < 1) {
                     n = 1;
                     inputEl.value = n;
                 }
                 labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
-                dateEl.textContent = this.formatDateLabel(this.dateNDaysAgo(n));
+                const ref = this.dateNDaysAgo(n);
+                dateEl.textContent = this.formatDateLabel(ref);
+                const stats = this.getStatsForDate(rows, ref.month, ref.day);
+                const uncertainPast = this.isPastDayUncertain(rows, ref.month, ref.day, stats);
+                const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
+                breakdownEl.textContent = textForCopy;
+                if (msgElPast) {
+                    msgElPast.classList.toggle('hidden', !uncertainPast);
+                    msgElPast.classList.toggle('block', uncertainPast);
+                }
+                block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
+                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
             };
             const pastDown = block.querySelector('[data-wf-past-day-down]');
             const pastInput = block.querySelector('[data-wf-past-day-input]');
@@ -262,17 +315,21 @@ const plugin = {
             }
             if (pastCopyBtn) {
                 pastCopyBtn.addEventListener('click', () => {
-                    const panel = block.closest('[role="tabpanel"]');
-                    const tbl = panel ? panel.querySelector('table') : null;
-                    if (!tbl) return;
-                    const rows = Array.from(tbl.querySelectorAll('tbody tr'));
-                    const n = Math.max(1, parseInt(pastInput.value, 10) || 1);
-                    const ref = this.dateNDaysAgo(n);
-                    const stats = this.getStatsForDate(rows, ref.month, ref.day);
-                    const text = this.buildCopyTextForDate(stats);
+                    const text = block.getAttribute('data-wf-past-day-copy-text') || '';
+                    if (!text) return;
+                    const uncertainPast = block.getAttribute('data-wf-past-day-uncertain') === 'true';
+                    if (uncertainPast) {
+                        alert(
+                            'Warning:\n\n' +
+                            'You copied a breakdown that may not be complete.\n\n' +
+                            'Please scroll down the page so that all reviews for that day are visible on the page before copying to ensure accurate results.'
+                        );
+                    }
                     if (pastCopyBtn._wfCopyResetTimeout) clearTimeout(pastCopyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('disputes-reviewed-today: copied past-day breakdown to clipboard', { daysAgo: n });
+                        Logger.log('disputes-reviewed-today: copied past-day breakdown to clipboard', {
+                            daysAgo: parseInt(pastInput && pastInput.value, 10) || 1
+                        });
                         pastCopyBtn.textContent = 'Copied!';
                         pastCopyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         pastCopyBtn._wfCopyResetTimeout = setTimeout(() => {
@@ -285,6 +342,7 @@ const plugin = {
                     });
                 });
             }
+            block._wfUpdatePastDayUI = updatePastDayUI;
             updatePastDayUI();
             grid.insertAdjacentElement('afterend', block);
             Logger.log('disputes-reviewed-today: injected today breakdown and copy block');
@@ -317,6 +375,9 @@ const plugin = {
                 `Approved: ${todayApproved}, Rejected: ${todayRejected}` + (dayAr != null ? ` (${dayAr}% AR)` : '')
             ];
             copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
+        }
+        if (block && typeof block._wfUpdatePastDayUI === 'function') {
+            block._wfUpdatePastDayUI();
         }
         if (uncertain && !state.lastUncertain) {
             Logger.info('disputes-reviewed-today: last visible row is today — showing uncertain count and scroll message');
