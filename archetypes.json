@@ -1,6 +1,6 @@
 {
   "version": "5.1.0",
-  "archetypesVersion": "6.1",
+  "archetypesVersion": "6.4",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -381,6 +381,51 @@
         {
           "name": "dispute-ids-enhancer.js",
           "version": "2.3"
+        }
+      ]
+    },
+    {
+      "id": "dispute-detail",
+      "name": "Dispute Detail Page",
+      "description": "Page for reviewing a single writer dispute",
+      "urlPattern": "work/problems/disputes/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "env-load-gate.js",
+          "version": "1.0"
+        },
+        {
+          "name": "dispute-detail-task-id.js",
+          "version": "1.0"
+        },
+        {
+          "name": "dispute-content-layout-fixes.js",
+          "version": "1.2"
+        },
+        {
+          "name": "clear-search.js",
+          "version": "1.0"
+        },
+        {
+          "name": "favorites.js",
+          "version": "1.0"
+        },
+        {
+          "name": "execute-to-current-tool.js",
+          "version": "1.0"
+        },
+        {
+          "name": "toggle-tool-parameters.js",
+          "version": "1.0"
+        },
+        {
+          "name": "tool-results-resize-handle.js",
+          "version": "1.0"
+        },
+        {
+          "name": "tool-description-truncate.js",
+          "version": "1.0"
         }
       ]
     }
