@@ -1,6 +1,6 @@
 {
   "version": "5.1.4",
-  "archetypesVersion": "6.7",
+  "archetypesVersion": "6.8",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -42,6 +42,10 @@
         {
           "name": "task-creation-today-env.js",
           "version": "1.5"
+        },
+        {
+          "name": "disputes-reviewed-today.js",
+          "version": "1.0"
         }
       ]
     },
