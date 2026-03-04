@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -243,232 +243,47 @@ const plugin = {
             });
         const statsPayload = JSON.stringify({ todayCount, dayAr, uncertain, env: sortedEnvsForPayload });
 
+        const todayCopyText = this.buildCopyTextForDate({ count: todayCount, envCount }, uncertain);
+
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        const arrowBtnClass = 'inline-flex items-center justify-center w-7 h-7 rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-30 disabled:pointer-events-none text-base';
 
         let block = card.querySelector('[data-wf-feedback-stats-block]');
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-feedback-stats-block', 'true');
+            block._wfDaysAgo = 0;
             block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
-                '<div class="flex justify-between gap-4">',
-                '<div class="text-sm text-blue-600 dark:text-blue-400" data-wf-today-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
+                '<div class="flex items-center gap-2">',
+                '<button type="button" class="' + arrowBtnClass + '" data-wf-day-prev aria-label="Previous day">‹</button>',
+                '<span class="flex-1 text-center text-xs text-muted-foreground" data-wf-day-label>Today</span>',
+                '<button type="button" class="' + arrowBtnClass + '" data-wf-day-next aria-label="Next day" disabled>›</button>',
                 '</div>',
-                '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
-                '<span class="text-xs text-muted-foreground">Copy today\'s breakdown.</span>',
+                '<div class="mt-3 flex justify-between gap-4">',
+                '<div class="text-sm text-blue-600 dark:text-blue-400" data-wf-count></div>',
+                '<div class="text-sm text-right ml-2" data-wf-breakdown></div>',
+                '</div>',
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg></p>',
+                '<div class="mt-4 flex justify-between items-center gap-2">',
+                '<span class="text-xs font-medium text-muted-foreground" data-wf-date-label></span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>',
-                '<div class="mt-4 pt-4 border-t border-border/50" data-wf-past-day-section>',
-                '<div class="flex flex-wrap items-center gap-2 justify-between">',
-                '<div class="flex flex-wrap items-center gap-2">',
-                '<span class="text-xs text-muted-foreground">Copy the breakdown from</span>',
-                '<span class="inline-flex items-center border border-input rounded-sm overflow-hidden bg-background">',
-                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-down aria-label="Decrease days">−</button>',
-                '<input type="number" min="1" value="1" class="w-11 h-8 text-center text-sm border-0 bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" data-wf-past-day-input inputmode="numeric">',
-                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-up aria-label="Increase days">+</button>',
-                '</span>',
-                '<span class="text-xs text-muted-foreground" data-wf-past-day-label>day ago:</span>',
-                '</div>',
-                '<div class="ml-auto flex items-center gap-2">',
-                '<span class="text-xs font-medium text-muted-foreground" data-wf-past-day-date></span>',
-                '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
-                '</div>',
-                '</div>',
-                '<div class="mt-2 flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-past-day-count></div>',
-                '<div class="text-sm text-right ml-2" data-wf-past-day-breakdown></div>',
-                '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-past-day-scroll-msg>Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.</p>',
-                '</div>'
             ].join('');
+
+            const self = this;
+            const prevBtn = block.querySelector('[data-wf-day-prev]');
+            const nextBtn = block.querySelector('[data-wf-day-next]');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
-            if (copyBtn) {
-                copyBtn.addEventListener('click', () => {
-                    const text = copyBtn.getAttribute('data-wf-copy-text');
-                    if (!text) return;
-                    if (copyBtn.getAttribute('data-wf-copy-uncertain') === 'true') {
-                        alert(
-                            'Warning:\n\n' +
-                            'You copied a breakdown that may not be complete.\n\n' +
-                            'Please scroll down the page so that all of today\'s tasks are visible on the page before copying to ensure accurate results.'
-                        );
-                    }
-                    if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
-                    navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('feedback-given-stats: copied breakdown to clipboard');
-                        copyBtn.textContent = 'Copied!';
-                        copyBtn.classList.add('text-green-600', 'dark:text-green-400');
-                        copyBtn._wfCopyResetTimeout = setTimeout(() => {
-                            copyBtn._wfCopyResetTimeout = null;
-                            copyBtn.textContent = 'Copy';
-                            copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
-                        }, 5000);
-                    }).catch((err) => {
-                        Logger.error('feedback-given-stats: failed to copy breakdown', err);
-                    });
-                });
-            }
-            const updatePastDayUI = () => {
-                const inputEl = block.querySelector('[data-wf-past-day-input]');
-                const labelEl = block.querySelector('[data-wf-past-day-label]');
-                const dateEl = block.querySelector('[data-wf-past-day-date]');
-                const pastCountEl = block.querySelector('[data-wf-past-day-count]');
-                const breakdownEl = block.querySelector('[data-wf-past-day-breakdown]');
-                const msgElPast = block.querySelector('[data-wf-past-day-scroll-msg]');
-                if (!inputEl || !labelEl || !dateEl || !pastCountEl || !breakdownEl) return;
-                let n = parseInt(inputEl.value, 10);
-                if (Number.isNaN(n) || n < 1) {
-                    n = 1;
-                    inputEl.value = n;
-                }
-                labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
-                const ref = this.dateNDaysAgo(n);
-                dateEl.textContent = this.formatDateLabel(ref);
-                const panelEl = block.closest('[role="tabpanel"]');
-                const tableEl = panelEl ? panelEl.querySelector('table') : null;
-                const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
-                const stats = this.getStatsForDate(liveRows, ref.month, ref.day);
-                const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
-                const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
-                const dayArPast = (() => {
-                    let a = 0, f = 0;
-                    for (const k of Object.keys(stats.envCount || {})) {
-                        a += (stats.envApproved && stats.envApproved[k]) || 0;
-                        f += (stats.envFeedbackRequested && stats.envFeedbackRequested[k]) || 0;
-                    }
-                    const total = a + f;
-                    return total > 0 ? Math.round((a / total) * 100) : null;
-                })();
-                pastCountEl.textContent = `${stats.count}${uncertainPast ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
-                breakdownEl.textContent = '';
-                breakdownEl.className = 'text-sm text-right ml-2';
-                const sortedPastEnvs = Object.entries(stats.envCount || {}).sort((a, b) => b[1] - a[1]);
-                if (sortedPastEnvs.length === 0) {
-                    breakdownEl.textContent = '—';
-                } else {
-                    for (const [name, count] of sortedPastEnvs) {
-                        const line = document.createElement('div');
-                        line.className = 'text-sm';
-                        const orangeClass = 'text-orange-600 dark:text-orange-400';
-                        const nameSpan = document.createElement('span');
-                        nameSpan.className = orangeClass;
-                        nameSpan.textContent = name;
-                        const countSpan = document.createElement('span');
-                        countSpan.className = orangeClass;
-                        countSpan.textContent = `: ${count}`;
-                        line.appendChild(nameSpan);
-                        line.appendChild(countSpan);
-                        const a = (stats.envApproved && stats.envApproved[name]) || 0;
-                        const f = (stats.envFeedbackRequested && stats.envFeedbackRequested[name]) || 0;
-                        const total = a + f;
-                        const ar = total > 0 ? Math.round((a / total) * 100) : null;
-                        if (ar != null) {
-                            const arSpan = document.createElement('span');
-                            arSpan.className = 'text-muted-foreground';
-                            arSpan.textContent = ` (${ar}% AR)`;
-                            line.appendChild(arSpan);
-                        }
-                        breakdownEl.appendChild(line);
-                    }
-                }
-                if (msgElPast) {
-                    msgElPast.classList.toggle('hidden', !uncertainPast);
-                    msgElPast.classList.toggle('block', uncertainPast);
-                }
-                block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
-            };
-            const pastDown = block.querySelector('[data-wf-past-day-down]');
-            const pastInput = block.querySelector('[data-wf-past-day-input]');
-            const pastUp = block.querySelector('[data-wf-past-day-up]');
-            const pastCopyBtn = block.querySelector('[data-wf-past-day-copy-btn]');
-            if (pastDown) {
-                pastDown.addEventListener('click', () => {
-                    const n = Math.max(1, (parseInt(pastInput.value, 10) || 1) - 1);
-                    pastInput.value = n;
-                    updatePastDayUI();
-                });
-            }
-            if (pastUp) {
-                pastUp.addEventListener('click', () => {
-                    const n = (parseInt(pastInput.value, 10) || 1) + 1;
-                    pastInput.value = n;
-                    updatePastDayUI();
-                });
-            }
-            if (pastInput) {
-                pastInput.addEventListener('input', updatePastDayUI);
-                pastInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'e' || e.key === '-' || e.key === '+') e.preventDefault();
-                });
-            }
-            if (pastCopyBtn) {
-                pastCopyBtn.addEventListener('click', () => {
-                    const text = block.getAttribute('data-wf-past-day-copy-text') || '';
-                    if (!text) return;
-                    const uncertainPast = block.getAttribute('data-wf-past-day-uncertain') === 'true';
-                    if (uncertainPast) {
-                        alert(
-                            'Warning:\n\n' +
-                            'You copied a breakdown that may not be complete.\n\n' +
-                            'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.'
-                        );
-                    }
-                    if (pastCopyBtn._wfCopyResetTimeout) clearTimeout(pastCopyBtn._wfCopyResetTimeout);
-                    navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('feedback-given-stats: copied past-day breakdown to clipboard', {
-                            daysAgo: parseInt(pastInput && pastInput.value, 10) || 1
-                        });
-                        pastCopyBtn.textContent = 'Copied!';
-                        pastCopyBtn.classList.add('text-green-600', 'dark:text-green-400');
-                        pastCopyBtn._wfCopyResetTimeout = setTimeout(() => {
-                            pastCopyBtn._wfCopyResetTimeout = null;
-                            pastCopyBtn.textContent = 'Copy';
-                            pastCopyBtn.classList.remove('text-green-600', 'dark:text-green-400');
-                        }, 5000);
-                    }).catch((err) => {
-                        Logger.error('feedback-given-stats: failed to copy past-day breakdown', err);
-                    });
-                });
-            }
-            block._wfUpdatePastDayUI = updatePastDayUI;
-            updatePastDayUI();
-            const existingContent = card.querySelector('.p-4.pt-0.flex.items-end.justify-between');
-            if (existingContent && existingContent.nextSibling) {
-                card.insertBefore(block, existingContent.nextSibling);
-            } else {
-                card.appendChild(block);
-            }
-            Logger.log('feedback-given-stats: injected stats block');
-        }
 
-        const todayEl = block.querySelector('[data-wf-today-count]');
-        const envBreakdownEl = block.querySelector('[data-wf-env-breakdown]');
-        const msgEl = block.querySelector('[data-wf-scroll-msg]');
-        const copySectionEl = block.querySelector('[data-wf-copy-section]');
-        const copyBtn = block.querySelector('[data-wf-copy-btn]');
-
-        const todayLabel = uncertain ? `${todayCount}? today` : `${todayCount} today`;
-        if (todayEl) {
-            todayEl.textContent = '';
-            todayEl.appendChild(document.createTextNode(todayLabel));
-            if (dayAr != null) {
-                const arSpan = document.createElement('span');
-                arSpan.className = 'text-muted-foreground';
-                arSpan.textContent = ` (${dayAr}% AR)`;
-                todayEl.appendChild(arSpan);
-            }
-        }
-
-        if (envBreakdownEl) {
-            envBreakdownEl.textContent = '';
-            envBreakdownEl.className = 'text-sm text-right ml-2';
-            if (sortedEnvsForPayload.length === 0) {
-                envBreakdownEl.textContent = '—';
-            } else {
-                for (const [name, n, ar] of sortedEnvsForPayload) {
+            const renderEnvLines = (el, envData) => {
+                el.textContent = '';
+                el.className = 'text-sm text-right ml-2';
+                if (envData.length === 0) {
+                    el.textContent = '—';
+                    return;
+                }
+                for (const [name, n, ar] of envData) {
                     const line = document.createElement('div');
                     line.className = 'text-sm';
                     const orangeClass = 'text-orange-600 dark:text-orange-400';
@@ -486,37 +301,153 @@ const plugin = {
                         arSpan.textContent = ` (${ar}% AR)`;
                         line.appendChild(arSpan);
                     }
-                    envBreakdownEl.appendChild(line);
+                    el.appendChild(line);
                 }
+            };
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', () => {
+                    block._wfDaysAgo = (block._wfDaysAgo || 0) + 1;
+                    if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
+                });
             }
+            if (nextBtn) {
+                nextBtn.addEventListener('click', () => {
+                    block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
+                    if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
+                });
+            }
+            if (copyBtn) {
+                copyBtn.addEventListener('click', () => {
+                    const text = copyBtn.getAttribute('data-wf-copy-text');
+                    if (!text) return;
+                    if (copyBtn.getAttribute('data-wf-copy-uncertain') === 'true') {
+                        const daysAgo = block._wfDaysAgo || 0;
+                        alert(
+                            'Warning:\n\n' +
+                            'You copied a breakdown that may not be complete.\n\n' +
+                            (daysAgo === 0
+                                ? 'Please scroll down the page so that all of today\'s tasks are visible on the page before copying to ensure accurate results.'
+                                : 'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.')
+                        );
+                    }
+                    if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
+                    navigator.clipboard.writeText(text).then(() => {
+                        Logger.log('feedback-given-stats: copied breakdown to clipboard', { daysAgo: block._wfDaysAgo || 0 });
+                        copyBtn.textContent = 'Copied!';
+                        copyBtn.classList.add('text-green-600', 'dark:text-green-400');
+                        copyBtn._wfCopyResetTimeout = setTimeout(() => {
+                            copyBtn._wfCopyResetTimeout = null;
+                            copyBtn.textContent = 'Copy';
+                            copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
+                        }, 5000);
+                    }).catch((err) => {
+                        Logger.error('feedback-given-stats: failed to copy breakdown', err);
+                    });
+                });
+            }
+
+            const updateUI = () => {
+                const daysAgo = block._wfDaysAgo || 0;
+                const dayLabelEl = block.querySelector('[data-wf-day-label]');
+                const countEl = block.querySelector('[data-wf-count]');
+                const breakdownEl = block.querySelector('[data-wf-breakdown]');
+                const scrollMsgEl = block.querySelector('[data-wf-scroll-msg]');
+                const dateLabelEl = block.querySelector('[data-wf-date-label]');
+                const copyBtnEl = block.querySelector('[data-wf-copy-btn]');
+                const nextBtnEl = block.querySelector('[data-wf-day-next]');
+
+                if (dayLabelEl) {
+                    dayLabelEl.textContent = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`;
+                }
+                if (nextBtnEl) nextBtnEl.disabled = daysAgo === 0;
+
+                let isUncertain, copyText;
+
+                if (daysAgo === 0) {
+                    const ts = block._wfTodayStats || {};
+                    isUncertain = ts.uncertain || false;
+                    copyText = ts.copyText || '';
+                    if (dateLabelEl) dateLabelEl.textContent = '';
+                    if (countEl) {
+                        countEl.className = 'text-sm text-blue-600 dark:text-blue-400';
+                        countEl.textContent = '';
+                        countEl.appendChild(document.createTextNode(ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0)));
+                        if (ts.dayAr != null) {
+                            const arSpan = document.createElement('span');
+                            arSpan.className = 'text-muted-foreground';
+                            arSpan.textContent = ` (${ts.dayAr}% AR)`;
+                            countEl.appendChild(arSpan);
+                        }
+                    }
+                    if (breakdownEl) renderEnvLines(breakdownEl, ts.envData || []);
+                } else {
+                    const ref = self.dateNDaysAgo(daysAgo);
+                    if (dateLabelEl) dateLabelEl.textContent = self.formatDateLabel(ref);
+                    const panelEl = block.closest('[role="tabpanel"]');
+                    const tableEl = panelEl ? panelEl.querySelector('table') : null;
+                    const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
+                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day);
+                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
+                    copyText = self.buildCopyTextForDate(stats, isUncertain);
+                    let a = 0, f = 0;
+                    for (const k of Object.keys(stats.envCount || {})) {
+                        a += (stats.envApproved && stats.envApproved[k]) || 0;
+                        f += (stats.envFeedbackRequested && stats.envFeedbackRequested[k]) || 0;
+                    }
+                    const total = a + f;
+                    const dayArPast = total > 0 ? Math.round((a / total) * 100) : null;
+                    if (countEl) {
+                        countEl.className = 'text-sm text-muted-foreground';
+                        countEl.textContent = `${stats.count}${isUncertain ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                    }
+                    const pastEnvData = Object.entries(stats.envCount || {})
+                        .sort((x, y) => y[1] - x[1])
+                        .map(([name, count]) => {
+                            const envA = (stats.envApproved && stats.envApproved[name]) || 0;
+                            const envF = (stats.envFeedbackRequested && stats.envFeedbackRequested[name]) || 0;
+                            const envTotal = envA + envF;
+                            const ar = envTotal > 0 ? Math.round((envA / envTotal) * 100) : null;
+                            return [name, count, ar];
+                        });
+                    if (breakdownEl) renderEnvLines(breakdownEl, pastEnvData);
+                }
+
+                if (scrollMsgEl) {
+                    scrollMsgEl.textContent = daysAgo === 0
+                        ? 'Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.'
+                        : 'Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.';
+                    scrollMsgEl.classList.toggle('hidden', !isUncertain);
+                    scrollMsgEl.classList.toggle('block', isUncertain);
+                }
+                if (copyBtnEl) {
+                    copyBtnEl.setAttribute('data-wf-copy-uncertain', isUncertain ? 'true' : 'false');
+                    copyBtnEl.setAttribute('data-wf-copy-text', copyText);
+                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy';
+                }
+            };
+            block._wfUpdateUI = updateUI;
+            const existingContent = card.querySelector('.p-4.pt-0.flex.items-end.justify-between');
+            if (existingContent && existingContent.nextSibling) {
+                card.insertBefore(block, existingContent.nextSibling);
+            } else {
+                card.appendChild(block);
+            }
+            Logger.log('feedback-given-stats: injected stats block');
         }
 
-        if (copySectionEl) copySectionEl.classList.toggle('hidden', todayCount === 0);
-        if (msgEl) {
-            if (uncertain) {
-                msgEl.classList.remove('hidden');
-                msgEl.classList.add('block');
-            } else {
-                msgEl.classList.add('hidden');
-                msgEl.classList.remove('block');
-            }
+        block._wfTodayStats = {
+            count: todayCount,
+            uncertain,
+            dayAr,
+            envData: sortedEnvsForPayload,
+            copyText: todayCopyText
+        };
+
+        if (typeof block._wfUpdateUI === 'function') {
+            block._wfUpdateUI();
         }
-        if (copyBtn) {
-            copyBtn.setAttribute('data-wf-copy-uncertain', uncertain ? 'true' : 'false');
-            if (!copyBtn._wfCopyResetTimeout) {
-                copyBtn.textContent = 'Copy';
-            }
-            const copyLines = [
-                `QA: ${todayCount} tasks.`,
-                ...Object.entries(envCount)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([name, n]) => `${name}: ${n}`)
-            ];
-            copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
-        }
-        if (block && typeof block._wfUpdatePastDayUI === 'function') {
-            block._wfUpdatePastDayUI();
-        }
+
         if (uncertain && !state.lastUncertain) {
             Logger.info('feedback-given-stats: last visible row is today — showing uncertain count and scroll message');
         }

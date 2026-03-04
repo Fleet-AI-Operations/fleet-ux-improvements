@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -188,7 +188,8 @@ const plugin = {
         }
 
         const uncertain = rows.length > 0 && lastRowIsToday;
-        const envBreakdownText = Object.keys(envCount).length === 0
+        const todayCopyText = this.buildCopyTextForDate({ count: todayCount, envCount }, uncertain);
+        const todayEnvBreakdownText = Object.keys(envCount).length === 0
             ? '—'
             : Object.entries(envCount)
                 .sort((a, b) => b[1] - a[1])
@@ -196,60 +197,65 @@ const plugin = {
                 .join(', ');
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        const arrowBtnClass = 'inline-flex items-center justify-center w-7 h-7 rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-30 disabled:pointer-events-none text-base';
 
         let block = panel.querySelector('[data-wf-task-creation-today-env-block]');
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-task-creation-today-env-block', 'true');
+            block._wfDaysAgo = 0;
             block.className = 'rounded-xl text-card-foreground bg-muted-extra border-none shadow-none p-4 pt-4 flex flex-col justify-center mt-3 mb-3';
             block.innerHTML = [
-                '<div class="flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-today-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-env-breakdown></div>',
+                '<div class="flex items-center gap-2">',
+                '<button type="button" class="' + arrowBtnClass + '" data-wf-day-prev aria-label="Previous day">‹</button>',
+                '<span class="flex-1 text-center text-xs text-muted-foreground" data-wf-day-label>Today</span>',
+                '<button type="button" class="' + arrowBtnClass + '" data-wf-day-next aria-label="Next day" disabled>›</button>',
                 '</div>',
-                '<div class="mt-4 flex justify-between items-center gap-2" data-wf-copy-section>',
-                '<span class="text-xs text-muted-foreground">Copy today\'s breakdown.</span>',
+                '<div class="mt-3 flex justify-between gap-4">',
+                '<div class="text-sm text-muted-foreground" data-wf-count></div>',
+                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-breakdown></div>',
+                '</div>',
+                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg></p>',
+                '<div class="mt-4 flex justify-between items-center gap-2">',
+                '<span class="text-xs font-medium text-muted-foreground" data-wf-date-label></span>',
                 '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
                 '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg>Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.</p>',
-                '<div class="mt-4 pt-4 border-t border-border/50" data-wf-past-day-section>',
-                '<div class="flex flex-wrap items-center gap-2 justify-between">',
-                '<div class="flex flex-wrap items-center gap-2">',
-                '<span class="text-xs text-muted-foreground">Copy the breakdown from</span>',
-                '<span class="inline-flex items-center border border-input rounded-sm overflow-hidden bg-background">',
-                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-down aria-label="Decrease days">−</button>',
-                '<input type="number" min="1" value="1" class="w-11 h-8 text-center text-sm border-0 bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" data-wf-past-day-input inputmode="numeric">',
-                '<button type="button" class="flex items-center justify-center w-7 h-8 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" data-wf-past-day-up aria-label="Increase days">+</button>',
-                '</span>',
-                '<span class="text-xs text-muted-foreground" data-wf-past-day-label>day ago:</span>',
-                '</div>',
-                '<div class="ml-auto flex items-center gap-2">',
-                '<span class="text-xs font-medium text-muted-foreground" data-wf-past-day-date></span>',
-                '<button type="button" class="' + copyButtonClass + '" data-wf-past-day-copy-btn>Copy</button>',
-                '</div>',
-                '</div>',
-                '<div class="mt-2 flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-past-day-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-past-day-breakdown></div>',
-                '</div>',
-                '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-past-day-scroll-msg>Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.</p>',
-                '</div>'
             ].join('');
+
+            const self = this;
+            const prevBtn = block.querySelector('[data-wf-day-prev]');
+            const nextBtn = block.querySelector('[data-wf-day-next]');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', () => {
+                    block._wfDaysAgo = (block._wfDaysAgo || 0) + 1;
+                    if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
+                });
+            }
+            if (nextBtn) {
+                nextBtn.addEventListener('click', () => {
+                    block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
+                    if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
+                });
+            }
             if (copyBtn) {
                 copyBtn.addEventListener('click', () => {
                     const text = copyBtn.getAttribute('data-wf-copy-text');
                     if (!text) return;
                     if (copyBtn.getAttribute('data-wf-copy-uncertain') === 'true') {
+                        const daysAgo = block._wfDaysAgo || 0;
                         alert(
                             'Warning:\n\n' +
                             'You copied a breakdown that may not be complete.\n\n' +
-                            'Please scroll down the page so that all of today\'s tasks are visible on the page before copying to ensure accurate results.'
+                            (daysAgo === 0
+                                ? 'Please scroll down the page so that all of today\'s tasks are visible on the page before copying to ensure accurate results.'
+                                : 'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.')
                         );
                     }
                     if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('task-creation-today-env: copied breakdown to clipboard');
+                        Logger.log('task-creation-today-env: copied breakdown to clipboard', { daysAgo: block._wfDaysAgo || 0 });
                         copyBtn.textContent = 'Copied!';
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
@@ -262,135 +268,81 @@ const plugin = {
                     });
                 });
             }
-            const updatePastDayUI = () => {
-                const inputEl = block.querySelector('[data-wf-past-day-input]');
-                const labelEl = block.querySelector('[data-wf-past-day-label]');
-                const dateEl = block.querySelector('[data-wf-past-day-date]');
-                const pastCountEl = block.querySelector('[data-wf-past-day-count]');
-                const breakdownEl = block.querySelector('[data-wf-past-day-breakdown]');
-                const msgElPast = block.querySelector('[data-wf-past-day-scroll-msg]');
-                if (!inputEl || !labelEl || !dateEl || !pastCountEl || !breakdownEl) return;
-                let n = parseInt(inputEl.value, 10);
-                if (Number.isNaN(n) || n < 1) {
-                    n = 1;
-                    inputEl.value = n;
+
+            const updateUI = () => {
+                const daysAgo = block._wfDaysAgo || 0;
+                const dayLabelEl = block.querySelector('[data-wf-day-label]');
+                const countEl = block.querySelector('[data-wf-count]');
+                const breakdownEl = block.querySelector('[data-wf-breakdown]');
+                const scrollMsgEl = block.querySelector('[data-wf-scroll-msg]');
+                const dateLabelEl = block.querySelector('[data-wf-date-label]');
+                const copyBtnEl = block.querySelector('[data-wf-copy-btn]');
+                const nextBtnEl = block.querySelector('[data-wf-day-next]');
+
+                if (dayLabelEl) {
+                    dayLabelEl.textContent = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`;
                 }
-                labelEl.textContent = n === 1 ? 'day ago:' : 'days ago:';
-                const ref = this.dateNDaysAgo(n);
-                dateEl.textContent = this.formatDateLabel(ref);
-                const panelEl = block.closest('[role="tabpanel"]');
-                const tableEl = panelEl ? panelEl.querySelector('table') : null;
-                const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
-                const stats = this.getStatsForDate(liveRows, ref.month, ref.day);
-                const uncertainPast = this.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
-                const textForCopy = this.buildCopyTextForDate(stats, uncertainPast);
-                pastCountEl.textContent = `${stats.count}${uncertainPast ? '?' : ''}`;
-                const envBreakdownTextPast = Object.keys(stats.envCount).length === 0
-                    ? '—'
-                    : Object.entries(stats.envCount)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([name, count]) => `${name}: ${count}`)
-                        .join(', ');
-                breakdownEl.textContent = envBreakdownTextPast;
-                if (msgElPast) {
-                    msgElPast.classList.toggle('hidden', !uncertainPast);
-                    msgElPast.classList.toggle('block', uncertainPast);
+                if (nextBtnEl) nextBtnEl.disabled = daysAgo === 0;
+
+                let displayCount, displayBreakdown, isUncertain, copyText;
+
+                if (daysAgo === 0) {
+                    const ts = block._wfTodayStats || {};
+                    displayCount = ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0);
+                    displayBreakdown = ts.envBreakdownText || '—';
+                    isUncertain = ts.uncertain || false;
+                    copyText = ts.copyText || '';
+                    if (dateLabelEl) dateLabelEl.textContent = '';
+                } else {
+                    const ref = self.dateNDaysAgo(daysAgo);
+                    if (dateLabelEl) dateLabelEl.textContent = self.formatDateLabel(ref);
+                    const panelEl = block.closest('[role="tabpanel"]');
+                    const tableEl = panelEl ? panelEl.querySelector('table') : null;
+                    const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
+                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day);
+                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
+                    copyText = self.buildCopyTextForDate(stats, isUncertain);
+                    displayCount = `${stats.count}${isUncertain ? '?' : ''}`;
+                    displayBreakdown = Object.keys(stats.envCount).length === 0
+                        ? '—'
+                        : Object.entries(stats.envCount)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([name, count]) => `${name}: ${count}`)
+                            .join(', ');
                 }
-                block.setAttribute('data-wf-past-day-uncertain', uncertainPast ? 'true' : 'false');
-                block.setAttribute('data-wf-past-day-copy-text', textForCopy);
+
+                if (countEl) countEl.textContent = displayCount;
+                if (breakdownEl) breakdownEl.textContent = displayBreakdown;
+
+                if (scrollMsgEl) {
+                    scrollMsgEl.textContent = daysAgo === 0
+                        ? 'Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.'
+                        : 'Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.';
+                    scrollMsgEl.classList.toggle('hidden', !isUncertain);
+                    scrollMsgEl.classList.toggle('block', isUncertain);
+                }
+                if (copyBtnEl) {
+                    copyBtnEl.setAttribute('data-wf-copy-uncertain', isUncertain ? 'true' : 'false');
+                    copyBtnEl.setAttribute('data-wf-copy-text', copyText);
+                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy';
+                }
             };
-            const pastDown = block.querySelector('[data-wf-past-day-down]');
-            const pastInput = block.querySelector('[data-wf-past-day-input]');
-            const pastUp = block.querySelector('[data-wf-past-day-up]');
-            const pastCopyBtn = block.querySelector('[data-wf-past-day-copy-btn]');
-            if (pastDown) {
-                pastDown.addEventListener('click', () => {
-                    const n = Math.max(1, (parseInt(pastInput.value, 10) || 1) - 1);
-                    pastInput.value = n;
-                    updatePastDayUI();
-                });
-            }
-            if (pastUp) {
-                pastUp.addEventListener('click', () => {
-                    const n = (parseInt(pastInput.value, 10) || 1) + 1;
-                    pastInput.value = n;
-                    updatePastDayUI();
-                });
-            }
-            if (pastInput) {
-                pastInput.addEventListener('input', updatePastDayUI);
-                pastInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'e' || e.key === '-' || e.key === '+') e.preventDefault();
-                });
-            }
-            if (pastCopyBtn) {
-                pastCopyBtn.addEventListener('click', () => {
-                    const text = block.getAttribute('data-wf-past-day-copy-text') || '';
-                    if (!text) return;
-                    const uncertainPast = block.getAttribute('data-wf-past-day-uncertain') === 'true';
-                    if (uncertainPast) {
-                        alert(
-                            'Warning:\n\n' +
-                            'You copied a breakdown that may not be complete.\n\n' +
-                            'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.'
-                        );
-                    }
-                    if (pastCopyBtn._wfCopyResetTimeout) clearTimeout(pastCopyBtn._wfCopyResetTimeout);
-                    navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('task-creation-today-env: copied past-day breakdown to clipboard', {
-                            daysAgo: parseInt(pastInput && pastInput.value, 10) || 1
-                        });
-                        pastCopyBtn.textContent = 'Copied!';
-                        pastCopyBtn.classList.add('text-green-600', 'dark:text-green-400');
-                        pastCopyBtn._wfCopyResetTimeout = setTimeout(() => {
-                            pastCopyBtn._wfCopyResetTimeout = null;
-                            pastCopyBtn.textContent = 'Copy';
-                            pastCopyBtn.classList.remove('text-green-600', 'dark:text-green-400');
-                        }, 5000);
-                    }).catch((err) => {
-                        Logger.error('task-creation-today-env: failed to copy past-day breakdown', err);
-                    });
-                });
-            }
-            block._wfUpdatePastDayUI = updatePastDayUI;
-            updatePastDayUI();
+            block._wfUpdateUI = updateUI;
             grid.insertAdjacentElement('afterend', block);
-            Logger.log('task-creation-today-env: injected today count and environment breakdown block');
+            Logger.log('task-creation-today-env: injected breakdown and copy block');
         }
 
-        const todayEl = block.querySelector('[data-wf-today-count]');
-        const envEl = block.querySelector('[data-wf-env-breakdown]');
-        const msgEl = block.querySelector('[data-wf-scroll-msg]');
-        const copySectionEl = block.querySelector('[data-wf-copy-section]');
-        const copyBtn = block.querySelector('[data-wf-copy-btn]');
-        if (todayEl) todayEl.textContent = uncertain ? `${todayCount}? today` : `${todayCount} today`;
-        if (envEl) envEl.textContent = envBreakdownText;
-        if (copySectionEl) copySectionEl.classList.toggle('hidden', todayCount === 0);
-        if (msgEl) {
-            if (uncertain) {
-                msgEl.classList.remove('hidden');
-                msgEl.classList.add('block');
-            } else {
-                msgEl.classList.add('hidden');
-                msgEl.classList.remove('block');
-            }
+        block._wfTodayStats = {
+            count: todayCount,
+            uncertain,
+            envBreakdownText: todayEnvBreakdownText,
+            copyText: todayCopyText
+        };
+
+        if (typeof block._wfUpdateUI === 'function') {
+            block._wfUpdateUI();
         }
-        if (copyBtn) {
-            copyBtn.setAttribute('data-wf-copy-uncertain', uncertain ? 'true' : 'false');
-            if (!copyBtn._wfCopyResetTimeout) {
-                copyBtn.textContent = 'Copy';
-            }
-            const copyLines = [
-                `Task Creation: ${todayCount} tasks.`,
-                ...Object.entries(envCount)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([name, n]) => `${name}: ${n}`)
-            ];
-            copyBtn.setAttribute('data-wf-copy-text', copyLines.join('\n'));
-        }
-        if (block && typeof block._wfUpdatePastDayUI === 'function') {
-            block._wfUpdatePastDayUI();
-        }
+
         if (uncertain && !state.lastUncertain) {
             Logger.info('task-creation-today-env: last visible row is today — showing uncertain count and scroll message');
         }
