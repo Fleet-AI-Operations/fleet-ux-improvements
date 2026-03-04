@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '2.5',
+    _version: '2.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -246,7 +246,7 @@ const plugin = {
         const todayCopyText = this.buildCopyTextForDate({ count: todayCount, envCount }, uncertain);
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-        const arrowBtnClass = 'inline-flex items-center justify-center w-7 h-7 rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-30 disabled:pointer-events-none text-base';
+        const arrowBtnClass = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent text-white border-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:border-gray-500 disabled:text-gray-500 disabled:bg-transparent disabled:hover:bg-transparent disabled:cursor-not-allowed disabled:opacity-100 text-base font-medium';
 
         let block = card.querySelector('[data-wf-feedback-stats-block]');
         if (!block) {
@@ -255,9 +255,9 @@ const plugin = {
             block._wfDaysAgo = 0;
             block.className = 'p-4 pt-4 border-t border-border/50 flex flex-col justify-center';
             block.innerHTML = [
-                '<div class="flex items-center gap-2">',
+                '<div class="flex items-center justify-center gap-2">',
                 '<button type="button" class="' + arrowBtnClass + '" data-wf-day-prev aria-label="Previous day">‹</button>',
-                '<span class="flex-1 text-center text-xs text-muted-foreground" data-wf-day-label>Today</span>',
+                '<span class="text-xs text-white font-medium min-w-[5rem]" data-wf-day-label>Today</span>',
                 '<button type="button" class="' + arrowBtnClass + '" data-wf-day-next aria-label="Next day" disabled>›</button>',
                 '</div>',
                 '<div class="mt-3 flex justify-between gap-4">',
