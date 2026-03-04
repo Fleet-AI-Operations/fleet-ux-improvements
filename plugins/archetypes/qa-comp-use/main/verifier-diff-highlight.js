@@ -5,9 +5,9 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
-    phase: 'mutation',
+    phase: 'init',
 
     initialState: {
         verifierObserved: false,
@@ -51,51 +51,66 @@ const plugin = {
                 display: flex;
                 align-items: center;
                 gap: 8px;
-                margin-left: auto;
+                margin-left: auto !important;
+            }
+            .verifier-diff-slider-on {
+                background-color: #2563eb !important;
             }
         `;
         document.head.appendChild(style);
         Logger.log('✓ Verifier Diff Highlight styles injected');
-    },
 
-    onMutation(state, context) {
-        const container = this.findVerifierFieldList();
-        if (!container) {
-            if (state.verifierObserved) {
-                state.verifierObserved = false;
-                state.appliedCount = 0;
-                state.toggleInserted = false;
-                Logger.debug('Verifier field list no longer present, resetting state');
+        const self = this;
+        function processVerifier() {
+            const container = self.findVerifierFieldList();
+            if (!container) {
+                if (state.verifierObserved) {
+                    state.verifierObserved = false;
+                    state.appliedCount = 0;
+                    state.toggleInserted = false;
+                    Logger.debug('Verifier field list no longer present, resetting state');
+                }
+                return;
             }
-            return;
+
+            if (!state.verifierObserved) {
+                state.verifierObserved = true;
+                Logger.log('✓ Verifier Per-Field Comparison section detected');
+            }
+
+            if (!state.toggleInserted) {
+                const inserted = self.insertToggle(state, container);
+                if (inserted) {
+                    state.toggleInserted = true;
+                    Logger.log('✓ Verifier diff toggle inserted');
+                }
+            }
+
+            if (state.highlightsEnabled) {
+                const applied = self.applyDiffsToAllFields(state, container);
+                if (applied > 0 && applied !== state.appliedCount) {
+                    state.appliedCount = applied;
+                    Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
+                }
+            } else {
+                self.removeHighlights(state, container);
+                if (state.appliedCount > 0) {
+                    state.appliedCount = 0;
+                    Logger.debug('Verifier diff highlights disabled, original content restored');
+                }
+            }
         }
 
-        if (!state.verifierObserved) {
-            state.verifierObserved = true;
-            Logger.log('✓ Verifier Per-Field Comparison section detected');
-        }
+        const observer = new MutationObserver((mutations) => {
+            const hasAdditions = mutations.some(m => m.addedNodes && m.addedNodes.length > 0);
+            if (!hasAdditions) return;
+            processVerifier();
+        });
 
-        if (!state.toggleInserted) {
-            const inserted = this.insertToggle(state, container);
-            if (inserted) {
-                state.toggleInserted = true;
-                Logger.log('✓ Verifier diff toggle inserted');
-            }
-        }
+        observer.observe(document.body, { childList: true, subtree: true });
+        CleanupRegistry.registerObserver(observer);
 
-        if (state.highlightsEnabled) {
-            const applied = this.applyDiffsToAllFields(state, container);
-            if (applied > 0 && applied !== state.appliedCount) {
-                state.appliedCount = applied;
-                Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
-            }
-        } else {
-            this.removeHighlights(state, container);
-            if (state.appliedCount > 0) {
-                state.appliedCount = 0;
-                Logger.debug('Verifier diff highlights disabled, original content restored');
-            }
-        }
+        processVerifier();
     },
 
     insertToggle(state, fieldListContainer) {
@@ -146,7 +161,9 @@ const plugin = {
 
         const updateSlider = () => {
             const on = checkbox.checked;
-            slider.style.backgroundColor = on ? 'var(--primary, #4f46e5)' : '#ccc';
+            slider.classList.toggle('verifier-diff-slider-on', on);
+            if (!on) slider.style.backgroundColor = '#ccc';
+            else slider.style.backgroundColor = '';
             knob.style.left = on ? '19px' : '3px';
         };
         updateSlider();
