@@ -1,25 +1,14 @@
 // ============= dispute-ids-enhancer.js =============
 // Intercepts /api/disputes response and surfaces dispute id and eval_task_id at top of each card as copy buttons.
 
-const DISPUTE_BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 pl-4 pr-4 py-2';
-const IGNORE_CACHE_PREFIX = 'fleet-disputes-ignore-v1:';
-
 const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
-    description: 'Surface Dispute and Task IDs at top of dispute cards, with optional ignore/collapse.',
-    _version: '2.3',
+    description: 'Surface Dispute and Task IDs at top of dispute cards.',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
 
-    subOptions: [
-        {
-            id: 'ignore-disputes',
-            name: 'Ignore disputes (collapse cards)',
-            description: 'Add an Ignore/Un-Ignore control per dispute card that collapses card content and restores your resolution text.',
-            enabledByDefault: true
-        }
-    ],
     initialState: {
         interceptionInstalled: false,
         loggedNoCardsYet: false,
@@ -32,10 +21,6 @@ const plugin = {
     onMutation(state, context) {
         if (!state.interceptionInstalled) {
             this.installDisputesInterception(context, state);
-        }
-        const ignoreEnabled = typeof Storage.getSubOptionEnabled === 'function' && Storage.getSubOptionEnabled(plugin.id, 'ignore-disputes', true);
-        if (ignoreEnabled) {
-            this.ensureSyncUI(context, state);
         }
         if (context.disputesData && Array.isArray(context.disputesData)) {
             if (this.isInjectionComplete(context)) return;
@@ -123,194 +108,6 @@ const plugin = {
             Logger.warn('Dispute IDs Enhancer: error while loading disputes cache', e);
             return false;
         }
-    },
-
-    getIgnoreStorageKey() {
-        return `${plugin.id}-ignored`;
-    },
-
-    loadIgnoreStore() {
-        const key = this.getIgnoreStorageKey();
-        try {
-            const raw = Storage.get(key, null);
-            if (!raw) return {};
-            let parsed = raw;
-            if (typeof raw === 'string') {
-                try {
-                    parsed = JSON.parse(raw);
-                } catch (e) {
-                    Logger.warn('Dispute IDs Enhancer: failed to parse ignore store, clearing', e);
-                    Storage.delete(key);
-                    return {};
-                }
-            }
-            if (!parsed || typeof parsed !== 'object') return {};
-            return parsed;
-        } catch (e) {
-            Logger.warn('Dispute IDs Enhancer: error while loading ignore store', e);
-            return {};
-        }
-    },
-
-    saveIgnoreStore(store) {
-        const key = this.getIgnoreStorageKey();
-        try {
-            Storage.set(key, JSON.stringify(store || {}));
-            const count = store ? Object.keys(store).length : 0;
-            Logger.debug(`Dispute IDs Enhancer: saved ignore store with ${count} entr${count === 1 ? 'y' : 'ies'}`);
-        } catch (e) {
-            Logger.warn('Dispute IDs Enhancer: failed to save ignore store', e);
-        }
-    },
-
-    getIgnoreEntry(disputeId, store) {
-        if (!disputeId) return null;
-        const key = String(disputeId);
-        const source = store || this.loadIgnoreStore();
-        const entry = source[key];
-        if (!entry || typeof entry !== 'object') return null;
-        return entry;
-    },
-
-    setIgnoreEntry(disputeId, partial, store) {
-        if (!disputeId) return;
-        const key = String(disputeId);
-        const currentStore = store || this.loadIgnoreStore();
-        const existing = currentStore[key] && typeof currentStore[key] === 'object' ? currentStore[key] : {};
-        const next = Object.assign({}, existing, partial || {}, { updatedAt: Date.now() });
-        if (!next.ignored && !next.resolutionText) {
-            delete currentStore[key];
-        } else {
-            currentStore[key] = next;
-        }
-        this.saveIgnoreStore(currentStore);
-        return currentStore;
-    },
-
-    findSyncContainer() {
-        const link = document.querySelector('a[href*="/work/problems"]');
-        if (!link || !link.closest) return null;
-        const container = link.closest('.mb-6');
-        return container || null;
-    },
-
-    ensureSyncUI(context, state) {
-        if (document.querySelector('[data-fleet-dispute-sync]')) return;
-        const container = this.findSyncContainer();
-        if (!container) return;
-
-        const row = document.createElement('div');
-        row.setAttribute('data-fleet-dispute-sync', '1');
-        row.className = 'flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-border';
-
-        const help = document.createElement('p');
-        help.className = 'text-xs text-muted-foreground max-w-xl';
-        help.textContent = 'Share ignore list: copy your list to clipboard and paste elsewhere for another QA to copy; they can paste here to add those ignored disputes to their list (existing entries are kept).';
-        row.appendChild(help);
-
-        const btnGroup = document.createElement('div');
-        btnGroup.className = 'flex items-center gap-2 shrink-0';
-
-        const copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.className = DISPUTE_BUTTON_CLASS;
-        copyBtn.textContent = 'Copy ignore list';
-        copyBtn.title = 'Copy your ignored disputes list to clipboard';
-        copyBtn.addEventListener('click', () => this.copyIgnoreCache());
-
-        const pasteBtn = document.createElement('button');
-        pasteBtn.type = 'button';
-        pasteBtn.className = DISPUTE_BUTTON_CLASS;
-        pasteBtn.textContent = 'Paste ignore list';
-        pasteBtn.title = 'Paste and merge an ignore list from clipboard';
-        pasteBtn.addEventListener('click', () => this.pasteIgnoreCache(context, state));
-
-        btnGroup.appendChild(copyBtn);
-        btnGroup.appendChild(pasteBtn);
-        row.appendChild(btnGroup);
-        container.appendChild(row);
-        Logger.log('Dispute IDs Enhancer: sync ignore UI added');
-    },
-
-    copyIgnoreCache() {
-        try {
-            const store = this.loadIgnoreStore();
-            const payload = IGNORE_CACHE_PREFIX + JSON.stringify(store);
-            navigator.clipboard.writeText(payload).then(() => {
-                const n = Object.keys(store).length;
-                Logger.log(`Dispute IDs Enhancer: copied ignore list to clipboard (${n} entr${n === 1 ? 'y' : 'ies'})`);
-            }).catch((err) => {
-                Logger.error('Dispute IDs Enhancer: failed to copy ignore list', err);
-            });
-        } catch (e) {
-            Logger.error('Dispute IDs Enhancer: copy ignore list failed', e);
-        }
-    },
-
-    parsePastedIgnoreCache(raw) {
-        if (typeof raw !== 'string') return null;
-        const trimmed = raw.replace(/^\s+|\s+$/g, '').replace(/\uFEFF/g, '');
-        if (!trimmed.startsWith(IGNORE_CACHE_PREFIX)) return null;
-        const json = trimmed.slice(IGNORE_CACHE_PREFIX.length).trim();
-        try {
-            const parsed = JSON.parse(json);
-            return parsed && typeof parsed === 'object' ? parsed : null;
-        } catch (e) {
-            return null;
-        }
-    },
-
-    pasteIgnoreCache(context, state) {
-        navigator.clipboard.readText().then((text) => {
-            const pasted = this.parsePastedIgnoreCache(text);
-            if (!pasted) {
-                Logger.warn('Dispute IDs Enhancer: clipboard does not contain a valid ignore list (paste a list copied from this page).');
-                return;
-            }
-            const current = this.loadIgnoreStore();
-            let added = 0;
-            for (const [id, entry] of Object.entries(pasted)) {
-                if (!id || !entry || typeof entry !== 'object' || !entry.ignored) continue;
-                if (current[id] && current[id].ignored) continue;
-                current[id] = {
-                    ignored: true,
-                    resolutionText: typeof entry.resolutionText === 'string' ? entry.resolutionText.trim() : '',
-                    updatedAt: entry.updatedAt || Date.now()
-                };
-                added++;
-            }
-            this.saveIgnoreStore(current);
-            Logger.log(`Dispute IDs Enhancer: merged ignore list from clipboard (${added} new entr${added === 1 ? 'y' : 'ies'})`);
-            this.reapplyIgnoreState(context, state);
-        }).catch((err) => {
-            Logger.error('Dispute IDs Enhancer: failed to read clipboard', err);
-        });
-    },
-
-    reapplyIgnoreState(context, state) {
-        const cards = document.querySelectorAll('[data-ui="dispute-card"]');
-        const disputes = context && context.disputesData && Array.isArray(context.disputesData) ? context.disputesData : [];
-        if (cards.length === 0 || disputes.length === 0) return;
-        cards.forEach((card, i) => {
-            const dispute = disputes[i];
-            if (!dispute || dispute.id == null) return;
-            const disputeId = String(dispute.id);
-            const idsRow = card.querySelector('[data-fleet-dispute-ids]');
-            if (!idsRow) return;
-            const isIgnored = !!this.getIgnoreEntry(disputeId);
-            this.collapseCardForIgnoredState(card, idsRow, isIgnored);
-
-            const ignoreBtn = card.querySelector('[data-fleet-dispute-ignore]');
-            if (ignoreBtn) {
-                ignoreBtn.textContent = isIgnored ? 'Un-Ignore' : 'Ignore';
-                ignoreBtn.title = isIgnored ? 'Un-ignore this dispute (show full content)' : 'Ignore this dispute (collapse content)';
-            }
-
-            if (isIgnored) {
-                this.restoreResolutionTextFromCache(idsRow);
-            }
-        });
-        Logger.debug('Dispute IDs Enhancer: reapplied ignore state to cards');
     },
 
     updateDisputesCache(disputes) {
@@ -467,9 +264,6 @@ const plugin = {
             state.loggedNoCardsYet = true;
             Logger.log('Dispute IDs Enhancer: have data but no cards yet (will retry)');
         }
-        const ignoreEnabled = Storage.getSubOptionEnabled
-            ? Storage.getSubOptionEnabled(plugin.id, 'ignore-disputes', true)
-            : true;
 
         let injected = 0;
         cards.forEach((card, i) => {
@@ -485,13 +279,6 @@ const plugin = {
             }
             container.insertBefore(row, container.firstChild);
             this.hideNativeExpandButton(card);
-            if (ignoreEnabled) {
-                try {
-                    this.applyIgnoreUI(card, dispute, row);
-                } catch (e) {
-                    Logger.debug('Dispute IDs Enhancer: failed to apply ignore UI for card', e);
-                }
-            }
             injected++;
         });
         if (injected > 0) {
@@ -512,238 +299,6 @@ const plugin = {
             Logger.debug('Dispute IDs Enhancer: hid native dispute expand button(s) to avoid DOM conflicts');
         } catch (e) {
             Logger.debug('Dispute IDs Enhancer: failed to hide native expand button', e);
-        }
-    },
-
-    findResolutionTextarea(card) {
-        if (!card) return null;
-        const textarea = card.querySelector('textarea[data-ui="dispute-resolution-reason"]');
-        if (!textarea) {
-            Logger.debug('Dispute IDs Enhancer: resolution textarea not found for card');
-        }
-        return textarea;
-    },
-
-    ensureHeaderContentWrapped(card, idsRow) {
-        if (!card || !idsRow) return null;
-        const container = idsRow.parentElement;
-        if (!container) return null;
-        let wrapper = card.querySelector('[data-fleet-dispute-collapsible-header]');
-        if (wrapper) return wrapper;
-
-        const toWrap = [];
-        for (let i = 0; i < container.children.length; i++) {
-            const child = container.children[i];
-            if (child !== idsRow) toWrap.push(child);
-        }
-        if (toWrap.length === 0) return null;
-
-        wrapper = document.createElement('div');
-        wrapper.setAttribute('data-fleet-dispute-collapsible-header', '1');
-        toWrap.forEach((el) => wrapper.appendChild(el));
-        container.appendChild(wrapper);
-        return wrapper;
-    },
-
-    ensureCollapsibleContainer(card, idsRow) {
-        if (!card) return null;
-        let collapsible = card.querySelector('[data-fleet-dispute-collapsible]');
-        if (collapsible) return collapsible;
-
-        const mainInner = card.querySelector('[class*="space-y-1.5"][class*="p-4"]');
-        if (!mainInner) {
-            Logger.warn('Dispute IDs Enhancer: no main inner container found for collapsible content');
-            return null;
-        }
-
-        // Collect all siblings after the main inner container (card body, resolution, etc.)
-        const toWrap = [];
-        let sibling = mainInner.nextElementSibling;
-        while (sibling) {
-            toWrap.push(sibling);
-            sibling = sibling.nextElementSibling;
-        }
-        if (toWrap.length === 0) return null;
-
-        collapsible = document.createElement('div');
-        collapsible.setAttribute('data-fleet-dispute-collapsible', '1');
-        const parent = mainInner.parentNode;
-        parent.appendChild(collapsible);
-        toWrap.forEach((el) => {
-            collapsible.appendChild(el);
-        });
-        return collapsible;
-    },
-
-    ensureShowHideToggle(idsRow, isIgnored) {
-        const wrapper = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-group]');
-        const existing = idsRow && idsRow.querySelector('[data-fleet-dispute-toggle]');
-        if (!isIgnored) {
-            if (wrapper) wrapper.remove();
-            if (existing) existing.remove();
-            const orphanLabel = idsRow && idsRow.querySelector('[data-fleet-dispute-ignored-label]');
-            if (orphanLabel) orphanLabel.remove();
-            return null;
-        }
-        if (existing) return existing;
-        if (!idsRow) return null;
-        const group = document.createElement('div');
-        group.setAttribute('data-fleet-dispute-ignored-group', '1');
-        group.className = 'ml-auto flex items-center gap-2';
-        const label = document.createElement('span');
-        label.setAttribute('data-fleet-dispute-ignored-label', '1');
-        label.className = 'text-xs text-muted-foreground font-medium';
-        label.textContent = 'Ignored';
-        group.appendChild(label);
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.setAttribute('data-fleet-dispute-toggle', '1');
-        toggle.className = DISPUTE_BUTTON_CLASS;
-        toggle.textContent = 'Show Content';
-        group.appendChild(toggle);
-        idsRow.appendChild(group);
-        return toggle;
-    },
-
-    collapseCardForIgnoredState(card, idsRow, isIgnored) {
-        const headerWrapper = this.ensureHeaderContentWrapped(card, idsRow);
-        const collapsible = this.ensureCollapsibleContainer(card, idsRow);
-        const toggle = this.ensureShowHideToggle(idsRow, isIgnored);
-        if (isIgnored && !toggle) return;
-
-        const setCollapsed = (hidden) => {
-            if (headerWrapper) headerWrapper.style.display = hidden ? 'none' : '';
-            if (collapsible) collapsible.style.display = hidden ? 'none' : '';
-            if (toggle) toggle.textContent = hidden ? 'Show Content' : 'Hide Content';
-        };
-
-        if (isIgnored) {
-            setCollapsed(true);
-        } else {
-            setCollapsed(false);
-        }
-
-        if (toggle && !toggle._fleetToggleBound) {
-            toggle._fleetToggleBound = true;
-            const self = this;
-            toggle.addEventListener('click', () => {
-                const currentlyHidden = collapsible && collapsible.style.display === 'none';
-                if (currentlyHidden) {
-                    setCollapsed(false);
-                    self.restoreResolutionTextFromCache(idsRow);
-                    Logger.debug('Dispute IDs Enhancer: dispute content shown via toggle');
-                } else {
-                    setCollapsed(true);
-                    Logger.debug('Dispute IDs Enhancer: dispute content hidden via toggle');
-                }
-            });
-        }
-    },
-
-    setTextareaValueReactFriendly(textarea, text) {
-        if (!textarea) return;
-        textarea.focus();
-        const previousValue = textarea.value;
-        const proto = Object.getPrototypeOf(textarea);
-        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-        if (descriptor && descriptor.set) {
-            descriptor.set.call(textarea, text);
-        } else {
-            textarea.value = text;
-        }
-        if (textarea._valueTracker && typeof textarea._valueTracker.setValue === 'function') {
-            try {
-                textarea._valueTracker.setValue(previousValue);
-            } catch (_) { /* ignore */ }
-        }
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-    },
-
-    restoreResolutionTextFromCache(idsRow) {
-        if (!idsRow) return;
-        const disputeId = idsRow.getAttribute('data-fleet-dispute-id');
-        if (!disputeId) return;
-        const entry = this.getIgnoreEntry(disputeId);
-        if (!entry || typeof entry.resolutionText !== 'string') return;
-        const card = idsRow.closest('[data-ui="dispute-card"]');
-        if (!card) return;
-        const textarea = this.findResolutionTextarea(card);
-        if (!textarea) return;
-        this.setTextareaValueReactFriendly(textarea, entry.resolutionText);
-        Logger.debug(`Dispute IDs Enhancer: restored resolution text for dispute ${disputeId} (expand)`);
-    },
-
-    applyIgnoreUI(card, dispute, idsRow) {
-        if (!dispute || dispute.id == null) return;
-        if (!card || !idsRow) return;
-
-        const disputeId = String(dispute.id);
-        const existing = this.getIgnoreEntry(disputeId);
-        const isIgnored = !!(existing && existing.ignored);
-
-        const footer = card.querySelector('div.border-t.pt-4 .flex.items-center.justify-end.gap-2.mt-4') ||
-            card.querySelector('div.border-t.pt-4 .flex.items-center.justify-end');
-        if (!footer) {
-            Logger.debug('Dispute IDs Enhancer: no footer action container found for card', disputeId);
-        }
-
-        let ignoreBtn = card.querySelector('[data-fleet-dispute-ignore]');
-        if (!ignoreBtn && footer) {
-            ignoreBtn = document.createElement('button');
-            ignoreBtn.type = 'button';
-            ignoreBtn.setAttribute('data-fleet-dispute-ignore', disputeId);
-            ignoreBtn.className = DISPUTE_BUTTON_CLASS;
-
-            const rejectBtn = footer.querySelector('[data-ui="dispute-reject"]');
-            if (rejectBtn && rejectBtn.parentNode === footer) {
-                footer.insertBefore(ignoreBtn, rejectBtn);
-            } else {
-                footer.insertBefore(ignoreBtn, footer.firstChild);
-            }
-        }
-
-        if (!ignoreBtn) {
-            return;
-        }
-
-        const resolutionTextarea = this.findResolutionTextarea(card);
-        if (isIgnored && existing && typeof existing.resolutionText === 'string' && resolutionTextarea) {
-            this.setTextareaValueReactFriendly(resolutionTextarea, existing.resolutionText);
-            Logger.debug(`Dispute IDs Enhancer: restored resolution text for ignored dispute ${disputeId}`);
-        }
-
-        this.collapseCardForIgnoredState(card, idsRow, isIgnored);
-
-        const applyLabel = (ignored) => {
-            ignoreBtn.textContent = ignored ? 'Un-Ignore' : 'Ignore';
-            ignoreBtn.title = ignored ? 'Un-ignore this dispute (show full content)' : 'Ignore this dispute (collapse content)';
-        };
-        applyLabel(isIgnored);
-
-        if (!ignoreBtn._fleetIgnoreBound) {
-            ignoreBtn._fleetIgnoreBound = true;
-            ignoreBtn.addEventListener('click', () => {
-                const textarea = this.findResolutionTextarea(card);
-                const currentText = textarea ? textarea.value || '' : '';
-                const currentEntry = this.getIgnoreEntry(disputeId);
-                const nowIgnored = !(currentEntry && currentEntry.ignored);
-
-                if (nowIgnored) {
-                    const updatedStore = this.setIgnoreEntry(disputeId, { ignored: true, resolutionText: currentText });
-                    Logger.info(`Dispute IDs Enhancer: dispute ${disputeId} marked as ignored`);
-                    this.collapseCardForIgnoredState(card, idsRow, true);
-                    applyLabel(true);
-                    if (textarea && currentText) {
-                        this.setTextareaValueReactFriendly(textarea, currentText);
-                    }
-                } else {
-                    this.setIgnoreEntry(disputeId, { ignored: false });
-                    Logger.info(`Dispute IDs Enhancer: dispute ${disputeId} un-ignored`);
-                    this.collapseCardForIgnoredState(card, idsRow, false);
-                    applyLabel(false);
-                }
-            });
         }
     },
 

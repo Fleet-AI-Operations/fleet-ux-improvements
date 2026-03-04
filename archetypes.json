@@ -1,6 +1,6 @@
 {
   "version": "5.1.4",
-  "archetypesVersion": "6.18",
+  "archetypesVersion": "6.19",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -384,7 +384,7 @@
       "plugins": [
         {
           "name": "dispute-ids-enhancer.js",
-          "version": "2.3"
+          "version": "3.0"
         }
       ]
     },
