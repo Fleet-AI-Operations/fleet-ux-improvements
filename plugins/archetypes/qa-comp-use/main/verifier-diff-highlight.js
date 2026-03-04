@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -70,16 +70,13 @@ const plugin = {
             return;
         }
 
-        const card = container.closest('div.rounded-sm.overflow-hidden.border.bg-card');
-        if (!card) return;
-
         if (!state.verifierObserved) {
             state.verifierObserved = true;
             Logger.log('✓ Verifier Per-Field Comparison section detected');
         }
 
         if (!state.toggleInserted) {
-            const inserted = this.insertToggle(state, card, container);
+            const inserted = this.insertToggle(state, container);
             if (inserted) {
                 state.toggleInserted = true;
                 Logger.log('✓ Verifier diff toggle inserted');
@@ -101,7 +98,7 @@ const plugin = {
         }
     },
 
-    insertToggle(state, card, fieldListContainer) {
+    insertToggle(state, fieldListContainer) {
         const headerBlock = fieldListContainer.previousElementSibling;
         if (!headerBlock || !headerBlock.textContent.includes('Per-Field Comparison')) {
             Logger.debug('Verifier: could not find Per-Field Comparison header block');
@@ -172,15 +169,39 @@ const plugin = {
     },
 
     findVerifierFieldList() {
-        const candidates = Context.dom.queryAll('div.text-xs.border-t.divide-y', {
+        const labelCandidates = Context.dom.queryAll('div.text-muted-foreground.font-medium', {
             context: `${this.id}.findVerifierFieldList`
         });
-        for (const el of candidates) {
-            const card = el.closest('div.rounded-sm.overflow-hidden.border.bg-card');
-            if (!card) continue;
-            if (!card.textContent.includes('Per-Field Comparison')) continue;
-            return el;
+
+        if (!labelCandidates || labelCandidates.length === 0) {
+            Logger.debug('Verifier: no text-muted-foreground.font-medium divs found on page');
+            return null;
         }
+
+        for (const label of labelCandidates) {
+            if (!label.textContent.trim().includes('Per-Field Comparison')) continue;
+
+            const card = label.closest('.bg-card');
+            if (!card) {
+                Logger.debug('Verifier: found Per-Field Comparison label but no .bg-card ancestor');
+                continue;
+            }
+
+            const headerSection = label.closest('[class*="p-3"]');
+            if (!headerSection) {
+                Logger.debug('Verifier: found Per-Field Comparison label but no p-3 section ancestor');
+                continue;
+            }
+
+            const fieldList = headerSection.nextElementSibling;
+            if (!fieldList) {
+                Logger.debug('Verifier: found header section but no nextElementSibling field list');
+                continue;
+            }
+
+            return fieldList;
+        }
+
         return null;
     },
 
