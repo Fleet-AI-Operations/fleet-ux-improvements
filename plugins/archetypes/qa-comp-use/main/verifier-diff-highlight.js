@@ -5,19 +5,18 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         verifierObserved: false,
-        appliedCount: 0
+        appliedCount: 0,
+        toggleInserted: false,
+        highlightsEnabled: true
     },
 
     selectors: {
-        // Card that contains "Per-Field Comparison" and the field list
-        perFieldSection: null, // found by text
-        // List of field rows
         fieldList: 'div.text-xs.border-t.divide-y.divide-border'
     },
 
@@ -25,28 +24,34 @@ const plugin = {
         const style = document.createElement('style');
         style.textContent = `
             .verifier-diff-remove {
-                background-color: rgba(239, 68, 68, 0.25) !important;
-                color: rgb(127, 29, 29);
+                background-color: rgba(239, 68, 68, 0.35) !important;
+                color: rgb(127, 29, 29) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
             }
             .dark .verifier-diff-remove {
-                background-color: rgba(239, 68, 68, 0.2) !important;
-                color: rgb(254, 202, 202);
+                background-color: rgba(239, 68, 68, 0.35) !important;
+                color: rgb(254, 202, 202) !important;
             }
             .verifier-diff-add {
-                background-color: rgba(16, 185, 129, 0.25) !important;
-                color: rgb(6, 78, 59);
+                background-color: rgba(16, 185, 129, 0.35) !important;
+                color: rgb(6, 78, 59) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
             }
             .dark .verifier-diff-add {
-                background-color: rgba(16, 185, 129, 0.2) !important;
-                color: rgb(167, 243, 208);
+                background-color: rgba(16, 185, 129, 0.35) !important;
+                color: rgb(167, 243, 208) !important;
+            }
+            .verifier-diff-toggle-wrap {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-left: auto;
             }
         `;
         document.head.appendChild(style);
@@ -59,21 +64,111 @@ const plugin = {
             if (state.verifierObserved) {
                 state.verifierObserved = false;
                 state.appliedCount = 0;
+                state.toggleInserted = false;
                 Logger.debug('Verifier field list no longer present, resetting state');
             }
             return;
         }
+
+        const card = container.closest('div.rounded-sm.overflow-hidden.border.bg-card');
+        if (!card) return;
 
         if (!state.verifierObserved) {
             state.verifierObserved = true;
             Logger.log('✓ Verifier Per-Field Comparison section detected');
         }
 
-        const applied = this.applyDiffsToAllFields(container);
-        if (applied > 0 && applied !== state.appliedCount) {
-            state.appliedCount = applied;
-            Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
+        if (!state.toggleInserted) {
+            const inserted = this.insertToggle(state, card, container);
+            if (inserted) {
+                state.toggleInserted = true;
+                Logger.log('✓ Verifier diff toggle inserted');
+            }
         }
+
+        if (state.highlightsEnabled) {
+            const applied = this.applyDiffsToAllFields(state, container);
+            if (applied > 0 && applied !== state.appliedCount) {
+                state.appliedCount = applied;
+                Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
+            }
+        } else {
+            this.removeHighlights(state, container);
+            if (state.appliedCount > 0) {
+                state.appliedCount = 0;
+                Logger.debug('Verifier diff highlights disabled, original content restored');
+            }
+        }
+    },
+
+    insertToggle(state, card, fieldListContainer) {
+        const headerBlock = fieldListContainer.previousElementSibling;
+        if (!headerBlock || !headerBlock.textContent.includes('Per-Field Comparison')) {
+            Logger.debug('Verifier: could not find Per-Field Comparison header block');
+            return false;
+        }
+        const headerRow = headerBlock.querySelector('.flex.items-center.gap-2') || headerBlock.firstElementChild;
+        if (!headerRow) {
+            Logger.debug('Verifier: could not find header row for toggle');
+            return false;
+        }
+        if (headerRow.querySelector('.verifier-diff-toggle-wrap')) {
+            return true;
+        }
+
+        const wrap = document.createElement('div');
+        wrap.className = 'verifier-diff-toggle-wrap';
+
+        const toggleId = `${this.id}-toggle`;
+        const label = document.createElement('label');
+        label.htmlFor = toggleId;
+        label.textContent = 'Highlight Differences';
+        label.setAttribute('style', 'font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); cursor: pointer; user-select: none; white-space: nowrap;');
+
+        const switchWrap = document.createElement('label');
+        switchWrap.setAttribute('style', 'position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0;');
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = toggleId;
+        checkbox.checked = state.highlightsEnabled;
+        checkbox.setAttribute('style', 'opacity: 0; width: 0; height: 0; position: absolute;');
+
+        const slider = document.createElement('span');
+        slider.setAttribute('style', 'position: absolute; cursor: pointer; inset: 0; background-color: #ccc; transition: 0.2s; border-radius: 20px;');
+
+        const knob = document.createElement('span');
+        knob.setAttribute('style', 'position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; transition: 0.2s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.2);');
+
+        slider.appendChild(knob);
+        switchWrap.appendChild(checkbox);
+        switchWrap.appendChild(slider);
+        wrap.appendChild(label);
+        wrap.appendChild(switchWrap);
+        headerRow.appendChild(wrap);
+
+        const updateSlider = () => {
+            const on = checkbox.checked;
+            slider.style.backgroundColor = on ? 'var(--primary, #4f46e5)' : '#ccc';
+            knob.style.left = on ? '19px' : '3px';
+        };
+        updateSlider();
+
+        checkbox.addEventListener('change', () => {
+            updateSlider();
+            state.highlightsEnabled = checkbox.checked;
+            Logger.debug(`Verifier diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
+            if (state.highlightsEnabled) {
+                this.applyDiffsToAllFields(state, fieldListContainer);
+                state.appliedCount = 1;
+            } else {
+                this.removeHighlights(state, fieldListContainer);
+                state.appliedCount = 0;
+            }
+        });
+        CleanupRegistry.registerEventListener(checkbox, 'change', () => {});
+
+        return true;
     },
 
     findVerifierFieldList() {
@@ -101,30 +196,42 @@ const plugin = {
             const expectedSpan = divs[0].querySelector('span.break-words');
             const answerSpan = divs[1].querySelector('span.break-words');
             if (!expectedSpan || !answerSpan) continue;
-            pairs.push({ expectedSpan, answerSpan });
+            pairs.push({ block, expectedSpan, answerSpan });
         }
         return pairs;
     },
 
-    applyDiffsToAllFields(container) {
+    applyDiffsToAllFields(state, container) {
         const pairs = this.getFieldPairs(container);
         if (pairs.length === 0) {
             Logger.debug('No verifier field pairs (Expected/Your Answer) found');
             return 0;
         }
 
+        if (!state.verifierDiffOriginalHtml) {
+            state.verifierDiffOriginalHtml = new WeakMap();
+        }
+        const originalHtml = state.verifierDiffOriginalHtml;
+
         let applied = 0;
         const isDark = document.documentElement.classList.contains('dark');
         const styles = this.getHighlightStyles(isDark);
 
-        for (const { expectedSpan, answerSpan } of pairs) {
+        for (const { block, expectedSpan, answerSpan } of pairs) {
             const expectedText = (expectedSpan.textContent || '').trim();
             const answerText = (answerSpan.textContent || '').trim();
 
-            if (expectedSpan.dataset.verifierDiffExpected === expectedText &&
-                answerSpan.dataset.verifierDiffAnswer === answerText &&
-                expectedSpan.dataset.verifierDiffApplied === 'true') {
+            if (expectedSpan.dataset.verifierDiffApplied === 'true' &&
+                expectedSpan.dataset.verifierDiffExpectedText === expectedText &&
+                answerSpan.dataset.verifierDiffAnswerText === answerText) {
                 continue;
+            }
+
+            if (!originalHtml.has(expectedSpan)) {
+                originalHtml.set(expectedSpan, expectedSpan.innerHTML);
+            }
+            if (!originalHtml.has(answerSpan)) {
+                originalHtml.set(answerSpan, answerSpan.innerHTML);
             }
 
             const diff = this.computeCharDiff(expectedText, answerText);
@@ -133,13 +240,54 @@ const plugin = {
 
             expectedSpan.innerHTML = expectedHtml;
             answerSpan.innerHTML = answerHtml;
-            expectedSpan.dataset.verifierDiffExpected = expectedText;
-            answerSpan.dataset.verifierDiffAnswer = answerText;
+            expectedSpan.dataset.verifierDiffExpectedText = expectedText;
+            answerSpan.dataset.verifierDiffAnswerText = answerText;
+            this.setBlockBackgroundForDiff(block, true);
             expectedSpan.dataset.verifierDiffApplied = 'true';
             answerSpan.dataset.verifierDiffApplied = 'true';
             applied++;
         }
         return applied;
+    },
+
+    setBlockBackgroundForDiff(block, on) {
+        if (!block) return;
+        if (on) {
+            if (!block.dataset.verifierDiffOriginalBg) {
+                block.dataset.verifierDiffOriginalBg = block.style.backgroundColor || '';
+                block.dataset.verifierDiffOriginalClassName = block.className || '';
+            }
+            block.style.backgroundColor = 'rgba(0, 0, 0, 0.03)';
+            block.classList.add('rounded-md');
+        } else {
+            if (block.dataset.verifierDiffOriginalBg !== undefined) {
+                block.style.backgroundColor = block.dataset.verifierDiffOriginalBg || '';
+                block.className = block.dataset.verifierDiffOriginalClassName || '';
+                delete block.dataset.verifierDiffOriginalBg;
+                delete block.dataset.verifierDiffOriginalClassName;
+            }
+        }
+    },
+
+    removeHighlights(state, container) {
+        const pairs = this.getFieldPairs(container);
+        const originalHtml = state.verifierDiffOriginalHtml;
+        if (!originalHtml) return;
+        for (const { block, expectedSpan, answerSpan } of pairs) {
+            if (originalHtml.has(expectedSpan)) {
+                expectedSpan.innerHTML = originalHtml.get(expectedSpan);
+                originalHtml.delete(expectedSpan);
+            }
+            if (originalHtml.has(answerSpan)) {
+                answerSpan.innerHTML = originalHtml.get(answerSpan);
+                originalHtml.delete(answerSpan);
+            }
+            delete expectedSpan.dataset.verifierDiffApplied;
+            delete expectedSpan.dataset.verifierDiffExpectedText;
+            delete answerSpan.dataset.verifierDiffApplied;
+            delete answerSpan.dataset.verifierDiffAnswerText;
+            this.setBlockBackgroundForDiff(block, false);
+        }
     },
 
     // ---------- Character-level diff (LCS on characters) ----------
