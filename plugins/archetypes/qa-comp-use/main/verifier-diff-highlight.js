@@ -5,22 +5,58 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '1.4',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
+        bootstrapped: false,
+        stylesInjected: false,
         verifierObserved: false,
-        appliedCount: 0,
         toggleInserted: false,
-        highlightsEnabled: true
+        highlightsEnabled: true,
+        bodyObserver: null,
+        cardObserver: null,
+        verifierCard: null,
+        fieldListContainer: null,
+        headerLabel: null,
+        rowSignatures: null,
+        verifierDiffOriginalHtml: null,
+        scanScheduled: false,
+        lastReadyRows: -1
     },
 
-    selectors: {
-        fieldList: 'div.text-xs.border-t.divide-y.divide-border'
+    onMutation(state) {
+        if (state.bootstrapped) return;
+        if (!document.body || !document.head) return;
+        state.bootstrapped = true;
+
+        this.ensureStyles(state);
+        this.initializeCaches(state);
+        this.installBodyObserver(state);
+        this.refreshVerifierBinding(state);
+        Logger.log('✓ Verifier Diff Highlight observer bootstrap complete');
     },
 
-    init(state, context) {
+    destroy(state) {
+        this.disconnectCardObserver(state);
+        if (state.bodyObserver) {
+            state.bodyObserver.disconnect();
+            state.bodyObserver = null;
+        }
+        if (state.fieldListContainer) {
+            this.removeHighlights(state, state.fieldListContainer);
+        }
+        state.fieldListContainer = null;
+        state.verifierCard = null;
+        state.headerLabel = null;
+        state.toggleInserted = false;
+        state.verifierObserved = false;
+        state.lastReadyRows = -1;
+    },
+
+    ensureStyles(state) {
+        if (state.stylesInjected) return;
         const style = document.createElement('style');
         style.textContent = `
             .verifier-diff-remove {
@@ -58,19 +94,62 @@ const plugin = {
             }
         `;
         document.head.appendChild(style);
+        state.stylesInjected = true;
         Logger.log('✓ Verifier Diff Highlight styles injected');
     },
 
-    onMutation(state, context) {
-        const container = this.findVerifierFieldList();
-        if (!container) {
-            if (state.verifierObserved) {
-                state.verifierObserved = false;
-                state.appliedCount = 0;
-                state.toggleInserted = false;
-                Logger.debug('Verifier field list no longer present, resetting state');
-            }
+    initializeCaches(state) {
+        if (!(state.rowSignatures instanceof WeakMap)) {
+            state.rowSignatures = new WeakMap();
+        }
+        if (!(state.verifierDiffOriginalHtml instanceof WeakMap)) {
+            state.verifierDiffOriginalHtml = new WeakMap();
+        }
+    },
+
+    installBodyObserver(state) {
+        if (state.bodyObserver || !document.body) return;
+        const observer = new MutationObserver(() => {
+            this.scheduleRefresh(state);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        CleanupRegistry.registerObserver(observer);
+        state.bodyObserver = observer;
+    },
+
+    scheduleRefresh(state) {
+        if (state.scanScheduled) return;
+        state.scanScheduled = true;
+        queueMicrotask(() => {
+            state.scanScheduled = false;
+            this.refreshVerifierBinding(state);
+        });
+    },
+
+    refreshVerifierBinding(state) {
+        const found = this.findVerifierComparisonSection();
+        if (!found) {
+            this.handleVerifierRemoved(state);
             return;
+        }
+
+        const switchedContainer = state.fieldListContainer !== found.fieldList;
+        if (switchedContainer) {
+            this.disconnectCardObserver(state);
+            state.verifierCard = found.card;
+            state.fieldListContainer = found.fieldList;
+            state.headerLabel = found.label;
+            state.toggleInserted = false;
+            state.lastReadyRows = -1;
+            this.installCardObserver(state);
+        }
+
+        if (!state.toggleInserted) {
+            const inserted = this.insertToggle(state);
+            if (inserted) {
+                state.toggleInserted = true;
+                Logger.log('✓ Verifier diff toggle inserted');
+            }
         }
 
         if (!state.verifierObserved) {
@@ -78,40 +157,101 @@ const plugin = {
             Logger.log('✓ Verifier Per-Field Comparison section detected');
         }
 
-        if (!state.toggleInserted) {
-            const inserted = this.insertToggle(state, container);
-            if (inserted) {
-                state.toggleInserted = true;
-                Logger.log('✓ Verifier diff toggle inserted');
-            }
-        }
+        const counts = state.highlightsEnabled
+            ? this.applyDiffsToAllFields(state, state.fieldListContainer)
+            : this.removeHighlights(state, state.fieldListContainer);
 
-        if (state.highlightsEnabled) {
-            const applied = this.applyDiffsToAllFields(state, container);
-            if (applied > 0 && applied !== state.appliedCount) {
-                state.appliedCount = applied;
-                Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
-            }
-        } else {
-            this.removeHighlights(state, container);
-            if (state.appliedCount > 0) {
-                state.appliedCount = 0;
-                Logger.debug('Verifier diff highlights disabled, original content restored');
+        if (counts.readyRows !== state.lastReadyRows) {
+            state.lastReadyRows = counts.readyRows;
+            Logger.debug(`Verifier comparison rows ready: ${counts.readyRows}`);
+        }
+        if (counts.updatedRows > 0) {
+            if (state.highlightsEnabled) {
+                Logger.debug(`Verifier diff highlights updated for ${counts.updatedRows} row(s)`);
+            } else {
+                Logger.debug(`Verifier diff highlights removed from ${counts.updatedRows} row(s)`);
             }
         }
     },
 
-    insertToggle(state, fieldListContainer) {
+    handleVerifierRemoved(state) {
+        if (!state.fieldListContainer) return;
+        this.removeHighlights(state, state.fieldListContainer);
+        this.disconnectCardObserver(state);
+        state.verifierObserved = false;
+        state.toggleInserted = false;
+        state.verifierCard = null;
+        state.fieldListContainer = null;
+        state.headerLabel = null;
+        state.lastReadyRows = -1;
+        this.initializeCaches(state);
+        Logger.debug('Verifier field list no longer present, resetting state');
+    },
+
+    disconnectCardObserver(state) {
+        if (!state.cardObserver) return;
+        state.cardObserver.disconnect();
+        state.cardObserver = null;
+    },
+
+    installCardObserver(state) {
+        if (state.cardObserver || !state.fieldListContainer) return;
+        const observer = new MutationObserver((mutations) => {
+            if (!state.fieldListContainer || !state.fieldListContainer.isConnected) {
+                this.scheduleRefresh(state);
+                return;
+            }
+
+            let relevant = false;
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList') {
+                    relevant = true;
+                    break;
+                }
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                    relevant = true;
+                    break;
+                }
+            }
+            if (!relevant) return;
+            this.refreshVerifierBinding(state);
+        });
+
+        observer.observe(state.fieldListContainer, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+        CleanupRegistry.registerObserver(observer);
+        state.cardObserver = observer;
+    },
+
+    findVerifierComparisonSection() {
+        const labels = Context.dom.queryAll('div.text-sm.text-muted-foreground.font-medium', {
+            context: `${this.id}.findVerifierComparisonSection`
+        });
+        for (const label of labels) {
+            const text = (label.textContent || '').trim();
+            if (!text.includes('Per-Field Comparison')) continue;
+            const card = label.closest('.bg-card');
+            if (!card) continue;
+            const fieldList = card.querySelector('div.text-xs.border-t.divide-y.divide-border');
+            if (!fieldList) continue;
+            return { label, card, fieldList };
+        }
+        return null;
+    },
+
+    insertToggle(state) {
+        const fieldListContainer = state.fieldListContainer;
+        if (!fieldListContainer) return false;
         const headerBlock = fieldListContainer.previousElementSibling;
         if (!headerBlock || !headerBlock.textContent.includes('Per-Field Comparison')) {
-            Logger.debug('Verifier: could not find Per-Field Comparison header block');
             return false;
         }
         const headerRow = headerBlock.querySelector('.flex.items-center.gap-2') || headerBlock.firstElementChild;
-        if (!headerRow) {
-            Logger.debug('Verifier: could not find header row for toggle');
-            return false;
-        }
+        if (!headerRow) return false;
         if (headerRow.querySelector('.verifier-diff-toggle-wrap')) {
             return true;
         }
@@ -156,108 +296,76 @@ const plugin = {
         };
         updateSlider();
 
-        checkbox.addEventListener('change', () => {
+        const onToggleChange = () => {
             updateSlider();
             state.highlightsEnabled = checkbox.checked;
             Logger.debug(`Verifier diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
             if (state.highlightsEnabled) {
                 this.applyDiffsToAllFields(state, fieldListContainer);
-                state.appliedCount = 1;
             } else {
                 this.removeHighlights(state, fieldListContainer);
-                state.appliedCount = 0;
             }
-        });
-        CleanupRegistry.registerEventListener(checkbox, 'change', () => {});
+        };
+        CleanupRegistry.registerEventListener(checkbox, 'change', onToggleChange);
 
         return true;
     },
 
-    findVerifierFieldList() {
-        const labelCandidates = Context.dom.queryAll('div.text-muted-foreground.font-medium', {
-            context: `${this.id}.findVerifierFieldList`
-        });
+    getRows(container) {
+        if (!container) return [];
+        return Array.from(container.querySelectorAll(':scope > div'));
+    },
 
-        if (!labelCandidates || labelCandidates.length === 0) {
-            Logger.debug('Verifier: no text-muted-foreground.font-medium divs found on page');
+    extractFieldPair(row) {
+        let valueRows = row.querySelectorAll('.mt-2.pl-\\[18px\\].space-y-1\\.5.text-muted-foreground > div');
+        if (valueRows.length < 2) {
+            valueRows = row.querySelectorAll('.mt-2.pl-\\[18px\\].space-y-1.text-muted-foreground > div');
+        }
+        if (valueRows.length < 2) return null;
+
+        const expectedLabel = valueRows[0].querySelector('span.font-medium.text-foreground\\/70');
+        const answerLabel = valueRows[1].querySelector('span.font-medium.text-foreground\\/70');
+        if (!expectedLabel || !answerLabel) return null;
+        if (!expectedLabel.textContent.includes('Expected:')) return null;
+        if (!answerLabel.textContent.includes('Your Answer:')) return null;
+
+        const expectedSpan = expectedLabel.nextElementSibling;
+        const answerSpan = answerLabel.nextElementSibling;
+        if (!expectedSpan || !answerSpan) return null;
+        if (!expectedSpan.classList.contains('break-words') || !answerSpan.classList.contains('break-words')) {
             return null;
         }
 
-        for (const label of labelCandidates) {
-            if (!label.textContent.trim().includes('Per-Field Comparison')) continue;
-
-            const card = label.closest('.bg-card');
-            if (!card) {
-                Logger.debug('Verifier: found Per-Field Comparison label but no .bg-card ancestor');
-                continue;
-            }
-
-            const headerSection = label.closest('[class*="p-3"]');
-            if (!headerSection) {
-                Logger.debug('Verifier: found Per-Field Comparison label but no p-3 section ancestor');
-                continue;
-            }
-
-            const fieldList = headerSection.nextElementSibling;
-            if (!fieldList) {
-                Logger.debug('Verifier: found header section but no nextElementSibling field list');
-                continue;
-            }
-
-            return fieldList;
-        }
-
-        return null;
-    },
-
-    getFieldPairs(container) {
-        const pairs = [];
-        const rows = container.querySelectorAll(':scope > div');
-        for (const row of rows) {
-            const block = row.querySelector('[class*="space-y-1.5"].text-muted-foreground') ||
-                row.querySelector('[class*="space-y-1"]');
-            if (!block) continue;
-            const divs = block.querySelectorAll(':scope > div');
-            if (divs.length < 2) continue;
-            const expectedSpan = divs[0].querySelector('span.break-words');
-            const answerSpan = divs[1].querySelector('span.break-words');
-            if (!expectedSpan || !answerSpan) continue;
-            pairs.push({ block, expectedSpan, answerSpan });
-        }
-        return pairs;
+        const block = valueRows[0].parentElement || row;
+        return { row, block, expectedSpan, answerSpan };
     },
 
     applyDiffsToAllFields(state, container) {
-        const pairs = this.getFieldPairs(container);
-        if (pairs.length === 0) {
-            Logger.debug('No verifier field pairs (Expected/Your Answer) found');
-            return 0;
-        }
+        if (!container) return { readyRows: 0, updatedRows: 0 };
+        this.initializeCaches(state);
 
-        if (!state.verifierDiffOriginalHtml) {
-            state.verifierDiffOriginalHtml = new WeakMap();
-        }
-        const originalHtml = state.verifierDiffOriginalHtml;
-
-        let applied = 0;
+        let readyRows = 0;
+        let updatedRows = 0;
         const isDark = document.documentElement.classList.contains('dark');
         const styles = this.getHighlightStyles(isDark);
-
-        for (const { block, expectedSpan, answerSpan } of pairs) {
+        const rows = this.getRows(container);
+        for (const row of rows) {
+            const pair = this.extractFieldPair(row);
+            if (!pair) continue;
+            readyRows++;
+            const { block, expectedSpan, answerSpan } = pair;
             const expectedText = (expectedSpan.textContent || '').trim();
             const answerText = (answerSpan.textContent || '').trim();
-
-            if (expectedSpan.dataset.verifierDiffApplied === 'true' &&
-                expectedSpan.dataset.verifierDiffExpectedText === expectedText &&
-                answerSpan.dataset.verifierDiffAnswerText === answerText) {
+            const signature = `${expectedText}\u0000${answerText}\u0000${isDark ? 'dark' : 'light'}`;
+            if (state.rowSignatures.get(row) === signature) {
                 continue;
             }
 
-            if (!originalHtml.has(expectedSpan)) {
-                originalHtml.set(expectedSpan, expectedSpan.innerHTML);
+            if (!state.verifierDiffOriginalHtml.has(expectedSpan)) {
+                state.verifierDiffOriginalHtml.set(expectedSpan, expectedSpan.innerHTML);
             }
-            if (!originalHtml.has(answerSpan)) {
-                originalHtml.set(answerSpan, answerSpan.innerHTML);
+            if (!state.verifierDiffOriginalHtml.has(answerSpan)) {
+                state.verifierDiffOriginalHtml.set(answerSpan, answerSpan.innerHTML);
             }
 
             const diff = this.computeCharDiff(expectedText, answerText);
@@ -271,9 +379,10 @@ const plugin = {
             this.setBlockBackgroundForDiff(block, true);
             expectedSpan.dataset.verifierDiffApplied = 'true';
             answerSpan.dataset.verifierDiffApplied = 'true';
-            applied++;
+            state.rowSignatures.set(row, signature);
+            updatedRows++;
         }
-        return applied;
+        return { readyRows, updatedRows };
     },
 
     setBlockBackgroundForDiff(block, on) {
@@ -296,24 +405,36 @@ const plugin = {
     },
 
     removeHighlights(state, container) {
-        const pairs = this.getFieldPairs(container);
-        const originalHtml = state.verifierDiffOriginalHtml;
-        if (!originalHtml) return;
-        for (const { block, expectedSpan, answerSpan } of pairs) {
-            if (originalHtml.has(expectedSpan)) {
-                expectedSpan.innerHTML = originalHtml.get(expectedSpan);
-                originalHtml.delete(expectedSpan);
+        if (!container) return { readyRows: 0, updatedRows: 0 };
+        this.initializeCaches(state);
+
+        let readyRows = 0;
+        let updatedRows = 0;
+        const rows = this.getRows(container);
+        for (const row of rows) {
+            const pair = this.extractFieldPair(row);
+            if (!pair) continue;
+            readyRows++;
+            const { block, expectedSpan, answerSpan } = pair;
+
+            if (state.verifierDiffOriginalHtml.has(expectedSpan)) {
+                expectedSpan.innerHTML = state.verifierDiffOriginalHtml.get(expectedSpan);
+                state.verifierDiffOriginalHtml.delete(expectedSpan);
+                updatedRows++;
             }
-            if (originalHtml.has(answerSpan)) {
-                answerSpan.innerHTML = originalHtml.get(answerSpan);
-                originalHtml.delete(answerSpan);
+            if (state.verifierDiffOriginalHtml.has(answerSpan)) {
+                answerSpan.innerHTML = state.verifierDiffOriginalHtml.get(answerSpan);
+                state.verifierDiffOriginalHtml.delete(answerSpan);
+                updatedRows++;
             }
             delete expectedSpan.dataset.verifierDiffApplied;
             delete expectedSpan.dataset.verifierDiffExpectedText;
             delete answerSpan.dataset.verifierDiffApplied;
             delete answerSpan.dataset.verifierDiffAnswerText;
             this.setBlockBackgroundForDiff(block, false);
+            state.rowSignatures.delete(row);
         }
+        return { readyRows, updatedRows };
     },
 
     // ---------- Character-level diff (LCS on characters) ----------
