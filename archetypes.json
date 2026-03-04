@@ -1,6 +1,6 @@
 {
-  "version": "5.2.0",
-  "archetypesVersion": "6.8",
+  "version": "5.1.4",
+  "archetypesVersion": "6.19",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -37,11 +37,15 @@
         },
         {
           "name": "feedback-given-stats.js",
-          "version": "1.6"
+          "version": "2.8"
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "1.5"
+          "version": "2.8"
+        },
+        {
+          "name": "disputes-reviewed-today.js",
+          "version": "2.8"
         }
       ]
     },
@@ -380,7 +384,7 @@
       "plugins": [
         {
           "name": "dispute-ids-enhancer.js",
-          "version": "2.3"
+          "version": "3.0"
         }
       ]
     },

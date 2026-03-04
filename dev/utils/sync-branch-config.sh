@@ -3,7 +3,8 @@
 # sync-branch-config.sh — Update fleet.user.js for the current git branch
 #
 # Usage:
-#   ./sync-branch-config.sh
+#   ./sync-branch-config.sh        # use current git branch
+#   ./sync-branch-config.sh -m     # update as if on main (ignore actual branch)
 #
 # Run from repo root (or anywhere; uses git to find root). Updates fleet.user.js:
 #   - @name: add "[branch] " prefix when not main, remove when main
@@ -16,10 +17,24 @@
 
 set -euo pipefail
 
+use_main=false
+while getopts "m" opt; do
+  case "$opt" in
+    m) use_main=true ;;
+    *) echo "Usage: $0 [-m]" >&2; exit 1 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 file_path="$root/fleet.user.js"
-branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+
+if [[ "$use_main" == true ]]; then
+  branch="main"
+else
+  branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+fi
 
 if [[ ! -f "$file_path" ]]; then
   echo "[error] fleet.user.js not found: $file_path" >&2
