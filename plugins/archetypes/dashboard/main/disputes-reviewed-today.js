@@ -1,8 +1,8 @@
-// ============= task-creation-today-env.js =============
+// ============= disputes-reviewed-today.js =============
 const plugin = {
-    id: 'taskCreationTodayEnv',
-    name: 'Daily Task Creation Breakdown',
-    description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
+    id: 'disputesReviewedToday',
+    name: 'Disputes Reviewed Today Breakdown',
+    description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
     _version: '2.8',
     enabledByDefault: true,
     phase: 'mutation',
@@ -12,7 +12,7 @@ const plugin = {
     MONTH_INDEX: { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 },
 
     /**
-     * Parse date text like "Jan 27" or "Feb 2" (ignore year).
+     * Parse date text like "Jan 27" or "Mar 3" (ignore year).
      * @returns {{ month: number, day: number } | null}
      */
     parseDateText(text) {
@@ -58,18 +58,30 @@ const plugin = {
         return parsed && target && parsed.month === target.month && parsed.day === target.day;
     },
 
+    /** @returns {'approved'|'rejected'|null} */
+    classifyOutcome(cell) {
+        if (!cell) return null;
+        const text = (cell.textContent || '').trim();
+        if (/approved/i.test(text)) return 'approved';
+        if (/rejected/i.test(text)) return 'rejected';
+        return null;
+    },
+
     /**
-     * Find the Task Creation tab panel: one that has a table with thead containing "Submitted" and "Environment".
+     * Find the Disputes Reviewed tab panel: table with Date, Task, Outcome (no Environment).
      * @returns {HTMLTableElement | null}
      */
-    findTaskCreationTable(main) {
+    findDisputesReviewedTable(main) {
         const panels = main.querySelectorAll('[role="tabpanel"]');
         for (const panel of panels) {
             const table = panel.querySelector('table');
             if (!table || !table.tHead) continue;
             const thText = table.tHead.textContent || '';
-            if (thText.includes('Submitted') && thText.includes('Environment')) {
-                return table;
+            if (thText.includes('Date') && thText.includes('Task') && thText.includes('Outcome') && !thText.includes('Environment')) {
+                const totalReviewedHeading = panel.querySelector('h3.tracking-tight');
+                if (totalReviewedHeading && totalReviewedHeading.textContent.trim() === 'Total Reviewed') {
+                    return table;
+                }
             }
         }
         return null;
@@ -77,30 +89,31 @@ const plugin = {
 
     getStatsForDate(rows, targetMonth, targetDay) {
         let count = 0;
-        const envCount = Object.create(null);
+        let approved = 0;
+        let rejected = 0;
         for (const tr of rows) {
             const dateCell = tr.cells[0];
-            const envCell = tr.cells[2];
+            const outcomeCell = tr.cells[2];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
-            const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
                 count++;
-                if (env) envCount[env] = (envCount[env] || 0) + 1;
+                const outcome = this.classifyOutcome(outcomeCell);
+                if (outcome === 'approved') approved++;
+                else if (outcome === 'rejected') rejected++;
             }
         }
-        return { count, envCount };
+        return { count, approved, rejected };
     },
 
     buildCopyTextForDate(stats, uncertain) {
         const count = stats && typeof stats.count === 'number' ? stats.count : 0;
-        const envCount = (stats && stats.envCount) || Object.create(null);
+        const approved = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+        const rejected = stats && typeof stats.rejected === 'number' ? stats.rejected : 0;
         const suffix = uncertain ? '?' : '';
         const lines = [
-            `Task Creation: ${count}${suffix} tasks.`,
-            ...Object.entries(envCount)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, n]) => `${name}: ${n}`)
+            `Disputes Reviewed: ${count}${suffix} tasks.`,
+            `${approved} approved, ${rejected} rejected`
         ];
         return lines.join('\n');
     },
@@ -140,27 +153,26 @@ const plugin = {
         const main = Context.dom.query('main', { context: `${this.id}.main` });
         if (!main) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: main not found');
+                Logger.debug('disputes-reviewed-today: main not found');
                 state.missingLogged = true;
             }
             return;
         }
 
-        const table = this.findTaskCreationTable(main);
+        const table = this.findDisputesReviewedTable(main);
         if (!table) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: Task Creation table not found');
+                Logger.debug('disputes-reviewed-today: Disputes Reviewed table not found');
                 state.missingLogged = true;
             }
             return;
         }
 
         const panel = table.closest('[role="tabpanel"]');
-        const submittedHeading = panel && Array.from(panel.querySelectorAll('h3')).find(h => h.textContent.trim().startsWith('Submitted'));
-        const grid = submittedHeading ? submittedHeading.closest('.grid') : (panel && panel.firstElementChild);
+        const grid = panel && panel.querySelector('.grid');
         if (!grid || !grid.matches('.grid')) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: 4-card grid not found in tab panel');
+                Logger.debug('disputes-reviewed-today: stat card grid not found in tab panel');
                 state.missingLogged = true;
             }
             return;
@@ -169,41 +181,44 @@ const plugin = {
 
         const rows = Array.from(table.querySelectorAll('tbody tr'));
         let todayCount = 0;
-        const envCount = Object.create(null);
+        let todayApproved = 0;
+        let todayRejected = 0;
         let lastRowIsToday = false;
 
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
             const dateCell = tr.cells[0];
-            const envCell = tr.cells[2];
+            const outcomeCell = tr.cells[2];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
-            const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             const rowIsToday = this.isToday(parsed);
             if (rowIsToday) {
                 todayCount++;
-                if (env) envCount[env] = (envCount[env] || 0) + 1;
+                const outcome = this.classifyOutcome(outcomeCell);
+                if (outcome === 'approved') todayApproved++;
+                else if (outcome === 'rejected') todayRejected++;
             }
             if (i === rows.length - 1) lastRowIsToday = rowIsToday;
         }
 
         const uncertain = rows.length > 0 && lastRowIsToday;
-        const todayCopyText = this.buildCopyTextForDate({ count: todayCount, envCount }, uncertain);
-        const todayEnvBreakdownText = Object.keys(envCount).length === 0
+        const dayAr = todayCount > 0 ? Math.round((todayApproved / todayCount) * 100) : null;
+        const todayBreakdownText = todayCount === 0
             ? '—'
-            : Object.entries(envCount)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, n]) => `${name}: ${n}`)
-                .join(', ');
+            : `${todayApproved} approved, ${todayRejected} rejected` + (dayAr != null ? ` (${dayAr}% AR)` : '');
+        const todayCopyText = this.buildCopyTextForDate(
+            { count: todayCount, approved: todayApproved, rejected: todayRejected },
+            uncertain
+        );
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
         const arrowBtnActive = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent border-blue-500 text-blue-500 hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-base font-medium cursor-pointer';
         const arrowBtnDisabled = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent border-gray-500 text-gray-500 text-base font-medium cursor-not-allowed';
 
-        let block = panel.querySelector('[data-wf-task-creation-today-env-block]');
+        let block = panel.querySelector('[data-wf-disputes-reviewed-today-block]');
         if (!block) {
             block = document.createElement('div');
-            block.setAttribute('data-wf-task-creation-today-env-block', 'true');
+            block.setAttribute('data-wf-disputes-reviewed-today-block', 'true');
             block._wfDaysAgo = 0;
             block.className = 'rounded-xl text-card-foreground bg-muted-extra border-none shadow-none p-4 pt-4 flex flex-col justify-center mt-3 mb-3';
             block.innerHTML = [
@@ -253,13 +268,13 @@ const plugin = {
                             'Warning:\n\n' +
                             'You copied a breakdown that may not be complete.\n\n' +
                             (daysAgo === 0
-                                ? 'Please scroll down the page so that all of today\'s tasks are visible on the page before copying to ensure accurate results.'
-                                : 'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.')
+                                ? 'Please scroll down the page so that all of today\'s reviews are visible on the page before copying to ensure accurate results.'
+                                : 'Please scroll down the page so that all reviews for that day are visible on the page before copying to ensure accurate results.')
                         );
                     }
                     if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
-                        Logger.log('task-creation-today-env: copied breakdown to clipboard', { daysAgo: block._wfDaysAgo || 0 });
+                        Logger.log('disputes-reviewed-today: copied breakdown to clipboard', { daysAgo: block._wfDaysAgo || 0 });
                         copyBtn.textContent = 'Copied!';
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
@@ -268,7 +283,7 @@ const plugin = {
                             copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
                         }, 5000);
                     }).catch((err) => {
-                        Logger.error('task-creation-today-env: failed to copy breakdown', err);
+                        Logger.error('disputes-reviewed-today: failed to copy breakdown', err);
                     });
                 });
             }
@@ -296,7 +311,7 @@ const plugin = {
                 if (daysAgo === 0) {
                     const ts = block._wfTodayStats || {};
                     displayCount = ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0);
-                    displayBreakdown = ts.envBreakdownText || '—';
+                    displayBreakdown = ts.breakdownText || '—';
                     isUncertain = ts.uncertain || false;
                     copyText = ts.copyText || '';
                     if (dateLabelEl) dateLabelEl.textContent = '';
@@ -309,13 +324,9 @@ const plugin = {
                     const stats = self.getStatsForDate(liveRows, ref.month, ref.day);
                     isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
                     copyText = self.buildCopyTextForDate(stats, isUncertain);
-                    displayCount = `${stats.count}${isUncertain ? '?' : ''}`;
-                    displayBreakdown = Object.keys(stats.envCount).length === 0
-                        ? '—'
-                        : Object.entries(stats.envCount)
-                            .sort((a, b) => b[1] - a[1])
-                            .map(([name, count]) => `${name}: ${count}`)
-                            .join(', ');
+                    const dayArPast = stats.count > 0 ? Math.round((stats.approved / stats.count) * 100) : null;
+                    displayCount = `${stats.count}${isUncertain ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                    displayBreakdown = stats.count === 0 ? '—' : `${stats.approved} approved, ${stats.rejected} rejected` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
                 }
 
                 if (countEl) countEl.textContent = displayCount;
@@ -323,11 +334,12 @@ const plugin = {
 
                 if (scrollMsgEl) {
                     scrollMsgEl.textContent = daysAgo === 0
-                        ? 'Please scroll down to ensure all of today\'s submissions have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.'
-                        : 'Please scroll down to ensure all submissions for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.';
+                        ? 'Please scroll down to ensure all of today\'s reviews have been counted accurately. The copy breakdown functionality may be inaccurate until you do this.'
+                        : 'Please scroll down to ensure all reviews for that day have been loaded before copying. The copy breakdown functionality may be inaccurate until you do this.';
                     scrollMsgEl.classList.toggle('hidden', !isUncertain);
                     scrollMsgEl.classList.toggle('block', isUncertain);
                 }
+
                 if (copyBtnEl) {
                     copyBtnEl.setAttribute('data-wf-copy-uncertain', isUncertain ? 'true' : 'false');
                     copyBtnEl.setAttribute('data-wf-copy-text', copyText);
@@ -336,13 +348,15 @@ const plugin = {
             };
             block._wfUpdateUI = updateUI;
             grid.insertAdjacentElement('afterend', block);
-            Logger.log('task-creation-today-env: injected breakdown and copy block');
+            Logger.log('disputes-reviewed-today: injected breakdown and copy block');
         }
 
         block._wfTodayStats = {
             count: todayCount,
+            approved: todayApproved,
+            rejected: todayRejected,
             uncertain,
-            envBreakdownText: todayEnvBreakdownText,
+            breakdownText: todayBreakdownText,
             copyText: todayCopyText
         };
 
@@ -351,7 +365,7 @@ const plugin = {
         }
 
         if (uncertain && !state.lastUncertain) {
-            Logger.info('task-creation-today-env: last visible row is today — showing uncertain count and scroll message');
+            Logger.info('disputes-reviewed-today: last visible row is today — showing uncertain count and scroll message');
         }
         state.lastUncertain = uncertain;
     }
