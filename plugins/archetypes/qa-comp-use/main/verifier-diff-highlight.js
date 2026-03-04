@@ -5,9 +5,9 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
-    phase: 'init',
+    phase: 'mutation',
 
     initialState: {
         verifierObserved: false,
@@ -59,58 +59,46 @@ const plugin = {
         `;
         document.head.appendChild(style);
         Logger.log('✓ Verifier Diff Highlight styles injected');
+    },
 
-        const self = this;
-        function processVerifier() {
-            const container = self.findVerifierFieldList();
-            if (!container) {
-                if (state.verifierObserved) {
-                    state.verifierObserved = false;
-                    state.appliedCount = 0;
-                    state.toggleInserted = false;
-                    Logger.debug('Verifier field list no longer present, resetting state');
-                }
-                return;
+    onMutation(state, context) {
+        const container = this.findVerifierFieldList();
+        if (!container) {
+            if (state.verifierObserved) {
+                state.verifierObserved = false;
+                state.appliedCount = 0;
+                state.toggleInserted = false;
+                Logger.debug('Verifier field list no longer present, resetting state');
             }
+            return;
+        }
 
-            if (!state.verifierObserved) {
-                state.verifierObserved = true;
-                Logger.log('✓ Verifier Per-Field Comparison section detected');
-            }
+        if (!state.verifierObserved) {
+            state.verifierObserved = true;
+            Logger.log('✓ Verifier Per-Field Comparison section detected');
+        }
 
-            if (!state.toggleInserted) {
-                const inserted = self.insertToggle(state, container);
-                if (inserted) {
-                    state.toggleInserted = true;
-                    Logger.log('✓ Verifier diff toggle inserted');
-                }
-            }
-
-            if (state.highlightsEnabled) {
-                const applied = self.applyDiffsToAllFields(state, container);
-                if (applied > 0 && applied !== state.appliedCount) {
-                    state.appliedCount = applied;
-                    Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
-                }
-            } else {
-                self.removeHighlights(state, container);
-                if (state.appliedCount > 0) {
-                    state.appliedCount = 0;
-                    Logger.debug('Verifier diff highlights disabled, original content restored');
-                }
+        if (!state.toggleInserted) {
+            const inserted = this.insertToggle(state, container);
+            if (inserted) {
+                state.toggleInserted = true;
+                Logger.log('✓ Verifier diff toggle inserted');
             }
         }
 
-        const observer = new MutationObserver((mutations) => {
-            const hasAdditions = mutations.some(m => m.addedNodes && m.addedNodes.length > 0);
-            if (!hasAdditions) return;
-            processVerifier();
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
-        CleanupRegistry.registerObserver(observer);
-
-        processVerifier();
+        if (state.highlightsEnabled) {
+            const applied = this.applyDiffsToAllFields(state, container);
+            if (applied > 0 && applied !== state.appliedCount) {
+                state.appliedCount = applied;
+                Logger.log(`✓ Verifier diff highlights applied to ${applied} field(s)`);
+            }
+        } else {
+            this.removeHighlights(state, container);
+            if (state.appliedCount > 0) {
+                state.appliedCount = 0;
+                Logger.debug('Verifier diff highlights disabled, original content restored');
+            }
+        }
     },
 
     insertToggle(state, fieldListContainer) {
