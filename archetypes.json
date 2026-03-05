@@ -1,6 +1,6 @@
 {
   "version": "5.2.0",
-  "archetypesVersion": "6.20",
+  "archetypesVersion": "6.21",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -368,10 +368,6 @@
         {
           "name": "remember-layout-proportions.js",
           "version": "1.0"
-        },
-        {
-          "name": "metadata-tag-qa-enhancements.js",
-          "version": "2.5"
         }
       ]
     },
