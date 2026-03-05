@@ -1,6 +1,6 @@
 {
   "version": "5.2.0",
-  "archetypesVersion": "6.27",
+  "archetypesVersion": "6.28",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -363,7 +363,7 @@
         },
         {
           "name": "verifier-diff-highlight.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "accept-task-modal-improvements.js",

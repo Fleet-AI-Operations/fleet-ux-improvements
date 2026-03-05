@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -15,35 +15,27 @@ const plugin = {
         verifierObserved: false,
         toggleInserted: false,
         highlightsEnabled: true,
-        bodyObserver: null,
-        cardObserver: null,
         verifierCard: null,
         fieldListContainer: null,
         headerLabel: null,
         rowSignatures: null,
-        verifierDiffOriginalHtml: null,
-        scanScheduled: false,
         lastReadyRows: -1
     },
 
     onMutation(state) {
-        if (state.bootstrapped) return;
         if (!document.body || !document.head) return;
-        state.bootstrapped = true;
 
-        this.ensureStyles(state);
-        this.initializeCaches(state);
-        this.installBodyObserver(state);
+        if (!state.bootstrapped) {
+            state.bootstrapped = true;
+            this.ensureStyles(state);
+            this.initializeCaches(state);
+            Logger.log('✓ Verifier Diff Highlight observer bootstrap complete');
+        }
+
         this.refreshVerifierBinding(state);
-        Logger.log('✓ Verifier Diff Highlight observer bootstrap complete');
     },
 
     destroy(state) {
-        this.disconnectCardObserver(state);
-        if (state.bodyObserver) {
-            state.bodyObserver.disconnect();
-            state.bodyObserver = null;
-        }
         if (state.fieldListContainer) {
             this.removeHighlights(state, state.fieldListContainer);
         }
@@ -92,6 +84,13 @@ const plugin = {
             .verifier-diff-slider-on {
                 background-color: #2563eb !important;
             }
+            .verifier-diff-rendered {
+                display: inline;
+            }
+            .verifier-diff-block {
+                background-color: rgba(0, 0, 0, 0.03);
+                border-radius: 0.375rem;
+            }
         `;
         document.head.appendChild(style);
         state.stylesInjected = true;
@@ -102,28 +101,6 @@ const plugin = {
         if (!(state.rowSignatures instanceof WeakMap)) {
             state.rowSignatures = new WeakMap();
         }
-        if (!(state.verifierDiffOriginalHtml instanceof WeakMap)) {
-            state.verifierDiffOriginalHtml = new WeakMap();
-        }
-    },
-
-    installBodyObserver(state) {
-        if (state.bodyObserver || !document.body) return;
-        const observer = new MutationObserver(() => {
-            this.scheduleRefresh(state);
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-        CleanupRegistry.registerObserver(observer);
-        state.bodyObserver = observer;
-    },
-
-    scheduleRefresh(state) {
-        if (state.scanScheduled) return;
-        state.scanScheduled = true;
-        queueMicrotask(() => {
-            state.scanScheduled = false;
-            this.refreshVerifierBinding(state);
-        });
     },
 
     refreshVerifierBinding(state) {
@@ -135,13 +112,14 @@ const plugin = {
 
         const switchedContainer = state.fieldListContainer !== found.fieldList;
         if (switchedContainer) {
-            this.disconnectCardObserver(state);
+            if (state.fieldListContainer) {
+                this.removeHighlights(state, state.fieldListContainer);
+            }
             state.verifierCard = found.card;
             state.fieldListContainer = found.fieldList;
             state.headerLabel = found.label;
             state.toggleInserted = false;
             state.lastReadyRows = -1;
-            this.installCardObserver(state);
         }
 
         if (!state.toggleInserted) {
@@ -177,7 +155,6 @@ const plugin = {
     handleVerifierRemoved(state) {
         if (!state.fieldListContainer) return;
         this.removeHighlights(state, state.fieldListContainer);
-        this.disconnectCardObserver(state);
         state.verifierObserved = false;
         state.toggleInserted = false;
         state.verifierCard = null;
@@ -186,45 +163,6 @@ const plugin = {
         state.lastReadyRows = -1;
         this.initializeCaches(state);
         Logger.debug('Verifier field list no longer present, resetting state');
-    },
-
-    disconnectCardObserver(state) {
-        if (!state.cardObserver) return;
-        state.cardObserver.disconnect();
-        state.cardObserver = null;
-    },
-
-    installCardObserver(state) {
-        if (state.cardObserver || !state.fieldListContainer) return;
-        const observer = new MutationObserver((mutations) => {
-            if (!state.fieldListContainer || !state.fieldListContainer.isConnected) {
-                this.scheduleRefresh(state);
-                return;
-            }
-
-            let relevant = false;
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList') {
-                    relevant = true;
-                    break;
-                }
-                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                    relevant = true;
-                    break;
-                }
-            }
-            if (!relevant) return;
-            this.refreshVerifierBinding(state);
-        });
-
-        observer.observe(state.fieldListContainer, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
-        });
-        CleanupRegistry.registerObserver(observer);
-        state.cardObserver = observer;
     },
 
     findVerifierComparisonSection() {
@@ -258,6 +196,7 @@ const plugin = {
 
         const wrap = document.createElement('div');
         wrap.className = 'verifier-diff-toggle-wrap';
+        wrap.setAttribute('data-fleet-plugin', this.id);
 
         const toggleId = `${this.id}-toggle`;
         const label = document.createElement('label');
@@ -300,11 +239,7 @@ const plugin = {
             updateSlider();
             state.highlightsEnabled = checkbox.checked;
             Logger.debug(`Verifier diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
-            if (state.highlightsEnabled) {
-                this.applyDiffsToAllFields(state, fieldListContainer);
-            } else {
-                this.removeHighlights(state, fieldListContainer);
-            }
+            this.refreshVerifierBinding(state);
         };
         CleanupRegistry.registerEventListener(checkbox, 'change', onToggleChange);
 
@@ -340,6 +275,72 @@ const plugin = {
         return { row, block, expectedSpan, answerSpan };
     },
 
+    ensureMirrorSpan(sourceSpan, role) {
+        const parent = sourceSpan?.parentElement;
+        if (!parent) return null;
+
+        const existing = Array.from(parent.children).find((child) => (
+            child.getAttribute &&
+            child.getAttribute('data-fleet-plugin') === this.id &&
+            child.getAttribute('data-verifier-diff-role') === role
+        ));
+        if (existing) {
+            return existing;
+        }
+
+        const mirror = document.createElement('span');
+        mirror.className = `${sourceSpan.className || ''} verifier-diff-rendered`;
+        mirror.setAttribute('data-fleet-plugin', this.id);
+        mirror.setAttribute('data-verifier-diff-role', role);
+        sourceSpan.insertAdjacentElement('afterend', mirror);
+        return mirror;
+    },
+
+    setSourceSpanHidden(sourceSpan, hidden) {
+        if (!sourceSpan) return;
+
+        if (hidden) {
+            if (!sourceSpan.dataset.verifierDiffOriginalDisplay) {
+                sourceSpan.dataset.verifierDiffOriginalDisplay = sourceSpan.style.display || '';
+            }
+            sourceSpan.style.display = 'none';
+            sourceSpan.dataset.verifierDiffHidden = 'true';
+            return;
+        }
+
+        if (sourceSpan.dataset.verifierDiffHidden === 'true') {
+            sourceSpan.style.display = sourceSpan.dataset.verifierDiffOriginalDisplay || '';
+        }
+        delete sourceSpan.dataset.verifierDiffHidden;
+        delete sourceSpan.dataset.verifierDiffOriginalDisplay;
+    },
+
+    removeMirrorSpan(sourceSpan, role) {
+        const parent = sourceSpan?.parentElement;
+        if (!parent) return false;
+
+        const mirror = Array.from(parent.children).find((child) => (
+            child.getAttribute &&
+            child.getAttribute('data-fleet-plugin') === this.id &&
+            child.getAttribute('data-verifier-diff-role') === role
+        ));
+        if (!mirror) return false;
+
+        mirror.remove();
+        return true;
+    },
+
+    hasMirrorSpan(sourceSpan, role) {
+        const parent = sourceSpan?.parentElement;
+        if (!parent) return false;
+
+        return Array.from(parent.children).some((child) => (
+            child.getAttribute &&
+            child.getAttribute('data-fleet-plugin') === this.id &&
+            child.getAttribute('data-verifier-diff-role') === role
+        ));
+    },
+
     applyDiffsToAllFields(state, container) {
         if (!container) return { readyRows: 0, updatedRows: 0 };
         this.initializeCaches(state);
@@ -357,28 +358,28 @@ const plugin = {
             const expectedText = (expectedSpan.textContent || '').trim();
             const answerText = (answerSpan.textContent || '').trim();
             const signature = `${expectedText}\u0000${answerText}\u0000${isDark ? 'dark' : 'light'}`;
-            if (state.rowSignatures.get(row) === signature) {
+            const mirrorsPresent = this.hasMirrorSpan(expectedSpan, 'expected') && this.hasMirrorSpan(answerSpan, 'answer');
+            const originalsHidden = expectedSpan.dataset.verifierDiffHidden === 'true' && answerSpan.dataset.verifierDiffHidden === 'true';
+            if (state.rowSignatures.get(row) === signature && mirrorsPresent && originalsHidden) {
                 continue;
-            }
-
-            if (!state.verifierDiffOriginalHtml.has(expectedSpan)) {
-                state.verifierDiffOriginalHtml.set(expectedSpan, expectedSpan.innerHTML);
-            }
-            if (!state.verifierDiffOriginalHtml.has(answerSpan)) {
-                state.verifierDiffOriginalHtml.set(answerSpan, answerSpan.innerHTML);
             }
 
             const diff = this.computeCharDiff(expectedText, answerText);
             const expectedHtml = this.renderOriginal(diff, styles.remove);
             const answerHtml = this.renderNew(diff, styles.add);
+            const expectedMirror = this.ensureMirrorSpan(expectedSpan, 'expected');
+            const answerMirror = this.ensureMirrorSpan(answerSpan, 'answer');
+            if (!expectedMirror || !answerMirror) continue;
 
-            expectedSpan.innerHTML = expectedHtml;
-            answerSpan.innerHTML = answerHtml;
-            expectedSpan.dataset.verifierDiffExpectedText = expectedText;
-            answerSpan.dataset.verifierDiffAnswerText = answerText;
+            expectedMirror.innerHTML = expectedHtml;
+            answerMirror.innerHTML = answerHtml;
+            expectedMirror.dataset.verifierDiffExpectedText = expectedText;
+            answerMirror.dataset.verifierDiffAnswerText = answerText;
+            expectedMirror.dataset.verifierDiffApplied = 'true';
+            answerMirror.dataset.verifierDiffApplied = 'true';
+            this.setSourceSpanHidden(expectedSpan, true);
+            this.setSourceSpanHidden(answerSpan, true);
             this.setBlockBackgroundForDiff(block, true);
-            expectedSpan.dataset.verifierDiffApplied = 'true';
-            answerSpan.dataset.verifierDiffApplied = 'true';
             state.rowSignatures.set(row, signature);
             updatedRows++;
         }
@@ -387,21 +388,7 @@ const plugin = {
 
     setBlockBackgroundForDiff(block, on) {
         if (!block) return;
-        if (on) {
-            if (!block.dataset.verifierDiffOriginalBg) {
-                block.dataset.verifierDiffOriginalBg = block.style.backgroundColor || '';
-                block.dataset.verifierDiffOriginalClassName = block.className || '';
-            }
-            block.style.backgroundColor = 'rgba(0, 0, 0, 0.03)';
-            block.classList.add('rounded-md');
-        } else {
-            if (block.dataset.verifierDiffOriginalBg !== undefined) {
-                block.style.backgroundColor = block.dataset.verifierDiffOriginalBg || '';
-                block.className = block.dataset.verifierDiffOriginalClassName || '';
-                delete block.dataset.verifierDiffOriginalBg;
-                delete block.dataset.verifierDiffOriginalClassName;
-            }
-        }
+        block.classList.toggle('verifier-diff-block', on);
     },
 
     removeHighlights(state, container) {
@@ -417,23 +404,34 @@ const plugin = {
             readyRows++;
             const { block, expectedSpan, answerSpan } = pair;
 
-            if (state.verifierDiffOriginalHtml.has(expectedSpan)) {
-                expectedSpan.innerHTML = state.verifierDiffOriginalHtml.get(expectedSpan);
-                state.verifierDiffOriginalHtml.delete(expectedSpan);
+            if (this.removeMirrorSpan(expectedSpan, 'expected')) {
                 updatedRows++;
             }
-            if (state.verifierDiffOriginalHtml.has(answerSpan)) {
-                answerSpan.innerHTML = state.verifierDiffOriginalHtml.get(answerSpan);
-                state.verifierDiffOriginalHtml.delete(answerSpan);
+            if (this.removeMirrorSpan(answerSpan, 'answer')) {
                 updatedRows++;
             }
-            delete expectedSpan.dataset.verifierDiffApplied;
-            delete expectedSpan.dataset.verifierDiffExpectedText;
-            delete answerSpan.dataset.verifierDiffApplied;
-            delete answerSpan.dataset.verifierDiffAnswerText;
+            this.setSourceSpanHidden(expectedSpan, false);
+            this.setSourceSpanHidden(answerSpan, false);
             this.setBlockBackgroundForDiff(block, false);
             state.rowSignatures.delete(row);
         }
+
+        const orphanMirrors = container.querySelectorAll(`[data-fleet-plugin="${this.id}"][data-verifier-diff-role]`);
+        for (const mirror of orphanMirrors) {
+            mirror.remove();
+            updatedRows++;
+        }
+
+        const hiddenSources = container.querySelectorAll('[data-verifier-diff-hidden="true"]');
+        for (const sourceSpan of hiddenSources) {
+            this.setSourceSpanHidden(sourceSpan, false);
+        }
+
+        const highlightedBlocks = container.querySelectorAll('.verifier-diff-block');
+        for (const block of highlightedBlocks) {
+            block.classList.remove('verifier-diff-block');
+        }
+
         return { readyRows, updatedRows };
     },
 
@@ -482,7 +480,7 @@ const plugin = {
         return this.backtrack(dp, a, b);
     },
 
-    groupConsecutive(diff, includeTypes, highlightType) {
+    groupConsecutive(diff, includeTypes) {
         const filtered = diff.filter(d => includeTypes.includes(d.type));
         const groups = [];
         for (let i = 0; i < filtered.length; i++) {
@@ -513,7 +511,7 @@ const plugin = {
     },
 
     renderOriginal(diff, removeStyle) {
-        const groups = this.groupConsecutive(diff, ['equal', 'remove'], 'remove');
+        const groups = this.groupConsecutive(diff, ['equal', 'remove']);
         let html = '';
         groups.forEach(group => {
             const text = group.values.join('');
@@ -527,7 +525,7 @@ const plugin = {
     },
 
     renderNew(diff, addStyle) {
-        const groups = this.groupConsecutive(diff, ['equal', 'add'], 'add');
+        const groups = this.groupConsecutive(diff, ['equal', 'add']);
         let html = '';
         groups.forEach(group => {
             const text = group.values.join('');
