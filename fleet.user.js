@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [update/remove-metadata-tag-qa-enhancements] Fleet Workflow Builder UX Enhancer
+// @name         [fix] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      5.2.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -42,7 +42,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'update/remove-metadata-tag-qa-enhancements',
+        branch: 'fix',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
