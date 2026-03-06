@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -86,10 +86,6 @@ const plugin = {
             }
             .verifier-diff-rendered {
                 display: inline;
-            }
-            .verifier-diff-block {
-                background-color: rgba(0, 0, 0, 0.03);
-                border-radius: 0.375rem;
             }
         `;
         document.head.appendChild(style);
@@ -309,7 +305,8 @@ const plugin = {
         }
 
         if (sourceSpan.dataset.verifierDiffHidden === 'true') {
-            sourceSpan.style.display = sourceSpan.dataset.verifierDiffOriginalDisplay || '';
+            const restored = sourceSpan.dataset.verifierDiffOriginalDisplay || 'inline';
+            sourceSpan.style.display = restored;
         }
         delete sourceSpan.dataset.verifierDiffHidden;
         delete sourceSpan.dataset.verifierDiffOriginalDisplay;
@@ -379,7 +376,6 @@ const plugin = {
             answerMirror.dataset.verifierDiffApplied = 'true';
             this.setSourceSpanHidden(expectedSpan, true);
             this.setSourceSpanHidden(answerSpan, true);
-            this.setBlockBackgroundForDiff(block, true);
             state.rowSignatures.set(row, signature);
             updatedRows++;
         }
