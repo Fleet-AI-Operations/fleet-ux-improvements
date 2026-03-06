@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -316,7 +316,7 @@ const plugin = {
         delete sourceSpan.dataset.verifierDiffOriginalDisplay;
     },
 
-    removeMirrorSpan(sourceSpan, role) {
+    removeMirrorSpan(sourceSpan, role, options = {}) {
         const parent = sourceSpan?.parentElement;
         if (!parent) return false;
 
@@ -327,6 +327,9 @@ const plugin = {
         ));
         if (!mirror) return false;
 
+        if (options.copyContentToSource) {
+            sourceSpan.innerHTML = mirror.innerHTML;
+        }
         mirror.remove();
         return true;
     },
@@ -365,13 +368,15 @@ const plugin = {
                 continue;
             }
 
-            const diff = this.computeCharDiff(expectedText, answerText);
-            const expectedHtml = this.renderOriginal(diff, styles.remove);
+            const expectedHasRedText = expectedSpan.classList.contains('text-red-500') ||
+                expectedSpan.querySelector('.text-red-500');
             const answerHasRedText = answerSpan.classList.contains('text-red-500') ||
                 answerSpan.querySelector('.text-red-500');
-            const answerHtml = answerHasRedText
-                ? answerSpan.innerHTML
-                : this.renderNew(diff, styles.add);
+            const skipDiffForRow = expectedHasRedText || answerHasRedText;
+
+            const diff = this.computeCharDiff(expectedText, answerText);
+            const expectedHtml = skipDiffForRow ? expectedSpan.innerHTML : this.renderOriginal(diff, styles.remove);
+            const answerHtml = skipDiffForRow ? answerSpan.innerHTML : this.renderNew(diff, styles.add);
             const expectedMirror = this.ensureMirrorSpan(expectedSpan, 'expected');
             const answerMirror = this.ensureMirrorSpan(answerSpan, 'answer');
             if (!expectedMirror || !answerMirror) continue;
@@ -408,10 +413,10 @@ const plugin = {
             readyRows++;
             const { block, expectedSpan, answerSpan } = pair;
 
-            if (this.removeMirrorSpan(expectedSpan, 'expected')) {
+            if (this.removeMirrorSpan(expectedSpan, 'expected', { copyContentToSource: true })) {
                 updatedRows++;
             }
-            if (this.removeMirrorSpan(answerSpan, 'answer')) {
+            if (this.removeMirrorSpan(answerSpan, 'answer', { copyContentToSource: true })) {
                 updatedRows++;
             }
             this.setSourceSpanHidden(expectedSpan, false);
