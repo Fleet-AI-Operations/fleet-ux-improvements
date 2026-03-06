@@ -1,5 +1,5 @@
 {
-  "version": "5.2.0",
+  "version": "5.2.1",
   "archetypesVersion": "6.32",
   "corePlugins": [
     {
@@ -372,10 +372,6 @@
         {
           "name": "remember-layout-proportions.js",
           "version": "1.0"
-        },
-        {
-          "name": "metadata-tag-qa-enhancements.js",
-          "version": "2.5"
         }
       ]
     },
