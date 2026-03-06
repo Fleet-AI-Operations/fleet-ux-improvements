@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -14,7 +14,8 @@ const plugin = {
         highlightsApplied: false,
         toggleInserted: false,
         copyButtonsInserted: false,
-        highlightsEnabled: true
+        highlightsEnabled: true,
+        diffLevel: 'word' // 'word' | 'char'
     },
     
     selectors: {
@@ -32,7 +33,7 @@ const plugin = {
         const style = document.createElement('style');
         style.textContent = `
             pre .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.2) !important;
+                background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(127, 29, 29) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
@@ -40,11 +41,11 @@ const plugin = {
                 -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.15) !important;
+                background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(254, 202, 202) !important;
             }
             pre .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.2) !important;
+                background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(6, 78, 59) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
@@ -52,7 +53,7 @@ const plugin = {
                 -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.15) !important;
+                background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(167, 243, 208) !important;
             }
             pre .diff-newline-marker {
@@ -66,6 +67,13 @@ const plugin = {
                 gap: 12px;
                 margin: 0.4rem 0 0.9rem;
                 width: 100%;
+            }
+            .diff-level-btn-active {
+                border-color: #2563eb !important;
+                box-shadow: 0 0 0 2px #2563eb !important;
+            }
+            .diff-level-btn-inactive {
+                border-color: var(--border, #e5e7eb) !important;
             }
         `;
         document.head.appendChild(style);
@@ -212,6 +220,41 @@ const plugin = {
         
         toggleContainer.appendChild(toggleText);
         toggleContainer.appendChild(toggleSwitch);
+
+        const buttonBaseClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        const wordBtn = document.createElement('button');
+        wordBtn.type = 'button';
+        wordBtn.setAttribute('data-fleet-plugin', this.id);
+        wordBtn.dataset.diffLevel = 'word';
+        wordBtn.className = buttonBaseClass + ' ' + (state.diffLevel === 'word' ? 'diff-level-btn-active' : 'diff-level-btn-inactive');
+        wordBtn.textContent = 'Word';
+        wordBtn.title = 'Word-level diff';
+        const charBtn = document.createElement('button');
+        charBtn.type = 'button';
+        charBtn.setAttribute('data-fleet-plugin', this.id);
+        charBtn.dataset.diffLevel = 'char';
+        charBtn.className = buttonBaseClass + ' ' + (state.diffLevel === 'char' ? 'diff-level-btn-active' : 'diff-level-btn-inactive');
+        charBtn.textContent = 'Character';
+        charBtn.title = 'Character-level diff';
+
+        const setLevel = (level) => {
+            state.diffLevel = level;
+            wordBtn.className = buttonBaseClass + ' ' + (level === 'word' ? 'diff-level-btn-active' : 'diff-level-btn-inactive');
+            charBtn.className = buttonBaseClass + ' ' + (level === 'char' ? 'diff-level-btn-active' : 'diff-level-btn-inactive');
+            state.highlightsApplied = false;
+            Logger.debug(`Diff level: ${level}`);
+            if (state.highlightsEnabled) {
+                this.applyDiffHighlights(modal);
+                state.highlightsApplied = true;
+            }
+        };
+        wordBtn.addEventListener('click', () => setLevel('word'));
+        charBtn.addEventListener('click', () => setLevel('char'));
+        CleanupRegistry.registerEventListener(wordBtn, 'click', () => {});
+        CleanupRegistry.registerEventListener(charBtn, 'click', () => {});
+
+        toggleContainer.appendChild(wordBtn);
+        toggleContainer.appendChild(charBtn);
         
         // Insert after header/title block
         title.parentElement.insertAdjacentElement('afterend', toggleContainer);
@@ -366,7 +409,8 @@ const plugin = {
         const originalBefore = beforePre.dataset.originalText;
         const originalAfter = afterPre.dataset.originalText;
         
-        if (alreadyHighlighted && hasHighlights && originalBefore === beforeText && originalAfter === afterText) {
+        const levelUnchanged = beforePre.dataset.diffLevelUsed === state.diffLevel;
+        if (alreadyHighlighted && hasHighlights && originalBefore === beforeText && originalAfter === afterText && levelUnchanged) {
             return true;
         }
         
@@ -378,8 +422,11 @@ const plugin = {
             delete afterPre.dataset.diffHighlighted;
         }
         
-        // Compute diff
-        const diff = this.computeDiff(beforeText, afterText);
+        // Compute diff (word-level or character-level)
+        const diff = state.diffLevel === 'char'
+            ? this.computeCharDiff(beforeText, afterText)
+            : this.computeDiff(beforeText, afterText);
+        const isCharLevel = state.diffLevel === 'char';
         
         // Store original text
         beforePre.dataset.originalText = beforeText;
@@ -389,8 +436,8 @@ const plugin = {
         const highlightStyles = this.getHighlightStyles(isDark);
         
         // Render highlighted versions
-        const beforeHtml = this.renderOriginal(diff, highlightStyles.remove);
-        const afterHtml = this.renderNew(diff, highlightStyles.add);
+        const beforeHtml = this.renderOriginal(diff, highlightStyles.remove, isCharLevel);
+        const afterHtml = this.renderNew(diff, highlightStyles.add, isCharLevel);
         
         beforePre.innerHTML = beforeHtml;
         afterPre.innerHTML = afterHtml;
@@ -398,9 +445,11 @@ const plugin = {
         // Strip colored backgrounds from wrapper divs so highlights are visible
         this.stripWrapperBackgrounds(beforePre, afterPre);
         
-        // Mark as highlighted
+        // Mark as highlighted and store level so we re-apply when switching Word/Character
         beforePre.dataset.diffHighlighted = 'true';
         afterPre.dataset.diffHighlighted = 'true';
+        beforePre.dataset.diffLevelUsed = state.diffLevel;
+        afterPre.dataset.diffLevelUsed = state.diffLevel;
         
         return true;
     },
@@ -431,6 +480,8 @@ const plugin = {
         // Remove markers
         delete beforePre.dataset.diffHighlighted;
         delete afterPre.dataset.diffHighlighted;
+        delete beforePre.dataset.diffLevelUsed;
+        delete afterPre.dataset.diffLevelUsed;
         
         Logger.debug('Diff highlights removed');
     },
@@ -544,6 +595,28 @@ const plugin = {
         const dp = this.computeLCS(oldTokens, newTokens);
         return this.backtrack(dp, oldTokens, newTokens);
     },
+
+    computeCharDiff(beforeText, afterText) {
+        const a = beforeText.split('');
+        const b = afterText.split('');
+        const dp = this.computeLCS(a, b);
+        return this.backtrack(dp, a, b);
+    },
+
+    groupConsecutiveChar(diff, includeTypes) {
+        const filtered = diff.filter(d => includeTypes.includes(d.type));
+        const groups = [];
+        for (let i = 0; i < filtered.length; i++) {
+            const item = filtered[i];
+            const lastGroup = groups[groups.length - 1];
+            if (lastGroup && lastGroup.type === item.type) {
+                lastGroup.values.push(item.value);
+            } else {
+                groups.push({ type: item.type, values: [item.value], trimTrailing: false });
+            }
+        }
+        return groups;
+    },
     
     groupConsecutive(diff, includeTypes, highlightType) {
         const filtered = diff.filter(d => includeTypes.includes(d.type));
@@ -582,19 +655,21 @@ const plugin = {
     },
     
     getHighlightStyles(isDark) {
-        const removeBg = isDark ? 'rgba(255, 0, 64, 0.55)' : 'rgba(255, 0, 64, 0.6)';
-        const addBg = isDark ? 'rgba(0, 255, 106, 0.5)' : 'rgba(0, 255, 106, 0.6)';
-        const removeGlow = isDark ? 'rgba(255, 0, 64, 0.9)' : 'rgba(255, 0, 64, 0.75)';
-        const addGlow = isDark ? 'rgba(0, 255, 106, 0.9)' : 'rgba(0, 255, 106, 0.75)';
-        const base = 'border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone;color:inherit;';
+        const removeBg = 'rgba(239, 68, 68, 0.35)';
+        const addBg = 'rgba(16, 185, 129, 0.35)';
+        const removeColor = isDark ? 'rgb(254, 202, 202)' : 'rgb(127, 29, 29)';
+        const addColor = isDark ? 'rgb(167, 243, 208)' : 'rgb(6, 78, 59)';
+        const base = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;';
         return {
-            remove: `${base}background-color:${removeBg};box-shadow:0 0 0 2px ${removeGlow},0 0 8px ${removeGlow};`,
-            add: `${base}background-color:${addBg};box-shadow:0 0 0 2px ${addGlow},0 0 8px ${addGlow};`
+            remove: `${base}background-color:${removeBg};color:${removeColor};`,
+            add: `${base}background-color:${addBg};color:${addColor};`
         };
     },
     
-    renderOriginal(diff, removeStyle) {
-        const groups = this.groupConsecutive(diff, ['equal', 'remove'], 'remove');
+    renderOriginal(diff, removeStyle, isCharLevel) {
+        const groups = isCharLevel
+            ? this.groupConsecutiveChar(diff, ['equal', 'remove'])
+            : this.groupConsecutive(diff, ['equal', 'remove'], 'remove');
         let html = '';
         
         groups.forEach(group => {
@@ -619,8 +694,10 @@ const plugin = {
         return html;
     },
     
-    renderNew(diff, addStyle) {
-        const groups = this.groupConsecutive(diff, ['equal', 'add'], 'add');
+    renderNew(diff, addStyle, isCharLevel) {
+        const groups = isCharLevel
+            ? this.groupConsecutiveChar(diff, ['equal', 'add'])
+            : this.groupConsecutive(diff, ['equal', 'add'], 'add');
         let html = '';
         
         groups.forEach(group => {
