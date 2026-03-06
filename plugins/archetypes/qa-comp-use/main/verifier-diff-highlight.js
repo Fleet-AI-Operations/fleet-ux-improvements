@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -305,8 +305,12 @@ const plugin = {
         }
 
         if (sourceSpan.dataset.verifierDiffHidden === 'true') {
-            const restored = sourceSpan.dataset.verifierDiffOriginalDisplay || 'inline';
-            sourceSpan.style.display = restored;
+            const stored = sourceSpan.dataset.verifierDiffOriginalDisplay;
+            if (stored !== undefined && stored !== null && stored !== '') {
+                sourceSpan.style.display = stored;
+            } else {
+                sourceSpan.style.removeProperty('display');
+            }
         }
         delete sourceSpan.dataset.verifierDiffHidden;
         delete sourceSpan.dataset.verifierDiffOriginalDisplay;
@@ -363,7 +367,11 @@ const plugin = {
 
             const diff = this.computeCharDiff(expectedText, answerText);
             const expectedHtml = this.renderOriginal(diff, styles.remove);
-            const answerHtml = this.renderNew(diff, styles.add);
+            const answerHasRedText = answerSpan.classList.contains('text-red-500') ||
+                answerSpan.querySelector('.text-red-500');
+            const answerHtml = answerHasRedText
+                ? answerSpan.innerHTML
+                : this.renderNew(diff, styles.add);
             const expectedMirror = this.ensureMirrorSpan(expectedSpan, 'expected');
             const answerMirror = this.ensureMirrorSpan(answerSpan, 'answer');
             if (!expectedMirror || !answerMirror) continue;
