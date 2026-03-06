@@ -5,7 +5,7 @@ const plugin = {
     id: 'verifierDiffHighlightV1',
     name: 'Verifier Diff Highlighting',
     description: 'Character-level diff between Expected and Your Answer in verifier output',
-    _version: '2.4',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -13,8 +13,6 @@ const plugin = {
         bootstrapped: false,
         stylesInjected: false,
         verifierObserved: false,
-        toggleInserted: false,
-        highlightsEnabled: true,
         verifierCard: null,
         fieldListContainer: null,
         headerLabel: null,
@@ -42,7 +40,6 @@ const plugin = {
         state.fieldListContainer = null;
         state.verifierCard = null;
         state.headerLabel = null;
-        state.toggleInserted = false;
         state.verifierObserved = false;
         state.lastReadyRows = -1;
     },
@@ -75,15 +72,6 @@ const plugin = {
                 background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(167, 243, 208) !important;
             }
-            .verifier-diff-toggle-wrap {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin-left: auto !important;
-            }
-            .verifier-diff-slider-on {
-                background-color: #2563eb !important;
-            }
             .verifier-diff-rendered {
                 display: inline;
             }
@@ -114,16 +102,7 @@ const plugin = {
             state.verifierCard = found.card;
             state.fieldListContainer = found.fieldList;
             state.headerLabel = found.label;
-            state.toggleInserted = false;
             state.lastReadyRows = -1;
-        }
-
-        if (!state.toggleInserted) {
-            const inserted = this.insertToggle(state);
-            if (inserted) {
-                state.toggleInserted = true;
-                Logger.log('✓ Verifier diff toggle inserted');
-            }
         }
 
         if (!state.verifierObserved) {
@@ -131,20 +110,14 @@ const plugin = {
             Logger.log('✓ Verifier Per-Field Comparison section detected');
         }
 
-        const counts = state.highlightsEnabled
-            ? this.applyDiffsToAllFields(state, state.fieldListContainer)
-            : this.removeHighlights(state, state.fieldListContainer);
+        const counts = this.applyDiffsToAllFields(state, state.fieldListContainer);
 
         if (counts.readyRows !== state.lastReadyRows) {
             state.lastReadyRows = counts.readyRows;
             Logger.debug(`Verifier comparison rows ready: ${counts.readyRows}`);
         }
         if (counts.updatedRows > 0) {
-            if (state.highlightsEnabled) {
-                Logger.debug(`Verifier diff highlights updated for ${counts.updatedRows} row(s)`);
-            } else {
-                Logger.debug(`Verifier diff highlights removed from ${counts.updatedRows} row(s)`);
-            }
+            Logger.debug(`Verifier diff highlights updated for ${counts.updatedRows} row(s)`);
         }
     },
 
@@ -152,7 +125,6 @@ const plugin = {
         if (!state.fieldListContainer) return;
         this.removeHighlights(state, state.fieldListContainer);
         state.verifierObserved = false;
-        state.toggleInserted = false;
         state.verifierCard = null;
         state.fieldListContainer = null;
         state.headerLabel = null;
@@ -175,71 +147,6 @@ const plugin = {
             return { label, card, fieldList };
         }
         return null;
-    },
-
-    insertToggle(state) {
-        const fieldListContainer = state.fieldListContainer;
-        if (!fieldListContainer) return false;
-        const headerBlock = fieldListContainer.previousElementSibling;
-        if (!headerBlock || !headerBlock.textContent.includes('Per-Field Comparison')) {
-            return false;
-        }
-        const headerRow = headerBlock.querySelector('.flex.items-center.gap-2') || headerBlock.firstElementChild;
-        if (!headerRow) return false;
-        if (headerRow.querySelector('.verifier-diff-toggle-wrap')) {
-            return true;
-        }
-
-        const wrap = document.createElement('div');
-        wrap.className = 'verifier-diff-toggle-wrap';
-        wrap.setAttribute('data-fleet-plugin', this.id);
-
-        const toggleId = `${this.id}-toggle`;
-        const label = document.createElement('label');
-        label.htmlFor = toggleId;
-        label.textContent = 'Highlight Differences';
-        label.setAttribute('style', 'font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); cursor: pointer; user-select: none; white-space: nowrap;');
-
-        const switchWrap = document.createElement('label');
-        switchWrap.setAttribute('style', 'position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0;');
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = toggleId;
-        checkbox.checked = state.highlightsEnabled;
-        checkbox.setAttribute('style', 'opacity: 0; width: 0; height: 0; position: absolute;');
-
-        const slider = document.createElement('span');
-        slider.setAttribute('style', 'position: absolute; cursor: pointer; inset: 0; background-color: #ccc; transition: 0.2s; border-radius: 20px;');
-
-        const knob = document.createElement('span');
-        knob.setAttribute('style', 'position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; transition: 0.2s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.2);');
-
-        slider.appendChild(knob);
-        switchWrap.appendChild(checkbox);
-        switchWrap.appendChild(slider);
-        wrap.appendChild(label);
-        wrap.appendChild(switchWrap);
-        headerRow.appendChild(wrap);
-
-        const updateSlider = () => {
-            const on = checkbox.checked;
-            slider.classList.toggle('verifier-diff-slider-on', on);
-            if (!on) slider.style.backgroundColor = '#ccc';
-            else slider.style.backgroundColor = '';
-            knob.style.left = on ? '19px' : '3px';
-        };
-        updateSlider();
-
-        const onToggleChange = () => {
-            updateSlider();
-            state.highlightsEnabled = checkbox.checked;
-            Logger.debug(`Verifier diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
-            this.refreshVerifierBinding(state);
-        };
-        CleanupRegistry.registerEventListener(checkbox, 'change', onToggleChange);
-
-        return true;
     },
 
     getRows(container) {
