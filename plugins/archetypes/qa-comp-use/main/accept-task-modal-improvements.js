@@ -47,7 +47,7 @@ const plugin = {
     id: 'acceptTaskModalImprovements',
     name: '"Accept Task" Modal Improvements',
     description: 'Add a button above the optional comments box to paste a positive blurb',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -130,7 +130,7 @@ const plugin = {
         wrapper.setAttribute('data-fleet-plugin', this.id);
         wrapper.className = 'flex flex-col gap-2';
 
-        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-0 h-8 rounded-sm pl-3 pr-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-primary-foreground transition-colors shadow-[0_0_10px_rgba(0,0,0,0.1)]';
+        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-emerald-600 bg-transparent text-emerald-600 hover:bg-emerald-50 hover:border-emerald-700 h-8 rounded-sm pl-3 pr-3 text-xs transition-colors';
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = buttonClass;
