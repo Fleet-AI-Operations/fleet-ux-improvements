@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level and character-level changes in the Prompt Changes modal',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -192,7 +192,18 @@ const plugin = {
         
         const toggleContainer = document.createElement('div');
         toggleContainer.className = 'diff-toggle-row';
-        toggleContainer.style.gap = '10px';
+        toggleContainer.style.display = 'flex';
+        toggleContainer.style.alignItems = 'center';
+        toggleContainer.style.justifyContent = 'center';
+        toggleContainer.style.flexWrap = 'nowrap';
+        toggleContainer.style.gap = '12px';
+        toggleContainer.style.margin = '0.4rem 0 0.9rem';
+        toggleContainer.style.width = '100%';
+
+        const leftBlock = document.createElement('div');
+        leftBlock.style.display = 'flex';
+        leftBlock.style.alignItems = 'center';
+        leftBlock.style.gap = '10px';
         
         const toggleId = `${this.id}-toggle`;
         const toggleText = document.createElement('label');
@@ -249,24 +260,56 @@ const plugin = {
         toggleSwitch.appendChild(toggleCheckbox);
         toggleSwitch.appendChild(toggleSlider);
         
-        toggleContainer.appendChild(toggleText);
-        toggleContainer.appendChild(toggleSwitch);
+        leftBlock.appendChild(toggleText);
+        leftBlock.appendChild(toggleSwitch);
+        toggleContainer.appendChild(leftBlock);
 
-        // Granularity segmented control: Word | Character
         const granularityGroup = document.createElement('div');
-        granularityGroup.className = 'diff-granularity-group';
+        granularityGroup.style.display = 'inline-flex';
+        granularityGroup.style.alignItems = 'center';
+        granularityGroup.style.borderRadius = '6px';
+        granularityGroup.style.overflow = 'hidden';
+        granularityGroup.style.border = '1px solid var(--border, #e2e2e2)';
+        granularityGroup.style.background = 'var(--muted, rgba(0,0,0,0.04))';
+        granularityGroup.style.marginLeft = 'auto';
+        granularityGroup.style.flexShrink = '0';
+
+        const applyBtnBaseStyles = (btn) => {
+            btn.style.padding = '6px 14px';
+            btn.style.fontSize = '12px';
+            btn.style.fontWeight = '500';
+            btn.style.cursor = 'pointer';
+            btn.style.border = 'none';
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--muted-foreground, #888)';
+            btn.style.lineHeight = '1.4';
+            btn.style.transition = 'background-color 0.15s, color 0.15s';
+        };
+
+        const applyBtnActiveStyles = (btn, isActive) => {
+            if (isActive) {
+                btn.style.backgroundColor = 'var(--primary, #4f46e5)';
+                btn.style.color = 'var(--primary-foreground, #fff)';
+            } else {
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = 'var(--muted-foreground, #888)';
+            }
+        };
 
         const wordBtn = document.createElement('button');
         wordBtn.type = 'button';
-        wordBtn.className = 'diff-granularity-btn';
         wordBtn.textContent = 'Word';
         wordBtn.setAttribute('aria-pressed', state.diffGranularity === 'word' ? 'true' : 'false');
+        applyBtnBaseStyles(wordBtn);
+        wordBtn.style.borderRight = '1px solid var(--border, #e2e2e2)';
+        applyBtnActiveStyles(wordBtn, state.diffGranularity === 'word');
 
         const charBtn = document.createElement('button');
         charBtn.type = 'button';
-        charBtn.className = 'diff-granularity-btn';
         charBtn.textContent = 'Character';
         charBtn.setAttribute('aria-pressed', state.diffGranularity === 'char' ? 'true' : 'false');
+        applyBtnBaseStyles(charBtn);
+        applyBtnActiveStyles(charBtn, state.diffGranularity === 'char');
 
         granularityGroup.appendChild(wordBtn);
         granularityGroup.appendChild(charBtn);
@@ -302,6 +345,8 @@ const plugin = {
             Storage.set(this.storageKeys.granularity, granularity);
             wordBtn.setAttribute('aria-pressed', granularity === 'word' ? 'true' : 'false');
             charBtn.setAttribute('aria-pressed', granularity === 'char' ? 'true' : 'false');
+            applyBtnActiveStyles(wordBtn, granularity === 'word');
+            applyBtnActiveStyles(charBtn, granularity === 'char');
             Logger.debug(`Diff granularity set to ${granularity}`);
 
             state.highlightsApplied = false;
