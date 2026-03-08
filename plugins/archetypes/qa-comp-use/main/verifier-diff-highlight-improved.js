@@ -6,7 +6,7 @@ const plugin = {
     id: 'verifierDiffHighlightImproved',
     name: 'Verifier Diff Highlight (Improved)',
     description: 'Custom side-by-side diff viewer for Expected vs Your Answer in verifier output',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -143,24 +143,25 @@ const plugin = {
             }
             [${this.DATA_ATTR}] .vdhi-radio-group {
                 display: inline-flex;
-                border: 1px solid hsl(var(--border));
                 border-radius: 0.375rem;
                 overflow: hidden;
+                gap: 0;
             }
             [${this.DATA_ATTR}] .vdhi-radio-btn {
-                padding: 1px 8px;
+                padding: 2px 10px;
                 font-size: 0.675rem;
                 cursor: pointer;
-                border: none;
-                background: transparent;
+                border: 2px solid hsl(var(--border));
+                background: hsl(var(--muted) / 0.5);
                 color: hsl(var(--muted-foreground));
                 transition: all 0.15s;
                 font-weight: 500;
                 line-height: 1.5;
             }
             [${this.DATA_ATTR}] .vdhi-radio-btn.active {
-                background: hsl(var(--accent));
-                color: hsl(var(--accent-foreground));
+                border-color: #3b82f6;
+                background: transparent;
+                color: #3b82f6;
             }
             [${this.DATA_ATTR}] .vdhi-radio-btn:hover:not(.active) {
                 background: hsl(var(--accent) / 0.5);
@@ -170,6 +171,21 @@ const plugin = {
             }
             [${this.DATA_ATTR}] .vdhi-tray-chevron.collapsed {
                 transform: rotate(-90deg);
+            }
+            [${this.DATA_ATTR}] .vdhi-copy-btn {
+                padding: 2px 6px;
+                font-size: 0.65rem;
+                font-weight: 500;
+                border: 1px solid hsl(var(--border));
+                border-radius: 0.25rem;
+                background: hsl(var(--muted) / 0.5);
+                color: hsl(var(--muted-foreground));
+                cursor: pointer;
+                transition: border-color 0.15s, background 0.15s;
+            }
+            [${this.DATA_ATTR}] .vdhi-copy-btn:hover {
+                background: hsl(var(--accent) / 0.5);
+                border-color: hsl(var(--border));
             }
         `;
         document.head.appendChild(style);
@@ -396,7 +412,7 @@ const plugin = {
 
         const toggleLabel = document.createElement('span');
         toggleLabel.className = 'text-xs text-muted-foreground';
-        toggleLabel.textContent = 'Highlight';
+        toggleLabel.textContent = 'Highlight Diffs';
         toggleLabel.style.cursor = 'pointer';
         toggleLabel.style.userSelect = 'none';
 
@@ -545,6 +561,20 @@ const plugin = {
 
         leftSide.appendChild(chevronSvg);
         leftSide.appendChild(nameSpan);
+
+        if (pair) {
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'vdhi-copy-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.title = 'Copy Expected and QA answer to clipboard';
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.copyTrayToClipboard(pair);
+            });
+            leftSide.appendChild(copyBtn);
+        }
+
         headerDiv.appendChild(leftSide);
 
         if (statusIcon) {
@@ -666,6 +696,17 @@ const plugin = {
                 this.renderDiffForEntry(state, entry);
             }
         }
+    },
+
+    copyTrayToClipboard(pair) {
+        const expectedText = (pair.expectedSpan.textContent || '').trim();
+        const answerText = (pair.answerSpan.textContent || '').trim();
+        const blob = `Expected Answer:\n${expectedText}\n\nQA Answer:\n${answerText}`;
+        navigator.clipboard.writeText(blob).then(() => {
+            Logger.info('Copied Expected and QA answer to clipboard');
+        }).catch((err) => {
+            Logger.error('Failed to copy to clipboard', err);
+        });
     },
 
     // ========== MUTATION OBSERVERS ==========
