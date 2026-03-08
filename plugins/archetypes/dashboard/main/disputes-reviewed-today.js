@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '2.8',
+    _version: '2.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -231,8 +231,8 @@ const plugin = {
                 '</div>',
                 '</div>',
                 '<div class="mt-3 flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-breakdown></div>',
+                '<div class="text-sm" data-wf-count></div>',
+                '<div class="text-sm text-right ml-2" data-wf-breakdown></div>',
                 '</div>',
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg></p>',
                 '<div class="mt-4 flex justify-between items-center gap-2">',
@@ -329,8 +329,45 @@ const plugin = {
                     displayBreakdown = stats.count === 0 ? '—' : `${stats.approved} approved, ${stats.rejected} rejected` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
                 }
 
-                if (countEl) countEl.textContent = displayCount;
-                if (breakdownEl) breakdownEl.textContent = displayBreakdown;
+                if (countEl) {
+                    countEl.textContent = '';
+                    const countMatch = displayCount.match(/^(\d+\??)(?:\s*(\(\d+% AR\)))?$/);
+                    const numPart = countMatch ? countMatch[1] : displayCount;
+                    const arPart = countMatch && countMatch[2] ? countMatch[2] : null;
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'text-blue-600 dark:text-blue-400';
+                    numSpan.textContent = numPart;
+                    countEl.appendChild(numSpan);
+                    if (arPart) {
+                        const arSpan = document.createElement('span');
+                        arSpan.className = 'text-muted-foreground';
+                        arSpan.textContent = ' ' + arPart;
+                        countEl.appendChild(arSpan);
+                    }
+                }
+                if (breakdownEl) {
+                    breakdownEl.textContent = '';
+                    if (displayBreakdown === '—') {
+                        const dashSpan = document.createElement('span');
+                        dashSpan.className = 'text-muted-foreground';
+                        dashSpan.textContent = '—';
+                        breakdownEl.appendChild(dashSpan);
+                    } else {
+                        const arMatch = displayBreakdown.match(/\s*\(\d+% AR\)$/);
+                        const mainPart = arMatch ? displayBreakdown.slice(0, -arMatch[0].length) : displayBreakdown;
+                        const arSuffix = arMatch ? arMatch[0] : null;
+                        const mainSpan = document.createElement('span');
+                        mainSpan.className = 'text-orange-600 dark:text-orange-400';
+                        mainSpan.textContent = mainPart;
+                        breakdownEl.appendChild(mainSpan);
+                        if (arSuffix) {
+                            const arSpan = document.createElement('span');
+                            arSpan.className = 'text-muted-foreground';
+                            arSpan.textContent = arSuffix;
+                            breakdownEl.appendChild(arSpan);
+                        }
+                    }
+                }
 
                 if (scrollMsgEl) {
                     scrollMsgEl.textContent = daysAgo === 0

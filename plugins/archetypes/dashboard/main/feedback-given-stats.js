@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '2.8',
+    _version: '2.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -377,9 +377,12 @@ const plugin = {
                     copyText = ts.copyText || '';
                     if (dateLabelEl) dateLabelEl.textContent = '';
                     if (countEl) {
-                        countEl.className = 'text-sm text-blue-600 dark:text-blue-400';
+                        countEl.className = 'text-sm';
                         countEl.textContent = '';
-                        countEl.appendChild(document.createTextNode(ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0)));
+                        const numSpan = document.createElement('span');
+                        numSpan.className = 'text-blue-600 dark:text-blue-400';
+                        numSpan.textContent = ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0);
+                        countEl.appendChild(numSpan);
                         if (ts.dayAr != null) {
                             const arSpan = document.createElement('span');
                             arSpan.className = 'text-muted-foreground';
@@ -405,8 +408,18 @@ const plugin = {
                     const total = a + f;
                     const dayArPast = total > 0 ? Math.round((a / total) * 100) : null;
                     if (countEl) {
-                        countEl.className = 'text-sm text-muted-foreground';
-                        countEl.textContent = `${stats.count}${isUncertain ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                        countEl.className = 'text-sm';
+                        countEl.textContent = '';
+                        const numSpan = document.createElement('span');
+                        numSpan.className = 'text-blue-600 dark:text-blue-400';
+                        numSpan.textContent = `${stats.count}${isUncertain ? '?' : ''}`;
+                        countEl.appendChild(numSpan);
+                        if (dayArPast != null) {
+                            const arSpan = document.createElement('span');
+                            arSpan.className = 'text-muted-foreground';
+                            arSpan.textContent = ` (${dayArPast}% AR)`;
+                            countEl.appendChild(arSpan);
+                        }
                     }
                     const pastEnvData = Object.entries(stats.envCount || {})
                         .sort((x, y) => y[1] - x[1])
