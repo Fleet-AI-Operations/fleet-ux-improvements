@@ -6,7 +6,7 @@ const plugin = {
     id: 'verifierDiffHighlightImproved',
     name: 'Verifier Diff Highlight (Improved)',
     description: 'Custom side-by-side diff viewer for Expected vs Your Answer in verifier output',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -411,6 +411,9 @@ const plugin = {
         const spacer = document.createElement('div');
         spacer.style.flex = '1';
 
+        const controlsWrap = document.createElement('div');
+        controlsWrap.className = 'border rounded-sm bg-background p-2';
+
         const controls = document.createElement('div');
         controls.style.cssText = 'display:flex;align-items:center;gap:10px;';
 
@@ -483,10 +486,12 @@ const plugin = {
         controls.appendChild(toggleWrap);
         controls.appendChild(radioGroup);
 
+        controlsWrap.appendChild(controls);
+
         headerRow.appendChild(titleDiv);
         headerRow.appendChild(matchSpan);
         headerRow.appendChild(spacer);
-        headerRow.appendChild(controls);
+        headerRow.appendChild(controlsWrap);
         header.appendChild(headerRow);
         card.appendChild(header);
 
