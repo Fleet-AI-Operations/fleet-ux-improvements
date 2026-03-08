@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '2.8',
+    _version: '2.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -216,13 +216,13 @@ const plugin = {
                 '</div>',
                 '</div>',
                 '<div class="mt-3 flex justify-between gap-4">',
-                '<div class="text-sm text-muted-foreground" data-wf-count></div>',
-                '<div class="text-sm text-muted-foreground text-right ml-2" data-wf-breakdown></div>',
+                '<div class="text-sm" data-wf-count></div>',
+                '<div class="text-sm text-orange-600 dark:text-orange-400 text-right ml-2" data-wf-breakdown></div>',
                 '</div>',
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg></p>',
                 '<div class="mt-4 flex justify-between items-center gap-2">',
                 '<span class="text-xs font-medium text-muted-foreground" data-wf-date-label></span>',
-                '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
+                '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy Breakdown</button>',
                 '</div>',
             ].join('');
 
@@ -264,7 +264,7 @@ const plugin = {
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
                             copyBtn._wfCopyResetTimeout = null;
-                            copyBtn.textContent = 'Copy';
+                            copyBtn.textContent = 'Copy Breakdown';
                             copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
                         }, 5000);
                     }).catch((err) => {
@@ -318,7 +318,13 @@ const plugin = {
                             .join(', ');
                 }
 
-                if (countEl) countEl.textContent = displayCount;
+                if (countEl) {
+                    countEl.textContent = '';
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'text-blue-600 dark:text-blue-400';
+                    numSpan.textContent = displayCount;
+                    countEl.appendChild(numSpan);
+                }
                 if (breakdownEl) breakdownEl.textContent = displayBreakdown;
 
                 if (scrollMsgEl) {
@@ -331,7 +337,7 @@ const plugin = {
                 if (copyBtnEl) {
                     copyBtnEl.setAttribute('data-wf-copy-uncertain', isUncertain ? 'true' : 'false');
                     copyBtnEl.setAttribute('data-wf-copy-text', copyText);
-                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy';
+                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy Breakdown';
                 }
             };
             block._wfUpdateUI = updateUI;

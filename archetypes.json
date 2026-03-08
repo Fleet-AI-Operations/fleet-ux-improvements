@@ -37,15 +37,15 @@
         },
         {
           "name": "feedback-given-stats.js",
-          "version": "2.8"
+          "version": "2.9"
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "2.8"
+          "version": "2.9"
         },
         {
           "name": "disputes-reviewed-today.js",
-          "version": "2.8"
+          "version": "2.9"
         }
       ]
     },
@@ -163,7 +163,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.0"
+          "version": "3.2"
         }
       ]
     },
@@ -294,7 +294,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "1.9"
+          "version": "2.2"
         },
         {
           "name": "tool-results-resize-handle.js",
@@ -359,7 +359,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "1.9"
+          "version": "2.2"
         },
         {
           "name": "verifier-diff-highlight-improved.js",

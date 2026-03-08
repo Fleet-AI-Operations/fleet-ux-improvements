@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '2.8',
+    _version: '2.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -271,7 +271,7 @@ const plugin = {
                 '<p class="text-xs text-muted-foreground mt-2 hidden" data-wf-scroll-msg></p>',
                 '<div class="mt-4 flex justify-between items-center gap-2">',
                 '<span class="text-xs font-medium text-muted-foreground" data-wf-date-label></span>',
-                '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy</button>',
+                '<button type="button" class="' + copyButtonClass + '" data-wf-copy-btn>Copy Breakdown</button>',
                 '</div>',
             ].join('');
 
@@ -342,7 +342,7 @@ const plugin = {
                         copyBtn.classList.add('text-green-600', 'dark:text-green-400');
                         copyBtn._wfCopyResetTimeout = setTimeout(() => {
                             copyBtn._wfCopyResetTimeout = null;
-                            copyBtn.textContent = 'Copy';
+                            copyBtn.textContent = 'Copy Breakdown';
                             copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
                         }, 5000);
                     }).catch((err) => {
@@ -377,9 +377,12 @@ const plugin = {
                     copyText = ts.copyText || '';
                     if (dateLabelEl) dateLabelEl.textContent = '';
                     if (countEl) {
-                        countEl.className = 'text-sm text-blue-600 dark:text-blue-400';
+                        countEl.className = 'text-sm';
                         countEl.textContent = '';
-                        countEl.appendChild(document.createTextNode(ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0)));
+                        const numSpan = document.createElement('span');
+                        numSpan.className = 'text-blue-600 dark:text-blue-400';
+                        numSpan.textContent = ts.uncertain ? `${ts.count || 0}?` : String(ts.count || 0);
+                        countEl.appendChild(numSpan);
                         if (ts.dayAr != null) {
                             const arSpan = document.createElement('span');
                             arSpan.className = 'text-muted-foreground';
@@ -405,8 +408,18 @@ const plugin = {
                     const total = a + f;
                     const dayArPast = total > 0 ? Math.round((a / total) * 100) : null;
                     if (countEl) {
-                        countEl.className = 'text-sm text-muted-foreground';
-                        countEl.textContent = `${stats.count}${isUncertain ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
+                        countEl.className = 'text-sm';
+                        countEl.textContent = '';
+                        const numSpan = document.createElement('span');
+                        numSpan.className = 'text-blue-600 dark:text-blue-400';
+                        numSpan.textContent = `${stats.count}${isUncertain ? '?' : ''}`;
+                        countEl.appendChild(numSpan);
+                        if (dayArPast != null) {
+                            const arSpan = document.createElement('span');
+                            arSpan.className = 'text-muted-foreground';
+                            arSpan.textContent = ` (${dayArPast}% AR)`;
+                            countEl.appendChild(arSpan);
+                        }
                     }
                     const pastEnvData = Object.entries(stats.envCount || {})
                         .sort((x, y) => y[1] - x[1])
@@ -430,7 +443,7 @@ const plugin = {
                 if (copyBtnEl) {
                     copyBtnEl.setAttribute('data-wf-copy-uncertain', isUncertain ? 'true' : 'false');
                     copyBtnEl.setAttribute('data-wf-copy-text', copyText);
-                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy';
+                    if (!copyBtnEl._wfCopyResetTimeout) copyBtnEl.textContent = 'Copy Breakdown';
                 }
             };
             block._wfUpdateUI = updateUI;

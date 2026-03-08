@@ -4,8 +4,8 @@
 const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
-    description: 'Highlights word-level changes in the Prompt Changes modal',
-    _version: '1.9',
+    description: 'Highlights word-level and character-level changes in the Prompt Changes modal',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -14,25 +14,28 @@ const plugin = {
         highlightsApplied: false,
         toggleInserted: false,
         copyButtonsInserted: false,
-        highlightsEnabled: true
+        highlightsEnabled: true,
+        diffGranularity: 'word'
+    },
+
+    storageKeys: {
+        granularity: 'prompt-diff-granularity'
     },
     
     selectors: {
-        // Modal container - use the role and title to identify
         modal: 'div[role="dialog"]',
         modalTitle: 'h2',
-        // Pre elements containing the text
         beforePre: 'pre.text-sm.whitespace-pre-wrap',
-        // Grid container
         gridContainer: 'div.grid.grid-cols-2.gap-4'
     },
     
     init(state, context) {
-        // Add styles for diff highlighting
+        state.diffGranularity = Storage.get(this.storageKeys.granularity, 'word');
+
         const style = document.createElement('style');
         style.textContent = `
             pre .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.2) !important;
+                background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(127, 29, 29) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
@@ -40,11 +43,11 @@ const plugin = {
                 -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-remove {
-                background-color: rgba(239, 68, 68, 0.15) !important;
+                background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(254, 202, 202) !important;
             }
             pre .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.2) !important;
+                background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(6, 78, 59) !important;
                 padding: 0 0.125rem;
                 border-radius: 3px;
@@ -52,7 +55,7 @@ const plugin = {
                 -webkit-box-decoration-break: clone;
             }
             .dark pre .diff-highlight-add {
-                background-color: rgba(16, 185, 129, 0.15) !important;
+                background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(167, 243, 208) !important;
             }
             pre .diff-newline-marker {
@@ -63,9 +66,54 @@ const plugin = {
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                flex-wrap: nowrap;
                 gap: 12px;
                 margin: 0.4rem 0 0.9rem;
                 width: 100%;
+            }
+            .diff-granularity-group {
+                display: inline-flex;
+                align-items: center;
+                border-radius: 6px;
+                overflow: hidden;
+                border: 1px solid var(--border, #e2e2e2);
+                background: var(--muted, rgba(0,0,0,0.04));
+            }
+            .dark .diff-granularity-group {
+                border-color: var(--border, #333);
+                background: var(--muted, rgba(255,255,255,0.06));
+            }
+            .diff-granularity-btn {
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                border: none;
+                border-right: 1px solid var(--border, #e2e2e2);
+                background: transparent;
+                color: var(--muted-foreground, #888);
+                transition: background-color 0.15s, color 0.15s;
+                line-height: 1.4;
+            }
+            .diff-granularity-btn:last-child {
+                border-right: none;
+            }
+            .dark .diff-granularity-btn {
+                border-right-color: var(--border, #333);
+            }
+            .dark .diff-granularity-btn:last-child {
+                border-right: none;
+            }
+            .diff-granularity-btn[aria-pressed="true"] {
+                background-color: var(--primary, #4f46e5);
+                color: var(--primary-foreground, #fff);
+            }
+            .diff-granularity-btn:not([aria-pressed="true"]):hover {
+                background-color: var(--accent, rgba(0,0,0,0.06));
+                color: var(--accent-foreground, inherit);
+            }
+            .dark .diff-granularity-btn:not([aria-pressed="true"]):hover {
+                background-color: var(--accent, rgba(255,255,255,0.08));
             }
         `;
         document.head.appendChild(style);
@@ -73,11 +121,9 @@ const plugin = {
     },
     
     onMutation(state, context) {
-        // Find the modal
         const modal = this.findPromptChangesModal();
         
         if (!modal) {
-            // Reset state when modal is not present
             if (state.modalObserved) {
                 state.modalObserved = false;
                 state.highlightsApplied = false;
@@ -88,13 +134,11 @@ const plugin = {
             return;
         }
         
-        // Modal is present
         if (!state.modalObserved) {
             state.modalObserved = true;
             Logger.log('✓ Prompt Changes modal detected');
         }
         
-        // Insert toggle if not already inserted
         if (!state.toggleInserted) {
             const toggleInserted = this.insertToggle(state, modal);
             if (toggleInserted) {
@@ -111,9 +155,8 @@ const plugin = {
             }
         }
         
-        // Apply highlights if not already applied and highlights are enabled
         if (!state.highlightsApplied && state.highlightsEnabled) {
-            const applied = this.applyDiffHighlights(modal);
+            const applied = this.applyDiffHighlights(modal, state);
             if (applied) {
                 state.highlightsApplied = true;
                 Logger.log('✓ Diff highlights applied to modal');
@@ -122,12 +165,10 @@ const plugin = {
     },
     
     findPromptChangesModal() {
-        // Find all dialogs
         const modals = Context.dom.queryAll(this.selectors.modal, {
             context: `${this.id}.findModal`
         });
         
-        // Find the one with "Prompt Changes" in the title
         for (const modal of modals) {
             const title = modal.querySelector(this.selectors.modalTitle);
             if (title && title.textContent.includes('Prompt Changes')) {
@@ -145,15 +186,24 @@ const plugin = {
             return false;
         }
         
-        // Check if toggle already exists
         if (modal.querySelector('.diff-toggle-row')) {
             return true;
         }
         
-        // Create toggle container centered under header
         const toggleContainer = document.createElement('div');
         toggleContainer.className = 'diff-toggle-row';
-        toggleContainer.style.gap = '10px';
+        toggleContainer.style.display = 'flex';
+        toggleContainer.style.alignItems = 'center';
+        toggleContainer.style.justifyContent = 'center';
+        toggleContainer.style.flexWrap = 'nowrap';
+        toggleContainer.style.gap = '12px';
+        toggleContainer.style.margin = '0.4rem 0 0.9rem';
+        toggleContainer.style.width = '100%';
+
+        const leftBlock = document.createElement('div');
+        leftBlock.style.display = 'flex';
+        leftBlock.style.alignItems = 'center';
+        leftBlock.style.gap = '10px';
         
         const toggleId = `${this.id}-toggle`;
         const toggleText = document.createElement('label');
@@ -210,13 +260,63 @@ const plugin = {
         toggleSwitch.appendChild(toggleCheckbox);
         toggleSwitch.appendChild(toggleSlider);
         
-        toggleContainer.appendChild(toggleText);
-        toggleContainer.appendChild(toggleSwitch);
+        leftBlock.appendChild(toggleText);
+        leftBlock.appendChild(toggleSwitch);
+        toggleContainer.appendChild(leftBlock);
+
+        const granularityGroup = document.createElement('div');
+        granularityGroup.style.display = 'inline-flex';
+        granularityGroup.style.alignItems = 'center';
+        granularityGroup.style.borderRadius = '6px';
+        granularityGroup.style.overflow = 'hidden';
+        granularityGroup.style.border = '1px solid var(--border, #e2e2e2)';
+        granularityGroup.style.background = 'var(--muted, rgba(0,0,0,0.04))';
+        granularityGroup.style.marginLeft = 'auto';
+        granularityGroup.style.flexShrink = '0';
+
+        const applyBtnBaseStyles = (btn) => {
+            btn.style.padding = '6px 14px';
+            btn.style.fontSize = '12px';
+            btn.style.fontWeight = '500';
+            btn.style.cursor = 'pointer';
+            btn.style.border = 'none';
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--muted-foreground, #888)';
+            btn.style.lineHeight = '1.4';
+            btn.style.transition = 'background-color 0.15s, color 0.15s';
+        };
+
+        const applyBtnActiveStyles = (btn, isActive) => {
+            if (isActive) {
+                btn.style.backgroundColor = 'var(--primary, #4f46e5)';
+                btn.style.color = 'var(--primary-foreground, #fff)';
+            } else {
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = 'var(--muted-foreground, #888)';
+            }
+        };
+
+        const wordBtn = document.createElement('button');
+        wordBtn.type = 'button';
+        wordBtn.textContent = 'Word';
+        wordBtn.setAttribute('aria-pressed', state.diffGranularity === 'word' ? 'true' : 'false');
+        applyBtnBaseStyles(wordBtn);
+        wordBtn.style.borderRight = '1px solid var(--border, #e2e2e2)';
+        applyBtnActiveStyles(wordBtn, state.diffGranularity === 'word');
+
+        const charBtn = document.createElement('button');
+        charBtn.type = 'button';
+        charBtn.textContent = 'Character';
+        charBtn.setAttribute('aria-pressed', state.diffGranularity === 'char' ? 'true' : 'false');
+        applyBtnBaseStyles(charBtn);
+        applyBtnActiveStyles(charBtn, state.diffGranularity === 'char');
+
+        granularityGroup.appendChild(wordBtn);
+        granularityGroup.appendChild(charBtn);
+        toggleContainer.appendChild(granularityGroup);
         
-        // Insert after header/title block
         title.parentElement.insertAdjacentElement('afterend', toggleContainer);
         
-        // Add event listener
         const updateToggleStyles = () => {
             const isOn = toggleCheckbox.checked;
             toggleSlider.style.backgroundColor = isOn ? 'var(--brand, #4f46e5)' : '#ccc';
@@ -228,19 +328,41 @@ const plugin = {
         toggleCheckbox.addEventListener('change', () => {
             updateToggleStyles();
             state.highlightsEnabled = toggleCheckbox.checked;
-            state.highlightsApplied = false; // Force re-render
+            state.highlightsApplied = false;
             Logger.debug(`Diff highlights ${state.highlightsEnabled ? 'enabled' : 'disabled'}`);
             
-            // Re-apply or remove highlights
             if (state.highlightsEnabled) {
-                this.applyDiffHighlights(modal);
+                this.applyDiffHighlights(modal, state);
                 state.highlightsApplied = true;
             } else {
                 this.removeHighlights(modal);
             }
         });
+
+        const setGranularity = (granularity) => {
+            if (state.diffGranularity === granularity) return;
+            state.diffGranularity = granularity;
+            Storage.set(this.storageKeys.granularity, granularity);
+            wordBtn.setAttribute('aria-pressed', granularity === 'word' ? 'true' : 'false');
+            charBtn.setAttribute('aria-pressed', granularity === 'char' ? 'true' : 'false');
+            applyBtnActiveStyles(wordBtn, granularity === 'word');
+            applyBtnActiveStyles(charBtn, granularity === 'char');
+            Logger.debug(`Diff granularity set to ${granularity}`);
+
+            state.highlightsApplied = false;
+            if (state.highlightsEnabled) {
+                this.removeHighlights(modal);
+                this.applyDiffHighlights(modal, state);
+                state.highlightsApplied = true;
+            }
+        };
+
+        wordBtn.addEventListener('click', () => setGranularity('word'));
+        charBtn.addEventListener('click', () => setGranularity('char'));
         
         CleanupRegistry.registerEventListener(toggleCheckbox, 'change', () => {});
+        CleanupRegistry.registerEventListener(wordBtn, 'click', () => {});
+        CleanupRegistry.registerEventListener(charBtn, 'click', () => {});
         
         return true;
     },
@@ -293,7 +415,7 @@ const plugin = {
             
             const button = createCopyIconButton();
             button.dataset.diffCopyTarget = label;
-            
+
             let copyFeedbackTimeoutId = null;
             button.addEventListener('click', async () => {
                 const pre = column.querySelector(this.selectors.beforePre);
@@ -322,7 +444,7 @@ const plugin = {
                     Logger.error(`Failed to copy ${label} prompt`, err);
                 }
             });
-            
+
             headerRow.appendChild(button);
             return true;
         };
@@ -332,22 +454,19 @@ const plugin = {
         return beforeOk && afterOk;
     },
     
-    applyDiffHighlights(modal) {
-        // Find the grid container
+    applyDiffHighlights(modal, state) {
         const gridContainer = modal.querySelector(this.selectors.gridContainer);
         if (!gridContainer) {
             Logger.debug('Could not find grid container in modal');
             return false;
         }
         
-        // Find both columns
         const columns = gridContainer.querySelectorAll('.flex.flex-col.min-h-0');
         if (columns.length !== 2) {
             Logger.debug('Could not find both columns in modal');
             return false;
         }
         
-        // Extract text from both pre elements
         const beforePre = columns[0].querySelector(this.selectors.beforePre);
         const afterPre = columns[1].querySelector(this.selectors.beforePre);
         
@@ -378,27 +497,25 @@ const plugin = {
             delete afterPre.dataset.diffHighlighted;
         }
         
-        // Compute diff
-        const diff = this.computeDiff(beforeText, afterText);
+        const granularity = (state && state.diffGranularity) || 'word';
+        const diff = granularity === 'char'
+            ? this.computeCharDiff(beforeText, afterText)
+            : this.computeDiff(beforeText, afterText);
         
-        // Store original text
         beforePre.dataset.originalText = beforeText;
         afterPre.dataset.originalText = afterText;
         
         const isDark = document.documentElement.classList.contains('dark');
         const highlightStyles = this.getHighlightStyles(isDark);
         
-        // Render highlighted versions
         const beforeHtml = this.renderOriginal(diff, highlightStyles.remove);
         const afterHtml = this.renderNew(diff, highlightStyles.add);
         
         beforePre.innerHTML = beforeHtml;
         afterPre.innerHTML = afterHtml;
         
-        // Strip colored backgrounds from wrapper divs so highlights are visible
         this.stripWrapperBackgrounds(beforePre, afterPre);
         
-        // Mark as highlighted
         beforePre.dataset.diffHighlighted = 'true';
         afterPre.dataset.diffHighlighted = 'true';
         
@@ -417,7 +534,6 @@ const plugin = {
         
         if (!beforePre || !afterPre) return;
         
-        // Restore original text
         if (beforePre.dataset.originalText) {
             beforePre.textContent = beforePre.dataset.originalText;
         }
@@ -425,10 +541,8 @@ const plugin = {
             afterPre.textContent = afterPre.dataset.originalText;
         }
         
-        // Restore wrapper backgrounds
         this.restoreWrapperBackgrounds(beforePre, afterPre);
         
-        // Remove markers
         delete beforePre.dataset.diffHighlighted;
         delete afterPre.dataset.diffHighlighted;
         
@@ -439,7 +553,6 @@ const plugin = {
         const beforeWrapper = beforePre.parentElement;
         const afterWrapper = afterPre.parentElement;
         
-        // Store original className for restoration, then strip the colored backgrounds
         if (beforeWrapper && !beforeWrapper.dataset.originalClassName) {
             beforeWrapper.dataset.originalClassName = beforeWrapper.className;
             beforeWrapper.dataset.originalInlineBg = beforeWrapper.style.backgroundColor || '';
@@ -459,7 +572,6 @@ const plugin = {
         const beforeWrapper = beforePre.parentElement;
         const afterWrapper = afterPre.parentElement;
         
-        // Restore full className from saved snapshot
         if (beforeWrapper && beforeWrapper.dataset.originalClassName) {
             beforeWrapper.className = beforeWrapper.dataset.originalClassName;
             beforeWrapper.style.backgroundColor = beforeWrapper.dataset.originalInlineBg || '';
@@ -544,6 +656,13 @@ const plugin = {
         const dp = this.computeLCS(oldTokens, newTokens);
         return this.backtrack(dp, oldTokens, newTokens);
     },
+
+    computeCharDiff(oldText, newText) {
+        const a = oldText.split('');
+        const b = newText.split('');
+        const dp = this.computeLCS(a, b);
+        return this.backtrack(dp, a, b);
+    },
     
     groupConsecutive(diff, includeTypes, highlightType) {
         const filtered = diff.filter(d => includeTypes.includes(d.type));
@@ -582,14 +701,11 @@ const plugin = {
     },
     
     getHighlightStyles(isDark) {
-        const removeBg = isDark ? 'rgba(255, 0, 64, 0.55)' : 'rgba(255, 0, 64, 0.6)';
-        const addBg = isDark ? 'rgba(0, 255, 106, 0.5)' : 'rgba(0, 255, 106, 0.6)';
-        const removeGlow = isDark ? 'rgba(255, 0, 64, 0.9)' : 'rgba(255, 0, 64, 0.75)';
-        const addGlow = isDark ? 'rgba(0, 255, 106, 0.9)' : 'rgba(0, 255, 106, 0.75)';
-        const base = 'border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone;color:inherit;';
+        const removeBg = isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.3)';
+        const addBg = isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.3)';
         return {
-            remove: `${base}background-color:${removeBg};box-shadow:0 0 0 2px ${removeGlow},0 0 8px ${removeGlow};`,
-            add: `${base}background-color:${addBg};box-shadow:0 0 0 2px ${addGlow},0 0 8px ${addGlow};`
+            remove: `background-color:${removeBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`,
+            add: `background-color:${addBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`
         };
     },
     
@@ -612,7 +728,7 @@ const plugin = {
                     }
                 }
             } else {
-                html += this.escapeHtml(text);
+                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
             }
         });
         
@@ -638,7 +754,7 @@ const plugin = {
                     }
                 }
             } else {
-                html += this.escapeHtml(text);
+                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
             }
         });
         
