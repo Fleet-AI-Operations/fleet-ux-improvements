@@ -6,7 +6,7 @@ const plugin = {
     id: 'verifierDiffHighlightImproved',
     name: 'Verifier Diff Highlight (Improved)',
     description: 'Custom side-by-side diff viewer for Expected vs Your Answer in verifier output',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -173,7 +173,12 @@ const plugin = {
                 transform: rotate(-90deg);
             }
             [${this.DATA_ATTR}] .vdhi-copy-btn {
-                padding: 2px 6px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.5rem;
+                height: 1.5rem;
+                padding: 0;
                 font-size: 0.65rem;
                 font-weight: 500;
                 border: 1px solid hsl(var(--border));
@@ -181,11 +186,14 @@ const plugin = {
                 background: hsl(var(--muted) / 0.5);
                 color: hsl(var(--muted-foreground));
                 cursor: pointer;
-                transition: border-color 0.15s, background 0.15s;
+                transition: border-color 0.15s, background 0.15s, color 0.15s;
             }
             [${this.DATA_ATTR}] .vdhi-copy-btn:hover {
                 background: hsl(var(--accent) / 0.5);
                 border-color: hsl(var(--border));
+            }
+            [${this.DATA_ATTR}] .vdhi-copy-btn svg {
+                flex-shrink: 0;
             }
         `;
         document.head.appendChild(style);
@@ -563,15 +571,7 @@ const plugin = {
         leftSide.appendChild(nameSpan);
 
         if (pair) {
-            const copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'vdhi-copy-btn';
-            copyBtn.textContent = 'Copy';
-            copyBtn.title = 'Copy Expected and QA answer to clipboard';
-            copyBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.copyTrayToClipboard(pair);
-            });
+            const copyBtn = this.createTrayCopyButton(pair);
             leftSide.appendChild(copyBtn);
         }
 
@@ -698,15 +698,54 @@ const plugin = {
         }
     },
 
-    copyTrayToClipboard(pair) {
+    copyTrayToClipboard(pair, button) {
         const expectedText = (pair.expectedSpan.textContent || '').trim();
         const answerText = (pair.answerSpan.textContent || '').trim();
         const blob = `Expected Answer:\n${expectedText}\n\nQA Answer:\n${answerText}`;
         navigator.clipboard.writeText(blob).then(() => {
             Logger.info('Copied Expected and QA answer to clipboard');
+            if (button) {
+                if (button._vdhiCopyTimeoutId) clearTimeout(button._vdhiCopyTimeoutId);
+                button.style.backgroundColor = 'rgb(34, 197, 94)';
+                button.style.color = 'white';
+                button._vdhiCopyTimeoutId = setTimeout(() => {
+                    button.style.backgroundColor = '';
+                    button.style.color = '';
+                    button._vdhiCopyTimeoutId = null;
+                }, 3000);
+            }
         }).catch((err) => {
             Logger.error('Failed to copy to clipboard', err);
         });
+    },
+
+    createTrayCopyButton(pair) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'vdhi-copy-btn';
+        button.title = 'Copy Expected and QA answer to clipboard';
+        button.setAttribute('aria-label', 'Copy Expected and QA answer to clipboard');
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '12');
+        svg.setAttribute('height', '12');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.className = 'fill-current h-3 w-3 text-muted-foreground';
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill', 'currentColor');
+        path.setAttribute('fill-rule', 'evenodd');
+        path.setAttribute('clip-rule', 'evenodd');
+        path.setAttribute('d', 'M2 5C2 3.34315 3.34315 2 5 2H12C13.6569 2 15 3.34315 15 5C15 5.55228 14.5523 6 14 6C13.4477 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4H5C4.44772 4 4 4.44772 4 5V13C4 13.5523 4.44772 14 5 14H6C6.55228 14 7 14.4477 7 15C7 15.5523 6.55228 16 6 16H5C3.34315 16 2 14.6569 2 13V5ZM9 10.8462C9 9.20041 10.42 8 12 8H19C20.58 8 22 9.20041 22 10.8462V19.1538C22 20.7996 20.58 22 19 22H12C10.42 22 9 20.7996 9 19.1538V10.8462ZM12 10C11.3708 10 11 10.4527 11 10.8462V19.1538C11 19.5473 11.3708 20 12 20H19C19.6292 20 20 19.5473 20 19.1538V10.8462C20 10.4527 19.6292 10 19 10H12Z');
+        svg.appendChild(path);
+        button.appendChild(svg);
+
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.copyTrayToClipboard(pair, button);
+        });
+
+        return button;
     },
 
     // ========== MUTATION OBSERVERS ==========
