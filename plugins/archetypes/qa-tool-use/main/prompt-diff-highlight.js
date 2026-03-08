@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level and character-level changes in the Prompt Changes modal',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -66,36 +66,54 @@ const plugin = {
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                flex-wrap: nowrap;
                 gap: 12px;
                 margin: 0.4rem 0 0.9rem;
                 width: 100%;
             }
             .diff-granularity-group {
                 display: inline-flex;
+                align-items: center;
                 border-radius: 6px;
                 overflow: hidden;
                 border: 1px solid var(--border, #e2e2e2);
+                background: var(--muted, rgba(0,0,0,0.04));
             }
             .dark .diff-granularity-group {
                 border-color: var(--border, #333);
+                background: var(--muted, rgba(255,255,255,0.06));
             }
             .diff-granularity-btn {
-                padding: 3px 10px;
+                padding: 6px 12px;
                 font-size: 12px;
                 font-weight: 500;
                 cursor: pointer;
                 border: none;
+                border-right: 1px solid var(--border, #e2e2e2);
                 background: transparent;
                 color: var(--muted-foreground, #888);
                 transition: background-color 0.15s, color 0.15s;
                 line-height: 1.4;
             }
+            .diff-granularity-btn:last-child {
+                border-right: none;
+            }
+            .dark .diff-granularity-btn {
+                border-right-color: var(--border, #333);
+            }
+            .dark .diff-granularity-btn:last-child {
+                border-right: none;
+            }
             .diff-granularity-btn[aria-pressed="true"] {
-                background-color: var(--brand, #4f46e5);
-                color: #fff;
+                background-color: var(--primary, #4f46e5);
+                color: var(--primary-foreground, #fff);
             }
             .diff-granularity-btn:not([aria-pressed="true"]):hover {
                 background-color: var(--accent, rgba(0,0,0,0.06));
+                color: var(--accent-foreground, inherit);
+            }
+            .dark .diff-granularity-btn:not([aria-pressed="true"]):hover {
+                background-color: var(--accent, rgba(255,255,255,0.08));
             }
         `;
         document.head.appendChild(style);
@@ -665,7 +683,7 @@ const plugin = {
                     }
                 }
             } else {
-                html += this.escapeHtml(text);
+                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
             }
         });
         
@@ -691,7 +709,7 @@ const plugin = {
                     }
                 }
             } else {
-                html += this.escapeHtml(text);
+                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
             }
         });
         

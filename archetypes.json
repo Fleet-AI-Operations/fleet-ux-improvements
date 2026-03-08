@@ -1,6 +1,6 @@
 {
   "version": "5.2.2",
-  "archetypesVersion": "6.34",
+  "archetypesVersion": "6.35",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -163,7 +163,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "3.0"
+          "version": "3.1"
         }
       ]
     },
@@ -294,7 +294,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "tool-results-resize-handle.js",
@@ -359,7 +359,7 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.0"
+          "version": "2.1"
         },
         {
           "name": "verifier-diff-highlight.js",
