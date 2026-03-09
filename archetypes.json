@@ -1,6 +1,6 @@
 {
   "version": "5.2.2",
-  "archetypesVersion": "6.37",
+  "archetypesVersion": "6.38",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -430,6 +430,10 @@
         {
           "name": "tool-description-truncate.js",
           "version": "1.0"
+        },
+        {
+          "name": "verifier-diff-highlight-improved.js",
+          "version": "1.3"
         }
       ]
     }
