@@ -5,7 +5,7 @@ const plugin = {
     id: 'clearSearch',
     name: 'Clear Tool Search',
     description: 'Adds a clear `X` button to the tool search box when it has text',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
@@ -36,9 +36,11 @@ const plugin = {
             return;
         }
 
-        const rightDiv = wrapper.querySelector('div.absolute.right-2');
+        // OpenClaw uses right-1.5; original task-creation used right-2. Try both.
+        const rightDiv = wrapper.querySelector('div.absolute.right-1\\.5') ||
+            wrapper.querySelector('div.absolute.right-2');
         if (!rightDiv) {
-            Logger.warn('Clear search: right div (absolute right-2) not found');
+            Logger.warn('Clear search: right div (absolute right-1.5 or right-2) not found');
             return;
         }
 
