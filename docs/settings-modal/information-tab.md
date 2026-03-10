@@ -1,4 +1,4 @@
-1.7
+1.8
 ## Information
 
 #### Environment Codennames
@@ -7,7 +7,9 @@
 | Agora                     | Reddit                 |
 | Aisle                     | Walmart                |
 | Atlas                     | Google Maps            |
+| Bay                       | Amazon                 |
 | Chorus                    | Teams                  |
+| Crate                     | Instacart              |
 | Docket                    | Dropbox                |
 | Float                     | Ramp                   |
 | Focusign                  | Docusign               |
