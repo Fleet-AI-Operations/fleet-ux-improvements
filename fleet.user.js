@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      5.2.2
+// @version      5.3.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '5.2.2';
+    const VERSION = '5.3.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1021,10 +1021,21 @@
                     }
                     
                     // Check if ALL disambiguation selectors are present
-                    const allPresent = selectors.every(selector => {
-                        const exists = Context.dom.query(selector, {
+                    const selectorMatches = (selector) => {
+                        if (selector.startsWith('text:')) {
+                            const searchText = selector.slice(5);
+                            const elements = document.querySelectorAll('*');
+                            for (const el of elements) {
+                                if (el.children.length === 0 && el.textContent.trim() === searchText) return true;
+                            }
+                            return false;
+                        }
+                        return Context.dom.query(selector, {
                             context: `archetype:${archetype.id}`
                         }) !== null;
+                    };
+                    const allPresent = selectors.every(selector => {
+                        const exists = selectorMatches(selector);
                         Logger.debug(`  [${archetype.id}] Selector "${selector}": ${exists ? '✓' : '✗'}`);
                         return exists;
                     });

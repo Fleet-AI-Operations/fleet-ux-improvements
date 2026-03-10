@@ -1,6 +1,6 @@
 {
-  "version": "5.2.2",
-  "archetypesVersion": "6.39",
+  "version": "5.3.0",
+  "archetypesVersion": "6.41",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -109,6 +109,16 @@
           "version": "3.2"
         }
       ]
+    },
+    {
+      "id": "tool-use-task-creation-excluded",
+      "name": "Tool Use Task Creation Page (Excluded)",
+      "description": "Task Designers Special Projects variant - extension disabled",
+      "urlPattern": "work/problems/create-tool-use*",
+      "disambiguationSelectors": [
+        "text:Task Designers - Special Projects Tasks"
+      ],
+      "plugins": []
     },
     {
       "id": "tool-use-revision",
