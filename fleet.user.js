@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [fix-claw-plugins] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      5.3.1
+// @version      5.3.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '5.3.1';
+    const VERSION = '5.3.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -450,13 +450,13 @@
             this.set(`settings-doc-cache-${name}`, JSON.stringify(cacheData));
         },
         getSubmoduleLoggingEnabled() {
-            return this.get('submodule-logging', true);
+            return this.get('submodule-logging', false);
         },
         setSubmoduleLoggingEnabled(enabled) {
             this.set('submodule-logging', enabled);
         },
         getModuleLoggingEnabled(moduleId) {
-            return this.get(`module-logging-${moduleId}`, true);
+            return this.get(`module-logging-${moduleId}`, false);
         },
         setModuleLoggingEnabled(moduleId, enabled) {
             this.set(`module-logging-${moduleId}`, enabled);
@@ -1811,6 +1811,10 @@
             this.cleanupDeprecatedCache(pluginList, archetypeId, 'dev');
             
             Logger.log('Dev archetype plugin loading complete');
+            // Dev archetype plugins respect dev-global default off same as core dev plugins.
+            if (!Storage.get('dev-global-plugins-enabled', false)) {
+                PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
+            }
         },
         
         /**
@@ -2049,6 +2053,10 @@
         if (DEV_SCRIPTS_ENABLED) {
             const devPlugins = ArchetypeManager.getDevPlugins();
             await PluginLoader.loadPluginsFromConfig(devPlugins, 'dev');
+            // Dev tools default off regardless of per-plugin enabledByDefault; enforce before runCorePlugins.
+            if (!Storage.get('dev-global-plugins-enabled', false)) {
+                PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
+            }
         }
         const corePlugins = ArchetypeManager.getCorePlugins();
         await PluginLoader.loadPluginsFromConfig(corePlugins, 'core');
