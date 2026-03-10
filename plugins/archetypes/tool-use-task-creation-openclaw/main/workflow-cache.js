@@ -4,7 +4,7 @@ const plugin = {
     id: 'workflowCache',
     name: 'Workflow Cache',
     description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -420,14 +420,37 @@ const plugin = {
         return Array.from(innerSpace.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
     },
 
+    /**
+     * True when the workflow has at least one tool step. When the workflow is empty,
+     * the app may omit the .space-y-3 wrapper entirely (empty state is a single flex
+     * column with "No steps yet") — so we must not use toolsContainer.children.length,
+     * which would be non-zero due to that empty-state subtree.
+     */
+    hasWorkflowSteps(stableParent) {
+        if (!stableParent) return false;
+        if (stableParent.querySelector(this.selectors.workflowStep)) return true;
+        if (stableParent.querySelector(this.selectors.toolCardFallback)) return true;
+        return false;
+    },
+
+    /**
+     * Empty-state block uses a <p> whose text may be split across lines ("No steps" + "yet"),
+     * so textContent can contain newlines and fail includes('No steps yet'). Normalize whitespace.
+     */
+    findEmptyStateElement(stableParent) {
+        if (!stableParent) return null;
+        return Array.from(stableParent.children).find(el => {
+            const p = el.querySelector('p.text-sm.font-medium, p.font-medium');
+            if (!p) return false;
+            const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+            return text.includes('No steps yet') || text.includes('No steps');
+        });
+    },
+
     ensureEmptyStateSection(state, stableParent) {
         if (!stableParent) return;
-        const toolsContainer = this.getToolsContainer(stableParent);
-        const hasSteps = toolsContainer && toolsContainer.children.length > 0;
-        const emptyStateEl = Array.from(stableParent.children).find(el => {
-            const p = el.querySelector('p.text-sm.font-medium, p.font-medium');
-            return p && (p.textContent || '').trim().includes('No steps yet');
-        });
+        const hasSteps = this.hasWorkflowSteps(stableParent);
+        const emptyStateEl = this.findEmptyStateElement(stableParent);
         const existing = stableParent.querySelector('[data-wf-insert-prev-workflow="true"]');
         if (hasSteps || !emptyStateEl) {
             if (existing) existing.remove();
