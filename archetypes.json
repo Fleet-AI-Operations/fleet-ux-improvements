@@ -1,6 +1,6 @@
 {
   "version": "5.3.0",
-  "archetypesVersion": "6.41",
+  "archetypesVersion": "6.42",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -111,14 +111,67 @@
       ]
     },
     {
-      "id": "tool-use-task-creation-excluded",
-      "name": "Tool Use Task Creation Page (Excluded)",
-      "description": "Task Designers Special Projects variant - extension disabled",
+      "id": "tool-use-task-creation-openclaw",
+      "name": "Tool Use OpenClaw Task Creation Page",
+      "description": "Task Designers Special Projects OpenClaw variant",
       "urlPattern": "work/problems/create-tool-use*",
       "disambiguationSelectors": [
         "text:Task Designers - Special Projects Tasks"
       ],
-      "plugins": []
+      "plugins": [
+        {
+          "name": "clear-search.js",
+          "version": "2.0"
+        },
+        {
+          "name": "json-editor-online.js",
+          "version": "2.0"
+        },
+        {
+          "name": "guideline-buttons.js",
+          "version": "2.0"
+        },
+        {
+          "name": "favorites.js",
+          "version": "4.0"
+        },
+        {
+          "name": "remove-textarea-gradient.js",
+          "version": "2.2"
+        },
+        {
+          "name": "remember-layout-proportions.js",
+          "version": "2.0"
+        },
+        {
+          "name": "prompt-and-notes-areas.js",
+          "version": "3.1"
+        },
+        {
+          "name": "execute-to-current-tool.js",
+          "version": "2.0"
+        },
+        {
+          "name": "workflow-cache.js",
+          "version": "2.0"
+        },
+        {
+          "name": "toggle-tool-parameters.js",
+          "version": "2.3"
+        },
+        {
+          "name": "tool-results-resize-handle.js",
+          "version": "2.0"
+        },
+        {
+          "name": "tool-description-truncate.js",
+          "version": "2.0"
+        },
+        {
+          "name": "text-sanitizer.js",
+          "version": "3.2"
+        }
+      ]
     },
     {
       "id": "tool-use-revision",
