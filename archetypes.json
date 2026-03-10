@@ -1,6 +1,6 @@
 {
   "version": "5.2.2",
-  "archetypesVersion": "6.38",
+  "archetypesVersion": "6.39",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -381,12 +381,7 @@
       "description": "Page for reviewing writer disputes",
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "dispute-ids-enhancer.js",
-          "version": "3.0"
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "dispute-detail",
@@ -522,6 +517,19 @@
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
       "plugins": []
+    },
+    {
+      "id": "disputes",
+      "name": "Dispute Review Page",
+      "description": "Page for reviewing writer disputes",
+      "urlPattern": "work/problems/disputes",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "dispute-ids-enhancer.js",
+          "version": "3.0"
+        }
+      ]
     }
   ]
 }
