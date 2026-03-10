@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      5.3.0
+// @version      5.3.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '5.3.0';
+    const VERSION = '5.3.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1161,11 +1161,23 @@
                         continue;
                     }
                     
-                    // Check if ALL disambiguation selectors are present
-                    const allPresent = selectors.every(selector => {
-                        const exists = Context.dom.query(selector, {
+                    // Check if ALL disambiguation selectors are present (same rules as main
+                    // archetype disambiguation, including text: leaf-node matching)
+                    const selectorMatches = (selector) => {
+                        if (selector.startsWith('text:')) {
+                            const searchText = selector.slice(5);
+                            const elements = document.querySelectorAll('*');
+                            for (const el of elements) {
+                                if (el.children.length === 0 && el.textContent.trim() === searchText) return true;
+                            }
+                            return false;
+                        }
+                        return Context.dom.query(selector, {
                             context: `devArchetype:${archetype.id}`
                         }) !== null;
+                    };
+                    const allPresent = selectors.every(selector => {
+                        const exists = selectorMatches(selector);
                         Logger.debug(`  [dev:${archetype.id}] Selector "${selector}": ${exists ? '✓' : '✗'}`);
                         return exists;
                     });
@@ -2076,10 +2088,25 @@
             
             // Load dev archetype plugins (if dev scripts enabled)
             if (DEV_SCRIPTS_ENABLED) {
-                const devArchetype = await ArchetypeManager.detectDevArchetype();
+                // Prefer devArchetype entry whose id matches the already-disambiguated main
+                // archetype. detectDevArchetype() uses the same URL list as main; without this,
+                // openclaw vs task-creation (same urlPattern) falls back to the wrong dev plugin
+                // set because dev disambiguation did not support text: selectors like main does.
+                const devById = ArchetypeManager.devArchetypes.find((d) => d.id === archetype.id);
+                let devArchetype = null;
+                if (devById && devById.urlPattern && UrlMatcher.matches(Context.currentPath, devById.urlPattern)) {
+                    devArchetype = devById;
+                    ArchetypeManager.currentDevArchetype = devById;
+                    Logger.log(`✓ Dev archetype aligned with main archetype id: ${devArchetype.id}`);
+                }
+                if (!devArchetype) {
+                    devArchetype = await ArchetypeManager.detectDevArchetype();
+                }
                 if (devArchetype) {
                     const devPluginsToLoad = ArchetypeManager.getPluginsForCurrentDevArchetype();
-                    await PluginLoader.loadPluginsForDevArchetype(devPluginsToLoad, devArchetype.id);
+                    if (devPluginsToLoad.length > 0) {
+                        await PluginLoader.loadPluginsForDevArchetype(devPluginsToLoad, devArchetype.id);
+                    }
                 }
             }
             
