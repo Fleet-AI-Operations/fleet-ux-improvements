@@ -1,5 +1,6 @@
 // ============= guideline-buttons.js =============
 // Modular guideline link buttons below the user prompt. Wraps when panel is narrow.
+// Toggle hides/shows bottom-right Pylon chat + bug-report FAB via CSS only (visibility + pointer-events).
 
 const QA_GUIDELINES_LINK = 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56';
 
@@ -8,11 +9,14 @@ const BUTTONS = [
     { id: 'meridian-guidelines', title: 'Meridian Guidelines', link: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477' }
 ];
 
+const CORNER_WIDGETS_BODY_CLASS = 'fleet-hide-corner-widgets';
+const CORNER_WIDGETS_STORAGE_KEY = 'corner-widgets-hidden';
+
 const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add links to the guidelines on the page',
-    _version: '1.6',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -26,10 +30,14 @@ const plugin = {
 
     initialState: {
         wrapperAdded: false,
-        missingLogged: false
+        missingLogged: false,
+        styleInjected: false
     },
 
     onMutation(state, context) {
+        this.ensureCornerWidgetsStyle(state);
+        this.applyCornerWidgetsClassFromStorage();
+
         // Reuse existing wrapper if present (only one insertion per page)
         let wrapper = document.querySelector(`div[data-fleet-plugin="${this.id}"]`);
         if (wrapper) {
@@ -53,6 +61,65 @@ const plugin = {
         Logger.log('✓ Guideline Buttons: wrapper added below user prompt (qa-comp-use)');
 
         this.syncButtons(wrapper);
+    },
+
+    ensureCornerWidgetsStyle(state) {
+        if (state.styleInjected) return;
+        if (document.getElementById('fleet-corner-widgets-toggle-style')) {
+            state.styleInjected = true;
+            return;
+        }
+        const style = document.createElement('style');
+        style.id = 'fleet-corner-widgets-toggle-style';
+        style.setAttribute('data-fleet-plugin', this.id);
+        // CSS only: no DOM removal. visibility + pointer-events so layout/iframes do not "freak out"
+        style.textContent = `
+body.${CORNER_WIDGETS_BODY_CLASS} #pylon-chat,
+body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+/* Bug report FAB (qa page): fixed bottom-20 right-4 */
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.bottom-20.right-4,
+body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+`;
+        document.head.appendChild(style);
+        state.styleInjected = true;
+        Logger.log('Guideline Buttons: corner widgets hide style injected');
+    },
+
+    applyCornerWidgetsClassFromStorage() {
+        const hidden = Storage.get(this.storageKeyCornerWidgets(), false);
+        this.setCornerWidgetsHidden(!!hidden, false);
+    },
+
+    storageKeyCornerWidgets() {
+        return `plugin-${this.id}-${CORNER_WIDGETS_STORAGE_KEY}`;
+    },
+
+    /** @param {boolean} hidden @param {boolean} persist */
+    setCornerWidgetsHidden(hidden, persist) {
+        document.body.classList.toggle(CORNER_WIDGETS_BODY_CLASS, hidden);
+        if (persist) {
+            Storage.set(this.storageKeyCornerWidgets(), hidden);
+            Logger.log(`Guideline Buttons: corner widgets ${hidden ? 'hidden' : 'shown'} (CSS only)`);
+        }
+        const btn = document.querySelector(`button[data-fleet-corner-widgets-toggle="${this.id}"]`);
+        if (btn) {
+            btn.textContent = hidden
+                ? 'Show Bug Report/Chat Widgets'
+                : 'Hide Bug Report/Chat Widgets';
+            btn.title = hidden
+                ? 'Show Pylon chat and bug report button (bottom right)'
+                : 'Hide Pylon chat and bug report button (bottom right)';
+        }
+    },
+
+    isCornerWidgetsHidden() {
+        return document.body.classList.contains(CORNER_WIDGETS_BODY_CLASS);
     },
 
     findPromptSection() {
@@ -113,5 +180,26 @@ const plugin = {
                 existing.remove();
             }
         }
+
+        this.ensureCornerWidgetsToggleButton(wrapper, buttonClass);
+    },
+
+    ensureCornerWidgetsToggleButton(wrapper, buttonClass) {
+        let toggleBtn = wrapper.querySelector(`button[data-fleet-corner-widgets-toggle="${this.id}"]`);
+        if (!toggleBtn) {
+            toggleBtn = document.createElement('button');
+            toggleBtn.setAttribute('data-fleet-plugin', this.id);
+            toggleBtn.setAttribute('data-fleet-corner-widgets-toggle', this.id);
+            toggleBtn.type = 'button';
+            toggleBtn.className = buttonClass;
+            toggleBtn.addEventListener('click', () => {
+                const nextHidden = !this.isCornerWidgetsHidden();
+                this.setCornerWidgetsHidden(nextHidden, true);
+            });
+            wrapper.appendChild(toggleBtn);
+            Logger.log('Guideline Buttons: corner widgets toggle button added');
+        }
+        // Sync label from current body class
+        this.setCornerWidgetsHidden(this.isCornerWidgetsHidden(), false);
     }
 };
