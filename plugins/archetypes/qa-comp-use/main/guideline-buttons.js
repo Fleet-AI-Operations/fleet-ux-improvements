@@ -11,12 +11,20 @@ const BUTTONS = [
 
 const CORNER_WIDGETS_BODY_CLASS = 'fleet-hide-corner-widgets';
 const CORNER_WIDGETS_STORAGE_KEY = 'corner-widgets-hidden';
+const CORNER_WIDGETS_SUBOPTION_ID = 'corner-widgets-toggle';
+
+const CORNER_WIDGETS_SUBOPTION = {
+    id: CORNER_WIDGETS_SUBOPTION_ID,
+    name: 'Show/Hide Widgets button',
+    description: 'When enabled, adds a button next to the guideline links that toggles visibility (CSS only) of the Pylon support chat bubble and the Report a bug floating action button in the bottom-right. Hidden by default to reduce clutter.',
+    enabledByDefault: true
+};
 
 const plugin = {
     id: 'guidelineButtons',
     name: 'Guideline Buttons',
     description: 'Add links to the guidelines on the page',
-    _version: '2.0',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -26,7 +34,7 @@ const plugin = {
         name: b.title,
         description: null,
         enabledByDefault: true
-    })),
+    })).concat([CORNER_WIDGETS_SUBOPTION]),
 
     initialState: {
         wrapperAdded: false,
@@ -73,15 +81,19 @@ const plugin = {
         style.id = 'fleet-corner-widgets-toggle-style';
         style.setAttribute('data-fleet-plugin', this.id);
         // CSS only: no DOM removal. visibility + pointer-events so layout/iframes do not "freak out"
+        // Pylon: #pylon-chat / .PylonChat (see .cursor/context/other/pylon-chat.html)
+        // Report a bug FAB: fixed bottom-20 right-4 size-10 rounded-full (see qa.html)
         style.textContent = `
 body.${CORNER_WIDGETS_BODY_CLASS} #pylon-chat,
-body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat {
+body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat,
+body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat-app {
     visibility: hidden !important;
     pointer-events: none !important;
 }
-/* Bug report FAB (qa page): fixed bottom-20 right-4 */
 body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.bottom-20.right-4,
-body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
+body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed,
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.right-4.bottom-20.size-10,
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.bottom-20.right-4.rounded-full {
     visibility: hidden !important;
     pointer-events: none !important;
 }
@@ -92,7 +104,12 @@ body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
     },
 
     applyCornerWidgetsClassFromStorage() {
-        const hidden = Storage.get(this.storageKeyCornerWidgets(), false);
+        if (!Storage.getSubOptionEnabled(this.id, CORNER_WIDGETS_SUBOPTION_ID, true)) {
+            this.setCornerWidgetsHidden(false, false);
+            return;
+        }
+        // Default true = hidden when no prior storage
+        const hidden = Storage.get(this.storageKeyCornerWidgets(), true);
         this.setCornerWidgetsHidden(!!hidden, false);
     },
 
@@ -109,12 +126,10 @@ body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
         }
         const btn = document.querySelector(`button[data-fleet-corner-widgets-toggle="${this.id}"]`);
         if (btn) {
-            btn.textContent = hidden
-                ? 'Show Bug Report/Chat Widgets'
-                : 'Hide Bug Report/Chat Widgets';
+            btn.textContent = hidden ? 'Show Widgets' : 'Hide Widgets';
             btn.title = hidden
-                ? 'Show Pylon chat and bug report button (bottom right)'
-                : 'Hide Pylon chat and bug report button (bottom right)';
+                ? 'Show Pylon support chat and Report a bug button (bottom-right)'
+                : 'Hide Pylon support chat and Report a bug button (bottom-right)';
         }
     },
 
@@ -185,7 +200,16 @@ body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
     },
 
     ensureCornerWidgetsToggleButton(wrapper, buttonClass) {
-        let toggleBtn = wrapper.querySelector(`button[data-fleet-corner-widgets-toggle="${this.id}"]`);
+        const toggleBtnExisting = wrapper.querySelector(`button[data-fleet-corner-widgets-toggle="${this.id}"]`);
+        if (!Storage.getSubOptionEnabled(this.id, CORNER_WIDGETS_SUBOPTION_ID, true)) {
+            if (toggleBtnExisting) {
+                toggleBtnExisting.remove();
+                Logger.log('Guideline Buttons: corner widgets toggle removed (subOption disabled)');
+            }
+            this.setCornerWidgetsHidden(false, false);
+            return;
+        }
+        let toggleBtn = toggleBtnExisting;
         if (!toggleBtn) {
             toggleBtn = document.createElement('button');
             toggleBtn.setAttribute('data-fleet-plugin', this.id);
@@ -199,7 +223,6 @@ body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed {
             wrapper.appendChild(toggleBtn);
             Logger.log('Guideline Buttons: corner widgets toggle button added');
         }
-        // Sync label from current body class
         this.setCornerWidgetsHidden(this.isCornerWidgetsHidden(), false);
     }
 };
