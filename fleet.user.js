@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat-add-task-view] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      5.3.2
+// @version      5.3.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '5.3.2';
+    const VERSION = '5.3.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -2207,19 +2207,32 @@
             }
 
             const newPath = UrlMatcher.getPathFromUrl(newUrl);
-            const matchesArchetype = ArchetypeManager.archetypes.some(archetype => {
-                if (!archetype.urlPattern) {
-                    return false;
-                }
-                return UrlMatcher.matches(newPath, archetype.urlPattern);
-            });
+            const archetypeHasPlugins = (a) => Array.isArray(a.plugins) && a.plugins.length > 0;
+            const urlMatchesArchetype = (archetype) =>
+                archetype.urlPattern && UrlMatcher.matches(newPath, archetype.urlPattern);
 
-            if (matchesArchetype) {
-                Logger.log('Navigation target matches archetype; refreshing page...');
+            const matchesArchetype = ArchetypeManager.archetypes.some(urlMatchesArchetype) ||
+                (DEV_SCRIPTS_ENABLED && ArchetypeManager.devArchetypes.some(urlMatchesArchetype));
+
+            // Reload only when the target has at least one page-specific module to load.
+            // Archetypes with empty plugins still match the URL but should use SPA reinit instead.
+            const mainHasPluginsForPath = ArchetypeManager.archetypes.some(
+                (a) => urlMatchesArchetype(a) && archetypeHasPlugins(a)
+            );
+            const devHasPluginsForPath = DEV_SCRIPTS_ENABLED && ArchetypeManager.devArchetypes.some(
+                (a) => urlMatchesArchetype(a) && archetypeHasPlugins(a)
+            );
+            const shouldReloadForPlugins = mainHasPluginsForPath || devHasPluginsForPath;
+
+            if (shouldReloadForPlugins) {
+                Logger.log('Navigation target has page-specific plugins; refreshing page...');
                 Storage.delete('workflow-cache-latest');
                 Storage.delete('workflow-cache-latest-url');
                 location.reload();
                 return;
+            }
+            if (matchesArchetype) {
+                Logger.log('Navigation target matches archetype but has no page-specific plugins; reinitializing without reload...');
             }
         } catch (error) {
             Logger.error('Failed to check archetype match on navigation:', error);
