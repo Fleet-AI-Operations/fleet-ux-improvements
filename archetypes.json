@@ -1,6 +1,6 @@
 {
   "version": "5.3.2",
-  "archetypesVersion": "6.54",
+  "archetypesVersion": "6.55",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -459,7 +459,7 @@
         },
         {
           "name": "dispute-resolution-widgets-toggle.js",
-          "version": "1.0"
+          "version": "2.0"
         },
         {
           "name": "clear-search.js",

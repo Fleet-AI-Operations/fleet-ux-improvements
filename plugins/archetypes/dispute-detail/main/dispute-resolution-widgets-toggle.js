@@ -1,28 +1,45 @@
 // ============= dispute-resolution-widgets-toggle.js =============
-// Inserts a show/hide bar before the dispute resolution action buttons so the
-// resolution form (textarea, screenshots) can be collapsed for more vertical space.
+// Same behavior as guideline-buttons.js corner-widget hiding: CSS-only
+// (visibility + pointer-events) for Pylon chat + Report-a-bug FAB.
+// Default hidden. Toggle button is placed in the dispute resolution panel
+// before the action buttons row.
 
-const STORAGE_KEY = 'fleet-dispute-resolution-widgets-collapsed';
-const TOGGLE_BAR_ATTR = 'data-fleet-dispute-widgets-toggle-bar';
-const WRAPPER_ATTR = 'data-fleet-dispute-widgets-wrapper';
+const CORNER_WIDGETS_BODY_CLASS = 'fleet-hide-corner-widgets';
+const CORNER_WIDGETS_STORAGE_KEY = 'corner-widgets-hidden';
+const CORNER_WIDGETS_SUBOPTION_ID = 'corner-widgets-toggle';
+
+const CORNER_WIDGETS_SUBOPTION = {
+    id: CORNER_WIDGETS_SUBOPTION_ID,
+    name: 'Show/Hide Widgets button',
+    description:
+        'When enabled, adds a button in the resolution section that toggles visibility (CSS only) of the Pylon support chat bubble and the Report a bug floating action button in the bottom-right. Hidden by default to reduce clutter.',
+    enabledByDefault: true
+};
 
 const plugin = {
     id: 'disputeResolutionWidgetsToggle',
     name: 'Dispute Resolution Widgets Toggle',
-    description: 'Show/hide toggle for the resolution form block above the dispute action buttons',
-    _version: '1.0',
+    description:
+        'Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; hidden by default',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
+    subOptions: [CORNER_WIDGETS_SUBOPTION],
+
     initialState: {
-        appliedLogged: false,
-        missingLogged: false
+        styleInjected: false,
+        missingLogged: false,
+        toggleLogged: false
     },
 
     onMutation(state) {
+        this.ensureCornerWidgetsStyle(state);
+        this.applyCornerWidgetsClassFromStorage();
+
         const panel = this.findResolutionPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.debug('Dispute widgets toggle: resolution panel not found');
+                Logger.debug('Dispute Resolution Widgets Toggle: resolution panel not found');
                 state.missingLogged = true;
             }
             return;
@@ -32,18 +49,13 @@ const plugin = {
         const buttonRow = this.findActionButtonRow(panel);
         if (!buttonRow) {
             if (!state.missingLogged) {
-                Logger.debug('Dispute widgets toggle: action button row not found');
+                Logger.debug('Dispute Resolution Widgets Toggle: action button row not found');
                 state.missingLogged = true;
             }
             return;
         }
 
-        if (buttonRow.previousElementSibling && buttonRow.previousElementSibling.hasAttribute(TOGGLE_BAR_ATTR)) {
-            return;
-        }
-
-        this.ensureStyles();
-        this.wrapWidgetsAndInsertToggle(panel, buttonRow, state);
+        this.ensureToggleWrapper(panel, buttonRow, state);
     },
 
     findResolutionPanel() {
@@ -58,116 +70,138 @@ const plugin = {
         const rows = panel.querySelectorAll(':scope > .flex.items-center.justify-end.gap-2.mt-4');
         for (const row of rows) {
             const text = (row.textContent || '').trim();
-            if (text.includes('Approve') || text.includes('Reject Dispute') || text.includes('Flag as Bug')) {
+            if (
+                text.includes('Approve') ||
+                text.includes('Reject Dispute') ||
+                text.includes('Flag as Bug')
+            ) {
                 return row;
             }
         }
         return null;
     },
 
-    isCollapsed() {
-        try {
-            return localStorage.getItem(STORAGE_KEY) === '1';
-        } catch {
-            return false;
+    ensureCornerWidgetsStyle(state) {
+        if (state.styleInjected) return;
+        // Share style id with guideline-buttons so only one block is injected
+        if (document.getElementById('fleet-corner-widgets-toggle-style')) {
+            state.styleInjected = true;
+            return;
         }
-    },
-
-    setCollapsed(collapsed) {
-        try {
-            if (collapsed) localStorage.setItem(STORAGE_KEY, '1');
-            else localStorage.removeItem(STORAGE_KEY);
-        } catch (e) {
-            Logger.warn('Dispute widgets toggle: could not persist state', e);
-        }
-    },
-
-    ensureStyles() {
-        const id = 'fleet-dispute-widgets-toggle-style';
-        if (document.getElementById(id)) return;
         const style = document.createElement('style');
-        style.id = id;
+        style.id = 'fleet-corner-widgets-toggle-style';
         style.setAttribute('data-fleet-plugin', this.id);
         style.textContent = `
-            [${WRAPPER_ATTR}][aria-hidden="true"] {
-                display: none !important;
-            }
-            [${TOGGLE_BAR_ATTR}] {
-                display: flex;
-                align-items: center;
-                justify-content: flex-end;
-                margin-top: 0.75rem;
-                margin-bottom: 0.25rem;
-            }
-            [${TOGGLE_BAR_ATTR}] button {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.35rem;
-                font-size: 0.875rem;
-                font-weight: 500;
-                padding: 0.35rem 0.65rem;
-                border-radius: 0.25rem;
-                border: 1px solid hsl(var(--border, 214 32% 91%));
-                background: hsl(var(--background, 0 0% 100%));
-                color: hsl(var(--foreground, 222 47% 11%));
-                cursor: pointer;
-            }
-            [${TOGGLE_BAR_ATTR}] button:hover {
-                background: hsl(var(--accent, 210 40% 96%));
-            }
-            [${TOGGLE_BAR_ATTR}] button:focus-visible {
-                outline: 2px solid hsl(var(--ring, 222 84% 61%));
-                outline-offset: 2px;
-            }
-        `;
-        (document.head || document.documentElement).appendChild(style);
+body.${CORNER_WIDGETS_BODY_CLASS} #pylon-chat,
+body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat,
+body.${CORNER_WIDGETS_BODY_CLASS} .PylonChat-app {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.bottom-20.right-4,
+body.${CORNER_WIDGETS_BODY_CLASS} button.right-4.bottom-20.fixed,
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.right-4.bottom-20.size-10,
+body.${CORNER_WIDGETS_BODY_CLASS} button.fixed.bottom-20.right-4.rounded-full {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+`;
+        document.head.appendChild(style);
+        state.styleInjected = true;
+        Logger.log('Dispute Resolution Widgets Toggle: corner widgets hide style injected');
     },
 
-    wrapWidgetsAndInsertToggle(panel, buttonRow, state) {
-        const wrapper = document.createElement('div');
-        wrapper.setAttribute(WRAPPER_ATTR, '1');
-        wrapper.setAttribute('data-fleet-plugin', this.id);
-
-        const collapsed = this.isCollapsed();
-        wrapper.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
-
-        while (buttonRow.previousSibling) {
-            wrapper.insertBefore(buttonRow.previousSibling, wrapper.firstChild);
+    applyCornerWidgetsClassFromStorage() {
+        if (!Storage.getSubOptionEnabled(this.id, CORNER_WIDGETS_SUBOPTION_ID, true)) {
+            this.setCornerWidgetsHidden(false, false);
+            return;
         }
-        panel.insertBefore(wrapper, buttonRow);
+        // Default true = hidden when no prior storage (same as guideline-buttons)
+        const hidden = Storage.get(this.storageKeyCornerWidgets(), true);
+        this.setCornerWidgetsHidden(!!hidden, false);
+    },
 
-        const bar = document.createElement('div');
-        bar.setAttribute(TOGGLE_BAR_ATTR, '1');
-        bar.setAttribute('data-fleet-plugin', this.id);
+    storageKeyCornerWidgets() {
+        return `plugin-${this.id}-${CORNER_WIDGETS_STORAGE_KEY}`;
+    },
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-        btn.setAttribute('aria-controls', 'fleet-dispute-widgets-panel');
-        wrapper.id = 'fleet-dispute-widgets-panel';
-
-        const updateLabel = () => {
-            const hidden = wrapper.getAttribute('aria-hidden') === 'true';
-            btn.textContent = hidden ? 'Show widgets' : 'Hide widgets';
-            btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
-        };
-        updateLabel();
-
-        btn.addEventListener('click', () => {
-            const hidden = wrapper.getAttribute('aria-hidden') === 'true';
-            const next = !hidden;
-            wrapper.setAttribute('aria-hidden', next ? 'true' : 'false');
-            this.setCollapsed(next);
-            updateLabel();
-            Logger.log(`Dispute widgets toggle: widgets ${next ? 'hidden' : 'shown'}`);
-        });
-
-        bar.appendChild(btn);
-        panel.insertBefore(bar, buttonRow);
-
-        if (!state.appliedLogged) {
-            Logger.log('Dispute widgets toggle: toggle bar inserted before action buttons');
-            state.appliedLogged = true;
+    /** @param {boolean} hidden @param {boolean} persist */
+    setCornerWidgetsHidden(hidden, persist) {
+        document.body.classList.toggle(CORNER_WIDGETS_BODY_CLASS, hidden);
+        if (persist) {
+            Storage.set(this.storageKeyCornerWidgets(), hidden);
+            Logger.log(
+                `Dispute Resolution Widgets Toggle: corner widgets ${hidden ? 'hidden' : 'shown'} (CSS only)`
+            );
         }
+        const btn = document.querySelector(
+            `button[data-fleet-corner-widgets-toggle="${this.id}"]`
+        );
+        if (btn) {
+            btn.textContent = hidden ? 'Show Widgets' : 'Hide Widgets';
+            btn.title = hidden
+                ? 'Show Pylon support chat and Report a bug button (bottom-right)'
+                : 'Hide Pylon support chat and Report a bug button (bottom-right)';
+        }
+    },
+
+    isCornerWidgetsHidden() {
+        return document.body.classList.contains(CORNER_WIDGETS_BODY_CLASS);
+    },
+
+    ensureToggleWrapper(panel, buttonRow, state) {
+        const buttonClass =
+            'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+
+        const toggleBtnExisting = panel.querySelector(
+            `button[data-fleet-corner-widgets-toggle="${this.id}"]`
+        );
+
+        if (!Storage.getSubOptionEnabled(this.id, CORNER_WIDGETS_SUBOPTION_ID, true)) {
+            const wrapper = panel.querySelector(`div[data-fleet-plugin="${this.id}"]`);
+            if (wrapper) {
+                wrapper.remove();
+                Logger.log(
+                    'Dispute Resolution Widgets Toggle: toggle wrapper removed (subOption disabled)'
+                );
+            }
+            if (toggleBtnExisting && toggleBtnExisting.closest(`div[data-fleet-plugin="${this.id}"]`) === null) {
+                toggleBtnExisting.remove();
+            }
+            this.setCornerWidgetsHidden(false, false);
+            return;
+        }
+
+        let wrapper = panel.querySelector(`div[data-fleet-plugin="${this.id}"]`);
+        if (!wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.setAttribute('data-fleet-plugin', this.id);
+            wrapper.className = 'flex flex-wrap gap-1 items-center justify-end mt-3 mb-1';
+            panel.insertBefore(wrapper, buttonRow);
+            if (!state.toggleLogged) {
+                Logger.log(
+                    'Dispute Resolution Widgets Toggle: toggle wrapper added before action buttons'
+                );
+                state.toggleLogged = true;
+            }
+        }
+
+        let toggleBtn = wrapper.querySelector(
+            `button[data-fleet-corner-widgets-toggle="${this.id}"]`
+        );
+        if (!toggleBtn) {
+            toggleBtn = document.createElement('button');
+            toggleBtn.setAttribute('data-fleet-plugin', this.id);
+            toggleBtn.setAttribute('data-fleet-corner-widgets-toggle', this.id);
+            toggleBtn.type = 'button';
+            toggleBtn.className = buttonClass;
+            toggleBtn.addEventListener('click', () => {
+                const nextHidden = !this.isCornerWidgetsHidden();
+                this.setCornerWidgetsHidden(nextHidden, true);
+            });
+            wrapper.appendChild(toggleBtn);
+            Logger.log('Dispute Resolution Widgets Toggle: corner widgets toggle button added');
+        }
+        this.setCornerWidgetsHidden(this.isCornerWidgetsHidden(), false);
     }
 };
