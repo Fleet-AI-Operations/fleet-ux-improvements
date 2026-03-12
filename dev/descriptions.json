@@ -315,6 +315,13 @@
       "description": "Sorts environment cards A–Z by name on the task creation environment picker page."
     }
   ],
+  "archetypes/task-view/main": [
+    {
+      "file": "prompt-diff-highlight.js",
+      "name": "Prompt Diff Highlighting",
+      "description": "Highlights word-level and character-level changes in the Prompt Changes modal"
+    }
+  ],
   "archetypes/tool-use-revision/main": [
     {
       "file": "bug-report-expand.js",
