@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [feat-add-task-view] Fleet Workflow Builder UX Enhancer
+// @name         [feat-fix-partial-arch-match] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      5.3.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -14,8 +14,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-add-task-view/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-add-task-view/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-fix-partial-arch-match/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-fix-partial-arch-match/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -42,7 +42,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'feat-add-task-view',
+        branch: 'feat-fix-partial-arch-match',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
