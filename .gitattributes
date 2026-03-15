@@ -1,0 +1,8 @@
+# Enforce LF line endings for files involved in hash-based integrity verification.
+# Hashes are computed on raw bytes (shasum in CI, TextEncoder in browser);
+# CRLF vs LF differences would cause spurious mismatches.
+*.js text eol=lf
+*.sh text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

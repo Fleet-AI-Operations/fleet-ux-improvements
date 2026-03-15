@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      5.3.2
+// @version      6.0.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -28,7 +28,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '5.3.2';
+    const VERSION = '6.0.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1276,142 +1276,189 @@
         },
         
         /**
-         * Load plugin code from cache or URL, with version verification
+         * Compute SHA-256 hash of plugin code, matching the format used by compute-hashes.sh.
+         * Assumes UTF-8 encoding and LF-only line endings (no CRLF normalization).
+         * @param {string} code - Plugin source code
+         * @returns {Promise<string>} - Hash in "sha256-<hex>" format
+         */
+        async computeHash(code) {
+            try {
+                const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
+                const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+                return 'sha256-' + hex;
+            } catch (err) {
+                throw new Error(`SHA-256 hashing failed for integrity check: ${err.message || err}`);
+            }
+        },
+
+        /**
+         * Verify plugin code against an expected integrity hash.
+         * @param {string} code - Plugin source code
+         * @param {string} expectedHash - Expected hash from archetypes.json (e.g. "sha256-abc...")
+         * @param {string} filename - Plugin filename (for logging)
+         * @returns {Promise<{valid: boolean, computed: string}>}
+         */
+        async verifyPluginHash(code, expectedHash, filename) {
+            const computed = await this.computeHash(code);
+            const valid = computed === expectedHash;
+            if (!valid) {
+                Logger.warn(`Hash mismatch for ${filename}: expected ${expectedHash.slice(0, 24)}..., computed ${computed.slice(0, 24)}...`);
+            }
+            return { valid, computed };
+        },
+
+        /**
+         * Register archetype plugin in the cache registry (helper to reduce duplication).
+         * @param {string} sourcePath - Plugin source path
+         * @param {string} filename - Plugin filename
+         */
+        _registerCacheForArchetype(sourcePath, filename) {
+            if (sourcePath && sourcePath.startsWith('archetypes/')) {
+                const pathParts = sourcePath.split('/');
+                if (pathParts.length >= 3) {
+                    const archetypeId = pathParts[1];
+                    Storage.registerCachedPlugin(archetypeId, filename);
+                }
+            }
+        },
+
+        /**
+         * Load plugin code from cache or URL, with hash-based integrity verification.
+         * On main-like branches: plugins without a valid hash are blocked.
+         * On dev branches: hash mismatches produce warnings but loading proceeds.
          * @param {string} filename - Plugin filename
          * @param {string} sourcePath - Full path for caching
          * @param {string} version - Required version
          * @param {string} url - URL to fetch from if not cached
+         * @param {string} [expectedHash] - Expected SHA-256 hash from archetypes.json
          * @returns {Promise<string>} - Plugin code
          */
-        async loadPluginCode(filename, sourcePath, version, url) {
+        async loadPluginCode(filename, sourcePath, version, url, expectedHash) {
             const pluginKey = Storage.getPluginKey(filename, sourcePath);
             const cached = Storage.getCachedPlugin(pluginKey);
-            
-            // Check if we have a cached version that matches
-            if (cached && cached.version === version) {
-                Logger.debug(`Using cached plugin ${filename} v${version}`);
-                // Register in cache registry for archetype plugins (not core/dev)
-                if (sourcePath && sourcePath.startsWith('archetypes/')) {
-                    const pathParts = sourcePath.split('/');
-                    // Format: archetypes/archetypeId/main/filename or archetypes/archetypeId/dev/filename
-                    if (pathParts.length >= 3) {
-                        const archetypeId = pathParts[1];
-                        Storage.registerCachedPlugin(archetypeId, filename);
-                    }
-                }
-                return cached.code;
+            const isMainLike = MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
+
+            // On main-like branches, an integrity hash is required
+            if ((expectedHash === undefined || expectedHash === '') && isMainLike) {
+                const reason = expectedHash === '' ? 'empty integrity hash' : 'missing integrity hash';
+                Logger.error(`Plugin ${filename} blocked: ${reason} in archetypes.json`);
+                throw new Error(`Plugin ${filename} blocked: ${reason}`);
             }
-            
-            // Version mismatch or not cached - try to fetch
+
+            // --- CACHE PATH ---
+            if (cached && cached.version === version) {
+                if (expectedHash) {
+                    try {
+                        const hashResult = await this.verifyPluginHash(cached.code, expectedHash, filename);
+                        if (hashResult.valid) {
+                            Logger.debug(`Using cached plugin ${filename} v${version} (hash verified)`);
+                            this._registerCacheForArchetype(sourcePath, filename);
+                            return cached.code;
+                        }
+                        Logger.warn(`Cached ${filename} v${version} failed hash check. Re-fetching.`);
+                    } catch (hashError) {
+                        Logger.error(`Hash verification failed for ${filename}:`, hashError);
+                        throw new Error(`Plugin ${filename} blocked: hash verification error — ${hashError.message || hashError}`);
+                    }
+                } else {
+                    Logger.debug(`Using cached plugin ${filename} v${version} (no hash — dev branch)`);
+                    this._registerCacheForArchetype(sourcePath, filename);
+                    return cached.code;
+                }
+            }
+
+            // --- FETCH PATH ---
             Logger.log(`Fetching plugin ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
-            
+
             try {
                 const result = await this.loadPluginFromUrl(url, filename, sourcePath, version);
                 const fetchedCode = result.code;
                 const trimmed = fetchedCode.trim();
 
-                // If response looks like HTML (error page), don't attempt to parse as JS
                 if (trimmed.startsWith('<')) {
                     Logger.warn(`Fetched content for ${filename} does not look like JavaScript (may be HTML error page). First 150 chars: ${trimmed.slice(0, 150).replace(/\s+/g, ' ')}`);
-                    if (cached) {
-                        Logger.warn(`Using cached v${cached.version} due to non-JS response`);
-                        Context.outdatedPlugins.push({
-                            filename: filename,
-                            sourcePath: sourcePath,
-                            cachedVersion: cached.version,
-                            requiredVersion: version,
-                            nonJsResponse: true
-                        });
+                    if (cached && !isMainLike) {
+                        Logger.warn(`Using cached v${cached.version} due to non-JS response (dev branch)`);
+                        Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version, nonJsResponse: true });
                         return cached.code;
                     }
                     throw new Error(`Server returned non-JS content for ${filename} (possible CDN/network issue). Try again later.`);
                 }
 
-                // Verify the fetched version by parsing the plugin
-                // This protects against GitHub CDN cache delays
+                // --- HASH VERIFICATION (when hash is available) ---
+                if (expectedHash) {
+                    const hashResult = await this.verifyPluginHash(fetchedCode, expectedHash, filename);
+                    if (hashResult.valid) {
+                        this.cachePluginCode(filename, sourcePath, fetchedCode, version);
+                        Logger.debug(`Hash verified and cached ${filename} v${version}`);
+                        return fetchedCode;
+                    }
+
+                    if (isMainLike) {
+                        Logger.error(`✗ Plugin ${filename} integrity check failed! Refusing to load.`);
+                        throw new Error(`Plugin ${filename} blocked: integrity hash mismatch`);
+                    }
+
+                    Logger.warn(`⚠ Plugin ${filename} hash mismatch (dev branch). Loading anyway (not caching).`);
+                    return fetchedCode;
+                }
+
+                // --- NO HASH (dev branch only — main blocked above) ---
+                // Fall back to version-based verification for backward compatibility
                 try {
                     const parsedPlugin = this.parsePluginCode(fetchedCode, filename);
                     const fetchedVersion = parsedPlugin._version || parsedPlugin.version || null;
-                    
+
                     if (fetchedVersion && fetchedVersion !== version) {
-                        // Compare versions to determine if fetched is newer or older
                         const versionComparison = this._compareVersions(fetchedVersion, version);
-                        
+
                         if (versionComparison > 0) {
-                            // Fetched version is NEWER than required - this is good, not outdated
                             Logger.log(`✓ Fetched ${filename} has newer version v${fetchedVersion} (required v${version}). Using newer version.`);
-                            // Cache with the newer fetched version
                             this.cachePluginCode(filename, sourcePath, fetchedCode, fetchedVersion);
-                            Logger.debug(`Verified and cached ${filename} v${fetchedVersion} (newer than required v${version})`);
                             return fetchedCode;
                         } else {
-                            // Fetched version is OLDER than required - GitHub CDN might be stale
                             Logger.warn(`⚠ Fetched ${filename} has version v${fetchedVersion}, expected v${version}. GitHub CDN may be stale.`);
-                            
-                            // Don't cache the wrong version - use old cache if available
                             if (cached) {
                                 Logger.warn(`Using cached v${cached.version} instead of stale fetched version`);
-                                Context.outdatedPlugins.push({
-                                    filename: filename,
-                                    sourcePath: sourcePath,
-                                    cachedVersion: cached.version,
-                                    requiredVersion: version,
-                                    fetchedVersion: fetchedVersion
-                                });
+                                Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version, fetchedVersion });
                                 return cached.code;
                             } else {
-                                // No cache available, but version is wrong - use it anyway with warning
                                 Logger.warn(`No cache available, using fetched version v${fetchedVersion} (expected v${version})`);
-                                Context.outdatedPlugins.push({
-                                    filename: filename,
-                                    sourcePath: sourcePath,
-                                    cachedVersion: null,
-                                    requiredVersion: version,
-                                    fetchedVersion: fetchedVersion
-                                });
-                                // Don't cache the wrong version
+                                Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: null, requiredVersion: version, fetchedVersion });
                                 return fetchedCode;
                             }
                         }
                     }
-                    
-                    // Version matches (or plugin doesn't declare version) - cache it
+
                     this.cachePluginCode(filename, sourcePath, fetchedCode, version);
                     Logger.debug(`Verified and cached ${filename} v${version}`);
                     return fetchedCode;
-                    
+
                 } catch (parseError) {
-                    // Failed to parse - use old cache and surface the actual error for debugging
                     Logger.error(`Failed to parse fetched plugin ${filename} for version verification:`, parseError);
                     if (cached) {
                         Logger.warn(`Using cached v${cached.version} due to parse error`);
-                        Context.outdatedPlugins.push({
-                            filename: filename,
-                            sourcePath: sourcePath,
-                            cachedVersion: cached.version,
-                            requiredVersion: version,
-                            parseError: true,
-                            parseErrorMessage: parseError && parseError.message ? parseError.message : String(parseError)
-                        });
+                        Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version, parseError: true, parseErrorMessage: parseError && parseError.message ? parseError.message : String(parseError) });
                         return cached.code;
                     }
-                    // No cache, but can't parse - rethrow
                     throw parseError;
                 }
-                
+
             } catch (error) {
-                // Fetch failed - use cached version if available (with warning)
                 if (cached) {
+                    Logger.warn(`Fetch failed for ${filename}, falling back to cache:`, error);
+                    // On main, even fallback cache must pass integrity check
+                    if (expectedHash && isMainLike) {
+                        const hashResult = await this.verifyPluginHash(cached.code, expectedHash, filename);
+                        if (!hashResult.valid) {
+                            Logger.error(`✗ Fetch failed and cached ${filename} also fails integrity check. Refusing to load.`);
+                            throw new Error(`Plugin ${filename} blocked: fetch failed and cache integrity mismatch`);
+                        }
+                    }
                     Logger.warn(`⚠ Failed to fetch ${filename} v${version}, using cached v${cached.version}`);
-                    Context.outdatedPlugins.push({
-                        filename: filename,
-                        sourcePath: sourcePath,
-                        cachedVersion: cached.version,
-                        requiredVersion: version
-                    });
+                    Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version });
                     return cached.code;
                 }
-                // No cache available, rethrow error
                 throw error;
             }
         },
@@ -1457,17 +1504,17 @@
         },
         
         /**
-         * Load a core plugin with versioning support
+         * Load a core plugin with versioning and hash verification
          * @param {string} filename - Plugin filename
          * @param {string} version - Required version
+         * @param {string} [hash] - Expected integrity hash
          * @returns {Promise<Object>} - Plugin object
          */
-        async loadCorePlugin(filename, version) {
+        async loadCorePlugin(filename, version, hash) {
             const sourcePath = `core/main/${filename}`;
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
             
-            // Load plugin code with versioning
-            const code = await this.loadPluginCode(filename, sourcePath, version, url);
+            const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded core plugin ${filename} v${version}`);
@@ -1475,16 +1522,17 @@
         },
 
         /**
-         * Load a dev plugin with versioning support
+         * Load a dev plugin with versioning and hash verification
          * @param {string} filename - Plugin filename
          * @param {string} version - Required version
+         * @param {string} [hash] - Expected integrity hash
          * @returns {Promise<Object>} - Plugin object
          */
-        async loadDevPlugin(filename, version) {
+        async loadDevPlugin(filename, version, hash) {
             const sourcePath = `core/dev/${filename}`;
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
 
-            const code = await this.loadPluginCode(filename, sourcePath, version, url);
+            const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev plugin ${filename} v${version}`);
@@ -1492,14 +1540,14 @@
         },
         
         /**
-         * Load an archetype plugin with versioning support
+         * Load an archetype plugin with versioning and hash verification
          * @param {string} filename - The plugin filename (e.g., "source-data-explorer.js")
          * @param {string} version - Required version (e.g., "1.0")
          * @param {string} archetypeId - The archetype ID (e.g., "k-taskCreation")
+         * @param {string} [hash] - Expected integrity hash
          * @returns {Promise} - Resolves with the plugin object
          */
-        async loadArchetypePlugin(filename, version, archetypeId) {
-            // Archetype plugins must always live under: plugins/archetypes/<archetypeId>/main/<filename>
+        async loadArchetypePlugin(filename, version, archetypeId, hash) {
             if (filename.includes('/')) {
                 throw new Error(
                     `Invalid archetype plugin name "${filename}". Plugin names must be filenames only (no folder paths).`
@@ -1509,7 +1557,7 @@
             const sourcePath = `archetypes/${archetypeId}/main/${filename}`;
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
 
-            const code = await this.loadPluginCode(filename, sourcePath, version, url);
+            const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded ${filename} v${version} from ${sourcePath}`);
@@ -1517,15 +1565,15 @@
         },
         
         /**
-         * Load a dev archetype plugin with versioning support
+         * Load a dev archetype plugin with versioning and hash verification
          * Dev archetype plugins live under: plugins/archetypes/<archetypeId>/dev/<filename>
          * @param {string} filename - The plugin filename (e.g., "source-data-explorer.js")
          * @param {string} version - Required version (e.g., "1.0")
          * @param {string} archetypeId - The archetype ID (e.g., "qa-tool-use")
+         * @param {string} [hash] - Expected integrity hash
          * @returns {Promise} - Resolves with the plugin object
          */
-        async loadDevArchetypePlugin(filename, version, archetypeId) {
-            // Dev archetype plugins must always live under: plugins/archetypes/<archetypeId>/dev/<filename>
+        async loadDevArchetypePlugin(filename, version, archetypeId, hash) {
             if (filename.includes('/')) {
                 throw new Error(
                     `Invalid dev archetype plugin name "${filename}". Plugin names must be filenames only (no folder paths).`
@@ -1535,7 +1583,7 @@
             const sourcePath = `archetypes/${archetypeId}/dev/${filename}`;
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
 
-            const code = await this.loadPluginCode(filename, sourcePath, version, url);
+            const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev archetype plugin ${filename} v${version} from ${sourcePath}`);
@@ -1610,24 +1658,24 @@
                 : this.loadCorePlugin.bind(this);
 
             for (const pluginDef of pluginList) {
-                // Support both old format (string) and new format (object with name and version)
-                let filename, version;
+                let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
-                    // Backward compatibility: if just a string, default to version 1.0
                     filename = pluginDef;
                     version = '1.0';
                 } else if (pluginDef && pluginDef.name && pluginDef.version) {
                     filename = pluginDef.name;
                     version = pluginDef.version;
+                    hash = pluginDef.hash || undefined;
                 } else {
                     Logger.error(`Invalid ${normalizedType} plugin definition:`, pluginDef);
                     continue;
                 }
                 
-                Logger.debug(`🔍 archetypes.json requests ${normalizedType} plugin ${filename} v${version}`);
+                Logger.debug(`🔍 archetypes.json requests ${normalizedType} plugin ${filename} v${version}${hash ? ' (hash present)' : ''}`);
                 
                 try {
-                    const plugin = await loader(filename, version);
+                    const plugin = await loader(filename, version, hash);
                     const loadedVersion = plugin._version || plugin.version || version;
                     plugin._sourceFile = filename;
                     plugin._version = loadedVersion;
@@ -1658,21 +1706,21 @@
             const loadPromises = [];
             
             for (const pluginDef of pluginList) {
-                // Support both old format (string) and new format (object with name and version)
-                let filename, version;
+                let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
-                    // Backward compatibility: if just a string, default to version 1.0
                     filename = pluginDef;
                     version = '1.0';
                 } else if (pluginDef && pluginDef.name && pluginDef.version) {
                     filename = pluginDef.name;
                     version = pluginDef.version;
+                    hash = pluginDef.hash || undefined;
                 } else {
                     Logger.error('Invalid plugin definition:', pluginDef);
                     continue;
                 }
 
-                Logger.debug(`🔍 archetypes.json requests archetype plugin ${filename} v${version} for ${archetypeId}`);
+                Logger.debug(`🔍 archetypes.json requests archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
 
                 if (filename.includes('/')) {
                     Logger.error(
@@ -1681,7 +1729,6 @@
                     continue;
                 }
                 
-                // Check if already loaded
                 const existingPlugins = PluginManager.getAll();
                 const alreadyLoadedByFile = existingPlugins.some(p => p._sourceFile === filename);
                 
@@ -1694,7 +1741,7 @@
                 }
                 
                 loadPromises.push(
-                    this.loadArchetypePlugin(filename, version, archetypeId)
+                    this.loadArchetypePlugin(filename, version, archetypeId, hash)
                         .then(plugin => {
                             const loadedVersion = plugin._version || plugin.version || version;
                             plugin._sourceFile = filename;
@@ -1745,21 +1792,21 @@
             const loadPromises = [];
             
             for (const pluginDef of pluginList) {
-                // Support both old format (string) and new format (object with name and version)
-                let filename, version;
+                let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
-                    // Backward compatibility: if just a string, default to version 1.0
                     filename = pluginDef;
                     version = '1.0';
                 } else if (pluginDef && pluginDef.name && pluginDef.version) {
                     filename = pluginDef.name;
                     version = pluginDef.version;
+                    hash = pluginDef.hash || undefined;
                 } else {
                     Logger.error('Invalid dev archetype plugin definition:', pluginDef);
                     continue;
                 }
 
-                Logger.debug(`🔍 archetypes.json requests dev archetype plugin ${filename} v${version} for ${archetypeId}`);
+                Logger.debug(`🔍 archetypes.json requests dev archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
 
                 if (filename.includes('/')) {
                     Logger.error(
@@ -1768,7 +1815,6 @@
                     continue;
                 }
                 
-                // Check if already loaded
                 const existingPlugins = PluginManager.getAll();
                 const alreadyLoadedByFile = existingPlugins.some(p => p._sourceFile === filename && p._isDev);
                 
@@ -1781,7 +1827,7 @@
                 }
                 
                 loadPromises.push(
-                    this.loadDevArchetypePlugin(filename, version, archetypeId)
+                    this.loadDevArchetypePlugin(filename, version, archetypeId, hash)
                         .then(plugin => {
                             const loadedVersion = plugin._version || plugin.version || version;
                             plugin._sourceFile = filename;
@@ -1844,6 +1890,7 @@
             const expectedFilenames = new Set();
             pluginList.forEach(pluginDef => {
                 let filename;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
                     filename = pluginDef;
                 } else if (pluginDef && pluginDef.name) {
