@@ -6,25 +6,108 @@ on:
     types: [opened, synchronize]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify-hashes:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
 
-      - name: Compute plugin hashes
-        run: ./dev/utils/compute-hashes.sh
-
-      - name: Commit updated hashes
+      - name: Verify plugin hashes
+        shell: bash
         run: |
-          git diff --quiet archetypes.json && echo "No hash changes" && exit 0
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add archetypes.json
-          git commit -m "CI: update plugin hashes"
-          git push
+          set -e
+
+          archetypes_path="archetypes.json"
+          plugins_dir="plugins"
+
+          compute_hash() {
+            local filepath="$1"
+            if [[ ! -f "$filepath" ]]; then
+              echo ""
+              return
+            fi
+            local hex
+            hex="$(sha256sum "$filepath" | awk '{print $1}')"
+            echo "sha256-${hex}"
+          }
+
+          # Build a JSON object mapping logical keys to hashes.
+          # Keys use prefixes to disambiguate sections (core/, dev/, arch/, devarch/).
+          hashes_json="{"
+          first=true
+
+          # corePlugins → plugins/core/main/<name>
+          while IFS= read -r name; do
+            filepath="$plugins_dir/core/main/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Core plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "core/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '.corePlugins[].name' "$archetypes_path")
+
+          # devPlugins → plugins/core/dev/<name>
+          while IFS= read -r name; do
+            filepath="$plugins_dir/core/dev/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Dev plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "dev/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '.devPlugins[].name' "$archetypes_path")
+
+          # archetypes[].plugins → plugins/archetypes/<id>/main/<name>
+          while IFS=$'\t' read -r aid name; do
+            filepath="$plugins_dir/archetypes/$aid/main/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Archetype plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "arch/$aid/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '.archetypes[] | .id as $aid | .plugins[] | "\($aid)\t\(.name)"' "$archetypes_path")
+
+          # devArchetypes[].plugins → plugins/archetypes/<id>/dev/<name>
+          while IFS=$'\t' read -r aid name; do
+            filepath="$plugins_dir/archetypes/$aid/dev/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Dev archetype plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "devarch/$aid/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '(.devArchetypes // [])[] | .id as $aid | .plugins[] | "\($aid)\t\(.name)"' "$archetypes_path")
+
+          hashes_json+="}"
+
+          # Build expected archetypes.json with computed hashes
+          expected_json="$(mktemp)"
+          trap 'rm -f "$expected_json"' EXIT
+
+          jq -n --slurpfile arch "$archetypes_path" --argjson h "$hashes_json" '
+            ($arch[0]) as $a
+            | $a
+            | .corePlugins |= map(.name as $n | .hash = ($h["core/" + $n] // ""))
+            | .devPlugins |= map(.name as $n | .hash = ($h["dev/" + $n] // ""))
+            | (.archetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["arch/" + $aid + "/" + $n] // "")))
+            | (.devArchetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["devarch/" + $aid + "/" + $n] // "")))
+          ' > "$expected_json"
+
+          if diff -q "$archetypes_path" "$expected_json" > /dev/null 2>&1; then
+            echo "Plugin hashes are up to date."
+          else
+            echo "::error::Plugin hashes are out of date. Run ./dev/utils/compute-hashes.sh locally and commit the updated archetypes.json."
+            echo ""
+            echo "Differences:"
+            diff "$archetypes_path" "$expected_json" || true
+            exit 1
+          fi

@@ -3,6 +3,10 @@ name: Update plugin hashes
 on:
   push:
     branches-ignore: [main]
+    paths:
+      - 'plugins/**'
+      - 'archetypes.json'
+      - 'dev/utils/compute-hashes.sh'
 
 permissions:
   contents: write

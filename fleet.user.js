@@ -1277,13 +1277,18 @@
         
         /**
          * Compute SHA-256 hash of plugin code, matching the format used by compute-hashes.sh.
+         * Assumes UTF-8 encoding and LF-only line endings (no CRLF normalization).
          * @param {string} code - Plugin source code
          * @returns {Promise<string>} - Hash in "sha256-<hex>" format
          */
         async computeHash(code) {
-            const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
-            const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-            return 'sha256-' + hex;
+            try {
+                const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
+                const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+                return 'sha256-' + hex;
+            } catch (err) {
+                throw new Error(`SHA-256 hashing failed for integrity check: ${err.message || err}`);
+            }
         },
 
         /**
@@ -1297,7 +1302,7 @@
             const computed = await this.computeHash(code);
             const valid = computed === expectedHash;
             if (!valid) {
-                Logger.debug(`Hash mismatch for ${filename}: expected ${expectedHash.slice(0, 24)}..., computed ${computed.slice(0, 24)}...`);
+                Logger.warn(`Hash mismatch for ${filename}: expected ${expectedHash.slice(0, 24)}..., computed ${computed.slice(0, 24)}...`);
             }
             return { valid, computed };
         },
@@ -1333,22 +1338,28 @@
             const cached = Storage.getCachedPlugin(pluginKey);
             const isMainLike = MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
 
-            // On production branches, an integrity hash is required
-            if (!expectedHash && isMainLike) {
-                Logger.error(`Plugin ${filename} blocked: no integrity hash in archetypes.json`);
-                throw new Error(`Plugin ${filename} blocked: no integrity hash`);
+            // On main-like branches, an integrity hash is required
+            if ((expectedHash === undefined || expectedHash === '') && isMainLike) {
+                const reason = expectedHash === '' ? 'empty integrity hash' : 'missing integrity hash';
+                Logger.error(`Plugin ${filename} blocked: ${reason} in archetypes.json`);
+                throw new Error(`Plugin ${filename} blocked: ${reason}`);
             }
 
             // --- CACHE PATH ---
             if (cached && cached.version === version) {
                 if (expectedHash) {
-                    const hashResult = await this.verifyPluginHash(cached.code, expectedHash, filename);
-                    if (hashResult.valid) {
-                        Logger.debug(`Using cached plugin ${filename} v${version} (hash verified)`);
-                        this._registerCacheForArchetype(sourcePath, filename);
-                        return cached.code;
+                    try {
+                        const hashResult = await this.verifyPluginHash(cached.code, expectedHash, filename);
+                        if (hashResult.valid) {
+                            Logger.debug(`Using cached plugin ${filename} v${version} (hash verified)`);
+                            this._registerCacheForArchetype(sourcePath, filename);
+                            return cached.code;
+                        }
+                        Logger.warn(`Cached ${filename} v${version} failed hash check. Re-fetching.`);
+                    } catch (hashError) {
+                        Logger.error(`Hash verification failed for ${filename}:`, hashError);
+                        throw new Error(`Plugin ${filename} blocked: hash verification error — ${hashError.message || hashError}`);
                     }
-                    Logger.warn(`Cached ${filename} v${version} failed hash check. Re-fetching.`);
                 } else {
                     Logger.debug(`Using cached plugin ${filename} v${version} (no hash — dev branch)`);
                     this._registerCacheForArchetype(sourcePath, filename);
@@ -1388,8 +1399,7 @@
                         throw new Error(`Plugin ${filename} blocked: integrity hash mismatch`);
                     }
 
-                    Logger.warn(`⚠ Plugin ${filename} hash mismatch (dev branch). Loading anyway.`);
-                    this.cachePluginCode(filename, sourcePath, fetchedCode, version);
+                    Logger.warn(`⚠ Plugin ${filename} hash mismatch (dev branch). Loading anyway (not caching).`);
                     return fetchedCode;
                 }
 
@@ -1436,6 +1446,7 @@
 
             } catch (error) {
                 if (cached) {
+                    Logger.warn(`Fetch failed for ${filename}, falling back to cache:`, error);
                     // On main, even fallback cache must pass integrity check
                     if (expectedHash && isMainLike) {
                         const hashResult = await this.verifyPluginHash(cached.code, expectedHash, filename);
@@ -1648,6 +1659,7 @@
 
             for (const pluginDef of pluginList) {
                 let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
                     filename = pluginDef;
                     version = '1.0';
@@ -1695,6 +1707,7 @@
             
             for (const pluginDef of pluginList) {
                 let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
                     filename = pluginDef;
                     version = '1.0';
@@ -1780,6 +1793,7 @@
             
             for (const pluginDef of pluginList) {
                 let filename, version, hash;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
                     filename = pluginDef;
                     version = '1.0';
@@ -1876,6 +1890,7 @@
             const expectedFilenames = new Set();
             pluginList.forEach(pluginDef => {
                 let filename;
+                // Backward compat: older archetypes.json entries may be plain strings
                 if (typeof pluginDef === 'string') {
                     filename = pluginDef;
                 } else if (pluginDef && pluginDef.name) {

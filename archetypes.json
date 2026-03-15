@@ -1,6 +1,6 @@
 {
   "version": "6.0.0",
-  "archetypesVersion": "6.56",
+  "archetypesVersion": "6.57",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -649,13 +649,7 @@
       "description": "Page for reviewing and fixing previously submitted tool use tasks",
       "urlPattern": "work/problems/respond-feedback/edit-tool-use*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "source-data-explorer.js",
-          "version": "1.2",
-          "hash": ""
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "qa-tool-use",
@@ -686,13 +680,7 @@
       "description": "Page for creating computer use tasks",
       "urlPattern": "work/problems/create*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "source-data-explorer.js",
-          "version": "1.2",
-          "hash": ""
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "comp-use-revision",
@@ -700,13 +688,7 @@
       "description": "Page for reviewing and fixing previously submitted computer use tasks",
       "urlPattern": "work/problems/respond-feedback/edit*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "source-data-explorer.js",
-          "version": "1.2",
-          "hash": ""
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "qa-comp-use",

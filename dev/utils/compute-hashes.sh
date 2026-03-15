@@ -44,6 +44,11 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+if ! command -v shasum &>/dev/null; then
+  echo "[error] shasum is required but not installed. On Linux, install it via the 'perl' package." >&2
+  exit 1
+fi
+
 if [[ ! -f "$archetypes_path" ]]; then
   echo "[error] archetypes.json not found: $archetypes_path" >&2
   exit 1
