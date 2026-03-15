@@ -1,0 +1,30 @@
+name: Verify plugin hashes (PR)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  verify-hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+
+      - name: Compute plugin hashes
+        run: ./dev/utils/compute-hashes.sh
+
+      - name: Commit updated hashes
+        run: |
+          git diff --quiet archetypes.json && echo "No hash changes" && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add archetypes.json
+          git commit -m "CI: update plugin hashes"
+          git push
