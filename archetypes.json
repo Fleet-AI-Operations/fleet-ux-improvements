@@ -41,7 +41,7 @@
         {
           "name": "feedback-given-stats.js",
           "version": "2.9",
-          "hash": "sha256-3c09a920843a00b381c003472b79588f99d52645386e3ac263878f56121f4a55"
+          "hash": "sha256-3c09a920843a00b382c003472b79588f99d52645386e3ac263878f56121f4a55"
         },
         {
           "name": "task-creation-today-env.js",
