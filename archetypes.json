@@ -438,6 +438,11 @@
           "name": "accept-task-modal-improvements.js",
           "version": "1.7",
           "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6"
+        },
+        {
+          "name": "auto-start-recording.js",
+          "version": "1.0",
+          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143"
         }
       ]
     },
@@ -512,6 +517,11 @@
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719"
+        },
+        {
+          "name": "auto-start-recording.js",
+          "version": "1.0",
+          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143"
         }
       ]
     },
