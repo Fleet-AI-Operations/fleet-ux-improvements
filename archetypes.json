@@ -1,11 +1,16 @@
 {
-  "version": "6.0.0",
-  "archetypesVersion": "6.58",
+  "version": "6.1.0",
+  "archetypesVersion": "6.59",
   "corePlugins": [
     {
       "name": "settings-ui.js",
       "version": "6.1",
       "hash": "sha256-b73eddefd35b3053f0256f00f05e664029aced364948f8824836eea0d2566286"
+    },
+    {
+      "name": "extension-ping.js",
+      "version": "1.0",
+      "hash": "sha256-5c1c6509679a1b52b4395297f87d4b048cfae7408e171927827fa013d4f9ac8c"
     }
   ],
   "devPlugins": [
