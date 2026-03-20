@@ -1,46 +1,57 @@
 // ============= copy-verifier-output.js =============
-// Adds a copy button after "Stdout" in the Grading/verifier panel. Click copies the verifier output to the clipboard.
+// Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Click copies formatted verifier text to the clipboard.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 
 const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
-    description: 'Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard',
-    _version: '1.2',
+    description: 'Add a copy button after Stdout or Score in the Grading panel. Click copies the verifier output to the clipboard',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         buttonAdded: false,
-        stdoutRowMissingLogged: false
+        verifierTargetMissingLogged: false
     },
 
     onMutation(state, context) {
-        const stdoutRow = this.findStdoutRow();
-        if (!stdoutRow) {
-            if (!state.stdoutRowMissingLogged) {
-                Logger.debug('Copy Verifier Output: Stdout row not found');
-                state.stdoutRowMissingLogged = true;
+        const scoreRow = this.findScoreRow();
+        const stdoutRow = scoreRow ? null : this.findStdoutRow();
+        const anchorRow = scoreRow || stdoutRow;
+        if (!anchorRow) {
+            if (!state.verifierTargetMissingLogged) {
+                Logger.debug('Copy Verifier Output: Stdout/Score row not found');
+                state.verifierTargetMissingLogged = true;
             }
             return;
         }
-        state.stdoutRowMissingLogged = false;
+        state.verifierTargetMissingLogged = false;
 
-        if (stdoutRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
+        if (anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
             return;
         }
 
-        const container = stdoutRow.closest('div.text-xs.w-full');
-        if (!container) {
-            Logger.debug('Copy Verifier Output: Stdout container not found');
-            return;
+        let container;
+        if (scoreRow) {
+            container = scoreRow.closest('div.p-3');
+            if (!container) {
+                Logger.debug('Copy Verifier Output: Score card container not found');
+                return;
+            }
+        } else {
+            container = stdoutRow.closest('div.text-xs.w-full');
+            if (!container) {
+                Logger.debug('Copy Verifier Output: Stdout container not found');
+                return;
+            }
         }
 
         const button = this.createCopyButton(container);
-        stdoutRow.appendChild(button);
-        if (!stdoutRow.classList.contains('flex')) {
-            stdoutRow.classList.add('flex', 'items-center', 'gap-2');
+        anchorRow.appendChild(button);
+        if (!anchorRow.classList.contains('flex')) {
+            anchorRow.classList.add('flex', 'items-center', 'gap-2');
         }
         state.buttonAdded = true;
         Logger.log('Copy Verifier Output: Copy button added');
@@ -65,6 +76,22 @@ const plugin = {
         return null;
     },
 
+    findScoreRow() {
+        const gradingPanel = this.getGradingPanelRoot();
+        const roots = gradingPanel ? [gradingPanel, document] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+            for (const el of candidates) {
+                for (const s of el.querySelectorAll('span')) {
+                    if (s.textContent.trim() === 'Score:') {
+                        return el;
+                    }
+                }
+            }
+        }
+        return null;
+    },
+
     findStdoutRow() {
         const gradingPanel = this.getGradingPanelRoot();
         const roots = gradingPanel ? [gradingPanel, document] : [document];
@@ -79,9 +106,53 @@ const plugin = {
         return null;
     },
 
+    buildScoreVerifierMarkdown(container) {
+        const list = container.querySelector('div.text-xs.mb-3.space-y-0.5');
+        if (!list) {
+            return null;
+        }
+        const rows = list.querySelectorAll(':scope > div.flex.items-start');
+        const successes = [];
+        const failures = [];
+        for (const row of rows) {
+            const svg = row.querySelector(':scope > svg');
+            if (!svg) continue;
+            const cls = svg.getAttribute('class') || '';
+            const span = row.querySelector(':scope > span');
+            const text = span ? span.textContent.trim() : '';
+            if (!text) continue;
+            if (cls.includes('text-emerald')) {
+                successes.push(text);
+            } else if (cls.includes('text-red')) {
+                failures.push(text);
+            }
+        }
+        if (successes.length === 0 && failures.length === 0) {
+            return null;
+        }
+        const lines = ['## Verifier'];
+        if (successes.length > 0) {
+            lines.push('#### Successes');
+            for (const t of successes) {
+                lines.push(`> ✅ ${t}`);
+            }
+        }
+        if (failures.length > 0) {
+            lines.push('#### Failures');
+            for (const t of failures) {
+                lines.push(`> ❌ ${t}`);
+            }
+        }
+        return lines.join('\n');
+    },
+
     getVerifierOutputText(container) {
+        const scoreMd = this.buildScoreVerifierMarkdown(container);
+        if (scoreMd) {
+            return scoreMd;
+        }
         const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
-        if (pre) {
+        if (pre && pre.textContent.trim()) {
             return pre.textContent.trim();
         }
         return null;

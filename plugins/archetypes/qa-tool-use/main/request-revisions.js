@@ -14,7 +14,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.4',
+    _version: '4.5',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -537,6 +537,18 @@ const plugin = {
     },
 
     // Same search logic as copy-verifier-output.js
+    findScoreRow() {
+        const candidates = document.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+        for (const el of candidates) {
+            for (const s of el.querySelectorAll('span')) {
+                if (s.textContent.trim() === 'Score:') {
+                    return el;
+                }
+            }
+        }
+        return null;
+    },
+
     findStdoutRow() {
         const candidates = document.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
         for (const el of candidates) {
@@ -547,9 +559,68 @@ const plugin = {
         return null;
     },
 
+    buildScoreVerifierMarkdown(container) {
+        const list = container.querySelector('div.text-xs.mb-3.space-y-0.5');
+        if (!list) {
+            return null;
+        }
+        const rows = list.querySelectorAll(':scope > div.flex.items-start');
+        const successes = [];
+        const failures = [];
+        for (const row of rows) {
+            const svg = row.querySelector(':scope > svg');
+            if (!svg) continue;
+            const cls = svg.getAttribute('class') || '';
+            const span = row.querySelector(':scope > span');
+            const text = span ? span.textContent.trim() : '';
+            if (!text) continue;
+            if (cls.includes('text-emerald')) {
+                successes.push(text);
+            } else if (cls.includes('text-red')) {
+                failures.push(text);
+            }
+        }
+        if (successes.length === 0 && failures.length === 0) {
+            return null;
+        }
+        const lines = ['## Verifier'];
+        if (successes.length > 0) {
+            lines.push('#### Successes');
+            for (const t of successes) {
+                lines.push(`> ✅ ${t}`);
+            }
+        }
+        if (failures.length > 0) {
+            lines.push('#### Failures');
+            for (const t of failures) {
+                lines.push(`> ❌ ${t}`);
+            }
+        }
+        return lines.join('\n');
+    },
+
     getVerifierPreFromContainer(container) {
         const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
         return pre && pre.textContent.trim().length > 0 ? pre : null;
+    },
+
+    tryCaptureVerifierOutput() {
+        const scoreRow = this.findScoreRow();
+        if (scoreRow) {
+            const container = scoreRow.closest('div.p-3');
+            if (container) {
+                const md = this.buildScoreVerifierMarkdown(container);
+                if (md && md.length > 0) {
+                    return { kind: 'score', node: container };
+                }
+            }
+        }
+        const stdoutRow = this.findStdoutRow();
+        if (!stdoutRow) return null;
+        const container = stdoutRow.closest('div.text-xs.w-full');
+        if (!container) return null;
+        const pre = this.getVerifierPreFromContainer(container);
+        return pre ? { kind: 'pre', node: pre } : null;
     },
 
     watchVerifierOutput(state) {
@@ -557,28 +628,22 @@ const plugin = {
             return;
         }
 
-        const tryCaptureVerifier = () => {
-            const stdoutRow = this.findStdoutRow();
-            if (!stdoutRow) return null;
-            const container = stdoutRow.closest('div.text-xs.w-full');
-            if (!container) return null;
-            return this.getVerifierPreFromContainer(container);
-        };
+        const tryCaptureVerifier = () => this.tryCaptureVerifierOutput();
 
-        const pre = tryCaptureVerifier();
-        if (pre) {
+        const captured = tryCaptureVerifier();
+        if (captured) {
             Logger.log('✓ Verifier container detected');
-            this.saveVerifierOutput(state, pre);
+            this.saveVerifierOutput(state, captured);
             return;
         }
 
         const containerObserver = new MutationObserver(() => {
-            const pre = tryCaptureVerifier();
-            if (pre) {
+            const next = tryCaptureVerifier();
+            if (next) {
                 Logger.log('✓ Verifier container detected');
                 containerObserver.disconnect();
                 state.verifierObserver = null;
-                this.saveVerifierOutput(state, pre);
+                this.saveVerifierOutput(state, next);
             }
         });
 
@@ -588,35 +653,34 @@ const plugin = {
         });
         state.verifierObserver = containerObserver;
     },
-    
-    saveVerifierOutput(state, verifierPre) {
-        // Save the verifier output
-        state.verifierOutput = verifierPre.textContent.trim();
-        state.verifierElement = verifierPre;
-        
+
+    saveVerifierOutput(state, capture) {
+        const getText = () => {
+            if (capture.kind === 'pre') {
+                return capture.node.textContent.trim();
+            }
+            return this.buildScoreVerifierMarkdown(capture.node) || '';
+        };
+
+        state.verifierOutput = getText();
+        state.verifierElement = capture.node;
+
         Logger.log(`✓ Verifier output saved (${state.verifierOutput.length} chars)`);
-        
-        // Set up MutationObserver to watch for changes (in case of regrading)
-        const changeObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                    const newOutput = verifierPre.textContent.trim();
-                    if (newOutput !== state.verifierOutput && newOutput.length > 0) {
-                        state.verifierOutput = newOutput;
-                        Logger.log(`✓ Verifier output updated (${state.verifierOutput.length} chars)`);
-                    }
-                }
+
+        const changeObserver = new MutationObserver(() => {
+            const newOutput = getText();
+            if (newOutput !== state.verifierOutput && newOutput.length > 0) {
+                state.verifierOutput = newOutput;
+                Logger.log(`✓ Verifier output updated (${state.verifierOutput.length} chars)`);
             }
         });
-        
-        // Observe changes to the pre element and its children
-        changeObserver.observe(verifierPre, {
+
+        changeObserver.observe(capture.node, {
             childList: true,
             subtree: true,
             characterData: true
         });
-        
-        // Store the change observer (we'll keep the original observer reference for cleanup)
+
         state.verifierChangeObserver = changeObserver;
     },
     
