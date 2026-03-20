@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.62",
+  "archetypesVersion": "6.63",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -365,6 +365,11 @@
           "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143"
         },
         {
+          "name": "hide-grading-autoclick.js",
+          "version": "1.0",
+          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
+        },
+        {
           "name": "clear-search.js",
           "version": "2.1",
           "hash": "sha256-1c909857b79e8a369bd2e9a1767445fbfc0f77ae50c40b2c6fb09e879c7357f3"
@@ -472,6 +477,11 @@
           "name": "hide-testing-environment-banner.js",
           "version": "1.0",
           "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333"
+        },
+        {
+          "name": "hide-grading-autoclick.js",
+          "version": "1.0",
+          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
         },
         {
           "name": "bug-report-expand.js",
