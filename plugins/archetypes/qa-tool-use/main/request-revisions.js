@@ -14,7 +14,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.7',
+    _version: '4.8',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -34,8 +34,8 @@ const plugin = {
         },
         {
             id: 'copy-link-kinesis-guidelines',
-            name: 'Copy Link to Kinesis Guidelines',
-            description: 'Show a button under "Where are the issues?" that copies the Kinesis Guidelines link to the clipboard',
+            name: 'Kinesis Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens Kinesis Guidelines in a new tab',
             enabledByDefault: true
         }
     ],
@@ -138,7 +138,7 @@ const plugin = {
         // Get modal ID to track observers
         const modalId = requestRevisionsModal.id;
         
-        // Inject guideline copy-link buttons if enabled
+        // Inject guideline open buttons if enabled
         this.injectGuidelineCopyButtons(state, requestRevisionsModal);
         
         // Persist and restore Prompt Quality Rating selection within this page instance
@@ -431,49 +431,51 @@ const plugin = {
         wrapper.className = 'flex flex-wrap gap-2 mt-2';
 
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-        const linkClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-2 pr-2 text-xs no-underline text-foreground';
 
-        const kinesisGroup = document.createElement('span');
-        kinesisGroup.className = 'inline-flex items-center gap-1';
-        kinesisGroup.setAttribute('data-guideline-group', 'kinesis');
-        const kinesisBtn = document.createElement('button');
-        kinesisBtn.type = 'button';
-        kinesisBtn.className = buttonClass;
-        kinesisBtn.setAttribute('data-fleet-plugin', this.id);
-        kinesisBtn.setAttribute('data-guideline-copy', 'kinesis');
-        kinesisBtn.textContent = 'Copy Link to Kinesis Guidelines';
-        kinesisBtn.addEventListener('click', () => this.copyGuidelineLink(kinesisBtn, 'Copy Link to Kinesis Guidelines', GUIDELINE_LINKS.kinesis));
-        kinesisGroup.appendChild(kinesisBtn);
-        const kinesisOpen = document.createElement('a');
-        kinesisOpen.href = GUIDELINE_LINKS.kinesis;
-        kinesisOpen.target = '_blank';
-        kinesisOpen.rel = 'noopener noreferrer';
-        kinesisOpen.className = linkClass;
-        kinesisOpen.setAttribute('data-fleet-plugin', this.id);
-        kinesisOpen.textContent = 'Open';
-        kinesisGroup.appendChild(kinesisOpen);
-        wrapper.appendChild(kinesisGroup);
+        const kinesisBtn = this.createGuidelineOpenButton(
+            buttonClass,
+            'kinesis',
+            GUIDELINE_LINKS.kinesis,
+            'Kinesis Guidelines'
+        );
+        wrapper.appendChild(kinesisBtn);
 
         this.syncGuidelineCopyButtons(wrapper, kinesisEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
-        Logger.log('Request Revisions: guideline copy-link buttons added');
+        Logger.log('Request Revisions: guideline buttons added');
+    },
+
+    createGuidelineOpenButton(buttonClass, groupId, url, shortTitle) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = buttonClass;
+        btn.setAttribute('data-fleet-plugin', this.id);
+        btn.setAttribute('data-guideline-group', groupId);
+        btn.textContent = shortTitle;
+        btn.title = `Open ${shortTitle} in a new tab`;
+        btn.addEventListener('click', () => {
+            window.open(url, '_blank');
+            Logger.log(`Request Revisions: opened ${shortTitle}`);
+        });
+        return btn;
+    },
+
+    migrateLegacyGuidelineOpenControl(wrapper, groupId, url, shortTitle, buttonClass) {
+        const el = wrapper.querySelector(`[data-guideline-group="${groupId}"]`);
+        if (!el) return;
+        const isLegacy = el.tagName === 'SPAN' && el.querySelector('a');
+        if (!isLegacy) return;
+        const btn = this.createGuidelineOpenButton(buttonClass, groupId, url, shortTitle);
+        el.replaceWith(btn);
+        Logger.debug(`Request Revisions: migrated legacy ${shortTitle} control to open-only button`);
     },
 
     syncGuidelineCopyButtons(wrapper, kinesisEnabled) {
+        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        this.migrateLegacyGuidelineOpenControl(wrapper, 'kinesis', GUIDELINE_LINKS.kinesis, 'Kinesis Guidelines', buttonClass);
+
         const kinesisGroup = wrapper.querySelector('[data-guideline-group="kinesis"]');
         if (kinesisGroup) kinesisGroup.style.display = kinesisEnabled ? '' : 'none';
-    },
-
-    copyGuidelineLink(button, originalText, url) {
-        navigator.clipboard.writeText(url).then(() => {
-            button.textContent = 'Copied!';
-            Logger.log(`Request Revisions: copied ${originalText} to clipboard`);
-            setTimeout(() => {
-                button.textContent = originalText;
-            }, 2500);
-        }).catch((err) => {
-            Logger.error('Request Revisions: failed to copy guideline link', err);
-        });
     },
 
     findPromptQualityRatingSection(modal) {
