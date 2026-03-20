@@ -14,7 +14,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.5',
+    _version: '4.6',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -560,7 +560,7 @@ const plugin = {
     },
 
     buildScoreVerifierMarkdown(container) {
-        const list = container.querySelector('div.text-xs.mb-3.space-y-0.5');
+        const list = container.querySelector('div.text-xs.mb-3.space-y-0\\.5');
         if (!list) {
             return null;
         }

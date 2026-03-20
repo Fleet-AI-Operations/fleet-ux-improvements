@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after Stdout or Score in the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -107,7 +107,7 @@ const plugin = {
     },
 
     buildScoreVerifierMarkdown(container) {
-        const list = container.querySelector('div.text-xs.mb-3.space-y-0.5');
+        const list = container.querySelector('div.text-xs.mb-3.space-y-0\\.5');
         if (!list) {
             return null;
         }
