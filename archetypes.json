@@ -1,11 +1,16 @@
 {
-  "version": "6.0.0",
-  "archetypesVersion": "6.57",
+  "version": "6.1.2",
+  "archetypesVersion": "6.62",
   "corePlugins": [
     {
       "name": "settings-ui.js",
       "version": "6.1",
       "hash": "sha256-b73eddefd35b3053f0256f00f05e664029aced364948f8824836eea0d2566286"
+    },
+    {
+      "name": "extension-ping.js",
+      "version": "1.1",
+      "hash": "sha256-faae51a719082c75e025528766152ab23715701ed6f4b029acc717c6fc1b11d3"
     }
   ],
   "devPlugins": [
@@ -18,7 +23,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.8"
+      "version": "1.9"
     },
     {
       "name": "features-tab.md",

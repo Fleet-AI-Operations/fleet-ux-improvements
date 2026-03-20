@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      6.0.0
+// @version      6.1.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -13,6 +13,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
+// @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
 // @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
@@ -28,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '6.0.0';
+    const VERSION = '6.1.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1483,6 +1484,7 @@
                     'Logger',
                     'Context',
                     'CleanupRegistry',
+                    'GM_xmlhttpRequest',
                     code + '\n\n// Return the plugin for registration\nreturn plugin;'
                 );
 
@@ -1491,7 +1493,8 @@
                     Storage,
                     moduleLogger,
                     Context,
-                    CleanupRegistry
+                    CleanupRegistry,
+                    GM_xmlhttpRequest
                 );
                 if (useModuleLogger && plugin && plugin.id) {
                     resolvedModuleId = plugin.id;
