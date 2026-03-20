@@ -5,7 +5,7 @@ const plugin = {
     id: 'extension-ping',
     name: 'Extension Ping',
     description: 'Pings extension endpoint once per userscript version',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -65,6 +65,11 @@ const plugin = {
     },
 
     _sendPing(email, currentVersion, storageKey) {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            Logger.error('Extension ping unavailable: GM_xmlhttpRequest is not defined');
+            return;
+        }
+
         const payload = JSON.stringify({ email });
         const url = 'https://operations-toolkit-admin.vercel.app/api/extension-ping';
 

@@ -1484,6 +1484,7 @@
                     'Logger',
                     'Context',
                     'CleanupRegistry',
+                    'GM_xmlhttpRequest',
                     code + '\n\n// Return the plugin for registration\nreturn plugin;'
                 );
 
@@ -1492,7 +1493,8 @@
                     Storage,
                     moduleLogger,
                     Context,
-                    CleanupRegistry
+                    CleanupRegistry,
+                    GM_xmlhttpRequest
                 );
                 if (useModuleLogger && plugin && plugin.id) {
                     resolvedModuleId = plugin.id;
