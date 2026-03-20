@@ -1,8 +1,8 @@
-1.8
+1.9
 ## Information
-
+-> Pro-tip: Use `Ctrl`/`CMD` + `F` to search for names in this table. If you can't find one, please use the `Feedback` tab to notify me!
 #### Environment Codennames
-| Environment Codename       | Real App Name          |
+| Environment Codename      | Real App Name          |
 |---------------------------|------------------------|
 | Agora                     | Reddit                 |
 | Aisle                     | Walmart                |
@@ -12,7 +12,7 @@
 | Crate                     | Instacart              |
 | Docket                    | Dropbox                |
 | Float                     | Ramp                   |
-| Focusign                  | Docusign               |
+| Seal                      | Docusign               |
 | Foundry                   | Github                 |
 | Jetstream                 | Google Flights         |
 | Kernel                    | Jira / RevOps          |
@@ -31,10 +31,6 @@
 | Torch                     | PagerDuty              |
 | Vault                     | Confluence             |
 | Ward                      | Synk                   |
-| Forums Homes              | -                      |
-| FosOperations             | -                      |
-| RevOps                    | -                      |
-| SRE                       | -                      |
 | Docs                      | OpenOffice Writer      |
 | Sheets                    | OpenOffice Calc        |
 | Slides                    | OpenOffice Impress     |
