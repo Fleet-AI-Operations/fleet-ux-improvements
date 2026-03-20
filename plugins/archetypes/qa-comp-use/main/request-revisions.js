@@ -16,7 +16,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.8',
+    _version: '3.9',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -458,14 +458,17 @@ const plugin = {
         meridianGroup.appendChild(meridianOpen);
         wrapper.appendChild(meridianGroup);
 
-        const copyResultParamsBtn = document.createElement('button');
-        copyResultParamsBtn.type = 'button';
-        copyResultParamsBtn.className = buttonClass;
-        copyResultParamsBtn.setAttribute('data-fleet-plugin', this.id);
-        copyResultParamsBtn.textContent = 'Copy Result Params and Inputs';
-        copyResultParamsBtn.title = 'Copy parameter labels and values to clipboard';
-        copyResultParamsBtn.addEventListener('click', () => this.handleCopyResultParamsClick(copyResultParamsBtn));
-        wrapper.appendChild(copyResultParamsBtn);
+        // Only add Copy Result Params button if the target grid exists
+        if (this.hasResultParamsGrid()) {
+            const copyResultParamsBtn = document.createElement('button');
+            copyResultParamsBtn.type = 'button';
+            copyResultParamsBtn.className = buttonClass;
+            copyResultParamsBtn.setAttribute('data-fleet-plugin', this.id);
+            copyResultParamsBtn.textContent = 'Copy Result Params and Inputs';
+            copyResultParamsBtn.title = 'Copy parameter labels and values to clipboard';
+            copyResultParamsBtn.addEventListener('click', () => this.handleCopyResultParamsClick(copyResultParamsBtn));
+            wrapper.appendChild(copyResultParamsBtn);
+        }
 
         this.syncGuidelineCopyButtons(wrapper, meridianEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
@@ -475,6 +478,35 @@ const plugin = {
     syncGuidelineCopyButtons(wrapper, meridianEnabled) {
         const meridianGroup = wrapper.querySelector('[data-guideline-group="meridian"]');
         if (meridianGroup) meridianGroup.style.display = meridianEnabled ? '' : 'none';
+        
+        // Handle Copy Result Params button visibility based on whether the grid exists
+        const hasGrid = this.hasResultParamsGrid();
+        const copyResultParamsBtn = Array.from(wrapper.querySelectorAll('button[data-fleet-plugin="requestRevisions"]'))
+            .find(btn => btn.textContent === 'Copy Result Params and Inputs');
+        
+        if (hasGrid) {
+            // Grid exists - ensure button is visible or create it if missing
+            if (copyResultParamsBtn) {
+                copyResultParamsBtn.style.display = '';
+            } else {
+                // Button doesn't exist but grid does - create it
+                const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+                const newBtn = document.createElement('button');
+                newBtn.type = 'button';
+                newBtn.className = buttonClass;
+                newBtn.setAttribute('data-fleet-plugin', this.id);
+                newBtn.textContent = 'Copy Result Params and Inputs';
+                newBtn.title = 'Copy parameter labels and values to clipboard';
+                newBtn.addEventListener('click', () => this.handleCopyResultParamsClick(newBtn));
+                wrapper.appendChild(newBtn);
+                Logger.debug('Request Revisions: Copy Result Params button created dynamically');
+            }
+        } else {
+            // Grid doesn't exist - hide button if it exists
+            if (copyResultParamsBtn) {
+                copyResultParamsBtn.style.display = 'none';
+            }
+        }
     },
 
     copyGuidelineLink(button, originalText, url) {
@@ -498,6 +530,20 @@ const plugin = {
             }
         }
         return null;
+    },
+
+    hasResultParamsGrid() {
+        const section = this.findYourAnswerSection();
+        if (!section) return false;
+        const grid = section.querySelector('.grid.grid-cols-1.gap-4') || section.querySelector('.grid');
+        if (!grid) return false;
+        const rows = grid.querySelectorAll('.space-y-2');
+        for (const row of rows) {
+            const label = row.querySelector('label');
+            const input = row.querySelector('input, textarea');
+            if (label && input) return true;
+        }
+        return false;
     },
 
     getResultParamsTextFromPage() {
@@ -661,6 +707,7 @@ const plugin = {
             }
         }
         if (failures.length > 0) {
+            lines.push('');
             lines.push('#### Failures');
             for (const t of failures) {
                 lines.push(`> ❌ ${t}`);

@@ -14,7 +14,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.6',
+    _version: '4.7',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -591,6 +591,7 @@ const plugin = {
             }
         }
         if (failures.length > 0) {
+            lines.push('');
             lines.push('#### Failures');
             for (const t of failures) {
                 lines.push(`> ❌ ${t}`);
