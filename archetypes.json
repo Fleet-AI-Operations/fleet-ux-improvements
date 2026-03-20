@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.67",
+  "archetypesVersion": "6.68",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -391,8 +391,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.7",
-          "hash": "sha256-14f83455fe9e57858c005f0b9cfafe22df060d01bb9cf1e9271396c90a615442"
+          "version": "1.8",
+          "hash": "sha256-5b08a6a2eed71642263da8893128fecc6dc0bfdc950199b3f7b693c2fa3170b9"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -426,8 +426,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "4.6",
-          "hash": "sha256-1d476fbc88bad77224c4beeb9ad870537dfa16527b2a135a198da4aa643a80b6"
+          "version": "4.7",
+          "hash": "sha256-b9c2229aec44715cdf8168848f144f6c148f43eeb8269045b0b3fe6a020c8d9e"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -495,8 +495,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.6",
-          "hash": "sha256-f1db70a8c8e72cd4b6acbd8d28d39c20cbae36fa8fd61eb84423e1c1b081dbfe"
+          "version": "1.7",
+          "hash": "sha256-f7b8b6afd7ad1461ee213e334244aa28f69183f7071e5fc3bb8acf2ccda95f6f"
         },
         {
           "name": "copy-result-params.js",
@@ -510,8 +510,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.8",
-          "hash": "sha256-42541801523db2405b971edb13ab34087f71b4f186ee92f4b0363fd899bfe3c8"
+          "version": "3.9",
+          "hash": "sha256-f9ae54084df14447325c004c3e273faa944e9c9d525569ef3a4acfc6d6429940"
         },
         {
           "name": "qa-scratchpad.js",

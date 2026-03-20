@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after Stdout or Score in the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -138,6 +138,7 @@ const plugin = {
             }
         }
         if (failures.length > 0) {
+            lines.push('');
             lines.push('#### Failures');
             for (const t of failures) {
                 lines.push(`> ❌ ${t}`);
