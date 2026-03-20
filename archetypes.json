@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.64",
+  "archetypesVersion": "6.65",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -391,8 +391,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.4",
-          "hash": "sha256-09018b5f83f71160d4b22dbc41ebaa69b752c02a895c75e56c55c08de39f9bcb"
+          "version": "1.5",
+          "hash": "sha256-c01c6cb92b4bd003e52803ec9034c814c6ef4d5324c87921bc95c21b78df2aa2"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -495,8 +495,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.3",
-          "hash": "sha256-6774a346bf525817c20b97d0f4da56a65e90175088ca170ea231c290d64010b0"
+          "version": "1.4",
+          "hash": "sha256-8cf5145374bb8c3757254516b632a49e4e94309a689a208bf9c6839dc20e2be2"
         },
         {
           "name": "copy-result-params.js",
