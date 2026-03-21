@@ -75,7 +75,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Useful Link Buttons**: Quick links to QA/Kinesis guidelines and JSON Editor Online below the scratchpad
 - **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
 - **Remember Layout Proportions**: Persists and restores panel split positions between sessions
-- **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue (with guideline link shortcuts)
+- **Request Revisions Improvements**: In the Request Revisions modal: optional auto-paste of the saved prompt into the Task issue box when Task is selected; **Copy Verifier Output** button; shortcut to open project guidelines (Kinesis / Meridian)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 - **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
 - **Tool Results Resize Handle**: Resizable tool results area
@@ -90,7 +90,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Copy verifier output to clipboard
 - **Copy Result Params and Inputs**: Button under Your Answer to copy parameter labels and values to clipboard
 - **Guideline Buttons**: Quick links to guidelines
-- **Request Revisions Improvements**: Enhanced workflow with auto-copy workflow to "What did you try?", auto-paste prompt to Task issue, and auto-paste verifier output to Grading issue
+- **Request Revisions Improvements**: In the Request Revisions modal: optional auto-paste of the saved prompt into the Task issue box when Task is selected; **Copy Verifier Output** button; shortcut to open Meridian guidelines
 - **QA Scratchpad**: Adjustable-height scratchpad for notes (with option to remember contents)
 - **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
 - **Metadata Tag QA Enhancements**: Show/hide Writer Metadata section; suggested tag changes as toggles with "Copy Suggested Changes" for feedback

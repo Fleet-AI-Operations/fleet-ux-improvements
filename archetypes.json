@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.69",
+  "archetypesVersion": "6.70",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -426,8 +426,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "4.8",
-          "hash": "sha256-b87590e5fb94b83d34b34629ab1c4fa510c128aa02be544684a760da544256bd"
+          "version": "4.9",
+          "hash": "sha256-325eca433cf9c36d954fdc7b52d116a8c388ec25106834d99cb0037933838d7b"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -510,8 +510,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "3.10",
-          "hash": "sha256-402a8d5caf06384f749aae3821f96df1fb65a8eeee316592e39f3741f51bedfa"
+          "version": "3.11",
+          "hash": "sha256-0f22c8cd7865a738a25b68ac060844ea776d29f9d3c0bf727ff6ab65fcf4ce8d"
         },
         {
           "name": "qa-scratchpad.js",
