@@ -10,8 +10,10 @@ const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
 const COPY_PROMPT_SUBOPTION_ID = 'copy-prompt-button';
 const COPY_VERIFIER_OUTPUT_MARKER = 'data-fleet-revisions-copy-verifier';
 const COPY_VERIFIER_SUBOPTION_ID = 'copy-verifier-output-button';
-const COPY_RESULT_PARAMS_CONFIRMATION_MS = 3000;
-const COPY_RESULT_PARAMS_GREEN_BG = 'rgb(34, 197, 94)';
+const COPY_SUCCESS_FLASH_MS = 3000;
+const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
+const COPY_FAILURE_PULSE_MS = 500;
+const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
 const PROMPT_QUALITY_VALUES = ['Top 10%', 'Average', 'Bottom 10%'];
 const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
@@ -20,7 +22,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.12',
+    _version: '3.13',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -335,17 +337,18 @@ const plugin = {
     },
 
     handleCopyPromptClick(state, button) {
-        const originalText = 'Copy Prompt';
         const text = this.getPromptTextForClipboard(state);
         if (!text) {
             Logger.warn('Request Revisions: No prompt text to copy');
+            this.showCopyFailurePulse(button);
             return;
         }
         navigator.clipboard.writeText(text).then(() => {
             Logger.log(`Request Revisions: Copied prompt to clipboard (${text.length} chars)`);
-            this.showCopyResultParamsConfirmation(button, originalText);
+            this.showCopySuccessFlash(button);
         }).catch((err) => {
             Logger.error('Request Revisions: Failed to copy prompt', err);
+            this.showCopyFailurePulse(button);
         });
     },
 
@@ -361,17 +364,18 @@ const plugin = {
     },
 
     handleCopyVerifierOutputClick(state, button) {
-        const originalText = 'Copy Verifier Output';
         const text = this.getVerifierTextForClipboard(state);
         if (!text) {
             Logger.warn('Request Revisions: No verifier output to copy');
+            this.showCopyFailurePulse(button);
             return;
         }
         navigator.clipboard.writeText(text).then(() => {
             Logger.log(`Request Revisions: Copied verifier output to clipboard (${text.length} chars)`);
-            this.showCopyResultParamsConfirmation(button, originalText);
+            this.showCopySuccessFlash(button);
         }).catch((err) => {
             Logger.error('Request Revisions: Failed to copy verifier output', err);
+            this.showCopyFailurePulse(button);
         });
     },
 
@@ -421,31 +425,60 @@ const plugin = {
         return lines.join('\n');
     },
 
-    showCopyResultParamsConfirmation(button, originalText) {
-        button.textContent = 'Copied!';
-        button.style.backgroundColor = COPY_RESULT_PARAMS_GREEN_BG;
-        button.style.color = 'white';
-        if (button._copyResultParamsTimeout) clearTimeout(button._copyResultParamsTimeout);
-        button._copyResultParamsTimeout = setTimeout(() => {
-            button.textContent = originalText;
+    clearRequestRevisionsCopyButtonFeedback(button) {
+        if (button._copySuccessFlashTimeout) {
+            clearTimeout(button._copySuccessFlashTimeout);
+            button._copySuccessFlashTimeout = null;
+        }
+        if (button._copyFailurePulseTimeout) {
+            clearTimeout(button._copyFailurePulseTimeout);
+            button._copyFailurePulseTimeout = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    showCopySuccessFlash(button) {
+        this.clearRequestRevisionsCopyButtonFeedback(button);
+        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
+        button.style.color = '#ffffff';
+        button._copySuccessFlashTimeout = setTimeout(() => {
             button.style.backgroundColor = '';
             button.style.color = '';
-            button._copyResultParamsTimeout = null;
-        }, COPY_RESULT_PARAMS_CONFIRMATION_MS);
+            button._copySuccessFlashTimeout = null;
+        }, COPY_SUCCESS_FLASH_MS);
+    },
+
+    showCopyFailurePulse(button) {
+        this.clearRequestRevisionsCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = COPY_FAILURE_RED_BG;
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = `background-color ${COPY_FAILURE_PULSE_MS}ms ease-out, color ${COPY_FAILURE_PULSE_MS}ms ease-out`;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._copyFailurePulseTimeout = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._copyFailurePulseTimeout = null;
+        }, COPY_FAILURE_PULSE_MS);
     },
 
     handleCopyResultParamsClick(button) {
-        const originalText = button.textContent;
         const text = this.getResultParamsTextFromPage();
         if (!text) {
             Logger.warn('Request Revisions: No result params to copy');
+            this.showCopyFailurePulse(button);
             return;
         }
         navigator.clipboard.writeText(text).then(() => {
             Logger.log(`Request Revisions: Copied result params to clipboard (${text.length} chars)`);
-            this.showCopyResultParamsConfirmation(button, originalText);
+            this.showCopySuccessFlash(button);
         }).catch((err) => {
             Logger.error('Request Revisions: Failed to copy result params', err);
+            this.showCopyFailurePulse(button);
         });
     },
 
