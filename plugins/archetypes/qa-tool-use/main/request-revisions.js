@@ -2,6 +2,7 @@
 // Improvements to the Request Revisions Workflow
 
 const GUIDELINE_LINKS = {
+    qaGuidelines: 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56',
     kinesis: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d'
 };
 
@@ -22,7 +23,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '5.0',
+    _version: '5.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -38,6 +39,12 @@ const plugin = {
             id: COPY_VERIFIER_SUBOPTION_ID,
             name: 'Copy Verifier Output button',
             description: 'Show a button in Request Revisions that copies verifier output to the clipboard (paste into Grading manually if needed)',
+            enabledByDefault: true
+        },
+        {
+            id: 'copy-link-qa-guidelines',
+            name: 'QA Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens QA Guidelines in a new tab',
             enabledByDefault: true
         },
         {
@@ -169,10 +176,11 @@ const plugin = {
         if (!buttonRow) return;
 
         let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
+        const qaGuidelinesEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-qa-guidelines', true);
         const kinesisEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-kinesis-guidelines', true);
 
         if (wrapper) {
-            this.syncGuidelineCopyButtons(state, wrapper, kinesisEnabled);
+            this.syncGuidelineCopyButtons(state, wrapper, kinesisEnabled, qaGuidelinesEnabled);
             return;
         }
 
@@ -183,6 +191,14 @@ const plugin = {
 
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 
+        const qaBtn = this.createGuidelineOpenButton(
+            buttonClass,
+            'qa-guidelines',
+            GUIDELINE_LINKS.qaGuidelines,
+            'QA Guidelines'
+        );
+        wrapper.appendChild(qaBtn);
+
         const kinesisBtn = this.createGuidelineOpenButton(
             buttonClass,
             'kinesis',
@@ -191,7 +207,7 @@ const plugin = {
         );
         wrapper.appendChild(kinesisBtn);
 
-        this.syncGuidelineCopyButtons(state, wrapper, kinesisEnabled);
+        this.syncGuidelineCopyButtons(state, wrapper, kinesisEnabled, qaGuidelinesEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline buttons added');
     },
@@ -221,9 +237,27 @@ const plugin = {
         Logger.debug(`Request Revisions: migrated legacy ${shortTitle} control to open-only button`);
     },
 
-    syncGuidelineCopyButtons(state, wrapper, kinesisEnabled) {
+    syncGuidelineCopyButtons(state, wrapper, kinesisEnabled, qaGuidelinesEnabled) {
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        this.migrateLegacyGuidelineOpenControl(wrapper, 'qa-guidelines', GUIDELINE_LINKS.qaGuidelines, 'QA Guidelines', buttonClass);
         this.migrateLegacyGuidelineOpenControl(wrapper, 'kinesis', GUIDELINE_LINKS.kinesis, 'Kinesis Guidelines', buttonClass);
+
+        let qaGroup = wrapper.querySelector('[data-guideline-group="qa-guidelines"]');
+        if (!qaGroup) {
+            qaGroup = this.createGuidelineOpenButton(
+                buttonClass,
+                'qa-guidelines',
+                GUIDELINE_LINKS.qaGuidelines,
+                'QA Guidelines'
+            );
+            const kinesisEl = wrapper.querySelector('[data-guideline-group="kinesis"]');
+            if (kinesisEl) {
+                wrapper.insertBefore(qaGroup, kinesisEl);
+            } else {
+                wrapper.insertBefore(qaGroup, wrapper.firstChild);
+            }
+        }
+        qaGroup.style.display = qaGuidelinesEnabled ? '' : 'none';
 
         const kinesisGroup = wrapper.querySelector('[data-guideline-group="kinesis"]');
         if (kinesisGroup) kinesisGroup.style.display = kinesisEnabled ? '' : 'none';

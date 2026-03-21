@@ -2,6 +2,7 @@
 // Improvements to the Request Revisions Workflow (qa-comp-use)
 
 const GUIDELINE_LINKS = {
+    qaGuidelines: 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56',
     meridian: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477'
 };
 
@@ -22,7 +23,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -38,6 +39,12 @@ const plugin = {
             id: COPY_VERIFIER_SUBOPTION_ID,
             name: 'Copy Verifier Output button',
             description: 'Show a button in Request Revisions that copies verifier output to the clipboard (paste into Grading manually if needed)',
+            enabledByDefault: true
+        },
+        {
+            id: 'copy-link-qa-guidelines',
+            name: 'QA Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens QA Guidelines in a new tab',
             enabledByDefault: true
         },
         {
@@ -176,10 +183,11 @@ const plugin = {
         if (!buttonRow) return;
 
         let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
+        const qaGuidelinesEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-qa-guidelines', true);
         const meridianEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-meridian-guidelines', true);
 
         if (wrapper) {
-            this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled);
+            this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled);
             return;
         }
 
@@ -189,6 +197,14 @@ const plugin = {
         wrapper.className = 'flex flex-wrap gap-2 mt-2';
 
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+
+        const qaBtn = this.createGuidelineOpenButton(
+            buttonClass,
+            'qa-guidelines',
+            GUIDELINE_LINKS.qaGuidelines,
+            'QA Guidelines'
+        );
+        wrapper.appendChild(qaBtn);
 
         const meridianBtn = this.createGuidelineOpenButton(
             buttonClass,
@@ -210,7 +226,7 @@ const plugin = {
             wrapper.appendChild(copyResultParamsBtn);
         }
 
-        this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled);
+        this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline buttons added');
     },
@@ -240,9 +256,27 @@ const plugin = {
         Logger.debug(`Request Revisions: migrated legacy ${shortTitle} control to open-only button`);
     },
 
-    syncGuidelineCopyButtons(state, wrapper, meridianEnabled) {
+    syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled) {
         const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        this.migrateLegacyGuidelineOpenControl(wrapper, 'qa-guidelines', GUIDELINE_LINKS.qaGuidelines, 'QA Guidelines', buttonClass);
         this.migrateLegacyGuidelineOpenControl(wrapper, 'meridian', GUIDELINE_LINKS.meridian, 'Meridian Guidelines', buttonClass);
+
+        let qaGroup = wrapper.querySelector('[data-guideline-group="qa-guidelines"]');
+        if (!qaGroup) {
+            qaGroup = this.createGuidelineOpenButton(
+                buttonClass,
+                'qa-guidelines',
+                GUIDELINE_LINKS.qaGuidelines,
+                'QA Guidelines'
+            );
+            const meridianEl = wrapper.querySelector('[data-guideline-group="meridian"]');
+            if (meridianEl) {
+                wrapper.insertBefore(qaGroup, meridianEl);
+            } else {
+                wrapper.insertBefore(qaGroup, wrapper.firstChild);
+            }
+        }
+        qaGroup.style.display = qaGuidelinesEnabled ? '' : 'none';
 
         const meridianGroup = wrapper.querySelector('[data-guideline-group="meridian"]');
         if (meridianGroup) meridianGroup.style.display = meridianEnabled ? '' : 'none';
