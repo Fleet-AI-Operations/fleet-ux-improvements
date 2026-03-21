@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeIdsEnhancer',
     name: 'Dispute IDs Enhancer',
     description: 'Surface Dispute and Task IDs at top of dispute cards.',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -318,11 +318,42 @@ const plugin = {
         btn.title = `Copy ${value}`;
         btn.addEventListener('click', () => {
             navigator.clipboard.writeText(value).then(() => {
+                if (btn._fleetDisputeCopyFailT) {
+                    clearTimeout(btn._fleetDisputeCopyFailT);
+                    btn._fleetDisputeCopyFailT = null;
+                }
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn.style.transition = '';
+                btn.classList.remove('fleet-dispute-id-copied');
+                void btn.offsetHeight;
                 btn.classList.add('fleet-dispute-id-copied');
                 Logger.log(`Dispute IDs Enhancer: copied ${label} to clipboard`);
-                setTimeout(() => btn.classList.remove('fleet-dispute-id-copied'), 3000);
+                if (btn._fleetDisputeCopyOkT) clearTimeout(btn._fleetDisputeCopyOkT);
+                btn._fleetDisputeCopyOkT = setTimeout(() => {
+                    btn.classList.remove('fleet-dispute-id-copied');
+                    btn._fleetDisputeCopyOkT = null;
+                }, 1000);
             }).catch((err) => {
                 Logger.error('Dispute IDs Enhancer: failed to copy', err);
+                if (btn._fleetDisputeCopyOkT) {
+                    clearTimeout(btn._fleetDisputeCopyOkT);
+                    btn._fleetDisputeCopyOkT = null;
+                }
+                btn.classList.remove('fleet-dispute-id-copied');
+                if (btn._fleetDisputeCopyFailT) clearTimeout(btn._fleetDisputeCopyFailT);
+                const prevTransition = btn.style.transition;
+                btn.style.transition = 'none';
+                btn.style.backgroundColor = 'rgb(239, 68, 68)';
+                btn.style.color = '#ffffff';
+                void btn.offsetHeight;
+                btn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn._fleetDisputeCopyFailT = setTimeout(() => {
+                    btn.style.transition = prevTransition || '';
+                    btn._fleetDisputeCopyFailT = null;
+                }, 500);
             });
         });
         return btn;

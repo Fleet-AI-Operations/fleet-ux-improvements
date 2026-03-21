@@ -3,10 +3,41 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '2.9',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
+
+    COPY_FEEDBACK_SUCCESS_MS: 1000,
+    COPY_FEEDBACK_FAILURE_MS: 500,
+
+    flashCopyButtonSuccess(btn) {
+        if (btn._wfCopyResetTimeout) clearTimeout(btn._wfCopyResetTimeout);
+        btn.style.transition = '';
+        btn.style.backgroundColor = 'rgb(34, 197, 94)';
+        btn.style.color = '#ffffff';
+        btn._wfCopyResetTimeout = setTimeout(() => {
+            btn._wfCopyResetTimeout = null;
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+        }, this.COPY_FEEDBACK_SUCCESS_MS);
+    },
+
+    flashCopyButtonFailure(btn) {
+        if (btn._wfCopyResetTimeout) clearTimeout(btn._wfCopyResetTimeout);
+        const prevT = btn.style.transition;
+        btn.style.transition = 'none';
+        btn.style.backgroundColor = 'rgb(239, 68, 68)';
+        btn.style.color = '#ffffff';
+        void btn.offsetHeight;
+        btn.style.transition = `background-color ${this.COPY_FEEDBACK_FAILURE_MS}ms ease-out, color ${this.COPY_FEEDBACK_FAILURE_MS}ms ease-out`;
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn._wfCopyResetTimeout = setTimeout(() => {
+            btn.style.transition = prevT || '';
+            btn._wfCopyResetTimeout = null;
+        }, this.COPY_FEEDBACK_FAILURE_MS);
+    },
 
     /** Month name (3-letter) to 1-based month index. */
     MONTH_INDEX: { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 },
@@ -246,7 +277,10 @@ const plugin = {
             if (copyBtn) {
                 copyBtn.addEventListener('click', () => {
                     const text = copyBtn.getAttribute('data-wf-copy-text');
-                    if (!text) return;
+                    if (!text) {
+                        self.flashCopyButtonFailure(copyBtn);
+                        return;
+                    }
                     if (copyBtn.getAttribute('data-wf-copy-uncertain') === 'true') {
                         const daysAgo = block._wfDaysAgo || 0;
                         alert(
@@ -257,18 +291,12 @@ const plugin = {
                                 : 'Please scroll down the page so that all submissions for that day are visible on the page before copying to ensure accurate results.')
                         );
                     }
-                    if (copyBtn._wfCopyResetTimeout) clearTimeout(copyBtn._wfCopyResetTimeout);
                     navigator.clipboard.writeText(text).then(() => {
                         Logger.log('task-creation-today-env: copied breakdown to clipboard', { daysAgo: block._wfDaysAgo || 0 });
-                        copyBtn.textContent = 'Copied!';
-                        copyBtn.classList.add('text-green-600', 'dark:text-green-400');
-                        copyBtn._wfCopyResetTimeout = setTimeout(() => {
-                            copyBtn._wfCopyResetTimeout = null;
-                            copyBtn.textContent = 'Copy Breakdown';
-                            copyBtn.classList.remove('text-green-600', 'dark:text-green-400');
-                        }, 5000);
+                        self.flashCopyButtonSuccess(copyBtn);
                     }).catch((err) => {
                         Logger.error('task-creation-today-env: failed to copy breakdown', err);
+                        self.flashCopyButtonFailure(copyBtn);
                     });
                 });
             }

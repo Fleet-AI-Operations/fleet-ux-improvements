@@ -10,8 +10,10 @@ const NORMAL_BORDER = '1px solid var(--border, #d4d4d4)';
 const NORMAL_BOX_SHADOW = '0 2px 8px rgba(0, 0, 0, 0.1)';
 const BORDER_SUGGEST_DESELECT = '2px solid rgb(239, 68, 68)';
 const BORDER_SUGGEST_SELECT = '2px solid rgb(34, 197, 94)';
-const COPY_CONFIRMATION_MS = 3000;
+const COPY_CONFIRMATION_MS = 1000;
+const COPY_FAILURE_PULSE_MS = 500;
 const COPY_CONFIRMATION_GREEN_BG = 'rgb(34, 197, 94)';
+const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
 const BUTTON_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 const COPY_BTN_DISABLED_CLASSES = ['opacity-50', 'cursor-not-allowed'];
@@ -22,7 +24,7 @@ const plugin = {
     id: 'metadataTagQAEnhancements',
     name: 'Metadata Tag QA Enhancements',
     description: 'Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)',
-    _version: '2.5',
+    _version: '2.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -253,28 +255,45 @@ const plugin = {
 
         btn.addEventListener('click', () => {
             const text = this.buildCopyText(state);
-            const originalText = btn.textContent;
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log('Metadata Tag QA Enhancements: suggested changes copied to clipboard');
-                this.showCopyConfirmation(btn, originalText);
+                this.showCopyConfirmation(btn);
             }).catch((err) => {
                 Logger.error('Metadata Tag QA Enhancements: failed to copy suggested changes', err);
+                this.showCopyFailurePulse(btn);
             });
         });
         return btn;
     },
 
-    showCopyConfirmation(button, originalText) {
-        button.textContent = 'Copied!';
+    showCopyConfirmation(button) {
+        if (button._copyConfirmationTimeout) clearTimeout(button._copyConfirmationTimeout);
+        if (button._copyFailurePulseTimeout) clearTimeout(button._copyFailurePulseTimeout);
+        button.style.transition = '';
         button.style.backgroundColor = COPY_CONFIRMATION_GREEN_BG;
         button.style.color = 'white';
-        if (button._copyConfirmationTimeout) clearTimeout(button._copyConfirmationTimeout);
         button._copyConfirmationTimeout = setTimeout(() => {
-            button.textContent = originalText;
             button.style.backgroundColor = '';
             button.style.color = '';
             button._copyConfirmationTimeout = null;
         }, COPY_CONFIRMATION_MS);
+    },
+
+    showCopyFailurePulse(button) {
+        if (button._copyConfirmationTimeout) clearTimeout(button._copyConfirmationTimeout);
+        if (button._copyFailurePulseTimeout) clearTimeout(button._copyFailurePulseTimeout);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = COPY_FAILURE_RED_BG;
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = `background-color ${COPY_FAILURE_PULSE_MS}ms ease-out, color ${COPY_FAILURE_PULSE_MS}ms ease-out`;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._copyFailurePulseTimeout = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._copyFailurePulseTimeout = null;
+        }, COPY_FAILURE_PULSE_MS);
     },
 
     buildTagToggles(innerContent, header, state) {
@@ -453,12 +472,12 @@ const plugin = {
         if (!hasAny) btn.classList.add(...COPY_BTN_DISABLED_CLASSES);
         btn.addEventListener('click', () => {
             const text = this.buildCopyText(state);
-            const originalText = btn.textContent;
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log('Metadata Tag QA Enhancements: suggested changes copied to clipboard (modal)');
-                this.showCopyConfirmation(btn, originalText);
+                this.showCopyConfirmation(btn);
             }).catch((err) => {
                 Logger.error('Metadata Tag QA Enhancements: failed to copy suggested changes', err);
+                this.showCopyFailurePulse(btn);
             });
         });
         wrapper.appendChild(btn);

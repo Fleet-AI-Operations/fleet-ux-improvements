@@ -1,46 +1,57 @@
 // ============= copy-verifier-output.js =============
-// Adds a copy button after "Stdout" in the Verifier Output panel. Click copies the verifier output to the clipboard.
+// Adds a copy button in the Verifier Output panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Click copies formatted verifier text to the clipboard.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 
 const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
-    description: 'Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.3',
+    description: 'Add a copy button after Stdout or Score in the Verifier Output panel. Click copies the verifier output to the clipboard',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         buttonAdded: false,
-        stdoutRowMissingLogged: false
+        verifierTargetMissingLogged: false
     },
 
     onMutation(state, context) {
-        const stdoutRow = this.findStdoutRow();
-        if (!stdoutRow) {
-            if (!state.stdoutRowMissingLogged) {
-                Logger.debug('Copy Verifier Output: Stdout row not found');
-                state.stdoutRowMissingLogged = true;
+        const scoreRow = this.findScoreRow();
+        const stdoutRow = scoreRow ? null : this.findStdoutRow();
+        const anchorRow = scoreRow || stdoutRow;
+        if (!anchorRow) {
+            if (!state.verifierTargetMissingLogged) {
+                Logger.debug('Copy Verifier Output: Stdout/Score row not found');
+                state.verifierTargetMissingLogged = true;
             }
             return;
         }
-        state.stdoutRowMissingLogged = false;
+        state.verifierTargetMissingLogged = false;
 
-        if (stdoutRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
+        if (anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
             return;
         }
 
-        const container = stdoutRow.closest('div.text-xs.w-full');
-        if (!container) {
-            Logger.debug('Copy Verifier Output: Stdout container not found');
-            return;
+        let container;
+        if (scoreRow) {
+            container = scoreRow.closest('div.p-3');
+            if (!container) {
+                Logger.debug('Copy Verifier Output: Score card container not found');
+                return;
+            }
+        } else {
+            container = stdoutRow.closest('div.text-xs.w-full');
+            if (!container) {
+                Logger.debug('Copy Verifier Output: Stdout container not found');
+                return;
+            }
         }
 
         const button = this.createCopyButton(container);
-        stdoutRow.appendChild(button);
-        if (!stdoutRow.classList.contains('flex')) {
-            stdoutRow.classList.add('flex', 'items-center', 'gap-2');
+        anchorRow.appendChild(button);
+        if (!anchorRow.classList.contains('flex')) {
+            anchorRow.classList.add('flex', 'items-center', 'gap-2');
         }
         state.buttonAdded = true;
         Logger.log('Copy Verifier Output: Copy button added');
@@ -65,6 +76,22 @@ const plugin = {
         return null;
     },
 
+    findScoreRow() {
+        const gradingPanel = this.getGradingPanelRoot();
+        const roots = gradingPanel ? [gradingPanel, document] : [document];
+        for (const root of roots) {
+            const candidates = root.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+            for (const el of candidates) {
+                for (const s of el.querySelectorAll('span')) {
+                    if (s.textContent.trim() === 'Score:') {
+                        return el;
+                    }
+                }
+            }
+        }
+        return null;
+    },
+
     findStdoutRow() {
         const gradingPanel = this.getGradingPanelRoot();
         const roots = gradingPanel ? [gradingPanel, document] : [document];
@@ -79,30 +106,193 @@ const plugin = {
         return null;
     },
 
+    buildScoreVerifierMarkdown(container) {
+        const list = container.querySelector('div.text-xs.mb-3.space-y-0\\.5');
+        if (!list) {
+            return null;
+        }
+        const rows = list.querySelectorAll(':scope > div.flex.items-start');
+        const successes = [];
+        const failures = [];
+        for (const row of rows) {
+            const svg = row.querySelector(':scope > svg');
+            if (!svg) continue;
+            const cls = svg.getAttribute('class') || '';
+            const span = row.querySelector(':scope > span');
+            const text = span ? span.textContent.trim() : '';
+            if (!text) continue;
+            if (cls.includes('text-emerald')) {
+                successes.push(text);
+            } else if (cls.includes('text-red')) {
+                failures.push(text);
+            }
+        }
+        if (successes.length === 0 && failures.length === 0) {
+            return null;
+        }
+        const lines = ['## Verifier'];
+        if (successes.length > 0) {
+            lines.push('#### Successes');
+            for (const t of successes) {
+                lines.push(`> ✅ ${t}`);
+            }
+        }
+        if (failures.length > 0) {
+            lines.push('');
+            lines.push('#### Failures');
+            for (const t of failures) {
+                lines.push(`> ❌ ${t}`);
+            }
+        }
+        return lines.join('\n');
+    },
+
     getVerifierOutputText(container) {
+        const scoreMd = this.buildScoreVerifierMarkdown(container);
+        if (scoreMd) {
+            return scoreMd;
+        }
         const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
-        if (pre) {
+        if (pre && pre.textContent.trim()) {
             return pre.textContent.trim();
         }
         return null;
     },
 
+    ensureWindowCopyCapture() {
+        if (this._copyVerifierWindowCaptureInstalled) {
+            return;
+        }
+        this._copyVerifierWindowCaptureInstalled = true;
+        const win = typeof Context !== 'undefined' && Context.getPageWindow ? Context.getPageWindow() : window;
+        const handler = (e) => {
+            const btn = e.target.closest(`[${COPY_BUTTON_MARKER}="true"]`);
+            if (!btn || btn.getAttribute('data-fleet-plugin') !== this.id) {
+                return;
+            }
+            const cont = btn._fleetCopyVerifierContainer;
+            if (!cont) {
+                return;
+            }
+            if (btn._fleetCopyHandledAt && Date.now() - btn._fleetCopyHandledAt < 150) {
+                return;
+            }
+            btn._fleetCopyHandledAt = Date.now();
+            e.stopImmediatePropagation();
+            e.stopPropagation();
+            e.preventDefault();
+            const text = this.getVerifierOutputText(cont);
+            if (!text) {
+                Logger.warn('Copy Verifier Output: No verifier output to copy');
+                this.showVerifierCopyFailurePulse(btn);
+                return;
+            }
+            this.copyVerifierTextWithFeedback(btn, text);
+        };
+        win.addEventListener('pointerdown', handler, true);
+        win.addEventListener('click', handler, true);
+    },
+
+    clearVerifierCopyButtonFeedback(button) {
+        if (button._fleetCopyFeedbackTimeoutId) {
+            clearTimeout(button._fleetCopyFeedbackTimeoutId);
+            button._fleetCopyFeedbackTimeoutId = null;
+        }
+        if (button._fleetCopyFailureTimeoutId) {
+            clearTimeout(button._fleetCopyFailureTimeoutId);
+            button._fleetCopyFailureTimeoutId = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    showVerifierCopyFailurePulse(button) {
+        this.clearVerifierCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = 'rgb(239, 68, 68)';
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._fleetCopyFailureTimeoutId = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._fleetCopyFailureTimeoutId = null;
+        }, 500);
+    },
+
+    copyVerifierTextWithFeedback(button, text) {
+        const showOk = () => {
+            Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
+            this.clearVerifierCopyButtonFeedback(button);
+            button.style.backgroundColor = 'rgb(34, 197, 94)';
+            button.style.color = 'white';
+            button._fleetCopyFeedbackTimeoutId = setTimeout(() => {
+                button.style.backgroundColor = '';
+                button.style.color = '';
+                button._fleetCopyFeedbackTimeoutId = null;
+            }, 1000);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard
+                .writeText(text)
+                .then(showOk)
+                .catch((err) => {
+                    Logger.warn('Copy Verifier Output: Clipboard API failed, trying fallback', err);
+                    if (this.copyVerifierTextFallback(text)) {
+                        showOk();
+                    } else {
+                        Logger.error('Copy Verifier Output: Failed to copy to clipboard', err);
+                        this.showVerifierCopyFailurePulse(button);
+                    }
+                });
+        } else if (this.copyVerifierTextFallback(text)) {
+            showOk();
+        } else {
+            Logger.error('Copy Verifier Output: Failed to copy to clipboard');
+            this.showVerifierCopyFailurePulse(button);
+        }
+    },
+
+    copyVerifierTextFallback(text) {
+        try {
+            const temp = document.createElement('textarea');
+            temp.value = text;
+            temp.style.position = 'fixed';
+            temp.style.top = '-1000px';
+            document.body.appendChild(temp);
+            temp.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(temp);
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    },
+
     createCopyButton(container) {
+        this.ensureWindowCopyCapture();
+
         const button = document.createElement('button');
         button.setAttribute(COPY_BUTTON_MARKER, 'true');
         button.setAttribute('data-fleet-plugin', this.id);
         button.type = 'button';
-        button.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground size-7 h-6 w-6';
+        button.className =
+            'relative z-50 inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground size-7 h-6 w-6';
         button.setAttribute('data-state', 'closed');
         button.title = 'Copy verifier output to clipboard';
         button.setAttribute('aria-label', 'Copy verifier output to clipboard');
+        button._fleetCopyVerifierContainer = container;
 
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '12');
         svg.setAttribute('height', '12');
         svg.setAttribute('viewBox', '0 0 24 24');
         svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        svg.className = 'fill-current h-3 w-3 text-muted-foreground';
+        svg.className = 'fill-current h-3 w-3 text-muted-foreground pointer-events-none';
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('fill', 'currentColor');
         path.setAttribute('fill-rule', 'evenodd');
@@ -111,27 +301,31 @@ const plugin = {
         svg.appendChild(path);
         button.appendChild(svg);
 
-        let copyFeedbackTimeoutId = null;
-        button.addEventListener('click', () => {
+        const doCopy = () => {
+            if (button._fleetCopyHandledAt && Date.now() - button._fleetCopyHandledAt < 200) {
+                return;
+            }
+            button._fleetCopyHandledAt = Date.now();
             const text = this.getVerifierOutputText(container);
             if (!text) {
                 Logger.warn('Copy Verifier Output: No verifier output to copy');
+                this.showVerifierCopyFailurePulse(button);
                 return;
             }
-            navigator.clipboard.writeText(text).then(() => {
-                Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
-                button.style.backgroundColor = 'rgb(34, 197, 94)';
-                button.style.color = 'white';
-                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
-                copyFeedbackTimeoutId = setTimeout(() => {
-                    button.style.backgroundColor = '';
-                    button.style.color = '';
-                    copyFeedbackTimeoutId = null;
-                }, 1000);
-            }).catch((err) => {
-                Logger.error('Copy Verifier Output: Failed to copy to clipboard', err);
-            });
-        });
+            this.copyVerifierTextWithFeedback(button, text);
+        };
+
+        button.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            doCopy();
+        }, true);
+
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            doCopy();
+        }, true);
 
         return button;
     }

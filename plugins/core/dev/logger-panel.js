@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.5',
+    _version: '2.6',
     enabledByDefault: false,
     phase: 'core',
 
@@ -371,7 +371,9 @@ const plugin = {
             },
             onToggle: () => this._updateVisibility(state, !state.isVisible),
             onClear: () => this._clearLogs(state),
-            onCopyAll: () => this._copyAll(state),
+            onCopyAll: () => {
+                void this._copyAll(state);
+            },
             onMinimize: () => this._updateVisibility(state, false),
             onSearch: (event) => {
                 state.searchQuery = event.target.value.trim().toLowerCase();
@@ -501,7 +503,10 @@ const plugin = {
             entry.style.background = 'transparent';
         });
         entry.addEventListener('click', () => {
-            this._copyToClipboard(message);
+            void (async () => {
+                const ok = await this._copyToClipboard(message);
+                this._flashDevLoggerCopyFeedback(entry, ok);
+            })();
         });
 
         return entry;
@@ -591,17 +596,52 @@ const plugin = {
         this._updateNewLogIndicator(state);
     },
 
-    _copyAll(state) {
+    async _copyAll(state) {
         const text = state.logs.map((log) => log.text).join('\n');
-        this._copyToClipboard(text);
+        const ui = state.ui;
+        const btn = ui && ui.copyButton;
+        const ok = await this._copyToClipboard(text);
+        if (btn) {
+            this._flashDevLoggerCopyFeedback(btn, ok);
+        }
+        if (!ok && text) {
+            Logger.warn('Dev logger: copy all to clipboard failed');
+        }
     },
 
-    _copyToClipboard: async function(text) {
-        if (!text) return;
+    _flashDevLoggerCopyFeedback(targetEl, success) {
+        if (targetEl._fleetLoggerCopyT) clearTimeout(targetEl._fleetLoggerCopyT);
+        if (success) {
+            targetEl.style.transition = '';
+            targetEl.style.backgroundColor = 'rgb(34, 197, 94)';
+            targetEl.style.color = '#ffffff';
+            targetEl._fleetLoggerCopyT = setTimeout(() => {
+                targetEl.style.backgroundColor = '';
+                targetEl.style.color = '';
+                targetEl._fleetLoggerCopyT = null;
+            }, 1000);
+        } else {
+            const prevT = targetEl.style.transition;
+            targetEl.style.transition = 'none';
+            targetEl.style.backgroundColor = 'rgb(239, 68, 68)';
+            targetEl.style.color = '#ffffff';
+            void targetEl.offsetHeight;
+            targetEl.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+            targetEl.style.backgroundColor = '';
+            targetEl.style.color = '';
+            targetEl._fleetLoggerCopyT = setTimeout(() => {
+                targetEl.style.transition = prevT || '';
+                targetEl._fleetLoggerCopyT = null;
+            }, 500);
+        }
+    },
+
+    async _copyToClipboard(text) {
+        if (!text) return false;
         try {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 await navigator.clipboard.writeText(text);
-                return;
+                return true;
             }
         } catch (e) {
             // Fall back below
@@ -613,12 +653,14 @@ const plugin = {
         temp.style.top = '-1000px';
         document.body.appendChild(temp);
         temp.select();
+        let ok = false;
         try {
-            document.execCommand('copy');
+            ok = document.execCommand('copy');
         } catch (e) {
-            // Ignore
+            ok = false;
         }
         document.body.removeChild(temp);
+        return ok;
     },
 
     _setupLogging(state, context) {

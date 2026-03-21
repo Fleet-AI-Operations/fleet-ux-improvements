@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyPrompt',
     name: 'Copy Prompt',
     description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -110,17 +110,34 @@ const plugin = {
         button.appendChild(svg);
 
         let copyFeedbackTimeoutId = null;
+        const pulseFailure = () => {
+            if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+            const prevT = button.style.transition;
+            button.style.transition = 'none';
+            button.style.backgroundColor = 'rgb(239, 68, 68)';
+            button.style.color = '#ffffff';
+            void button.offsetHeight;
+            button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            copyFeedbackTimeoutId = setTimeout(() => {
+                button.style.transition = prevT || '';
+                copyFeedbackTimeoutId = null;
+            }, 500);
+        };
         button.addEventListener('click', () => {
             const text = this.getPromptText(promptSection);
             if (!text) {
                 Logger.warn('Copy Prompt: No prompt text to copy');
+                pulseFailure();
                 return;
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Copy Prompt: Copied ${text.length} chars to clipboard`);
+                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                button.style.transition = '';
                 button.style.backgroundColor = 'rgb(34, 197, 94)';
                 button.style.color = 'white';
-                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
                 copyFeedbackTimeoutId = setTimeout(() => {
                     button.style.backgroundColor = '';
                     button.style.color = '';
@@ -128,6 +145,7 @@ const plugin = {
                 }, 1000);
             }).catch((err) => {
                 Logger.error('Copy Prompt: Failed to copy to clipboard', err);
+                pulseFailure();
             });
         });
 

@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -451,23 +451,38 @@ const plugin = {
         executeBtn.className = buttonClass;
         executeBtn.setAttribute('data-fleet-plugin', this.id);
         executeBtn.textContent = 'Execute';
-        const showExecuteFeedback = () => {
-            executeBtn.textContent = 'Executed';
+        const showExecuteSuccess = () => {
+            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
+            executeBtn.style.transition = '';
             executeBtn.style.backgroundColor = 'rgb(34, 197, 94)';
             executeBtn.style.color = 'white';
-            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
             state.executeFeedbackTimeoutId = setTimeout(() => {
-                executeBtn.textContent = 'Execute';
                 executeBtn.style.backgroundColor = '';
                 executeBtn.style.color = '';
                 state.executeFeedbackTimeoutId = null;
-            }, 3000);
+            }, 1000);
+        };
+        const showExecuteFailure = () => {
+            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
+            const prevT = executeBtn.style.transition;
+            executeBtn.style.transition = 'none';
+            executeBtn.style.backgroundColor = 'rgb(239, 68, 68)';
+            executeBtn.style.color = '#ffffff';
+            void executeBtn.offsetHeight;
+            executeBtn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+            executeBtn.style.backgroundColor = '';
+            executeBtn.style.color = '';
+            state.executeFeedbackTimeoutId = setTimeout(() => {
+                executeBtn.style.transition = prevT || '';
+                state.executeFeedbackTimeoutId = null;
+            }, 500);
         };
         const onExecute = () => {
             const id = select.value;
             const action = this.actions[id];
             if (!action) return;
             const input = textarea.value || '';
+            let ok = true;
             try {
                 const output = action.run(input);
                 textarea.value = output;
@@ -476,8 +491,13 @@ const plugin = {
             } catch (e) {
                 Logger.error('Text Sanitizer: Execute failed', e);
                 textarea.value = input;
+                ok = false;
             }
-            showExecuteFeedback();
+            if (ok) {
+                showExecuteSuccess();
+            } else {
+                showExecuteFailure();
+            }
         };
         executeBtn.addEventListener('click', onExecute);
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
@@ -500,31 +520,50 @@ const plugin = {
         button.title = 'Copy text';
         button.setAttribute('aria-label', 'Copy text');
 
+        const pulseCopyFailure = () => {
+            if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
+            const prevT = button.style.transition;
+            button.style.transition = 'none';
+            button.style.backgroundColor = 'rgb(239, 68, 68)';
+            button.style.color = '#ffffff';
+            void button.offsetHeight;
+            button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            state.copyFeedbackTimeoutId = setTimeout(() => {
+                button.style.transition = prevT || '';
+                state.copyFeedbackTimeoutId = null;
+            }, 500);
+        };
         const handleCopy = () => {
             const container = button.closest('[data-qa-text-sanitizer="true"]');
             const textarea = container ? container.querySelector('[data-qa-text-sanitizer-textarea="true"]') : null;
-            if (!textarea) return;
+            if (!textarea) {
+                pulseCopyFailure();
+                return;
+            }
             const text = textarea.value || '';
             if (!text) {
                 Logger.debug('Text Sanitizer: No text to copy');
+                pulseCopyFailure();
                 return;
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Text Sanitizer: Copied ${text.length} chars and cleared`);
-                button.textContent = 'Copied';
+                if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
+                button.style.transition = '';
                 button.style.backgroundColor = 'rgb(34, 197, 94)';
                 button.style.color = 'white';
-                if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
                 state.copyFeedbackTimeoutId = setTimeout(() => {
-                    button.textContent = 'Copy';
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     state.copyFeedbackTimeoutId = null;
-                }, 3000);
+                }, 1000);
                 textarea.value = '';
                 if (opts && opts.onAfterClear) opts.onAfterClear();
             }).catch((err) => {
                 Logger.error('Text Sanitizer: Failed to copy to clipboard', err);
+                pulseCopyFailure();
             });
         };
 

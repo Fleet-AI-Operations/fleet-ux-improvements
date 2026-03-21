@@ -1,16 +1,18 @@
 // ============= copy-result-params.js =============
 // Adds a "Copy Result Params and Inputs" button under the Your Answer title/explanation.
-// Click copies each parameter label and value (e.g. "Total Paid: 0") to the clipboard with green 3s confirmation.
+// Click copies each parameter label and value (e.g. "Total Paid: 0") to the clipboard with green 1s confirmation (label unchanged).
 
 const COPY_RESULT_PARAMS_MARKER = 'data-fleet-copy-result-params';
-const CONFIRMATION_MS = 3000;
+const CONFIRMATION_MS = 1000;
+const FAILURE_PULSE_MS = 500;
 const GREEN_BG = 'rgb(34, 197, 94)';
+const FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
 const plugin = {
     id: 'copyResultParams',
     name: 'Copy Result Params and Inputs',
     description: 'Add a button under Your Answer that copies all parameter labels and values to the clipboard',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -77,17 +79,45 @@ const plugin = {
         return lines.join('\n');
     },
 
-    showCopyConfirmation(button, originalText) {
-        button.textContent = 'Copied!';
+    clearCopyButtonFeedback(button) {
+        if (button._copyResultParamsTimeout) {
+            clearTimeout(button._copyResultParamsTimeout);
+            button._copyResultParamsTimeout = null;
+        }
+        if (button._copyResultParamsFailTimeout) {
+            clearTimeout(button._copyResultParamsFailTimeout);
+            button._copyResultParamsFailTimeout = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    showCopySuccessFlash(button) {
+        this.clearCopyButtonFeedback(button);
         button.style.backgroundColor = GREEN_BG;
         button.style.color = 'white';
-        if (button._copyResultParamsTimeout) clearTimeout(button._copyResultParamsTimeout);
         button._copyResultParamsTimeout = setTimeout(() => {
-            button.textContent = originalText;
             button.style.backgroundColor = '';
             button.style.color = '';
             button._copyResultParamsTimeout = null;
         }, CONFIRMATION_MS);
+    },
+
+    showCopyFailurePulse(button) {
+        this.clearCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = FAILURE_RED_BG;
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = `background-color ${FAILURE_PULSE_MS}ms ease-out, color ${FAILURE_PULSE_MS}ms ease-out`;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._copyResultParamsFailTimeout = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._copyResultParamsFailTimeout = null;
+        }, FAILURE_PULSE_MS);
     },
 
     createCopyButton(yourAnswerSection) {
@@ -103,18 +133,19 @@ const plugin = {
         button.textContent = 'Copy Result Params and Inputs';
         button.title = 'Copy parameter labels and values to clipboard';
 
-        const originalText = button.textContent;
         button.addEventListener('click', () => {
             const text = this.getResultParamsText(yourAnswerSection);
             if (!text) {
                 Logger.warn('Copy Result Params: No parameters to copy');
+                this.showCopyFailurePulse(button);
                 return;
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Copy Result Params: Copied ${text.length} chars to clipboard`);
-                this.showCopyConfirmation(button, originalText);
+                this.showCopySuccessFlash(button);
             }).catch((err) => {
                 Logger.error('Copy Result Params: Failed to copy to clipboard', err);
+                this.showCopyFailurePulse(button);
             });
         });
 
