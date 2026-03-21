@@ -6,6 +6,8 @@ const GUIDELINE_LINKS = {
 };
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
+const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
+const COPY_PROMPT_SUBOPTION_ID = 'copy-prompt-button';
 const COPY_VERIFIER_OUTPUT_MARKER = 'data-fleet-revisions-copy-verifier';
 const COPY_VERIFIER_SUBOPTION_ID = 'copy-verifier-output-button';
 const COPY_BUTTON_CONFIRMATION_MS = 3000;
@@ -18,16 +20,16 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.9',
+    _version: '4.10',
     enabledByDefault: true,
     phase: 'mutation',
     
     // ========== SUB-OPTIONS ==========
     subOptions: [
         {
-            id: 'auto-paste-prompt-to-task',
-            name: 'Auto-paste prompt to Task issue',
-            description: 'Saves the prompt text on page load and automatically pastes it into the Task issue box when Task is selected',
+            id: COPY_PROMPT_SUBOPTION_ID,
+            name: 'Copy Prompt button',
+            description: 'Show a button in Request Revisions that copies the task prompt to the clipboard (paste into Task feedback manually if needed)',
             enabledByDefault: true
         },
         {
@@ -47,8 +49,6 @@ const plugin = {
     initialState: {
         missingLogged: false,
         promptText: null,
-        promptSaved: false,
-        taskObservers: new Map(), // Map of modalId -> { observer, taskButton }
         verifierOutput: null,
         verifierObserver: null,
         verifierElement: null,
@@ -58,17 +58,6 @@ const plugin = {
     },
     
     onMutation(state, context) {
-        // Ensure taskObservers Map exists
-        if (!state.taskObservers || !(state.taskObservers instanceof Map)) {
-            state.taskObservers = new Map();
-        }
-        
-        // Save prompt text if not already saved and the feature is enabled
-        const autoPastePromptEnabled = Storage.getSubOptionEnabled(this.id, 'auto-paste-prompt-to-task', true);
-        if (autoPastePromptEnabled && !state.promptSaved) {
-            this.savePromptText(state);
-        }
-        
         // Defer starting verifier watch until after initial load (avoids second body observer during mutation storm)
         if (state.verifierWatchEligibleAt === undefined) {
             state.verifierWatchEligibleAt = Date.now() + 1500;
@@ -80,8 +69,6 @@ const plugin = {
         });
         
         if (dialogs.length === 0) {
-            // Clean up observers when no dialogs are open
-            this.cleanupTaskObservers(state);
             return;
         }
         
@@ -132,109 +119,12 @@ const plugin = {
             this.watchVerifierOutput(state);
         }
         
-        // Get modal ID to track observers
-        const modalId = requestRevisionsModal.id;
-        
         // Inject guideline open buttons if enabled
         this.injectGuidelineCopyButtons(state, requestRevisionsModal);
         
         // Persist and restore Prompt Quality Rating selection within this page instance
         this.capturePromptQualityRating(state, requestRevisionsModal);
         this.restorePromptQualityRating(state, requestRevisionsModal);
-        
-        // Set up Task button observer if not already set up and feature is enabled
-        if (autoPastePromptEnabled && state.promptText && !state.taskObservers.has(modalId)) {
-            this.setupTaskButtonObserver(state, requestRevisionsModal, modalId);
-        }
-    },
-    
-    applyTextareaValue(textarea, value) {
-        // Try to find React's onChange handler and call it directly
-        // This is the proper way to work with React controlled components
-        const reactFiber = this.getReactFiber(textarea);
-        if (reactFiber) {
-            const props = reactFiber.memoizedProps || reactFiber.pendingProps;
-            if (props && props.onChange) {
-                // Create a synthetic event object that React expects
-                const syntheticEvent = {
-                    target: textarea,
-                    currentTarget: textarea,
-                    bubbles: true,
-                    cancelable: true,
-                    defaultPrevented: false,
-                    eventPhase: 2, // AT_TARGET
-                    isTrusted: false,
-                    nativeEvent: new Event('input', { bubbles: true }),
-                    preventDefault: () => {},
-                    stopPropagation: () => {},
-                    timeStamp: Date.now(),
-                    type: 'change'
-                };
-                
-                // Set the value using native setter first
-                const nativeValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLTextAreaElement.prototype,
-                    'value'
-                )?.set;
-                
-                if (nativeValueSetter) {
-                    nativeValueSetter.call(textarea, value);
-                } else {
-                    textarea.value = value;
-                }
-                
-                // Call React's onChange handler directly
-                try {
-                    props.onChange(syntheticEvent);
-                    Logger.debug('Called React onChange handler directly');
-                    return;
-                } catch (error) {
-                    Logger.warn('Error calling React onChange:', error);
-                    // Fall through to event dispatch method
-                }
-            }
-        }
-        
-        // Fallback: Use native value setter and dispatch events
-        // This should work for most React versions
-        const nativeValueSetter = Object.getOwnPropertyDescriptor(
-            window.HTMLTextAreaElement.prototype,
-            'value'
-        )?.set;
-        
-        if (nativeValueSetter) {
-            nativeValueSetter.call(textarea, value);
-        } else {
-            textarea.value = value;
-        }
-        
-        // Focus the textarea first (React sometimes needs this)
-        textarea.focus();
-        
-        // Dispatch input event (React listens to this)
-        const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-        textarea.dispatchEvent(inputEvent);
-        
-        // Also dispatch change event
-        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-        textarea.dispatchEvent(changeEvent);
-        
-        // Blur and refocus to ensure React processes the change
-        textarea.blur();
-        textarea.focus();
-    },
-    
-    savePromptText(state) {
-        // Find the task panel: prefer structure (panel containing Prompt section). Radix panel IDs like :re: are unstable.
-        const panel = this.findTaskPanel();
-        if (!panel) return;
-
-        const promptElement = panel.querySelector('.text-sm.whitespace-pre-wrap');
-        if (promptElement) {
-            state.promptText = promptElement.textContent.trim();
-            state.promptSaved = true;
-            Logger.log(`✓ Prompt text saved (${state.promptText.length} chars)`);
-        }
     },
 
     findTaskPanel() {
@@ -256,139 +146,6 @@ const plugin = {
         }
         // Strategy 3: fallback to Radix ID (unstable across sessions)
         return document.querySelector('[id=":re:"]') || document.querySelector('[data-panel-id=":re:"]');
-    },
-    
-    setupTaskButtonObserver(state, modal, modalId) {
-        // Find the Task button
-        const taskButton = this.findTaskIssueButton(modal);
-        if (!taskButton) {
-            Logger.debug('Task button not found, will retry on next mutation');
-            return;
-        }
-        
-        // Check if already processed (button is already clicked)
-        if (this.isTaskButtonSelected(taskButton)) {
-            // Button is already selected, wait a bit for textarea to appear, then paste
-            setTimeout(() => {
-                this.handleTaskIssuePaste(state, modal, modalId);
-            }, 100);
-            // Mark as having observer (even though we won't set one up) to prevent retries
-            state.taskObservers.set(modalId, { observer: null, taskButton });
-            return;
-        }
-        
-        // Set up MutationObserver to watch for class changes on the Task button
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                    if (this.isTaskButtonSelected(taskButton)) {
-                        // Task button was clicked, wait a bit for textarea to appear, then paste
-                        setTimeout(() => {
-                            this.handleTaskIssuePaste(state, modal, modalId);
-                        }, 100);
-                        // Disconnect observer after detecting click
-                        observer.disconnect();
-                        state.taskObservers.delete(modalId);
-                        break;
-                    }
-                }
-            }
-        });
-        
-        // Observe class attribute changes on the Task button
-        observer.observe(taskButton, {
-            attributes: true,
-            attributeFilter: ['class']
-        });
-        
-        // Store observer info
-        state.taskObservers.set(modalId, { observer, taskButton });
-        
-        Logger.debug('Task button observer set up');
-    },
-    
-    isTaskButtonSelected(button) {
-        // Check if button has the selected state classes
-        return button.classList.contains('border-brand') || 
-               button.classList.contains('bg-brand') ||
-               button.querySelector('.border-brand') !== null ||
-               button.querySelector('.bg-brand') !== null;
-    },
-    
-    findTaskIssueButton(modal) {
-        // Find button for Task option in the issues section (label-tolerant: "Task", "Problems with Task", etc.)
-        const buttons = Context.dom.queryAll('button', {
-            root: modal,
-            context: `${this.id}.issueButtons`
-        });
-        
-        for (const button of buttons) {
-            const buttonText = button.textContent.trim();
-            // Accept exact "Task" or labels that include "Task" but are not Environment/Grading
-            const isTaskOption = buttonText === 'Task' ||
-                (buttonText.includes('Task') && !buttonText.includes('Environment') && !buttonText.includes('Grading'));
-            if (!isTaskOption) continue;
-            // Check if any ancestor contains "Where are the issues"
-            // (it's in a sibling div, not the immediate parent)
-            let ancestor = button.parentElement;
-            while (ancestor && ancestor !== modal) {
-                const ancestorText = ancestor.textContent || '';
-                if (ancestorText.includes('Where are the issues')) {
-                    return button;
-                }
-                ancestor = ancestor.parentElement;
-            }
-        }
-        return null;
-    },
-    
-    handleTaskIssuePaste(state, modal, modalId) {
-        Logger.log('Request Revisions: handleTaskIssuePaste ran');
-        // Prefer id-based selector (#feedback-Task); fallback for older markup
-        let taskFeedbackTextarea = document.getElementById('feedback-Task');
-        if (!taskFeedbackTextarea || !modal.contains(taskFeedbackTextarea) || taskFeedbackTextarea.tagName !== 'TEXTAREA') {
-            taskFeedbackTextarea = Context.dom.query('textarea#feedback-Task', {
-                root: modal,
-                context: `${this.id}.taskFeedbackTextarea`
-            });
-        }
-        
-        if (!taskFeedbackTextarea) {
-            Logger.log('Request Revisions: Task paste skipped — no textarea');
-            return; // Textarea doesn't exist yet (might appear slightly after button click)
-        }
-        
-        // Check if textarea already has content (trim to handle whitespace-only content)
-        const currentValue = taskFeedbackTextarea.value ? taskFeedbackTextarea.value.trim() : '';
-        if (currentValue.length > 0) {
-            Logger.log(`Request Revisions: Task paste skipped — already has content (${currentValue.length} chars)`);
-            return; // Don't overwrite existing content
-        }
-        
-        if (!state.promptText) {
-            Logger.log('Request Revisions: Task paste skipped — no promptText');
-            return;
-        }
-        
-        // Format the prompt text
-        const formattedPrompt = `---\n${state.promptText}\n---`;
-        
-        Logger.log(`Pasting prompt text to Task issue box (${formattedPrompt.length} chars)`);
-        
-        // Apply the value using the same method that worked for workflow copy
-        this.applyTextareaValue(taskFeedbackTextarea, formattedPrompt);
-        
-        Logger.log('✓ Prompt text pasted to Task issue box');
-    },
-    
-    cleanupTaskObservers(state) {
-        // Clean up all Task button observers
-        for (const [modalId, observerInfo] of state.taskObservers.entries()) {
-            if (observerInfo.observer) {
-                observerInfo.observer.disconnect();
-            }
-        }
-        state.taskObservers.clear();
     },
 
     findWhereAreTheIssuesButtonRow(modal) {
@@ -471,6 +228,8 @@ const plugin = {
 
         const copyVerifierEnabled = Storage.getSubOptionEnabled(this.id, COPY_VERIFIER_SUBOPTION_ID, true);
         this.syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass);
+        const copyPromptEnabled = Storage.getSubOptionEnabled(this.id, COPY_PROMPT_SUBOPTION_ID, true);
+        this.syncCopyPromptButton(state, wrapper, copyPromptEnabled, buttonClass);
     },
 
     syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass) {
@@ -485,13 +244,65 @@ const plugin = {
                 btn.textContent = 'Copy Verifier Output';
                 btn.title = 'Copy verifier output to clipboard';
                 btn.addEventListener('click', () => this.handleCopyVerifierOutputClick(state, btn));
-                wrapper.appendChild(btn);
+                wrapper.insertBefore(btn, wrapper.firstChild);
                 Logger.debug('Request Revisions: Copy Verifier Output button added');
             }
             btn.style.display = '';
         } else if (btn) {
             btn.style.display = 'none';
         }
+    },
+
+    syncCopyPromptButton(state, wrapper, copyPromptEnabled, buttonClass) {
+        let btn = wrapper.querySelector(`[${COPY_PROMPT_MARKER}="true"]`);
+        if (copyPromptEnabled) {
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = buttonClass;
+                btn.setAttribute('data-fleet-plugin', this.id);
+                btn.setAttribute(COPY_PROMPT_MARKER, 'true');
+                btn.textContent = 'Copy Prompt';
+                btn.title = 'Copy task prompt to clipboard';
+                btn.addEventListener('click', () => this.handleCopyPromptClick(state, btn));
+                wrapper.insertBefore(btn, wrapper.firstChild);
+                Logger.debug('Request Revisions: Copy Prompt button added');
+            }
+            btn.style.display = '';
+        } else if (btn) {
+            btn.style.display = 'none';
+        }
+    },
+
+    getPromptTextForClipboard(state) {
+        const panel = this.findTaskPanel();
+        if (panel) {
+            const el = panel.querySelector('.text-sm.whitespace-pre-wrap') ||
+                panel.querySelector('[class*="whitespace-pre-wrap"]');
+            if (el) {
+                const text = el.textContent.trim();
+                if (text) {
+                    state.promptText = text;
+                    return text;
+                }
+            }
+        }
+        return (state.promptText && String(state.promptText).trim()) || '';
+    },
+
+    handleCopyPromptClick(state, button) {
+        const originalText = 'Copy Prompt';
+        const text = this.getPromptTextForClipboard(state);
+        if (!text) {
+            Logger.warn('Request Revisions: No prompt text to copy');
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => {
+            Logger.log(`Request Revisions: Copied prompt to clipboard (${text.length} chars)`);
+            this.showCopyButtonConfirmation(button, originalText);
+        }).catch((err) => {
+            Logger.error('Request Revisions: Failed to copy prompt', err);
+        });
     },
 
     getVerifierTextForClipboard(state) {
@@ -740,30 +551,5 @@ const plugin = {
         });
 
         state.verifierChangeObserver = changeObserver;
-    },
-    
-    getReactFiber(element) {
-        // Try different React internal property names
-        // React 16+: __reactInternalInstance or __reactFiber
-        // React 17+: __reactFiber$<random>
-        // React 18+: __reactFiber$<random> or __reactInternalInstance$<random>
-        const keys = Object.keys(element);
-        for (const key of keys) {
-            if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
-                return element[key];
-            }
-        }
-        
-        // Also check for React 18's alternate fiber
-        for (const key of keys) {
-            if (key.includes('reactFiber') || key.includes('reactInternalInstance')) {
-                const fiber = element[key];
-                if (fiber && (fiber.memoizedProps || fiber.pendingProps)) {
-                    return fiber;
-                }
-            }
-        }
-        
-        return null;
     }
 };
