@@ -7,7 +7,7 @@ const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description: 'Add a copy button after Stdout or Score in the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -184,6 +184,7 @@ const plugin = {
             const text = this.getVerifierOutputText(cont);
             if (!text) {
                 Logger.warn('Copy Verifier Output: No verifier output to copy');
+                this.showVerifierCopyFailurePulse(btn);
                 return;
             }
             this.copyVerifierTextWithFeedback(btn, text);
@@ -192,12 +193,42 @@ const plugin = {
         win.addEventListener('click', handler, true);
     },
 
+    clearVerifierCopyButtonFeedback(button) {
+        if (button._fleetCopyFeedbackTimeoutId) {
+            clearTimeout(button._fleetCopyFeedbackTimeoutId);
+            button._fleetCopyFeedbackTimeoutId = null;
+        }
+        if (button._fleetCopyFailureTimeoutId) {
+            clearTimeout(button._fleetCopyFailureTimeoutId);
+            button._fleetCopyFailureTimeoutId = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    showVerifierCopyFailurePulse(button) {
+        this.clearVerifierCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = 'rgb(239, 68, 68)';
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._fleetCopyFailureTimeoutId = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._fleetCopyFailureTimeoutId = null;
+        }, 500);
+    },
+
     copyVerifierTextWithFeedback(button, text) {
         const showOk = () => {
             Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
+            this.clearVerifierCopyButtonFeedback(button);
             button.style.backgroundColor = 'rgb(34, 197, 94)';
             button.style.color = 'white';
-            if (button._fleetCopyFeedbackTimeoutId) clearTimeout(button._fleetCopyFeedbackTimeoutId);
             button._fleetCopyFeedbackTimeoutId = setTimeout(() => {
                 button.style.backgroundColor = '';
                 button.style.color = '';
@@ -215,12 +246,14 @@ const plugin = {
                         showOk();
                     } else {
                         Logger.error('Copy Verifier Output: Failed to copy to clipboard', err);
+                        this.showVerifierCopyFailurePulse(button);
                     }
                 });
         } else if (this.copyVerifierTextFallback(text)) {
             showOk();
         } else {
             Logger.error('Copy Verifier Output: Failed to copy to clipboard');
+            this.showVerifierCopyFailurePulse(button);
         }
     },
 
@@ -276,6 +309,7 @@ const plugin = {
             const text = this.getVerifierOutputText(container);
             if (!text) {
                 Logger.warn('Copy Verifier Output: No verifier output to copy');
+                this.showVerifierCopyFailurePulse(button);
                 return;
             }
             this.copyVerifierTextWithFeedback(button, text);

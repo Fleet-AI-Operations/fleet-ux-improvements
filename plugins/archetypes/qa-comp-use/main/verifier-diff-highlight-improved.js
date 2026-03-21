@@ -6,7 +6,7 @@ const plugin = {
     id: 'verifierDiffHighlightImproved',
     name: 'Verifier Diff Highlight (Improved)',
     description: 'Custom side-by-side diff viewer for Expected vs Your Answer in verifier output',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -711,16 +711,37 @@ const plugin = {
             Logger.info('Copied Expected and QA answer to clipboard');
             if (button) {
                 if (button._vdhiCopyTimeoutId) clearTimeout(button._vdhiCopyTimeoutId);
+                if (button._vdhiCopyFailTimeoutId) clearTimeout(button._vdhiCopyFailTimeoutId);
+                button.style.transition = '';
                 button.style.backgroundColor = 'rgb(34, 197, 94)';
                 button.style.color = 'white';
                 button._vdhiCopyTimeoutId = setTimeout(() => {
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     button._vdhiCopyTimeoutId = null;
-                }, 3000);
+                }, 1000);
             }
         }).catch((err) => {
             Logger.error('Failed to copy to clipboard', err);
+            if (button) {
+                if (button._vdhiCopyTimeoutId) {
+                    clearTimeout(button._vdhiCopyTimeoutId);
+                    button._vdhiCopyTimeoutId = null;
+                }
+                if (button._vdhiCopyFailTimeoutId) clearTimeout(button._vdhiCopyFailTimeoutId);
+                const prevTransition = button.style.transition;
+                button.style.transition = 'none';
+                button.style.backgroundColor = 'rgb(239, 68, 68)';
+                button.style.color = '#ffffff';
+                void button.offsetHeight;
+                button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+                button.style.backgroundColor = '';
+                button.style.color = '';
+                button._vdhiCopyFailTimeoutId = setTimeout(() => {
+                    button.style.transition = prevTransition || '';
+                    button._vdhiCopyFailTimeoutId = null;
+                }, 500);
+            }
         });
     },
 

@@ -4,7 +4,7 @@ const plugin = {
     id: 'progressPromptExpand',
     name: 'Expanded Submitted Prompts',
     description: 'Hover over task items to expand truncated prompts',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
@@ -94,11 +94,43 @@ const plugin = {
                     e.stopPropagation();
                     if (!Storage.getSubOptionEnabled(pluginId, 'copyOnClick', true)) return;
                     const text = inner.textContent.trim();
-                    if (!text) return;
+                    const flashSuccess = () => {
+                        if (inner._wfPromptCopyT) clearTimeout(inner._wfPromptCopyT);
+                        inner.style.transition = '';
+                        inner.style.backgroundColor = 'rgb(34, 197, 94)';
+                        inner.style.color = '#ffffff';
+                        inner._wfPromptCopyT = setTimeout(() => {
+                            inner.style.backgroundColor = '';
+                            inner.style.color = '';
+                            inner._wfPromptCopyT = null;
+                        }, 1000);
+                    };
+                    const flashFailure = () => {
+                        if (inner._wfPromptCopyT) clearTimeout(inner._wfPromptCopyT);
+                        const prevT = inner.style.transition;
+                        inner.style.transition = 'none';
+                        inner.style.backgroundColor = 'rgb(239, 68, 68)';
+                        inner.style.color = '#ffffff';
+                        void inner.offsetHeight;
+                        inner.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+                        inner.style.backgroundColor = '';
+                        inner.style.color = '';
+                        inner._wfPromptCopyT = setTimeout(() => {
+                            inner.style.transition = prevT || '';
+                            inner._wfPromptCopyT = null;
+                        }, 500);
+                    };
+                    if (!text) {
+                        Logger.debug('progress-prompt-expand: no prompt text to copy');
+                        flashFailure();
+                        return;
+                    }
                     navigator.clipboard.writeText(text).then(() => {
                         Logger.log('Prompt copied to clipboard');
+                        flashSuccess();
                     }).catch((err) => {
                         Logger.error('Failed to copy prompt:', err);
+                        flashFailure();
                     });
                 });
             }

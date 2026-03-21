@@ -10,7 +10,7 @@ const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
 const COPY_PROMPT_SUBOPTION_ID = 'copy-prompt-button';
 const COPY_VERIFIER_OUTPUT_MARKER = 'data-fleet-revisions-copy-verifier';
 const COPY_VERIFIER_SUBOPTION_ID = 'copy-verifier-output-button';
-const COPY_SUCCESS_FLASH_MS = 3000;
+const COPY_SUCCESS_FLASH_MS = 1000;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
@@ -22,7 +22,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '3.13',
+    _version: '4.0',
     enabledByDefault: true,
     phase: 'mutation',
     

@@ -13,7 +13,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -28,6 +28,33 @@ const plugin = {
     initialState: {
         wrapperAdded: false,
         missingLogged: false
+    },
+
+    flashClipboardSuccess(btn) {
+        if (btn._fleetClipboardFbT) clearTimeout(btn._fleetClipboardFbT);
+        btn.style.backgroundColor = 'rgb(34, 197, 94)';
+        btn.style.color = '#ffffff';
+        btn._fleetClipboardFbT = setTimeout(() => {
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+            btn._fleetClipboardFbT = null;
+        }, 1000);
+    },
+
+    flashClipboardFailure(btn) {
+        if (btn._fleetClipboardFbT) clearTimeout(btn._fleetClipboardFbT);
+        const prevT = btn.style.transition;
+        btn.style.transition = 'none';
+        btn.style.backgroundColor = 'rgb(239, 68, 68)';
+        btn.style.color = '#ffffff';
+        void btn.offsetHeight;
+        btn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn._fleetClipboardFbT = setTimeout(() => {
+            btn.style.transition = prevT || '';
+            btn._fleetClipboardFbT = null;
+        }, 500);
     },
 
     onMutation(state, context) {
@@ -183,8 +210,10 @@ const plugin = {
                     btn.addEventListener('click', () => {
                         navigator.clipboard.writeText(b.link).then(() => {
                             Logger.log(`Useful Link Buttons: copied link to clipboard`);
+                            this.flashClipboardSuccess(btn);
                         }).catch((err) => {
                             Logger.error('Useful Link Buttons: failed to copy link', err);
+                            this.flashClipboardFailure(btn);
                         });
                     });
                 } else {

@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level and character-level changes in the Prompt Changes modal',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -417,24 +417,42 @@ const plugin = {
             button.dataset.diffCopyTarget = label;
 
             let copyFeedbackTimeoutId = null;
+            const pulseCopyFailure = () => {
+                if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                const prevT = button.style.transition;
+                button.style.transition = 'none';
+                button.style.backgroundColor = 'rgb(239, 68, 68)';
+                button.style.color = 'white';
+                void button.offsetHeight;
+                button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+                button.style.backgroundColor = '';
+                button.style.color = '';
+                copyFeedbackTimeoutId = setTimeout(() => {
+                    button.style.transition = prevT || '';
+                    copyFeedbackTimeoutId = null;
+                }, 500);
+            };
             button.addEventListener('click', async () => {
                 const pre = column.querySelector(this.selectors.beforePre);
                 if (!pre) {
                     Logger.warn(`Missing ${label} pre element for copy`);
+                    pulseCopyFailure();
                     return;
                 }
                 const fallbackText = pre.textContent || '';
                 const sourceText = pre.dataset.originalText || fallbackText;
                 if (!sourceText) {
                     Logger.warn(`No ${label} text found to copy`);
+                    pulseCopyFailure();
                     return;
                 }
                 try {
                     await navigator.clipboard.writeText(sourceText);
                     Logger.info(`Copied ${label} prompt to clipboard (${sourceText.length} chars)`);
+                    if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
+                    button.style.transition = '';
                     button.style.backgroundColor = 'rgb(34, 197, 94)';
                     button.style.color = 'white';
-                    if (copyFeedbackTimeoutId) clearTimeout(copyFeedbackTimeoutId);
                     copyFeedbackTimeoutId = setTimeout(() => {
                         button.style.backgroundColor = '';
                         button.style.color = '';
@@ -442,6 +460,7 @@ const plugin = {
                     }, 1000);
                 } catch (err) {
                     Logger.error(`Failed to copy ${label} prompt`, err);
+                    pulseCopyFailure();
                 }
             });
 

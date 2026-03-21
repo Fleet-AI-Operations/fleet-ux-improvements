@@ -9,7 +9,7 @@ const plugin = {
     id: 'disputeDetailTaskId',
     name: 'Dispute Detail Task ID',
     description: 'Shows a copyable Task ID in the dispute detail header from the View Task link',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -82,11 +82,42 @@ const plugin = {
         btn.title = 'Copy Task ID';
         btn.addEventListener('click', () => {
             navigator.clipboard.writeText(taskId).then(() => {
+                if (btn._fleetDisputeCopyFailT) {
+                    clearTimeout(btn._fleetDisputeCopyFailT);
+                    btn._fleetDisputeCopyFailT = null;
+                }
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn.style.transition = '';
+                btn.classList.remove('fleet-dispute-id-copied');
+                void btn.offsetHeight;
                 btn.classList.add('fleet-dispute-id-copied');
                 Logger.log('Dispute Detail Task ID: copied to clipboard');
-                setTimeout(() => btn.classList.remove('fleet-dispute-id-copied'), 3000);
+                if (btn._fleetDisputeCopyOkT) clearTimeout(btn._fleetDisputeCopyOkT);
+                btn._fleetDisputeCopyOkT = setTimeout(() => {
+                    btn.classList.remove('fleet-dispute-id-copied');
+                    btn._fleetDisputeCopyOkT = null;
+                }, 1000);
             }).catch((err) => {
                 Logger.error('Dispute Detail Task ID: failed to copy', err);
+                if (btn._fleetDisputeCopyOkT) {
+                    clearTimeout(btn._fleetDisputeCopyOkT);
+                    btn._fleetDisputeCopyOkT = null;
+                }
+                btn.classList.remove('fleet-dispute-id-copied');
+                if (btn._fleetDisputeCopyFailT) clearTimeout(btn._fleetDisputeCopyFailT);
+                const prevTransition = btn.style.transition;
+                btn.style.transition = 'none';
+                btn.style.backgroundColor = 'rgb(239, 68, 68)';
+                btn.style.color = '#ffffff';
+                void btn.offsetHeight;
+                btn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn._fleetDisputeCopyFailT = setTimeout(() => {
+                    btn.style.transition = prevTransition || '';
+                    btn._fleetDisputeCopyFailT = null;
+                }, 500);
             });
         });
         return btn;

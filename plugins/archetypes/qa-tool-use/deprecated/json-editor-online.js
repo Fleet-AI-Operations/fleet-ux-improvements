@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -144,7 +144,8 @@ const plugin = {
                 if (isHandlingClick) return;
                 isHandlingClick = true;
                 try {
-                    await this.copyResultAndOpenEditor(card, resultArea);
+                    const copyOk = await this.copyResultAndOpenEditor(card, resultArea);
+                    this._flashJsonEditorToolButton(button, copyOk);
                 } finally {
                     // Reset after a short delay to allow async operations
                     setTimeout(() => { isHandlingClick = false; }, 1000);
@@ -247,57 +248,82 @@ const plugin = {
         return null;
     },
     
+    _flashJsonEditorToolButton(button, success) {
+        if (button._fleetJsonEdFlashT) clearTimeout(button._fleetJsonEdFlashT);
+        if (success) {
+            button.style.transition = '';
+            button.style.backgroundColor = 'rgb(34, 197, 94)';
+            button.style.color = '#ffffff';
+            button._fleetJsonEdFlashT = setTimeout(() => {
+                button.style.backgroundColor = '';
+                button.style.color = '';
+                button._fleetJsonEdFlashT = null;
+            }, 1000);
+        } else {
+            const prevT = button.style.transition;
+            button.style.transition = 'none';
+            button.style.backgroundColor = 'rgb(239, 68, 68)';
+            button.style.color = '#ffffff';
+            void button.offsetHeight;
+            button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            button._fleetJsonEdFlashT = setTimeout(() => {
+                button.style.transition = prevT || '';
+                button._fleetJsonEdFlashT = null;
+            }, 500);
+        }
+    },
+
     async copyResultAndOpenEditor(card, resultArea) {
-        // Prevent double execution
         if (this._copying) {
-            return;
+            return false;
         }
         this._copying = true;
-        
+        let copyOk = false;
+
         try {
             Logger.log('Copying result and opening JSON Editor Online');
-            
-            // Find the result content div (the one with the actual JSON/text)
+
             const resultContent = this.findResultContent(resultArea);
             if (resultContent) {
-                try {
-                    // Extract text content
-                    const textContent = resultContent.textContent || resultContent.innerText || '';
-                    
-                    if (textContent.trim()) {
-                        // Use Clipboard API to copy directly
-                        await navigator.clipboard.writeText(textContent);
-                        Logger.log('✓ Copied result content to clipboard');
-                    } else {
-                        Logger.warn('Result content is empty');
-                    }
-                } catch (e) {
-                    Logger.warn('Failed to copy to clipboard:', e);
-                    // Fallback: try using document.execCommand for older browsers
+                const textContent = (resultContent.textContent || resultContent.innerText || '').trim();
+                if (textContent) {
                     try {
-                        const textArea = document.createElement('textarea');
-                        textArea.value = resultContent.textContent || resultContent.innerText || '';
-                        textArea.style.position = 'fixed';
-                        textArea.style.opacity = '0';
-                        document.body.appendChild(textArea);
-                        textArea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textArea);
-                        Logger.log('✓ Copied result content to clipboard (fallback method)');
-                    } catch (fallbackError) {
-                        Logger.warn('Fallback copy method also failed:', fallbackError);
+                        await navigator.clipboard.writeText(textContent);
+                        copyOk = true;
+                        Logger.log('✓ Copied result content to clipboard');
+                    } catch (e) {
+                        Logger.warn('Failed to copy to clipboard:', e);
+                        try {
+                            const textArea = document.createElement('textarea');
+                            textArea.value = textContent;
+                            textArea.style.position = 'fixed';
+                            textArea.style.opacity = '0';
+                            document.body.appendChild(textArea);
+                            textArea.select();
+                            copyOk = document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                            if (copyOk) {
+                                Logger.log('✓ Copied result content to clipboard (fallback method)');
+                            }
+                        } catch (fallbackError) {
+                            Logger.warn('Fallback copy method also failed:', fallbackError);
+                        }
                     }
+                } else {
+                    Logger.warn('Result content is empty');
                 }
             } else {
                 Logger.warn('Result content div not found, opening editor anyway');
             }
-            
-            // Open JSON Editor Online in new tab
+
             window.open('https://jsoneditoronline.org', '_blank');
             Logger.log('✓ Opened JSON Editor Online');
         } finally {
             this._copying = false;
         }
+        return copyOk;
     },
     
     findResultContent(resultArea) {
