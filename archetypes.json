@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.78",
+  "archetypesVersion": "6.79",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -391,8 +391,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.9",
-          "hash": "sha256-9e77d8f75789817ee4c43f6d71d1886a75dbb8c69d7e92e1769efe2fc5e6ba50"
+          "version": "2.0",
+          "hash": "sha256-1b13b3bdc92749882de73ad3d7304cdccae2d00f54a745c7401fa79994e20158"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -495,8 +495,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.8",
-          "hash": "sha256-0899b7312a8dc2bcba72aad9d236263c30033589af95407200c33420427fb906"
+          "version": "1.9",
+          "hash": "sha256-bdbecbdf73ac1ccd439306cb4a8981f5e4bd4b6fb965d06afa2b40964ec0a061"
         },
         {
           "name": "copy-result-params.js",
@@ -612,8 +612,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.0",
-          "hash": "sha256-10d2779718e3e2c67981808d69dd2c568557d348bffa53bbd3a8e482459dab01"
+          "version": "1.1",
+          "hash": "sha256-4969571a31d8dda112975bffa8d42c30c570812e49d7e7f30cc07d79130554f0"
         },
         {
           "name": "verifier-diff-highlight-improved.js",

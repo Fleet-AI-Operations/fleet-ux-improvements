@@ -1,13 +1,17 @@
 // ============= copy-verifier-output.js =============
 // Adds a copy button in the Verifier Output panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Click copies formatted verifier text to the clipboard.
+// Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
+const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
+const RAW_OUTPUT_ROW_MARKER = 'data-fleet-copy-verifier-raw-row';
 
 const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
-    description: 'Add a copy button after Stdout or Score in the Verifier Output panel. Click copies the verifier output to the clipboard',
-    _version: '1.9',
+    description:
+        'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -29,10 +33,6 @@ const plugin = {
         }
         state.verifierTargetMissingLogged = false;
 
-        if (anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
-            return;
-        }
-
         let container;
         if (scoreRow) {
             container = scoreRow.closest('div.p-3');
@@ -48,13 +48,75 @@ const plugin = {
             }
         }
 
-        const button = this.createCopyButton(container);
-        anchorRow.appendChild(button);
-        if (!anchorRow.classList.contains('flex')) {
-            anchorRow.classList.add('flex', 'items-center', 'gap-2');
+        if (!anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
+            const button = this.createCopyButton(container);
+            anchorRow.appendChild(button);
+            if (!anchorRow.classList.contains('flex')) {
+                anchorRow.classList.add('flex', 'items-center', 'gap-2');
+            }
+            if (!state.buttonAdded) {
+                state.buttonAdded = true;
+                Logger.log('Copy Verifier Output: Copy button added');
+            }
         }
-        state.buttonAdded = true;
-        Logger.log('Copy Verifier Output: Copy button added');
+
+        if (scoreRow) {
+            this.syncRawOutputCopyButton(container);
+        }
+    },
+
+    findRawOutputBlock(scoreContainer) {
+        for (const block of scoreContainer.querySelectorAll(':scope > div.text-xs.mb-3')) {
+            if (block.classList.contains('space-y-0.5')) continue;
+            const hasRaw = Array.from(block.querySelectorAll('button')).some((b) =>
+                (b.textContent || '').includes('Raw Output')
+            );
+            if (hasRaw) return block;
+        }
+        return null;
+    },
+
+    findRawOutputPre(block) {
+        return block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre');
+    },
+
+    unwrapRawOutputCopyRow(block) {
+        const wrapper = block.querySelector(`:scope > [${RAW_OUTPUT_ROW_MARKER}="true"]`);
+        if (!wrapper) return;
+        const toggleBtn = wrapper.querySelector(`button:not([${COPY_RAW_OUTPUT_MARKER}="true"])`);
+        if (toggleBtn && (toggleBtn.textContent || '').includes('Raw Output')) {
+            block.insertBefore(toggleBtn, wrapper);
+            if (!toggleBtn.classList.contains('mb-1')) toggleBtn.classList.add('mb-1');
+        }
+        wrapper.remove();
+    },
+
+    syncRawOutputCopyButton(scoreContainer) {
+        const block = this.findRawOutputBlock(scoreContainer);
+        if (!block) return;
+        const pre = this.findRawOutputPre(block);
+        if (!pre || !pre.textContent.trim()) {
+            this.unwrapRawOutputCopyRow(block);
+            return;
+        }
+        let copyBtn = block.querySelector(`[${COPY_RAW_OUTPUT_MARKER}="true"]`);
+        if (copyBtn) {
+            copyBtn._fleetCopyRawPre = pre;
+            return;
+        }
+        const toggleBtn = Array.from(block.querySelectorAll('button')).find(
+            (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
+        );
+        if (!toggleBtn) return;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex items-center gap-2 mb-1';
+        wrapper.setAttribute(RAW_OUTPUT_ROW_MARKER, 'true');
+        toggleBtn.classList.remove('mb-1');
+        toggleBtn.parentNode.insertBefore(wrapper, toggleBtn);
+        wrapper.appendChild(toggleBtn);
+        copyBtn = this.createRawOutputCopyButton(pre);
+        wrapper.appendChild(copyBtn);
+        Logger.debug('Copy Verifier Output: Raw Output copy control added');
     },
 
     getGradingPanelRoot() {
@@ -166,6 +228,26 @@ const plugin = {
         this._copyVerifierWindowCaptureInstalled = true;
         const win = typeof Context !== 'undefined' && Context.getPageWindow ? Context.getPageWindow() : window;
         const handler = (e) => {
+            const rawBtn = e.target.closest(`[${COPY_RAW_OUTPUT_MARKER}="true"]`);
+            if (rawBtn && rawBtn.getAttribute('data-fleet-plugin') === this.id) {
+                const pre = rawBtn._fleetCopyRawPre;
+                if (rawBtn._fleetCopyHandledAt && Date.now() - rawBtn._fleetCopyHandledAt < 150) {
+                    return;
+                }
+                rawBtn._fleetCopyHandledAt = Date.now();
+                e.stopImmediatePropagation();
+                e.stopPropagation();
+                e.preventDefault();
+                const rawText = pre && pre.textContent.trim();
+                if (!rawText) {
+                    Logger.warn('Copy Verifier Output: No raw output to copy');
+                    this.showVerifierCopyFailurePulse(rawBtn);
+                    return;
+                }
+                this.copyVerifierTextWithFeedback(rawBtn, rawText, ' (raw output)');
+                return;
+            }
+
             const btn = e.target.closest(`[${COPY_BUTTON_MARKER}="true"]`);
             if (!btn || btn.getAttribute('data-fleet-plugin') !== this.id) {
                 return;
@@ -223,9 +305,9 @@ const plugin = {
         }, 500);
     },
 
-    copyVerifierTextWithFeedback(button, text) {
+    copyVerifierTextWithFeedback(button, text, logSuffix = '') {
         const showOk = () => {
-            Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard`);
+            Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard${logSuffix}`);
             this.clearVerifierCopyButtonFeedback(button);
             button.style.backgroundColor = 'rgb(34, 197, 94)';
             button.style.color = 'white';
@@ -313,6 +395,63 @@ const plugin = {
                 return;
             }
             this.copyVerifierTextWithFeedback(button, text);
+        };
+
+        button.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            doCopy();
+        }, true);
+
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            doCopy();
+        }, true);
+
+        return button;
+    },
+
+    createRawOutputCopyButton(pre) {
+        this.ensureWindowCopyCapture();
+
+        const button = document.createElement('button');
+        button.setAttribute(COPY_RAW_OUTPUT_MARKER, 'true');
+        button.setAttribute('data-fleet-plugin', this.id);
+        button.type = 'button';
+        button.className =
+            'relative z-50 inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground size-7 h-6 w-6';
+        button.setAttribute('data-state', 'closed');
+        button.title = 'Copy raw verifier output to clipboard';
+        button.setAttribute('aria-label', 'Copy raw verifier output to clipboard');
+        button._fleetCopyRawPre = pre;
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '12');
+        svg.setAttribute('height', '12');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.className = 'fill-current h-3 w-3 text-muted-foreground pointer-events-none';
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill', 'currentColor');
+        path.setAttribute('fill-rule', 'evenodd');
+        path.setAttribute('clip-rule', 'evenodd');
+        path.setAttribute('d', 'M2 5C2 3.34315 3.34315 2 5 2H12C13.6569 2 15 3.34315 15 5C15 5.55228 14.5523 6 14 6C13.4477 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4H5C4.44772 4 4 4.44772 4 5V13C4 13.5523 4.44772 14 5 14H6C6.55228 14 7 14.4477 7 15C7 15.5523 6.55228 16 6 16H5C3.34315 16 2 14.6569 2 13V5ZM9 10.8462C9 9.20041 10.42 8 12 8H19C20.58 8 22 9.20041 22 10.8462V19.1538C22 20.7996 20.58 22 19 22H12C10.42 22 9 20.7996 9 19.1538V10.8462ZM12 10C11.3708 10 11 10.4527 11 10.8462V19.1538C11 19.5473 11.3708 20 12 20H19C19.6292 20 20 19.5473 20 19.1538V10.8462C20 10.4527 19.6292 10 19 10H12Z');
+        svg.appendChild(path);
+        button.appendChild(svg);
+
+        const doCopy = () => {
+            if (button._fleetCopyHandledAt && Date.now() - button._fleetCopyHandledAt < 200) {
+                return;
+            }
+            button._fleetCopyHandledAt = Date.now();
+            const text = pre && pre.textContent.trim();
+            if (!text) {
+                Logger.warn('Copy Verifier Output: No raw output to copy');
+                this.showVerifierCopyFailurePulse(button);
+                return;
+            }
+            this.copyVerifierTextWithFeedback(button, text, ' (raw output)');
         };
 
         button.addEventListener('pointerdown', (e) => {
