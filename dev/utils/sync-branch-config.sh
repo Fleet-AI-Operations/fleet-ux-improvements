@@ -5,6 +5,7 @@
 # Usage:
 #   ./sync-branch-config.sh        # use current git branch
 #   ./sync-branch-config.sh -m     # update as if on main (ignore actual branch)
+#   ./sync-branch-config.sh -c     # after sync, commit fleet.user.js if it changed
 #
 # Run from repo root (or anywhere; uses git to find root). Updates fleet.user.js:
 #   - @name: add "[branch] " prefix when not main, remove when main
@@ -18,10 +19,12 @@
 set -euo pipefail
 
 use_main=false
-while getopts "m" opt; do
+commit_after=false
+while getopts "mc" opt; do
   case "$opt" in
     m) use_main=true ;;
-    *) echo "Usage: $0 [-m]" >&2; exit 1 ;;
+    c) commit_after=true ;;
+    *) echo "Usage: $0 [-m] [-c]" >&2; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -61,9 +64,21 @@ new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header
   s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{HEADER_VERSION}.$3}ge;
 ')"
 
+changed=false
 if [[ "$new_content" != "$content" ]]; then
   printf "%s" "$new_content" > "$file_path"
+  changed=true
   echo "[info] Synced fleet.user.js for branch: $branch"
 else
   echo "[info] fleet.user.js already in sync for branch: $branch"
+fi
+
+if [[ "$commit_after" == true ]]; then
+  if [[ "$changed" == true ]]; then
+    git -C "$root" add -- "$file_path"
+    git -C "$root" commit -m "Sync fleet.user.js branch config to $branch"
+    echo "[info] Committed fleet.user.js for branch: $branch"
+  else
+    echo "[info] No commit (-c): fleet.user.js was already in sync"
+  fi
 fi
