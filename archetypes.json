@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.77",
+  "archetypesVersion": "6.78",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -609,6 +609,11 @@
           "name": "tool-description-truncate.js",
           "version": "1.0",
           "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1"
+        },
+        {
+          "name": "copy-verifier-output.js",
+          "version": "1.0",
+          "hash": "sha256-10d2779718e3e2c67981808d69dd2c568557d348bffa53bbd3a8e482459dab01"
         },
         {
           "name": "verifier-diff-highlight-improved.js",
