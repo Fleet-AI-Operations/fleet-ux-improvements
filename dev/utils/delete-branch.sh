@@ -9,9 +9,10 @@
 #   branch   Name of the branch to delete.
 #
 # Effects:
-#   Deletes the branch locally (git branch -D) and on origin (git push --delete).
-#   Errors are ignored; both deletions are attempted even if the branch does
-#   not exist in one or both places.
+#   Checks out main, deletes the branch locally (git branch -D) and on origin
+#   (git push --delete), then runs git pull on main. Deletion errors are
+#   ignored; both deletions are attempted even if the branch does not exist in
+#   one or both places. Pull failures exit non-zero (set -e).
 #
 # Safety:
 #   The script refuses to delete the branch "main" (any casing) and exits with
@@ -32,3 +33,4 @@ fi
 git checkout main
 git branch -D "$branch" 2>/dev/null || true
 git push origin --delete "$branch" 2>/dev/null || true
+git pull
