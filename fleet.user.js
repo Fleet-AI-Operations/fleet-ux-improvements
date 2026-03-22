@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [fix-update-verifier-copy] Fleet Workflow Builder UX Enhancer
+// @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      6.1.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -15,8 +15,8 @@
 // @connect      raw.githubusercontent.com
 // @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix-update-verifier-copy/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix-update-verifier-copy/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -43,7 +43,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'fix-update-verifier-copy',
+        branch: 'main',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
