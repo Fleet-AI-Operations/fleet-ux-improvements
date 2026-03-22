@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.79",
+  "archetypesVersion": "6.80",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -391,8 +391,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "2.0",
-          "hash": "sha256-1b13b3bdc92749882de73ad3d7304cdccae2d00f54a745c7401fa79994e20158"
+          "version": "2.1",
+          "hash": "sha256-dd6c6aaa6243d1858bdc41b9d2a7c1efd39051288ddbbf200d6e1233de4db181"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -426,8 +426,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "5.1",
-          "hash": "sha256-c83c990f595c20c1e010700077c0d0263da4d9ced46944daa0a8e5697d8cac2e"
+          "version": "5.2",
+          "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa"
         },
         {
           "name": "prompt-diff-highlight.js",
@@ -495,8 +495,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.9",
-          "hash": "sha256-bdbecbdf73ac1ccd439306cb4a8981f5e4bd4b6fb965d06afa2b40964ec0a061"
+          "version": "1.10",
+          "hash": "sha256-668dc5e1fb58550f460399273e298c86af2619ce9e0a4068c75da07f4096f3e6"
         },
         {
           "name": "copy-result-params.js",
@@ -510,8 +510,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "4.1",
-          "hash": "sha256-ca2d864fc92f72f2a481e69fef3dad5ad442a64c72fbdf30a76beb092a41c1ca"
+          "version": "4.2",
+          "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71"
         },
         {
           "name": "qa-scratchpad.js",
@@ -612,8 +612,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.1",
-          "hash": "sha256-4969571a31d8dda112975bffa8d42c30c570812e49d7e7f30cc07d79130554f0"
+          "version": "1.2",
+          "hash": "sha256-668a6f255b4d3042cb277eca0f94ed080c3e8e0138b2e95ee7c5151a0c6b043d"
         },
         {
           "name": "verifier-diff-highlight-improved.js",
