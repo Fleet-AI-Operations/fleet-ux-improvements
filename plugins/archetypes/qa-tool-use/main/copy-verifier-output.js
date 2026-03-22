@@ -12,7 +12,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -49,11 +49,12 @@ const plugin = {
             }
         }
 
+        const copyButtonHost = scoreRow ? this.getScoreRowButtonHost(scoreRow) : anchorRow;
         if (!anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
             const button = this.createCopyButton(container);
-            anchorRow.appendChild(button);
-            if (!anchorRow.classList.contains('flex')) {
-                anchorRow.classList.add('flex', 'items-center', 'gap-2');
+            copyButtonHost.appendChild(button);
+            if (!copyButtonHost.classList.contains('flex')) {
+                copyButtonHost.classList.add('flex', 'items-center', 'gap-2');
             }
             if (!state.buttonAdded) {
                 state.buttonAdded = true;
@@ -137,6 +138,17 @@ const plugin = {
             }
         }
         return null;
+    },
+
+    /** When the score lives in an inner flex group and timing is a sibling (`justify-between`), append the copy control there so it stays beside the score. */
+    getScoreRowButtonHost(scoreRow) {
+        for (const s of scoreRow.querySelectorAll('span')) {
+            if (s.textContent.trim() !== 'Score:') continue;
+            const p = s.parentElement;
+            if (p && p !== scoreRow) return p;
+            return scoreRow;
+        }
+        return scoreRow;
     },
 
     findScoreRow() {
