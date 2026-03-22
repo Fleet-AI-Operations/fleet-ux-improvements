@@ -92,6 +92,10 @@ Scripts that touch `fleet.user.js` (checkout, release, test) ensure:
 - Updates `fleet.user.js` for the new branch, commits with message "Sync branch config", pushes.
 - Prints the GitHub tree URL; install the userscript from that URL for development.
 
+**sync-branch-config.sh** — `./dev/utils/sync-branch-config.sh [-m] [-c] [--dry-run] [--fleet PATH] [--branch NAME]`
+
+- Aligns `fleet.user.js` with the current git branch (`-m` treats the branch as `main`). `-c` commits the file if it changed. `--dry-run` prints the planned field updates without writing. `--fleet` uses a specific file path (default: `<repo>/fleet.user.js`). `--branch` uses a branch name instead of `git` HEAD (ignored when `-m` is set). Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches.
+
 **push.sh** — `./utils/push.sh [--dry-run] ["optional commit message"]`
 
 - Lists uncommitted changes; for each changed versioned file (plugins, fleet.user.js, settings-modal docs), bumps version by 0.1 if working tree is not already higher than HEAD. Updates `archetypes.json` settingsModalDocs for .md changes.
@@ -106,8 +110,8 @@ Scripts that touch `fleet.user.js` (checkout, release, test) ensure:
 
 **test.sh** — `./utils/test.sh [--dry-run] <new_branch_name>`
 
-- Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in `utils/` (or `local-utils/` if symlinked/copied). `--dry-run` prints planned changes without modifying anything.
-- Fetches `origin/main`, creates branch from `main`, runs `sync-branch-config.sh` to update `fleet.user.js`, commits and pushes.
+- Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in the same directory as the script (e.g. `dev/utils/`). `--dry-run` prints planned changes without modifying anything.
+- Fetches `origin/main`, creates a new branch from the **current** branch (so non-fleet files stay as on your branch), replaces `fleet.user.js` with `origin/main`’s copy, runs `sync-branch-config.sh` to update `fleet.user.js` for the new branch name, commits and pushes.
 - Use to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main with `release.sh` when satisfied.
 
 **update-versions.sh** — `./utils/update-versions.sh [--dry-run] [options]`
