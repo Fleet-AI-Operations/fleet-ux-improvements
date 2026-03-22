@@ -85,7 +85,7 @@ RAW_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/fleet
 BLOB_URL="https://github.com/$ghuser/$ghrepo/blob/$BRANCH/fleet.user.js"
 
 echo "You MUST test and develop using this $BRANCH specific userscript."
-echo "Install it at (raw):"
-echo "$RAW_INSTALL_URL"
 echo "View on GitHub:"
 echo "$BLOB_URL"
+echo "Install it at (raw):"
+echo "$RAW_INSTALL_URL"
