@@ -1,5 +1,6 @@
 // ============= copy-verifier-output.js =============
 // Adds a copy button in the verifier output area: after "Stdout" (classic output) or after "Score: #" (checklist verifier).
+// Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Same behavior as QA archetypes; shared verifier panel DOM (see verifier-diff-highlight-improved.js).
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
@@ -12,7 +13,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '1.1',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -36,7 +37,7 @@ const plugin = {
 
         let container;
         if (scoreRow) {
-            container = scoreRow.closest('div.p-3');
+            container = scoreRow.closest('div.p-3') || scoreRow.closest('div.p-2');
             if (!container) {
                 Logger.debug('Copy Verifier Output: Score card container not found');
                 return;
@@ -49,11 +50,12 @@ const plugin = {
             }
         }
 
+        const copyButtonHost = scoreRow ? this.getScoreRowButtonHost(scoreRow) : anchorRow;
         if (!anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`)) {
             const button = this.createCopyButton(container);
-            anchorRow.appendChild(button);
-            if (!anchorRow.classList.contains('flex')) {
-                anchorRow.classList.add('flex', 'items-center', 'gap-2');
+            copyButtonHost.appendChild(button);
+            if (!copyButtonHost.classList.contains('flex')) {
+                copyButtonHost.classList.add('flex', 'items-center', 'gap-2');
             }
             if (!state.buttonAdded) {
                 state.buttonAdded = true;
@@ -144,7 +146,7 @@ const plugin = {
                 if (panel) return panel;
             }
         }
-        const scoreRowCandidates = document.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+        const scoreRowCandidates = document.querySelectorAll('div.flex.items-center.text-sm.mb-3');
         for (const el of scoreRowCandidates) {
             for (const s of el.querySelectorAll('span')) {
                 if (s.textContent.trim() === 'Score:') {
@@ -156,11 +158,22 @@ const plugin = {
         return null;
     },
 
+    /** When the score lives in an inner flex group and timing is a sibling (`justify-between`), append the copy control there so it stays beside the score. */
+    getScoreRowButtonHost(scoreRow) {
+        for (const s of scoreRow.querySelectorAll('span')) {
+            if (s.textContent.trim() !== 'Score:') continue;
+            const p = s.parentElement;
+            if (p && p !== scoreRow) return p;
+            return scoreRow;
+        }
+        return scoreRow;
+    },
+
     findScoreRow() {
         const gradingPanel = this.getGradingPanelRoot();
         const roots = gradingPanel ? [gradingPanel, document] : [document];
         for (const root of roots) {
-            const candidates = root.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+            const candidates = root.querySelectorAll('div.flex.items-center.text-sm.mb-3');
             for (const el of candidates) {
                 for (const s of el.querySelectorAll('span')) {
                     if (s.textContent.trim() === 'Score:') {
@@ -199,7 +212,7 @@ const plugin = {
             if (!svg) continue;
             const cls = svg.getAttribute('class') || '';
             const span = row.querySelector(':scope > span');
-            const text = span ? span.textContent.trim() : '';
+            const text = span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '';
             if (!text) continue;
             if (cls.includes('text-emerald')) {
                 successes.push(text);

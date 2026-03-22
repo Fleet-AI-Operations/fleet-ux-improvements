@@ -23,7 +23,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.1',
+    _version: '4.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -578,7 +578,7 @@ const plugin = {
 
     // Same search logic as copy-verifier-output.js (qa-comp-use)
     findScoreRow() {
-        const candidates = document.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+        const candidates = document.querySelectorAll('div.flex.items-center.text-sm.mb-3');
         for (const el of candidates) {
             for (const s of el.querySelectorAll('span')) {
                 if (s.textContent.trim() === 'Score:') {
@@ -612,7 +612,7 @@ const plugin = {
             if (!svg) continue;
             const cls = svg.getAttribute('class') || '';
             const span = row.querySelector(':scope > span');
-            const text = span ? span.textContent.trim() : '';
+            const text = span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '';
             if (!text) continue;
             if (cls.includes('text-emerald')) {
                 successes.push(text);
@@ -648,7 +648,7 @@ const plugin = {
     tryCaptureVerifierOutput() {
         const scoreRow = this.findScoreRow();
         if (scoreRow) {
-            const container = scoreRow.closest('div.p-3');
+            const container = scoreRow.closest('div.p-3') || scoreRow.closest('div.p-2');
             if (container) {
                 const md = this.buildScoreVerifierMarkdown(container);
                 if (md && md.length > 0) {
