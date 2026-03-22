@@ -1,5 +1,6 @@
 // ============= copy-verifier-output.js =============
-// Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Click copies formatted verifier text to the clipboard.
+// Adds a copy button in the verifier output area: after "Stdout" (classic output) or after "Score: #" (checklist verifier).
+// Same behavior as QA archetypes; shared verifier panel DOM (see verifier-diff-highlight-improved.js).
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
@@ -11,7 +12,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '1.9',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -133,6 +134,23 @@ const plugin = {
             if (instancePanel && instancePanel.parentElement) {
                 const sibling = instancePanel.nextElementSibling || instancePanel.previousElementSibling;
                 if (sibling && sibling.getAttribute?.('data-panel')) return sibling;
+            }
+        }
+        // Dispute detail: no "Report Grading Issues"; scope search to the panel that contains the verifier labels
+        const stdoutCandidates = document.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
+        for (const el of stdoutCandidates) {
+            if (el.textContent.trim() === 'Stdout') {
+                const panel = el.closest('[data-panel]');
+                if (panel) return panel;
+            }
+        }
+        const scoreRowCandidates = document.querySelectorAll('div.text-sm.flex.items-center.gap-2.mb-3');
+        for (const el of scoreRowCandidates) {
+            for (const s of el.querySelectorAll('span')) {
+                if (s.textContent.trim() === 'Score:') {
+                    const panel = el.closest('[data-panel]');
+                    if (panel) return panel;
+                }
             }
         }
         return null;

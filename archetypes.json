@@ -1,6 +1,6 @@
 {
   "version": "6.1.2",
-  "archetypesVersion": "6.75",
+  "archetypesVersion": "6.79",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -391,8 +391,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.9",
-          "hash": "sha256-9e77d8f75789817ee4c43f6d71d1886a75dbb8c69d7e92e1769efe2fc5e6ba50"
+          "version": "2.0",
+          "hash": "sha256-1b13b3bdc92749882de73ad3d7304cdccae2d00f54a745c7401fa79994e20158"
         },
         {
           "name": "remember-layout-proportions.js",
@@ -495,8 +495,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.8",
-          "hash": "sha256-0899b7312a8dc2bcba72aad9d236263c30033589af95407200c33420427fb906"
+          "version": "1.9",
+          "hash": "sha256-bdbecbdf73ac1ccd439306cb4a8981f5e4bd4b6fb965d06afa2b40964ec0a061"
         },
         {
           "name": "copy-result-params.js",
@@ -581,6 +581,11 @@
           "hash": "sha256-80b40af93a2889dc851f876b304f8dd015080f0d6c3acd2f3e5bc32a29795e23"
         },
         {
+          "name": "create-instance-autoclick.js",
+          "version": "1.1",
+          "hash": "sha256-347d7d13d41af849764a88acbcf392c3b2e0c5a487cf2c6e456c2fd930d3004f"
+        },
+        {
           "name": "favorites.js",
           "version": "1.0",
           "hash": "sha256-1d840f89b2dc12883cc22e15fa620c1141ad53289746d048c5e5fe00ef110af0"
@@ -604,6 +609,11 @@
           "name": "tool-description-truncate.js",
           "version": "1.0",
           "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1"
+        },
+        {
+          "name": "copy-verifier-output.js",
+          "version": "1.1",
+          "hash": "sha256-4969571a31d8dda112975bffa8d42c30c570812e49d7e7f30cc07d79130554f0"
         },
         {
           "name": "verifier-diff-highlight-improved.js",

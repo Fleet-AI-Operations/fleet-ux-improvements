@@ -38,6 +38,11 @@ set -euo pipefail
 # Repo root from script location (use git so scripts in utils/ or dev/utils/ both work)
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git -C "$script_dir" rev-parse --show-toplevel)"
+sync_script="$script_dir/sync-branch-config.sh"
+if [[ ! -f "$sync_script" ]]; then
+  echo "[error] sync-branch-config.sh not found: $sync_script" >&2
+  exit 1
+fi
 
 usage() {
   cat <<'EOF'
@@ -99,88 +104,16 @@ if [[ "$dry_run" == true ]]; then
     echo "[error] fleet.user.js not found on origin/main"
     exit 1
   fi
-  content="$(git -C "$root" show origin/main:fleet.user.js)"
-  header_version="$(printf '%s' "$content" | awk '/^\/\/ @version[[:space:]]+/ {print $3; exit}')"
-  if [[ -z "$header_version" ]]; then
-    echo "[error] Could not find @version in header of main's fleet.user.js"
-    exit 1
-  fi
-  needs_name_change() {
-    printf '%s' "$content" | BRANCH="$branch" perl -0ne '
-      if (/^\/\/ \@name\s+(\[[^\]]+\]\s+)?(.+?)(?:\r?\n|\z)/m) {
-        my ($tag, $name) = ($1, $2);
-        $name =~ s/^\s+|\s+$//g;
-        if ($ENV{BRANCH} eq "main") { print($tag ? "1" : "0"); } else {
-          my $expected = "[" . $ENV{BRANCH} . "] ";
-          print((!defined $tag || $tag ne $expected) ? "1" : "0");
-        }
-      }
-    '
-  }
-  needs_download_url_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
-  needs_update_url_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
-  needs_github_config_change() { printf '%s' "$content" | BRANCH="$branch" perl -0ne 'if (/branch:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{BRANCH} ? "1" : "0"); }'; }
-  needs_version_constant_change() { printf '%s' "$content" | HEADER_VERSION="$header_version" perl -0ne 'if (/const VERSION\s*=\s*[\"\x27]([^\"\x27]+)[\"\x27]/) { print($1 ne $ENV{HEADER_VERSION} ? "1" : "0"); }'; }
-  name_change="$(needs_name_change)"
-  download_change="$(needs_download_url_change)"
-  update_change="$(needs_update_url_change)"
-  github_change="$(needs_github_config_change)"
-  version_change="$(needs_version_constant_change)"
-  new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header_version" perl -0pe '
-    s{(// \@name\s+)(\[[^\]]+\]\s+)?(.+?)(\r?\n|\z)}{
-      my ($p, $tag, $name, $eol) = ($1, $2, $3, $4);
-      $name =~ s/^\s+|\s+$//g;
-      ($ENV{BRANCH} eq "main" ? $p . $name : $p . "[" . $ENV{BRANCH} . "] " . $name) . $eol
-    }mge;
-    s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/)([^/]+)(/fleet\.user\.js)}{$1.$ENV{BRANCH}.$3}ge;
-    s{(branch:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
-    s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{HEADER_VERSION}.$3}ge;
-  ')"
-  print_fleet_changes() {
-    local c="$1" n="$2"
-    if [[ "$name_change" == "1" ]]; then
-      cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      echo "  fleet.user.js: @name: \"$cur\" -> \"$new\""
-    fi
-    if [[ "$download_change" == "1" ]]; then
-      cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      echo "  fleet.user.js: @downloadURL: \"$cur\" -> \"$new\""
-    fi
-    if [[ "$update_change" == "1" ]]; then
-      cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      echo "  fleet.user.js: @updateURL: \"$cur\" -> \"$new\""
-    fi
-    if [[ "$github_change" == "1" ]]; then
-      cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      new="$(printf '%s' "$n" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      echo "  fleet.user.js: GITHUB_CONFIG.branch: \"$cur\" -> \"$new\""
-    fi
-    if [[ "$version_change" == "1" ]]; then
-      cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /const VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      new="$(printf '%s' "$n" | perl -0ne 'print $1 if /const VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      echo "  fleet.user.js: const VERSION: \"$cur\" -> \"$new\""
-    fi
-  }
-  changed=()
-  [[ "$name_change" == "1" ]] && changed+=("@name")
-  [[ "$download_change" == "1" ]] && changed+=("@downloadURL")
-  [[ "$update_change" == "1" ]] && changed+=("@updateURL")
-  [[ "$github_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
-  [[ "$version_change" == "1" ]] && changed+=("VERSION constant")
+  tmp_fleet="$(mktemp)"
+  trap 'rm -f "$tmp_fleet"' EXIT
+  git -C "$root" show origin/main:fleet.user.js >"$tmp_fleet"
   current_branch="$(git -C "$root" branch --show-current)"
   echo "[dry-run] Would create branch: $branch from current branch ($current_branch); would replace fleet.user.js with main's, then update fleet.user.js:"
-  if [[ "${#changed[@]}" -gt 0 ]]; then
-    print_fleet_changes "$content" "$new_content"
-  else
-    echo "  (no changes - already in sync for branch $branch)"
-  fi
+  "$sync_script" --dry-run --fleet "$tmp_fleet" --branch "$branch"
   echo "[dry-run] Would run: git fetch origin main"
   echo "[dry-run] Would run: git checkout -b $branch"
   echo "[dry-run] Would run: git checkout origin/main -- fleet.user.js"
-  echo "[dry-run] Would run: sync-branch-config.sh (or apply above fleet.user.js changes)"
+  echo "[dry-run] Would run: $sync_script"
   echo "[dry-run] Would run: git add ."
   echo "[dry-run] Would run: git commit -m \"Sync branch config for $branch\""
   echo "[dry-run] Would run: git push -u origin $branch"
@@ -198,7 +131,7 @@ echo "[info] Replacing fleet.user.js with main's version..."
 git -C "$root" checkout origin/main -- fleet.user.js
 
 echo "[info] Syncing branch config in fleet.user.js..."
-(cd "$root" && "$script_dir/sync-branch-config.sh")
+(cd "$root" && "$sync_script")
 
 git -C "$root" add .
 if git -C "$root" diff --cached --quiet; then
