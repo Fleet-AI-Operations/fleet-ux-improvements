@@ -1860,8 +1860,8 @@
             this.cleanupDeprecatedCache(pluginList, archetypeId, 'dev');
             
             Logger.log('Dev archetype plugin loading complete');
-            // Dev archetype plugins respect dev-global default off same as core dev plugins.
-            if (!Storage.get('dev-global-plugins-enabled', false)) {
+            // Dev archetype plugins: when dev-global is off, disable all; on dev builds default is on (see Storage.get default).
+            if (!Storage.get('dev-global-plugins-enabled', DEV_SCRIPTS_ENABLED)) {
                 PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
             }
         },
@@ -2103,8 +2103,8 @@
         if (DEV_SCRIPTS_ENABLED) {
             const devPlugins = ArchetypeManager.getDevPlugins();
             await PluginLoader.loadPluginsFromConfig(devPlugins, 'dev');
-            // Dev tools default off regardless of per-plugin enabledByDefault; enforce before runCorePlugins.
-            if (!Storage.get('dev-global-plugins-enabled', false)) {
+            // When dev-global is off, disable all dev plugins before runCorePlugins. On dev builds the default is on (logger + optional archetype dev).
+            if (!Storage.get('dev-global-plugins-enabled', DEV_SCRIPTS_ENABLED)) {
                 PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
             }
         }
