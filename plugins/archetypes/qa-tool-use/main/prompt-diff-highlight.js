@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptDiffHighlightV1',
     name: 'Prompt Diff Highlighting',
     description: 'Highlights word-level and character-level changes in the Prompt Changes modal',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -37,7 +37,6 @@ const plugin = {
             pre .diff-highlight-remove {
                 background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(127, 29, 29) !important;
-                padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
@@ -49,7 +48,6 @@ const plugin = {
             pre .diff-highlight-add {
                 background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(6, 78, 59) !important;
-                padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
@@ -723,8 +721,8 @@ const plugin = {
         const removeBg = isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.3)';
         const addBg = isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.3)';
         return {
-            remove: `background-color:${removeBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`,
-            add: `background-color:${addBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`
+            remove: `background-color:${removeBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;`,
+            add: `background-color:${addBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;`
         };
     },
     

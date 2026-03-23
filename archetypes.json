@@ -1,6 +1,6 @@
 {
   "version": "6.2.0",
-  "archetypesVersion": "6.83",
+  "archetypesVersion": "6.84",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -264,8 +264,8 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "3.3",
-          "hash": "sha256-d226b94bccd038122217639d34bafc2417f4b573afe3c9b373b63c3bdee8d9af"
+          "version": "3.4",
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
         }
       ]
     },
@@ -431,8 +431,8 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.3",
-          "hash": "sha256-3f354b0619991574f9718b2a2607278bf2711a354a9f9f24a6cd03a15ebfc4eb"
+          "version": "2.4",
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
         },
         {
           "name": "tool-results-resize-handle.js",
@@ -520,13 +520,13 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.3",
-          "hash": "sha256-3f354b0619991574f9718b2a2607278bf2711a354a9f9f24a6cd03a15ebfc4eb"
+          "version": "2.4",
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
         },
         {
           "name": "verifier-diff-highlight-improved.js",
-          "version": "1.4",
-          "hash": "sha256-d8c9f49082a3d7fef6f85daa5e806041fdde49746064f74ff66336772fa91978"
+          "version": "1.5",
+          "hash": "sha256-70e886f9378a8ac6c5bea333b75e2d6a66d510eae03fbd7af3d8eff3a0e687f6"
         },
         {
           "name": "accept-task-modal-improvements.js",
@@ -617,8 +617,8 @@
         },
         {
           "name": "verifier-diff-highlight-improved.js",
-          "version": "1.4",
-          "hash": "sha256-e0ef7a8f1f8b53aa0ac26661d5d2f0024b3739c43e9f673a6ec982474a8239f8"
+          "version": "1.5",
+          "hash": "sha256-42fe5f4290fc72eda17ecfc93176ea0c078017a52abeede23ed26ef59dccaf62"
         }
       ]
     },
@@ -631,8 +631,8 @@
       "plugins": [
         {
           "name": "prompt-diff-highlight.js",
-          "version": "3.3",
-          "hash": "sha256-d226b94bccd038122217639d34bafc2417f4b573afe3c9b373b63c3bdee8d9af"
+          "version": "3.4",
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
         }
       ]
     }
