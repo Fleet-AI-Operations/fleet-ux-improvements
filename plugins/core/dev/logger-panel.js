@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.7',
+    _version: '2.8',
     enabledByDefault: true,
     phase: 'core',
 
@@ -154,6 +154,18 @@ const plugin = {
         copyButton.style.color = 'inherit';
         copyButton.style.cursor = 'pointer';
 
+        const refreshButton = document.createElement('button');
+        refreshButton.type = 'button';
+        refreshButton.textContent = 'Refresh';
+        refreshButton.title = 'Reload the page';
+        refreshButton.style.fontSize = '11px';
+        refreshButton.style.padding = '2px 6px';
+        refreshButton.style.borderRadius = '6px';
+        refreshButton.style.border = '1px solid rgba(255,255,255,0.2)';
+        refreshButton.style.background = 'transparent';
+        refreshButton.style.color = 'inherit';
+        refreshButton.style.cursor = 'pointer';
+
         const minimizeButton = document.createElement('button');
         minimizeButton.type = 'button';
         minimizeButton.textContent = 'Minimize';
@@ -270,6 +282,7 @@ const plugin = {
 
         headerActions.appendChild(clearButton);
         headerActions.appendChild(copyButton);
+        headerActions.appendChild(refreshButton);
         headerActions.appendChild(minimizeButton);
         header.appendChild(headerTitle);
         header.appendChild(headerActions);
@@ -301,6 +314,7 @@ const plugin = {
             headerActions,
             clearButton,
             copyButton,
+            refreshButton,
             minimizeButton,
             searchInput,
             bodyWrapper,
@@ -375,6 +389,10 @@ const plugin = {
                 void this._copyAll(state);
             },
             onMinimize: () => this._updateVisibility(state, false),
+            onRefresh: () => {
+                Logger.log('✓ Dev logger: refresh page requested');
+                window.location.reload();
+            },
             onSearch: (event) => {
                 state.searchQuery = event.target.value.trim().toLowerCase();
                 this._applySearchFilter(state);
@@ -419,6 +437,7 @@ const plugin = {
         ui.toggleButton.addEventListener('click', state.handlers.onToggle);
         ui.clearButton.addEventListener('click', state.handlers.onClear);
         ui.copyButton.addEventListener('click', state.handlers.onCopyAll);
+        ui.refreshButton.addEventListener('click', state.handlers.onRefresh);
         ui.minimizeButton.addEventListener('click', state.handlers.onMinimize);
         ui.searchInput.addEventListener('input', state.handlers.onSearch);
         ui.resizeHandle.addEventListener('mousedown', state.handlers.onResizeStart);

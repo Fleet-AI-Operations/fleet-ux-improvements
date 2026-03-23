@@ -1,6 +1,6 @@
 {
   "version": "6.2.0",
-  "archetypesVersion": "6.88",
+  "archetypesVersion": "6.89",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -16,8 +16,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.7",
-      "hash": "sha256-bbfcb6423e97512f1afa26a6aeb0bcc0380fa0cc01f47819966acdfe73d1ad0d"
+      "version": "2.8",
+      "hash": "sha256-f61da8733fe9d961e169d66445bf0fe372295f15dd667152353ced6675ff5825"
     }
   ],
   "settingsModalDocs": [
