@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.8',
+    _version: '2.9',
     enabledByDefault: true,
     phase: 'core',
 
@@ -616,14 +616,19 @@ const plugin = {
     },
 
     async _copyAll(state) {
-        const text = state.logs.map((log) => log.text).join('\n');
+        const visibleLogs = state.logs.filter(
+            (log) => log.node && log.node.style.display !== 'none'
+        );
+        const text = visibleLogs.map((log) => log.text).join('\n');
         const ui = state.ui;
         const btn = ui && ui.copyButton;
         const ok = await this._copyToClipboard(text);
         if (btn) {
             this._flashDevLoggerCopyFeedback(btn, ok);
         }
-        if (!ok && text) {
+        if (!text && state.logs.length > 0) {
+            Logger.warn('Dev logger: copy skipped (no visible logs for current filter)');
+        } else if (!ok && text) {
             Logger.warn('Dev logger: copy all to clipboard failed');
         }
     },
