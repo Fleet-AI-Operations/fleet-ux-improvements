@@ -1,6 +1,6 @@
 {
   "version": "6.2.0",
-  "archetypesVersion": "6.86",
+  "archetypesVersion": "6.87",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -379,8 +379,8 @@
         },
         {
           "name": "hide-grading-panel-button.js",
-          "version": "1.0",
-          "hash": "sha256-51691284c97e8ea6018d57362192fb1b30f1fe36939134f309c78a63f67b1dfb"
+          "version": "1.1",
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
         },
         {
           "name": "clear-search.js",
@@ -498,8 +498,8 @@
         },
         {
           "name": "hide-grading-panel-button.js",
-          "version": "1.0",
-          "hash": "sha256-51691284c97e8ea6018d57362192fb1b30f1fe36939134f309c78a63f67b1dfb"
+          "version": "1.1",
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
         },
         {
           "name": "bug-report-expand.js",
