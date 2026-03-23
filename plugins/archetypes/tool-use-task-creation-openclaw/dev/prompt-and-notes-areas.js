@@ -6,8 +6,8 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '3.1',
-    enabledByDefault: true,
+    _version: '3.2',
+    enabledByDefault: false,
     phase: 'mutation',
     
     // ========== SUB-OPTIONS ==========

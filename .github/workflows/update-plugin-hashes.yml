@@ -22,9 +22,36 @@ jobs:
 
       - name: Commit updated hashes
         run: |
-          git diff --quiet archetypes.json && echo "No hash changes" && exit 0
+          if git diff --quiet archetypes.json; then
+            echo "No hash changes"
+            exit 0
+          fi
+
+          OLD="$(mktemp)"
+          trap 'rm -f "$OLD"' EXIT
+          git show HEAD:archetypes.json > "$OLD"
+
+          LIST="$(jq -r -n --slurpfile o "$OLD" --slurpfile n archetypes.json '($o[0]) as $O | ($n[0]) as $N | def bm(a): (a // []) | map({(.name): .hash}) | add // {}; def plugins_for($archetypes; $aid): ($archetypes // [] | map(select(.id == $aid)) | if length > 0 then .[0].plugins // [] else [] end); ((bm($O.corePlugins)) as $oc | (bm($N.corePlugins)) as $nc | ($nc | keys_unsorted[]) as $k | select(($oc[$k] // "") != ($nc[$k] // "")) | "plugins/core/main/\($k)"), ((bm($O.devPlugins)) as $oc | (bm($N.devPlugins)) as $nc | ($nc | keys_unsorted[]) as $k | select(($oc[$k] // "") != ($nc[$k] // "")) | "plugins/core/dev/\($k)"), (($N.archetypes // [])[] as $na | $na.id as $aid | (bm(plugins_for($O.archetypes; $aid))) as $oc | (bm($na.plugins)) as $nc | ($nc | keys_unsorted[]) as $k | select(($oc[$k] // "") != ($nc[$k] // "")) | "plugins/archetypes/\($aid)/main/\($k)"), (($N.devArchetypes // [])[] as $na | $na.id as $aid | (bm(plugins_for($O.devArchetypes; $aid))) as $oc | (bm($na.plugins)) as $nc | ($nc | keys_unsorted[]) as $k | select(($oc[$k] // "") != ($nc[$k] // "")) | "plugins/archetypes/\($aid)/dev/\($k)")' | sort -u)"
+
+          echo "Plugins with updated hashes:"
+          if [[ -n "$LIST" ]]; then
+            echo "$LIST" | sed 's/^/- /'
+            {
+              echo "### Plugins with updated hashes"
+              echo ""
+              echo "$LIST" | sed 's/^/- /'
+            } >> "$GITHUB_STEP_SUMMARY"
+            BODY="Updated hashes for:"$'\n'"$(echo "$LIST" | sed 's/^/- /')"
+          else
+            echo "(none detected by hash diff; see archetypes.json changes)"
+            echo "### archetypes.json changed" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Plugin list could not be derived from hash field diffs; inspect the commit diff." >> "$GITHUB_STEP_SUMMARY"
+            BODY="archetypes.json updated; inspect diff for details."
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add archetypes.json
-          git commit -m "CI: update plugin hashes"
+          git commit -m "CI: update plugin hashes" -m "$BODY"
           git push

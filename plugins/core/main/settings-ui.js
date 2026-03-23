@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1604,8 +1604,8 @@ const plugin = {
     },
 
     _getDevGlobalEnabled() {
-        // Default off: dev tools disabled until explicitly enabled (overrides per-plugin enabledByDefault).
-        return Storage.get('dev-global-plugins-enabled', false);
+        // Main-like builds: default off. Dev branches: default on so dev archetype plugins load; per-plugin defaults still apply.
+        return Storage.get('dev-global-plugins-enabled', Context.isDevBranch);
     },
 
     _setDevGlobalEnabled(enabled) {

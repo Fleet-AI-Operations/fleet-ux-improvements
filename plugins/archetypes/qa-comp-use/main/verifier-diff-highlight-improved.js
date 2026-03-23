@@ -6,7 +6,7 @@ const plugin = {
     id: 'verifierDiffHighlightImproved',
     name: 'Verifier Diff Highlight (Improved)',
     description: 'Custom side-by-side diff viewer for Expected vs Your Answer in verifier output',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -68,7 +68,6 @@ const plugin = {
             .verifier-diff-remove {
                 background-color: rgba(239, 68, 68, 0.35) !important;
                 color: rgb(127, 29, 29) !important;
-                padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
@@ -80,7 +79,6 @@ const plugin = {
             .verifier-diff-add {
                 background-color: rgba(16, 185, 129, 0.35) !important;
                 color: rgb(6, 78, 59) !important;
-                padding: 0 0.125rem;
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
@@ -922,8 +920,8 @@ const plugin = {
         const removeBg = isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.3)';
         const addBg = isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.3)';
         return {
-            remove: `background-color:${removeBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`,
-            add: `background-color:${addBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;padding:0 0.125rem;`
+            remove: `background-color:${removeBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;`,
+            add: `background-color:${addBg};border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;`
         };
     },
 

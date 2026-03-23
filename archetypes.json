@@ -1,11 +1,11 @@
 {
-  "version": "6.1.2",
-  "archetypesVersion": "6.81",
+  "version": "6.2.0",
+  "archetypesVersion": "6.90",
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.1",
-      "hash": "sha256-b73eddefd35b3053f0256f00f05e664029aced364948f8824836eea0d2566286"
+      "version": "6.2",
+      "hash": "sha256-eac152cd0dbcf5c97bff3ddc17c3ccc65a2fadfbca2af55e0f89f62b4febf07c"
     },
     {
       "name": "extension-ping.js",
@@ -16,8 +16,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.6",
-      "hash": "sha256-c3ed59d35a36fb23fd7982ed3144a68f1bdd18d05086788fd4c8d249eab2b848"
+      "version": "2.9",
+      "hash": "sha256-d7283f301f13c35707de9fc645d42abe7a63ddfdd4dd0b29edf2abf07e8b1867"
     }
   ],
   "settingsModalDocs": [
@@ -264,10 +264,18 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "3.3",
-          "hash": "sha256-d226b94bccd038122217639d34bafc2417f4b573afe3c9b373b63c3bdee8d9af"
+          "version": "3.4",
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
         }
       ]
+    },
+    {
+      "id": "create-task-project-selection",
+      "name": "Create Task Project Selection",
+      "description": "Screen for choosing a project before creating a task",
+      "urlPattern": "work/problems/create-instance",
+      "disambiguationSelectors": [],
+      "plugins": []
     },
     {
       "id": "comp-use-task-creation",
@@ -370,6 +378,11 @@
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
         },
         {
+          "name": "hide-grading-panel-button.js",
+          "version": "1.1",
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
+        },
+        {
           "name": "clear-search.js",
           "version": "2.1",
           "hash": "sha256-1c909857b79e8a369bd2e9a1767445fbfc0f77ae50c40b2c6fb09e879c7357f3"
@@ -431,8 +444,8 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.3",
-          "hash": "sha256-3f354b0619991574f9718b2a2607278bf2711a354a9f9f24a6cd03a15ebfc4eb"
+          "version": "2.4",
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
         },
         {
           "name": "tool-results-resize-handle.js",
@@ -484,6 +497,11 @@
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
         },
         {
+          "name": "hide-grading-panel-button.js",
+          "version": "1.1",
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
+        },
+        {
           "name": "bug-report-expand.js",
           "version": "1.3",
           "hash": "sha256-ebd685e61af47b6510bb1949d48135a33e9b5dd6e98765f3267e310377239d32"
@@ -520,13 +538,13 @@
         },
         {
           "name": "prompt-diff-highlight.js",
-          "version": "2.3",
-          "hash": "sha256-3f354b0619991574f9718b2a2607278bf2711a354a9f9f24a6cd03a15ebfc4eb"
+          "version": "2.4",
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
         },
         {
           "name": "verifier-diff-highlight-improved.js",
-          "version": "1.4",
-          "hash": "sha256-d8c9f49082a3d7fef6f85daa5e806041fdde49746064f74ff66336772fa91978"
+          "version": "1.5",
+          "hash": "sha256-70e886f9378a8ac6c5bea333b75e2d6a66d510eae03fbd7af3d8eff3a0e687f6"
         },
         {
           "name": "accept-task-modal-improvements.js",
@@ -617,8 +635,8 @@
         },
         {
           "name": "verifier-diff-highlight-improved.js",
-          "version": "1.4",
-          "hash": "sha256-e0ef7a8f1f8b53aa0ac26661d5d2f0024b3739c43e9f673a6ec982474a8239f8"
+          "version": "1.5",
+          "hash": "sha256-42fe5f4290fc72eda17ecfc93176ea0c078017a52abeede23ed26ef59dccaf62"
         }
       ]
     },
@@ -631,8 +649,8 @@
       "plugins": [
         {
           "name": "prompt-diff-highlight.js",
-          "version": "3.3",
-          "hash": "sha256-d226b94bccd038122217639d34bafc2417f4b573afe3c9b373b63c3bdee8d9af"
+          "version": "3.4",
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
         }
       ]
     }
@@ -668,13 +686,13 @@
       "plugins": [
         {
           "name": "prompt-and-notes-areas.js",
-          "version": "3.1",
-          "hash": "sha256-6139e763f20b96517308fd3c9c2960c92534de686c618a408d205518bdc598ed"
+          "version": "3.2",
+          "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5"
         },
         {
           "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-3062ae5abb6df57a519dc08c43e04db1f852c9f7359304c01eeebece158b14d4"
+          "version": "2.2",
+          "hash": "sha256-39e3660beef1dc7e6aefbc03c512fdfe28f8b87d25edb187c71cb86eb712826c"
         }
       ]
     },
@@ -710,6 +728,14 @@
       ]
     },
     {
+      "id": "create-task-project-selection",
+      "name": "Create Task Project Selection",
+      "description": "Screen for choosing a project before creating a task",
+      "urlPattern": "work/problems/create-instance",
+      "disambiguationSelectors": [],
+      "plugins": []
+    },
+    {
       "id": "comp-use-task-creation",
       "name": "Computer Use Task Creation Page",
       "description": "Page for creating computer use tasks",
@@ -742,8 +768,8 @@
       "plugins": [
         {
           "name": "dispute-ids-enhancer.js",
-          "version": "3.1",
-          "hash": "sha256-4c885d4706a1b1a367213b45dea7842424a124a7db38f457e4d5bad9cc80d1d7"
+          "version": "3.2",
+          "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e"
         }
       ]
     }

@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      6.1.2
+// @version      6.2.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '6.1.2';
+    const VERSION = '6.2.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1860,8 +1860,8 @@
             this.cleanupDeprecatedCache(pluginList, archetypeId, 'dev');
             
             Logger.log('Dev archetype plugin loading complete');
-            // Dev archetype plugins respect dev-global default off same as core dev plugins.
-            if (!Storage.get('dev-global-plugins-enabled', false)) {
+            // Dev archetype plugins: when dev-global is off, disable all; on dev builds default is on (see Storage.get default).
+            if (!Storage.get('dev-global-plugins-enabled', DEV_SCRIPTS_ENABLED)) {
                 PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
             }
         },
@@ -2103,8 +2103,8 @@
         if (DEV_SCRIPTS_ENABLED) {
             const devPlugins = ArchetypeManager.getDevPlugins();
             await PluginLoader.loadPluginsFromConfig(devPlugins, 'dev');
-            // Dev tools default off regardless of per-plugin enabledByDefault; enforce before runCorePlugins.
-            if (!Storage.get('dev-global-plugins-enabled', false)) {
+            // When dev-global is off, disable all dev plugins before runCorePlugins. On dev builds the default is on (logger + optional archetype dev).
+            if (!Storage.get('dev-global-plugins-enabled', DEV_SCRIPTS_ENABLED)) {
                 PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
             }
         }
@@ -2217,6 +2217,37 @@
             return null;
         }
     }
+
+    /**
+     * Whether SPA navigation to this path should trigger a full reload (archetype plugins
+     * are listed in archetypes.json for the main archetype and/or devArchetypes when dev is on).
+     */
+    function navigationTargetHasConfiguredPlugins(newPath) {
+        const mainHasPlugins = ArchetypeManager.archetypes.some((archetype) => {
+            if (!archetype.urlPattern) {
+                return false;
+            }
+            if (!UrlMatcher.matches(newPath, archetype.urlPattern)) {
+                return false;
+            }
+            return (archetype.plugins || []).length > 0;
+        });
+        if (mainHasPlugins) {
+            return true;
+        }
+        if (DEV_SCRIPTS_ENABLED) {
+            return ArchetypeManager.devArchetypes.some((devArchetype) => {
+                if (!devArchetype.urlPattern) {
+                    return false;
+                }
+                if (!UrlMatcher.matches(newPath, devArchetype.urlPattern)) {
+                    return false;
+                }
+                return (devArchetype.plugins || []).length > 0;
+            });
+        }
+        return false;
+    }
     
     async function handleNavigation(newUrl, previousUrl) {
         Logger.log('Handling navigation, checking URL diff...');
@@ -2257,15 +2288,22 @@
             }
 
             const newPath = UrlMatcher.getPathFromUrl(newUrl);
-            const matchesArchetype = ArchetypeManager.archetypes.some(archetype => {
+            const matchesMainArchetypePath = ArchetypeManager.archetypes.some((archetype) => {
                 if (!archetype.urlPattern) {
                     return false;
                 }
                 return UrlMatcher.matches(newPath, archetype.urlPattern);
             });
+            const warrantsFullReload = navigationTargetHasConfiguredPlugins(newPath);
 
-            if (matchesArchetype) {
-                Logger.log('Navigation target matches archetype; refreshing page...');
+            if (matchesMainArchetypePath && !warrantsFullReload) {
+                Logger.log(
+                    'Navigation matches an archetype URL pattern but no configured main/dev plugins warrant a full reload; skipping reload...'
+                );
+            }
+
+            if (warrantsFullReload) {
+                Logger.log('Navigation target has configured archetype plugins; refreshing page...');
                 Storage.delete('workflow-cache-latest');
                 Storage.delete('workflow-cache-latest-url');
                 location.reload();
