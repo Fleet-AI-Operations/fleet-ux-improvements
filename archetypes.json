@@ -1,6 +1,6 @@
 {
   "version": "6.2.0",
-  "archetypesVersion": "6.84",
+  "archetypesVersion": "6.85",
   "corePlugins": [
     {
       "name": "settings-ui.js",
@@ -268,6 +268,14 @@
           "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
         }
       ]
+    },
+    {
+      "id": "create-task-project-selection",
+      "name": "Create Task Project Selection",
+      "description": "Screen for choosing a project before creating a task",
+      "urlPattern": "work/problems/create-instance",
+      "disambiguationSelectors": [],
+      "plugins": []
     },
     {
       "id": "comp-use-task-creation",
@@ -708,6 +716,14 @@
           "hash": "sha256-1f7708627f64c04c6f92a33c49c783a79ff144ea7485cf4a285d805d758ed72d"
         }
       ]
+    },
+    {
+      "id": "create-task-project-selection",
+      "name": "Create Task Project Selection",
+      "description": "Screen for choosing a project before creating a task",
+      "urlPattern": "work/problems/create-instance",
+      "disambiguationSelectors": [],
+      "plugins": []
     },
     {
       "id": "comp-use-task-creation",
