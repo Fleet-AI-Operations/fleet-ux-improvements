@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from rapidfuzz import fuzz
+from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -40,7 +41,7 @@ def repo_root_from(start: Path) -> Path:
 
 
 def token_backspace(query: str) -> str:
-    """Remove the last whitespace-separated token."""
+    """Remove the last whitespace-separated token (readline/word-style)."""
     parts = query.split()
     if not parts:
         return ""
@@ -127,12 +128,13 @@ class ArchetypesFlagApp(App[None]):
         for _pos, row_i in enumerate(self._filtered):
             r = self._rows[row_i]
             on = self.effective(r)
-            sym = "[x]" if on else "[ ]"
-            table.add_row(sym, r.label)
+            # Plain str is parsed as Rich markup; [x] would vanish. Use Text for literals.
+            flag = Text("[x]" if on else "[ ]")
+            table.add_row(flag, r.label)
         self.query_one("#search_line", Static).update(
             "Search: "
             + repr(self.query_text)
-            + "  |  Backspace token  Ctrl+W clear  |  Up/Down  Space toggle  Enter summary  Esc back"
+            + "  |  Backspace char  Ctrl+W word  Ctrl+U clear  |  Up/Down  Space  Enter  Esc"
         )
         if not self._filtered:
             return
@@ -210,13 +212,18 @@ class ArchetypesFlagApp(App[None]):
                     self._overrides[row.path_tuple] = newv
                 self.refresh_table()
             return
-        if key in ("ctrl+w", "ctrl+backspace"):
+        if key in ("ctrl+u", "ctrl+backspace"):
             event.prevent_default()
             self.query_text = ""
             return
-        if key == "backspace":
+        if key == "ctrl+w":
             event.prevent_default()
             self.query_text = token_backspace(self.query_text)
+            return
+        if key == "backspace":
+            event.prevent_default()
+            if self.query_text:
+                self.query_text = self.query_text[:-1]
             return
         char = event.character
         if char and len(char) == 1 and char.isprintable():

@@ -105,7 +105,7 @@ Scripts that touch `fleet.user.js` (checkout, release, test) ensure:
 - Interactive terminal UI (Python + Textual) to fuzzy-search and toggle boolean flags in `archetypes.json`, then confirm and dispatch that workflow on GitHub.
 - Setup: `cd dev/tools/archetypes-flags-tui && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` (keep `.venv/` local; it is not tracked.)
 - Run: `.venv/bin/python app.py` (repo root must contain `archetypes.json`; `gh auth login` needs **repo** and **workflow** scopes so `gh api` can trigger `workflow_dispatch`).
-- Shortcut keys (main screen): type to filter; **Backspace** removes last search token; **Ctrl+W** clears search; **Up/Down** move; **Space** toggles; **Enter** summary; **Esc** returns from the summary screen. On the summary, **Y** + **Enter** dispatches the workflow; **n** + **Enter** cancels.
+- Shortcut keys (main screen): type to filter; **Backspace** deletes last character; **Ctrl+W** deletes last word (token); **Ctrl+U** or **Ctrl+Backspace** clears search; **Up/Down** move; **Space** toggles; **Enter** summary; **Esc** returns from the summary screen. On the summary, **Y** + **Enter** dispatches the workflow; **n** + **Enter** cancels.
 
 **push.sh** — `./utils/push.sh [--dry-run] ["optional commit message"]`
 
