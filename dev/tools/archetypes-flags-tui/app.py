@@ -61,6 +61,7 @@ class ArchetypesFlagApp(App[None]):
     """
 
     BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit", priority=True),
         Binding("q", "quit", "Quit"),
         Binding("escape", "maybe_leave_summary", "Back"),
     ]
@@ -134,7 +135,7 @@ class ArchetypesFlagApp(App[None]):
         self.query_one("#search_line", Static).update(
             "Search: "
             + repr(self.query_text)
-            + "  |  Backspace char  Ctrl+W word  Ctrl+U clear  |  Up/Down  Space  Enter  Esc"
+            + "  |  Backspace char  Ctrl+W word  Ctrl+U clear  |  Up/Down  Space  Enter  Esc  Ctrl+C quit"
         )
         if not self._filtered:
             return
@@ -177,6 +178,10 @@ class ArchetypesFlagApp(App[None]):
             self.view_mode = "edit"
 
     async def on_key(self, event: Key) -> None:
+        if event.key == "ctrl+c":
+            event.prevent_default()
+            self.exit()
+            return
         if self.view_mode == "summary":
             return
         key = event.key
