@@ -1,7 +1,7 @@
 {
   "version": "6.4.0",
-  "coreOnlyMode": true,
-  "archetypesVersion": "6.94",
+  "coreOnlyMode": false,
+  "archetypesVersion": "6.95",
   "corePlugins": [
     {
       "name": "settings-ui.js",
