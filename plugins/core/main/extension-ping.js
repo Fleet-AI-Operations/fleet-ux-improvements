@@ -4,8 +4,9 @@
 const plugin = {
     id: 'extension-ping',
     name: 'Extension Ping',
-    description: 'Pings extension endpoint once per userscript version',
-    _version: '1.1',
+    description:
+        'Pings extension usage endpoint; once per userscript version by default, or every load when archetypes.json sets extensionPingEveryLoad',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -18,10 +19,15 @@ const plugin = {
             }
 
             const storageKey = 'extension-ping-last-version';
-            const lastPingedVersion = Storage.get(storageKey, null);
-            if (lastPingedVersion === currentVersion) {
-                Logger.debug(`Extension ping skipped: already pinged for version ${currentVersion}`);
-                return;
+            const pingEveryLoad = context && context.extensionPingEveryLoad === true;
+            if (!pingEveryLoad) {
+                const lastPingedVersion = Storage.get(storageKey, null);
+                if (lastPingedVersion === currentVersion) {
+                    Logger.debug(`Extension ping skipped: already pinged for version ${currentVersion}`);
+                    return;
+                }
+            } else {
+                Logger.debug('Extension ping: extensionPingEveryLoad is set; skipping version dedup');
             }
 
             const email = this._extractEmailFromInlineScripts();
@@ -30,7 +36,7 @@ const plugin = {
                 return;
             }
 
-            this._sendPing(email, currentVersion, storageKey);
+            this._sendPing(email, currentVersion, storageKey, pingEveryLoad);
         } catch (error) {
             Logger.error('Extension ping init failed:', error);
         }
@@ -64,13 +70,42 @@ const plugin = {
         return null;
     },
 
-    _sendPing(email, currentVersion, storageKey) {
+    _buildPingMetadata(extensionVersion) {
+        const meta = { extensionVersion: String(extensionVersion) };
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.userAgent) {
+            meta.userAgent = nav.userAgent;
+        }
+        if (nav && nav.userAgentData) {
+            const uad = nav.userAgentData;
+            const plain = {};
+            if (uad.brands && uad.brands.length > 0) {
+                plain.brands = uad.brands.map((b) => ({ brand: b.brand, version: b.version }));
+            }
+            if (typeof uad.mobile === 'boolean') {
+                plain.mobile = uad.mobile;
+            }
+            if (uad.platform) {
+                plain.platform = uad.platform;
+            }
+            if (Object.keys(plain).length > 0) {
+                meta.userAgentData = plain;
+            }
+        }
+        return meta;
+    },
+
+    _sendPing(email, currentVersion, storageKey, pingEveryLoad) {
         if (typeof GM_xmlhttpRequest !== 'function') {
             Logger.error('Extension ping unavailable: GM_xmlhttpRequest is not defined');
             return;
         }
 
-        const payload = JSON.stringify({ email });
+        const body = {
+            email,
+            metadata: this._buildPingMetadata(currentVersion)
+        };
+        const payload = JSON.stringify(body);
         const url = 'https://operations-toolkit-admin.vercel.app/api/extension-ping';
 
         GM_xmlhttpRequest({
@@ -83,8 +118,14 @@ const plugin = {
             onload: (response) => {
                 const status = response && typeof response.status === 'number' ? response.status : 0;
                 if (status >= 200 && status < 300) {
-                    Storage.set(storageKey, currentVersion);
-                    Logger.info(`Extension ping sent for version ${currentVersion}`);
+                    if (!pingEveryLoad) {
+                        Storage.set(storageKey, currentVersion);
+                    }
+                    Logger.info(
+                        pingEveryLoad
+                            ? `Extension ping sent for version ${currentVersion} (extensionPingEveryLoad)`
+                            : `Extension ping sent for version ${currentVersion}`
+                    );
                     return;
                 }
 

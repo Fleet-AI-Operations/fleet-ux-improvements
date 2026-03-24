@@ -66,6 +66,8 @@
         latestVersion: null,
         /** When true (from archetypes.json coreOnlyMode), skip archetype plugins and SPA full reload; core plugins (e.g. settings UI) still run. */
         coreOnlyMode: false,
+        /** When true (from archetypes.json extensionPingEveryLoad), extension-ping POSTs on every load instead of once per userscript version. */
+        extensionPingEveryLoad: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
@@ -940,6 +942,7 @@
                                 // Always log archetypes version (cannot be disabled)
                                 Context.archetypesVersion = config.archetypesVersion || null;
                                 Context.coreOnlyMode = config.coreOnlyMode === true;
+                                Context.extensionPingEveryLoad = config.extensionPingEveryLoad === true;
                                 applyArchetypeRemoteLoggingConfig(config);
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
                                 if (Context.coreOnlyMode) {
