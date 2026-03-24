@@ -114,13 +114,24 @@ class ArchetypesFlagApp(App[None]):
         q = self.query_text.strip().lower()
         if not q:
             return list(range(n))
-        scored: list[tuple[int, int]] = []
+        # Tier: 0 = query is contiguous substring of visible label (strongest)
+        #       1 = substring of full search_blob but not label alone
+        #       2 = fuzzy only (substring match never applied)
+        ranked: list[tuple[int, int, int]] = []
         for i in range(n):
             row = self._rows[i]
-            score = fuzz.token_set_ratio(q, row.search_blob)
-            scored.append((score, i))
-        scored.sort(key=lambda x: (-x[0], x[1]))
-        return [i for _, i in scored]
+            lab = row.label.lower()
+            blob = row.search_blob
+            if q in lab:
+                tier = 0
+            elif q in blob:
+                tier = 1
+            else:
+                tier = 2
+            fuzz_sc = fuzz.token_set_ratio(q, blob)
+            ranked.append((tier, fuzz_sc, i))
+        ranked.sort(key=lambda t: (t[0], -t[1], t[2]))
+        return [i for _, _, i in ranked]
 
     def refresh_table(self) -> None:
         table = self.query_one("#flag_table", DataTable)
