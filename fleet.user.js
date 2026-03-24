@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [fix-spa-url-check] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      6.4.0
+// @version      7.0.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '6.4.0';
+    const VERSION = '7.0.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -371,10 +371,18 @@
             }
             
             const previousUrl = this._lastUrl;
+            const previousPath = UrlMatcher.getPathFromUrl(previousUrl);
+            const nextPath = UrlMatcher.getPathFromUrl(newUrl);
+
             this._lastUrl = newUrl;
-            
+
+            if (previousPath === nextPath) {
+                Logger.debug('Query-only or hash-only URL change; skipping plugin navigation');
+                return;
+            }
+
             Logger.log(`Navigation detected [${method}]: ${previousUrl} → ${newUrl}`);
-            
+
             this._onNavigateCallbacks.forEach(callback => {
                 try {
                     callback(newUrl, previousUrl);
@@ -2215,21 +2223,6 @@
     }
     
     /**
-     * Extract a specific query parameter from a URL
-     * @param {string} url - The full URL
-     * @param {string} param - The parameter name to extract
-     * @returns {string|null} - The parameter value or null if not found
-     */
-    function getQueryParam(url, param) {
-        try {
-            const urlObj = new URL(url);
-            return urlObj.searchParams.get(param);
-        } catch (e) {
-            return null;
-        }
-    }
-
-    /**
      * Whether SPA navigation to this path should trigger a full reload (archetype plugins
      * are listed in archetypes.json for the main archetype and/or devArchetypes when dev is on).
      */
@@ -2265,16 +2258,6 @@
 
         if (newUrl === previousUrl) {
             Logger.log('URL is the same, skipping...');
-            return;
-        }
-
-        // Check if task_project_target_id matches - if so, don't reload
-        // This prevents reload when only instance_id changes (e.g., backend reset)
-        const previousProjectId = getQueryParam(previousUrl, 'task_project_target_id');
-        const newProjectId = getQueryParam(newUrl, 'task_project_target_id');
-
-        if (previousProjectId && newProjectId && previousProjectId === newProjectId) {
-            Logger.log(`Navigation has same task_project_target_id (${newProjectId}), skipping reload...`);
             return;
         }
 
