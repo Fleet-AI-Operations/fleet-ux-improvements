@@ -124,8 +124,6 @@ class ArchetypesFlagApp(App[None]):
         table = self.query_one("#flag_table", DataTable)
         self._filtered = self.compute_filtered()
         table.clear(columns=False)
-        if table.column_count == 0:
-            table.add_columns("On", "Setting")
         for _pos, row_i in enumerate(self._filtered):
             r = self._rows[row_i]
             on = self.effective(r)
