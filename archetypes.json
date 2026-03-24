@@ -1,24 +1,33 @@
 {
-  "version": "6.4.0",
-  "coreOnlyMode": true,
-  "archetypesVersion": "6.94",
+  "version": "7.1.0",
+  "coreOnlyMode": false,
+  "extensionPingEveryLoad": false,
+  "archetypesVersion": "6.103",
+  "logs": {
+    "debug": false,
+    "verbose": false,
+    "submodule": false
+  },
   "corePlugins": [
     {
       "name": "settings-ui.js",
       "version": "6.2",
-      "hash": "sha256-eac152cd0dbcf5c97bff3ddc17c3ccc65a2fadfbca2af55e0f89f62b4febf07c"
+      "hash": "sha256-eac152cd0dbcf5c97bff3ddc17c3ccc65a2fadfbca2af55e0f89f62b4febf07c",
+      "log": false
     },
     {
       "name": "extension-ping.js",
-      "version": "1.1",
-      "hash": "sha256-faae51a719082c75e025528766152ab23715701ed6f4b029acc717c6fc1b11d3"
+      "version": "1.5",
+      "hash": "sha256-18e51f29fb3a2ff70a7cca03e72a5178158b1e6b8327bde39ccf1cc2ca9ff2ca",
+      "log": false
     }
   ],
   "devPlugins": [
     {
       "name": "logger-panel.js",
       "version": "2.9",
-      "hash": "sha256-d7283f301f13c35707de9fc645d42abe7a63ddfdd4dd0b29edf2abf07e8b1867"
+      "hash": "sha256-d7283f301f13c35707de9fc645d42abe7a63ddfdd4dd0b29edf2abf07e8b1867",
+      "log": false
     }
   ],
   "settingsModalDocs": [
@@ -42,22 +51,26 @@
         {
           "name": "progress-prompt-expand.js",
           "version": "1.8",
-          "hash": "sha256-2d499f17881a9c1335ad4b37ac695ccf19ab37747b02e0bc10fb05e29d8cd0f0"
+          "hash": "sha256-2d499f17881a9c1335ad4b37ac695ccf19ab37747b02e0bc10fb05e29d8cd0f0",
+          "log": false
         },
         {
           "name": "feedback-given-stats.js",
           "version": "3.0",
-          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6"
+          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6",
+          "log": false
         },
         {
           "name": "task-creation-today-env.js",
           "version": "3.0",
-          "hash": "sha256-9ab03fd598a5046a1fcee023f30296dc3b11408e96ac64d74c6c08cb09980f53"
+          "hash": "sha256-9ab03fd598a5046a1fcee023f30296dc3b11408e96ac64d74c6c08cb09980f53",
+          "log": false
         },
         {
           "name": "disputes-reviewed-today.js",
           "version": "3.0",
-          "hash": "sha256-eece62dc245e0482ca91851b53460142fd5f2bb0dc00d8953ed233c479aff158"
+          "hash": "sha256-eece62dc245e0482ca91851b53460142fd5f2bb0dc00d8953ed233c479aff158",
+          "log": false
         }
       ]
     },
@@ -71,67 +84,80 @@
         {
           "name": "clear-search.js",
           "version": "2.0",
-          "hash": "sha256-26456ceb6951f47c4ac23fa933c135e110c7506d6b3a0dd4249c3daf26c08063"
+          "hash": "sha256-26456ceb6951f47c4ac23fa933c135e110c7506d6b3a0dd4249c3daf26c08063",
+          "log": false
         },
         {
           "name": "json-editor-online.js",
           "version": "2.1",
-          "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180"
+          "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac"
+          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "log": false
         },
         {
           "name": "favorites.js",
           "version": "4.0",
-          "hash": "sha256-3d479c21ea95d0b320ed742289f6b716e632c85dbde6b0ca17e9fca518d712af"
+          "hash": "sha256-3d479c21ea95d0b320ed742289f6b716e632c85dbde6b0ca17e9fca518d712af",
+          "log": false
         },
         {
           "name": "remove-textarea-gradient.js",
           "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e"
+          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "2.0",
-          "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200"
+          "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200",
+          "log": false
         },
         {
           "name": "prompt-and-notes-areas.js",
           "version": "3.1",
-          "hash": "sha256-6139e763f20b96517308fd3c9c2960c92534de686c618a408d205518bdc598ed"
+          "hash": "sha256-6139e763f20b96517308fd3c9c2960c92534de686c618a408d205518bdc598ed",
+          "log": false
         },
         {
           "name": "execute-to-current-tool.js",
           "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf"
+          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
+          "log": false
         },
         {
           "name": "workflow-cache.js",
           "version": "2.0",
-          "hash": "sha256-cbe1b187968425d30a2bcd61f80cf187397d43b1e686d4db75c27186ceac19e9"
+          "hash": "sha256-cbe1b187968425d30a2bcd61f80cf187397d43b1e686d4db75c27186ceac19e9",
+          "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
           "version": "2.3",
-          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae"
+          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae",
+          "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
           "version": "2.0",
-          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0"
+          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0",
+          "log": false
         },
         {
           "name": "tool-description-truncate.js",
           "version": "2.0",
-          "hash": "sha256-f806767296a5ea148780c47656f14999b8103739363feb9cd1e528e1a4fca27e"
+          "hash": "sha256-f806767296a5ea148780c47656f14999b8103739363feb9cd1e528e1a4fca27e",
+          "log": false
         },
         {
           "name": "text-sanitizer.js",
           "version": "3.3",
-          "hash": "sha256-00fb0fa32015a92797b2c70a9e5e00a8a552670addee1aeb9b72cb2ce309a8b4"
+          "hash": "sha256-00fb0fa32015a92797b2c70a9e5e00a8a552670addee1aeb9b72cb2ce309a8b4",
+          "log": false
         }
       ]
     },
@@ -147,57 +173,68 @@
         {
           "name": "clear-search.js",
           "version": "2.1",
-          "hash": "sha256-a3f797c53cbc1b8ecfc5034a73400267987c2a9edc6219e856735e018b5755a5"
+          "hash": "sha256-a3f797c53cbc1b8ecfc5034a73400267987c2a9edc6219e856735e018b5755a5",
+          "log": false
         },
         {
           "name": "json-editor-online.js",
           "version": "2.1",
-          "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180"
+          "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac"
+          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "log": false
         },
         {
           "name": "favorites.js",
           "version": "4.0",
-          "hash": "sha256-3d479c21ea95d0b320ed742289f6b716e632c85dbde6b0ca17e9fca518d712af"
+          "hash": "sha256-3d479c21ea95d0b320ed742289f6b716e632c85dbde6b0ca17e9fca518d712af",
+          "log": false
         },
         {
           "name": "remove-textarea-gradient.js",
           "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e"
+          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "2.0",
-          "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200"
+          "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200",
+          "log": false
         },
         {
           "name": "execute-to-current-tool.js",
           "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf"
+          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
+          "log": false
         },
         {
           "name": "workflow-cache.js",
           "version": "2.1",
-          "hash": "sha256-46ab5c6741a7d67dad4ef348353d4f1f4cf25d5fb5e746b8759077bdfc30e0bd"
+          "hash": "sha256-46ab5c6741a7d67dad4ef348353d4f1f4cf25d5fb5e746b8759077bdfc30e0bd",
+          "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
           "version": "2.3",
-          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae"
+          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae",
+          "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
           "version": "2.0",
-          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0"
+          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0",
+          "log": false
         },
         {
           "name": "text-sanitizer.js",
           "version": "3.3",
-          "hash": "sha256-00fb0fa32015a92797b2c70a9e5e00a8a552670addee1aeb9b72cb2ce309a8b4"
+          "hash": "sha256-00fb0fa32015a92797b2c70a9e5e00a8a552670addee1aeb9b72cb2ce309a8b4",
+          "log": false
         }
       ]
     },
@@ -211,62 +248,74 @@
         {
           "name": "clear-search.js",
           "version": "2.0",
-          "hash": "sha256-1a0622c93b663b7e64b5e3a3c29f0ddd06eb7e464cb655f47c491b5c24a53aed"
+          "hash": "sha256-1a0622c93b663b7e64b5e3a3c29f0ddd06eb7e464cb655f47c491b5c24a53aed",
+          "log": false
         },
         {
           "name": "favorites.js",
           "version": "5.0",
-          "hash": "sha256-e8b53a6643768475e3f975d89805da88cd0fdde8152625003da406e3180d5060"
+          "hash": "sha256-e8b53a6643768475e3f975d89805da88cd0fdde8152625003da406e3180d5060",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "1.6",
-          "hash": "sha256-3aefd5135a7621e6c9d63261d46e6d87b91cb455cc1f93f65d9f71dd97525d2a"
+          "hash": "sha256-3aefd5135a7621e6c9d63261d46e6d87b91cb455cc1f93f65d9f71dd97525d2a",
+          "log": false
         },
         {
           "name": "bug-report-expand.js",
           "version": "1.3",
-          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2"
+          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2",
+          "log": false
         },
         {
           "name": "prompt-scratchpad.js",
           "version": "2.1",
-          "hash": "sha256-6ab9d874928c74166fd43aadac8c5538a52268aa751acd30020d318ed415d9d9"
+          "hash": "sha256-6ab9d874928c74166fd43aadac8c5538a52268aa751acd30020d318ed415d9d9",
+          "log": false
         },
         {
           "name": "execute-to-current-tool.js",
           "version": "3.0",
-          "hash": "sha256-ff34686d136205e519afdfc017deb48012e9f2dc116a4d375987a83b36c932a2"
+          "hash": "sha256-ff34686d136205e519afdfc017deb48012e9f2dc116a4d375987a83b36c932a2",
+          "log": false
         },
         {
           "name": "workflow-cache.js",
           "version": "2.0",
-          "hash": "sha256-3cf51593be8e4acb29476964fd74fa078a937e1bc691d144dacd622dcde39873"
+          "hash": "sha256-3cf51593be8e4acb29476964fd74fa078a937e1bc691d144dacd622dcde39873",
+          "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
           "version": "3.1",
-          "hash": "sha256-e842744b2c05fd5d11b3e1fc5f2ecb476fc5deb4dfca2ce7d22acd985d629331"
+          "hash": "sha256-e842744b2c05fd5d11b3e1fc5f2ecb476fc5deb4dfca2ce7d22acd985d629331",
+          "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
           "version": "3.0",
-          "hash": "sha256-052a9388e4afa5d2deb1815cf89bd35bfc4af400def565b18aa60f917a72b5f5"
+          "hash": "sha256-052a9388e4afa5d2deb1815cf89bd35bfc4af400def565b18aa60f917a72b5f5",
+          "log": false
         },
         {
           "name": "tool-description-truncate.js",
           "version": "2.0",
-          "hash": "sha256-53bbb4926e5939a3bfd64152cdeb9ea12689250dbb074e0e79e8ddc22371d60a"
+          "hash": "sha256-53bbb4926e5939a3bfd64152cdeb9ea12689250dbb074e0e79e8ddc22371d60a",
+          "log": false
         },
         {
           "name": "text-sanitizer.js",
           "version": "3.1",
-          "hash": "sha256-e8d44bc528ecfb602f8b684a52a534ab0eea28ef75f58f3b997db3917f310be9"
+          "hash": "sha256-e8d44bc528ecfb602f8b684a52a534ab0eea28ef75f58f3b997db3917f310be9",
+          "log": false
         },
         {
           "name": "prompt-diff-highlight.js",
           "version": "3.4",
-          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997",
+          "log": false
         }
       ]
     },
@@ -288,32 +337,38 @@
         {
           "name": "auto-toggle-fullscreen-mode.js",
           "version": "1.1",
-          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227"
+          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227",
+          "log": false
         },
         {
           "name": "remove-textarea-gradient.js",
           "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60"
+          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
+          "log": false
         },
         {
           "name": "hide-testing-environment-banner.js",
           "version": "1.0",
-          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333"
+          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "1.4",
-          "hash": "sha256-4481551aecbebfdc15450bbad9cedd2d4a3acfc624b64d7796292d90261b4025"
+          "hash": "sha256-4481551aecbebfdc15450bbad9cedd2d4a3acfc624b64d7796292d90261b4025",
+          "log": false
         },
         {
           "name": "prompt-scratchpad.js",
           "version": "2.1",
-          "hash": "sha256-f15fc7a63ee2f7fd9219793423b0bc0173b18596ea23570960bdf5a253e528be"
+          "hash": "sha256-f15fc7a63ee2f7fd9219793423b0bc0173b18596ea23570960bdf5a253e528be",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719"
+          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
+          "log": false
         }
       ]
     },
@@ -327,37 +382,44 @@
         {
           "name": "auto-toggle-fullscreen-mode.js",
           "version": "1.1",
-          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227"
+          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227",
+          "log": false
         },
         {
           "name": "remove-textarea-gradient.js",
           "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60"
+          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
+          "log": false
         },
         {
           "name": "hide-testing-environment-banner.js",
           "version": "1.0",
-          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333"
+          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "1.4",
-          "hash": "sha256-533bd516613590d019c13093f0edd6b30a624e38916573ad29411c8e21cf8f50"
+          "hash": "sha256-533bd516613590d019c13093f0edd6b30a624e38916573ad29411c8e21cf8f50",
+          "log": false
         },
         {
           "name": "bug-report-expand.js",
           "version": "1.3",
-          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2"
+          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2",
+          "log": false
         },
         {
           "name": "prompt-scratchpad.js",
           "version": "2.1",
-          "hash": "sha256-64f89a9a1b7f2b2fc211a39ca811bff49dd4c2764c320f0a5906f9beb97845e7"
+          "hash": "sha256-64f89a9a1b7f2b2fc211a39ca811bff49dd4c2764c320f0a5906f9beb97845e7",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719"
+          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
+          "log": false
         }
       ]
     },
@@ -371,102 +433,122 @@
         {
           "name": "auto-start-recording.js",
           "version": "1.0",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143"
+          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
+          "log": false
         },
         {
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
-          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
+          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
+          "log": false
         },
         {
           "name": "hide-grading-panel-button.js",
           "version": "1.1",
-          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
+          "log": false
         },
         {
           "name": "clear-search.js",
           "version": "2.1",
-          "hash": "sha256-1c909857b79e8a369bd2e9a1767445fbfc0f77ae50c40b2c6fb09e879c7357f3"
+          "hash": "sha256-1c909857b79e8a369bd2e9a1767445fbfc0f77ae50c40b2c6fb09e879c7357f3",
+          "log": false
         },
         {
           "name": "favorites.js",
           "version": "4.0",
-          "hash": "sha256-dd991aa618b4f49abf7890a69e99a826eaaa897a250bb204d3b54e434382eb53"
+          "hash": "sha256-dd991aa618b4f49abf7890a69e99a826eaaa897a250bb204d3b54e434382eb53",
+          "log": false
         },
         {
           "name": "bug-report-expand.js",
           "version": "1.3",
-          "hash": "sha256-ebd685e61af47b6510bb1949d48135a33e9b5dd6e98765f3267e310377239d32"
+          "hash": "sha256-ebd685e61af47b6510bb1949d48135a33e9b5dd6e98765f3267e310377239d32",
+          "log": false
         },
         {
           "name": "copy-prompt.js",
           "version": "1.6",
-          "hash": "sha256-e9fd5dfa0043ac0249b21407483e0f3985eebcb8c3ac1fed66f10cacc148a650"
+          "hash": "sha256-e9fd5dfa0043ac0249b21407483e0f3985eebcb8c3ac1fed66f10cacc148a650",
+          "log": false
         },
         {
           "name": "copy-verifier-output.js",
           "version": "2.2",
-          "hash": "sha256-342b609c73d59ef5775320488f0cc3182a8d37a4d38b9fb6b7c6d5a1243d3097"
+          "hash": "sha256-342b609c73d59ef5775320488f0cc3182a8d37a4d38b9fb6b7c6d5a1243d3097",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "2.2",
-          "hash": "sha256-bc06d024d1e9c6e0c201f511e28feb8db83ee2f561e03624a970614df01e4fd8"
+          "hash": "sha256-bc06d024d1e9c6e0c201f511e28feb8db83ee2f561e03624a970614df01e4fd8",
+          "log": false
         },
         {
           "name": "qa-scratchpad.js",
           "version": "2.2",
-          "hash": "sha256-bc86c47ce2a79a9d662606bb7b198193cd0a1d80cc249d036330795bc1de4e9f"
+          "hash": "sha256-bc86c47ce2a79a9d662606bb7b198193cd0a1d80cc249d036330795bc1de4e9f",
+          "log": false
         },
         {
           "name": "useful-links-buttons.js",
           "version": "2.1",
-          "hash": "sha256-92914ecd1790fa86c7054308c509d23e81defabfd98719f0c7b9720112339ff8"
+          "hash": "sha256-92914ecd1790fa86c7054308c509d23e81defabfd98719f0c7b9720112339ff8",
+          "log": false
         },
         {
           "name": "text-sanitizer.js",
           "version": "2.6",
-          "hash": "sha256-8b6df5ee1457423a55c22cf7beeb5780f23f15531e697bcc487ffde8b6a3be6b"
+          "hash": "sha256-8b6df5ee1457423a55c22cf7beeb5780f23f15531e697bcc487ffde8b6a3be6b",
+          "log": false
         },
         {
           "name": "execute-to-current-tool.js",
           "version": "2.0",
-          "hash": "sha256-430bec914ed32d755da7477788c34586d55a288d7b30dffdbb19a01ae0e45161"
+          "hash": "sha256-430bec914ed32d755da7477788c34586d55a288d7b30dffdbb19a01ae0e45161",
+          "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
           "version": "2.1",
-          "hash": "sha256-76c9ebbf39700d8e38758021084cd4cb95a57152e78a980c7897decae767602e"
+          "hash": "sha256-76c9ebbf39700d8e38758021084cd4cb95a57152e78a980c7897decae767602e",
+          "log": false
         },
         {
           "name": "request-revisions.js",
           "version": "5.2",
-          "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa"
+          "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa",
+          "log": false
         },
         {
           "name": "prompt-diff-highlight.js",
           "version": "2.4",
-          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234",
+          "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
           "version": "2.0",
-          "hash": "sha256-4222b6ccc3d55b2c996a37010868bd73b34f4b8a26438375a6ff152a89ab194b"
+          "hash": "sha256-4222b6ccc3d55b2c996a37010868bd73b34f4b8a26438375a6ff152a89ab194b",
+          "log": false
         },
         {
           "name": "tool-description-truncate.js",
           "version": "1.3",
-          "hash": "sha256-a9cbab9521fb434443a27faae81d41bf51ff6cfd41feb6e6491de0dbb8edc78b"
+          "hash": "sha256-a9cbab9521fb434443a27faae81d41bf51ff6cfd41feb6e6491de0dbb8edc78b",
+          "log": false
         },
         {
           "name": "workflow-cache.js",
           "version": "2.1",
-          "hash": "sha256-e8846babc1b9c74a93f4929c69313864d12b0c22f5cb3b36cbea317ddb53823c"
+          "hash": "sha256-e8846babc1b9c74a93f4929c69313864d12b0c22f5cb3b36cbea317ddb53823c",
+          "log": false
         },
         {
           "name": "accept-task-modal-improvements.js",
           "version": "1.7",
-          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6"
+          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6",
+          "log": false
         }
       ]
     },
@@ -480,82 +562,98 @@
         {
           "name": "auto-start-recording.js",
           "version": "1.0",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143"
+          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
+          "log": false
         },
         {
           "name": "auto-toggle-fullscreen-mode.js",
           "version": "1.1",
-          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227"
+          "hash": "sha256-6317bcc51bc874b7df19da11d96fa8c2f5a33c0139f948246156c7b1211d5227",
+          "log": false
         },
         {
           "name": "hide-testing-environment-banner.js",
           "version": "1.0",
-          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333"
+          "hash": "sha256-6dd897a39ffe736497bb1678c5373548c55780245681b134842de91d96e9d333",
+          "log": false
         },
         {
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
-          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37"
+          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
+          "log": false
         },
         {
           "name": "hide-grading-panel-button.js",
           "version": "1.1",
-          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88"
+          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
+          "log": false
         },
         {
           "name": "bug-report-expand.js",
           "version": "1.3",
-          "hash": "sha256-ebd685e61af47b6510bb1949d48135a33e9b5dd6e98765f3267e310377239d32"
+          "hash": "sha256-ebd685e61af47b6510bb1949d48135a33e9b5dd6e98765f3267e310377239d32",
+          "log": false
         },
         {
           "name": "copy-prompt.js",
           "version": "1.5",
-          "hash": "sha256-78603cee2124738aeb32db0ca503b5e9654d17d1ffdd0e564f626c6e5501f73a"
+          "hash": "sha256-78603cee2124738aeb32db0ca503b5e9654d17d1ffdd0e564f626c6e5501f73a",
+          "log": false
         },
         {
           "name": "copy-verifier-output.js",
           "version": "1.11",
-          "hash": "sha256-4e0365560103973d433ece5ab9c1b2847cd44c11ee8cae626bd0ae2e3de06831"
+          "hash": "sha256-4e0365560103973d433ece5ab9c1b2847cd44c11ee8cae626bd0ae2e3de06831",
+          "log": false
         },
         {
           "name": "copy-result-params.js",
           "version": "1.1",
-          "hash": "sha256-10b544d60b4eae9da833035e40ba4f43cc3b04e92d4e5447f463432c5b3e7bac"
+          "hash": "sha256-10b544d60b4eae9da833035e40ba4f43cc3b04e92d4e5447f463432c5b3e7bac",
+          "log": false
         },
         {
           "name": "guideline-buttons.js",
           "version": "2.3",
-          "hash": "sha256-038fb5954172425ed0530d776d78fbcb1f9b32f0e6036aaeda1786b2aed2732e"
+          "hash": "sha256-038fb5954172425ed0530d776d78fbcb1f9b32f0e6036aaeda1786b2aed2732e",
+          "log": false
         },
         {
           "name": "request-revisions.js",
           "version": "4.2",
-          "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71"
+          "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71",
+          "log": false
         },
         {
           "name": "qa-scratchpad.js",
           "version": "1.6",
-          "hash": "sha256-b219842987392a09692ea5f093331aef49477b8b25af8faff0272d273431d16a"
+          "hash": "sha256-b219842987392a09692ea5f093331aef49477b8b25af8faff0272d273431d16a",
+          "log": false
         },
         {
           "name": "prompt-diff-highlight.js",
           "version": "2.4",
-          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234"
+          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234",
+          "log": false
         },
         {
           "name": "verifier-diff-highlight-improved.js",
           "version": "1.5",
-          "hash": "sha256-70e886f9378a8ac6c5bea333b75e2d6a66d510eae03fbd7af3d8eff3a0e687f6"
+          "hash": "sha256-70e886f9378a8ac6c5bea333b75e2d6a66d510eae03fbd7af3d8eff3a0e687f6",
+          "log": false
         },
         {
           "name": "accept-task-modal-improvements.js",
           "version": "1.7",
-          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6"
+          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6",
+          "log": false
         },
         {
           "name": "remember-layout-proportions.js",
           "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719"
+          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
+          "log": false
         }
       ]
     },
@@ -577,67 +675,80 @@
         {
           "name": "env-load-gate.js",
           "version": "1.0",
-          "hash": "sha256-84403bd9d0d3278966bc215c3eebec38c222feb277da52c0a7ff3625c2ec3ef3"
+          "hash": "sha256-84403bd9d0d3278966bc215c3eebec38c222feb277da52c0a7ff3625c2ec3ef3",
+          "log": false
         },
         {
           "name": "dispute-detail-task-id.js",
           "version": "1.1",
-          "hash": "sha256-c5f505ac2b5485867898c9901b8c4faa4420b42da68eda32166bdeed49af58c7"
+          "hash": "sha256-c5f505ac2b5485867898c9901b8c4faa4420b42da68eda32166bdeed49af58c7",
+          "log": false
         },
         {
           "name": "dispute-content-layout-fixes.js",
           "version": "1.2",
-          "hash": "sha256-8305f713adae4f30a51538972018542eedec9a7f63d7a4871014fd16ffef1a37"
+          "hash": "sha256-8305f713adae4f30a51538972018542eedec9a7f63d7a4871014fd16ffef1a37",
+          "log": false
         },
         {
           "name": "dispute-resolution-widgets-toggle.js",
           "version": "2.0",
-          "hash": "sha256-a6cab015e8efca7d041130598d2c551b55ee1a733e0a6eb1810cb01bd2fe96bb"
+          "hash": "sha256-a6cab015e8efca7d041130598d2c551b55ee1a733e0a6eb1810cb01bd2fe96bb",
+          "log": false
         },
         {
           "name": "clear-search.js",
           "version": "1.0",
-          "hash": "sha256-80b40af93a2889dc851f876b304f8dd015080f0d6c3acd2f3e5bc32a29795e23"
+          "hash": "sha256-80b40af93a2889dc851f876b304f8dd015080f0d6c3acd2f3e5bc32a29795e23",
+          "log": false
         },
         {
           "name": "create-instance-autoclick.js",
           "version": "1.1",
-          "hash": "sha256-347d7d13d41af849764a88acbcf392c3b2e0c5a487cf2c6e456c2fd930d3004f"
+          "hash": "sha256-347d7d13d41af849764a88acbcf392c3b2e0c5a487cf2c6e456c2fd930d3004f",
+          "log": false
         },
         {
           "name": "favorites.js",
           "version": "1.0",
-          "hash": "sha256-1d840f89b2dc12883cc22e15fa620c1141ad53289746d048c5e5fe00ef110af0"
+          "hash": "sha256-1d840f89b2dc12883cc22e15fa620c1141ad53289746d048c5e5fe00ef110af0",
+          "log": false
         },
         {
           "name": "execute-to-current-tool.js",
           "version": "1.0",
-          "hash": "sha256-edd3970d03416214ee6d948232316accb36d19853199f92ccf233d3bb9d0f80e"
+          "hash": "sha256-edd3970d03416214ee6d948232316accb36d19853199f92ccf233d3bb9d0f80e",
+          "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
           "version": "1.0",
-          "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603"
+          "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603",
+          "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
           "version": "1.0",
-          "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70"
+          "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70",
+          "log": false
         },
         {
           "name": "tool-description-truncate.js",
           "version": "1.0",
-          "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1"
+          "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1",
+          "log": false
         },
         {
           "name": "copy-verifier-output.js",
           "version": "1.3",
-          "hash": "sha256-aa22295f5e6d8116220eec20c79dfd0b53fa34ca08bdd11f40f84054bcf62104"
+          "hash": "sha256-aa22295f5e6d8116220eec20c79dfd0b53fa34ca08bdd11f40f84054bcf62104",
+          "log": false
         },
         {
           "name": "verifier-diff-highlight-improved.js",
           "version": "1.5",
-          "hash": "sha256-42fe5f4290fc72eda17ecfc93176ea0c078017a52abeede23ed26ef59dccaf62"
+          "hash": "sha256-42fe5f4290fc72eda17ecfc93176ea0c078017a52abeede23ed26ef59dccaf62",
+          "log": false
         }
       ]
     },
@@ -651,7 +762,8 @@
         {
           "name": "prompt-diff-highlight.js",
           "version": "3.4",
-          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997"
+          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997",
+          "log": false
         }
       ]
     }
@@ -667,12 +779,14 @@
         {
           "name": "source-data-explorer.js",
           "version": "4.0",
-          "hash": "sha256-f8fff3deb0e23fc26053afe83da4da68b2f231f9c3961e1bdfb5ac0caa3a86f0"
+          "hash": "sha256-f8fff3deb0e23fc26053afe83da4da68b2f231f9c3961e1bdfb5ac0caa3a86f0",
+          "log": false
         },
         {
           "name": "workflow-integrity-check.js",
           "version": "2.0",
-          "hash": "sha256-73c0cfacead59b2325ac1d937bf27a2c8c07b82331ef9657c5e8003e4f4829f0"
+          "hash": "sha256-73c0cfacead59b2325ac1d937bf27a2c8c07b82331ef9657c5e8003e4f4829f0",
+          "log": false
         }
       ]
     },
@@ -688,12 +802,14 @@
         {
           "name": "prompt-and-notes-areas.js",
           "version": "3.2",
-          "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5"
+          "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
+          "log": false
         },
         {
           "name": "tool-description-truncate.js",
           "version": "2.2",
-          "hash": "sha256-39e3660beef1dc7e6aefbc03c512fdfe28f8b87d25edb187c71cb86eb712826c"
+          "hash": "sha256-39e3660beef1dc7e6aefbc03c512fdfe28f8b87d25edb187c71cb86eb712826c",
+          "log": false
         }
       ]
     },
@@ -714,17 +830,20 @@
         {
           "name": "source-data-explorer.js",
           "version": "1.3",
-          "hash": "sha256-8770f8edc00b55148e48267415c6804339e687dcee1a24f42a901df84eba1095"
+          "hash": "sha256-8770f8edc00b55148e48267415c6804339e687dcee1a24f42a901df84eba1095",
+          "log": false
         },
         {
           "name": "workflow-integrity-check.js",
           "version": "1.1",
-          "hash": "sha256-3e3478682d1f7379e40d933e399fcb234df7ee1e7dc52305fc61559d08835867"
+          "hash": "sha256-3e3478682d1f7379e40d933e399fcb234df7ee1e7dc52305fc61559d08835867",
+          "log": false
         },
         {
           "name": "reorganize-request-revisions.js",
           "version": "1.1",
-          "hash": "sha256-1f7708627f64c04c6f92a33c49c783a79ff144ea7485cf4a285d805d758ed72d"
+          "hash": "sha256-1f7708627f64c04c6f92a33c49c783a79ff144ea7485cf4a285d805d758ed72d",
+          "log": false
         }
       ]
     },
@@ -770,7 +889,8 @@
         {
           "name": "dispute-ids-enhancer.js",
           "version": "3.2",
-          "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e"
+          "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e",
+          "log": false
         }
       ]
     }

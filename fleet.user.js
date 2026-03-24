@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      6.4.0
+// @version      7.1.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '6.4.0';
+    const VERSION = '7.1.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -66,6 +66,8 @@
         latestVersion: null,
         /** When true (from archetypes.json coreOnlyMode), skip archetype plugins and SPA full reload; core plugins (e.g. settings UI) still run. */
         coreOnlyMode: false,
+        /** When true (from archetypes.json extensionPingEveryLoad), extension-ping POSTs on every load instead of once per userscript version. */
+        extensionPingEveryLoad: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
@@ -74,6 +76,10 @@
         getPageWindow: () => typeof unsafeWindow !== 'undefined' ? unsafeWindow : window,
         storageKeys: SHARED_STORAGE_KEYS,
         settingsModalDocs: {},
+        /** From archetypes.json `logs` + per-plugin `log`; defaults until fetch completes. */
+        remoteLogging: { debug: false, verbose: false, submodule: false },
+        /** Filenames (archetypes `name`) with `log: true` */
+        remoteModuleLogByFile: {},
     };
 
     // ============= DEV-ONLY REDIRECT (GODMODE) =============
@@ -371,10 +377,18 @@
             }
             
             const previousUrl = this._lastUrl;
+            const previousPath = UrlMatcher.getPathFromUrl(previousUrl);
+            const nextPath = UrlMatcher.getPathFromUrl(newUrl);
+
             this._lastUrl = newUrl;
-            
+
+            if (previousPath === nextPath) {
+                Logger.debug('Query-only or hash-only URL change; skipping plugin navigation');
+                return;
+            }
+
             Logger.log(`Navigation detected [${method}]: ${previousUrl} → ${newUrl}`);
-            
+
             this._onNavigateCallbacks.forEach(callback => {
                 try {
                     callback(newUrl, previousUrl);
@@ -627,21 +641,29 @@
         
         isDebugEnabled() {
             if (this._debugEnabled === null) {
-                this._debugEnabled = Storage.get('debug', true);
+                const storageOn = Storage.get('debug', true);
+                const rl = Context.remoteLogging;
+                const remoteOn = rl && rl.debug && rl.submodule;
+                this._debugEnabled = storageOn || !!remoteOn;
             }
             return this._debugEnabled;
         },
         
         isVerboseEnabled() {
             if (this._verboseEnabled === null) {
-                this._verboseEnabled = Storage.get('verbose', true);
+                const storageOn = Storage.get('verbose', true);
+                const rl = Context.remoteLogging;
+                const remoteOn = rl && rl.verbose && rl.submodule;
+                this._verboseEnabled = storageOn || !!remoteOn;
             }
             return this._verboseEnabled;
         },
 
         isSubmoduleLoggingEnabled() {
             if (this._submoduleEnabled === null) {
-                this._submoduleEnabled = Storage.getSubmoduleLoggingEnabled();
+                const storageOn = Storage.getSubmoduleLoggingEnabled();
+                const rl = Context.remoteLogging;
+                this._submoduleEnabled = storageOn || !!(rl && rl.submodule);
             }
             return this._submoduleEnabled;
         },
@@ -649,7 +671,14 @@
         isModuleLoggingEnabled(moduleId) {
             if (!moduleId) return false;
             if (typeof this._moduleLogEnabled[moduleId] === 'undefined') {
-                this._moduleLogEnabled[moduleId] = Storage.getModuleLoggingEnabled(moduleId);
+                const storageOn = Storage.getModuleLoggingEnabled(moduleId);
+                let remoteOn = false;
+                const reg = typeof PluginManager !== 'undefined' ? PluginManager.get(moduleId) : null;
+                const file = reg && reg._sourceFile;
+                if (file && Context.remoteModuleLogByFile && Context.remoteModuleLogByFile[file]) {
+                    remoteOn = true;
+                }
+                this._moduleLogEnabled[moduleId] = storageOn || remoteOn;
             }
             return this._moduleLogEnabled[moduleId];
         },
@@ -773,6 +802,38 @@
         }
     };
 
+    /**
+     * Read `logs` / per-plugin `log` from archetypes.json and merge into Context.
+     * Remote debug/verbose only apply when remote submodule is true. Per-file `log` follows
+     * the same submodule master gate as storage (via _shouldLogModule).
+     */
+    function applyArchetypeRemoteLoggingConfig(config) {
+        const logs = (config && config.logs) || {};
+        Context.remoteLogging = {
+            debug: logs.debug === true,
+            verbose: logs.verbose === true,
+            submodule: logs.submodule === true
+        };
+        const byFile = Object.create(null);
+        const ingestPluginList = (list) => {
+            if (!list || !Array.isArray(list)) return;
+            for (const def of list) {
+                if (def && typeof def === 'object' && def.name && def.log === true) {
+                    byFile[def.name] = true;
+                }
+            }
+        };
+        ingestPluginList(config.corePlugins);
+        ingestPluginList(config.devPlugins);
+        (config.archetypes || []).forEach((a) => ingestPluginList(a.plugins));
+        (config.devArchetypes || []).forEach((a) => ingestPluginList(a.plugins));
+        Context.remoteModuleLogByFile = byFile;
+        Logger._debugEnabled = null;
+        Logger._verboseEnabled = null;
+        Logger._submoduleEnabled = null;
+        Logger._moduleLogEnabled = {};
+    }
+
     // ============= DOM SELECTORS (SAFE) =============
     const DomUtils = {
         _invalidSelectorLog: new Set(),
@@ -881,6 +942,8 @@
                                 // Always log archetypes version (cannot be disabled)
                                 Context.archetypesVersion = config.archetypesVersion || null;
                                 Context.coreOnlyMode = config.coreOnlyMode === true;
+                                Context.extensionPingEveryLoad = config.extensionPingEveryLoad === true;
+                                applyArchetypeRemoteLoggingConfig(config);
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
                                 if (Context.coreOnlyMode) {
                                     Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
@@ -2215,21 +2278,6 @@
     }
     
     /**
-     * Extract a specific query parameter from a URL
-     * @param {string} url - The full URL
-     * @param {string} param - The parameter name to extract
-     * @returns {string|null} - The parameter value or null if not found
-     */
-    function getQueryParam(url, param) {
-        try {
-            const urlObj = new URL(url);
-            return urlObj.searchParams.get(param);
-        } catch (e) {
-            return null;
-        }
-    }
-
-    /**
      * Whether SPA navigation to this path should trigger a full reload (archetype plugins
      * are listed in archetypes.json for the main archetype and/or devArchetypes when dev is on).
      */
@@ -2265,16 +2313,6 @@
 
         if (newUrl === previousUrl) {
             Logger.log('URL is the same, skipping...');
-            return;
-        }
-
-        // Check if task_project_target_id matches - if so, don't reload
-        // This prevents reload when only instance_id changes (e.g., backend reset)
-        const previousProjectId = getQueryParam(previousUrl, 'task_project_target_id');
-        const newProjectId = getQueryParam(newUrl, 'task_project_target_id');
-
-        if (previousProjectId && newProjectId && previousProjectId === newProjectId) {
-            Logger.log(`Navigation has same task_project_target_id (${newProjectId}), skipping reload...`);
             return;
         }
 

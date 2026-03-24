@@ -13,15 +13,17 @@
 #
 # Effects:
 #   1. Checks out main and creates a new branch with the given name.
-#   2. Updates fleet.user.js so it targets this branch:
+#   2. Updates fleet.user.js so it targets this branch (via sync-branch-config.sh):
 #      - @name: prefixed with "[<branch>] " (e.g. "[my-feature] Fleet").
 #      - @downloadURL / @updateURL: branch segment set to <branch> so Tampermonkey
 #        installs/updates from the branch-specific raw URL.
 #      - GITHUB_CONFIG.branch: set to <branch> for in-script behaviour.
 #      - VERSION: kept in sync with the header @version.
-#   3. Commits these changes with message "Sync branch config" and pushes the new
+#   3. Runs toggle-core-only-mode.sh -f so archetypes.json has coreOnlyMode false for
+#      feature work (bumps archetypesVersion only when that value changes).
+#   4. Commits these changes with message "Sync branch config" and pushes the new
 #      branch to origin.
-#   4. Prints the GitHub tree URL for the branch so you can install the branch-specific
+#   5. Prints the GitHub tree URL for the branch so you can install the branch-specific
 #      userscript for development and testing.
 #
 # Use this when starting work on a feature: install the script from the printed URL
@@ -51,14 +53,20 @@ if [[ -z "$BRANCH" ]]; then
 fi
 
 sync_script="$script_dir/sync-branch-config.sh"
+toggle_core_script="$script_dir/toggle-core-only-mode.sh"
 if [[ ! -f "$sync_script" ]]; then
   echo "[error] sync-branch-config.sh not found: $sync_script" >&2
+  exit 1
+fi
+if [[ ! -f "$toggle_core_script" ]]; then
+  echo "[error] toggle-core-only-mode.sh not found: $toggle_core_script" >&2
   exit 1
 fi
 
 if [[ "$dry_run" == true ]]; then
   echo "[info] Dry run - would create branch: $BRANCH (no git or file changes)"
   "$sync_script" --dry-run --branch "$BRANCH"
+  echo "[dry-run] Would run: \"$toggle_core_script\" -f"
   echo "[dry-run] Would run: git checkout main"
   echo "[dry-run] Would run: git checkout -b $BRANCH"
   echo "[dry-run] Would run: $sync_script"
@@ -73,6 +81,7 @@ git -C "$root" checkout -b "$BRANCH"
 echo "[info] Current branch: $(git -C "$root" rev-parse --abbrev-ref HEAD)"
 
 "$sync_script"
+"$toggle_core_script" -f
 
 git -C "$root" add .
 git -C "$root" commit -m "Sync branch config"

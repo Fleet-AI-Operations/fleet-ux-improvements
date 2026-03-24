@@ -1,0 +1,62 @@
+name: Apply archetypes boolean patch
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch_json:
+        description: JSON array of {op,set_boolean,path,value} records (see dev/utils/apply-archetypes-boolean-patch.sh)
+        required: true
+        type: string
+      base_ref:
+        description: Branch to check out, branch from, and target with the PR
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.base_ref }}
+
+      - name: Merge patch into archetypes.json
+        id: merge
+        env:
+          PATCH_JSON: ${{ inputs.patch_json }}
+        run: |
+          set -euo pipefail
+          chmod +x dev/utils/apply-archetypes-boolean-patch.sh
+          python3 -c "import os, pathlib; p=pathlib.Path(os.environ['RUNNER_TEMP'])/'patch.json'; p.write_text(os.environ['PATCH_JSON'], encoding='utf-8')"
+          ./dev/utils/apply-archetypes-boolean-patch.sh archetypes.json "$RUNNER_TEMP/patch.json" > "$RUNNER_TEMP/merged.json"
+          if cmp -s <(jq -cS . archetypes.json) <(jq -cS . "$RUNNER_TEMP/merged.json"); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No effective changes to archetypes.json (patch was empty or no-ops)."
+          else
+            cp "$RUNNER_TEMP/merged.json" archetypes.json
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create branch, commit, and open pull request
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="bot/archetypes-booleans-${{ github.run_id }}-${{ github.run_attempt }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add archetypes.json
+          git commit -m "chore(archetypes): apply boolean flag patches" -m "Applied via workflow_dispatch archetypes-boolean-apply.yml (run ${{ github.run_id }})."
+          git push origin "$BRANCH"
+          gh pr create \
+            --base "${{ inputs.base_ref }}" \
+            --head "$BRANCH" \
+            --title "chore(archetypes): boolean flag updates" \
+            --body "Automated PR from **Apply archetypes boolean patch** workflow.\n\nReview the \`archetypes.json\` diff (including \`archetypesVersion\`) before merging."

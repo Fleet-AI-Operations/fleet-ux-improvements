@@ -96,6 +96,17 @@ Scripts that touch `fleet.user.js` (checkout, release, test) ensure:
 
 - Aligns `fleet.user.js` with the current git branch (`-m` treats the branch as `main`). `-c` commits the file if it changed. `--dry-run` prints the planned field updates without writing. `--fleet` uses a specific file path (default: `<repo>/fleet.user.js`). `--branch` uses a branch name instead of `git` HEAD (ignored when `-m` is set). Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches.
 
+**apply-archetypes-boolean-patch.sh** — `./dev/utils/apply-archetypes-boolean-patch.sh <archetypes.json> <patch.json>`
+
+- Validates and merges **boolean-only** edits into `archetypes.json` (see header comments for the JSON patch shape). Bumps `archetypesVersion` by `0.1` when any boolean value actually changes. Prints the resulting file to stdout. Used by the **Apply archetypes boolean patch** GitHub Actions workflow.
+
+**archetypes-flags-tui** — `dev/tools/archetypes-flags-tui/`
+
+- Interactive terminal UI (Python + Textual) to fuzzy-search and toggle boolean flags in `archetypes.json`, then confirm and dispatch that workflow on GitHub.
+- Setup: `cd dev/tools/archetypes-flags-tui && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` (keep `.venv/` local; it is not tracked.)
+- Run: `.venv/bin/python app.py` (repo root must contain `archetypes.json`; `gh auth login` needs **repo** and **workflow** scopes so `gh api` can trigger `workflow_dispatch`).
+- Shortcut keys (main screen): type to filter; **Backspace** deletes last character; **Ctrl+W** deletes last word (token); **Ctrl+U** or **Ctrl+Backspace** clears search; **Up/Down** move; **Space** toggles; **Enter** summary; **Esc** returns from the summary screen. On the summary, **Y** + **Enter** dispatches the workflow; **n** + **Enter** cancels.
+
 **push.sh** — `./utils/push.sh [--dry-run] ["optional commit message"]`
 
 - Lists uncommitted changes; for each changed versioned file (plugins, fleet.user.js, settings-modal docs), bumps version by 0.1 if working tree is not already higher than HEAD. Updates `archetypes.json` settingsModalDocs for .md changes.
