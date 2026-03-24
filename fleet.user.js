@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [disable] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      6.2.0
+// @version      6.4.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '6.2.0';
+    const VERSION = '6.4.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -64,6 +64,8 @@
         outdatedPlugins: [],
         isOutdated: false,
         latestVersion: null,
+        /** When true (from archetypes.json coreOnlyMode), skip archetype plugins and SPA full reload; core plugins (e.g. settings UI) still run. */
+        coreOnlyMode: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
@@ -878,7 +880,11 @@
                                 
                                 // Always log archetypes version (cannot be disabled)
                                 Context.archetypesVersion = config.archetypesVersion || null;
+                                Context.coreOnlyMode = config.coreOnlyMode === true;
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
+                                if (Context.coreOnlyMode) {
+                                    Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
+                                }
                                 
                                 Logger.log(`✓ Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
                                 resolve(config);
@@ -2131,6 +2137,11 @@
                 Logger.warn('Script is outdated. Archetype plugins are disabled. Please update the script to continue using page-specific features. Open Settings to see the update banner.');
                 return;
             }
+
+            if (Context.coreOnlyMode) {
+                Logger.log('coreOnlyMode: archetype UX plugins are not loaded (settings and update checks remain active).');
+                return;
+            }
             
             // Detect archetype using URL + optional disambiguation
             const archetype = await ArchetypeManager.detectArchetype();
@@ -2302,12 +2313,15 @@
                 );
             }
 
-            if (warrantsFullReload) {
+            if (warrantsFullReload && !Context.coreOnlyMode) {
                 Logger.log('Navigation target has configured archetype plugins; refreshing page...');
                 Storage.delete('workflow-cache-latest');
                 Storage.delete('workflow-cache-latest-url');
                 location.reload();
                 return;
+            }
+            if (warrantsFullReload && Context.coreOnlyMode) {
+                Logger.log('coreOnlyMode: skipping full page reload on SPA navigation (archetype UX is inactive).');
             }
         } catch (error) {
             Logger.error('Failed to check archetype match on navigation:', error);
