@@ -2,7 +2,7 @@
   "version": "7.1.0",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": true,
-  "archetypesVersion": "6.102",
+  "archetypesVersion": "6.103",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -17,8 +17,8 @@
     },
     {
       "name": "extension-ping.js",
-      "version": "1.4",
-      "hash": "sha256-2a74b0178daf7ee190d8a61ed8e73ec0ae5244a9527cf12c2d253a18af42d000",
+      "version": "1.5",
+      "hash": "sha256-18e51f29fb3a2ff70a7cca03e72a5178158b1e6b8327bde39ccf1cc2ca9ff2ca",
       "log": false
     }
   ],

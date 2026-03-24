@@ -6,7 +6,7 @@ const plugin = {
     name: 'Extension Ping',
     description:
         'Pings extension usage endpoint; once per userscript version by default, or every load when archetypes.json sets extensionPingEveryLoad',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -75,22 +75,6 @@ const plugin = {
         const nav = typeof navigator !== 'undefined' ? navigator : null;
         if (nav && nav.userAgent) {
             meta.userAgent = nav.userAgent;
-        }
-        if (nav && nav.userAgentData) {
-            const uad = nav.userAgentData;
-            const plain = {};
-            if (uad.brands && uad.brands.length > 0) {
-                plain.brands = uad.brands.map((b) => ({ brand: b.brand, version: b.version }));
-            }
-            if (typeof uad.mobile === 'boolean') {
-                plain.mobile = uad.mobile;
-            }
-            if (uad.platform) {
-                plain.platform = uad.platform;
-            }
-            if (Object.keys(plain).length > 0) {
-                meta.userAgentData = plain;
-            }
         }
         return meta;
     },
