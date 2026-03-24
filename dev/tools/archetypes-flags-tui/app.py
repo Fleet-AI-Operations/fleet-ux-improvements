@@ -48,6 +48,53 @@ def token_backspace(query: str) -> str:
     return " ".join(parts[:-1])
 
 
+def lcs_length(a: str, b: str) -> int:
+    """Length of longest common subsequence over characters (classic DP)."""
+    if not a or not b:
+        return 0
+    m, n = len(a), len(b)
+    prev = [0] * (n + 1)
+    for i in range(1, m + 1):
+        curr = [0] * (n + 1)
+        ai = a[i - 1]
+        for j in range(1, n + 1):
+            if ai == b[j - 1]:
+                curr[j] = prev[j - 1] + 1
+            else:
+                curr[j] = max(prev[j], curr[j - 1])
+        prev = curr
+    return prev[n]
+
+
+def lcs_rank_parts(q: str, lab: str, blob: str) -> tuple[float, float, int]:
+    """
+    Return (coverage, normalized_lcs, substr_pos) for sorting.
+
+    coverage: max LCS length vs query / len(q) — order-preserving match strength.
+    normalized_lcs: 2 * lcs / (len(q) + len(text)) on the text that achieved max LCS.
+    substr_pos: start index of contiguous q in lab, else in blob, else 10**9 (fuzzy rows).
+    """
+    len_q = len(q)
+    if len_q == 0:
+        return (0.0, 0.0, 10**9)
+    l_lab = lcs_length(q, lab)
+    l_blob = lcs_length(q, blob)
+    if l_lab >= l_blob:
+        l_best, text = l_lab, lab
+    else:
+        l_best, text = l_blob, blob
+    coverage = l_best / len_q
+    denom = len_q + len(text)
+    norm = (2.0 * l_best / denom) if denom else 0.0
+    if q in lab:
+        pos = lab.find(q)
+    elif q in blob:
+        pos = blob.find(q)
+    else:
+        pos = 10**9
+    return (coverage, norm, pos)
+
+
 class ArchetypesFlagApp(App[None]):
     """Browse and toggle booleans, then dispatch the apply workflow."""
 
@@ -117,7 +164,9 @@ class ArchetypesFlagApp(App[None]):
         # Tier: 0 = query is contiguous substring of visible label (strongest)
         #       1 = substring of full search_blob but not label alone
         #       2 = fuzzy only (substring match never applied)
-        ranked: list[tuple[int, int, int]] = []
+        # Within each tier: LCS coverage + normalized LCS, then substring position,
+        # then token_set_ratio as a final tiebreaker.
+        ranked: list[tuple[int, float, float, int, int, int]] = []
         for i in range(n):
             row = self._rows[i]
             lab = row.label.lower()
@@ -128,10 +177,13 @@ class ArchetypesFlagApp(App[None]):
                 tier = 1
             else:
                 tier = 2
+            cov, norm, pos = lcs_rank_parts(q, lab, blob)
             fuzz_sc = fuzz.token_set_ratio(q, blob)
-            ranked.append((tier, fuzz_sc, i))
-        ranked.sort(key=lambda t: (t[0], -t[1], t[2]))
-        return [i for _, _, i in ranked]
+            ranked.append((tier, cov, norm, pos, fuzz_sc, i))
+        ranked.sort(
+            key=lambda t: (t[0], -t[1], -t[2], t[3], -t[4], t[5])
+        )
+        return [i for _, _, _, _, _, i in ranked]
 
     def refresh_table(self) -> None:
         table = self.query_one("#flag_table", DataTable)
