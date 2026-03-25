@@ -82,6 +82,107 @@
         remoteModuleLogByFile: {},
     };
 
+    const RefreshGuard = {
+        _pendingReloadSource: null,
+        _pendingReloadReason: null,
+        _pendingReloadAt: 0,
+        _beforeUnloadBound: false,
+        _reloadPatched: false,
+
+        isPageRefreshConfirmationEnabled() {
+            return Storage.get('page-refresh-confirmation-enabled', true);
+        },
+
+        isExtensionRefreshConfirmationEnabled() {
+            return Storage.get('extension-refresh-confirmation-enabled', false);
+        },
+
+        markPendingReload(source = 'page', reason = '') {
+            this._pendingReloadSource = source;
+            this._pendingReloadReason = reason || '';
+            this._pendingReloadAt = Date.now();
+            Logger.info(`Refresh pending (${source})${reason ? `: ${reason}` : ''}`);
+        },
+
+        _consumePendingReloadSource() {
+            const now = Date.now();
+            // Keep source marks only briefly so stale values don't leak into unrelated unloads.
+            if (!this._pendingReloadSource || (now - this._pendingReloadAt) > 3000) {
+                this._pendingReloadSource = null;
+                this._pendingReloadReason = null;
+                this._pendingReloadAt = 0;
+                return 'page';
+            }
+            const source = this._pendingReloadSource;
+            this._pendingReloadSource = null;
+            this._pendingReloadReason = null;
+            this._pendingReloadAt = 0;
+            return source;
+        },
+
+        _inferSourceFromStack(stack) {
+            if (!stack) return 'page';
+            if (/fleet\.user\.js|plugins\/core\/|plugins\/archetypes\//i.test(stack)) {
+                return 'extension';
+            }
+            return 'page';
+        },
+
+        _beforeUnloadHandler(event) {
+            const source = this._consumePendingReloadSource();
+            const pageEnabled = this.isPageRefreshConfirmationEnabled();
+            const extensionEnabled = this.isExtensionRefreshConfirmationEnabled();
+            const shouldPrompt = source === 'extension' ? extensionEnabled : pageEnabled;
+            if (!shouldPrompt) {
+                Logger.debug(`Refresh confirmation skipped (${source})`);
+                return undefined;
+            }
+            Logger.warn(`Showing refresh confirmation dialog (${source})`);
+            event.preventDefault();
+            event.returnValue = '';
+            return '';
+        },
+
+        _patchReloadMethod(locationObject, label) {
+            if (!locationObject || typeof locationObject.reload !== 'function') {
+                return false;
+            }
+            const original = locationObject.reload.bind(locationObject);
+            try {
+                locationObject.reload = (...args) => {
+                    const source = this._inferSourceFromStack(new Error().stack || '');
+                    this.markPendingReload(source, `${label}.reload()`);
+                    return original(...args);
+                };
+                Logger.log(`Patched ${label}.reload for refresh confirmation tracking`);
+                return true;
+            } catch (e) {
+                Logger.warn(`Could not patch ${label}.reload directly:`, e);
+                return false;
+            }
+        },
+
+        init() {
+            if (!this._beforeUnloadBound) {
+                window.addEventListener('beforeunload', (event) => this._beforeUnloadHandler(event));
+                this._beforeUnloadBound = true;
+                Logger.log('Refresh confirmation guard initialized');
+            }
+            if (this._reloadPatched) return;
+            const pageWindow = Context.getPageWindow();
+            const patchedCurrentWindow = this._patchReloadMethod(window.location, 'window.location');
+            const patchedPageWindow = pageWindow && pageWindow !== window
+                ? this._patchReloadMethod(pageWindow.location, 'unsafeWindow.location')
+                : false;
+            this._reloadPatched = patchedCurrentWindow || patchedPageWindow;
+        },
+
+        requestExtensionReload(reason = 'extension action') {
+            this.markPendingReload('extension', reason);
+            location.reload();
+        }
+    };
+
     // ============= DEV-ONLY REDIRECT (GODMODE) =============
     // If this build is not main and the user does not have the GODMODE userscript, show a modal and stop.
     const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
@@ -156,6 +257,8 @@
     }
 
     function runFleet() {
+    Context.requestExtensionReload = (reason) => RefreshGuard.requestExtensionReload(reason);
+    RefreshGuard.init();
 
     // ============= CLEANUP REGISTRY =============
     const CleanupRegistry = {
@@ -533,6 +636,8 @@
             const globalKeys = [
                 'global-plugins-enabled',
                 'global-plugins-previous',
+                'page-refresh-confirmation-enabled',
+                'extension-refresh-confirmation-enabled',
                 'debug',
                 'verbose',
                 'submodule-logging',
@@ -2355,7 +2460,7 @@
                 Logger.log('Navigation target has configured archetype plugins; refreshing page...');
                 Storage.delete('workflow-cache-latest');
                 Storage.delete('workflow-cache-latest-url');
-                location.reload();
+                Context.requestExtensionReload('SPA navigation with configured archetype plugins');
                 return;
             }
             if (warrantsFullReload && Context.coreOnlyMode) {
