@@ -54,7 +54,7 @@
         devPath: 'dev',
         archetypesPath: 'archetypes.json'
     };
-    // Branches that behave like main: run immediately, no GODMODE check, no dev-only features (test-update simulates main for testing).
+    // Branches that behave like main: run immediately, no dev-ID check, no dev-only features (test-update simulates main for testing).
     const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
     const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
     /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
@@ -244,9 +244,159 @@
         }
     };
 
-    // ============= DEV-ONLY REDIRECT (GODMODE) =============
-    // If this build is not main and the user does not have the GODMODE userscript, show a modal and stop.
+    const RefreshGuard = {
+        _pendingReloadSource: null,
+        _pendingReloadReason: null,
+        _pendingReloadAt: 0,
+        _beforeUnloadBound: false,
+        _reloadPatched: false,
+        _skipNextBeforeUnloadPrompt: false,
+
+        _getStorage() {
+            return Context.storage || null;
+        },
+
+        _getLogger() {
+            return Context.logger || null;
+        },
+
+        _log(level, message, ...args) {
+            const logger = this._getLogger();
+            if (logger && typeof logger[level] === 'function') {
+                logger[level](message, ...args);
+                return;
+            }
+            const fn = typeof console[level] === 'function' ? console[level] : console.log;
+            fn(`${LOG_PREFIX} ${message}`, ...args);
+        },
+
+        isPageRefreshConfirmationEnabled() {
+            const storage = this._getStorage();
+            return storage ? storage.get('page-refresh-confirmation-enabled', DEFAULT_PAGE_REFRESH_CONFIRMATION) : false;
+        },
+
+        isExtensionRefreshConfirmationEnabled() {
+            const storage = this._getStorage();
+            return storage
+                ? storage.get('extension-refresh-confirmation-enabled', DEFAULT_EXTENSION_REFRESH_CONFIRMATION)
+                : false;
+        },
+
+        markPendingReload(source = 'page', reason = '') {
+            this._pendingReloadSource = source;
+            this._pendingReloadReason = reason || '';
+            this._pendingReloadAt = Date.now();
+            this._log('info', `Refresh pending (${source})${reason ? `: ${reason}` : ''}`);
+        },
+
+        _consumePendingReloadSource() {
+            const now = Date.now();
+            // Keep source marks only briefly so stale values don't leak into unrelated unloads.
+            if (!this._pendingReloadSource || (now - this._pendingReloadAt) > 3000) {
+                this._pendingReloadSource = null;
+                this._pendingReloadReason = null;
+                this._pendingReloadAt = 0;
+                return 'page';
+            }
+            const source = this._pendingReloadSource;
+            this._pendingReloadSource = null;
+            this._pendingReloadReason = null;
+            this._pendingReloadAt = 0;
+            return source;
+        },
+
+        _inferSourceFromStack(stack) {
+            if (!stack) return 'page';
+            if (/fleet\.user\.js|plugins\/core\/|plugins\/archetypes\//i.test(stack)) {
+                return 'extension';
+            }
+            return 'page';
+        },
+
+        _beforeUnloadHandler(event) {
+            const source = this._consumePendingReloadSource();
+            if (this._skipNextBeforeUnloadPrompt) {
+                this._skipNextBeforeUnloadPrompt = false;
+                this._log('debug', `Skipping beforeunload prompt once (${source})`);
+                return undefined;
+            }
+            const pageEnabled = this.isPageRefreshConfirmationEnabled();
+            const extensionEnabled = this.isExtensionRefreshConfirmationEnabled();
+            const shouldPrompt = source === 'extension' ? extensionEnabled : pageEnabled;
+            if (!shouldPrompt) {
+                this._log('debug', `Refresh confirmation skipped (${source})`);
+                return undefined;
+            }
+            const bracketLabel = source === 'extension'
+                ? '[Extension Initiated Refresh]'
+                : '[Fleet Initiated Refresh]';
+            const message = `${bracketLabel} Are you sure you want to refresh this page?`;
+            this._log('warn', `Showing refresh confirmation dialog (${source})`);
+            event.preventDefault();
+            // Browsers may ignore custom beforeunload text, but setting it is still best-effort.
+            event.returnValue = message;
+            return message;
+        },
+
+        _patchReloadMethod(locationObject, label) {
+            if (!locationObject || typeof locationObject.reload !== 'function') {
+                return false;
+            }
+            const original = locationObject.reload.bind(locationObject);
+            try {
+                locationObject.reload = (...args) => {
+                    const source = this._inferSourceFromStack(new Error().stack || '');
+                    this.markPendingReload(source, `${label}.reload()`);
+                    return original(...args);
+                };
+                this._log('log', `Patched ${label}.reload for refresh confirmation tracking`);
+                return true;
+            } catch (e) {
+                this._log('warn', `Could not patch ${label}.reload directly:`, e);
+                return false;
+            }
+        },
+
+        init() {
+            if (!this._beforeUnloadBound) {
+                window.addEventListener('beforeunload', (event) => this._beforeUnloadHandler(event));
+                this._beforeUnloadBound = true;
+                this._log('log', 'Refresh confirmation guard initialized');
+            }
+            if (this._reloadPatched) return;
+            try {
+                const pageWindow = Context.getPageWindow();
+                const patchedCurrentWindow = this._patchReloadMethod(window.location, 'window.location');
+                const patchedPageWindow = pageWindow && pageWindow !== window
+                    ? this._patchReloadMethod(pageWindow.location, 'unsafeWindow.location')
+                    : false;
+                this._reloadPatched = patchedCurrentWindow || patchedPageWindow;
+            } catch (e) {
+                this._log('warn', 'Refresh guard init continued without reload patching', e);
+            }
+        },
+
+        requestExtensionReload(reason = 'extension action') {
+            if (this.isExtensionRefreshConfirmationEnabled()) {
+                const confirmed = window.confirm(
+                    '[Extension Initiated Refresh] Are you sure you want to refresh this page?'
+                );
+                if (!confirmed) {
+                    this._log('info', `Extension refresh cancelled by user${reason ? `: ${reason}` : ''}`);
+                    return;
+                }
+                // Prevent a second native beforeunload prompt for the same extension reload.
+                this._skipNextBeforeUnloadPrompt = true;
+            }
+            this.markPendingReload('extension', reason);
+            location.reload();
+        }
+    };
+
+    // ============= DEV-ONLY REDIRECT (DEV ID) =============
+    // If this build is not main and the user does not have the branch dev-ID userscript, show a modal and stop.
     const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
+    const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
 
     function showNonDevRedirectModal() {
         const root = document.body || document.documentElement;
@@ -2645,11 +2795,14 @@
             try {
                 const pageWindow = Context.getPageWindow();
                 if (pageWindow && pageWindow.localStorage) {
-                    isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
+                    const devIdBranch = pageWindow.localStorage.getItem(DEV_ID_STORAGE_KEY);
+                    isDev = devIdBranch === 'main' || devIdBranch === GITHUB_CONFIG.branch;
                     if (isDev) {
-                        pageWindow.localStorage.removeItem('fleet-godmode');
-                        console.log("[Fleet UX Enhancer] - GODMODE detected, removing GODMODE key");
+                        pageWindow.localStorage.removeItem(DEV_ID_STORAGE_KEY);
+                        console.log(`[Fleet UX Enhancer] - Dev ID detected for branch "${devIdBranch}", removing dev ID key`);
                     }
+                    // Explicitly disable legacy GODMODE behavior.
+                    pageWindow.localStorage.removeItem('fleet-godmode');
                 }
             } catch (e) {
                 // treat as non-dev
