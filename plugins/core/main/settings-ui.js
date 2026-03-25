@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.4',
+    _version: '6.5',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -479,6 +479,9 @@ const plugin = {
                         </div>
                         <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
                             This will show a confirmation dialog before any refresh that is initiated by the Fleet website. If you are experiencing nuisance refreshes, this should allow you to prevent them from affecting you.
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
+                            Please also note that when this toggle is on, you will get a confirmation dialog even when you manually refresh the page (such as by using the browser refresh button, or using <code>CMD/Ctrl + R</code>, etc)
                         </div>
                         <div style="font-size: 12px; color: #b45309; margin-top: 8px; line-height: 1.45;">
                             Please note that if you refuse a Fleet refresh (for example, one that occurs from a site update), you may end up continuing to work on an outdated website, and successful page interactions are not guaranteed after this point.
