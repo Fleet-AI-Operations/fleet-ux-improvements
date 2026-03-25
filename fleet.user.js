@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat-confirm-refresh-dialogue] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.1
+// @version      7.1.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.1';
+    const VERSION = '7.1.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -89,19 +89,39 @@
         _beforeUnloadBound: false,
         _reloadPatched: false,
 
+        _getStorage() {
+            return Context.storage || null;
+        },
+
+        _getLogger() {
+            return Context.logger || null;
+        },
+
+        _log(level, message, ...args) {
+            const logger = this._getLogger();
+            if (logger && typeof logger[level] === 'function') {
+                logger[level](message, ...args);
+                return;
+            }
+            const fn = typeof console[level] === 'function' ? console[level] : console.log;
+            fn(`${LOG_PREFIX} ${message}`, ...args);
+        },
+
         isPageRefreshConfirmationEnabled() {
-            return Storage.get('page-refresh-confirmation-enabled', true);
+            const storage = this._getStorage();
+            return storage ? storage.get('page-refresh-confirmation-enabled', true) : true;
         },
 
         isExtensionRefreshConfirmationEnabled() {
-            return Storage.get('extension-refresh-confirmation-enabled', false);
+            const storage = this._getStorage();
+            return storage ? storage.get('extension-refresh-confirmation-enabled', false) : false;
         },
 
         markPendingReload(source = 'page', reason = '') {
             this._pendingReloadSource = source;
             this._pendingReloadReason = reason || '';
             this._pendingReloadAt = Date.now();
-            Logger.info(`Refresh pending (${source})${reason ? `: ${reason}` : ''}`);
+            this._log('info', `Refresh pending (${source})${reason ? `: ${reason}` : ''}`);
         },
 
         _consumePendingReloadSource() {
@@ -134,10 +154,10 @@
             const extensionEnabled = this.isExtensionRefreshConfirmationEnabled();
             const shouldPrompt = source === 'extension' ? extensionEnabled : pageEnabled;
             if (!shouldPrompt) {
-                Logger.debug(`Refresh confirmation skipped (${source})`);
+                this._log('debug', `Refresh confirmation skipped (${source})`);
                 return undefined;
             }
-            Logger.warn(`Showing refresh confirmation dialog (${source})`);
+            this._log('warn', `Showing refresh confirmation dialog (${source})`);
             event.preventDefault();
             event.returnValue = '';
             return '';
@@ -154,10 +174,10 @@
                     this.markPendingReload(source, `${label}.reload()`);
                     return original(...args);
                 };
-                Logger.log(`Patched ${label}.reload for refresh confirmation tracking`);
+                this._log('log', `Patched ${label}.reload for refresh confirmation tracking`);
                 return true;
             } catch (e) {
-                Logger.warn(`Could not patch ${label}.reload directly:`, e);
+                this._log('warn', `Could not patch ${label}.reload directly:`, e);
                 return false;
             }
         },
@@ -166,15 +186,19 @@
             if (!this._beforeUnloadBound) {
                 window.addEventListener('beforeunload', (event) => this._beforeUnloadHandler(event));
                 this._beforeUnloadBound = true;
-                Logger.log('Refresh confirmation guard initialized');
+                this._log('log', 'Refresh confirmation guard initialized');
             }
             if (this._reloadPatched) return;
-            const pageWindow = Context.getPageWindow();
-            const patchedCurrentWindow = this._patchReloadMethod(window.location, 'window.location');
-            const patchedPageWindow = pageWindow && pageWindow !== window
-                ? this._patchReloadMethod(pageWindow.location, 'unsafeWindow.location')
-                : false;
-            this._reloadPatched = patchedCurrentWindow || patchedPageWindow;
+            try {
+                const pageWindow = Context.getPageWindow();
+                const patchedCurrentWindow = this._patchReloadMethod(window.location, 'window.location');
+                const patchedPageWindow = pageWindow && pageWindow !== window
+                    ? this._patchReloadMethod(pageWindow.location, 'unsafeWindow.location')
+                    : false;
+                this._reloadPatched = patchedCurrentWindow || patchedPageWindow;
+            } catch (e) {
+                this._log('warn', 'Refresh guard init continued without reload patching', e);
+            }
         },
 
         requestExtensionReload(reason = 'extension action') {
@@ -733,6 +757,8 @@
         }
     };
 
+    Context.storage = Storage;
+
     // ============= LOGGING =============
     const Logger = {
         _debugEnabled: null,
@@ -903,6 +929,8 @@
             this._emit('error', payload);
         }
     };
+
+    Context.logger = Logger;
 
     Context.requestExtensionReload = (reason) => RefreshGuard.requestExtensionReload(reason);
     RefreshGuard.init();
