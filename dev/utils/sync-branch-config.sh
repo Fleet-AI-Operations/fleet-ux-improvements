@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 #
-# sync-branch-config.sh — Update fleet.user.js for the current git branch
+# sync-branch-config.sh — Update branch-bound userscript config for current git branch
 #
 # Usage:
 #   ./sync-branch-config.sh              # use current git branch, default fleet path
 #   ./sync-branch-config.sh -m           # update as if on main (ignore actual branch)
-#   ./sync-branch-config.sh -c           # after sync, commit fleet.user.js if it changed
+#   ./sync-branch-config.sh -c           # after sync, commit changed userscript files
 #   ./sync-branch-config.sh --dry-run    # print planned changes; do not write or commit
 #   ./sync-branch-config.sh --fleet PATH # read/write this file instead of <root>/fleet.user.js
 #   ./sync-branch-config.sh --branch NAME # use NAME instead of git HEAD (ignored if -m)
 #
-# Run from repo root (or anywhere; uses git to find root). Updates fleet.user.js:
+# Run from repo root (or anywhere; uses git to find root). Updates:
+#   - fleet.user.js
 #   - @name: add "[branch] " prefix when not main, remove when main
 #   - @downloadURL / @updateURL: set segment to current branch
 #   - GITHUB_CONFIG.branch: set to current branch
 #   - const VERSION: set from header @version
+#   - dev/fleet-dev-id.user.js
+#   - @downloadURL / @updateURL: set segment to current branch
+#   - const BRANCH_NAME: set to current branch
 #
 # Used by checkout.sh and test.sh; may be run directly.
 #
@@ -59,6 +63,7 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 file_path="${fleet_path_arg:-$root/fleet.user.js}"
+dev_id_path="$root/dev/fleet-dev-id.user.js"
 
 if [[ "$use_main" == true ]]; then
   branch="main"
@@ -74,6 +79,11 @@ fi
 
 if [[ ! -f "$file_path" ]]; then
   echo "[error] fleet.user.js not found: $file_path" >&2
+  exit 1
+fi
+
+if [[ ! -f "$dev_id_path" ]]; then
+  echo "[error] dev ID userscript not found: $dev_id_path" >&2
   exit 1
 fi
 
@@ -95,6 +105,12 @@ new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header
   s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/)([^/]+)(/fleet\.user\.js)}{$1.$ENV{BRANCH}.$3}ge;
   s{(branch:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
   s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{HEADER_VERSION}.$3}ge;
+')"
+
+dev_id_content="$(cat "$dev_id_path")"
+dev_id_new_content="$(printf "%s" "$dev_id_content" | BRANCH="$branch" perl -0pe '
+  s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/)([^/]+)(/dev/fleet-dev-id\.user\.js)}{$1.$ENV{BRANCH}.$3}ge;
+  s{(const BRANCH_NAME\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
 ')"
 
 needs_name_change() {
@@ -140,6 +156,30 @@ needs_version_constant_change() {
   ' "$file_path"
 }
 
+needs_dev_id_download_url_change() {
+  BRANCH="$branch" perl -0ne '
+    if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/dev\/fleet-dev-id\.user\.js/m) {
+      print($1 ne $ENV{BRANCH} ? "1" : "0");
+    }
+  ' "$dev_id_path"
+}
+
+needs_dev_id_update_url_change() {
+  BRANCH="$branch" perl -0ne '
+    if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/dev\/fleet-dev-id\.user\.js/m) {
+      print($1 ne $ENV{BRANCH} ? "1" : "0");
+    }
+  ' "$dev_id_path"
+}
+
+needs_dev_id_branch_change() {
+  BRANCH="$branch" perl -0ne '
+    if (/const BRANCH_NAME\s*=\s*["\x27]([^"\x27]+)["\x27]/) {
+      print($1 ne $ENV{BRANCH} ? "1" : "0");
+    }
+  ' "$dev_id_path"
+}
+
 print_fleet_changes() {
   local c="$1" n="$2"
   local cur new
@@ -170,23 +210,50 @@ print_fleet_changes() {
   fi
 }
 
+print_dev_id_changes() {
+  local c="$1" n="$2"
+  local cur new
+  if [[ "$dev_id_download_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  dev/fleet-dev-id.user.js: @downloadURL: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$dev_id_update_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  dev/fleet-dev-id.user.js: @updateURL: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$dev_id_branch_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /const BRANCH_NAME\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /const BRANCH_NAME\s*=\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  dev/fleet-dev-id.user.js: BRANCH_NAME: \"$cur\" -> \"$new\""
+  fi
+}
+
 if [[ "$dry_run" == true ]]; then
   name_change="$(needs_name_change)"
   download_change="$(needs_download_url_change)"
   update_change="$(needs_update_url_change)"
   github_change="$(needs_github_config_change)"
   version_change="$(needs_version_constant_change)"
+  dev_id_download_change="$(needs_dev_id_download_url_change)"
+  dev_id_update_change="$(needs_dev_id_update_url_change)"
+  dev_id_branch_change="$(needs_dev_id_branch_change)"
   changed=()
   [[ "$name_change" == "1" ]] && changed+=("@name")
   [[ "$download_change" == "1" ]] && changed+=("@downloadURL")
   [[ "$update_change" == "1" ]] && changed+=("@updateURL")
   [[ "$github_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
   [[ "$version_change" == "1" ]] && changed+=("VERSION constant")
+  [[ "$dev_id_download_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @downloadURL")
+  [[ "$dev_id_update_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @updateURL")
+  [[ "$dev_id_branch_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js BRANCH_NAME")
   if [[ "${#changed[@]}" -gt 0 ]]; then
-    echo "[dry-run] Would update fleet.user.js:"
+    echo "[dry-run] Would update branch config files:"
     print_fleet_changes "$content" "$new_content"
+    print_dev_id_changes "$dev_id_content" "$dev_id_new_content"
   else
-    echo "[dry-run] fleet.user.js: no changes (all values already in sync for branch $branch)"
+    echo "[dry-run] branch config files: no changes (all values already in sync for branch $branch)"
   fi
   exit 0
 fi
@@ -200,12 +267,20 @@ else
   echo "[info] fleet.user.js already in sync for branch: $branch"
 fi
 
+if [[ "$dev_id_new_content" != "$dev_id_content" ]]; then
+  printf "%s" "$dev_id_new_content" > "$dev_id_path"
+  changed_write=true
+  echo "[info] Synced dev/fleet-dev-id.user.js for branch: $branch"
+else
+  echo "[info] dev/fleet-dev-id.user.js already in sync for branch: $branch"
+fi
+
 if [[ "$commit_after" == true ]]; then
   if [[ "$changed_write" == true ]]; then
-    git -C "$root" add -- "$file_path"
-    git -C "$root" commit -m "Sync fleet.user.js branch config to $branch"
-    echo "[info] Committed fleet.user.js for branch: $branch"
+    git -C "$root" add -- "$file_path" "$dev_id_path"
+    git -C "$root" commit -m "Sync branch config to $branch"
+    echo "[info] Committed branch config files for branch: $branch"
   else
-    echo "[info] No commit (-c): fleet.user.js was already in sync"
+    echo "[info] No commit (-c): branch config files were already in sync"
   fi
 fi

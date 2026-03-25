@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.0
+// @version      7.2.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.0';
+    const VERSION = '7.2.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -49,7 +49,7 @@
         devPath: 'dev',
         archetypesPath: 'archetypes.json'
     };
-    // Branches that behave like main: run immediately, no GODMODE check, no dev-only features (test-update simulates main for testing).
+    // Branches that behave like main: run immediately, no dev-ID check, no dev-only features (test-update simulates main for testing).
     const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
     const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
     
@@ -82,9 +82,10 @@
         remoteModuleLogByFile: {},
     };
 
-    // ============= DEV-ONLY REDIRECT (GODMODE) =============
-    // If this build is not main and the user does not have the GODMODE userscript, show a modal and stop.
+    // ============= DEV-ONLY REDIRECT (DEV ID) =============
+    // If this build is not main and the user does not have the branch dev-ID userscript, show a modal and stop.
     const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
+    const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
 
     function showNonDevRedirectModal() {
         const root = document.body || document.documentElement;
@@ -2439,11 +2440,14 @@
             try {
                 const pageWindow = Context.getPageWindow();
                 if (pageWindow && pageWindow.localStorage) {
-                    isDev = pageWindow.localStorage.getItem('fleet-godmode') === 'GODMODE';
+                    const devIdBranch = pageWindow.localStorage.getItem(DEV_ID_STORAGE_KEY);
+                    isDev = devIdBranch === 'main' || devIdBranch === GITHUB_CONFIG.branch;
                     if (isDev) {
-                        pageWindow.localStorage.removeItem('fleet-godmode');
-                        console.log("[Fleet UX Enhancer] - GODMODE detected, removing GODMODE key");
+                        pageWindow.localStorage.removeItem(DEV_ID_STORAGE_KEY);
+                        console.log(`[Fleet UX Enhancer] - Dev ID detected for branch "${devIdBranch}", removing dev ID key`);
                     }
+                    // Explicitly disable legacy GODMODE behavior.
+                    pageWindow.localStorage.removeItem('fleet-godmode');
                 }
             } catch (e) {
                 // treat as non-dev
