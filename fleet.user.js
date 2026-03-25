@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat-confirm-refresh-dialogue] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.2
+// @version      7.1.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.2';
+    const VERSION = '7.1.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -88,6 +88,7 @@
         _pendingReloadAt: 0,
         _beforeUnloadBound: false,
         _reloadPatched: false,
+        _skipNextBeforeUnloadPrompt: false,
 
         _getStorage() {
             return Context.storage || null;
@@ -150,6 +151,11 @@
 
         _beforeUnloadHandler(event) {
             const source = this._consumePendingReloadSource();
+            if (this._skipNextBeforeUnloadPrompt) {
+                this._skipNextBeforeUnloadPrompt = false;
+                this._log('debug', `Skipping beforeunload prompt once (${source})`);
+                return undefined;
+            }
             const pageEnabled = this.isPageRefreshConfirmationEnabled();
             const extensionEnabled = this.isExtensionRefreshConfirmationEnabled();
             const shouldPrompt = source === 'extension' ? extensionEnabled : pageEnabled;
@@ -157,10 +163,15 @@
                 this._log('debug', `Refresh confirmation skipped (${source})`);
                 return undefined;
             }
+            const bracketLabel = source === 'extension'
+                ? '[Extension Initiated Refresh]'
+                : '[Fleet Initiated Refresh]';
+            const message = `${bracketLabel} Are you sure you want to refresh this page?`;
             this._log('warn', `Showing refresh confirmation dialog (${source})`);
             event.preventDefault();
-            event.returnValue = '';
-            return '';
+            // Browsers may ignore custom beforeunload text, but setting it is still best-effort.
+            event.returnValue = message;
+            return message;
         },
 
         _patchReloadMethod(locationObject, label) {
@@ -202,6 +213,17 @@
         },
 
         requestExtensionReload(reason = 'extension action') {
+            if (this.isExtensionRefreshConfirmationEnabled()) {
+                const confirmed = window.confirm(
+                    '[Extension Initiated Refresh] Are you sure you want to refresh this page?'
+                );
+                if (!confirmed) {
+                    this._log('info', `Extension refresh cancelled by user${reason ? `: ${reason}` : ''}`);
+                    return;
+                }
+                // Prevent a second native beforeunload prompt for the same extension reload.
+                this._skipNextBeforeUnloadPrompt = true;
+            }
             this.markPendingReload('extension', reason);
             location.reload();
         }
