@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.2',
+    _version: '6.6',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -266,6 +266,8 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
+        const pageRefreshConfirmEnabled = this._getPageRefreshConfirmationEnabled();
+        const extensionRefreshConfirmEnabled = this._getExtensionRefreshConfirmationEnabled();
         const noPluginsMsg = Context.isOutdated
             ? 'No plugins will load until you update the userscript.'
             : 'No plugins loaded for this page.';
@@ -461,6 +463,42 @@ const plugin = {
                         cursor: pointer;
                         transition: all 0.2s;
                     ">All Off</button>
+                </div>
+            </div>
+
+            <!-- Refresh Confirmation -->
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                    Refresh Confirmation
+                </h3>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="padding: 10px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <label style="font-size: 13px; color: var(--foreground, #333);" for="wf-page-refresh-confirmation-enabled">Page refresh confirmation dialog</label>
+                            ${this._createSwitchHTML('wf-page-refresh-confirmation-enabled', pageRefreshConfirmEnabled, null, false, { variant: 'main' })}
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
+                            This will show a confirmation dialog before any refresh that is initiated by the Fleet website. If you are experiencing nuisance refreshes, this should allow you to prevent them from affecting you.
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
+                            Please also note that when this toggle is on, you will get a confirmation dialog even when you manually refresh the page (such as by using the browser refresh button, or using <code>CMD/Ctrl + R</code>, etc)
+                        </div>
+                        <div style="font-size: 12px; color: #b45309; margin-top: 8px; line-height: 1.45;">
+                            Please note that if you refuse a Fleet refresh (for example, one that occurs from a site update), you may end up continuing to work on an outdated website, and successful page interactions are not guaranteed after this point.
+                        </div>
+                    </div>
+                    <div style="padding: 10px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <label style="font-size: 13px; color: var(--foreground, #333);" for="wf-extension-refresh-confirmation-enabled">Confirm before refreshes initiated by this extension?</label>
+                            ${this._createSwitchHTML('wf-extension-refresh-confirmation-enabled', extensionRefreshConfirmEnabled, null, false, { variant: 'sub' })}
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
+                            This will show a confirmation dialog before any page refresh, including refreshes initiated by this extension.
+                        </div>
+                        <div style="font-size: 12px; color: #b45309; margin-top: 8px; line-height: 1.45;">
+                            Please note that this extension works by refreshing every time you navigate to a page that has plugins associated with it. This toggle should only be used as a last resort for debugging purposes. If you find that you need this toggle enabled to prevent nuisance refreshes, please use the &quot;Feedback&quot; tab to create an issue immediately!
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -723,7 +761,11 @@ const plugin = {
         }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
-                window.location.reload();
+                if (typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload('settings-ui update banner refresh');
+                } else {
+                    window.location.reload();
+                }
             });
         }
 
@@ -1040,7 +1082,35 @@ const plugin = {
         if (reloadLink) {
             reloadLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                window.location.reload();
+                if (typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload('settings-ui reload plugins link');
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+
+        const pageRefreshConfirmationToggle = Context.dom.query('#wf-page-refresh-confirmation-enabled', {
+            root: modal,
+            context: `${this.id}.pageRefreshConfirmationToggle`
+        });
+        if (pageRefreshConfirmationToggle) {
+            pageRefreshConfirmationToggle.addEventListener('change', (e) => {
+                this._handleToggleChange(e);
+                this._setPageRefreshConfirmationEnabled(e.target.checked);
+                this._updateSettingsMessage(modal, plugins);
+            });
+        }
+
+        const extensionRefreshConfirmationToggle = Context.dom.query('#wf-extension-refresh-confirmation-enabled', {
+            root: modal,
+            context: `${this.id}.extensionRefreshConfirmationToggle`
+        });
+        if (extensionRefreshConfirmationToggle) {
+            extensionRefreshConfirmationToggle.addEventListener('change', (e) => {
+                this._handleToggleChange(e);
+                this._setExtensionRefreshConfirmationEnabled(e.target.checked);
+                this._updateSettingsMessage(modal, plugins);
             });
         }
         
@@ -1057,7 +1127,11 @@ const plugin = {
                     const clearedCount = Storage.clearAll(allPlugins);
                     Logger.log(`✓ Cache cleared: ${clearedCount} keys removed`);
                     alert(`Cache cleared successfully. ${clearedCount} storage keys were removed. The page will now reload.`);
-                    window.location.reload();
+                    if (typeof Context.requestExtensionReload === 'function') {
+                        Context.requestExtensionReload('settings-ui clear cache');
+                    } else {
+                        window.location.reload();
+                    }
                 }
             });
             clearCacheBtn.addEventListener('mouseenter', () => {
@@ -1516,6 +1590,8 @@ const plugin = {
             .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
         const snapshot = {
             globalEnabled: this._getGlobalEnabled(),
+            pageRefreshConfirmationEnabled: this._getPageRefreshConfirmationEnabled(),
+            extensionRefreshConfirmationEnabled: this._getExtensionRefreshConfirmationEnabled(),
             debug: Logger.isDebugEnabled(),
             verbose: Logger.isVerboseEnabled(),
             submoduleLogging: Logger.isSubmoduleLoggingEnabled(),
@@ -1564,6 +1640,22 @@ const plugin = {
 
     _setGlobalEnabled(enabled) {
         Storage.set('global-plugins-enabled', enabled);
+    },
+
+    _getPageRefreshConfirmationEnabled() {
+        return Storage.get('page-refresh-confirmation-enabled', false);
+    },
+
+    _setPageRefreshConfirmationEnabled(enabled) {
+        Storage.set('page-refresh-confirmation-enabled', enabled);
+    },
+
+    _getExtensionRefreshConfirmationEnabled() {
+        return Storage.get('extension-refresh-confirmation-enabled', false);
+    },
+
+    _setExtensionRefreshConfirmationEnabled(enabled) {
+        Storage.set('extension-refresh-confirmation-enabled', enabled);
     },
     
     _getPulseOverrideEnabled() {
@@ -1676,7 +1768,11 @@ const plugin = {
             if (refreshLink) {
                 refreshLink.addEventListener('click', (e) => {
                     e.preventDefault();
-                    window.location.reload();
+                    if (typeof Context.requestExtensionReload === 'function') {
+                        Context.requestExtensionReload('settings-ui settings changed refresh');
+                    } else {
+                        window.location.reload();
+                    }
                 });
             }
         }
