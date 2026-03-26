@@ -110,7 +110,7 @@
 
         isPageRefreshConfirmationEnabled() {
             const storage = this._getStorage();
-            return storage ? storage.get('page-refresh-confirmation-enabled', true) : true;
+            return storage ? storage.get('page-refresh-confirmation-enabled', false) : false;
         },
 
         isExtensionRefreshConfirmationEnabled() {
