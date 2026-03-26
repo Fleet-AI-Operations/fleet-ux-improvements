@@ -1,8 +1,8 @@
 {
   "version": "7.1.3",
-  "coreOnlyMode": true,
+  "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.111",
+  "archetypesVersion": "6.112",
   "logs": {
     "debug": false,
     "verbose": false,
