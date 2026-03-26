@@ -4,8 +4,8 @@ const plugin = {
     id: 'autoToggleFullscreenMode',
     name: 'Auto Toggle Fullscreen Mode',
     description: 'Clicks the fullscreen (monitor) toggle button once when the page loads to enter fullscreen mode',
-    _version: '1.1',
-    enabledByDefault: true,
+    _version: '1.2',
+    enabledByDefault: false,
     phase: 'mutation',
     initialState: { clicked: false, missingLogged: false, envChecked: false, fosEnvExempt: false },
 

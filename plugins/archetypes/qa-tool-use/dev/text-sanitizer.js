@@ -105,8 +105,8 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.6',
-    enabledByDefault: true,
+    _version: '2.7',
+    enabledByDefault: false,
     phase: 'mutation',
 
     initialState: {

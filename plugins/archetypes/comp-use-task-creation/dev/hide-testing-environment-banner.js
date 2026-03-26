@@ -4,8 +4,8 @@ const plugin = {
     id: 'hideTestingEnvironmentBanner',
     name: 'Hide Testing Environment Banner',
     description: 'Hides the "You are currently testing the environment" banner that can block the embedded work area',
-    _version: '1.0',
-    enabledByDefault: true,
+    _version: '1.1',
+    enabledByDefault: false,
     phase: 'mutation',
     initialState: { hidden: false, missingLogged: false },
 

@@ -5,8 +5,8 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '2.1',
-    enabledByDefault: true,
+    _version: '2.2',
+    enabledByDefault: false,
     phase: 'mutation',
     
     // ========== SUB-OPTIONS ==========

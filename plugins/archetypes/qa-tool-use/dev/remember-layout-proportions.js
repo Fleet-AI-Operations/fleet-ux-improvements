@@ -15,8 +15,8 @@ const plugin = {
     id: 'qaToolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on QA Tool Use pages',
-    _version: '2.2',
-    enabledByDefault: true,
+    _version: '2.3',
+    enabledByDefault: false,
     phase: 'init',
     initialState: {
         installed: false,

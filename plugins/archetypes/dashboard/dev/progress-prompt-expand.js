@@ -4,8 +4,8 @@ const plugin = {
     id: 'progressPromptExpand',
     name: 'Expanded Submitted Prompts',
     description: 'Hover over task items to expand truncated prompts',
-    _version: '1.8',
-    enabledByDefault: true,
+    _version: '1.9',
+    enabledByDefault: false,
     phase: 'mutation',
     initialState: { missingLogged: false },
     subOptions: [

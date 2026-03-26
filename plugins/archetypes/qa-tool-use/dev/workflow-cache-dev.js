@@ -3,8 +3,8 @@ const plugin = {
     id: 'workflowCache-dev',
     name: 'Workflow Cache',
     description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.27',
-    enabledByDefault: true,
+    _version: '1.28',
+    enabledByDefault: false,
     phase: 'mutation',
 
     initialState: {

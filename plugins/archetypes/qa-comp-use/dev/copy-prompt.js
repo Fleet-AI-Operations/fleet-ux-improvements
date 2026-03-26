@@ -7,8 +7,8 @@ const plugin = {
     id: 'copyPrompt',
     name: 'Copy Prompt',
     description: 'Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard',
-    _version: '1.5',
-    enabledByDefault: true,
+    _version: '1.6',
+    enabledByDefault: false,
     phase: 'mutation',
 
     initialState: {

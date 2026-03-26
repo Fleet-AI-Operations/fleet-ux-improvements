@@ -7,7 +7,7 @@ const plugin = {
     id: 'reorganizeRequestRevisions',
     name: '"Request Revisions" Modal Reorganization',
     description: 'Split the Request Revisions modal into two columns to reduce scrolling.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -20,7 +20,7 @@ const plugin = {
             id: 'two-column-layout',
             name: 'Two-column layout',
             description: 'Split the modal into two columns with a resizable divider to reduce scrolling. Divider position is remembered.',
-            enabledByDefault: true
+            enabledByDefault: false
         }
     ],
 

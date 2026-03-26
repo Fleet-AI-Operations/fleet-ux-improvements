@@ -9,8 +9,8 @@ const plugin = {
     id: 'toolUseLayoutProportions',
     name: 'Remember Layout Proportions',
     description: 'Persist and restore the main panel split positions on Tool Use Task Creation pages',
-    _version: '2.0',
-    enabledByDefault: true,
+    _version: '2.1',
+    enabledByDefault: false,
     phase: 'init',
     initialState: {
         installed: false,

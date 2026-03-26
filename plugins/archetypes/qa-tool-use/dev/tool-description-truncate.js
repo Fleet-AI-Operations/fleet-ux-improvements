@@ -17,8 +17,8 @@ const plugin = {
     id: 'toolDescriptionTruncate',
     name: 'Tool Description Truncation',
     description: 'Limits the length tool descriptions to make the tool picker more manageable',
-    _version: '1.3',
-    enabledByDefault: true,
+    _version: '1.4',
+    enabledByDefault: false,
     phase: 'mutation',
     initialState: {},
 
