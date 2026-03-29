@@ -1,8 +1,8 @@
 {
-  "version": "7.1.3",
+  "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.119",
+  "archetypesVersion": "6.121",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.6",
-      "hash": "sha256-41d7f552bf27523d7e93214cd68fd617162640b39c0e1541ef854ca0fb0a672a",
+      "version": "6.7",
+      "hash": "sha256-636e3fa04960c455a7ee4ccfba7b5f64ecae3f1329ade4ac381c8bc759e6ea6d",
       "log": false
     },
     {

@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat-enable-prevent-refresh-by-default] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.3
+// @version      7.1.4
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.3';
+    const VERSION = '7.1.4';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -110,7 +110,7 @@
 
         isPageRefreshConfirmationEnabled() {
             const storage = this._getStorage();
-            return storage ? storage.get('page-refresh-confirmation-enabled', false) : false;
+            return storage ? storage.get('page-refresh-confirmation-enabled', true) : false;
         },
 
         isExtensionRefreshConfirmationEnabled() {
