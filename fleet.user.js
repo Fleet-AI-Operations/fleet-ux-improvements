@@ -52,7 +52,10 @@
     // Branches that behave like main: run immediately, no GODMODE check, no dev-only features (test-update simulates main for testing).
     const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
     const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
-    
+    /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
+    const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? false : true;
+    const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
+
     // ============= SHARED CONTEXT =============
     const Context = {
         version: VERSION,
@@ -613,7 +616,7 @@
             this.set(`settings-doc-cache-${name}`, JSON.stringify(cacheData));
         },
         getSubmoduleLoggingEnabled() {
-            return this.get('submodule-logging', false);
+            return this.get('submodule-logging', DEFAULT_STORAGE_SUBMODULE_LOGGING);
         },
         setSubmoduleLoggingEnabled(enabled) {
             this.set('submodule-logging', enabled);
@@ -801,7 +804,7 @@
         
         isVerboseEnabled() {
             if (this._verboseEnabled === null) {
-                const storageOn = Storage.get('verbose', true);
+                const storageOn = Storage.get('verbose', DEFAULT_STORAGE_LOG_VERBOSE);
                 const rl = Context.remoteLogging;
                 const remoteOn = rl && rl.verbose && rl.submodule;
                 this._verboseEnabled = storageOn || !!remoteOn;
