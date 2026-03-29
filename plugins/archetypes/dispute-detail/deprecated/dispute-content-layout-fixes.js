@@ -1,5 +1,7 @@
-// ============= dispute-content-layout-fixes.js =============
-// Targeted layout fixes for dispute detail text blocks and action buttons.
+// ============= dispute-content-layout-fixes.js (deprecated) =============
+// Deprecated: superseded by dispute-resolution-action-menu.js, which keeps the
+// non–action-bar layout rules in its stylesheet and replaces the action button
+// row with a dropdown + Confirm control.
 
 const STYLE_ID = 'fleet-dispute-detail-layout-fixes-style';
 

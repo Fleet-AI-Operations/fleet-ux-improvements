@@ -2,7 +2,7 @@
   "version": "7.1.3",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.115",
+  "archetypesVersion": "6.116",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -523,9 +523,9 @@
           "log": false
         },
         {
-          "name": "dispute-content-layout-fixes.js",
-          "version": "1.3",
-          "hash": "sha256-a0c38cbd2566727127c4797261296ffc300023315af4010a6480ebfeeee1f40d",
+          "name": "dispute-resolution-action-menu.js",
+          "version": "1.0",
+          "hash": "sha256-02b28f69bda9d5c4216a7f8fbca8653ef7b109241ae339f323f322dac3d3f2ff",
           "log": false
         },
         {
