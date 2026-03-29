@@ -13,7 +13,7 @@ const plugin = {
     name: 'Dispute Resolution Action Menu',
     description:
         'Replaces the row of dispute resolution buttons with a dropdown and Confirm Action control; triggers the underlying native button',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -92,7 +92,8 @@ const plugin = {
     },
 
     findActionButtonRow(panel) {
-        const rows = panel.querySelectorAll(':scope > .flex.items-center.justify-end.gap-2.mt-4');
+        // Row may be nested under collapsible content (not a direct child of .border-t.pt-4)
+        const rows = panel.querySelectorAll(':scope .flex.items-center.justify-end.gap-2.mt-4');
         for (const row of rows) {
             const text = (row.textContent || '').trim();
             if (

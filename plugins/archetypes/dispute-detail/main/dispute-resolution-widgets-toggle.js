@@ -21,7 +21,7 @@ const plugin = {
     name: 'Dispute Resolution Widgets Toggle',
     description:
         'Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; hidden by default',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [CORNER_WIDGETS_SUBOPTION],
@@ -67,7 +67,7 @@ const plugin = {
     },
 
     findActionButtonRow(panel) {
-        const rows = panel.querySelectorAll(':scope > .flex.items-center.justify-end.gap-2.mt-4');
+        const rows = panel.querySelectorAll(':scope .flex.items-center.justify-end.gap-2.mt-4');
         for (const row of rows) {
             const text = (row.textContent || '').trim();
             if (
