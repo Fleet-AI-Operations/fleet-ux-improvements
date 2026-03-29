@@ -6,7 +6,7 @@ const plugin = {
     id: 'promptAndNotesAreas',
     name: 'Prompt and Notes Areas Layout',
     description: 'Anchors scratchpad to bottom and makes prompt handle control both areas',
-    _version: '3.3',
+    _version: '3.2',
     enabledByDefault: false,
     phase: 'mutation',
     
@@ -16,7 +16,7 @@ const plugin = {
             id: 'remember-scratchpad',
             name: 'Remember Scratchpad Text',
             description: 'Saves and restores scratchpad text across page loads',
-            enabledByDefault: false
+            enabledByDefault: true
         }
     ],
     

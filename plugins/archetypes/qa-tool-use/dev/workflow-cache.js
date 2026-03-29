@@ -1,9 +1,9 @@
-// ============= workflow-cache-dev.js =============
+// ============= workflow-cache.js =============
 const plugin = {
-    id: 'workflowCache-dev',
+    id: 'workflowCache',
     name: 'Workflow Cache',
-    description: 'Observes workflow for tool add/delete/execute events; captures JSON snapshot on add/delete/execute',
-    _version: '1.28',
+    description: 'Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded',
+    _version: '2.2',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -15,28 +15,34 @@ const plugin = {
         containerObservers: [],
         workflowSnapshot: null,
         applyInProgress: false,
-        applyControlsAdded: false,
         toolPanelMissingLogged: false
     },
 
     selectors: {
-        toolCard: 'div.rounded-lg.border.transition-colors',
-        toolHeader: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
-        stableParent: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
+        toolCard: '[data-ui="workflow-step"]',
+        toolCardFallback: 'div.rounded-lg.border.transition-colors',
+        toolHeader: '[data-ui="step-header"]',
+        toolHeaderFallback: 'div.flex.items-center.gap-3.p-3.cursor-pointer.hover\\:bg-muted\\/30',
+        stableParent: '[data-ui="workflow-steps-container"]',
+        stableParentFallback: '.flex-1.px-16.py-4.max-w-screen-md.mx-auto',
         toolsContainer: '.space-y-3',
-        workflowToolbar: '.border-b.h-9',
-        toolSearchInput: 'input[placeholder="Search tools, descriptions, parameters..."]',
+        workflowToolbar: '[data-ui="workflow-toolbar"]',
+        workflowToolbarFallback: '.border-b.h-9',
+        workflowClear: '[data-ui="workflow-clear"]',
+        toolSearchInput: '[data-ui="tools-search"]',
+        toolSearchInputFallback: 'input[placeholder="Search tools, descriptions, parameters..."]',
         toolClearButton: 'button.wf-clear-search-btn',
         toolTabList: '[role="tablist"]',
         toolTab: 'button[role="tab"]',
-        toolListRoot: 'div.p-2.space-y-1',
-        toolListItem: 'button.group\\/tool'
+        toolListRoot: '[data-ui="tools-list"]',
+        toolListRootFallback: 'div.p-2.space-y-1',
+        toolListItem: '[data-ui="tool-item"]',
+        toolListItemFallback: 'button.group\\/tool'
     },
 
     storageKeys: {
         latestSnapshot: 'workflow-cache-latest',
-        latestSnapshotUrl: 'workflow-cache-latest-url',
-        devJson: 'workflow-cache-dev-json'
+        latestSnapshotUrl: 'workflow-cache-latest-url'
     },
 
     onMutation(state, context) {
@@ -60,7 +66,6 @@ const plugin = {
 
         state.missingLogged = false;
 
-        this.ensureApplyControls(state, panel);
         this.ensureEmptyStateSection(state, stableParent);
 
         if (state.observedParent !== stableParent) {
@@ -74,12 +79,25 @@ const plugin = {
             state.observedParent = stableParent;
         }
 
-        const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+        const toolsContainer = this.getStepsContainer(stableParent);
         if (toolsContainer && toolsContainer !== state.observedContainer) {
             this.attachContainerObservers(toolsContainer, state);
             state.observedContainer = toolsContainer;
             Logger.info('Workflow cache: observing workflow');
         }
+    },
+
+    getStepsContainer(stableParent) {
+        if (!stableParent) return null;
+        if (stableParent.getAttribute('data-ui') === 'workflow-steps-container') return stableParent;
+        return stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+    },
+
+    getToolCards(container) {
+        if (!container) return [];
+        const byDataUi = container.querySelectorAll(this.selectors.toolCard);
+        if (byDataUi.length) return Array.from(byDataUi);
+        return Array.from(container.querySelectorAll(this.selectors.toolCardFallback));
     },
 
     disconnectAllObservers(state) {
@@ -149,7 +167,7 @@ const plugin = {
             Logger.warn('Workflow cache: captureSnapshot called with no container');
             return [];
         }
-        const cards = container.querySelectorAll(this.selectors.toolCard);
+        const cards = this.getToolCards(container);
         if (!cards.length) {
             Logger.warn('Workflow cache: snapshot found no tool cards in container');
             return [];
@@ -188,7 +206,7 @@ const plugin = {
     },
 
     getToolNameFromCard(card) {
-        const header = card.querySelector(this.selectors.toolHeader);
+        const header = card.querySelector(this.selectors.toolHeader) || card.querySelector(this.selectors.toolHeaderFallback);
         if (!header) {
             Logger.warn('Workflow cache: getToolNameFromCard found no header in card');
             return '';
@@ -208,12 +226,15 @@ const plugin = {
             Logger.warn('Workflow cache: getParamsFromCard found no open parameters content (card may be collapsed)');
             return params;
         }
-        const spaceY3 = content.querySelector('div.space-y-3');
+        const spaceY3 = content.querySelector('div.space-y-3') || content.querySelector('[data-ui="step-parameters"]');
         if (!spaceY3) {
             Logger.warn('Workflow cache: getParamsFromCard found no div.space-y-3 in parameters content');
             return params;
         }
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
+        const paramBlocks = spaceY3.querySelectorAll('[data-param]');
+        const blocks = paramBlocks.length
+            ? Array.from(paramBlocks)
+            : Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         blocks.forEach(block => {
             const name = this.getParamNameFromBlock(block);
             if (!name) return;
@@ -225,6 +246,8 @@ const plugin = {
     },
 
     getParamNameFromBlock(block) {
+        const dataParam = block.getAttribute && block.getAttribute('data-param');
+        if (dataParam) return dataParam.trim();
         const code = block.querySelector('code.text-xs.font-mono');
         if (code) return code.textContent.trim();
         const label = block.querySelector('label[for^="param-"]');
@@ -233,9 +256,12 @@ const plugin = {
     },
 
     getParamTypeFromBlock(block) {
+        const dataType = block.getAttribute && block.getAttribute('data-param-type');
+        if (dataType) return (dataType || '').trim().toLowerCase().replace(/\s+/g, '');
         const typeDiv = block.querySelector('div.inline-flex.whitespace-nowrap.rounded-md.border.font-medium');
         if (!typeDiv) return '';
-        return (typeDiv.textContent || '').trim().toLowerCase();
+        const raw = (typeDiv.textContent || '').trim().toLowerCase();
+        return raw.replace(/\s+/g, '');
     },
 
     getParamValueFromBlock(block, typeLabel) {
@@ -300,6 +326,19 @@ const plugin = {
             inputs.forEach(inp => {
                 const v = inp.value.trim();
                 if (v) arr.push(v);
+            });
+            return arr.length ? arr : undefined;
+        }
+        if (typeLabel === 'integer[]' || typeLabel.includes('integer[]') || typeLabel === 'number[]' || typeLabel.includes('number[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap) return undefined;
+            const inputs = wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="number"]');
+            const arr = [];
+            inputs.forEach(inp => {
+                const s = inp.value.trim();
+                if (s === '') return;
+                const n = Number(s);
+                arr.push(Number.isNaN(n) ? s : n);
             });
             return arr.length ? arr : undefined;
         }
@@ -386,30 +425,10 @@ const plugin = {
         return Array.from(innerSpace.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
     },
 
-    ensureApplyControls(state, panel) {
-        if (!panel || panel.querySelector('[data-wf-apply-cache-dev="true"]')) return;
-
-        const positionStyle = window.getComputedStyle(panel).position;
-        if (!positionStyle || positionStyle === 'static') {
-            panel.style.position = 'relative';
-        }
-
-        const devPanel = this.createDevPanel(state);
-        if (devPanel) {
-            devPanel.style.position = 'absolute';
-            devPanel.style.right = '16px';
-            devPanel.style.bottom = '15%';
-            devPanel.style.zIndex = '50';
-            panel.appendChild(devPanel);
-        }
-
-        Logger.log('✓ Workflow cache: apply controls added');
-    },
-
     ensureEmptyStateSection(state, stableParent) {
         if (!stableParent) return;
-        const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
-        const hasSteps = toolsContainer && toolsContainer.children.length > 0;
+            const toolsContainer = this.getStepsContainer(stableParent);
+            const hasSteps = toolsContainer && this.getToolCards(toolsContainer).length > 0;
         const emptyStateEl = Array.from(stableParent.children).find(el => {
             const p = el.querySelector('p.text-sm.font-medium, p.font-medium');
             return p && (p.textContent || '').trim().includes('No steps yet');
@@ -437,93 +456,6 @@ const plugin = {
         });
         section.appendChild(btn);
         stableParent.appendChild(section);
-    },
-
-    createDevPanel(state) {
-        const wrapper = document.createElement('div');
-        wrapper.setAttribute('data-wf-apply-cache-dev', 'true');
-        wrapper.className = 'flex flex-col rounded-md border border-input bg-background shadow-sm';
-        wrapper.style.width = '280px';
-
-        const header = document.createElement('div');
-        header.className = 'flex items-center justify-between gap-2 p-2 border-b border-border';
-        const label = document.createElement('div');
-        label.className = 'text-[10px] font-medium uppercase tracking-wider text-muted-foreground';
-        label.textContent = 'Dev cache JSON';
-        const minBtn = document.createElement('button');
-        minBtn.type = 'button';
-        minBtn.setAttribute('aria-label', 'Minimize');
-        minBtn.className = 'inline-flex items-center justify-center rounded-sm size-6 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
-        minBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>';
-        const body = document.createElement('div');
-        body.className = 'flex flex-col gap-2 p-2';
-        body.setAttribute('data-wf-dev-panel-body', 'true');
-
-        const resizeHandle = document.createElement('div');
-        resizeHandle.setAttribute('data-wf-dev-resize', 'true');
-        resizeHandle.className = 'flex items-center justify-center cursor-ns-resize border-b border-border py-0.5 hover:bg-muted/30';
-        resizeHandle.style.minHeight = '8px';
-        resizeHandle.innerHTML = '<div style="width:24px;height:3px;border-radius:2px;background:currentColor;opacity:0.3;"></div>';
-        let startY = 0, startRows = 5;
-        resizeHandle.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            startY = e.clientY;
-            startRows = parseInt(textarea.getAttribute('data-rows') || '5', 10) || 5;
-            const onMove = (ev) => {
-                const dy = ev.clientY - startY;
-                const line = 16;
-                const deltaRows = Math.round(-dy / line);
-                const newRows = Math.max(2, Math.min(20, startRows + deltaRows));
-                textarea.setAttribute('data-rows', String(newRows));
-                textarea.rows = newRows;
-            };
-            const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-
-        const textarea = document.createElement('textarea');
-        textarea.setAttribute('data-rows', '5');
-        textarea.className = 'w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand';
-        textarea.rows = 5;
-        textarea.placeholder = 'Paste cache JSON here...';
-        textarea.value = Storage.get(this.storageKeys.devJson, '') || '';
-
-        textarea.addEventListener('input', () => {
-            Storage.set(this.storageKeys.devJson, textarea.value || '');
-        });
-
-        const applyBtn = document.createElement('button');
-        applyBtn.type = 'button';
-        applyBtn.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-7 rounded-sm px-2 text-xs';
-        applyBtn.textContent = 'Apply dev JSON';
-        applyBtn.addEventListener('click', () => {
-            const text = textarea.value || '';
-            Storage.set(this.storageKeys.devJson, text);
-            this.applyCachedWorkflow(state, { source: 'dev', jsonText: text });
-        });
-
-        minBtn.addEventListener('click', () => {
-            const isHidden = body.style.display === 'none';
-            body.style.display = isHidden ? '' : 'none';
-            minBtn.innerHTML = isHidden
-                ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>'
-                : '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
-            minBtn.setAttribute('aria-label', isHidden ? 'Minimize' : 'Expand');
-        });
-
-        header.appendChild(label);
-        header.appendChild(minBtn);
-        wrapper.appendChild(header);
-        body.appendChild(resizeHandle);
-        body.appendChild(textarea);
-        body.appendChild(applyBtn);
-        wrapper.appendChild(body);
-
-        return wrapper;
     },
 
     async applyCachedWorkflow(state, options) {
@@ -567,7 +499,7 @@ const plugin = {
                 return;
             }
 
-            const toolsContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+            const toolsContainer = this.getStepsContainer(stableParent);
             await this.clearWorkflowTools(panel, toolsContainer);
 
             for (const entry of entries) {
@@ -598,8 +530,8 @@ const plugin = {
                     continue;
                 }
 
-                const currentContainer = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
-                const prevCount = currentContainer ? currentContainer.querySelectorAll(this.selectors.toolCard).length : 0;
+                const currentContainer = this.getStepsContainer(stableParent);
+                const prevCount = currentContainer ? this.getToolCards(currentContainer).length : 0;
                 callBtn.click();
 
                 const newCard = await this.waitForNewToolCard(stableParent, prevCount);
@@ -620,18 +552,6 @@ const plugin = {
     },
 
     getEntriesForApply(state, options) {
-        if (options && options.source === 'dev') {
-            const text = (options.jsonText || '').trim();
-            if (!text) return [];
-            try {
-                const parsed = JSON.parse(text);
-                return Array.isArray(parsed) ? parsed : [];
-            } catch (e) {
-                Logger.error('Workflow cache: dev JSON parse failed', e);
-                return [];
-            }
-        }
-
         const storedUrl = Storage.get(this.storageKeys.latestSnapshotUrl, '');
         if (storedUrl && storedUrl !== window.location.href) {
             Storage.delete(this.storageKeys.latestSnapshot);
@@ -659,11 +579,13 @@ const plugin = {
     },
 
     findToolPanelRoot() {
-        const input = document.querySelector(this.selectors.toolSearchInput);
+        const input = document.querySelector(this.selectors.toolSearchInput) || document.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return null;
+        const toolsPanel = input.closest('[data-ui="tools-panel"]');
+        if (toolsPanel) return toolsPanel;
         let el = input.parentElement;
         while (el && el !== document.body) {
-            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot)) {
+            if (el.querySelector(this.selectors.toolTabList) || el.querySelector(this.selectors.toolListRoot) || el.querySelector(this.selectors.toolListRootFallback)) {
                 return el;
             }
             el = el.parentElement;
@@ -673,7 +595,7 @@ const plugin = {
 
     clearToolSearch(toolPanelRoot) {
         if (!toolPanelRoot) return;
-        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput);
+        const input = toolPanelRoot.querySelector(this.selectors.toolSearchInput) || toolPanelRoot.querySelector(this.selectors.toolSearchInputFallback);
         if (!input) return;
         const clearBtn = toolPanelRoot.querySelector(this.selectors.toolClearButton);
         if (clearBtn && clearBtn.offsetParent !== null) {
@@ -700,7 +622,7 @@ const plugin = {
             return { toolToTab, tabButtons };
         }
 
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         for (const tab of tabs) {
             const tabName = this.getTabLabel(tab);
             if (!tabName) continue;
@@ -743,7 +665,7 @@ const plugin = {
     async switchToToolTab(tabInfo, tabName, toolPanelRoot) {
         if (!tabInfo || !tabInfo.tabButtons || !tabInfo.tabButtons[tabName]) return;
         const tab = tabInfo.tabButtons[tabName];
-        const listRoot = toolPanelRoot ? toolPanelRoot.querySelector(this.selectors.toolListRoot) : null;
+        const listRoot = toolPanelRoot ? (toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback)) : null;
         const prevNames = listRoot ? this.readToolNamesFromList(listRoot) : [];
         this.activateTab(tab);
         await this.waitForTabActive(tab);
@@ -755,9 +677,10 @@ const plugin = {
     },
 
     readToolList(toolPanelRoot) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return [];
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         const tools = [];
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
@@ -768,6 +691,8 @@ const plugin = {
     },
 
     getToolNameFromListItem(item) {
+        const dataName = item.getAttribute && item.getAttribute('data-ui-name');
+        if (dataName) return this.normalizeToolName(dataName);
         const primary = item.querySelector('span.text-xs.font-medium.text-foreground span span');
         const fallback = item.querySelector('span.text-xs.font-medium.text-foreground');
         const text = primary ? primary.textContent : (fallback ? fallback.textContent : item.textContent);
@@ -775,13 +700,16 @@ const plugin = {
     },
 
     findToolCallButton(toolPanelRoot, toolName) {
-        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot);
+        const listRoot = toolPanelRoot.querySelector(this.selectors.toolListRoot) || toolPanelRoot.querySelector(this.selectors.toolListRootFallback);
         if (!listRoot) return null;
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         const target = this.normalizeToolName(toolName);
         for (const item of items) {
             const name = this.getToolNameFromListItem(item);
             if (!name || name !== target) continue;
+            const callBtn = item.querySelector('[data-ui="tool-add-to-workflow"]');
+            if (callBtn) return callBtn;
             const btns = Array.from(item.querySelectorAll('button'));
             return btns.find(btn => btn.textContent.trim() === 'Call') || null;
         }
@@ -793,7 +721,8 @@ const plugin = {
     },
 
     readToolNamesFromList(listRoot) {
-        const items = Array.from(listRoot.querySelectorAll(this.selectors.toolListItem));
+        const itemSelector = listRoot.querySelectorAll(this.selectors.toolListItem).length ? this.selectors.toolListItem : this.selectors.toolListItemFallback;
+        const items = Array.from(listRoot.querySelectorAll(itemSelector));
         return items.map(item => this.getToolNameFromListItem(item)).filter(Boolean);
     },
 
@@ -843,9 +772,9 @@ const plugin = {
             Logger.debug('Workflow cache: no workflow container (empty), skip clear');
             return;
         }
-        const toolbar = panel.querySelector(this.selectors.workflowToolbar);
+        const toolbar = panel.querySelector(this.selectors.workflowToolbar) || panel.querySelector(this.selectors.workflowToolbarFallback);
         if (!toolbar) return;
-        const clearBtn = Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
+        const clearBtn = toolbar.querySelector(this.selectors.workflowClear) || Array.from(toolbar.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Clear');
         if (!clearBtn) return;
         clearBtn.click();
         await this.waitForContainerEmpty(toolsContainer);
@@ -854,12 +783,12 @@ const plugin = {
 
     async waitForContainerEmpty(container, timeoutMs = 50) {
         if (!container) return true;
-        const existing = container.querySelectorAll(this.selectors.toolCard);
+        const existing = this.getToolCards(container);
         if (existing.length === 0) return true;
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const remaining = container.querySelectorAll(this.selectors.toolCard);
+                const remaining = this.getToolCards(container);
                 if (remaining.length === 0) {
                     observer.disconnect();
                     resolve(true);
@@ -875,22 +804,22 @@ const plugin = {
 
     async waitForNewToolCard(stableParent, previousCount, timeoutMs = 50) {
         if (!stableParent) return null;
-        const container = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+        const container = this.getStepsContainer(stableParent);
         if (container) {
-            const cards = container.querySelectorAll(this.selectors.toolCard);
+            const cards = this.getToolCards(container);
             if (cards.length > previousCount) {
-                return cards[cards.length - 1] || null;
+                return cards[previousCount] ?? null;
             }
         }
 
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const c = stableParent.querySelector(':scope > ' + this.selectors.toolsContainer);
+                const c = this.getStepsContainer(stableParent);
                 if (!c) return;
-                const updated = c.querySelectorAll(this.selectors.toolCard);
+                const updated = this.getToolCards(c);
                 if (updated.length > previousCount) {
                     observer.disconnect();
-                    resolve(updated[updated.length - 1] || null);
+                    resolve(updated[previousCount] ?? null);
                 }
             });
             observer.observe(stableParent, { childList: true, subtree: true });
@@ -907,10 +836,11 @@ const plugin = {
 
         const content = card.querySelector('div[data-state="open"] div.px-3.pb-3.space-y-3');
         if (!content) return;
-        const spaceY3 = content.querySelector('div.space-y-3');
+        const spaceY3 = content.querySelector('[data-ui="step-parameters"]') || content.querySelector('div.space-y-3');
         if (!spaceY3) return;
 
-        const blocks = Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && el.matches('div.flex.flex-col.gap-1\\.5'));
+        const paramBlocks = spaceY3.querySelectorAll('[data-param]');
+        const blocks = paramBlocks.length ? Array.from(paramBlocks) : Array.from(spaceY3.children).filter(el => el.nodeType === Node.ELEMENT_NODE && el.matches && (el.matches('div.flex.flex-col.gap-1\\.5') || el.matches('div.flex.flex-col.gap-2')));
         const blockMap = {};
         for (const block of blocks) {
             const name = this.getParamNameFromBlock(block);
@@ -931,7 +861,7 @@ const plugin = {
     ensureCardExpanded(card) {
         const openContent = card.querySelector('div[data-state="open"]');
         if (openContent) return;
-        const header = card.querySelector(this.selectors.toolHeader);
+        const header = card.querySelector(this.selectors.toolHeader) || card.querySelector(this.selectors.toolHeaderFallback);
         if (header) header.click();
     },
 
@@ -1021,6 +951,17 @@ const plugin = {
             return;
         }
 
+        if (typeLabel === 'integer[]' || typeLabel.includes('integer[]') || typeLabel === 'number[]' || typeLabel.includes('number[]')) {
+            const wrap = block.querySelector('div.space-y-2.mt-1');
+            if (!wrap || !Array.isArray(value)) return;
+            await this.ensureArrayItems(wrap, value.length);
+            const inputs = Array.from(wrap.querySelectorAll('div.flex.items-center.gap-2 input[type="number"]'));
+            for (let i = 0; i < value.length; i++) {
+                if (inputs[i]) this.setInputValue(inputs[i], (value[i] === null || value[i] === undefined) ? '' : String(value[i]));
+            }
+            return;
+        }
+
         if (typeLabel === 'object[]' || typeLabel.includes('object[]')) {
             const wrap = block.querySelector('div.space-y-2.mt-1') || block;
             if (!Array.isArray(value)) return;
@@ -1053,7 +994,7 @@ const plugin = {
         if (!addBtn) return;
 
         const getItemCount = () => {
-            const inputs = wrap.querySelectorAll('input[type="text"], button[role="combobox"], div.relative.border.rounded-md.p-3');
+            const inputs = wrap.querySelectorAll('input[type="text"], input[type="number"], button[role="combobox"], div.relative.border.rounded-md.p-3');
             return inputs.length;
         };
 
@@ -1198,7 +1139,7 @@ const plugin = {
         this.disconnectContainerObservers(state);
 
         const self = this;
-        const toolCardSelector = this.selectors.toolCard;
+        const toolCardSelector = this.selectors.toolCard + ',' + this.selectors.toolCardFallback;
 
         const isToolCardOrWrapper = (node) => {
             if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.matches) return false;
@@ -1268,12 +1209,15 @@ const plugin = {
     },
 
     findWorkflowPanel() {
+        const byDataUi = document.querySelector('[data-ui="workflow-panel"]');
+        if (byDataUi) return byDataUi;
+
         const panels = Context.dom.queryAll('[data-panel-id][data-panel]', {
             context: `${this.id}.panels`
         });
 
         for (const candidate of panels) {
-            const toolbar = candidate.querySelector('.border-b.h-9');
+            const toolbar = candidate.querySelector(this.selectors.workflowToolbar) || candidate.querySelector(this.selectors.workflowToolbarFallback);
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
@@ -1286,7 +1230,7 @@ const plugin = {
 
         const knownPanel = document.querySelector('[id=":rs:"][data-panel]');
         if (knownPanel) {
-            const toolbar = knownPanel.querySelector('.border-b.h-9');
+            const toolbar = knownPanel.querySelector(this.selectors.workflowToolbar) || knownPanel.querySelector(this.selectors.workflowToolbarFallback);
             if (toolbar) {
                 const workflowText = Array.from(toolbar.querySelectorAll('span')).find(
                     span => span.textContent.trim() === 'Workflow'
@@ -1302,9 +1246,11 @@ const plugin = {
 
     findStableParent(panel) {
         if (!panel) return null;
+        const byDataUi = panel.querySelector(this.selectors.stableParent);
+        if (byDataUi) return byDataUi;
         const scrollables = panel.querySelectorAll('.overflow-y-auto');
         for (const scrollable of scrollables) {
-            const stable = scrollable.querySelector(this.selectors.stableParent);
+            const stable = scrollable.querySelector(this.selectors.stableParentFallback);
             if (stable) return stable;
         }
         return null;

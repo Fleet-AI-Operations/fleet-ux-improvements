@@ -7,7 +7,7 @@ const plugin = {
     id: 'disputeContentLayoutFixes',
     name: 'Dispute Content Layout Fixes',
     description: 'Fixes text whitespace handling and action button visibility in dispute detail panel',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -52,13 +52,14 @@ const plugin = {
             }
 
             /* Keep dispute action bar visible: wrap buttons when panel is too narrow */
-            .border-t.pt-4 > .flex.items-center.justify-end.gap-2.mt-4 {
+            .flex.items-center.justify-end.gap-2.mt-4 {
+                display: flex !important;
                 flex-wrap: wrap !important;
                 gap: 0.5rem !important;
                 min-width: 0 !important;
             }
 
-            .border-t.pt-4 > .flex.items-center.justify-end.gap-2.mt-4 > button {
+            .flex.items-center.justify-end.gap-2.mt-4 > button {
                 flex: 0 0 auto !important;
             }
 
