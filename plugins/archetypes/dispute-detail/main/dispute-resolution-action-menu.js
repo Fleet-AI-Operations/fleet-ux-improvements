@@ -7,13 +7,22 @@ const STYLE_ID = 'fleet-dispute-resolution-action-menu-style';
 const MENU_ROOT_ATTR = 'data-fleet-dispute-action-menu';
 const MENU_CONTROL_ATTR = 'data-fleet-dispute-menu-control';
 const ROW_CLASS = 'fleet-dispute-action-row--menu';
+const SELECT_CLASS_HOOK = 'fleet-dispute-action-select';
+
+/** Baseline when no action is chosen (not merged with button classes). */
+const SELECT_NEUTRAL_CLASSES = [
+    'h-9 min-w-[12rem] rounded-sm border border-input bg-background px-3 py-1',
+    'text-sm text-foreground ring-offset-background',
+    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+    SELECT_CLASS_HOOK
+].join(' ');
 
 const plugin = {
     id: 'disputeResolutionActionMenu',
     name: 'Dispute Resolution Action Menu',
     description:
         'Replaces the row of dispute resolution buttons with a dropdown and Confirm Action control; triggers the underlying native button',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -66,6 +75,7 @@ const plugin = {
             this.populateSelect(select, natives);
             if (select) select.value = '';
             if (confirmBtn) confirmBtn.disabled = true;
+            this.syncSelectVisualFromNative(select, null);
             wrapper.dataset.fleetActionSig = sig;
             Logger.log('Dispute Resolution Action Menu: action list refreshed');
         }
@@ -158,6 +168,18 @@ const plugin = {
     gap: 0.5rem !important;
     min-width: 0 !important;
 }
+select.${SELECT_CLASS_HOOK} {
+    appearance: none !important;
+    cursor: pointer !important;
+    padding-right: 2rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.4rem center !important;
+    background-size: 1rem !important;
+}
+.dark select.${SELECT_CLASS_HOOK} {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
 `;
         state.styleReady = true;
         Logger.debug('Dispute Resolution Action Menu: layout and hide styles applied');
@@ -180,6 +202,39 @@ const plugin = {
         });
     },
 
+    /**
+     * Button classes that do not apply sensibly to a &lt;select&gt; (layout with icons, etc.).
+     */
+    mirroredClassTokensFromButton(button) {
+        const raw = (button && button.getAttribute('class')) || '';
+        const drop = new Set([
+            'inline-flex',
+            'items-center',
+            'justify-center',
+            'whitespace-nowrap',
+            'mr-auto',
+            'ml-auto',
+            'flex',
+            'shrink-0',
+            'grow'
+        ]);
+        return raw.split(/\s+/).filter(t => {
+            if (!t || drop.has(t)) return false;
+            if (t.startsWith('disabled:')) return false;
+            return true;
+        });
+    },
+
+    syncSelectVisualFromNative(select, nativeButton) {
+        if (!select) return;
+        if (!nativeButton) {
+            select.className = SELECT_NEUTRAL_CLASSES;
+            return;
+        }
+        const tokens = this.mirroredClassTokensFromButton(nativeButton);
+        select.className = [...tokens, SELECT_CLASS_HOOK].join(' ');
+    },
+
     buildMenuWrapper(row, natives, sig) {
         const wrap = document.createElement('div');
         wrap.setAttribute(MENU_ROOT_ATTR, '1');
@@ -189,8 +244,7 @@ const plugin = {
 
         const select = document.createElement('select');
         select.setAttribute('aria-label', 'Dispute resolution action');
-        select.className =
-            'h-9 min-w-[12rem] rounded-sm border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+        this.syncSelectVisualFromNative(select, null);
 
         this.populateSelect(select, natives);
 
@@ -207,6 +261,11 @@ const plugin = {
 
         select.addEventListener('change', () => {
             confirmBtn.disabled = select.value === '';
+            const nativesNow = this.getNativeActionButtons(row);
+            const idx = select.value === '' ? -1 : parseInt(select.value, 10);
+            const native =
+                idx >= 0 && idx < nativesNow.length ? nativesNow[idx] : null;
+            this.syncSelectVisualFromNative(select, native);
         });
         confirmBtn.addEventListener('click', () => this.handleConfirm(row, select, confirmBtn));
 
@@ -232,5 +291,6 @@ const plugin = {
         natives[idx].click();
         select.value = '';
         confirmBtn.disabled = true;
+        this.syncSelectVisualFromNative(select, null);
     }
 };
