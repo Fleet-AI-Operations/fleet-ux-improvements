@@ -2,7 +2,7 @@
   "version": "7.1.3",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.115",
+  "archetypesVersion": "6.119",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -523,9 +523,9 @@
           "log": false
         },
         {
-          "name": "dispute-content-layout-fixes.js",
-          "version": "1.3",
-          "hash": "sha256-a0c38cbd2566727127c4797261296ffc300023315af4010a6480ebfeeee1f40d",
+          "name": "dispute-resolution-action-menu.js",
+          "version": "1.2",
+          "hash": "sha256-acafb0c177c84f96585c5f1a51835b5686cf601a9b93fb16620a5be3791a7d8c",
           "log": false
         },
         {
@@ -536,8 +536,8 @@
         },
         {
           "name": "dispute-resolution-widgets-toggle.js",
-          "version": "2.0",
-          "hash": "sha256-a6cab015e8efca7d041130598d2c551b55ee1a733e0a6eb1810cb01bd2fe96bb",
+          "version": "2.2",
+          "hash": "sha256-0d927f8a6c4c211281f12a985fbafcaf719fe49a6cbb166f4f88f16e9c656cc6",
           "log": false
         },
         {
