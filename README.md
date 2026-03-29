@@ -74,100 +74,105 @@ If the script doesn't seem to be working:
 
 ## Features
 
-The extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`.
+The extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).
 
 Many of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!
 
 ### Main Dashboard
-- **Progress Prompt Expand**: Hover over My Progress task items to expand truncated prompts (with option to click to copy, or keep all expanded)
-- **Feedback Given Approval Rate**: Show approval rate on the Feedback Given stat when both approved and feedback-requested counts exist
-- **Feedback Given Today and Environment**: Show today's feedback count and environment breakdown under Feedback Given; indicate when list may be incomplete
-- **Task Creation Today and Environment**: Show today's task creation count and environment breakdown below the Submitted/Awaiting Review/Accepted grid; indicate when list may be incomplete
-
-### QA Project Picker Page
-- **Auto Sort Available QA Tasks**: Sort and organize the available QA tasks list for quicker scanning
+- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning
+- **Feedback Given Stats**: Show overall approval rate, today's feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning
+- **Daily Task Creation Breakdown**: Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete
 
 ### Tool Use Task Creation Page
-- **Favorites**: Star frequently-used tools to help find them quickly (persists between sessions)
-- **Execute to Current Tool**: Button to execute all tools from the beginning up to and including the current tool
-- **Workflow Cache**: Cache workflow state for faster reloads and recovery
-- **JSON Editor Online**: Button that links to JSON Editor Online for JSON manipulation
-- **Guideline Buttons**: Quick links to guidelines below the prompt area
-- **Clear Search**: One-click clear for search inputs
-- **Remove Textarea Gradient**: Cleaner textarea appearance
-- **Remember Layout Proportions**: Persists and restores the main panel split positions between sessions
-- **Prompt and Notes Areas Layout**: Anchors scratchpad to bottom and makes prompt handle control both areas (with option to remember scratchpad text)
-- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
-- **Tool Results Resize Handle**: Resizable tool results area
-- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
-- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
+- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
+- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
+
+### Tool Use Task Creation Page (OpenClaw / Special Projects)
+*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*
+- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text
+- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
+- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Tool Favorites**: Add favorite stars to tools list
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.
+- **Remember Layout Proportions**: Persist and restore the main panel split positions on Tool Use Task Creation pages
+- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
+- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
+- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
 
 ### Tool Use Task Revision Page
-- **Favorites**: Star frequently-used tools (persists between sessions)
-- **Execute to Current Tool**: Execute all tools from the start up to and including the current tool
-- **Workflow Cache**: Cache workflow state for faster reloads and recovery
-- **Prompt Scratchpad**: Scratchpad for notes while revising
-- **Guideline Buttons**: Quick links to Fleet guidelines
-- **Clear Search**: One-click clear for search inputs
-- **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
-- **Tool Results Resize Handle**: Resizable tool results area
-- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
-- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
-- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
-
-### Task Creation Environment Picker Page
-- **Sort Environments Alphabetically**: Sort environment cards A–Z by name within each project section
+- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **Prompt Diff Highlighting**: Highlights word-level and character-level changes in the Prompt Changes modal
+- **Scratchpad**: Adds an adjustable height scratchpad to the page
+- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
+- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 
 ### Computer Use Task Creation Page
-- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
-- **Prompt Scratchpad**: Scratchpad for notes while creating tasks
-- **Guideline Buttons**: Quick links to project guidelines
-- **Remove Textarea Gradient**: Cleaner textarea appearance
-- **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
-- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
+- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **Scratchpad**: Adds an adjustable height scratchpad to the page
+- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
+- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 
 ### Computer Use Task Revision Page
-- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
-- **Prompt Scratchpad**: Scratchpad for notes while revising
-- **Guideline Buttons**: Quick links to guidelines
-- **Remove Textarea Gradient**: Cleaner textarea appearance
-- **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
-- **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **Scratchpad**: Adds an adjustable height scratchpad to the page
+- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
+- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 
 ### QA Tool Use Review Page
-- **Clear Search**: One-click clear for search inputs
-- **Favorites**: Star frequently-used tools (persists between sessions)
-- **Execute to Current Tool**: Execute all tools from the start up to and including the current tool
-- **Workflow Cache**: Cache workflow state for faster reloads and recovery
-- **Copy Prompt**: Copy prompt text to clipboard
-- **Copy Verifier Output**: Copy verifier output to clipboard
-- **QA Scratchpad**: Adjustable-height scratchpad for notes between prompt quality rating and environment variables (with option to remember contents)
-- **Useful Link Buttons**: Quick links to QA/Kinesis guidelines and JSON Editor Online below the scratchpad
-- **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Remember Layout Proportions**: Persists and restores panel split positions between sessions
-- **Request Revisions Improvements**: In the Request Revisions modal: **Copy Prompt** and **Copy Verifier Output** buttons; shortcut to open project guidelines (Kinesis / Meridian)
-- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
-- **Toggle Tool Parameters**: Collapse/expand tool parameters (with option to auto-collapse on execute)
-- **Tool Results Resize Handle**: Resizable tool results area
-- **Tool description truncation**: Truncate long tool descriptions (with option to hide when collapsed)
-- **Text Sanitizer**: Sanitize and normalize text in workflow-related fields
+- **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
+- **Auto Start Recording**: Automatically clicks the "Start Recording" button once when it appears on the page.
+- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard
+- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
+- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
+- **Hide Grading Panel Button**: Adds Hide Grading in the Grading panel header; delegates to the top Hide Grading control when grading is open.
+- **Prompt Diff Highlighting**: Highlights word-level and character-level changes in the Prompt Changes modal
+- **QA Scratchpad**: Adds an adjustable height scratchpad to the page
+- **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
+- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
+- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **Useful Link Buttons**: Add useful link buttons to the page
 
 ### QA Computer Use Review Page
-- **Auto Toggle Fullscreen Mode**: Clicks the fullscreen toggle on load to enter fullscreen
-- **Hide Testing Environment Banner**: Hides the testing environment notice that blocks the top portion of the screen
-- **Bug Report Expand**: Click bug reports to expand and view full content with proper whitespace rendering
-- **Copy Prompt**: Copy prompt text to clipboard
-- **Copy Verifier Output**: Copy verifier output to clipboard
-- **Copy Result Params and Inputs**: Button under Your Answer to copy parameter labels and values to clipboard
-- **Guideline Buttons**: Quick links to guidelines
-- **Request Revisions Improvements**: In the Request Revisions modal: **Copy Prompt** and **Copy Verifier Output** buttons; shortcut to open Meridian guidelines
-- **QA Scratchpad**: Adjustable-height scratchpad for notes (with option to remember contents)
-- **Prompt Diff Highlighting**: Highlight differences in prompt content when comparing versions
-- **Metadata Tag QA Enhancements**: Show/hide Writer Metadata section; suggested tag changes as toggles with "Copy Suggested Changes" for feedback
-- **Accept Task Modal Improvements**: Button above optional comments to paste a positive blurb when accepting a task
-- **Remember Layout Proportions**: Persist and restore panel split positions between sessions
+- **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
+- **Auto Start Recording**: Automatically clicks the "Start Recording" button once when it appears on the page.
+- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard
+- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
+- **Guideline Buttons**: Add links to the guidelines on the page
+- **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
+- **Hide Grading Panel Button**: Adds Hide Grading in the Grading panel header; delegates to the top Hide Grading control when grading is open.
+- **Prompt Diff Highlighting**: Highlights word-level and character-level changes in the Prompt Changes modal
+- **QA Scratchpad**: Adds an adjustable height scratchpad to the page
+- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
+- **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
+- **Verifier Diff Highlight (Improved)**: Custom side-by-side diff viewer for Expected vs Your Answer in verifier output
+
+### Dispute Detail Page
+- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
+- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
+- **Create Instance Autoclick**: Automatically clicks the "Create Instance" button once when it becomes visible.
+- **Dispute Resolution Action Menu**: Replaces the row of dispute resolution buttons with a dropdown and Confirm Action control; triggers the underlying native button
+- **Dispute Detail Task ID**: Shows a copyable Task ID in the dispute detail header from the View Task link
+- **Dispute Resolution Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar
+- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
+- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
+- **Tool Favorites**: Add favorite stars to tools list
+- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
+- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
+- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **Verifier Diff Highlight (Improved)**: Custom side-by-side diff viewer for Expected vs Your Answer in verifier output
+
+### Task View
+- **Prompt Diff Highlighting**: Highlights word-level and character-level changes in the Prompt Changes modal
 
 ---
 

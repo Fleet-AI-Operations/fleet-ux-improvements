@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.121",
+  "archetypesVersion": "6.122",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.7"
+      "version": "1.8"
     }
   ],
   "archetypes": [
