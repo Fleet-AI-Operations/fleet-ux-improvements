@@ -156,11 +156,6 @@
       "description": "Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)"
     },
     {
-      "file": "prompt-diff-highlight.js",
-      "name": "Prompt Diff Highlighting",
-      "description": "Highlights word-level changes in the Prompt Changes modal"
-    },
-    {
       "file": "qa-scratchpad.js",
       "name": "QA Scratchpad",
       "description": "Adds an adjustable height scratchpad to the page"
@@ -229,11 +224,6 @@
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
-    },
-    {
-      "file": "prompt-diff-highlight.js",
-      "name": "Prompt Diff Highlighting",
-      "description": "Highlights word-level changes in the Prompt Changes modal"
     },
     {
       "file": "qa-scratchpad.js",
@@ -315,13 +305,7 @@
       "description": "Sorts environment cards A–Z by name on the task creation environment picker page."
     }
   ],
-  "archetypes/task-view/main": [
-    {
-      "file": "prompt-diff-highlight.js",
-      "name": "Prompt Diff Highlighting",
-      "description": "Highlights word-level and character-level changes in the Prompt Changes modal"
-    }
-  ],
+  "archetypes/task-view/main": [],
   "archetypes/tool-use-revision/main": [
     {
       "file": "bug-report-expand.js",
@@ -347,11 +331,6 @@
       "file": "guideline-buttons.js",
       "name": "Guideline Buttons",
       "description": "Add links to the guidelines on the page"
-    },
-    {
-      "file": "prompt-diff-highlight.js",
-      "name": "Prompt Diff Highlighting",
-      "description": "Highlights word-level changes in the Prompt Changes modal"
     },
     {
       "file": "prompt-scratchpad.js",
