@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.122",
+  "archetypesVersion": "6.123",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -216,12 +216,6 @@
           "log": false
         },
         {
-          "name": "prompt-diff-highlight.js",
-          "version": "3.4",
-          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997",
-          "log": false
-        },
-        {
           "name": "prompt-scratchpad.js",
           "version": "2.1",
           "hash": "sha256-6ab9d874928c74166fd43aadac8c5538a52268aa751acd30020d318ed415d9d9",
@@ -371,12 +365,6 @@
           "log": false
         },
         {
-          "name": "prompt-diff-highlight.js",
-          "version": "2.4",
-          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234",
-          "log": false
-        },
-        {
           "name": "qa-scratchpad.js",
           "version": "2.2",
           "hash": "sha256-bc86c47ce2a79a9d662606bb7b198193cd0a1d80cc249d036330795bc1de4e9f",
@@ -455,12 +443,6 @@
           "name": "hide-grading-panel-button.js",
           "version": "1.1",
           "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
-          "log": false
-        },
-        {
-          "name": "prompt-diff-highlight.js",
-          "version": "2.4",
-          "hash": "sha256-a3dc5ca34efb8e988da115e7528b381790fa7cea7ff50267e8f7582fc603b234",
           "log": false
         },
         {
@@ -590,14 +572,7 @@
       "description": "Page for viewing a task (view-task)",
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "prompt-diff-highlight.js",
-          "version": "3.4",
-          "hash": "sha256-54e30cf2a6efb44e98da43db6cd8b609fd2fa1260c9cba283e66fca1d221e997",
-          "log": false
-        }
-      ]
+      "plugins": []
     }
   ],
   "devArchetypes": [
