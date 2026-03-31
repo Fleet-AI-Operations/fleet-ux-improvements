@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [feat-remove-tool-favorites] Fleet Workflow Builder UX Enhancer
+// @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.1.4
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -15,8 +15,8 @@
 // @connect      raw.githubusercontent.com
 // @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-remove-tool-favorites/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat-remove-tool-favorites/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -43,7 +43,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'feat-remove-tool-favorites',
+        branch: 'main',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
