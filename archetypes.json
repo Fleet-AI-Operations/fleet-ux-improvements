@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.124",
+  "archetypesVersion": "6.125",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -33,7 +33,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.10"
+      "version": "1.11"
     },
     {
       "name": "features-tab.md",
@@ -138,12 +138,6 @@
           "name": "execute-to-current-tool.js",
           "version": "2.0",
           "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
-          "log": false
-        },
-        {
-          "name": "favorites.js",
-          "version": "4.0",
-          "hash": "sha256-3d479c21ea95d0b320ed742289f6b716e632c85dbde6b0ca17e9fca518d712af",
           "log": false
         },
         {
@@ -535,12 +529,6 @@
           "log": false
         },
         {
-          "name": "favorites.js",
-          "version": "1.0",
-          "hash": "sha256-1d840f89b2dc12883cc22e15fa620c1141ad53289746d048c5e5fe00ef110af0",
-          "log": false
-        },
-        {
           "name": "toggle-tool-parameters.js",
           "version": "1.0",
           "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603",
@@ -593,12 +581,6 @@
           "name": "clear-search.js",
           "version": "2.1",
           "hash": "sha256-6976f18b8d791403d9ae3d6f6a581e08b22d01a1add34c3735067235b14fc040",
-          "log": false
-        },
-        {
-          "name": "favorites.js",
-          "version": "4.1",
-          "hash": "sha256-32e9702151eff993ef96a519337388478ef2b1f7396ec47e611e854323f30f7b",
           "log": false
         },
         {
@@ -688,12 +670,6 @@
           "log": false
         },
         {
-          "name": "favorites.js",
-          "version": "5.1",
-          "hash": "sha256-f16c7c183c5d08b51619966c007b9819ddcab0d282734cbb206fea9badf2d2c2",
-          "log": false
-        },
-        {
           "name": "text-sanitizer.js",
           "version": "3.2",
           "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
@@ -723,12 +699,6 @@
           "name": "bug-report-expand.js",
           "version": "1.4",
           "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
-        {
-          "name": "favorites.js",
-          "version": "4.1",
-          "hash": "sha256-e355018b3a2fc411c011ecc8610aa57bf3687f3cdbdd8957890289fd4b60296b",
           "log": false
         },
         {
