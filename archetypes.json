@@ -1,8 +1,8 @@
 {
-  "version": "7.1.4",
+  "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.3",
+  "archetypesVersion": "7.5",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.9"
+      "version": "1.10"
     }
   ],
   "archetypes": [
@@ -489,12 +489,6 @@
           "version": "4.2",
           "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71",
           "log": false
-        },
-        {
-          "name": "verifier-diff-highlight-improved.js",
-          "version": "1.5",
-          "hash": "sha256-70e886f9378a8ac6c5bea333b75e2d6a66d510eae03fbd7af3d8eff3a0e687f6",
-          "log": false
         }
       ]
     },
@@ -521,8 +515,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.3",
-          "hash": "sha256-aa22295f5e6d8116220eec20c79dfd0b53fa34ca08bdd11f40f84054bcf62104",
+          "version": "1.4",
+          "hash": "sha256-d994c8591e9d3ba6ac3c73736a1c47b31fc97ce786bbe683214aa93d627e180b",
           "log": false
         },
         {
@@ -577,12 +571,6 @@
           "name": "tool-results-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70",
-          "log": false
-        },
-        {
-          "name": "verifier-diff-highlight-improved.js",
-          "version": "1.5",
-          "hash": "sha256-42fe5f4290fc72eda17ecfc93176ea0c078017a52abeede23ed26ef59dccaf62",
           "log": false
         }
       ]

@@ -1,7 +1,7 @@
 // ============= copy-verifier-output.js =============
 // Adds a copy button in the verifier output area: after "Stdout" (classic output) or after "Score: #" (checklist verifier).
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
-// Same behavior as QA archetypes; shared verifier panel DOM (see verifier-diff-highlight-improved.js).
+// Same behavior as QA archetypes; shared verifier panel DOM.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
@@ -13,7 +13,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
