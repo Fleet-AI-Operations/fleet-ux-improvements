@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.0",
+  "archetypesVersion": "7.1",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -401,6 +401,12 @@
           "name": "show-hide-widgets.js",
           "version": "1.0",
           "hash": "sha256-926c8bc44e3b55932f6326b3d148b18febaae9eb75ba3b72789d7b9fbb72d54c",
+          "log": false
+        },
+        {
+          "name": "remember-layout-proportions.js",
+          "version": "1.0",
+          "hash": "sha256-5a69e4876f4d3eb3118d98e72390f60539cdab45182bfbcacd757d397d00e677",
           "log": false
         }
       ]
