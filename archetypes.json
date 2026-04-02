@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "6.125",
+  "archetypesVersion": "7.0",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -386,6 +386,21 @@
           "name": "useful-links-buttons.js",
           "version": "2.1",
           "hash": "sha256-92914ecd1790fa86c7054308c509d23e81defabfd98719f0c7b9720112339ff8",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "qa-session",
+      "name": "Session Trace Review",
+      "description": "Page for reviewing session traces",
+      "urlPattern": "work/problems/qa-session/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "show-hide-widgets.js",
+          "version": "1.0",
+          "hash": "sha256-926c8bc44e3b55932f6326b3d148b18febaae9eb75ba3b72789d7b9fbb72d54c",
           "log": false
         }
       ]
