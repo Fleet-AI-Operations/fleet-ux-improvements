@@ -151,7 +151,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **QA Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
-- **Verifier Diff Highlight (Improved)**: Custom side-by-side diff viewer for Expected vs Your Answer in verifier output
 
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
@@ -166,7 +165,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
-- **Verifier Diff Highlight (Improved)**: Custom side-by-side diff viewer for Expected vs Your Answer in verifier output
 
 ### Session Trace Review Page
 - **Session Trace Show/Hide Widgets**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar before Skip
