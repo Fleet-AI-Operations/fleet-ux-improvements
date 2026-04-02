@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.1",
+  "archetypesVersion": "7.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -407,6 +407,12 @@
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-5a69e4876f4d3eb3118d98e72390f60539cdab45182bfbcacd757d397d00e677",
+          "log": false
+        },
+        {
+          "name": "auto-expand-verifier-section.js",
+          "version": "1.0",
+          "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
           "log": false
         }
       ]
