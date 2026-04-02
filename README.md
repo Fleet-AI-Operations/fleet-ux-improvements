@@ -168,6 +168,12 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Diff Highlight (Improved)**: Custom side-by-side diff viewer for Expected vs Your Answer in verifier output
 
+### Session Trace Review Page
+- **Session Trace Show/Hide Widgets**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar before Skip
+- **Remember Layout Proportions**: Save and restore panel split percentages (main columns, prompt vs comments in the left stack, transcript vs screenshot in the trace area)
+- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)
+- **Toggle Left Panel**: Top-bar control to hide or show the left column (prompt and comments) via a body class so the trace column can use full width
+
 ### Task View
 *No production plugins are configured for this archetype.*
 
