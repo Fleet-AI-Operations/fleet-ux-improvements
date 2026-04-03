@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputesReviewedViewTask',
     name: 'Disputes Reviewed View Task Links',
     description: 'Add a View Task link next to each task key in the Disputes Reviewed table using eval_task_id from the history API',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -146,13 +146,30 @@ const plugin = {
         return null;
     },
 
+    /**
+     * Task key from the prompt UI only — never use taskCell.textContent: after we inject
+     * "View Task", the full cell text is not a valid map key and caused add/remove thrash.
+     */
     getTaskKeyFromCell(taskCell) {
         if (!taskCell) return '';
         const inner = taskCell.querySelector('.fleet-progress-prompt-inner div');
-        if (inner) return (inner.textContent || '').trim();
+        if (inner) {
+            const key = (inner.textContent || '').trim();
+            if (key) {
+                taskCell.dataset.fleetDisputeReviewedTaskKey = key;
+                return key;
+            }
+        }
         const wrap = taskCell.querySelector('.fleet-progress-prompt-inner');
-        if (wrap) return (wrap.textContent || '').trim();
-        return (taskCell.textContent || '').trim();
+        if (wrap) {
+            const key = (wrap.textContent || '').trim();
+            if (key) {
+                taskCell.dataset.fleetDisputeReviewedTaskKey = key;
+                return key;
+            }
+        }
+        const cached = (taskCell.dataset.fleetDisputeReviewedTaskKey || '').trim();
+        return cached;
     },
 
     VIEW_LINK_ATTR: 'data-fleet-disputes-reviewed-view-task',
@@ -186,8 +203,9 @@ const plugin = {
                 } else {
                     link.href = href;
                 }
-            } else if (link) {
+            } else if (taskKey && !evalId && link) {
                 link.remove();
+                delete taskCell.dataset.fleetDisputeReviewedTaskKey;
             }
         }
         if (injected > 0) {
