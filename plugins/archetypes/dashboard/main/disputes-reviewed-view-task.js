@@ -1,18 +1,22 @@
 // ============= disputes-reviewed-view-task.js =============
-// Captures dispute-reviews/history API responses on the dashboard Disputes tab and adds a View Task link per row (task_key → eval_task_id).
+// Captures dispute-reviews/history API on dashboard Disputes tab; inserts a column between Task and Outcome with View Task links (task_key → eval_task_id).
 
 const plugin = {
     id: 'disputesReviewedViewTask',
     name: 'Disputes Reviewed View Task Links',
-    description: 'Add a View Task link next to each task key in the Disputes Reviewed table using eval_task_id from the history API',
-    _version: '1.1',
+    description: 'Insert a View Task column on the Disputes Reviewed table using eval_task_id from the history API',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         interceptionInstalled: false,
         missingLogged: false,
-        loggedFirstHistoryCapture: false
+        loggedFirstHistoryCapture: false,
+        loggedColumnInject: false
     },
+
+    ACTION_COL_ATTR: 'data-fleet-drvt-action-col',
+    ACTION_CELL_ATTR: 'data-fleet-drvt-action-cell',
 
     mergeHistoryPayload(context, disputes) {
         if (!context.disputeReviewHistoryTaskKeyToEvalId) {
@@ -45,6 +49,22 @@ const plugin = {
             return String(urlStr).includes('dispute-reviews/history');
         };
 
+        const scheduleSyncFromHistory = () => {
+            const pw = context.getPageWindow();
+            pw.requestAnimationFrame(() => {
+                try {
+                    const main = Context.dom.query('main', { context: `${self.id}.history-sync` });
+                    if (!main) return;
+                    const table = self.findDisputesReviewedTable(main);
+                    if (!table) return;
+                    const map = context.disputeReviewHistoryTaskKeyToEvalId || {};
+                    self.syncViewTaskLinks(table, map, state);
+                } catch (e) {
+                    Logger.error('disputes-reviewed-view-task: sync after history response failed', e);
+                }
+            });
+        };
+
         const onDisputesPayload = (data) => {
             if (!data || !Array.isArray(data.disputes)) return;
             const n = self.mergeHistoryPayload(context, data.disputes);
@@ -56,20 +76,7 @@ const plugin = {
                 } else {
                     Logger.debug(`disputes-reviewed-view-task: history page merged (+${n} rows, ${totalKeys} keys total)`);
                 }
-                const pageWindow = context.getPageWindow();
-                pageWindow.requestAnimationFrame(() => {
-                    try {
-                        const main = Context.dom.query('main', { context: `${self.id}.history-sync` });
-                        if (!main) return;
-                        const table = self.findDisputesReviewedTable(main);
-                        const map = context.disputeReviewHistoryTaskKeyToEvalId;
-                        if (table && map) {
-                            self.syncViewTaskLinks(table, map);
-                        }
-                    } catch (e) {
-                        Logger.error('disputes-reviewed-view-task: sync after history response failed', e);
-                    }
-                });
+                scheduleSyncFromHistory();
             }
         };
 
@@ -147,43 +154,108 @@ const plugin = {
     },
 
     /**
-     * Task key from the prompt UI only — never use taskCell.textContent: after we inject
-     * "View Task", the full cell text is not a valid map key and caused add/remove thrash.
+     * Task column only (no View Task in this cell — link lives in the injected column).
      */
     getTaskKeyFromCell(taskCell) {
         if (!taskCell) return '';
         const inner = taskCell.querySelector('.fleet-progress-prompt-inner div');
         if (inner) {
             const key = (inner.textContent || '').trim();
-            if (key) {
-                taskCell.dataset.fleetDisputeReviewedTaskKey = key;
-                return key;
-            }
+            if (key) return key;
         }
         const wrap = taskCell.querySelector('.fleet-progress-prompt-inner');
         if (wrap) {
             const key = (wrap.textContent || '').trim();
-            if (key) {
-                taskCell.dataset.fleetDisputeReviewedTaskKey = key;
-                return key;
-            }
+            if (key) return key;
         }
-        const cached = (taskCell.dataset.fleetDisputeReviewedTaskKey || '').trim();
-        return cached;
+        return (taskCell.textContent || '').trim();
     },
 
     VIEW_LINK_ATTR: 'data-fleet-disputes-reviewed-view-task',
 
-    syncViewTaskLinks(table, map) {
-        if (!table || !map) return;
+    ensureActionColumn(table, state) {
+        const theadRow = table.tHead && table.tHead.rows[0];
+        const tbody = table.tBodies[0];
+        if (!theadRow || !tbody) return;
+
+        const hasOurHeader = theadRow.querySelector(`th[${this.ACTION_COL_ATTR}]`);
+
+        if (hasOurHeader) {
+            for (const tr of tbody.rows) {
+                if (tr.cells.length >= 4 && tr.cells[2] && tr.cells[2].hasAttribute(this.ACTION_CELL_ATTR)) {
+                    continue;
+                }
+                if (tr.cells.length === 3) {
+                    const td = this.createActionBodyCell(tr.cells[1]);
+                    tr.insertBefore(td, tr.cells[2]);
+                }
+            }
+            return;
+        }
+
+        if (theadRow.cells.length !== 3) {
+            Logger.debug('disputes-reviewed-view-task: skip column insert — thead column count is not 3', {
+                count: theadRow.cells.length
+            });
+            return;
+        }
+
+        const th = document.createElement('th');
+        th.setAttribute(this.ACTION_COL_ATTR, 'true');
+        th.setAttribute('scope', 'col');
+        th.className = theadRow.cells[1].className;
+        th.textContent = '';
+        theadRow.insertBefore(th, theadRow.cells[2]);
+
+        for (const tr of tbody.rows) {
+            if (tr.cells.length !== 3) continue;
+            const td = this.createActionBodyCell(tr.cells[1]);
+            tr.insertBefore(td, tr.cells[2]);
+        }
+
+        if (!state.loggedColumnInject) {
+            state.loggedColumnInject = true;
+            Logger.log('disputes-reviewed-view-task: inserted View Task column between Task and Outcome');
+        }
+    },
+
+    createActionBodyCell(taskTdRef) {
+        const td = document.createElement('td');
+        td.setAttribute(this.ACTION_CELL_ATTR, 'true');
+        const refClass = (taskTdRef && taskTdRef.className) || '';
+        td.className = refClass
+            .replace(/\bmax-w-\[[^\]]+\]\b/g, '')
+            .replace(/\btruncate\b/g, '')
+            .trim();
+        if (!td.className) {
+            td.className = 'p-2 align-middle text-xs whitespace-nowrap';
+        } else {
+            td.classList.add('whitespace-nowrap');
+        }
+        return td;
+    },
+
+    syncViewTaskLinks(table, map, state) {
+        if (!table) return;
+        const lookup = map || {};
+        this.ensureActionColumn(table, state);
+
+        if (Object.keys(lookup).length === 0) {
+            return;
+        }
+
         const rows = table.querySelectorAll('tbody tr');
         let injected = 0;
         for (const tr of rows) {
+            if (tr.cells.length < 4) continue;
             const taskCell = tr.cells[1];
-            if (!taskCell) continue;
+            const actionCell = tr.cells[2];
+            if (!taskCell || !actionCell || !actionCell.hasAttribute(this.ACTION_CELL_ATTR)) continue;
+
             const taskKey = this.getTaskKeyFromCell(taskCell);
-            const evalId = taskKey ? map[taskKey] : '';
-            let link = taskCell.querySelector(`[${this.VIEW_LINK_ATTR}]`);
+            const evalId = taskKey ? lookup[taskKey] : '';
+            let link = actionCell.querySelector(`[${this.VIEW_LINK_ATTR}]`);
+
             if (evalId) {
                 const href = `https://www.fleetai.com/work/problems/view-task/${evalId}`;
                 if (!link) {
@@ -195,17 +267,15 @@ const plugin = {
                     link.target = '_blank';
                     link.rel = 'noopener noreferrer';
                     link.href = href;
-                    if (!taskCell.classList.contains('flex')) {
-                        taskCell.classList.add('flex', 'flex-wrap', 'items-center', 'gap-2');
-                    }
-                    taskCell.appendChild(link);
+                    actionCell.appendChild(link);
                     injected++;
                 } else {
                     link.href = href;
                 }
-            } else if (taskKey && !evalId && link) {
+            } else if (taskKey && link) {
                 link.remove();
-                delete taskCell.dataset.fleetDisputeReviewedTaskKey;
+            } else if (!taskKey && link) {
+                link.remove();
             }
         }
         if (injected > 0) {
@@ -235,9 +305,7 @@ const plugin = {
         }
 
         state.missingLogged = false;
-        const map = context.disputeReviewHistoryTaskKeyToEvalId;
-        if (map && Object.keys(map).length > 0) {
-            this.syncViewTaskLinks(table, map);
-        }
+        const map = context.disputeReviewHistoryTaskKeyToEvalId || {};
+        this.syncViewTaskLinks(table, map, state);
     }
 };

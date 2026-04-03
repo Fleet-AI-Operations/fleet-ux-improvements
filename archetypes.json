@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.8",
+  "archetypesVersion": "7.9",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -56,8 +56,8 @@
         },
         {
           "name": "disputes-reviewed-view-task.js",
-          "version": "1.1",
-          "hash": "sha256-664ee6ee6bbe283c0d43c5f52d8f901244382f7688ba018207742b9dd5274f8c",
+          "version": "1.2",
+          "hash": "sha256-b0ec065890afcf0dbfc43a0147cfbdb47bdf34f09fec67242759ed6ae207b117",
           "log": false
         },
         {
