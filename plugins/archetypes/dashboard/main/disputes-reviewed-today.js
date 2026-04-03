@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -99,6 +99,31 @@ const plugin = {
     },
 
     /**
+     * Resolve Date and Outcome column indices from thead so counts work with or without
+     * injected columns (e.g. View Task between Task and Outcome).
+     * @returns {{ dateIdx: number, outcomeIdx: number }}
+     */
+    resolveReviewedTableColumnIndices(table) {
+        const theadRow = table.tHead && table.tHead.rows[0];
+        const fallback = { dateIdx: 0, outcomeIdx: 2 };
+        if (!theadRow || theadRow.cells.length === 0) return fallback;
+
+        let dateIdx = -1;
+        let outcomeIdx = -1;
+        for (let i = 0; i < theadRow.cells.length; i++) {
+            const raw = (theadRow.cells[i].textContent || '').trim().replace(/\s+/g, ' ');
+            if (/^date$/i.test(raw)) dateIdx = i;
+            if (/outcome/i.test(raw)) outcomeIdx = i;
+        }
+        if (dateIdx < 0) dateIdx = 0;
+        if (outcomeIdx < 0) {
+            const n = theadRow.cells.length;
+            outcomeIdx = n > 3 ? n - 1 : 2;
+        }
+        return { dateIdx, outcomeIdx };
+    },
+
+    /**
      * Find the Disputes Reviewed tab panel: table with Date, Task, Outcome (no Environment).
      * @returns {HTMLTableElement | null}
      */
@@ -118,13 +143,13 @@ const plugin = {
         return null;
     },
 
-    getStatsForDate(rows, targetMonth, targetDay) {
+    getStatsForDate(rows, targetMonth, targetDay, dateIdx, outcomeIdx) {
         let count = 0;
         let approved = 0;
         let rejected = 0;
         for (const tr of rows) {
-            const dateCell = tr.cells[0];
-            const outcomeCell = tr.cells[2];
+            const dateCell = tr.cells[dateIdx];
+            const outcomeCell = tr.cells[outcomeIdx];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
@@ -149,16 +174,18 @@ const plugin = {
         return lines.join('\n');
     },
 
-    isPastDayUncertain(rows, targetMonth, targetDay, stats) {
+    isPastDayUncertain(rows, targetMonth, targetDay, stats, dateIdx) {
         if (!rows || rows.length === 0) return true;
         if (!stats) return true;
         if (stats.count === 0) return true;
         if (stats.count !== 10) return false;
 
+        const dIdx = typeof dateIdx === 'number' ? dateIdx : 0;
+
         let lastIndex = -1;
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
+            const dateCell = tr.cells[dIdx];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
@@ -170,7 +197,7 @@ const plugin = {
         }
         for (let i = lastIndex + 1; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
+            const dateCell = tr.cells[dIdx];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (parsed && !this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
@@ -210,6 +237,7 @@ const plugin = {
         }
         state.missingLogged = false;
 
+        const { dateIdx, outcomeIdx } = this.resolveReviewedTableColumnIndices(table);
         const rows = Array.from(table.querySelectorAll('tbody tr'));
         let todayCount = 0;
         let todayApproved = 0;
@@ -218,8 +246,8 @@ const plugin = {
 
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
-            const outcomeCell = tr.cells[2];
+            const dateCell = tr.cells[dateIdx];
+            const outcomeCell = tr.cells[outcomeIdx];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             const rowIsToday = this.isToday(parsed);
@@ -349,8 +377,9 @@ const plugin = {
                     const panelEl = block.closest('[role="tabpanel"]');
                     const tableEl = panelEl ? panelEl.querySelector('table') : null;
                     const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
-                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day);
-                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
+                    const col = tableEl ? self.resolveReviewedTableColumnIndices(tableEl) : { dateIdx: 0, outcomeIdx: 2 };
+                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day, col.dateIdx, col.outcomeIdx);
+                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats, col.dateIdx);
                     copyText = self.buildCopyTextForDate(stats, isUncertain);
                     const dayArPast = stats.count > 0 ? Math.round((stats.approved / stats.count) * 100) : null;
                     displayCount = `${stats.count}${isUncertain ? '?' : ''}` + (dayArPast != null ? ` (${dayArPast}% AR)` : '');
