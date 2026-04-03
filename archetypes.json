@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.6",
+  "archetypesVersion": "7.7",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -52,6 +52,12 @@
           "name": "disputes-reviewed-today.js",
           "version": "3.0",
           "hash": "sha256-eece62dc245e0482ca91851b53460142fd5f2bb0dc00d8953ed233c479aff158",
+          "log": false
+        },
+        {
+          "name": "disputes-reviewed-view-task.js",
+          "version": "1.0",
+          "hash": "sha256-a26680c7f38ff6d9a46b4eec0edbd4a97413c16cbea0f226d63c03f3ccf1fcbc",
           "log": false
         },
         {
