@@ -1,4 +1,4 @@
-1.14
+1.15
 
 ## Features
 
@@ -86,7 +86,9 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Create Instance Autoclick**: Automatically clicks the "Create Instance" button once when it becomes visible.
 - **Dispute Resolution Action Menu**: Keeps Flag as Bug as a full-width button above a full-width action dropdown and Confirm; other actions trigger hidden native buttons
 - **Dispute Detail Task ID**: Shows a copyable Task ID in the dispute detail header from the View Task link
+- **Dispute Prompt Scratchpad**: Collapsible notes between the task prompt and writer dispute (default collapsed; not saved across reloads)
 - **Dispute Resolution Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar
+- **Dispute Scenario Near Prompt**: Expands Scenario / User Story, duplicates it above the task prompt in an always-open form, and hides the original block with CSS
 - **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
