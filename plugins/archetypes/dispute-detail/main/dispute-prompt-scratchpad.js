@@ -6,7 +6,7 @@ const plugin = {
     id: 'disputePromptScratchpad',
     name: 'Dispute Prompt Scratchpad',
     description: 'Collapsible scratchpad after the task prompt on dispute detail (not persisted)',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -45,7 +45,7 @@ const plugin = {
 
     buildScratchpad() {
         const wrap = document.createElement('div');
-        wrap.className = 'mb-4';
+        wrap.className = 'mt-4 mb-4';
         wrap.dataset.fleetDisputePromptScratchpad = 'true';
 
         const inner = document.createElement('div');
@@ -72,8 +72,7 @@ const plugin = {
         const textarea = document.createElement('textarea');
         textarea.className =
             'flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y';
-        textarea.placeholder =
-            'Notes for this dispute only (not saved; cleared on reload).';
+        textarea.placeholder = 'QA Scratchpad';
 
         panel.appendChild(textarea);
 

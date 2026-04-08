@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.18",
+  "archetypesVersion": "7.19",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -545,8 +545,8 @@
         },
         {
           "name": "dispute-prompt-scratchpad.js",
-          "version": "1.0",
-          "hash": "sha256-a204497b7c3175ddb478047063ebb611ad1b344fdb0433fec684a4c9d89f3585",
+          "version": "1.1",
+          "hash": "sha256-0008ea0f12a40103417f3f741db224c89b909fb64c1c641e970e5fe62f138e37",
           "log": false
         },
         {
