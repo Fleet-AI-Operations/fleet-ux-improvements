@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.24",
+  "archetypesVersion": "7.26",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -33,7 +33,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.11"
+      "version": "1.13"
     },
     {
       "name": "features-tab.md",
