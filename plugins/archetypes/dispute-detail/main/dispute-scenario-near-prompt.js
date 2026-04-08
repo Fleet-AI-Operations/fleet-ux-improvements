@@ -4,13 +4,15 @@
 
 const STYLE_ID = 'fleet-dispute-scenario-near-prompt-style';
 const SCENARIO_LABEL = 'Scenario / User Story';
+const TASK_PROMPT_HEADER_TEXT = 'Task Prompt';
+const VIEW_TASK_PATH_PREFIX = '/work/problems/view-task/';
 
 const plugin = {
     id: 'disputeScenarioNearPrompt',
     name: 'Dispute Scenario Near Prompt',
     description:
-        'Moves Scenario / User Story above the task prompt (expanded clone; original hidden with CSS)',
-    _version: '1.1',
+        'Moves Scenario / User Story above the task prompt; hides in-header Task Prompt label and adds label above the prompt card',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -19,7 +21,8 @@ const plugin = {
         inProgress: false,
         observer: null,
         timeoutId: null,
-        missingLogged: false
+        missingLogged: false,
+        headerPromptMissingLogged: false
     },
 
     onMutation(state) {
@@ -74,6 +77,44 @@ const plugin = {
         return pre?.closest('div.rounded-xl.text-card-foreground.border.bg-card') || null;
     },
 
+    findNativeHeaderTaskPromptSpan() {
+        const viewLink = document.querySelector(`a[href*="${VIEW_TASK_PATH_PREFIX}"]`);
+        const row = viewLink?.closest('.flex.items-center.gap-2');
+        if (!row) return null;
+        for (const el of row.querySelectorAll('span')) {
+            if ((el.textContent || '').trim() === TASK_PROMPT_HEADER_TEXT) return el;
+        }
+        return null;
+    },
+
+    markHeaderTaskPromptHidden(state) {
+        const span = this.findNativeHeaderTaskPromptSpan();
+        if (!span) {
+            if (!state.headerPromptMissingLogged) {
+                Logger.warn('Dispute Scenario Near Prompt: header Task Prompt label not found to hide');
+                state.headerPromptMissingLogged = true;
+            }
+            return;
+        }
+        state.headerPromptMissingLogged = false;
+        if (span.hasAttribute('data-fleet-dispute-scenario-header-prompt-hidden')) return;
+        span.setAttribute('data-fleet-dispute-scenario-header-prompt-hidden', '1');
+        Logger.log('Dispute Scenario Near Prompt: marked header Task Prompt label for CSS hide');
+    },
+
+    installPromptHeadingAboveCard(promptCard) {
+        if (document.querySelector('[data-fleet-dispute-scenario-prompt-heading="1"]')) return;
+        const wrap = document.createElement('div');
+        wrap.dataset.fleetDisputeScenarioPromptHeading = '1';
+        wrap.className = 'mb-2';
+        const label = document.createElement('span');
+        label.className = 'text-xs font-medium text-muted-foreground';
+        label.textContent = TASK_PROMPT_HEADER_TEXT;
+        wrap.appendChild(label);
+        promptCard.insertAdjacentElement('beforebegin', wrap);
+        Logger.log('Dispute Scenario Near Prompt: inserted Task Prompt label above prompt card');
+    },
+
     beginExpandAndRelocate(state, btn, sourceRoot, promptCard) {
         const panel = btn.nextElementSibling;
         if (!panel || !(panel instanceof HTMLElement)) {
@@ -95,7 +136,9 @@ const plugin = {
             try {
                 this.installScenarioClone(sourceRoot, promptCard);
                 sourceRoot.setAttribute('data-fleet-dispute-scenario-original', 'true');
-                this.ensureHideOriginalStyle();
+                this.ensureHideStyles();
+                this.markHeaderTaskPromptHidden(state);
+                this.installPromptHeadingAboveCard(promptCard);
                 state.completed = true;
                 Logger.log(
                     'Dispute Scenario Near Prompt: expanded, cloned Scenario / User Story above task prompt (original hidden)'
@@ -179,17 +222,33 @@ const plugin = {
         });
     },
 
-    ensureHideOriginalStyle() {
-        if (document.getElementById(STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
-        style.setAttribute('data-fleet-plugin', this.id);
-        style.textContent = `
+    ensureHideStyles() {
+        const fullRules = `
 [data-fleet-dispute-scenario-original] {
     display: none !important;
 }
+[data-fleet-dispute-scenario-header-prompt-hidden] {
+    display: none !important;
+}
 `;
+        const headerOnlyRule = `
+[data-fleet-dispute-scenario-header-prompt-hidden] {
+    display: none !important;
+}
+`;
+        let style = document.getElementById(STYLE_ID);
+        if (style) {
+            if (!style.textContent.includes('data-fleet-dispute-scenario-header-prompt-hidden')) {
+                style.textContent = style.textContent.trim() + headerOnlyRule;
+                Logger.log('Dispute Scenario Near Prompt: extended CSS for header Task Prompt hide');
+            }
+            return;
+        }
+        style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.setAttribute('data-fleet-plugin', this.id);
+        style.textContent = fullRules;
         (document.head || document.documentElement).appendChild(style);
-        Logger.log('Dispute Scenario Near Prompt: injected CSS to hide original scenario block');
+        Logger.log('Dispute Scenario Near Prompt: injected CSS (scenario original + header prompt label hide)');
     }
 };

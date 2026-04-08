@@ -9,7 +9,7 @@ const plugin = {
     id: 'disputeDetailTaskId',
     name: 'Dispute Detail Task ID',
     description: 'Shows a copyable Task ID in the dispute detail header from the View Task link',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -39,19 +39,43 @@ const plugin = {
             Logger.warn('Dispute Detail Task ID: right header group not found');
             return;
         }
+        const outerRow = rightGroup.parentElement;
+        if (!this.isDisputeHeaderOuterRow(outerRow, rightGroup)) {
+            Logger.warn('Dispute Detail Task ID: header outer row validation failed');
+            return;
+        }
         this.ensureCopyStyle();
         const label = document.createElement('span');
         label.className = 'text-xs text-muted-foreground font-medium';
         label.textContent = 'Task:';
         const copyBtn = this.buildCopyButton(taskId);
-        rightGroup.insertBefore(copyBtn, rightGroup.firstChild);
-        rightGroup.insertBefore(label, rightGroup.firstChild);
+        const taskIdRow = document.createElement('div');
+        taskIdRow.className = 'flex items-center gap-2';
+        taskIdRow.appendChild(label);
+        taskIdRow.appendChild(copyBtn);
+
+        const rightColumn = document.createElement('div');
+        rightColumn.className = 'flex flex-col items-end gap-1';
+
+        outerRow.insertBefore(rightColumn, rightGroup);
+        rightColumn.appendChild(taskIdRow);
+        rightColumn.appendChild(rightGroup);
+
+        rightGroup.classList.add('justify-between', 'w-full');
         rightGroup.setAttribute('data-fleet-dispute-detail-task-id-injected', '1');
         state.missingLogged = false;
         if (!state.injectedLogged) {
             Logger.log('Dispute Detail Task ID: injected copyable task ID in header');
             state.injectedLogged = true;
         }
+    },
+
+    isDisputeHeaderOuterRow(outerRow, rightGroup) {
+        if (!(outerRow instanceof HTMLElement)) return false;
+        if (!outerRow.classList.contains('justify-between')) return false;
+        const disputesBack = document.querySelector('a[href="/work/problems/disputes"]');
+        if (!disputesBack || disputesBack.parentElement !== outerRow) return false;
+        return Array.prototype.indexOf.call(outerRow.children, rightGroup) !== -1;
     },
 
     getTaskIdFromHref(href) {
