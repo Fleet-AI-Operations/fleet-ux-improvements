@@ -1,28 +1,31 @@
 // ============= dispute-resolution-action-menu.js =============
-// Collapses native dispute resolution buttons into a select + Confirm control,
-// and triggers the real button on confirm. Native buttons stay in the DOM
-// (visually hidden) so page handlers keep working.
+// Shows Flag as Bug as a full-width native button; other actions use a select +
+// Confirm control that triggers visually hidden native buttons.
 
 const STYLE_ID = 'fleet-dispute-resolution-action-menu-style';
 const MENU_ROOT_ATTR = 'data-fleet-dispute-action-menu';
 const MENU_CONTROL_ATTR = 'data-fleet-dispute-menu-control';
+const FLAG_WRAP_ATTR = 'data-fleet-dispute-flag-actions';
 const ROW_CLASS = 'fleet-dispute-action-row--menu';
 const SELECT_CLASS_HOOK = 'fleet-dispute-action-select';
 
-/** Baseline when no action is chosen (not merged with button classes). */
+/** Baseline when no action is chosen (not merged with button classes). Width comes from flex row. */
 const SELECT_NEUTRAL_CLASSES = [
-    'h-9 min-w-[12rem] rounded-sm border border-input bg-background px-3 py-1',
+    'h-9 rounded-sm border border-input bg-background px-3 py-1',
     'text-sm text-foreground ring-offset-background',
     'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
     SELECT_CLASS_HOOK
 ].join(' ');
 
+/** Appended on every select sync so the dropdown grows with the menu row. */
+const SELECT_LAYOUT_CLASSES = 'flex-1 min-w-0 w-full max-w-full';
+
 const plugin = {
     id: 'disputeResolutionActionMenu',
     name: 'Dispute Resolution Action Menu',
     description:
-        'Replaces the row of dispute resolution buttons with a dropdown and Confirm Action control; triggers the underlying native button',
-    _version: '1.2',
+        'Keeps Flag as Bug as a full-width native button above a full-width row with an action dropdown (flex width) and fixed Confirm; other actions trigger the hidden native button',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -54,25 +57,41 @@ const plugin = {
         }
         state.missingRowLogged = false;
 
-        const natives = this.getNativeActionButtons(row);
-        if (!natives.length) {
+        let wrapper = row.querySelector(`[${MENU_ROOT_ATTR}]`);
+        if (!wrapper) {
+            const directButtons = this.getDirectNativeButtons(row);
+            const { flags, menu: menuNatives } = this.partitionActionButtons(directButtons);
+            if (!menuNatives.length) {
+                return;
+            }
+
+            row.classList.add(ROW_CLASS);
+            const flagWrap = this.ensureFlagWrap(row, flags);
+            if (flagWrap) {
+                row.insertBefore(flagWrap, row.firstChild);
+            }
+            const sig = this.signatureForButtons(menuNatives);
+            wrapper = this.buildMenuWrapper(row, menuNatives, sig);
+            row.insertBefore(wrapper, flagWrap ? flagWrap.nextSibling : row.firstChild);
+            if (!state.injectedLogged) {
+                Logger.log(
+                    'Dispute Resolution Action Menu: flag row (if any), dropdown and confirm control added'
+                );
+                state.injectedLogged = true;
+            }
+        }
+
+        const menuNatives = this.getMenuNativeButtons(row);
+        if (!menuNatives.length) {
             return;
         }
 
         row.classList.add(ROW_CLASS);
-        const sig = this.signatureForButtons(natives);
-        let wrapper = row.querySelector(`[${MENU_ROOT_ATTR}]`);
-        if (!wrapper) {
-            wrapper = this.buildMenuWrapper(row, natives, sig);
-            row.appendChild(wrapper);
-            if (!state.injectedLogged) {
-                Logger.log('Dispute Resolution Action Menu: dropdown and confirm control added');
-                state.injectedLogged = true;
-            }
-        } else if (wrapper.dataset.fleetActionSig !== sig) {
+        const sig = this.signatureForButtons(menuNatives);
+        if (wrapper.dataset.fleetActionSig !== sig) {
             const select = wrapper.querySelector('select');
             const confirmBtn = wrapper.querySelector(`button[${MENU_CONTROL_ATTR}]`);
-            this.populateSelect(select, natives);
+            this.populateSelect(select, menuNatives);
             if (select) select.value = '';
             if (confirmBtn) confirmBtn.disabled = true;
             this.syncSelectVisualFromNative(select, null);
@@ -87,10 +106,39 @@ const plugin = {
             .join('\0');
     },
 
-    getNativeActionButtons(row) {
+    /** Native action buttons that are still direct children of the row (menu actions once Flag is moved out). */
+    getMenuNativeButtons(row) {
         return Array.from(row.querySelectorAll(':scope > button')).filter(
             b => !b.hasAttribute(MENU_CONTROL_ATTR)
         );
+    },
+
+    /** All native action buttons that are direct children of the row (pre- and post-inject). */
+    getDirectNativeButtons(row) {
+        return this.getMenuNativeButtons(row);
+    },
+
+    partitionActionButtons(buttons) {
+        const flags = [];
+        const menu = [];
+        for (const b of buttons) {
+            const t = (b.textContent || '').trim();
+            if (t.includes('Flag as Bug')) flags.push(b);
+            else menu.push(b);
+        }
+        return { flags, menu };
+    },
+
+    ensureFlagWrap(row, flags) {
+        if (!flags.length) return null;
+        const wrap = document.createElement('div');
+        wrap.setAttribute(FLAG_WRAP_ATTR, '1');
+        wrap.setAttribute('data-fleet-plugin', this.id);
+        wrap.className = 'w-full min-w-0 flex flex-col gap-2';
+        for (const b of flags) {
+            wrap.appendChild(b);
+        }
+        return wrap;
     },
 
     findResolutionPanel() {
@@ -164,8 +212,25 @@ const plugin = {
 }
 .${ROW_CLASS} {
     position: relative !important;
-    flex-wrap: wrap !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
     gap: 0.5rem !important;
+    min-width: 0 !important;
+}
+.${ROW_CLASS} [${FLAG_WRAP_ATTR}] {
+    width: 100% !important;
+}
+.${ROW_CLASS} [${FLAG_WRAP_ATTR}] > button {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+.${ROW_CLASS} [${MENU_ROOT_ATTR}] {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: 100% !important;
     min-width: 0 !important;
 }
 select.${SELECT_CLASS_HOOK} {
@@ -228,18 +293,18 @@ select.${SELECT_CLASS_HOOK} {
     syncSelectVisualFromNative(select, nativeButton) {
         if (!select) return;
         if (!nativeButton) {
-            select.className = SELECT_NEUTRAL_CLASSES;
+            select.className = [SELECT_NEUTRAL_CLASSES, SELECT_LAYOUT_CLASSES].join(' ');
             return;
         }
         const tokens = this.mirroredClassTokensFromButton(nativeButton);
-        select.className = [...tokens, SELECT_CLASS_HOOK].join(' ');
+        select.className = [...tokens, SELECT_CLASS_HOOK, SELECT_LAYOUT_CLASSES].join(' ');
     },
 
     buildMenuWrapper(row, natives, sig) {
         const wrap = document.createElement('div');
         wrap.setAttribute(MENU_ROOT_ATTR, '1');
         wrap.setAttribute('data-fleet-plugin', this.id);
-        wrap.className = 'flex flex-wrap gap-2 items-center';
+        wrap.className = 'flex flex-row flex-nowrap gap-2 items-center w-full min-w-0';
         wrap.dataset.fleetActionSig = sig;
 
         const select = document.createElement('select');
@@ -249,7 +314,7 @@ select.${SELECT_CLASS_HOOK} {
         this.populateSelect(select, natives);
 
         const confirmClass =
-            'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-4';
+            'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-4';
 
         const confirmBtn = document.createElement('button');
         confirmBtn.type = 'button';
@@ -261,7 +326,7 @@ select.${SELECT_CLASS_HOOK} {
 
         select.addEventListener('change', () => {
             confirmBtn.disabled = select.value === '';
-            const nativesNow = this.getNativeActionButtons(row);
+            const nativesNow = this.getMenuNativeButtons(row);
             const idx = select.value === '' ? -1 : parseInt(select.value, 10);
             const native =
                 idx >= 0 && idx < nativesNow.length ? nativesNow[idx] : null;
@@ -276,7 +341,7 @@ select.${SELECT_CLASS_HOOK} {
 
     handleConfirm(row, select, confirmBtn) {
         const idx = parseInt(select.value, 10);
-        const natives = this.getNativeActionButtons(row);
+        const natives = this.getMenuNativeButtons(row);
         if (
             select.value === '' ||
             Number.isNaN(idx) ||

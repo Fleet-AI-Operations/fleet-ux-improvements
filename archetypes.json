@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.10",
+  "archetypesVersion": "7.19",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.7",
-      "hash": "sha256-636e3fa04960c455a7ee4ccfba7b5f64ecae3f1329ade4ac381c8bc759e6ea6d",
+      "version": "6.8",
+      "hash": "sha256-bceedbb627a1a46583d09aa418d77ce99de9285e3aa11a5822bce5c27eb658a1",
       "log": false
     },
     {
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.10"
+      "version": "1.15"
     }
   ],
   "archetypes": [
@@ -533,8 +533,8 @@
         },
         {
           "name": "dispute-resolution-action-menu.js",
-          "version": "1.2",
-          "hash": "sha256-acafb0c177c84f96585c5f1a51835b5686cf601a9b93fb16620a5be3791a7d8c",
+          "version": "1.3",
+          "hash": "sha256-d08ed2518a117f8fb9be74b2e1716ee0f13d04f8516fd3ba8f6f48ee5ab93e9f",
           "log": false
         },
         {
@@ -544,9 +544,27 @@
           "log": false
         },
         {
+          "name": "dispute-prompt-scratchpad.js",
+          "version": "1.1",
+          "hash": "sha256-0008ea0f12a40103417f3f741db224c89b909fb64c1c641e970e5fe62f138e37",
+          "log": false
+        },
+        {
           "name": "dispute-resolution-widgets-toggle.js",
           "version": "2.2",
           "hash": "sha256-0d927f8a6c4c211281f12a985fbafcaf719fe49a6cbb166f4f88f16e9c656cc6",
+          "log": false
+        },
+        {
+          "name": "dispute-scenario-near-prompt.js",
+          "version": "1.1",
+          "hash": "sha256-f233fa419797bc3cc723dff9f75635fa794153003f81bb26f34a93143559fbe7",
+          "log": false
+        },
+        {
+          "name": "dispute-screenshot-upload-improvement.js",
+          "version": "1.2",
+          "hash": "sha256-a1bc305b24991917ce9e630cc23b1eb0d89cf4382fec4c9cab00f526c5ac25a3",
           "log": false
         },
         {

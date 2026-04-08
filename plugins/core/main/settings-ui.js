@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.7',
+    _version: '6.8',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -54,6 +54,8 @@ const plugin = {
         const isBound = settingsBtn.dataset.wfSettingsBound === 'true';
         
         if (!isBound || !isAlreadyPulsing) {
+            const bgTranslucent = 'color-mix(in srgb, var(--background, white) 30%, transparent)';
+            const bgOpaque = 'var(--background, white)';
             const baseStyles = `
                 position: fixed;
                 bottom: 20px;
@@ -61,7 +63,7 @@ const plugin = {
                 width: 48px;
                 height: 48px;
                 border-radius: 50%;
-                background: var(--background, white);
+                background: ${shouldPulse ? bgOpaque : bgTranslucent};
                 border: 1px solid #60a5fa;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
                 display: flex;
@@ -69,7 +71,7 @@ const plugin = {
                 justify-content: center;
                 cursor: pointer;
                 z-index: 9999;
-                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease' : 'all 0.2s'};
+                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease' : 'background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease'};
             `;
             
             settingsBtn.style.cssText = baseStyles;
@@ -99,6 +101,7 @@ const plugin = {
         settingsBtn.dataset.wfSettingsBound = 'true';
 
         settingsBtn.addEventListener('mouseenter', () => {
+            settingsBtn.style.background = 'var(--background, white)';
             settingsBtn.style.transform = 'scale(1.1)';
             settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
         });
@@ -106,6 +109,13 @@ const plugin = {
         settingsBtn.addEventListener('mouseleave', () => {
             settingsBtn.style.transform = 'scale(1)';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            const solidBg =
+                Context.isOutdated ||
+                (Context.isDevBranch && this._getPulseOverrideEnabled()) ||
+                settingsBtn.classList.contains('wf-settings-outdated');
+            settingsBtn.style.background = solidBg
+                ? 'var(--background, white)'
+                : 'color-mix(in srgb, var(--background, white) 30%, transparent)';
         });
 
         settingsBtn.addEventListener('click', () => this._toggleModal());
@@ -123,7 +133,8 @@ const plugin = {
         // Ensure smooth transitions
         settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
         
-        // Set initial state (start with red outline)
+        // Set initial state (start with red outline); keep fill solid while update is highlighted
+        settingsBtn.style.background = 'var(--background, white)';
         settingsBtn.style.border = '2px solid #dc2626';
         settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
         
@@ -149,6 +160,12 @@ const plugin = {
         if (settingsBtn) {
             settingsBtn.style.border = '1px solid #60a5fa';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            if (settingsBtn.matches(':hover')) {
+                settingsBtn.style.background = 'var(--background, white)';
+            } else {
+                settingsBtn.style.background =
+                    'color-mix(in srgb, var(--background, white) 30%, transparent)';
+            }
         }
     },
     
