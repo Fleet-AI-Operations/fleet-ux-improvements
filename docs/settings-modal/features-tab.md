@@ -1,4 +1,4 @@
-1.11
+1.13
 
 ## Features
 
@@ -87,6 +87,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Dispute Resolution Action Menu**: Keeps Flag as Bug as a full-width button above a full-width action dropdown and Confirm; other actions trigger hidden native buttons
 - **Dispute Detail Task ID**: Shows a copyable Task ID in the dispute detail header from the View Task link
 - **Dispute Resolution Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar
+- **Dispute Screenshot Upload Improvement**: Full-width screenshot control with click, drag-and-drop, and paste; forwards images to the native file input (original control visually hidden)
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Tool Favorites**: Add favorite stars to tools list

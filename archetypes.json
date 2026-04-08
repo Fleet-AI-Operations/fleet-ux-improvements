@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.12",
+  "archetypesVersion": "7.14",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.11"
+      "version": "1.13"
     }
   ],
   "archetypes": [
@@ -547,6 +547,12 @@
           "name": "dispute-resolution-widgets-toggle.js",
           "version": "2.2",
           "hash": "sha256-0d927f8a6c4c211281f12a985fbafcaf719fe49a6cbb166f4f88f16e9c656cc6",
+          "log": false
+        },
+        {
+          "name": "dispute-screenshot-upload-improvement.js",
+          "version": "1.1",
+          "hash": "sha256-f356907fd5acb9d0ac596c160235ed0ac1c1d6aca5d6530a9a64590e039d3214",
           "log": false
         },
         {
