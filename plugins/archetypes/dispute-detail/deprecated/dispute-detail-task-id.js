@@ -1,5 +1,6 @@
-// ============= dispute-detail-task-id.js =============
-// Injects a copyable Task ID button in the dispute detail header (from View Task link).
+// ============= dispute-detail-task-id.js (deprecated) =============
+// Deprecated: removed from the dispute-detail archetype load list. Kept in-repo for
+// reference; native dispute detail already exposes View Task and timer in the header.
 
 const VIEW_TASK_PATH_PREFIX = '/work/problems/view-task/';
 const COPY_STYLE_ID = 'fleet-dispute-detail-task-id-copy-style';
@@ -9,9 +10,9 @@ const STACK_ATTR = 'data-fleet-dispute-detail-task-id-stack';
 const plugin = {
     id: 'disputeDetailTaskId',
     name: 'Dispute Detail Task ID',
-    description: 'Shows a copyable Task ID in the dispute detail header from the View Task link',
-    _version: '1.3',
-    enabledByDefault: true,
+    description: '[Deprecated] Copyable Task ID in dispute detail header — no longer loaded',
+    _version: '1.4',
+    enabledByDefault: false,
     phase: 'mutation',
     initialState: {
         injectedLogged: false,
