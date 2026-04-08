@@ -7,6 +7,7 @@
 #   ./sync-branch-config.sh -m           # update as if on main (ignore actual branch)
 #   ./sync-branch-config.sh -c           # after sync, commit fleet.user.js if it changed
 #   ./sync-branch-config.sh --dry-run    # print planned changes; do not write or commit
+#   ./sync-branch-config.sh --print-commit-message  # print the canonical one-line git commit message and exit
 #   ./sync-branch-config.sh --fleet PATH # read/write this file instead of <root>/fleet.user.js
 #   ./sync-branch-config.sh --branch NAME # use NAME instead of git HEAD (ignored if -m)
 #
@@ -24,6 +25,7 @@ set -euo pipefail
 use_main=false
 commit_after=false
 dry_run=false
+print_commit_message=false
 fleet_path_arg=""
 branch_override=""
 
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     -c) commit_after=true; shift ;;
     -mc|-cm) use_main=true; commit_after=true; shift ;;
     --dry-run) dry_run=true; shift ;;
+    --print-commit-message) print_commit_message=true; shift ;;
     --fleet)
       if [[ $# -lt 2 ]]; then
         echo "[error] --fleet requires a path" >&2
@@ -50,7 +53,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Usage: $0 [-m] [-c] [--dry-run] [--fleet PATH] [--branch NAME]" >&2
+      echo "Usage: $0 [-m] [-c] [--dry-run] [--print-commit-message] [--fleet PATH] [--branch NAME]" >&2
       exit 1
       ;;
   esac
@@ -66,6 +69,11 @@ elif [[ -n "$branch_override" ]]; then
   branch="$branch_override"
 else
   branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+fi
+
+if [[ "$print_commit_message" == true ]]; then
+  printf '%s\n' "Sync fleet.user.js branch config to $branch"
+  exit 0
 fi
 
 if [[ "$dry_run" == true ]]; then

@@ -1,4 +1,4 @@
-1.11
+1.13
 ## Information
 -> Pro-tip: Use `Ctrl/CMD + F` to search for names in this table. If you can't find one, please use the `Feedback` tab to notify me!
 #### Environment Codennames
@@ -16,6 +16,8 @@
 | Float                     | Ramp                   |
 | Seal                      | Docusign               |
 | Foundry                   | Github                 |
+| Funnel                    | Zip                    |
+| Harbor                    | Bank of America        |
 | Jetstream                 | Google Flights         |
 | Kernel                    | Jira / RevOps          |
 | KeyRing                   | Booking                |
