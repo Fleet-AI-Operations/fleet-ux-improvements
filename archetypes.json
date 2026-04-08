@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.14",
+  "archetypesVersion": "7.15",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.13"
+      "version": "1.14"
     }
   ],
   "archetypes": [
@@ -551,8 +551,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "1.1",
-          "hash": "sha256-f356907fd5acb9d0ac596c160235ed0ac1c1d6aca5d6530a9a64590e039d3214",
+          "version": "1.2",
+          "hash": "sha256-a1bc305b24991917ce9e630cc23b1eb0d89cf4382fec4c9cab00f526c5ac25a3",
           "log": false
         },
         {
