@@ -1,4 +1,4 @@
-1.15
+1.16
 
 ## Features
 
@@ -85,7 +85,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Create Instance Autoclick**: Automatically clicks the "Create Instance" button once when it becomes visible.
 - **Dispute Resolution Action Menu**: Keeps Flag as Bug as a full-width button above a full-width action dropdown and Confirm; other actions trigger hidden native buttons
-- **Dispute Detail Task ID**: Shows a copyable Task ID in the dispute detail header from the View Task link
 - **Dispute Prompt Scratchpad**: Collapsible notes between the task prompt and writer dispute (default collapsed; not saved across reloads)
 - **Dispute Resolution Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar
 - **Dispute Scenario Near Prompt**: Expands Scenario / User Story, duplicates it above the task prompt in an always-open form, and hides the original block with CSS

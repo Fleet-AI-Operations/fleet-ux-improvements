@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.19",
+  "archetypesVersion": "7.23",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.15"
+      "version": "1.16"
     }
   ],
   "archetypes": [
@@ -538,12 +538,6 @@
           "log": false
         },
         {
-          "name": "dispute-detail-task-id.js",
-          "version": "1.1",
-          "hash": "sha256-c5f505ac2b5485867898c9901b8c4faa4420b42da68eda32166bdeed49af58c7",
-          "log": false
-        },
-        {
           "name": "dispute-prompt-scratchpad.js",
           "version": "1.1",
           "hash": "sha256-0008ea0f12a40103417f3f741db224c89b909fb64c1c641e970e5fe62f138e37",
@@ -557,8 +551,8 @@
         },
         {
           "name": "dispute-scenario-near-prompt.js",
-          "version": "1.1",
-          "hash": "sha256-f233fa419797bc3cc723dff9f75635fa794153003f81bb26f34a93143559fbe7",
+          "version": "1.2",
+          "hash": "sha256-4161e8edd6fdcb3c8f7dcf198592e396b2083432fa7422164f621ea183ebcae8",
           "log": false
         },
         {
