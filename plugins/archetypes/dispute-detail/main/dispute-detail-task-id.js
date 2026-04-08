@@ -4,12 +4,13 @@
 const VIEW_TASK_PATH_PREFIX = '/work/problems/view-task/';
 const COPY_STYLE_ID = 'fleet-dispute-detail-task-id-copy-style';
 const COPY_BTN_CLASS = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-7 rounded-sm pl-2 pr-2 text-xs font-mono';
+const STACK_ATTR = 'data-fleet-dispute-detail-task-id-stack';
 
 const plugin = {
     id: 'disputeDetailTaskId',
     name: 'Dispute Detail Task ID',
     description: 'Shows a copyable Task ID in the dispute detail header from the View Task link',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -18,7 +19,12 @@ const plugin = {
     },
 
     onMutation(state) {
-        if (document.querySelector('[data-fleet-dispute-detail-task-id-injected]')) {
+        if (document.querySelector(`[${STACK_ATTR}="1"]`)) {
+            return;
+        }
+        const legacyRightGroup = this.findLegacyStackedColumnLayout();
+        if (legacyRightGroup) {
+            this.migrateLegacyStackedToTwoRows(legacyRightGroup, state);
             return;
         }
         const viewTaskLink = document.querySelector(`a[href*="${VIEW_TASK_PATH_PREFIX}"]`);
@@ -40,11 +46,99 @@ const plugin = {
             return;
         }
         const outerRow = rightGroup.parentElement;
-        if (!this.isDisputeHeaderOuterRow(outerRow, rightGroup)) {
+        if (!this.isNativeDisputeHeaderOuterRow(outerRow, rightGroup)) {
             Logger.warn('Dispute Detail Task ID: header outer row validation failed');
             return;
         }
         this.ensureCopyStyle();
+        const taskIdRow = this.buildTaskIdRow(taskId);
+        const rowBottom = this.moveActionsIntoNewRow(rightGroup);
+        rowBottom.setAttribute('data-fleet-dispute-detail-task-id-injected', '1');
+
+        const rowTop = document.createElement('div');
+        rowTop.className = 'flex items-center justify-between w-full';
+        const disputesBack = outerRow.querySelector('a[href="/work/problems/disputes"]');
+        if (!disputesBack) {
+            Logger.warn('Dispute Detail Task ID: Disputes back link missing during inject');
+            return;
+        }
+        rowTop.appendChild(disputesBack);
+        rowTop.appendChild(taskIdRow);
+
+        this.clearElement(outerRow);
+        this.transformOuterRowToStack(outerRow);
+        outerRow.appendChild(rowTop);
+        outerRow.appendChild(rowBottom);
+        outerRow.setAttribute(STACK_ATTR, '1');
+
+        state.missingLogged = false;
+        if (!state.injectedLogged) {
+            Logger.log('Dispute Detail Task ID: injected two-row header (Disputes|Task ID, timer|View Task)');
+            state.injectedLogged = true;
+        }
+    },
+
+    /** v1.2 layout: task-ID column with actions row nested inside */
+    findLegacyStackedColumnLayout() {
+        const injected = document.querySelector('[data-fleet-dispute-detail-task-id-injected]');
+        if (!injected?.classList.contains('flex')) return null;
+        const col = injected.parentElement;
+        if (!col?.classList.contains('flex-col') || !col.classList.contains('items-end')) return null;
+        if (injected !== col.lastElementChild) return null;
+        return injected;
+    },
+
+    migrateLegacyStackedToTwoRows(legacyRightGroup, state) {
+        const rightColumn = legacyRightGroup.parentElement;
+        const outerRow = rightColumn?.parentElement;
+        const taskIdRow = rightColumn?.firstElementChild;
+        if (
+            !outerRow ||
+            !(outerRow instanceof HTMLElement) ||
+            !taskIdRow ||
+            taskIdRow === legacyRightGroup
+        ) {
+            Logger.warn('Dispute Detail Task ID: legacy layout migration failed (unexpected DOM)');
+            return;
+        }
+        const disputesBack = outerRow.querySelector('a[href="/work/problems/disputes"]');
+        if (!disputesBack) {
+            Logger.warn('Dispute Detail Task ID: Disputes back link missing during migration');
+            return;
+        }
+        this.ensureCopyStyle();
+
+        const rowBottom = document.createElement('div');
+        rowBottom.className = 'flex items-center gap-2 justify-between w-full';
+        legacyRightGroup.removeAttribute('data-fleet-dispute-detail-task-id-injected');
+        while (legacyRightGroup.firstChild) {
+            rowBottom.appendChild(legacyRightGroup.firstChild);
+        }
+        legacyRightGroup.remove();
+
+        rightColumn.removeChild(taskIdRow);
+        rightColumn.remove();
+
+        const rowTop = document.createElement('div');
+        rowTop.className = 'flex items-center justify-between w-full';
+        rowTop.appendChild(disputesBack);
+        rowTop.appendChild(taskIdRow);
+
+        this.clearElement(outerRow);
+        this.transformOuterRowToStack(outerRow);
+        outerRow.appendChild(rowTop);
+        outerRow.appendChild(rowBottom);
+        rowBottom.setAttribute('data-fleet-dispute-detail-task-id-injected', '1');
+        outerRow.setAttribute(STACK_ATTR, '1');
+
+        Logger.log('Dispute Detail Task ID: migrated v1.2 header to two-row layout');
+        state.missingLogged = false;
+        if (!state.injectedLogged) {
+            state.injectedLogged = true;
+        }
+    },
+
+    buildTaskIdRow(taskId) {
         const label = document.createElement('span');
         label.className = 'text-xs text-muted-foreground font-medium';
         label.textContent = 'Task:';
@@ -53,24 +147,31 @@ const plugin = {
         taskIdRow.className = 'flex items-center gap-2';
         taskIdRow.appendChild(label);
         taskIdRow.appendChild(copyBtn);
+        return taskIdRow;
+    },
 
-        const rightColumn = document.createElement('div');
-        rightColumn.className = 'flex flex-col items-end gap-1';
+    moveActionsIntoNewRow(rightGroup) {
+        const rowBottom = document.createElement('div');
+        rowBottom.className = 'flex items-center gap-2 justify-between w-full';
+        while (rightGroup.firstChild) {
+            rowBottom.appendChild(rightGroup.firstChild);
+        }
+        rightGroup.remove();
+        return rowBottom;
+    },
 
-        outerRow.insertBefore(rightColumn, rightGroup);
-        rightColumn.appendChild(taskIdRow);
-        rightColumn.appendChild(rightGroup);
-
-        rightGroup.classList.add('justify-between', 'w-full');
-        rightGroup.setAttribute('data-fleet-dispute-detail-task-id-injected', '1');
-        state.missingLogged = false;
-        if (!state.injectedLogged) {
-            Logger.log('Dispute Detail Task ID: injected copyable task ID in header');
-            state.injectedLogged = true;
+    clearElement(el) {
+        while (el.firstChild) {
+            el.removeChild(el.firstChild);
         }
     },
 
-    isDisputeHeaderOuterRow(outerRow, rightGroup) {
+    transformOuterRowToStack(outerRow) {
+        outerRow.classList.remove('items-center', 'justify-between');
+        outerRow.classList.add('flex-col', 'gap-1');
+    },
+
+    isNativeDisputeHeaderOuterRow(outerRow, rightGroup) {
         if (!(outerRow instanceof HTMLElement)) return false;
         if (!outerRow.classList.contains('justify-between')) return false;
         const disputesBack = document.querySelector('a[href="/work/problems/disputes"]');
