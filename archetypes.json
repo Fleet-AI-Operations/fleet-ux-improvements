@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.26",
+  "archetypesVersion": "7.27",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.17"
+      "version": "1.18"
     }
   ],
   "archetypes": [
@@ -365,12 +365,6 @@
           "log": false
         },
         {
-          "name": "qa-scratchpad.js",
-          "version": "2.2",
-          "hash": "sha256-bc86c47ce2a79a9d662606bb7b198193cd0a1d80cc249d036330795bc1de4e9f",
-          "log": false
-        },
-        {
           "name": "request-revisions.js",
           "version": "5.2",
           "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa",
@@ -476,12 +470,6 @@
           "name": "hide-grading-panel-button.js",
           "version": "1.1",
           "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
-          "log": false
-        },
-        {
-          "name": "qa-scratchpad.js",
-          "version": "1.6",
-          "hash": "sha256-b219842987392a09692ea5f093331aef49477b8b25af8faff0272d273431d16a",
           "log": false
         },
         {

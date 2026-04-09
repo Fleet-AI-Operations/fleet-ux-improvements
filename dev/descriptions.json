@@ -156,11 +156,6 @@
       "description": "Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)"
     },
     {
-      "file": "qa-scratchpad.js",
-      "name": "QA Scratchpad",
-      "description": "Adds an adjustable height scratchpad to the page"
-    },
-    {
       "file": "remember-layout-proportions.js",
       "name": "Remember Layout Proportions",
       "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
@@ -224,11 +219,6 @@
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
-    },
-    {
-      "file": "qa-scratchpad.js",
-      "name": "QA Scratchpad",
-      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "remember-layout-proportions.js",
