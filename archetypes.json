@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.28",
+  "archetypesVersion": "7.29",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -391,6 +391,12 @@
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
       "plugins": [
+        {
+          "name": "view-eval-task-link.js",
+          "version": "1.0",
+          "hash": "sha256-9cf3b6f9fb7e1363e999f588706c860688e53982308148fb5b15e4efcd1a05e5",
+          "log": false
+        },
         {
           "name": "show-hide-widgets.js",
           "version": "1.0",
