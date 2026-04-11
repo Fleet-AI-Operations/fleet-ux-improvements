@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.30",
+  "archetypesVersion": "7.31",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -391,12 +391,6 @@
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
       "plugins": [
-        {
-          "name": "view-eval-task-link.js",
-          "version": "1.1",
-          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
-          "log": false
-        },
         {
           "name": "show-hide-widgets.js",
           "version": "1.0",
@@ -872,6 +866,21 @@
           "name": "dispute-ids-enhancer.js",
           "version": "3.2",
           "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "qa-session",
+      "name": "Session Trace Review",
+      "description": "Page for reviewing session traces",
+      "urlPattern": "work/problems/qa-session/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "view-eval-task-link.js",
+          "version": "1.1",
+          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
           "log": false
         }
       ]
