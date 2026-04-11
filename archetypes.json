@@ -1,8 +1,8 @@
 {
-  "version": "7.1.4",
+  "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.29",
+  "archetypesVersion": "7.30",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.8",
-      "hash": "sha256-bceedbb627a1a46583d09aa418d77ce99de9285e3aa11a5822bce5c27eb658a1",
+      "version": "6.9",
+      "hash": "sha256-1f643b7aa86e34c018362ed4802fcba1f7dd1c97b8dedbcdd5a5d23259ec769b",
       "log": false
     },
     {
@@ -393,8 +393,8 @@
       "plugins": [
         {
           "name": "view-eval-task-link.js",
-          "version": "1.0",
-          "hash": "sha256-9cf3b6f9fb7e1363e999f588706c860688e53982308148fb5b15e4efcd1a05e5",
+          "version": "1.1",
+          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
           "log": false
         },
         {
