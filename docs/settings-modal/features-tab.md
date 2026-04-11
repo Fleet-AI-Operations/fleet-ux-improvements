@@ -1,4 +1,4 @@
-1.19
+1.20
 
 ## Features
 
@@ -44,7 +44,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
-- **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 

@@ -77,11 +77,6 @@
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
     },
     {
-      "file": "prompt-scratchpad.js",
-      "name": "Scratchpad",
-      "description": "Adds an adjustable height scratchpad to the page"
-    },
-    {
       "file": "remember-layout-proportions.js",
       "name": "Remember Layout Proportions",
       "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"

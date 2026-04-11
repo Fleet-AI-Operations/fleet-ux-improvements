@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.32",
+  "archetypesVersion": "7.33",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.19"
+      "version": "1.20"
     }
   ],
   "archetypes": [
@@ -254,12 +254,6 @@
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-c8e82a3baf86a8eab309ae81dbd39d65b1818ef0735a2a684991f41ba235966a",
-          "log": false
-        },
-        {
-          "name": "prompt-scratchpad.js",
-          "version": "2.1",
-          "hash": "sha256-f15fc7a63ee2f7fd9219793423b0bc0173b18596ea23570960bdf5a253e528be",
           "log": false
         },
         {
