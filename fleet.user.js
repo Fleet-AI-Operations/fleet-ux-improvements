@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.4
+// @version      7.1.5
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.4';
+    const VERSION = '7.1.5';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -55,6 +55,8 @@
     /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
     const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? false : true;
     const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
+    /** When unset in storage: main-like builds default page refresh confirmation on; dev builds default off. */
+    const DEFAULT_PAGE_REFRESH_CONFIRMATION = !DEV_SCRIPTS_ENABLED;
 
     // ============= SHARED CONTEXT =============
     const Context = {
@@ -72,6 +74,8 @@
         /** When true (from archetypes.json extensionPingEveryLoad), extension-ping POSTs on every load instead of once per userscript version. */
         extensionPingEveryLoad: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
+        /** Default for `page-refresh-confirmation-enabled` when the key is unset (GM storage). */
+        defaultPageRefreshConfirmation: DEFAULT_PAGE_REFRESH_CONFIRMATION,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
         githubRepo: GITHUB_CONFIG.repo,
@@ -113,7 +117,7 @@
 
         isPageRefreshConfirmationEnabled() {
             const storage = this._getStorage();
-            return storage ? storage.get('page-refresh-confirmation-enabled', true) : false;
+            return storage ? storage.get('page-refresh-confirmation-enabled', DEFAULT_PAGE_REFRESH_CONFIRMATION) : false;
         },
 
         isExtensionRefreshConfirmationEnabled() {

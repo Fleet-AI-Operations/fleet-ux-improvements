@@ -25,9 +25,9 @@
       "description": "Makes bug report cards expandable to see full text"
     },
     {
-      "file": "guideline-buttons.js",
-      "name": "Guideline Buttons",
-      "description": "Add links to the guidelines on the page"
+      "file": "corner-widgets-toggle.js",
+      "name": "Corner Widgets Toggle",
+      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -67,19 +67,14 @@
       "description": "Makes bug report cards expandable to see full text"
     },
     {
-      "file": "guideline-buttons.js",
-      "name": "Guideline Buttons",
-      "description": "Add links to the guidelines on the page"
+      "file": "corner-widgets-toggle.js",
+      "name": "Corner Widgets Toggle",
+      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "hide-testing-environment-banner.js",
       "name": "Hide Testing Environment Banner",
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
-    },
-    {
-      "file": "prompt-scratchpad.js",
-      "name": "Scratchpad",
-      "description": "Adds an adjustable height scratchpad to the page"
     },
     {
       "file": "remember-layout-proportions.js",
@@ -141,9 +136,9 @@
       "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard"
     },
     {
-      "file": "guideline-buttons.js",
-      "name": "Guideline Buttons",
-      "description": "Add links to the guidelines on the page"
+      "file": "corner-widgets-toggle.js",
+      "name": "Corner Widgets Toggle",
+      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -318,9 +313,9 @@
       "description": "Add favorite stars to tools list"
     },
     {
-      "file": "guideline-buttons.js",
-      "name": "Guideline Buttons",
-      "description": "Add links to the guidelines on the page"
+      "file": "corner-widgets-toggle.js",
+      "name": "Corner Widgets Toggle",
+      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "prompt-scratchpad.js",
@@ -375,9 +370,9 @@
       "description": "Add favorite stars to tools list"
     },
     {
-      "file": "guideline-buttons.js",
-      "name": "Guideline Buttons",
-      "description": "Add links to the guidelines on the page"
+      "file": "corner-widgets-toggle.js",
+      "name": "Corner Widgets Toggle",
+      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "json-editor-online.js",

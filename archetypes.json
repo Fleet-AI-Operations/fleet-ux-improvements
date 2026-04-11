@@ -1,8 +1,8 @@
 {
-  "version": "7.1.4",
+  "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.27",
+  "archetypesVersion": "7.33",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.8",
-      "hash": "sha256-bceedbb627a1a46583d09aa418d77ce99de9285e3aa11a5822bce5c27eb658a1",
+      "version": "6.9",
+      "hash": "sha256-1f643b7aa86e34c018362ed4802fcba1f7dd1c97b8dedbcdd5a5d23259ec769b",
       "log": false
     },
     {
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.18"
+      "version": "1.20"
     }
   ],
   "archetypes": [
@@ -52,12 +52,6 @@
           "name": "disputes-reviewed-today.js",
           "version": "3.1",
           "hash": "sha256-9a5c90e98b1aad29cb3b4b36db317274570820abad1e684390c2c85985aa46f2",
-          "log": false
-        },
-        {
-          "name": "disputes-reviewed-view-task.js",
-          "version": "1.2",
-          "hash": "sha256-b0ec065890afcf0dbfc43a0147cfbdb47bdf34f09fec67242759ed6ae207b117",
           "log": false
         },
         {
@@ -88,9 +82,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-5376e496919834a840e26575edb28248f6c993f6030593bf3fdaaa2eec343aae",
           "log": false
         },
         {
@@ -147,9 +141,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-158e9d937559bc82897024f30c2f1d322eee18a147971488dbd1fcdf5e17191e",
           "log": false
         },
         {
@@ -210,9 +204,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "1.6",
-          "hash": "sha256-3aefd5135a7621e6c9d63261d46e6d87b91cb455cc1f93f65d9f71dd97525d2a",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-148ab6032fb302c888392c69c47572ec3d00ad0ad4940d31229b2363ce4b1bb3",
           "log": false
         },
         {
@@ -257,15 +251,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "1.4",
-          "hash": "sha256-4481551aecbebfdc15450bbad9cedd2d4a3acfc624b64d7796292d90261b4025",
-          "log": false
-        },
-        {
-          "name": "prompt-scratchpad.js",
-          "version": "2.1",
-          "hash": "sha256-f15fc7a63ee2f7fd9219793423b0bc0173b18596ea23570960bdf5a253e528be",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-c8e82a3baf86a8eab309ae81dbd39d65b1818ef0735a2a684991f41ba235966a",
           "log": false
         },
         {
@@ -290,9 +278,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "guideline-buttons.js",
-          "version": "1.4",
-          "hash": "sha256-533bd516613590d019c13093f0edd6b30a624e38916573ad29411c8e21cf8f50",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-37cbd80e8b70c38940eb5044d16f430ad33080204a3e7d96994a682bf0a06a16",
           "log": false
         },
         {
@@ -414,12 +402,6 @@
           "version": "1.0",
           "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
           "log": false
-        },
-        {
-          "name": "toggle-left-panel.js",
-          "version": "1.0",
-          "hash": "sha256-87a69e54ef701e571901f33f4d4c46bbc892a4040171760dd48e84c220d57736",
-          "log": false
         }
       ]
     },
@@ -455,9 +437,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.3",
-          "hash": "sha256-038fb5954172425ed0530d776d78fbcb1f9b32f0e6036aaeda1786b2aed2732e",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-14f09d82abf901ef6ec8de9b66575a666448f82ad9ccc20a6a7772f4d0cd7c29",
           "log": false
         },
         {
@@ -878,6 +860,21 @@
           "name": "dispute-ids-enhancer.js",
           "version": "3.2",
           "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "qa-session",
+      "name": "Session Trace Review",
+      "description": "Page for reviewing session traces",
+      "urlPattern": "work/problems/qa-session/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "view-eval-task-link.js",
+          "version": "1.1",
+          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
           "log": false
         }
       ]
