@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.31",
+  "archetypesVersion": "7.32",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.18"
+      "version": "1.19"
     }
   ],
   "archetypes": [
@@ -82,9 +82,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-5376e496919834a840e26575edb28248f6c993f6030593bf3fdaaa2eec343aae",
           "log": false
         },
         {
@@ -141,9 +141,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-22fa7eae954c71a89c0f8dfa3742b0c4b8aa8d0f26d121ffcb610d3387fe84ac",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-158e9d937559bc82897024f30c2f1d322eee18a147971488dbd1fcdf5e17191e",
           "log": false
         },
         {
@@ -204,9 +204,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "1.6",
-          "hash": "sha256-3aefd5135a7621e6c9d63261d46e6d87b91cb455cc1f93f65d9f71dd97525d2a",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-148ab6032fb302c888392c69c47572ec3d00ad0ad4940d31229b2363ce4b1bb3",
           "log": false
         },
         {
@@ -251,9 +251,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "1.4",
-          "hash": "sha256-4481551aecbebfdc15450bbad9cedd2d4a3acfc624b64d7796292d90261b4025",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-c8e82a3baf86a8eab309ae81dbd39d65b1818ef0735a2a684991f41ba235966a",
           "log": false
         },
         {
@@ -284,9 +284,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "guideline-buttons.js",
-          "version": "1.4",
-          "hash": "sha256-533bd516613590d019c13093f0edd6b30a624e38916573ad29411c8e21cf8f50",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-37cbd80e8b70c38940eb5044d16f430ad33080204a3e7d96994a682bf0a06a16",
           "log": false
         },
         {
@@ -443,9 +443,9 @@
           "log": false
         },
         {
-          "name": "guideline-buttons.js",
-          "version": "2.3",
-          "hash": "sha256-038fb5954172425ed0530d776d78fbcb1f9b32f0e6036aaeda1786b2aed2732e",
+          "name": "corner-widgets-toggle.js",
+          "version": "1.0",
+          "hash": "sha256-14f09d82abf901ef6ec8de9b66575a666448f82ad9ccc20a6a7772f4d0cd7c29",
           "log": false
         },
         {
