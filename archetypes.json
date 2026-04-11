@@ -2,7 +2,7 @@
   "version": "7.1.4",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.27",
+  "archetypesVersion": "7.28",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -52,12 +52,6 @@
           "name": "disputes-reviewed-today.js",
           "version": "3.1",
           "hash": "sha256-9a5c90e98b1aad29cb3b4b36db317274570820abad1e684390c2c85985aa46f2",
-          "log": false
-        },
-        {
-          "name": "disputes-reviewed-view-task.js",
-          "version": "1.2",
-          "hash": "sha256-b0ec065890afcf0dbfc43a0147cfbdb47bdf34f09fec67242759ed6ae207b117",
           "log": false
         },
         {
@@ -413,12 +407,6 @@
           "name": "auto-expand-verifier-section.js",
           "version": "1.0",
           "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
-          "log": false
-        },
-        {
-          "name": "toggle-left-panel.js",
-          "version": "1.0",
-          "hash": "sha256-87a69e54ef701e571901f33f4d4c46bbc892a4040171760dd48e84c220d57736",
           "log": false
         }
       ]
