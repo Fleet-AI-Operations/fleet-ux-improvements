@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         Fleet Workflow Builder UX Enhancer
+// @name         [fix-session-trace-metadata] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.1.5
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -15,8 +15,8 @@
 // @connect      raw.githubusercontent.com
 // @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix-session-trace-metadata/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix-session-trace-metadata/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -43,7 +43,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'main',
+        branch: 'fix-session-trace-metadata',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
