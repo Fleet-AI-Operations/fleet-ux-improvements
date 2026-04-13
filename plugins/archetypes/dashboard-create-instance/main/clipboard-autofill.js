@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -21,8 +21,11 @@ const plugin = {
         autofillInProgress: false,
         autocreateDoneForNav: false,
         clipboardRetryListeners: false,
+        toolbarClipboardVisibilityListeners: false,
         autocreateFromMutationAttempted: false,
-        _pendingAutocreateRaf: false
+        _pendingAutocreateRaf: false,
+        _toolbarVisibilityRaf: false,
+        _toolbarClipboardCheckGen: 0
     },
 
     onMutation(state) {
@@ -47,10 +50,8 @@ const plugin = {
             state.clipboardRetryListeners = false;
         }
 
-        if (!state.toolbarInjected) {
-            this.injectToolbar(state, root);
-            state.toolbarInjected = true;
-        }
+        this.ensureToolbarClipboardVisibilityListeners(state, root);
+        this.scheduleToolbarClipboardVisibilityCheck(state, root);
 
         if (Storage.get(this.storageKeys.alwaysAutocreate, false)) {
             this.ensureClipboardRetryListeners(state, root);
@@ -74,6 +75,68 @@ const plugin = {
 
     findBackLink(root) {
         return root.querySelector('a[href="/dashboard/instances"]');
+    },
+
+    removeToolbar(root) {
+        const wrap = root.querySelector('[data-fleet-create-instance-autofill-toolbar]');
+        if (wrap) wrap.remove();
+    },
+
+    scheduleToolbarClipboardVisibilityCheck(state, root) {
+        if (state._toolbarVisibilityRaf) return;
+        state._toolbarVisibilityRaf = true;
+        requestAnimationFrame(() => {
+            state._toolbarVisibilityRaf = false;
+            this.updateToolbarClipboardVisibility(state, root);
+        });
+    },
+
+    async updateToolbarClipboardVisibility(state, root) {
+        const currentRoot = this.findCreatePageRoot();
+        if (!currentRoot || currentRoot !== root) return;
+
+        state._toolbarClipboardCheckGen = (state._toolbarClipboardCheckGen || 0) + 1;
+        const gen = state._toolbarClipboardCheckGen;
+
+        const text = await this.readClipboardText();
+        if (this.findCreatePageRoot() !== currentRoot || gen !== state._toolbarClipboardCheckGen) return;
+
+        if (text == null) {
+            this.injectToolbar(state, currentRoot);
+            if (currentRoot.querySelector('[data-fleet-create-instance-autofill-toolbar]')) {
+                state.toolbarInjected = true;
+            }
+            return;
+        }
+
+        const payload = this.parseInstancePayload(text);
+        if (payload) {
+            this.injectToolbar(state, currentRoot);
+            if (currentRoot.querySelector('[data-fleet-create-instance-autofill-toolbar]')) {
+                state.toolbarInjected = true;
+            }
+            return;
+        }
+
+        this.removeToolbar(currentRoot);
+        state.toolbarInjected = false;
+        Logger.debug('Create Instance clipboard autofill: toolbar hidden (clipboard has no valid instance payload)');
+    },
+
+    ensureToolbarClipboardVisibilityListeners(state, root) {
+        if (state.toolbarClipboardVisibilityListeners) return;
+        state.toolbarClipboardVisibilityListeners = true;
+
+        const refresh = () => {
+            const r = this.findCreatePageRoot();
+            if (!r || r !== state.uiRoot) return;
+            this.scheduleToolbarClipboardVisibilityCheck(state, r);
+        };
+
+        CleanupRegistry.registerEventListener(window, 'focus', refresh);
+        CleanupRegistry.registerEventListener(document, 'visibilitychange', () => {
+            if (document.visibilityState === 'visible') refresh();
+        });
     },
 
     injectToolbar(state, root) {
