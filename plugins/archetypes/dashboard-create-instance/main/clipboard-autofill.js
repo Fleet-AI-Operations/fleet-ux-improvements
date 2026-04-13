@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -333,16 +333,70 @@ const plugin = {
             .trim();
     },
 
+    /**
+     * Insert word boundaries before camelCase / PascalCase transitions so
+     * "FosOperations" and "fos-operations" share the same compact form.
+     */
+    splitCamelCaseWords(s) {
+        return String(s || '')
+            .trim()
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+    },
+
+    /** Lowercase letters/digits only, after camelCase + separator normalization. */
+    envKeySemanticCompact(s) {
+        return this.splitCamelCaseWords(s)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '');
+    },
+
+    /** Tokens for fuzzy checks (kebab, snake, camel, and UI spacing). */
+    envKeyMatchTokens(s) {
+        return this.splitCamelCaseWords(s)
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(t => t.length > 0);
+    },
+
     envKeyMatchScore(optionText, envKey) {
-        const t = this.normalizeMatch(optionText);
+        const textRaw = (optionText || '').replace(/\s+/g, ' ').trim();
+        const t = this.normalizeMatch(textRaw);
         const k = this.normalizeMatch(envKey);
-        const kCompact = k.replace(/[^a-z0-9]/g, '');
-        const tCompact = t.replace(/[^a-z0-9]/g, '');
+
+        const optCompact = this.envKeySemanticCompact(textRaw);
+        const keyCompact = this.envKeySemanticCompact(envKey);
+
         if (t === k) return 100;
-        if (t.includes(k)) return 90;
+        if (optCompact && keyCompact && optCompact === keyCompact) return 99;
+
+        if (optCompact && keyCompact) {
+            if (optCompact.includes(keyCompact) && keyCompact.length >= 3) return 95;
+            if (keyCompact.includes(optCompact) && optCompact.length >= 3) return 94;
+        }
+
+        const keyToks = this.envKeyMatchTokens(envKey);
+        const optToks = this.envKeyMatchTokens(textRaw);
+        const optLower = t;
+        if (keyToks.length >= 2 && keyToks.every(tok => tok.length >= 2 && optLower.includes(tok))) {
+            return 90;
+        }
+        if (keyToks.length >= 2 && optToks.length >= keyToks.length) {
+            let ki = 0;
+            for (const ot of optToks) {
+                if (ki < keyToks.length && (ot === keyToks[ki] || ot.startsWith(keyToks[ki]) || keyToks[ki].startsWith(ot))) {
+                    ki++;
+                }
+            }
+            if (ki === keyToks.length) return 87;
+        }
+
+        const kLegacy = k.replace(/[^a-z0-9]/g, '');
+        const tLegacy = t.replace(/[^a-z0-9]/g, '');
+        if (t.includes(k)) return 86;
         if (k.includes(t)) return 85;
-        if (tCompact && kCompact && tCompact.includes(kCompact)) return 80;
-        if (tCompact && kCompact && kCompact.includes(tCompact)) return 75;
+        if (tLegacy && kLegacy && tLegacy.includes(kLegacy)) return 82;
+        if (tLegacy && kLegacy && kLegacy.includes(tLegacy)) return 81;
         return 0;
     },
 

@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.36",
+  "archetypesVersion": "7.37",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -246,8 +246,8 @@
       "plugins": [
         {
           "name": "clipboard-autofill.js",
-          "version": "1.0",
-          "hash": "sha256-a117ae99ca1fbced62817becec0d8d57fa9bd2952a941f3364943c5e5f301cc0",
+          "version": "1.1",
+          "hash": "sha256-fb80331ab86603e061cee8c8890c0848b1216a7728febfe31e3fb3da06c15b32",
           "log": false
         }
       ]
