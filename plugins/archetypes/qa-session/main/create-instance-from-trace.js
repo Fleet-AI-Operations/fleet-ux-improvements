@@ -12,9 +12,9 @@ const plugin = {
     id: 'sessionTraceCreateInstance',
     name: 'Session Trace Create Instance',
     description:
-        'Adds Create Instance in the trace top bar: copies seed data via the Copy Seed Data control when present, then opens the create-instance dashboard in a new tab',
-    _version: '1.0',
-    enabledByDefault: true,
+        'Adds Create Instance in the trace top bar: copies seed data via the Copy Seed Data control when present, then opens the create-instance dashboard in a new tab. Please note: this functionality only works for Senior Core members.',
+    _version: '1.1',
+    enabledByDefault: false,
     phase: 'mutation',
 
     initialState: {

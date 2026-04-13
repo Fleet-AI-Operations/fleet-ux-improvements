@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.40",
+  "archetypesVersion": "7.41",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -426,7 +426,7 @@
         },
         {
           "name": "create-instance-from-trace.js",
-          "version": "1.0",
+          "version": "1.1",
           "hash": "sha256-b033b16d8ad44c640ff05043de206ad6effb01741fc16c430fcce3f471e9899e",
           "log": false
         }
