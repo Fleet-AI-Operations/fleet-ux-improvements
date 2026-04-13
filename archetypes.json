@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.33",
+  "archetypesVersion": "7.34",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -873,8 +873,8 @@
       "plugins": [
         {
           "name": "view-eval-task-link.js",
-          "version": "1.1",
-          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
+          "version": "1.2",
+          "hash": "sha256-2884d9deed1c622ccc5a71cdec30239eda498603c635006c4b3765280a1d90f7",
           "log": false
         }
       ]
