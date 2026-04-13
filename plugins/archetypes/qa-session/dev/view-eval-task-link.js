@@ -1,27 +1,32 @@
 // ============= view-eval-task-link.js =============
-// Session Trace Review: capture eval_task from GET /rest/v1/sessions?... (same as the app),
-// then show a "View Task" link in the top bar (right of Skip).
+// Session Trace Review: capture eval_task and instance_join from GET /rest/v1/sessions?... (same as the app),
+// then show a "View Task" link and "Copy Seed Data" (JSON instance_join) in the top bar (right of Skip).
 //
 // Uses phase "early" so fetch is wrapped before most page requests. If the session request
 // already finished, a one-shot fallback fetch runs (captured apikey/auth headers or localStorage).
 
 const VIEW_LINK_ATTR = 'data-fleet-session-view-eval-task';
+const COPY_SEED_ATTR = 'data-fleet-session-copy-seed-data';
 
 const plugin = {
     id: 'sessionTraceViewEvalTask',
     name: 'Session Trace View Task link',
     description:
-        'Adds a View Task link (eval task) in the top bar from the sessions API response (network capture + optional fallback)',
-    _version: '1.1',
+        'Adds View Task and Copy Seed Data (instance_join JSON) in the top bar from the sessions API (capture + optional fallback)',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'early',
 
     initialState: {
         interceptionInstalled: false,
         evalTaskId: '',
+        instanceJoin: null,
+        instanceJoinSerialized: '',
         sessionIdFromUrl: '',
         missingLogged: false,
         linkLogged: false,
+        copySeedLogged: false,
+        seedCopyFeedbackTimeoutId: null,
         fallbackStarted: false,
         fallbackDone: false,
         diagLogged: false,
@@ -60,6 +65,13 @@ const plugin = {
         const id = payload.eval_task;
         if (typeof id === 'string' && id.length > 0) return id;
         return '';
+    },
+
+    extractInstanceJoin(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+        const j = payload.instance_join;
+        if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+        return j;
     },
 
     viewTaskHref(evalId) {
@@ -134,16 +146,43 @@ const plugin = {
         }
     },
 
-    onEvalTaskReady(state, pageWindow) {
+    onSessionDataReady(state, pageWindow) {
         const self = this;
         const tick = () => {
             try {
-                self.ensureViewTaskLink(state);
+                self.ensureTopBarSessionActions(state);
             } catch (e) {
-                Logger.error('session-trace-view-eval-task: ensure link failed', e);
+                Logger.error('session-trace-view-eval-task: ensure top bar actions failed', e);
             }
         };
         pageWindow.requestAnimationFrame(tick);
+    },
+
+    applySessionPayload(state, pageWindow, payload) {
+        const sid = this.getSessionIdFromLocation();
+        if (!sid) return;
+
+        let changed = false;
+
+        const evalId = this.extractEvalTaskId(payload);
+        if (evalId && state.evalTaskId !== evalId) {
+            state.evalTaskId = evalId;
+            changed = true;
+            Logger.log(`session-trace-view-eval-task: captured eval_task ${evalId}`);
+        }
+
+        const inst = this.extractInstanceJoin(payload);
+        if (inst) {
+            const serialized = JSON.stringify(inst);
+            if (state.instanceJoinSerialized !== serialized) {
+                state.instanceJoin = inst;
+                state.instanceJoinSerialized = serialized;
+                changed = true;
+                Logger.log('session-trace-view-eval-task: captured instance_join for seed data');
+            }
+        }
+
+        if (changed) this.onSessionDataReady(state, pageWindow);
     },
 
     installInterception(context, state) {
@@ -156,17 +195,6 @@ const plugin = {
 
         const self = this;
 
-        const onSessionPayload = (payload) => {
-            const sid = self.getSessionIdFromLocation();
-            if (!sid) return;
-            const evalId = self.extractEvalTaskId(payload);
-            if (!evalId) return;
-            if (state.evalTaskId === evalId) return;
-            state.evalTaskId = evalId;
-            Logger.log(`session-trace-view-eval-task: captured eval_task ${evalId}`);
-            self.onEvalTaskReady(state, pageWindow);
-        };
-
         const tryParseResponse = async (response, urlStr, method) => {
             const sid = self.getSessionIdFromLocation();
             if (!sid || !self.matchesSessionsDetailRequest(urlStr, sid)) return;
@@ -175,7 +203,7 @@ const plugin = {
             try {
                 const clone = response.clone();
                 const data = await clone.json();
-                onSessionPayload(data);
+                self.applySessionPayload(state, pageWindow, data);
             } catch (e) {
                 Logger.debug('session-trace-view-eval-task: failed to parse sessions JSON (fetch)', e);
             }
@@ -228,7 +256,7 @@ const plugin = {
                         const text = this.responseText;
                         if (!text) return;
                         const data = JSON.parse(text);
-                        onSessionPayload(data);
+                        self.applySessionPayload(state, pageWindow, data);
                     } catch (e) {
                         Logger.debug('session-trace-view-eval-task: failed to parse sessions XHR', e);
                     }
@@ -242,17 +270,21 @@ const plugin = {
     },
 
     async tryFallbackFetch(state, pageWindow) {
-        if (state.fallbackDone || state.evalTaskId) return;
+        if (state.fallbackDone) return;
         const sessionId = this.getSessionIdFromLocation();
         if (!sessionId) return;
 
+        if (state.evalTaskId && state.instanceJoin) return;
+
         state.fallbackDone = true;
 
-        const url = `https://api.fleetai.com/rest/v1/sessions?select=eval_task&id=eq.${sessionId}`;
+        const select =
+            'eval_task,instance_join:instances!sessions_instance_fkey(instance_id,env_key,version,data_key,data_version,env_variables)';
+        const url = `https://api.fleetai.com/rest/v1/sessions?select=${encodeURIComponent(select)}&id=eq.${sessionId}`;
         const headers = {
             accept: 'application/vnd.pgrst.object+json',
             'accept-profile': 'public',
-            'x-client-info': 'fleet-ux-sessionTraceViewEvalTask/1.1'
+            'x-client-info': 'fleet-ux-sessionTraceViewEvalTask/1.2'
         };
         const apikey = pageWindow.__fleetSessionTraceCapturedApikey;
         const auth = pageWindow.__fleetSessionTraceCapturedAuth;
@@ -266,7 +298,7 @@ const plugin = {
 
         if (!apikey && !auth && !token) {
             Logger.warn(
-                'session-trace-view-eval-task: no captured API headers or localStorage token; cannot fallback-fetch eval_task (interception may still work on next navigation)'
+                'session-trace-view-eval-task: no captured API headers or localStorage token; cannot fallback-fetch session row (interception may still work on next navigation)'
             );
             return;
         }
@@ -281,15 +313,7 @@ const plugin = {
                 return;
             }
             const data = await res.json();
-            const evalId = this.extractEvalTaskId(data);
-            if (!evalId) {
-                Logger.debug('session-trace-view-eval-task: fallback response had no eval_task');
-                return;
-            }
-            if (state.evalTaskId === evalId) return;
-            state.evalTaskId = evalId;
-            Logger.log(`session-trace-view-eval-task: eval_task from fallback fetch ${evalId}`);
-            this.onEvalTaskReady(state, pageWindow);
+            this.applySessionPayload(state, pageWindow, data);
         } catch (e) {
             Logger.debug('session-trace-view-eval-task: fallback fetch failed', e);
         }
@@ -318,8 +342,8 @@ const plugin = {
         }
         const self = this;
         const obs = new MutationObserver(() => {
-            if (!state.evalTaskId) return;
-            self.ensureViewTaskLink(state);
+            if (!state.evalTaskId && !state.instanceJoin) return;
+            self.ensureTopBarSessionActions(state);
         });
         obs.observe(pageWindow.document.documentElement, { childList: true, subtree: true });
         state.domObserver = obs;
@@ -335,12 +359,17 @@ const plugin = {
             if (sid !== state.sessionIdFromUrl) {
                 if (state.sessionIdFromUrl) {
                     state.evalTaskId = '';
+                    state.instanceJoin = null;
+                    state.instanceJoinSerialized = '';
                     state.linkLogged = false;
+                    state.copySeedLogged = false;
                     state.fallbackDone = false;
                     state.fallbackStarted = false;
                     state.diagLogged = false;
                     const old = pageWindow.document.querySelector(`a[${VIEW_LINK_ATTR}]`);
                     if (old) old.remove();
+                    const oldSeed = pageWindow.document.querySelector(`button[${COPY_SEED_ATTR}]`);
+                    if (oldSeed) oldSeed.remove();
                 }
                 state.sessionIdFromUrl = sid;
             }
@@ -358,9 +387,23 @@ const plugin = {
         return null;
     },
 
-    ensureViewTaskLink(state) {
-        if (!state.evalTaskId) return;
+    pulseSeedCopyFailure(button, state) {
+        if (state.seedCopyFeedbackTimeoutId) clearTimeout(state.seedCopyFeedbackTimeoutId);
+        const prevT = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = 'rgb(239, 68, 68)';
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        state.seedCopyFeedbackTimeoutId = setTimeout(() => {
+            button.style.transition = prevT || '';
+            state.seedCopyFeedbackTimeoutId = null;
+        }, 500);
+    },
 
+    ensureTopBarSessionActions(state) {
         const skipBtn = this.findSkipButton();
         if (!skipBtn) {
             if (!state.missingLogged) {
@@ -374,26 +417,81 @@ const plugin = {
         const container = skipBtn.parentElement;
         if (!container) return;
 
-        let link = container.querySelector(`a[${VIEW_LINK_ATTR}]`);
-        const href = this.viewTaskHref(state.evalTaskId);
-
-        if (!link) {
-            link = document.createElement('a');
-            link.setAttribute(VIEW_LINK_ATTR, 'true');
-            link.setAttribute('data-fleet-plugin', this.id);
-            link.className =
-                'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm px-3 text-xs shrink-0';
-            link.textContent = 'View Task';
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.href = href;
-            container.insertBefore(link, skipBtn.nextSibling);
-            if (!state.linkLogged) {
-                Logger.log('session-trace-view-eval-task: View Task link added to top bar');
-                state.linkLogged = true;
+        if (state.evalTaskId) {
+            let link = container.querySelector(`a[${VIEW_LINK_ATTR}]`);
+            const href = this.viewTaskHref(state.evalTaskId);
+            if (!link) {
+                link = document.createElement('a');
+                link.setAttribute(VIEW_LINK_ATTR, 'true');
+                link.setAttribute('data-fleet-plugin', this.id);
+                link.className =
+                    'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm px-3 text-xs shrink-0';
+                link.textContent = 'View Task';
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.href = href;
+                container.insertBefore(link, skipBtn.nextSibling);
+                if (!state.linkLogged) {
+                    Logger.log('session-trace-view-eval-task: View Task link added to top bar');
+                    state.linkLogged = true;
+                }
+            } else {
+                link.href = href;
             }
         } else {
-            link.href = href;
+            const oldLink = container.querySelector(`a[${VIEW_LINK_ATTR}]`);
+            if (oldLink) oldLink.remove();
+        }
+
+        if (state.instanceJoin) {
+            let copyBtn = container.querySelector(`button[${COPY_SEED_ATTR}]`);
+            const viewLink = container.querySelector(`a[${VIEW_LINK_ATTR}]`);
+            const anchorAfter = viewLink || skipBtn;
+
+            if (!copyBtn) {
+                copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.setAttribute(COPY_SEED_ATTR, 'true');
+                copyBtn.setAttribute('data-fleet-plugin', this.id);
+                copyBtn.className =
+                    'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm px-3 text-xs shrink-0';
+                copyBtn.textContent = 'Copy Seed Data';
+                copyBtn.title = 'Copy instance_join JSON to clipboard';
+                copyBtn.setAttribute('aria-label', 'Copy instance join seed data');
+
+                const self = this;
+                copyBtn.addEventListener('click', () => {
+                    const payload = JSON.stringify(state.instanceJoin, null, 2);
+                    navigator.clipboard.writeText(payload).then(
+                        () => {
+                            Logger.log('session-trace-view-eval-task: copied instance_join to clipboard');
+                            if (state.seedCopyFeedbackTimeoutId) clearTimeout(state.seedCopyFeedbackTimeoutId);
+                            copyBtn.style.transition = '';
+                            copyBtn.style.backgroundColor = 'rgb(34, 197, 94)';
+                            copyBtn.style.color = 'white';
+                            state.seedCopyFeedbackTimeoutId = setTimeout(() => {
+                                copyBtn.style.backgroundColor = '';
+                                copyBtn.style.color = '';
+                                state.seedCopyFeedbackTimeoutId = null;
+                            }, 1000);
+                        },
+                        (err) => {
+                            Logger.error('session-trace-view-eval-task: clipboard copy failed', err);
+                            self.pulseSeedCopyFailure(copyBtn, state);
+                        }
+                    );
+                });
+                container.insertBefore(copyBtn, anchorAfter.nextSibling);
+                if (!state.copySeedLogged) {
+                    Logger.log('session-trace-view-eval-task: Copy Seed Data button added to top bar');
+                    state.copySeedLogged = true;
+                }
+            } else if (copyBtn.previousElementSibling !== anchorAfter) {
+                container.insertBefore(copyBtn, anchorAfter.nextSibling);
+            }
+        } else {
+            const oldBtn = container.querySelector(`button[${COPY_SEED_ATTR}]`);
+            if (oldBtn) oldBtn.remove();
         }
     },
 
