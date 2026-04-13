@@ -1,4 +1,4 @@
-1.20
+1.21
 
 ## Features
 
@@ -8,7 +8,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Main Dashboard
 - **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning
-- **Feedback Given Stats**: Show overall approval rate, today's feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning
 - **Daily Task Creation Breakdown**: Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete
 
 ### Tool Use Task Creation Page
