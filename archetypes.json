@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.35",
+  "archetypesVersion": "7.42",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -37,7 +37,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.20"
+      "version": "1.21"
     }
   ],
   "archetypes": [
@@ -52,12 +52,6 @@
           "name": "disputes-reviewed-today.js",
           "version": "3.1",
           "hash": "sha256-9a5c90e98b1aad29cb3b4b36db317274570820abad1e684390c2c85985aa46f2",
-          "log": false
-        },
-        {
-          "name": "feedback-given-stats.js",
-          "version": "3.0",
-          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6",
           "log": false
         },
         {
@@ -238,6 +232,21 @@
       "plugins": []
     },
     {
+      "id": "dashboard-create-instance",
+      "name": "Dashboard Create Instance",
+      "description": "Dashboard page for creating instances; clipboard JSON autofill",
+      "urlPattern": "dashboard/instances/create",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "clipboard-autofill.js",
+          "version": "1.4",
+          "hash": "sha256-01eecf7b067cc375cd9fda9c9f855a5ca50d857af56fe7809e877a5866be2ad6",
+          "log": false
+        }
+      ]
+    },
+    {
       "id": "comp-use-task-creation",
       "name": "Computer Use Task Creation Page",
       "description": "Page for creating computer use tasks",
@@ -407,6 +416,12 @@
           "name": "copy-session-seed-data.js",
           "version": "1.0",
           "hash": "sha256-14164ee73e8936aac5b74e27a069a50a5b41e47030fcd5a76c975d1b01ea0785",
+          "log": false
+        },
+        {
+          "name": "create-instance-from-trace.js",
+          "version": "1.1",
+          "hash": "sha256-41e9fb6bc8e8f1eb8f8926f0be021ec08851045762cde213e0d9e25e7d6677c9",
           "log": false
         }
       ]

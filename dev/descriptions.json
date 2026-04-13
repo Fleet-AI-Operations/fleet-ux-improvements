@@ -89,19 +89,21 @@
   ],
   "archetypes/dashboard/main": [
     {
-      "file": "feedback-given-stats.js",
-      "name": "Feedback Given Stats",
-      "description": "Show overall approval rate, today's feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning"
-    },
-    {
-      "file": "progress-prompt-expand.js",
-      "name": "Expanded Submitted Prompts",
-      "description": "Hover over task items to expand truncated prompts"
+      "file": "disputes-reviewed-today.js",
+      "name": "Disputes Reviewed Today Breakdown",
+      "description": "Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning"
     },
     {
       "file": "task-creation-today-env.js",
       "name": "Daily Task Creation Breakdown",
       "description": "Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete"
+    }
+  ],
+  "archetypes/dashboard/dev": [
+    {
+      "file": "progress-prompt-expand.js",
+      "name": "Expanded Submitted Prompts",
+      "description": "Hover over task items to expand truncated prompts"
     }
   ],
   "archetypes/qa-comp-use/main": [
