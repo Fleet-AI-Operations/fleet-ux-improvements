@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -205,10 +205,10 @@ const plugin = {
     isValidPayload(o) {
         if (!o || typeof o !== 'object') return false;
         if (typeof o.env_key !== 'string' || !o.env_key.trim()) return false;
-        if (typeof o.version !== 'string' || !o.version.trim()) return false;
-        if (typeof o.data_key !== 'string' || !o.data_key.trim()) return false;
         if (typeof o.data_version !== 'string' || !o.data_version.trim()) return false;
         if (!o.env_variables || typeof o.env_variables !== 'object') return false;
+        if (o.version !== undefined && o.version !== null && typeof o.version !== 'string') return false;
+        if (o.data_key !== undefined && o.data_key !== null && typeof o.data_key !== 'string') return false;
         return true;
     },
 
@@ -253,13 +253,14 @@ const plugin = {
                 return;
             }
 
-            const versionLabel = this.buildVersionOptionLabel(payload);
-            await this.selectComboboxOption(verCombo, versionLabel, { matchEnvKey: false });
+            await this.wait(150);
+            await this.selectComboboxOption(verCombo, null, { matchVersionPayload: true, payload });
+            await this.wait(200);
 
-            await this.applyEnvVariables(root, payload.env_variables);
-
-            if (payload.instance_id && typeof payload.instance_id === 'string') {
-                await this.trySetInstanceIdField(root, payload.instance_id.trim());
+            const envOk = await this.strictReconcileEnvVariables(root, payload.env_variables);
+            if (!envOk) {
+                Logger.error('Create Instance clipboard autofill: env variables did not match clipboard (strict check failed); not submitting');
+                return;
             }
 
             if (submit) {
@@ -301,8 +302,53 @@ const plugin = {
         return container ? container.querySelector('[role="combobox"]') : null;
     },
 
-    buildVersionOptionLabel(payload) {
-        return `${payload.version} • ${payload.data_key} ${payload.data_version}`;
+    /** Word-boundary match for data_version (e.g. v0.0.23) inside option text. */
+    optionTextContainsDataVersion(fullText, dataVersion) {
+        const dv = String(dataVersion || '').trim();
+        if (!dv) return false;
+        const escaped = dv.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`\\b${escaped}\\b`, 'i').test(String(fullText || '').replace(/\s+/g, ' '));
+    },
+
+    /** Parse primary row version from cmdk option (e.g. v0.0.59). Higher = newer for tie-break. */
+    parsePrimaryVersionFromOption(opt) {
+        const span = opt.querySelector('span.font-medium.text-foreground');
+        const t = (span?.textContent || '').trim();
+        const m = t.match(/(\d+)\.(\d+)\.(\d+)/);
+        if (!m) return [0, 0, 0];
+        return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+    },
+
+    comparePrimaryVersionDesc(a, b) {
+        const va = this.parsePrimaryVersionFromOption(a);
+        const vb = this.parsePrimaryVersionFromOption(b);
+        for (let i = 0; i < 3; i++) {
+            if (va[i] !== vb[i]) return vb[i] - va[i];
+        }
+        return 0;
+    },
+
+    /**
+     * Version dropdown rows: subtitle line contains "{data_key} {data_version} • …" (see cmdk options).
+     * Match primarily on data_version; optional payload.version tie-breaks duplicate rows.
+     */
+    versionOptionMatchScore(opt, payload) {
+        const full = (opt.textContent || '').replace(/\s+/g, ' ').trim();
+        const dv = (payload.data_version || '').trim();
+        if (!dv || !this.optionTextContainsDataVersion(full, dv)) return 0;
+
+        let score = 100;
+        const span = opt.querySelector('span.font-medium.text-foreground');
+        const primaryText = (span?.textContent || '').trim();
+        const pv = (payload.version || '').trim().toLowerCase();
+        if (pv && primaryText) {
+            const pDigits = pv.replace(/^mcp/i, '').replace(/[^0-9.]/g, '');
+            const tDigits = primaryText.toLowerCase().replace(/[^0-9.]/g, '');
+            if (pDigits.length >= 3 && (tDigits.includes(pDigits) || pDigits.includes(tDigits))) {
+                score += 25;
+            }
+        }
+        return score;
     },
 
     async waitForVersionSection(root, timeoutMs = 8000) {
@@ -402,8 +448,12 @@ const plugin = {
 
     async selectComboboxOption(btn, desiredRaw, opts) {
         const matchEnvKey = !!(opts && opts.matchEnvKey);
+        const matchVersionPayload = !!(opts && opts.matchVersionPayload);
+        const payload = opts && opts.payload;
         const desired = String(desiredRaw || '').trim();
-        if (!btn || !desired) return false;
+        if (!btn) return false;
+        if (!matchVersionPayload && !desired) return false;
+        if (matchVersionPayload && !payload) return false;
 
         btn.focus();
         await this.wait(15);
@@ -434,29 +484,37 @@ const plugin = {
         const norm = (s) => this.normalizeMatch(s);
         const desiredNorm = norm(desired);
 
-        let targetIndex = -1;
-        let bestScore = -1;
-        options.forEach((opt, i) => {
+        const minScore = matchVersionPayload ? 100 : 50;
+        const scored = options.map((opt, i) => {
             const text = (opt.textContent || '').replace(/\s+/g, ' ').trim();
             let score = 0;
             if (matchEnvKey) {
                 score = this.envKeyMatchScore(text, desired);
+            } else if (matchVersionPayload && payload) {
+                score = this.versionOptionMatchScore(opt, payload);
             } else {
                 const n = norm(text);
                 if (n === desiredNorm) score = 100;
                 else if (n.includes(desiredNorm)) score = 90;
                 else if (desiredNorm.includes(n) && n.length > 5) score = 82;
             }
-            if (score > bestScore) {
-                bestScore = score;
-                targetIndex = i;
-            }
+            return { i, score, opt, text };
         });
 
-        if (targetIndex < 0 || bestScore < 50) {
-            Logger.warn('Create Instance clipboard autofill: no matching option for: ' + desired);
+        scored.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            if (matchVersionPayload) return this.comparePrimaryVersionDesc(a.opt, b.opt);
+            return a.i - b.i;
+        });
+
+        const best = scored[0];
+        if (!best || best.score < minScore) {
+            const label = matchVersionPayload ? `data_version ${payload.data_version}` : desired;
+            Logger.warn('Create Instance clipboard autofill: no matching option for: ' + label);
             return false;
         }
+
+        const targetIndex = best.i;
 
         const listboxEl = listbox || options[0].closest('[role="listbox"]');
         let currentIndex = this.getHighlightedOptionIndex(listboxEl);
@@ -581,53 +639,135 @@ const plugin = {
         return Array.from(container.querySelectorAll(':scope > .flex.gap-1.items-start'));
     },
 
-    async applyEnvVariables(root, envVars) {
-        const keys = Object.keys(envVars || {});
-        if (!keys.length) return;
+    findEnvAddButton(container) {
+        return Array.from(container.querySelectorAll('button')).find(b =>
+            (b.textContent || '').replace(/\s+/g, ' ').trim().startsWith('Add')
+        );
+    },
+
+    findEnvRowByKey(container, key) {
+        for (const row of this.getEnvRows(container)) {
+            const keyInput = row.querySelector('input[placeholder="Key"]');
+            if (keyInput && (keyInput.value || '').trim() === key) return row;
+        }
+        return null;
+    },
+
+    getEnvRowValueInput(row) {
+        return row.querySelector('.space-y-1 input') || row.querySelectorAll('input')[1];
+    },
+
+    verifyEnvVariablesExact(container, envVars) {
+        const expectedKeys = Object.keys(envVars || {});
+        const map = new Map();
+        for (const row of this.getEnvRows(container)) {
+            const keyInput = row.querySelector('input[placeholder="Key"]');
+            const valueInput = this.getEnvRowValueInput(row);
+            if (!keyInput) continue;
+            const k = (keyInput.value || '').trim();
+            if (!k) continue;
+            const v = (valueInput?.value ?? '').trim();
+            if (map.has(k)) {
+                return { ok: false, detail: 'duplicate row for key ' + k };
+            }
+            map.set(k, v);
+        }
+        if (map.size !== expectedKeys.length) {
+            return {
+                ok: false,
+                detail: `env var count mismatch: clipboard has ${expectedKeys.length} keys, form has ${map.size} non-empty rows`
+            };
+        }
+        for (const k of expectedKeys) {
+            if (!map.has(k)) {
+                return { ok: false, detail: 'missing key in form after sync: ' + k };
+            }
+            const expect = (envVars[k] === null || envVars[k] === undefined ? '' : String(envVars[k])).trim();
+            if (map.get(k) !== expect) {
+                return {
+                    ok: false,
+                    detail: `value mismatch for ${k}: form has "${map.get(k)}" but clipboard has "${expect}"`
+                };
+            }
+        }
+        for (const k of map.keys()) {
+            if (!Object.prototype.hasOwnProperty.call(envVars, k)) {
+                return { ok: false, detail: 'extra key in form: ' + k };
+            }
+        }
+        return { ok: true };
+    },
+
+    /**
+     * Advanced env grid must match clipboard exactly: same keys, same values; remove extras, add missing.
+     */
+    async strictReconcileEnvVariables(root, envVars) {
+        const expectedKeys = new Set(Object.keys(envVars || {}));
 
         await this.ensureAdvancedOpen(root);
         await this.wait(50);
 
         const container = this.findEnvVariablesRowsContainer(root);
         if (!container) {
-            Logger.warn('Create Instance clipboard autofill: env variables container not found');
-            return;
+            Logger.error('Create Instance clipboard autofill: env variables container not found');
+            return false;
         }
 
-        const existingByKey = new Map();
-        for (const row of this.getEnvRows(container)) {
-            const keyInput = row.querySelector('input[placeholder="Key"]');
-            if (!keyInput) continue;
-            const k = (keyInput.value || '').trim();
-            if (k) existingByKey.set(k, row);
-        }
-
-        for (const key of keys) {
-            const val = envVars[key];
-            const strVal = val === null || val === undefined ? '' : String(val);
-            let row = existingByKey.get(key);
-            if (!row) {
-                const addBtn = Array.from(container.querySelectorAll('button')).find(b =>
-                    (b.textContent || '').trim().startsWith('Add')
-                );
-                if (!addBtn) {
-                    Logger.warn('Create Instance clipboard autofill: Add row button not found for key ' + key);
-                    continue;
-                }
-                const prevCount = this.getEnvRows(container).length;
-                addBtn.click();
-                await this.waitForEnvRowCount(container, prevCount + 1);
-                const rows = this.getEnvRows(container);
-                row = rows[rows.length - 1];
-                if (!row) continue;
+        for (let attempt = 0; attempt < 60; attempt++) {
+            const rows = this.getEnvRows(container);
+            let removedOne = false;
+            for (const row of rows) {
                 const keyInput = row.querySelector('input[placeholder="Key"]');
-                if (keyInput) this.setInputValue(keyInput, key);
-                existingByKey.set(key, row);
+                if (!keyInput) continue;
+                const k = (keyInput.value || '').trim();
+                if (!k) continue;
+                if (expectedKeys.has(k)) continue;
+                const rm = row.querySelector(':scope > button[type="button"]');
+                if (rm) {
+                    rm.click();
+                    removedOne = true;
+                    await this.wait(100);
+                    break;
+                }
             }
+            if (!removedOne) break;
+        }
 
-            const valueInput = row.querySelector('.space-y-1 input') || row.querySelectorAll('input')[1];
+        for (const key of expectedKeys) {
+            if (this.findEnvRowByKey(container, key)) continue;
+            const addBtn = this.findEnvAddButton(container);
+            if (!addBtn) {
+                Logger.error('Create Instance clipboard autofill: Add button not found for missing key ' + key);
+                return false;
+            }
+            const prevCount = this.getEnvRows(container).length;
+            addBtn.click();
+            await this.waitForEnvRowCount(container, prevCount + 1);
+            const rows = this.getEnvRows(container);
+            const last = rows[rows.length - 1];
+            const keyInput = last?.querySelector('input[placeholder="Key"]');
+            if (keyInput) this.setInputValue(keyInput, key);
+        }
+
+        for (const key of expectedKeys) {
+            const strVal = envVars[key] === null || envVars[key] === undefined ? '' : String(envVars[key]);
+            const row = this.findEnvRowByKey(container, key);
+            if (!row) {
+                Logger.error('Create Instance clipboard autofill: row not found for key ' + key);
+                return false;
+            }
+            const valueInput = this.getEnvRowValueInput(row);
             if (valueInput) this.setInputValue(valueInput, strVal);
         }
+
+        await this.wait(80);
+        const verify = this.verifyEnvVariablesExact(container, envVars);
+        if (!verify.ok) {
+            Logger.error('Create Instance clipboard autofill: ' + verify.detail);
+            return false;
+        }
+        Logger.info('Create Instance clipboard autofill: advanced env vars match clipboard exactly');
+        return true;
     },
 
     waitForEnvRowCount(container, minCount, timeoutMs = 3000) {
@@ -649,23 +789,6 @@ const plugin = {
                 resolve();
             }, timeoutMs);
         });
-    },
-
-    async trySetInstanceIdField(root, instanceId) {
-        if (!instanceId) return;
-        const labels = Array.from(root.querySelectorAll('label'));
-        const lab = labels.find(l => /instance\s*id/i.test((l.textContent || '').trim()));
-        if (!lab) {
-            Logger.debug('Create Instance clipboard autofill: no Instance ID field; skipping instance_id');
-            return;
-        }
-        const idFor = lab.getAttribute('for');
-        let input = idFor ? document.getElementById(idFor) : null;
-        if (!input || input.tagName !== 'INPUT') {
-            const wrap = lab.parentElement;
-            input = wrap ? wrap.querySelector('input[type="text"], input:not([type])') : null;
-        }
-        if (input) this.setInputValue(input, instanceId);
     },
 
     findCreateButton(root) {
