@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -245,7 +245,12 @@ const plugin = {
                 return;
             }
 
-            await this.selectComboboxOption(envCombo, payload.env_key, { matchEnvKey: true });
+            const envOkSelect = await this.selectComboboxOption(envCombo, payload.env_key, { matchEnvKey: true });
+            if (!envOkSelect) {
+                Logger.error('Create Instance clipboard autofill: environment selection failed; aborting pipeline');
+                return;
+            }
+
             await this.waitForVersionSection(root);
             const verCombo = this.findVersionCombobox(root);
             if (!verCombo) {
@@ -254,7 +259,11 @@ const plugin = {
             }
 
             await this.wait(150);
-            await this.selectComboboxOption(verCombo, null, { matchVersionPayload: true, payload });
+            const versionOk = await this.selectVersionComboboxOption(verCombo, payload);
+            if (!versionOk) {
+                Logger.error('Create Instance clipboard autofill: version selection failed; aborting pipeline');
+                return;
+            }
             await this.wait(200);
 
             const envOk = await this.strictReconcileEnvVariables(root, payload.env_variables);
@@ -349,6 +358,213 @@ const plugin = {
             }
         }
         return score;
+    },
+
+    waitForAnimationFrame() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    },
+
+    waitForElementById(id, timeoutMs = 1200) {
+        if (!id) return Promise.resolve(null);
+        const existing = document.getElementById(id);
+        if (existing) return Promise.resolve(existing);
+        return new Promise(resolve => {
+            let settled = false;
+            const done = el => {
+                if (settled) return;
+                settled = true;
+                try {
+                    observer.disconnect();
+                } catch (e) {
+                    /* ignore */
+                }
+                resolve(el || null);
+            };
+            const observer = new MutationObserver(() => {
+                const el = document.getElementById(id);
+                if (el) done(el);
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            setTimeout(() => done(document.getElementById(id)), timeoutMs);
+        });
+    },
+
+    queryVersionOptions(panel) {
+        if (!panel) return [];
+        let opts = Array.from(panel.querySelectorAll('[cmdk-item][role="option"], [role="option"][cmdk-item]'));
+        if (!opts.length) opts = Array.from(panel.querySelectorAll('[role="option"]'));
+        return opts;
+    },
+
+    findCmdkFilterInput(panel) {
+        if (!panel) return null;
+        const byAttr = panel.querySelector('input[cmdk-input], input[data-slot="command-input"]');
+        if (byAttr && byAttr.offsetParent !== null) return byAttr;
+        const inputs = Array.from(panel.querySelectorAll('input[type="search"], input[type="text"], input:not([type])'));
+        for (const inp of inputs) {
+            if (inp.disabled || inp.type === 'hidden') continue;
+            const r = inp.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return inp;
+        }
+        return inputs[0] || null;
+    },
+
+    findScrollViewport(panel) {
+        if (!panel) return null;
+        const radix = panel.querySelector('[data-radix-scroll-area-viewport]');
+        if (radix) return radix;
+        const opts = panel.querySelectorAll('[role="option"]');
+        if (opts.length) {
+            let el = opts[0].parentElement;
+            while (el && el !== panel) {
+                const st = window.getComputedStyle(el);
+                const oy = st.overflowY;
+                if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 4) return el;
+                el = el.parentElement;
+            }
+        }
+        const candidates = panel.querySelectorAll('*');
+        for (const el of candidates) {
+            const st = window.getComputedStyle(el);
+            const oy = st.overflowY;
+            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 8) return el;
+        }
+        return panel;
+    },
+
+    pickBestVersionOption(options, payload) {
+        const scored = options.map(opt => ({
+            opt,
+            score: this.versionOptionMatchScore(opt, payload)
+        }));
+        scored.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return this.comparePrimaryVersionDesc(a.opt, b.opt);
+        });
+        return scored[0] || null;
+    },
+
+    /**
+     * Version picker uses cmdk inside a Radix dialog: open popover, optional filter, scroll viewport,
+     * then click the matching [role="option"] (ArrowDown/Enter is unreliable here).
+     */
+    async selectVersionComboboxOption(verCombo, payload) {
+        if (!verCombo || !payload) return false;
+
+        verCombo.focus();
+        await this.wait(15);
+        verCombo.click();
+        await this.wait(100);
+
+        const ctrlId = verCombo.getAttribute('aria-controls');
+        const panel = await this.waitForElementById(ctrlId, 1500);
+        if (!panel) {
+            Logger.error(
+                'Create Instance clipboard autofill: version popover not found (aria-controls=' +
+                    (ctrlId || '(missing)') +
+                    ')'
+            );
+            await this.pressKey(verCombo, 'Escape');
+            return false;
+        }
+
+        let filterApplied = false;
+        const filterInput = this.findCmdkFilterInput(panel);
+        const dv = (payload.data_version || '').trim();
+        if (filterInput && dv) {
+            this.setInputValue(filterInput, dv);
+            filterApplied = true;
+            await this.wait(80);
+            await this.waitForAnimationFrame();
+            await this.wait(50);
+        }
+
+        const viewport = this.findScrollViewport(panel);
+        if (viewport && viewport.scrollHeight > viewport.clientHeight + 2) {
+            viewport.scrollTop = 0;
+            await this.wait(40);
+        }
+
+        const minScore = 100;
+        const maxSteps = 72;
+        let best = null;
+        let lastTop = -1;
+        let stuck = 0;
+
+        for (let step = 0; step < maxSteps; step++) {
+            const options = this.queryVersionOptions(panel);
+            const candidate = this.pickBestVersionOption(options, payload);
+            if (candidate && candidate.score >= minScore) {
+                best = candidate;
+                break;
+            }
+
+            if (!viewport || viewport.scrollHeight <= viewport.clientHeight + 2) {
+                break;
+            }
+
+            const maxScroll = viewport.scrollHeight - viewport.clientHeight;
+            const nextTop = Math.min(
+                viewport.scrollTop + Math.max(1, Math.floor(viewport.clientHeight * 0.85)),
+                maxScroll
+            );
+
+            if (Math.abs(viewport.scrollTop - lastTop) < 0.5) stuck++;
+            else stuck = 0;
+            lastTop = viewport.scrollTop;
+
+            if (stuck >= 4) {
+                break;
+            }
+            if (viewport.scrollTop >= maxScroll - 1 || (stuck >= 2 && nextTop >= maxScroll - 1)) {
+                break;
+            }
+
+            viewport.scrollTop = nextTop;
+            await this.waitForAnimationFrame();
+            await this.wait(45);
+        }
+
+        if (!best || best.score < minScore) {
+            const optionCount = this.queryVersionOptions(panel).length;
+            Logger.error(
+                'Create Instance clipboard autofill: no version row for data_version ' +
+                    dv +
+                    ' (options in panel: ' +
+                    optionCount +
+                    ', cmdk filter applied: ' +
+                    filterApplied +
+                    ')'
+            );
+            await this.pressKey(filterInput || verCombo, 'Escape');
+            await this.wait(50);
+            return false;
+        }
+
+        try {
+            best.opt.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            await this.wait(60);
+            const inner =
+                best.opt.querySelector('div[class*="cursor-pointer"]') ||
+                best.opt.querySelector('div.group.flex') ||
+                best.opt.querySelector('div.flex-1.min-w-0') ||
+                best.opt;
+            inner.click();
+        } catch (e) {
+            Logger.error('Create Instance clipboard autofill: version option click failed', e);
+            try {
+                best.opt.focus();
+                await this.pressKey(best.opt, 'Enter');
+            } catch (e2) {
+                Logger.error('Create Instance clipboard autofill: version option Enter fallback failed', e2);
+                await this.pressKey(verCombo, 'Escape');
+                return false;
+            }
+        }
+
+        await this.wait(180);
+        Logger.log('Create Instance clipboard autofill: version row selected (data_version ' + dv + ')');
+        return true;
     },
 
     async waitForVersionSection(root, timeoutMs = 8000) {
@@ -448,12 +664,8 @@ const plugin = {
 
     async selectComboboxOption(btn, desiredRaw, opts) {
         const matchEnvKey = !!(opts && opts.matchEnvKey);
-        const matchVersionPayload = !!(opts && opts.matchVersionPayload);
-        const payload = opts && opts.payload;
         const desired = String(desiredRaw || '').trim();
-        if (!btn) return false;
-        if (!matchVersionPayload && !desired) return false;
-        if (matchVersionPayload && !payload) return false;
+        if (!btn || !desired) return false;
 
         btn.focus();
         await this.wait(15);
@@ -484,14 +696,12 @@ const plugin = {
         const norm = (s) => this.normalizeMatch(s);
         const desiredNorm = norm(desired);
 
-        const minScore = matchVersionPayload ? 100 : 50;
+        const minScore = 50;
         const scored = options.map((opt, i) => {
             const text = (opt.textContent || '').replace(/\s+/g, ' ').trim();
             let score = 0;
             if (matchEnvKey) {
                 score = this.envKeyMatchScore(text, desired);
-            } else if (matchVersionPayload && payload) {
-                score = this.versionOptionMatchScore(opt, payload);
             } else {
                 const n = norm(text);
                 if (n === desiredNorm) score = 100;
@@ -503,14 +713,12 @@ const plugin = {
 
         scored.sort((a, b) => {
             if (b.score !== a.score) return b.score - a.score;
-            if (matchVersionPayload) return this.comparePrimaryVersionDesc(a.opt, b.opt);
             return a.i - b.i;
         });
 
         const best = scored[0];
         if (!best || best.score < minScore) {
-            const label = matchVersionPayload ? `data_version ${payload.data_version}` : desired;
-            Logger.warn('Create Instance clipboard autofill: no matching option for: ' + label);
+            Logger.warn('Create Instance clipboard autofill: no matching option for: ' + desired);
             return false;
         }
 
