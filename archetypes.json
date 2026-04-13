@@ -2,7 +2,7 @@
   "version": "7.1.5",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.35",
+  "archetypesVersion": "7.36",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -238,6 +238,21 @@
       "plugins": []
     },
     {
+      "id": "dashboard-create-instance",
+      "name": "Dashboard Create Instance",
+      "description": "Dashboard page for creating instances; clipboard JSON autofill",
+      "urlPattern": "dashboard/instances/create",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "clipboard-autofill.js",
+          "version": "1.0",
+          "hash": "sha256-ca866e76e53ceb4174ef63a8b15bef8ed99fa9dae95f12ada6633082ab1b6ff5",
+          "log": false
+        }
+      ]
+    },
+    {
       "id": "comp-use-task-creation",
       "name": "Computer Use Task Creation Page",
       "description": "Page for creating computer use tasks",
@@ -407,6 +422,12 @@
           "name": "copy-session-seed-data.js",
           "version": "1.0",
           "hash": "sha256-14164ee73e8936aac5b74e27a069a50a5b41e47030fcd5a76c975d1b01ea0785",
+          "log": false
+        },
+        {
+          "name": "create-instance-from-trace.js",
+          "version": "1.0",
+          "hash": "sha256-b033b16d8ad44c640ff05043de206ad6effb01741fc16c430fcce3f471e9899e",
           "log": false
         }
       ]
