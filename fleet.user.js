@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         Fleet Workflow Builder UX Enhancer
+// @name         [feat/add-rcp] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.1.7
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -43,7 +43,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'main',
+        branch: 'feat/add-rcp',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
