@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.15',
+    _version: '6.14',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -533,6 +533,9 @@ const plugin = {
                 </div>
                 ${updateNotificationHTML}
                 ${tabRowHTML}
+                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: #92400e;">
+                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.
+                </div>
             </div>
             
             <div id="wf-settings-tab-panes">
@@ -702,6 +705,11 @@ const plugin = {
             </div>
             </div>
         `;
+
+        const staleMsg = document.getElementById('wf-settings-message');
+        if (staleMsg && !modal.contains(staleMsg)) {
+            staleMsg.remove();
+        }
         
         document.body.appendChild(modal);
 
@@ -873,6 +881,21 @@ const plugin = {
             });
         }
 
+        const settingsRefreshLink = Context.dom.query('#wf-settings-refresh-link', {
+            root: modal,
+            context: `${this.id}.settingsChangedRefreshLink`
+        });
+        if (settingsRefreshLink) {
+            settingsRefreshLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload('settings-ui settings changed refresh');
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+
         // Click outside the panel (on the dialog backdrop) closes the settings dialog
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
@@ -922,7 +945,7 @@ const plugin = {
                 if (!isEnabled) {
                     this._storeGlobalSnapshot(plugins);
                     plugins.forEach(plugin => {
-                        this._applyArchetypePluginEnabledFromUi(plugin.id, false);
+                        PluginManager.setEnabled(plugin.id, false);
                     });
                 } else {
                     this._restoreGlobalSnapshot(plugins);
@@ -967,7 +990,7 @@ const plugin = {
         if (allOffBtn) {
             allOffBtn.addEventListener('click', () => {
                 plugins.forEach(plugin => {
-                    this._applyArchetypePluginEnabledFromUi(plugin.id, false);
+                    PluginManager.setEnabled(plugin.id, false);
                 });
                 this._renderPluginList(modal, plugins);
                 this._attachPluginToggleListeners(modal, plugins);
@@ -998,7 +1021,7 @@ const plugin = {
                     if (!isEnabled) {
                         this._storeDevGlobalSnapshot(devPlugins);
                         devPlugins.forEach(plugin => {
-                            this._applyArchetypePluginEnabledFromUi(plugin.id, false);
+                            PluginManager.setEnabled(plugin.id, false);
                         });
                     } else {
                         this._restoreDevGlobalSnapshot(devPlugins);
@@ -1043,7 +1066,7 @@ const plugin = {
             if (allDevOffBtn) {
                 allDevOffBtn.addEventListener('click', () => {
                     devPlugins.forEach(plugin => {
-                        this._applyArchetypePluginEnabledFromUi(plugin.id, false);
+                        PluginManager.setEnabled(plugin.id, false);
                     });
                     this._renderDevPluginList(modal, devPlugins);
                     this._attachPluginToggleListeners(modal, devPlugins, 'dev');
@@ -1317,14 +1340,6 @@ const plugin = {
         }
     },
 
-    /** Updates stored plugin enablement; turning OFF also stops runtime until refresh. Turning ON is storage-only (requires refresh to run). */
-    _applyArchetypePluginEnabledFromUi(pluginId, enabled) {
-        PluginManager.setEnabled(pluginId, enabled);
-        if (!enabled) {
-            PluginManager.setArchetypeRuntimeActive(pluginId, false);
-        }
-    },
-
     _renderPluginList(modal, plugins) {
         const container = Context.dom.query('#wf-plugin-list', {
             root: modal,
@@ -1374,7 +1389,7 @@ const plugin = {
             if (checkbox) {
                 checkbox.addEventListener('change', (e) => {
                     this._handleToggleChange(e);
-                    this._applyArchetypePluginEnabledFromUi(plugin.id, e.target.checked);
+                    PluginManager.setEnabled(plugin.id, e.target.checked);
                     if (listType === 'dev') {
                         this._renderDevPluginList(modal, plugins);
                         this._attachPluginToggleListeners(modal, plugins, 'dev');
@@ -1786,7 +1801,7 @@ const plugin = {
     },
 
     _getExtensionRefreshConfirmationEnabled() {
-        return Storage.get('extension-refresh-confirmation-enabled', Context.defaultExtensionRefreshConfirmation);
+        return Storage.get('extension-refresh-confirmation-enabled', false);
     },
 
     _setExtensionRefreshConfirmationEnabled(enabled) {
@@ -1879,59 +1894,39 @@ const plugin = {
     },
 
     _ensureMessageElement(modal) {
-        let msg = document.getElementById('wf-settings-message');
+        let msg = modal.querySelector('#wf-settings-message');
         if (!msg) {
             msg = document.createElement('div');
             msg.id = 'wf-settings-message';
             msg.style.cssText = `
-                position: fixed;
                 display: none;
-                padding: 12px;
+                margin-top: 12px;
+                padding: 10px 12px;
                 background: #fef3c7;
                 border: 1px solid #f59e0b;
                 border-radius: 6px;
                 font-size: 13px;
                 text-align: center;
                 color: #92400e;
-                z-index: 10001;
             `;
             msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.';
-            document.body.appendChild(msg);
-            
-            // Attach click listener for the refresh link
-            const refreshLink = msg.querySelector('#wf-settings-refresh-link');
-            if (refreshLink) {
-                refreshLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (typeof Context.requestExtensionReload === 'function') {
-                        Context.requestExtensionReload('settings-ui settings changed refresh');
-                    } else {
-                        window.location.reload();
-                    }
-                });
+            const tabRow = modal.querySelector('#wf-settings-tab-row');
+            if (tabRow && tabRow.parentElement) {
+                tabRow.parentElement.insertBefore(msg, tabRow.nextSibling);
+            } else {
+                modal.insertBefore(msg, modal.firstChild);
             }
         }
-        this._positionMessage(modal, msg);
         return msg;
-    },
-
-    _positionMessage(modal, msg) {
-        if (!modal || !msg) return;
-        const rect = modal.getBoundingClientRect();
-        msg.style.left = `${rect.left}px`;
-        msg.style.top = `${rect.bottom + 8}px`;
-        msg.style.width = `${rect.width}px`;
     },
 
     _updateSettingsMessage(modal, plugins) {
         const msg = this._ensureMessageElement(modal);
+        if (!msg) return;
         const devPlugins = this._settingsDevPlugins || [];
         const current = this._getSettingsSnapshot(plugins, this._settingsArchetypeId, devPlugins);
         const changed = JSON.stringify(current) !== JSON.stringify(this._initialSettingsSnapshot);
         msg.style.display = changed ? 'block' : 'none';
-        if (changed) {
-            this._positionMessage(modal, msg);
-        }
     },
 
     _updateAllPluginsButtonsVisibility(modal, globalEnabled) {
