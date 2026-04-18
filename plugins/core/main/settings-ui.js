@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.14',
+    _version: '6.15',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2024,6 +2024,190 @@ const plugin = {
         }
     },
 
+    _settingsModalDocBody(raw) {
+        if (!raw || typeof raw !== 'string') return '';
+        const firstNewline = raw.indexOf('\n');
+        return firstNewline >= 0 ? raw.slice(firstNewline + 1).trim() : raw.trim();
+    },
+
+    _isMdTableRowLine(line) {
+        return /^\s*\|.+\|/.test(line);
+    },
+
+    _parseMdTableCells(line) {
+        const a = line.split('|').map(c => c.trim());
+        let start = 0;
+        let end = a.length;
+        while (start < end && a[start] === '') start++;
+        while (end > start && a[end - 1] === '') end--;
+        return a.slice(start, end);
+    },
+
+    _isMdTableSeparatorCells(cells) {
+        return cells.length > 0 && cells.every(c => /^[\s\-:]+$/.test(c));
+    },
+
+    _findEnvCodenameTableRange(lines) {
+        const headingRe = /^####\s+Environment Codenames\s*$/i;
+        let i = 0;
+        while (i < lines.length && !headingRe.test(lines[i].trim())) i++;
+        if (i >= lines.length) return null;
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() === '') j++;
+        if (j >= lines.length || !this._isMdTableRowLine(lines[j])) return null;
+        const tableStart = j;
+        let k = tableStart;
+        while (k < lines.length && this._isMdTableRowLine(lines[k])) k++;
+        return { tableStart, tableEnd: k };
+    },
+
+    _extractInformationCodenameRows(body) {
+        if (!body || typeof body !== 'string') return { rows: [] };
+        const lines = body.split(/\r?\n/);
+        const range = this._findEnvCodenameTableRange(lines);
+        if (!range) return { rows: [] };
+        const tableLines = lines.slice(range.tableStart, range.tableEnd);
+        const rows = [];
+        for (let r = 0; r < tableLines.length; r++) {
+            const cells = this._parseMdTableCells(tableLines[r]);
+            if (r === 0) continue;
+            if (r === 1 && this._isMdTableSeparatorCells(cells)) continue;
+            if (cells.length >= 2) {
+                rows.push({ codename: cells[0], realApp: cells[1] });
+            }
+        }
+        return { rows };
+    },
+
+    _prepareInformationTabMarkdown(body) {
+        const lines = body.split(/\r?\n/);
+        const range = this._findEnvCodenameTableRange(lines);
+        if (!range) return { markdown: body, rows: [] };
+        const { rows } = this._extractInformationCodenameRows(body);
+        const newLines = [
+            ...lines.slice(0, range.tableStart),
+            ':::wf-env-codenames:::',
+            ...lines.slice(range.tableEnd)
+        ];
+        return { markdown: newLines.join('\n'), rows };
+    },
+
+    _escapeHtmlCell(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    },
+
+    _mountEnvCodenamesWidget(pane) {
+        const root = pane.querySelector('#wf-env-codenames-root');
+        if (!root) {
+            Logger.debug('settings-ui: env codenames mount node missing');
+            return;
+        }
+        if (root.dataset.wfEnvCodenamesMounted === '1') return;
+
+        const raw = Context.settingsModalDocs && Context.settingsModalDocs['information-tab.md']
+            ? Context.settingsModalDocs['information-tab.md'].raw
+            : null;
+        if (!raw || typeof raw !== 'string') {
+            Logger.debug('settings-ui: information-tab raw missing for codenames widget');
+            return;
+        }
+        const body = this._settingsModalDocBody(raw);
+        const { rows } = this._extractInformationCodenameRows(body);
+        if (rows.length === 0) {
+            Logger.debug('settings-ui: no env codename rows parsed for widget');
+            return;
+        }
+
+        root.dataset.wfEnvCodenamesMounted = '1';
+        const tableCellStyle = 'padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid var(--border, #e5e5e5);';
+        const tableStyle = 'border-collapse: collapse; width: 100%; margin: 8px 0 0 0; font-size: 13px;';
+        const thBtnStyle = 'cursor: pointer; user-select: none; text-align: left; width: 100%; font: inherit; color: inherit; background: transparent; border: none; padding: 0;';
+        const esc = (t) => this._escapeHtmlCell(t);
+
+        root.innerHTML = `
+            <div style="margin: 8px 0 12px 0;">
+                <label for="wf-env-codenames-search" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--foreground, #333);">Search codenames or apps</label>
+                <input type="search" id="wf-env-codenames-search" autocomplete="off" placeholder="Type to filter…" style="width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; margin-bottom: 10px; background: var(--card, #fafafa); color: var(--foreground, #333);" />
+                <table style="${tableStyle}" aria-label="Environment codenames">
+                    <thead>
+                        <tr>
+                            <th scope="col" style="${tableCellStyle} font-weight: 600;">
+                                <button type="button" data-wf-col="0" style="${thBtnStyle}">Environment codename <span data-wf-sort-ind="0" aria-hidden="true"></span></button>
+                            </th>
+                            <th scope="col" style="${tableCellStyle} font-weight: 600;">
+                                <button type="button" data-wf-col="1" style="${thBtnStyle}">Real app name <span data-wf-sort-ind="1" aria-hidden="true"></span></button>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="wf-env-codenames-tbody"></tbody>
+                </table>
+            </div>
+        `;
+
+        const searchInput = root.querySelector('#wf-env-codenames-search');
+        const tbody = root.querySelector('#wf-env-codenames-tbody');
+        const sortIndicators = [root.querySelector('[data-wf-sort-ind="0"]'), root.querySelector('[data-wf-sort-ind="1"]')];
+        const headers = root.querySelectorAll('button[data-wf-col]');
+
+        let sortCol = 0;
+        let sortDir = 'asc';
+
+        const rowCmp = (a, b) => {
+            const va = sortCol === 0 ? a.codename : a.realApp;
+            const vb = sortCol === 0 ? b.codename : b.realApp;
+            const r = va.localeCompare(vb, undefined, { sensitivity: 'base' });
+            return sortDir === 'asc' ? r : -r;
+        };
+
+        const updateSortIndicators = () => {
+            sortIndicators.forEach((el, i) => {
+                if (!el) return;
+                if (i === sortCol) {
+                    el.textContent = sortDir === 'asc' ? '▲' : '▼';
+                } else {
+                    el.textContent = '';
+                }
+            });
+        };
+
+        const refresh = () => {
+            const q = (searchInput && searchInput.value) ? searchInput.value.trim().toLowerCase() : '';
+            let list = q
+                ? rows.filter((row) =>
+                    row.codename.toLowerCase().includes(q) || row.realApp.toLowerCase().includes(q))
+                : rows.slice();
+            list = list.sort(rowCmp);
+            tbody.innerHTML = list.map((row) => `
+                <tr>
+                    <td style="${tableCellStyle}">${esc(row.codename)}</td>
+                    <td style="${tableCellStyle}">${esc(row.realApp)}</td>
+                </tr>
+            `).join('');
+            updateSortIndicators();
+        };
+
+        searchInput.addEventListener('input', refresh);
+        headers.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const col = parseInt(btn.getAttribute('data-wf-col'), 10);
+                if (col === sortCol) {
+                    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortCol = col;
+                    sortDir = 'asc';
+                }
+                refresh();
+            });
+        });
+
+        refresh();
+        Logger.log('settings-ui: mounted interactive environment codenames table');
+    },
+
     _markdownToHtml(md) {
         if (!md || typeof md !== 'string') return '';
         const lines = md.trim().split(/\r?\n/);
@@ -2064,6 +2248,10 @@ const plugin = {
             }
             if (trimmed === '') {
                 if (!inTable) out.push('<br>');
+                continue;
+            }
+            if (trimmed === ':::wf-env-codenames:::') {
+                out.push('<div id="wf-env-codenames-root"></div>');
                 continue;
             }
             if (isTableRow(line)) {
@@ -2112,6 +2300,9 @@ const plugin = {
         if (this._docPaneCache[cacheKey]) {
             pane.innerHTML = this._docPaneCache[cacheKey];
             pane.dataset.wfDocLoaded = 'true';
+            if (tabId === 'information') {
+                this._mountEnvCodenamesWidget(pane);
+            }
             return;
         }
         if (!Context.settingsModalDocs || !Context.settingsModalDocs[docFilename]) {
@@ -2120,14 +2311,21 @@ const plugin = {
             return;
         }
         const raw = Context.settingsModalDocs[docFilename].raw;
-        const firstNewline = raw.indexOf('\n');
-        const body = firstNewline >= 0 ? raw.slice(firstNewline + 1).trim() : raw.trim();
-        const html = this._markdownToHtml(body);
+        const body = this._settingsModalDocBody(raw);
+        let mdBody = body;
+        if (docFilename === 'information-tab.md') {
+            const prep = this._prepareInformationTabMarkdown(body);
+            mdBody = prep.markdown;
+        }
+        const html = this._markdownToHtml(mdBody);
         const docStyles = `<style>.wf-settings-doc-content h2{font-size:16px !important}.wf-settings-doc-content h3{font-size:15px !important;margin-top:12px !important}.wf-settings-doc-content h4{font-size:14px !important;margin-top:12px !important}.wf-settings-doc-content h5{font-size:13px !important;margin-top:12px !important}.wf-settings-doc-content ul{list-style-type:disc !important;padding-left:24px !important}.wf-settings-doc-content li{display:list-item !important}.wf-settings-doc-content strong{color:var(--foreground,#333) !important}</style>`;
         const wrapped = `${docStyles}<div class="wf-settings-doc-content" style="font-size: 13px; color: var(--muted-foreground, #666); padding: 4px 0;">${html}</div>`;
         this._docPaneCache[cacheKey] = wrapped;
         pane.innerHTML = wrapped;
         pane.dataset.wfDocLoaded = 'true';
+        if (docFilename === 'information-tab.md') {
+            this._mountEnvCodenamesWidget(pane);
+        }
     },
 
     _createOutdatedPluginsHTML(outdatedPlugins) {

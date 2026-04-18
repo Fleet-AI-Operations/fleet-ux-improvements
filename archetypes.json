@@ -2,7 +2,7 @@
   "version": "7.1.7",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.54",
+  "archetypesVersion": "7.55",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.14",
-      "hash": "sha256-149eef8048415523ad3d051fc2802d6cee53532e8f3ed120f27588866f01b8fb",
+      "version": "6.15",
+      "hash": "sha256-778af8a5064af1cc32cb6d7a44c8873fba6de781c5ad013aba89e33bda266fd2",
       "log": false
     },
     {
@@ -33,7 +33,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.14"
+      "version": "1.15"
     },
     {
       "name": "features-tab.md",
