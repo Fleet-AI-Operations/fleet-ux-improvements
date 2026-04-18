@@ -1,8 +1,8 @@
 {
-  "version": "7.1.7",
+  "version": "7.2.0",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.56",
+  "archetypesVersion": "7.58",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -573,6 +573,21 @@
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
       "plugins": []
+    },
+    {
+      "id": "no-vnc",
+      "name": "noVNC Instance",
+      "description": "noVNC remote desktop instances on fleet environment subdomains",
+      "urlPattern": "_novnc",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "clipboard-bridge.js",
+          "version": "1.0",
+          "hash": "sha256-3259d9c0519adc7c098d78a10c8469daffaf78b7a630d698b3684ca53cba3478",
+          "log": false
+        }
+      ]
     }
   ],
   "devArchetypes": [
