@@ -1,6 +1,6 @@
-1.15
+1.16
 ## Information
--> Pro-tip: Use the search box under Environment Codenames to filter the table. If you still cannot find a name, please use the `Feedback` tab to notify me!
+If you still cannot find a specific codename, please use the `Feedback` tab to notify me!
 #### Environment Codenames
 | Environment Codename      | Real App Name          |
 |---------------------------|------------------------|
