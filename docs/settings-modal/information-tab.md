@@ -1,7 +1,7 @@
-1.13
+1.14
 ## Information
 -> Pro-tip: Use `Ctrl/CMD + F` to search for names in this table. If you can't find one, please use the `Feedback` tab to notify me!
-#### Environment Codennames
+#### Environment Codenames
 | Environment Codename      | Real App Name          |
 |---------------------------|------------------------|
 | Agora                     | Reddit                 |
@@ -26,6 +26,7 @@
 | LedgerGov                 | DMV                    |
 | Lumen                     | Datadog                |
 | Medora                    | Zocdoc                 |
+| Meridian                  | Amex                   |
 | Nest                      | Zillow                 |
 | Orbit                     | PandaDoc               |
 | Portal                    | Ticketmaster           |
@@ -37,10 +38,6 @@
 | Torch                     | PagerDuty              |
 | Vault                     | Confluence             |
 | Ward                      | Synk                   |
-| Docs                      | OpenOffice Writer      |
-| Sheets                    | OpenOffice Calc        |
-| Slides                    | OpenOffice Impress     |
-| Diagrams                  | OpenOffice Draw        |
 
 #### Guidelines
 - [Tool Use (Kinesis) Guidelines](https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d)
