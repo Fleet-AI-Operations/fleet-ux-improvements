@@ -2,7 +2,7 @@
   "version": "7.1.6",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.50",
+  "archetypesVersion": "7.51",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.14",
-      "hash": "sha256-187c8f051666e131ebafc4e956f895f7a0b7bc4559c9fccdafa950d95f6d1774",
+      "version": "6.15",
+      "hash": "sha256-c4e212849b7a9be5564da740b40587afecfbe0c2a18e0cf6c5753f2fa008368a",
       "log": false
     },
     {
@@ -430,7 +430,7 @@
         {
           "name": "auto-start-recording.js",
           "version": "1.1",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
+          "hash": "sha256-7cd9a01d7d57716717bb39d650cf3cbd53825e440dd127e9c45f3f2933886008",
           "log": false
         },
         {

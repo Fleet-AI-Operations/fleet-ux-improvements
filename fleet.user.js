@@ -2239,6 +2239,31 @@
         isEnabled(id) {
             return Storage.getPluginEnabled(id);
         },
+
+        /**
+         * Per-document session: archetype plugins run only when both storage says enabled
+         * and runtime was active for this load. Enabling a plugin in Settings updates
+         * storage only; runtime turns on after page refresh (or first-seen plugin ids on SPA nav).
+         */
+        _archetypeRuntimeActive: {},
+
+        initArchetypeRuntimeEnableState() {
+            this.getArchetypePlugins().forEach((p) => {
+                if (this._archetypeRuntimeActive[p.id] === undefined) {
+                    this._archetypeRuntimeActive[p.id] = Storage.getPluginEnabled(p.id);
+                }
+            });
+        },
+
+        setArchetypeRuntimeActive(id, active) {
+            this._archetypeRuntimeActive[id] = active;
+        },
+
+        /** Whether an archetype plugin should execute (early/init/mutation), not just appear enabled in Settings. */
+        isArchetypePluginActiveForRun(id) {
+            if (!this.isEnabled(id)) return false;
+            return this._archetypeRuntimeActive[id] === true;
+        },
         
         setEnabled(id, enabled) {
             Storage.setPluginEnabled(id, enabled);
@@ -2281,7 +2306,7 @@
         
         runEarlyPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'early' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'early' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
@@ -2294,7 +2319,7 @@
         
         runInitPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'init' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'init' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
@@ -2307,7 +2332,7 @@
         
         runMutationPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'mutation' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'mutation' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.onMutation) plugin.onMutation(plugin.state, Context);
@@ -2409,6 +2434,8 @@
                 }
             }
             
+            PluginManager.initArchetypeRuntimeEnableState();
+
             // Run early plugins
             PluginManager.runEarlyPlugins();
             

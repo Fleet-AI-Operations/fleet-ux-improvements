@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.14',
+    _version: '6.15',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -922,7 +922,7 @@ const plugin = {
                 if (!isEnabled) {
                     this._storeGlobalSnapshot(plugins);
                     plugins.forEach(plugin => {
-                        PluginManager.setEnabled(plugin.id, false);
+                        this._applyArchetypePluginEnabledFromUi(plugin.id, false);
                     });
                 } else {
                     this._restoreGlobalSnapshot(plugins);
@@ -967,7 +967,7 @@ const plugin = {
         if (allOffBtn) {
             allOffBtn.addEventListener('click', () => {
                 plugins.forEach(plugin => {
-                    PluginManager.setEnabled(plugin.id, false);
+                    this._applyArchetypePluginEnabledFromUi(plugin.id, false);
                 });
                 this._renderPluginList(modal, plugins);
                 this._attachPluginToggleListeners(modal, plugins);
@@ -998,7 +998,7 @@ const plugin = {
                     if (!isEnabled) {
                         this._storeDevGlobalSnapshot(devPlugins);
                         devPlugins.forEach(plugin => {
-                            PluginManager.setEnabled(plugin.id, false);
+                            this._applyArchetypePluginEnabledFromUi(plugin.id, false);
                         });
                     } else {
                         this._restoreDevGlobalSnapshot(devPlugins);
@@ -1043,7 +1043,7 @@ const plugin = {
             if (allDevOffBtn) {
                 allDevOffBtn.addEventListener('click', () => {
                     devPlugins.forEach(plugin => {
-                        PluginManager.setEnabled(plugin.id, false);
+                        this._applyArchetypePluginEnabledFromUi(plugin.id, false);
                     });
                     this._renderDevPluginList(modal, devPlugins);
                     this._attachPluginToggleListeners(modal, devPlugins, 'dev');
@@ -1317,6 +1317,14 @@ const plugin = {
         }
     },
 
+    /** Updates stored plugin enablement; turning OFF also stops runtime until refresh. Turning ON is storage-only (requires refresh to run). */
+    _applyArchetypePluginEnabledFromUi(pluginId, enabled) {
+        PluginManager.setEnabled(pluginId, enabled);
+        if (!enabled) {
+            PluginManager.setArchetypeRuntimeActive(pluginId, false);
+        }
+    },
+
     _renderPluginList(modal, plugins) {
         const container = Context.dom.query('#wf-plugin-list', {
             root: modal,
@@ -1366,7 +1374,7 @@ const plugin = {
             if (checkbox) {
                 checkbox.addEventListener('change', (e) => {
                     this._handleToggleChange(e);
-                    PluginManager.setEnabled(plugin.id, e.target.checked);
+                    this._applyArchetypePluginEnabledFromUi(plugin.id, e.target.checked);
                     if (listType === 'dev') {
                         this._renderDevPluginList(modal, plugins);
                         this._attachPluginToggleListeners(modal, plugins, 'dev');
