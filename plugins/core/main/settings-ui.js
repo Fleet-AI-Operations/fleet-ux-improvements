@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.12',
+    _version: '6.13',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -31,6 +31,9 @@ const plugin = {
         const style = document.createElement('style');
         style.id = 'wf-settings-dialog-styles';
         style.textContent = `
+            #wf-settings-modal {
+                margin: 0;
+            }
             #wf-settings-modal::backdrop {
                 background: rgba(0, 0, 0, 0.45);
             }
@@ -220,7 +223,6 @@ const plugin = {
             }
             this._modalOpen = true;
             this._startForeignModalObserver(modal);
-            this._lockModalTop(modal);
         }
     },
 
@@ -240,7 +242,6 @@ const plugin = {
                 return;
             }
             this._startForeignModalObserver(recreated);
-            this._lockModalTop(recreated);
         }
     },
     
@@ -317,14 +318,6 @@ const plugin = {
             attributeFilter: ['open', 'aria-modal', 'hidden', 'style', 'class']
         });
         check();
-    },
-
-    _lockModalTop(modal) {
-        requestAnimationFrame(() => {
-            const rect = modal.getBoundingClientRect();
-            modal.style.top = `${rect.top}px`;
-            modal.style.transform = 'translateX(-50%)';
-        });
     },
 
     _startPresenceGuard() {
