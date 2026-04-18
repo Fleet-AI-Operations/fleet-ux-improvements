@@ -6,22 +6,36 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.11',
+    _version: '6.12',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
     // Internal state (not reset on navigation)
     _buttonCreated: false,
     _modalOpen: false,
+    _foreignModalObserver: null,
     _presenceInterval: null,
     _pulseInterval: null,
     _docPaneCache: {},
     
     init(state, context) {
+        this._ensureDialogBackdropStyles();
         this._ensureSettingsButton();
         this._ensureModalPresence();
         this._startPresenceGuard();
         this._updatePulseAnimation();
+    },
+
+    _ensureDialogBackdropStyles() {
+        if (document.getElementById('wf-settings-dialog-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-settings-dialog-styles';
+        style.textContent = `
+            #wf-settings-modal::backdrop {
+                background: rgba(0, 0, 0, 0.45);
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
     },
     
     // No destroy method - this plugin persists
@@ -194,8 +208,19 @@ const plugin = {
             // Always recreate modal content when opening to get fresh plugin list
             if (modal) modal.remove();
             modal = this._createModal();
-            modal.style.display = 'block';
+            try {
+                if (typeof modal.showModal === 'function') {
+                    modal.showModal();
+                }
+            } catch (err) {
+                Logger.error('Settings dialog showModal failed', err);
+                modal.remove();
+                this._modalOpen = false;
+                return;
+            }
             this._modalOpen = true;
+            this._startForeignModalObserver(modal);
+            this._lockModalTop(modal);
         }
     },
 
@@ -204,20 +229,94 @@ const plugin = {
         const modal = document.getElementById('wf-settings-modal');
         if (!modal) {
             const recreated = this._createModal();
-            recreated.style.display = 'block';
+            try {
+                if (typeof recreated.showModal === 'function') {
+                    recreated.showModal();
+                }
+            } catch (err) {
+                Logger.error('Settings dialog showModal failed (presence guard)', err);
+                recreated.remove();
+                this._modalOpen = false;
+                return;
+            }
+            this._startForeignModalObserver(recreated);
+            this._lockModalTop(recreated);
         }
     },
     
     _closeModal() {
+        this._stopForeignModalObserver();
         const modal = document.getElementById('wf-settings-modal');
-        if (modal) {
+        if (modal && typeof modal.close === 'function') {
+            if (modal.open) {
+                modal.close();
+            } else {
+                this._modalOpen = false;
+                const msg = document.getElementById('wf-settings-message');
+                if (msg) msg.style.display = 'none';
+            }
+        } else if (modal) {
             modal.style.display = 'none';
+            this._modalOpen = false;
+            const msg = document.getElementById('wf-settings-message');
+            if (msg) msg.style.display = 'none';
+        } else {
+            this._modalOpen = false;
+            const msg = document.getElementById('wf-settings-message');
+            if (msg) msg.style.display = 'none';
         }
-        const msg = document.getElementById('wf-settings-message');
-        if (msg) {
-            msg.style.display = 'none';
+    },
+
+    _stopForeignModalObserver() {
+        if (this._foreignModalObserver) {
+            this._foreignModalObserver.disconnect();
+            this._foreignModalObserver = null;
         }
-        this._modalOpen = false;
+    },
+
+    _startForeignModalObserver(ourDialog) {
+        this._stopForeignModalObserver();
+        if (!ourDialog || !(ourDialog instanceof HTMLDialogElement)) return;
+
+        const isForeignAriaModalVisible = (el) => {
+            if (!(el instanceof Element) || ourDialog.contains(el)) return false;
+            const st = getComputedStyle(el);
+            if (st.display === 'none' || st.visibility === 'hidden') return false;
+            const r = el.getBoundingClientRect();
+            if (r.width < 4 || r.height < 4) return false;
+            return el.getAttribute('aria-modal') === 'true';
+        };
+
+        const check = () => {
+            if (!this._modalOpen || !ourDialog.isConnected || !ourDialog.open) return;
+
+            const openDialogs = document.querySelectorAll('dialog[open]');
+            for (const d of openDialogs) {
+                if (d !== ourDialog) {
+                    Logger.info('Closing Fleet settings because another native dialog opened (host page modal).');
+                    this._closeModal();
+                    return;
+                }
+            }
+
+            const ariaModals = document.querySelectorAll('[aria-modal="true"]');
+            for (const el of ariaModals) {
+                if (isForeignAriaModalVisible(el)) {
+                    Logger.info('Closing Fleet settings because a host aria-modal dialog appeared.');
+                    this._closeModal();
+                    return;
+                }
+            }
+        };
+
+        this._foreignModalObserver = new MutationObserver(check);
+        this._foreignModalObserver.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ['open', 'aria-modal', 'hidden', 'style', 'class']
+        });
+        check();
     },
 
     _lockModalTop(modal) {
@@ -248,8 +347,9 @@ const plugin = {
     },
     
     _createModal() {
-        const modal = document.createElement('div');
+        const modal = document.createElement('dialog');
         modal.id = 'wf-settings-modal';
+        modal.setAttribute('aria-label', 'Fleet Enhancer Extension settings');
         modal.style.cssText = `
             position: fixed;
             top: 50%;
@@ -260,9 +360,9 @@ const plugin = {
             border-radius: 12px;
             padding: 24px;
             width: 520px;
+            max-width: min(520px, calc(100vw - 32px));
             max-height: 80vh;
             overflow-y: auto;
-            z-index: 10000;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         `;
         
@@ -611,13 +711,21 @@ const plugin = {
         `;
         
         document.body.appendChild(modal);
+
+        const self = this;
+        modal.addEventListener('close', () => {
+            self._stopForeignModalObserver();
+            self._modalOpen = false;
+            const msg = document.getElementById('wf-settings-message');
+            if (msg) msg.style.display = 'none';
+        });
+
         this._ensureMessageElement(modal);
         
         // Attach event listeners
         this._attachModalListeners(modal, orderedPlugins, orderedDevPlugins);
         this._updateSettingsMessage(modal, archetypePlugins);
         
-        this._lockModalTop(modal);
         return modal;
     },
 
@@ -772,6 +880,19 @@ const plugin = {
             });
         }
 
+        // Click outside the panel (on the dialog backdrop) closes the settings dialog
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                self._closeModal();
+                return;
+            }
+            const rect = modal.getBoundingClientRect();
+            const { clientX: x, clientY: y } = e;
+            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+                self._closeModal();
+            }
+        });
+
         // Update banner: show "Refresh Page with New Version" after newest-version link is clicked
         const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
         const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
@@ -795,15 +916,6 @@ const plugin = {
         this._attachTabListeners(modal);
         this._switchSettingsTab(modal, 'information');
 
-        // Close on Escape key
-        const handleEscape = (e) => {
-            if (e.key === 'Escape' && self._modalOpen) {
-                self._closeModal();
-                document.removeEventListener('keydown', handleEscape);
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-        
         // Global toggle (regular plugins only)
         const globalToggle = Context.dom.query('#wf-global-enabled', {
             root: modal,
