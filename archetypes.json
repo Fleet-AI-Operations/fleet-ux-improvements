@@ -2,7 +2,7 @@
   "version": "7.1.6",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.49",
+  "archetypesVersion": "7.50",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -429,7 +429,7 @@
         },
         {
           "name": "auto-start-recording.js",
-          "version": "1.0",
+          "version": "1.1",
           "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
           "log": false
         },
