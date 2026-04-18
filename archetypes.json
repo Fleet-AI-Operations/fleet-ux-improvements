@@ -2,7 +2,7 @@
   "version": "7.1.7",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.53",
+  "archetypesVersion": "7.54",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -831,32 +831,7 @@
       "description": "Page for  reviewing and approving tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.2",
-          "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
-        {
-          "name": "copy-prompt.js",
-          "version": "1.6",
-          "hash": "sha256-6e4eb9e99a8d67d40f5811b413e8071774ca11a9f76652624cc4d2a6298fec49",
-          "log": false
-        },
-        {
-          "name": "hide-testing-environment-banner.js",
-          "version": "1.1",
-          "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "disputes",
