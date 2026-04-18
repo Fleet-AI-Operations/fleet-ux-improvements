@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.10',
+    _version: '6.11',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -497,14 +497,11 @@ const plugin = {
                         <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
                             This will show a confirmation dialog before any refresh that is initiated by the Fleet website. If you are experiencing nuisance refreshes, this should allow you to prevent them from affecting you.
                         </div>
-                        <details class="wf-refresh-additional-notes" style="margin-top: 8px;">
+                        <details class="wf-refresh-additional-notes" style="margin-top: 8px; margin-left: 12px;">
                             <summary style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; line-height: 1.45; list-style-position: outside;">Additional notes</summary>
                             <div style="margin-top: 8px; padding-left: 2px; line-height: 1.45;">
                                 <div style="font-size: 12px; color: #b45309;">
                                     When this is on, the same confirmation appears for manual reloads too (browser refresh button or <code style="font-size: 11px;">Ctrl/Cmd + R</code>), not only when Fleet initiates a reload.
-                                </div>
-                                <div style="font-size: 12px; color: #b45309; margin-top: 8px;">
-                                    If you cancel a reload the site requested—such as after an update—you may keep using an older version of the page; further interactions are not guaranteed to work reliably.
                                 </div>
                             </div>
                         </details>
@@ -517,7 +514,7 @@ const plugin = {
                         <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
                             This will show a confirmation dialog before any page refresh, including refreshes initiated by this extension.
                         </div>
-                        <details class="wf-refresh-additional-notes" style="margin-top: 8px;">
+                        <details class="wf-refresh-additional-notes" style="margin-top: 8px; margin-left: 12px;">
                             <summary style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; line-height: 1.45; list-style-position: outside;">Additional notes</summary>
                             <div style="font-size: 12px; color: #b45309; margin-top: 8px; padding-left: 2px; line-height: 1.45;">
                                 This extension reloads the page when you navigate to a URL that loads plugins, so only turn this on while debugging. If you need it to stop unwanted reloads, open the &quot;Feedback&quot; tab and report that right away.
