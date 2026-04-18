@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [fix/various-issues] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.5
+// @version      7.1.6
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.5';
+    const VERSION = '7.1.6';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -55,8 +55,9 @@
     /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
     const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? false : true;
     const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
-    /** When unset in storage: main-like builds default page refresh confirmation on; dev builds default off. */
-    const DEFAULT_PAGE_REFRESH_CONFIRMATION = !DEV_SCRIPTS_ENABLED;
+    /** When unset in storage: both off by default (site-native refresh UX; GitHub #78). */
+    const DEFAULT_PAGE_REFRESH_CONFIRMATION = false;
+    const DEFAULT_EXTENSION_REFRESH_CONFIRMATION = false;
 
     // ============= SHARED CONTEXT =============
     const Context = {
@@ -76,6 +77,8 @@
         isDevBranch: DEV_SCRIPTS_ENABLED,
         /** Default for `page-refresh-confirmation-enabled` when the key is unset (GM storage). */
         defaultPageRefreshConfirmation: DEFAULT_PAGE_REFRESH_CONFIRMATION,
+        /** Default for `extension-refresh-confirmation-enabled` when the key is unset (GM storage). */
+        defaultExtensionRefreshConfirmation: DEFAULT_EXTENSION_REFRESH_CONFIRMATION,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
         githubRepo: GITHUB_CONFIG.repo,
@@ -122,7 +125,9 @@
 
         isExtensionRefreshConfirmationEnabled() {
             const storage = this._getStorage();
-            return storage ? storage.get('extension-refresh-confirmation-enabled', false) : false;
+            return storage
+                ? storage.get('extension-refresh-confirmation-enabled', DEFAULT_EXTENSION_REFRESH_CONFIRMATION)
+                : false;
         },
 
         markPendingReload(source = 'page', reason = '') {

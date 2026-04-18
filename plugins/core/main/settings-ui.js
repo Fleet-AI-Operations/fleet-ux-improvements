@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.13',
+    _version: '6.14',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1778,7 +1778,7 @@ const plugin = {
     },
 
     _getExtensionRefreshConfirmationEnabled() {
-        return Storage.get('extension-refresh-confirmation-enabled', false);
+        return Storage.get('extension-refresh-confirmation-enabled', Context.defaultExtensionRefreshConfirmation);
     },
 
     _setExtensionRefreshConfirmationEnabled(enabled) {
