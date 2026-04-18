@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.1.5
+// @version      7.1.7
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -15,8 +15,8 @@
 // @connect      raw.githubusercontent.com
 // @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.1.5';
+    const VERSION = '7.1.7';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -55,8 +55,9 @@
     /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
     const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? false : true;
     const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
-    /** When unset in storage: main-like builds default page refresh confirmation on; dev builds default off. */
-    const DEFAULT_PAGE_REFRESH_CONFIRMATION = !DEV_SCRIPTS_ENABLED;
+    /** When unset in storage: both off by default (site-native refresh UX; GitHub #78). */
+    const DEFAULT_PAGE_REFRESH_CONFIRMATION = false;
+    const DEFAULT_EXTENSION_REFRESH_CONFIRMATION = false;
 
     // ============= SHARED CONTEXT =============
     const Context = {
@@ -76,6 +77,8 @@
         isDevBranch: DEV_SCRIPTS_ENABLED,
         /** Default for `page-refresh-confirmation-enabled` when the key is unset (GM storage). */
         defaultPageRefreshConfirmation: DEFAULT_PAGE_REFRESH_CONFIRMATION,
+        /** Default for `extension-refresh-confirmation-enabled` when the key is unset (GM storage). */
+        defaultExtensionRefreshConfirmation: DEFAULT_EXTENSION_REFRESH_CONFIRMATION,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
         githubRepo: GITHUB_CONFIG.repo,
@@ -122,7 +125,9 @@
 
         isExtensionRefreshConfirmationEnabled() {
             const storage = this._getStorage();
-            return storage ? storage.get('extension-refresh-confirmation-enabled', false) : false;
+            return storage
+                ? storage.get('extension-refresh-confirmation-enabled', DEFAULT_EXTENSION_REFRESH_CONFIRMATION)
+                : false;
         },
 
         markPendingReload(source = 'page', reason = '') {
@@ -2234,6 +2239,31 @@
         isEnabled(id) {
             return Storage.getPluginEnabled(id);
         },
+
+        /**
+         * Per-document session: archetype plugins run only when both storage says enabled
+         * and runtime was active for this load. Enabling a plugin in Settings updates
+         * storage only; runtime turns on after page refresh (or first-seen plugin ids on SPA nav).
+         */
+        _archetypeRuntimeActive: {},
+
+        initArchetypeRuntimeEnableState() {
+            this.getArchetypePlugins().forEach((p) => {
+                if (this._archetypeRuntimeActive[p.id] === undefined) {
+                    this._archetypeRuntimeActive[p.id] = Storage.getPluginEnabled(p.id);
+                }
+            });
+        },
+
+        setArchetypeRuntimeActive(id, active) {
+            this._archetypeRuntimeActive[id] = active;
+        },
+
+        /** Whether an archetype plugin should execute (early/init/mutation), not just appear enabled in Settings. */
+        isArchetypePluginActiveForRun(id) {
+            if (!this.isEnabled(id)) return false;
+            return this._archetypeRuntimeActive[id] === true;
+        },
         
         setEnabled(id, enabled) {
             Storage.setPluginEnabled(id, enabled);
@@ -2276,7 +2306,7 @@
         
         runEarlyPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'early' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'early' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
@@ -2289,7 +2319,7 @@
         
         runInitPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'init' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'init' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
@@ -2302,7 +2332,7 @@
         
         runMutationPlugins() {
             this.getArchetypePlugins()
-                .filter(p => p.phase === 'mutation' && this.isEnabled(p.id))
+                .filter(p => p.phase === 'mutation' && this.isArchetypePluginActiveForRun(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.onMutation) plugin.onMutation(plugin.state, Context);
@@ -2404,6 +2434,8 @@
                 }
             }
             
+            PluginManager.initArchetypeRuntimeEnableState();
+
             // Run early plugins
             PluginManager.runEarlyPlugins();
             

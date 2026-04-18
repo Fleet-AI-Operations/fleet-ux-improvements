@@ -1,8 +1,8 @@
 {
-  "version": "7.1.5",
+  "version": "7.1.7",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.42",
+  "archetypesVersion": "7.56",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -11,8 +11,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.9",
-      "hash": "sha256-1f643b7aa86e34c018362ed4802fcba1f7dd1c97b8dedbcdd5a5d23259ec769b",
+      "version": "6.15",
+      "hash": "sha256-778af8a5064af1cc32cb6d7a44c8873fba6de781c5ad013aba89e33bda266fd2",
       "log": false
     },
     {
@@ -33,7 +33,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.13"
+      "version": "1.16"
     },
     {
       "name": "features-tab.md",
@@ -411,18 +411,6 @@
           "version": "1.0",
           "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
           "log": false
-        },
-        {
-          "name": "copy-session-seed-data.js",
-          "version": "1.0",
-          "hash": "sha256-14164ee73e8936aac5b74e27a069a50a5b41e47030fcd5a76c975d1b01ea0785",
-          "log": false
-        },
-        {
-          "name": "create-instance-from-trace.js",
-          "version": "1.1",
-          "hash": "sha256-41e9fb6bc8e8f1eb8f8926f0be021ec08851045762cde213e0d9e25e7d6677c9",
-          "log": false
         }
       ]
     },
@@ -441,8 +429,8 @@
         },
         {
           "name": "auto-start-recording.js",
-          "version": "1.0",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
+          "version": "1.1",
+          "hash": "sha256-7cd9a01d7d57716717bb39d650cf3cbd53825e440dd127e9c45f3f2933886008",
           "log": false
         },
         {
@@ -843,32 +831,7 @@
       "description": "Page for  reviewing and approving tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.2",
-          "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
-        {
-          "name": "copy-prompt.js",
-          "version": "1.6",
-          "hash": "sha256-6e4eb9e99a8d67d40f5811b413e8071774ca11a9f76652624cc4d2a6298fec49",
-          "log": false
-        },
-        {
-          "name": "hide-testing-environment-banner.js",
-          "version": "1.1",
-          "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "disputes",
