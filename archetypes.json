@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.59",
+  "archetypesVersion": "7.60",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -583,8 +583,8 @@
       "plugins": [
         {
           "name": "clipboard-bridge.js",
-          "version": "1.0",
-          "hash": "sha256-3259d9c0519adc7c098d78a10c8469daffaf78b7a630d698b3684ca53cba3478",
+          "version": "1.1",
+          "hash": "sha256-330f7ba1459c96301f153928091e5e1e0026c7dc226626e21a83a4d5061a8bbe",
           "log": false
         }
       ]

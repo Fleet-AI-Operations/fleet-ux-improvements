@@ -283,6 +283,16 @@ async function _extractVmTextToOs() {
   }
 }
 
+var SHOW_FLOATING_BANNER_SUBOPTION_ID = "show-floating-banner";
+
+function _isFloatingBannerEnabled() {
+  return Storage.getSubOptionEnabled(
+    "clipboard-bridge",
+    SHOW_FLOATING_BANNER_SUBOPTION_ID,
+    true
+  );
+}
+
 function _initClipboardBridge() {
   // Remove any pre-existing instance (e.g. from a prior page load or bookmarklet run).
   var old = document.getElementById(ROOT_ID);
@@ -301,15 +311,23 @@ function _initClipboardBridge() {
   /** Serialize paste, overwrite, and extract so clipboard I/O does not interleave. */
   var clipQueue = Promise.resolve();
 
-  // ---- Floating panel ----
-  var root = document.createElement("div");
+  var showFloatingBanner = _isFloatingBannerEnabled();
+  var root = null;
+  var headerEl = null;
+  /** Drag handlers; stubs until panel is built so teardown can always remove listeners. */
+  var onMove = function () {};
+  var onUp = function () {};
+
+  // ---- Floating panel (optional; keyboard shortcuts always register below) ----
+  if (showFloatingBanner) {
+  root = document.createElement("div");
   root.id = ROOT_ID;
   root.style.cssText =
     "position:fixed;left:16px;top:120px;width:280px;z-index:" +
     Z +
     ";font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;";
 
-  var headerEl = document.createElement("div");
+  headerEl = document.createElement("div");
   headerEl.textContent = "Clipboard bridge";
   headerEl.style.cssText =
     "cursor:grab;padding:10px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);";
@@ -406,17 +424,17 @@ function _initClipboardBridge() {
   var drag = false;
   var ox = 0;
   var oy = 0;
-  function onMove(ev) {
+  onMove = function (ev) {
     if (!drag) { return; }
     root.style.left = Math.max(0, ev.clientX - ox) + "px";
     root.style.top  = Math.max(0, ev.clientY - oy) + "px";
-  }
-  function onUp() {
+  };
+  onUp = function () {
     drag = false;
     headerEl.style.cursor = "grab";
     document.removeEventListener("mousemove", onMove, true);
     document.removeEventListener("mouseup", onUp, true);
-  }
+  };
   headerEl.addEventListener("mousedown", function (ev) {
     if (ev.button !== 0) { return; }
     drag = true;
@@ -428,6 +446,8 @@ function _initClipboardBridge() {
     document.addEventListener("mouseup", onUp, true);
     ev.preventDefault();
   });
+
+  } /* end if (showFloatingBanner) */
 
   // ---- Keyboard shortcuts ----
   window._v = async function (e) {
@@ -476,18 +496,34 @@ function _initClipboardBridge() {
     }
   };
 
-  Logger.log("clipboard-bridge: floating panel and keyboard shortcuts active");
-  _toast("Clipboard bridge ready \u2014 drag the title bar. \u2318C/\u2318V, Ctrl+Shift+C/F.");
+  if (showFloatingBanner) {
+    Logger.log("clipboard-bridge: floating panel and keyboard shortcuts active");
+    _toast("Clipboard bridge ready \u2014 drag the title bar. \u2318C/\u2318V, Ctrl+Shift+C/F.");
+  } else {
+    Logger.log("clipboard-bridge: keyboard shortcuts active (floating banner hidden via settings)");
+    _toast(
+      "Clipboard bridge ready \u2014 \u2318C/\u2318V, Ctrl+Shift+C/F. Floating panel is hidden in settings."
+    );
+  }
 }
+
+const SHOW_FLOATING_BANNER_SUBOPTION = {
+  id: SHOW_FLOATING_BANNER_SUBOPTION_ID,
+  name: "Show floating banner",
+  description:
+    "When off, hides the draggable panel; ⌘C/⌘V and Ctrl+Shift+C/F still work.",
+  enabledByDefault: true,
+};
 
 const plugin = {
   id: "clipboard-bridge",
   name: "noVNC Clipboard Bridge",
   description:
     "Floating clipboard bridge panel with ⌘C/⌘V and Ctrl+Shift+C/F shortcuts for noVNC sessions",
-  _version: "1.0",
+  _version: "1.1",
   enabledByDefault: true,
   phase: "mutation",
+  subOptions: [SHOW_FLOATING_BANNER_SUBOPTION],
   initialState: { ready: false },
 
   onMutation(state) {
