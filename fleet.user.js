@@ -2,12 +2,12 @@
 // ==UserScript==
 // @name         [feat/add-rcp] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.2.0
+// @version      7.2.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
 // @match        https://fleetai.com/*
-// @match        https://*.env.fleet-prod-fow-us-east-1.fleetai.com/*
+// @include      /^https:\/\/[^/]+\.env\.[^/]+\.fleetai\.com/
 // @icon         https://www.fleetai.com/favicon.ico
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.2.0';
+    const VERSION = '7.2.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -42,7 +42,7 @@
 
     // noVNC instances run on a separate subdomain origin; return a synthetic path so
     // the archetype detection pipeline can still match them via urlPattern.
-    const NOVNC_HOST_PATTERN = /\.env\.fleet-prod-fow-us-east-1\.fleetai\.com$/;
+    const NOVNC_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
     const NOVNC_SYNTHETIC_PATH = '_novnc';
     
     // GitHub repository configuration
