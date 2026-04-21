@@ -328,9 +328,26 @@ function _initClipboardBridge() {
     ";font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;";
 
   headerEl = document.createElement("div");
-  headerEl.textContent = "Clipboard bridge";
   headerEl.style.cssText =
-    "cursor:grab;padding:10px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);";
+    "display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);";
+  var headerTitle = document.createElement("div");
+  headerTitle.textContent = "Clipboard bridge";
+  headerTitle.style.cssText =
+    "flex:1;min-width:0;cursor:grab;padding:2px 0;font-weight:600;font-size:12px;";
+  var hideBtn = document.createElement("button");
+  hideBtn.type = "button";
+  hideBtn.textContent = "Hide";
+  hideBtn.setAttribute("aria-label", "Hide clipboard bridge panel");
+  hideBtn.style.cssText =
+    "flex-shrink:0;margin:0;padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:#e8e8e8;font:inherit;font-size:11px;font-weight:500;cursor:pointer;";
+  hideBtn.onmouseenter = function () {
+    hideBtn.style.background = "rgba(255,255,255,0.16)";
+  };
+  hideBtn.onmouseleave = function () {
+    hideBtn.style.background = "rgba(255,255,255,0.1)";
+  };
+  headerEl.appendChild(headerTitle);
+  headerEl.appendChild(hideBtn);
 
   var bodyEl = document.createElement("div");
   bodyEl.style.cssText = "padding:12px;user-select:text;";
@@ -425,26 +442,39 @@ function _initClipboardBridge() {
   var ox = 0;
   var oy = 0;
   onMove = function (ev) {
-    if (!drag) { return; }
+    if (!drag || !root) { return; }
     root.style.left = Math.max(0, ev.clientX - ox) + "px";
     root.style.top  = Math.max(0, ev.clientY - oy) + "px";
   };
   onUp = function () {
     drag = false;
-    headerEl.style.cursor = "grab";
+    headerTitle.style.cursor = "grab";
     document.removeEventListener("mousemove", onMove, true);
     document.removeEventListener("mouseup", onUp, true);
   };
-  headerEl.addEventListener("mousedown", function (ev) {
+  headerTitle.addEventListener("mousedown", function (ev) {
     if (ev.button !== 0) { return; }
     drag = true;
-    headerEl.style.cursor = "grabbing";
+    headerTitle.style.cursor = "grabbing";
     var r = root.getBoundingClientRect();
     ox = ev.clientX - r.left;
     oy = ev.clientY - r.top;
     document.addEventListener("mousemove", onMove, true);
     document.addEventListener("mouseup", onUp, true);
     ev.preventDefault();
+  });
+
+  hideBtn.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    onUp();
+    if (root && root.parentNode) {
+      root.parentNode.removeChild(root);
+    }
+    root = null;
+    headerEl = null;
+    Logger.log(
+      "clipboard-bridge: floating panel hidden by user (reload page to show panel again)"
+    );
   });
 
   } /* end if (showFloatingBanner) */
@@ -520,7 +550,7 @@ const plugin = {
   name: "noVNC Clipboard Bridge",
   description:
     "Floating clipboard bridge panel with ⌘C/⌘V and Ctrl+Shift+C/F shortcuts for noVNC sessions",
-  _version: "1.1",
+  _version: "1.2",
   enabledByDefault: true,
   phase: "mutation",
   subOptions: [SHOW_FLOATING_BANNER_SUBOPTION],
