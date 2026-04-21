@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.60",
+  "archetypesVersion": "7.61",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -544,6 +544,12 @@
           "name": "execute-to-current-tool.js",
           "version": "1.0",
           "hash": "sha256-edd3970d03416214ee6d948232316accb36d19853199f92ccf233d3bb9d0f80e",
+          "log": false
+        },
+        {
+          "name": "qa-feedback-whitespace.js",
+          "version": "1.0",
+          "hash": "sha256-6d921e242e8d6870f54d6bc72e192c60fba342b6c76aa3426f872e99f284400d",
           "log": false
         },
         {
