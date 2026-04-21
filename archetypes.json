@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.62",
+  "archetypesVersion": "7.64",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -588,9 +588,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "clipboard-bridge.js",
-          "version": "1.2",
-          "hash": "sha256-f48f9409d6a86725af61a8ff832b687d1b7c271dd05e831f4fdec3790eff0b4e",
+          "name": "novnc-clipboard-bridge.js",
+          "version": "1.1",
+          "hash": "sha256-6c5c31f50878010a97dd053b5b2ce252a59c1b7ebb39ff5d135611e3ef484994",
           "log": false
         }
       ]
