@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.60",
+  "archetypesVersion": "7.64",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -547,6 +547,12 @@
           "log": false
         },
         {
+          "name": "qa-feedback-whitespace.js",
+          "version": "1.0",
+          "hash": "sha256-6d921e242e8d6870f54d6bc72e192c60fba342b6c76aa3426f872e99f284400d",
+          "log": false
+        },
+        {
           "name": "toggle-tool-parameters.js",
           "version": "1.0",
           "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603",
@@ -582,9 +588,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "clipboard-bridge.js",
+          "name": "novnc-clipboard-bridge.js",
           "version": "1.1",
-          "hash": "sha256-330f7ba1459c96301f153928091e5e1e0026c7dc226626e21a83a4d5061a8bbe",
+          "hash": "sha256-6c5c31f50878010a97dd053b5b2ce252a59c1b7ebb39ff5d135611e3ef484994",
           "log": false
         }
       ]
