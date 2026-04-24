@@ -1,6 +1,6 @@
 // ============= dispute-scenario-near-prompt.js =============
-// Expands the native "Scenario / User Story" collapsible, clones it in an always-open
-// form above the task prompt card, and hides the original block with CSS only.
+// Expands the native "Scenario / User Story" collapsible, then moves the original
+// interactive block above the task prompt card so native collapse/expand still works.
 
 const STYLE_ID = 'fleet-dispute-scenario-near-prompt-style';
 const SCENARIO_LABEL = 'Scenario / User Story';
@@ -12,7 +12,7 @@ const plugin = {
     name: 'Dispute Scenario Near Prompt',
     description:
         'Moves Scenario / User Story above the task prompt; hides in-header Task Prompt label and adds label above the prompt card',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -26,7 +26,7 @@ const plugin = {
     },
 
     onMutation(state) {
-        if (state.completed || document.querySelector('[data-fleet-dispute-scenario-near-prompt]')) {
+        if (state.completed || document.querySelector('[data-fleet-dispute-scenario-near-prompt="true"]')) {
             state.completed = true;
             return;
         }
@@ -135,14 +135,11 @@ const plugin = {
             }
             try {
                 this.installScenarioClone(sourceRoot, promptCard);
-                sourceRoot.setAttribute('data-fleet-dispute-scenario-original', 'true');
                 this.ensureHideStyles();
                 this.markHeaderTaskPromptHidden(state);
                 this.installPromptHeadingAboveCard(promptCard);
                 state.completed = true;
-                Logger.log(
-                    'Dispute Scenario Near Prompt: expanded, cloned Scenario / User Story above task prompt (original hidden)'
-                );
+                Logger.log('Dispute Scenario Near Prompt: moved Scenario / User Story above task prompt');
             } catch (e) {
                 Logger.error('Dispute Scenario Near Prompt: relocation failed', e);
             } finally {
@@ -189,44 +186,13 @@ const plugin = {
     },
 
     installScenarioClone(sourceRoot, promptCard) {
-        const clone = sourceRoot.cloneNode(true);
-        clone.removeAttribute('data-fleet-dispute-scenario-original');
-        clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
-        clone.querySelectorAll('[aria-controls]').forEach((el) => el.removeAttribute('aria-controls'));
-        this.forceCloneExpanded(clone);
-
-        const wrap = document.createElement('div');
-        wrap.className = 'mb-4';
-        wrap.dataset.fleetDisputeScenarioNearPrompt = 'true';
-        wrap.appendChild(clone);
-
-        promptCard.insertAdjacentElement('beforebegin', wrap);
-    },
-
-    forceCloneExpanded(root) {
-        const chevronExpanded = 'm6 9 6 6 6-6';
-        root.querySelectorAll('[data-state]').forEach((el) => el.setAttribute('data-state', 'open'));
-        root.querySelectorAll('[hidden]').forEach((el) => el.removeAttribute('hidden'));
-        const headerBtn = root.querySelector(':scope > button[type="button"]');
-        if (headerBtn) {
-            headerBtn.setAttribute('aria-expanded', 'true');
-            headerBtn.style.pointerEvents = 'none';
-            const path = headerBtn.querySelector(':scope > svg path');
-            if (path) path.setAttribute('d', chevronExpanded);
-        }
-        root.querySelectorAll('[style]').forEach((el) => {
-            const st = (el.getAttribute('style') || '').toLowerCase();
-            if (st.includes('display:none') || st.includes('display: none')) {
-                el.style.display = '';
-            }
-        });
+        sourceRoot.setAttribute('data-fleet-dispute-scenario-near-prompt', 'true');
+        sourceRoot.classList.add('mb-4');
+        promptCard.insertAdjacentElement('beforebegin', sourceRoot);
     },
 
     ensureHideStyles() {
         const fullRules = `
-[data-fleet-dispute-scenario-original] {
-    display: none !important;
-}
 [data-fleet-dispute-scenario-header-prompt-hidden] {
     display: none !important;
 }
@@ -249,6 +215,6 @@ const plugin = {
         style.setAttribute('data-fleet-plugin', this.id);
         style.textContent = fullRules;
         (document.head || document.documentElement).appendChild(style);
-        Logger.log('Dispute Scenario Near Prompt: injected CSS (scenario original + header prompt label hide)');
+        Logger.log('Dispute Scenario Near Prompt: injected CSS (header prompt label hide)');
     }
 };
