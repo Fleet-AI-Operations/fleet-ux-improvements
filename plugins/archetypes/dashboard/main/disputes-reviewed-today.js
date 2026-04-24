@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -143,6 +143,20 @@ const plugin = {
         return null;
     },
 
+    /** Remove breakdown UI when leaving the Disputes tab or when the table is gone (stat grid may persist). */
+    removeDisputesBreakdownBlocks(main) {
+        if (!main) return;
+        main.querySelectorAll('[data-wf-disputes-reviewed-today-block]').forEach((el) => el.remove());
+    },
+
+    /** Remove injected blocks that are not inside the current disputes tab panel (avoids duplicates). */
+    removeDisputesBreakdownBlocksOutsidePanel(main, panel) {
+        if (!main) return;
+        main.querySelectorAll('[data-wf-disputes-reviewed-today-block]').forEach((el) => {
+            if (!panel || !panel.contains(el)) el.remove();
+        });
+    },
+
     getStatsForDate(rows, targetMonth, targetDay, dateIdx, outcomeIdx) {
         let count = 0;
         let approved = 0;
@@ -219,6 +233,7 @@ const plugin = {
 
         const table = this.findDisputesReviewedTable(main);
         if (!table) {
+            this.removeDisputesBreakdownBlocks(main);
             if (!state.missingLogged) {
                 Logger.debug('disputes-reviewed-today: Disputes Reviewed table not found');
                 state.missingLogged = true;
@@ -229,6 +244,7 @@ const plugin = {
         const panel = table.closest('[role="tabpanel"]');
         const grid = panel && panel.querySelector('.grid');
         if (!grid || !grid.matches('.grid')) {
+            this.removeDisputesBreakdownBlocks(main);
             if (!state.missingLogged) {
                 Logger.debug('disputes-reviewed-today: stat card grid not found in tab panel');
                 state.missingLogged = true;
@@ -236,6 +252,7 @@ const plugin = {
             return;
         }
         state.missingLogged = false;
+        this.removeDisputesBreakdownBlocksOutsidePanel(main, panel);
 
         const { dateIdx, outcomeIdx } = this.resolveReviewedTableColumnIndices(table);
         const rows = Array.from(table.querySelectorAll('tbody tr'));

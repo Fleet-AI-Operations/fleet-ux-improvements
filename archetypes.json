@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.66",
+  "archetypesVersion": "7.67",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -50,8 +50,8 @@
       "plugins": [
         {
           "name": "disputes-reviewed-today.js",
-          "version": "3.1",
-          "hash": "sha256-9a5c90e98b1aad29cb3b4b36db317274570820abad1e684390c2c85985aa46f2",
+          "version": "3.2",
+          "hash": "sha256-fa20f6a8f3406a20ce18ea7be0850a5e7f73525fc76b0d0e009dffb60e5e437d",
           "log": false
         },
         {
