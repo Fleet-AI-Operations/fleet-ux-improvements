@@ -2,7 +2,7 @@
   "version": "7.2.1",
   "coreOnlyMode": false,
   "extensionPingEveryLoad": false,
-  "archetypesVersion": "7.64",
+  "archetypesVersion": "7.65",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -365,6 +365,12 @@
           "name": "request-revisions.js",
           "version": "5.2",
           "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa",
+          "log": false
+        },
+        {
+          "name": "text-sanitizer.js",
+          "version": "2.7",
+          "hash": "sha256-765afbc6c1807b1952303b48ed421234947b566a1afba7cac0f7741222f3bcc0",
           "log": false
         },
         {
