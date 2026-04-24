@@ -92,11 +92,6 @@
       "file": "disputes-reviewed-today.js",
       "name": "Disputes Reviewed Today Breakdown",
       "description": "Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning"
-    },
-    {
-      "file": "task-creation-today-env.js",
-      "name": "Daily Task Creation Breakdown",
-      "description": "Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete"
     }
   ],
   "archetypes/dashboard/dev": [

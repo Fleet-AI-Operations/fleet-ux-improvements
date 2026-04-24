@@ -1,4 +1,4 @@
-1.21
+1.22
 
 ## Features
 
@@ -8,7 +8,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Main Dashboard
 - **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning
-- **Daily Task Creation Breakdown**: Show today's task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete
 
 ### Tool Use Task Creation Page
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
