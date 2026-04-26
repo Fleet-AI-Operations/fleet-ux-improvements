@@ -6,7 +6,7 @@
 #   [{ "op": "set_boolean", "path": ["logs","debug"], "value": true }, ...]
 #
 # Path rules (jq getpath/setpath segments):
-#   - Top-level boolean: ["coreOnlyMode"], ["extensionPingEveryLoad"], etc.
+#   - Top-level boolean: ["coreOnlyMode"], etc.
 #   - Logs: ["logs", "<key>"] where <key> is a direct child of logs
 #   - Core plugin: ["corePlugins", <index>, "<key>"]
 #   - Dev plugin: ["devPlugins", <index>, "<key>"]

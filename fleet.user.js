@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      7.2.1
+// @version      7.3.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -14,7 +14,6 @@
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
-// @connect      operations-toolkit-admin.vercel.app
 // @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
 // @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
@@ -30,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '7.2.1';
+    const VERSION = '7.3.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -78,8 +77,6 @@
         latestVersion: null,
         /** When true (from archetypes.json coreOnlyMode), skip archetype plugins and SPA full reload; core plugins (e.g. settings UI) still run. */
         coreOnlyMode: false,
-        /** When true (from archetypes.json extensionPingEveryLoad), extension-ping POSTs on every load instead of once per userscript version. */
-        extensionPingEveryLoad: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
         /** Default for `page-refresh-confirmation-enabled` when the key is unset (GM storage). */
         defaultPageRefreshConfirmation: DEFAULT_PAGE_REFRESH_CONFIRMATION,
@@ -1125,7 +1122,6 @@
                                 // Always log archetypes version (cannot be disabled)
                                 Context.archetypesVersion = config.archetypesVersion || null;
                                 Context.coreOnlyMode = config.coreOnlyMode === true;
-                                Context.extensionPingEveryLoad = config.extensionPingEveryLoad === true;
                                 applyArchetypeRemoteLoggingConfig(config);
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
                                 if (Context.coreOnlyMode) {
