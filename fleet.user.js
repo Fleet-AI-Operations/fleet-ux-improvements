@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         Fleet Workflow Builder UX Enhancer
+// @name         [fix/deprecate-ping] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.2.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -49,7 +49,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'main',
+        branch: 'fix/deprecate-ping',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
