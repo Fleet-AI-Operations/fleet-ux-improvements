@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.69",
+  "archetypesVersion": "7.70",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -373,6 +373,12 @@
           "log": false
         },
         {
+          "name": "request-revisions-screenshot-upload-improvement.js",
+          "version": "1.0",
+          "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
+          "log": false
+        },
+        {
           "name": "text-sanitizer.js",
           "version": "2.7",
           "hash": "sha256-765afbc6c1807b1952303b48ed421234947b566a1afba7cac0f7741222f3bcc0",
@@ -484,6 +490,12 @@
           "name": "request-revisions.js",
           "version": "4.2",
           "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71",
+          "log": false
+        },
+        {
+          "name": "request-revisions-screenshot-upload-improvement.js",
+          "version": "1.0",
+          "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
           "log": false
         }
       ]
