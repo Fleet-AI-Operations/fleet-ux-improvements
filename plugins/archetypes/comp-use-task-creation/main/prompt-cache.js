@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -23,6 +23,7 @@ const plugin = {
         saveDebounceTimer:    null,
         saveIntervalId:       null,
         statusEl:             null,
+        statusCurrent:        null, // 'pending' | 'saved' — only write DOM on transitions
         restoreInjected:      false,
         restoreButtonEl:      null,
         restoreSourceText:    '',
@@ -63,6 +64,7 @@ const plugin = {
         if (state.saveDebounceTimer){ clearTimeout(state.saveDebounceTimer);  state.saveDebounceTimer = null; }
         state.textarea        = null;
         state.statusEl        = null;
+        state.statusCurrent   = null;
         state.restoreInjected = false;
         state.restoreButtonEl = null;
         state.restoreSourceText = '';
@@ -209,12 +211,21 @@ const plugin = {
         labelDiv.appendChild(el);
         state.statusEl = el;
 
-        // Show initial status
+        // Force re-render into the fresh element (statusCurrent is still set from before
+        // if the element was simply evicted from the DOM, so we clear it first)
+        const prev = state.statusCurrent;
+        state.statusCurrent = null;
         const isSaved = state.lastSavedValue !== null && textarea.value === state.lastSavedValue;
-        this.setStatus(state, isSaved ? 'saved' : 'pending');
+        this.setStatus(state, prev !== null ? prev : (isSaved ? 'saved' : 'pending'));
     },
 
     setStatus(state, status) {
+        // Guard: only touch the DOM when the status actually changes.
+        // Re-writing innerHTML on every keystroke (a) resets the spinner animation and
+        // (b) generates DOM mutations that can cause React to re-render the surrounding
+        // form and snap the textarea back to a stale value.
+        if (status === state.statusCurrent) return;
+        state.statusCurrent = status;
         if (!state.statusEl) return;
         if (status === 'saved') {
             state.statusEl.title = 'Prompt saved';
