@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -191,9 +191,11 @@ const plugin = {
                     this.removeRestoreButtons(state);
                     Logger.log('Prompt Cache: confirmed restore of last saved prompt');
                 } else {
+                    this.setTextareaValueReactFriendly(textarea, savedText);
                     state.selectedVersion = 'current';
                     this.setBtnConfirm(btn1);
                     this.setBtnDefault(btn2);
+                    Logger.debug('Prompt Cache: previewing last saved prompt');
                 }
             });
 
@@ -203,9 +205,11 @@ const plugin = {
                     this.removeRestoreButtons(state);
                     Logger.log('Prompt Cache: confirmed restore of previous prompt');
                 } else {
+                    this.setTextareaValueReactFriendly(textarea, prevText);
                     state.selectedVersion = 'previous';
                     this.setBtnConfirm(btn2);
                     this.setBtnDefault(btn1);
+                    Logger.debug('Prompt Cache: previewing previous prompt');
                 }
             });
 
