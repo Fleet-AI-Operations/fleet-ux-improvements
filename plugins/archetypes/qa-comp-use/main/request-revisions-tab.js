@@ -10,7 +10,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that syncs Task Issues into the native hidden RR modal',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -28,6 +28,11 @@ const plugin = {
         openedByTab: false,
         reopening: false,
         syncBound: false,
+        originalBodyPointerEvents: null,
+        originalHtmlPointerEvents: null,
+        pointerLockReleased: false,
+        outsideDismissBlocker: null,
+        replayingOutsideEvent: false,
         missingLogged: false
     },
 
@@ -186,7 +191,9 @@ const plugin = {
             state.contentPanel.classList.add('hidden');
         }
         this.syncTabState(state, false);
+        this.removeOutsideDismissBlocker(state);
         this.restorePinnedModalVisibility(state);
+        this.restorePageInteractionLock(state);
         this.disconnectPinObserver(state);
         this.removeEscBlocker(state);
         state.modalPinned = false;
@@ -220,6 +227,7 @@ const plugin = {
                 return;
             }
 
+            this.installOutsideDismissBlocker(state);
             const existingModal = this.findRequestRevisionsModal();
             if (!existingModal) {
                 nativeButton.click();
@@ -243,6 +251,7 @@ const plugin = {
             this.ensureTaskSelected(state);
             this.syncTaskIssuesToNativeModal(state);
             this.installEscBlocker(state);
+            this.installOutsideDismissBlocker(state);
             this.installPinObserver(state);
             Logger.info('Request Revisions Tab: native modal pinned behind tab');
         } catch (error) {
@@ -308,6 +317,7 @@ const plugin = {
             state.pinnedBackdrop.style.opacity = '0';
             state.pinnedBackdrop.style.pointerEvents = 'none';
         }
+        this.releasePageInteractionLock(state);
     },
 
     restorePinnedModalVisibility(state) {
@@ -323,6 +333,35 @@ const plugin = {
             state.pinnedBackdrop.style.pointerEvents = '';
             state.pinnedBackdrop.removeAttribute(RR_BACKDROP_MANAGED_MARKER);
         }
+    },
+
+    releasePageInteractionLock(state) {
+        if (!state.pointerLockReleased) {
+            state.originalBodyPointerEvents = document.body.style.pointerEvents || '';
+            state.originalHtmlPointerEvents = document.documentElement.style.pointerEvents || '';
+            state.pointerLockReleased = true;
+        }
+        document.body.style.pointerEvents = '';
+        document.documentElement.style.pointerEvents = '';
+        requestAnimationFrame(() => {
+            if (!state.tabActive || !state.modalPinned) return;
+            document.body.style.pointerEvents = '';
+            document.documentElement.style.pointerEvents = '';
+        });
+        setTimeout(() => {
+            if (!state.tabActive || !state.modalPinned) return;
+            document.body.style.pointerEvents = '';
+            document.documentElement.style.pointerEvents = '';
+        }, 50);
+    },
+
+    restorePageInteractionLock(state) {
+        if (!state.pointerLockReleased) return;
+        document.body.style.pointerEvents = state.originalBodyPointerEvents || '';
+        document.documentElement.style.pointerEvents = state.originalHtmlPointerEvents || '';
+        state.originalBodyPointerEvents = null;
+        state.originalHtmlPointerEvents = null;
+        state.pointerLockReleased = false;
     },
 
     ensureTaskSelected(state) {
@@ -399,6 +438,90 @@ const plugin = {
         if (!state.escBlocker) return;
         document.removeEventListener('keydown', state.escBlocker, true);
         state.escBlocker = null;
+    },
+
+    installOutsideDismissBlocker(state) {
+        if (state.outsideDismissBlocker) return;
+        state.outsideDismissBlocker = (event) => {
+            if (state.replayingOutsideEvent) return;
+            if (!state.tabActive || !state.pinnedModal || !state.modalPinned) return;
+            if (event.target === state.pinnedModal || event.target === state.pinnedBackdrop) {
+                event.stopImmediatePropagation();
+                event.stopPropagation();
+                event.preventDefault();
+                return;
+            }
+
+            const target = event.target;
+            const panel = state.contentPanel;
+            const isInCustomPanel = panel && target instanceof Node && panel.contains(target);
+            if (isInCustomPanel) {
+                this.focusCustomPanelTarget(event);
+                event.stopImmediatePropagation();
+                event.stopPropagation();
+                if (event.type !== 'focusin') {
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            const replayTarget = target instanceof Element ? target : null;
+            event.stopImmediatePropagation();
+            event.stopPropagation();
+            event.preventDefault();
+            if (event.type === 'click') {
+                this.replayOutsideClick(state, event, replayTarget);
+            }
+        };
+
+        for (const eventName of ['pointerdown', 'mousedown', 'mouseup', 'click', 'focusin']) {
+            window.addEventListener(eventName, state.outsideDismissBlocker, true);
+        }
+        Logger.debug('Request Revisions Tab: outside dismiss blocker installed');
+    },
+
+    removeOutsideDismissBlocker(state) {
+        if (!state.outsideDismissBlocker) return;
+        for (const eventName of ['pointerdown', 'mousedown', 'mouseup', 'click', 'focusin']) {
+            window.removeEventListener(eventName, state.outsideDismissBlocker, true);
+        }
+        state.outsideDismissBlocker = null;
+    },
+
+    focusCustomPanelTarget(event) {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const focusTarget = target.closest('textarea, input, button, select, [tabindex]');
+        if (!focusTarget || typeof focusTarget.focus !== 'function') return;
+        focusTarget.focus({ preventScroll: true });
+    },
+
+    replayOutsideClick(state, originalEvent, target) {
+        if (!target || state.contentPanel?.contains(target) || target === state.pinnedModal || target === state.pinnedBackdrop) {
+            return;
+        }
+        state.replayingOutsideEvent = true;
+        try {
+            const replay = new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                detail: originalEvent.detail,
+                screenX: originalEvent.screenX,
+                screenY: originalEvent.screenY,
+                clientX: originalEvent.clientX,
+                clientY: originalEvent.clientY,
+                ctrlKey: originalEvent.ctrlKey,
+                altKey: originalEvent.altKey,
+                shiftKey: originalEvent.shiftKey,
+                metaKey: originalEvent.metaKey,
+                button: originalEvent.button,
+                buttons: originalEvent.buttons
+            });
+            target.dispatchEvent(replay);
+        } finally {
+            state.replayingOutsideEvent = false;
+        }
     },
 
     installPinObserver(state) {
