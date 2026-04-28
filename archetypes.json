@@ -281,6 +281,12 @@
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
           "log": false
+        },
+        {
+          "name": "prompt-cache.js",
+          "version": "1.0",
+          "hash": "sha256-4c02f995366d3b79ccb3960f7a30592c9b29af50f4156cb2a904b009221e8342",
+          "log": false
         }
       ]
     },
