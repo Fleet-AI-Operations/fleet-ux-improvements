@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.10',
+    _version: '2.11',
     enabledByDefault: true,
     phase: 'core',
 
@@ -126,7 +126,9 @@ const plugin = {
         header.style.justifyContent = 'space-between';
 
         const headerTitle = document.createElement('span');
-        headerTitle.textContent = 'Fleet UX Logs';
+        const scriptVersion = context && context.version ? context.version : (typeof Context !== 'undefined' ? (Context.version || '?') : '?');
+        const archetypesVersion = (typeof Context !== 'undefined' && Context.archetypesVersion) ? Context.archetypesVersion : '?';
+        headerTitle.textContent = `Logs · v${scriptVersion} · a${archetypesVersion}`;
 
         const headerActions = document.createElement('div');
         headerActions.style.display = 'flex';

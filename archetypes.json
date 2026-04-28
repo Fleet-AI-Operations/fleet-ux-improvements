@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.75",
+  "archetypesVersion": "7.76",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -18,8 +18,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.10",
-      "hash": "sha256-2d0ae302fe9a1d4edd5a311de3b23c0334e919675bebbea5777392d3952232ed",
+      "version": "2.11",
+      "hash": "sha256-dbaeeca750355752d6fe8bc32315a2c6f960a80ca04b7ff2b8abfd0104d5f7bf",
       "log": false
     }
   ],
