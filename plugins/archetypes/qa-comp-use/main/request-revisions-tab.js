@@ -10,7 +10,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that syncs Task Issues into the native hidden RR modal',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -568,18 +568,15 @@ const plugin = {
 
             const target = event.target;
             const panel = state.contentPanel;
-            const isInCustomPanel = panel && target instanceof Node && panel.contains(target);
+            const isInCustomPanel = this.isNodeInside(panel, target);
             if (isInCustomPanel) {
                 this.focusCustomPanelTarget(event);
                 event.stopImmediatePropagation();
                 event.stopPropagation();
-                if (event.type !== 'focusin') {
-                    event.preventDefault();
-                }
                 return;
             }
 
-            const replayTarget = target instanceof Element ? target : null;
+            const replayTarget = this.asElement(target);
             event.stopImmediatePropagation();
             event.stopPropagation();
             event.preventDefault();
@@ -603,15 +600,18 @@ const plugin = {
     },
 
     focusCustomPanelTarget(event) {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
+        const target = this.asElement(event.target);
+        if (!target) return;
         const focusTarget = target.closest('textarea, input, button, select, [tabindex]');
         if (!focusTarget || typeof focusTarget.focus !== 'function') return;
-        focusTarget.focus({ preventScroll: true });
+        setTimeout(() => {
+            if (document.activeElement === focusTarget || typeof focusTarget.focus !== 'function') return;
+            focusTarget.focus({ preventScroll: true });
+        }, 0);
     },
 
     replayOutsideClick(state, originalEvent, target) {
-        if (!target || state.contentPanel?.contains(target) || target === state.pinnedModal || target === state.pinnedBackdrop) {
+        if (!target || this.isNodeInside(state.contentPanel, target) || target === state.pinnedModal || target === state.pinnedBackdrop) {
             return;
         }
         state.replayingOutsideEvent = true;
@@ -636,6 +636,25 @@ const plugin = {
         } finally {
             state.replayingOutsideEvent = false;
         }
+    },
+
+    isNodeInside(container, target) {
+        if (!container || !target || typeof target !== 'object' || typeof container.contains !== 'function') {
+            return false;
+        }
+        try {
+            return container === target || container.contains(target);
+        } catch (error) {
+            return false;
+        }
+    },
+
+    asElement(target) {
+        if (!target || typeof target !== 'object') return null;
+        if (typeof target.closest === 'function' && typeof target.dispatchEvent === 'function') {
+            return target;
+        }
+        return null;
     },
 
     installPinObserver(state) {
