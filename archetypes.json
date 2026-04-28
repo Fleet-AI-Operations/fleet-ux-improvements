@@ -265,6 +265,12 @@
           "log": false
         },
         {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-4962576fc240f13437bc4aa42a4c6afff5b17cf32d3caa9a916da84d6f83cec5",
+          "log": false
+        },
+        {
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
