@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.77",
+  "archetypesVersion": "7.78",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -310,6 +310,12 @@
           "log": false
         },
         {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-d21f89e1fc36b693a2f735f9284e22292fd12274ba93254f697520043dc7032a",
+          "log": false
+        },
+        {
           "name": "prompt-scratchpad.js",
           "version": "2.1",
           "hash": "sha256-64f89a9a1b7f2b2fc211a39ca811bff49dd4c2764c320f0a5906f9beb97845e7",
@@ -478,6 +484,12 @@
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-14f09d82abf901ef6ec8de9b66575a666448f82ad9ccc20a6a7772f4d0cd7c29",
+          "log": false
+        },
+        {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-15d1ad0c1b968c8b39171db1f8e770804be302844724e9527a98559c1e0e5a48",
           "log": false
         },
         {
