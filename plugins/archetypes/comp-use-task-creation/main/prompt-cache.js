@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -27,8 +27,9 @@ const plugin = {
         statusCurrent:     null,   // 'pending' | 'saved' — only write DOM on transitions
         restoreInjected:   false,
         restoreWrapperEl:  null,
-        restoreInitialText: '',    // textarea value at the time buttons were injected
-        selectedVersion:   null,   // 'current' | 'previous' — which btn is in confirm state
+        restoreInitialText:   '',    // textarea value at the time buttons were injected
+        selectedVersion:      null,  // 'current' | 'previous' — which btn is in confirm state
+        suppressRestoreCheck: false, // true while plugin-driven paste fires its synthetic input
         stylesInjected:    false,
         missingLogged:     false
     },
@@ -175,7 +176,7 @@ const plugin = {
             // Single button: no confirm step — click directly restores and dismisses
             const btn = this.makeRestoreBtn('Restore last saved prompt?');
             btn.addEventListener('click', () => {
-                this.setTextareaValueReactFriendly(textarea, savedText);
+                this.pastePreview(state, textarea, savedText);
                 this.removeRestoreButtons(state);
                 Logger.log('Prompt Cache: restored last saved prompt (single version)');
             });
@@ -187,11 +188,10 @@ const plugin = {
 
             btn1.addEventListener('click', () => {
                 if (state.selectedVersion === 'current') {
-                    this.setTextareaValueReactFriendly(textarea, savedText);
                     this.removeRestoreButtons(state);
                     Logger.log('Prompt Cache: confirmed restore of last saved prompt');
                 } else {
-                    this.setTextareaValueReactFriendly(textarea, savedText);
+                    this.pastePreview(state, textarea, savedText);
                     state.selectedVersion = 'current';
                     this.setBtnConfirm(btn1);
                     this.setBtnDefault(btn2);
@@ -201,11 +201,10 @@ const plugin = {
 
             btn2.addEventListener('click', () => {
                 if (state.selectedVersion === 'previous') {
-                    this.setTextareaValueReactFriendly(textarea, prevText);
                     this.removeRestoreButtons(state);
                     Logger.log('Prompt Cache: confirmed restore of previous prompt');
                 } else {
-                    this.setTextareaValueReactFriendly(textarea, prevText);
+                    this.pastePreview(state, textarea, prevText);
                     state.selectedVersion = 'previous';
                     this.setBtnConfirm(btn2);
                     this.setBtnDefault(btn1);
@@ -223,6 +222,14 @@ const plugin = {
         state.restoreInitialText = textarea.value;
         state.selectedVersion    = null;
         Logger.info(`Prompt Cache: restore button(s) shown (hasPrev: ${hasPrevious}) for instance ${currentId}`);
+    },
+
+    pastePreview(state, textarea, text) {
+        // Suppress the synthetic input event so our own paste doesn't trip the
+        // "user typed something new → dismiss buttons" check.
+        state.suppressRestoreCheck = true;
+        this.setTextareaValueReactFriendly(textarea, text);
+        state.suppressRestoreCheck = false;
     },
 
     makeRestoreBtn(label) {
@@ -247,6 +254,8 @@ const plugin = {
 
     maybeRemoveRestoreButtonsAfterTyping(state) {
         if (!state.restoreInjected || !state.textarea) return;
+        // Ignore the synthetic input event fired by our own preview paste
+        if (state.suppressRestoreCheck) return;
         if (state.textarea.value === state.restoreInitialText) return;
         this.removeRestoreButtons(state);
         Logger.info('Prompt Cache: restore buttons removed after user changed prompt text');
