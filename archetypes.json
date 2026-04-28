@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.70",
+  "archetypesVersion": "7.80",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -18,8 +18,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.9",
-      "hash": "sha256-d7283f301f13c35707de9fc645d42abe7a63ddfdd4dd0b29edf2abf07e8b1867",
+      "version": "2.11",
+      "hash": "sha256-dbaeeca750355752d6fe8bc32315a2c6f960a80ca04b7ff2b8abfd0104d5f7bf",
       "log": false
     }
   ],
@@ -265,6 +265,12 @@
           "log": false
         },
         {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-4962576fc240f13437bc4aa42a4c6afff5b17cf32d3caa9a916da84d6f83cec5",
+          "log": false
+        },
+        {
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
@@ -281,6 +287,12 @@
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
           "log": false
+        },
+        {
+          "name": "prompt-cache.js",
+          "version": "2.2",
+          "hash": "sha256-b3abe9f96692af2f513f7e0a95aea210719f12610bc3d81e46ed0e019c7d3d8d",
+          "log": false
         }
       ]
     },
@@ -295,6 +307,12 @@
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-37cbd80e8b70c38940eb5044d16f430ad33080204a3e7d96994a682bf0a06a16",
+          "log": false
+        },
+        {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-d21f89e1fc36b693a2f735f9284e22292fd12274ba93254f697520043dc7032a",
           "log": false
         },
         {
@@ -466,6 +484,12 @@
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-14f09d82abf901ef6ec8de9b66575a666448f82ad9ccc20a6a7772f4d0cd7c29",
+          "log": false
+        },
+        {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-15d1ad0c1b968c8b39171db1f8e770804be302844724e9527a98559c1e0e5a48",
           "log": false
         },
         {

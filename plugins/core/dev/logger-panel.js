@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.9',
+    _version: '2.11',
     enabledByDefault: true,
     phase: 'core',
 
@@ -126,7 +126,9 @@ const plugin = {
         header.style.justifyContent = 'space-between';
 
         const headerTitle = document.createElement('span');
-        headerTitle.textContent = 'Fleet UX Logs';
+        const scriptVersion = context && context.version ? context.version : (typeof Context !== 'undefined' ? (Context.version || '?') : '?');
+        const archetypesVersion = (typeof Context !== 'undefined' && Context.archetypesVersion) ? Context.archetypesVersion : '?';
+        headerTitle.textContent = `Logs · v${scriptVersion} · a${archetypesVersion}`;
 
         const headerActions = document.createElement('div');
         headerActions.style.display = 'flex';
@@ -635,26 +637,29 @@ const plugin = {
 
     _flashDevLoggerCopyFeedback(targetEl, success) {
         if (targetEl._fleetLoggerCopyT) clearTimeout(targetEl._fleetLoggerCopyT);
+        const prevBackgroundColor = targetEl.style.backgroundColor;
+        const prevColor = targetEl.style.color;
+        const prevTransition = targetEl.style.transition;
         if (success) {
             targetEl.style.transition = '';
             targetEl.style.backgroundColor = 'rgb(34, 197, 94)';
             targetEl.style.color = '#ffffff';
             targetEl._fleetLoggerCopyT = setTimeout(() => {
-                targetEl.style.backgroundColor = '';
-                targetEl.style.color = '';
+                targetEl.style.backgroundColor = prevBackgroundColor;
+                targetEl.style.color = prevColor;
+                targetEl.style.transition = prevTransition;
                 targetEl._fleetLoggerCopyT = null;
             }, 1000);
         } else {
-            const prevT = targetEl.style.transition;
             targetEl.style.transition = 'none';
             targetEl.style.backgroundColor = 'rgb(239, 68, 68)';
             targetEl.style.color = '#ffffff';
             void targetEl.offsetHeight;
             targetEl.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-            targetEl.style.backgroundColor = '';
-            targetEl.style.color = '';
+            targetEl.style.backgroundColor = prevBackgroundColor;
+            targetEl.style.color = prevColor;
             targetEl._fleetLoggerCopyT = setTimeout(() => {
-                targetEl.style.transition = prevT || '';
+                targetEl.style.transition = prevTransition;
                 targetEl._fleetLoggerCopyT = null;
             }, 500);
         }
