@@ -1,34 +1,36 @@
 // ============= prompt-cache.js =============
 // Auto-saves the prompt textarea content to local storage every 1 s (or 1 s after
-// the user finishes typing, whichever fires later).  When the page reloads with the
-// same instance_id a "Restore previous prompt?" button is shown above the textarea.
+// the user finishes typing, whichever fires later).  Keeps the two most-recent
+// non-empty saves so the user can restore either on page reload.
 // A live save-status indicator (spinner → checkmark) is injected next to the label.
 
 const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '1.4',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
     storageKeys: {
-        promptText: 'comp-use-prompt-cache-text',
-        instanceId:  'comp-use-prompt-cache-instance-id'
+        promptText:     'comp-use-prompt-cache-text',
+        promptPrevText: 'comp-use-prompt-cache-prev-text',
+        instanceId:     'comp-use-prompt-cache-instance-id'
     },
 
     initialState: {
-        textarea:             null,
-        lastSavedValue:       null,
-        saveDebounceTimer:    null,
-        saveIntervalId:       null,
-        statusEl:             null,
-        statusCurrent:        null, // 'pending' | 'saved' — only write DOM on transitions
-        restoreInjected:      false,
-        restoreButtonEl:      null,
-        restoreSourceText:    '',
-        stylesInjected:       false,
-        missingLogged:        false
+        textarea:          null,
+        lastSavedValue:    null,
+        saveDebounceTimer: null,
+        saveIntervalId:    null,
+        statusEl:          null,
+        statusCurrent:     null,   // 'pending' | 'saved' — only write DOM on transitions
+        restoreInjected:   false,
+        restoreWrapperEl:  null,
+        restoreInitialText: '',    // textarea value at the time buttons were injected
+        selectedVersion:   null,   // 'current' | 'previous' — which btn is in confirm state
+        stylesInjected:    false,
+        missingLogged:     false
     },
 
     // ─── lifecycle ────────────────────────────────────────────────────────────
@@ -49,7 +51,6 @@ const plugin = {
         }
         state.missingLogged = false;
 
-        // Re-setup whenever the textarea element reference changes
         if (state.textarea !== textarea) {
             this.teardown(state);
             state.textarea = textarea;
@@ -60,21 +61,20 @@ const plugin = {
     },
 
     teardown(state) {
-        if (state.saveIntervalId)   { clearInterval(state.saveIntervalId);   state.saveIntervalId = null; }
-        if (state.saveDebounceTimer){ clearTimeout(state.saveDebounceTimer);  state.saveDebounceTimer = null; }
-        state.textarea        = null;
-        state.statusEl        = null;
-        state.statusCurrent   = null;
-        state.restoreInjected = false;
-        state.restoreButtonEl = null;
-        state.restoreSourceText = '';
+        if (state.saveIntervalId)    { clearInterval(state.saveIntervalId);   state.saveIntervalId = null; }
+        if (state.saveDebounceTimer) { clearTimeout(state.saveDebounceTimer);  state.saveDebounceTimer = null; }
+        state.textarea          = null;
+        state.statusEl          = null;
+        state.statusCurrent     = null;
+        state.restoreInjected   = false;
+        state.restoreWrapperEl  = null;
+        state.restoreInitialText = '';
+        state.selectedVersion   = null;
     },
 
     setup(state, textarea) {
-        // 1 s debounce on every keystroke
-        // (CleanupRegistry.registerEventListener also calls addEventListener internally)
         const onInput = () => {
-            this.maybeRemoveRestoreButtonAfterTyping(state);
+            this.maybeRemoveRestoreButtonsAfterTyping(state);
             this.setStatus(state, 'pending');
             if (state.saveDebounceTimer) clearTimeout(state.saveDebounceTimer);
             state.saveDebounceTimer = setTimeout(() => {
@@ -82,17 +82,15 @@ const plugin = {
                 state.saveDebounceTimer = null;
             }, 1000);
         };
+        // registerEventListener also calls addEventListener internally
         CleanupRegistry.registerEventListener(textarea, 'input', onInput);
 
-        // Interval check: also saves every 1 s when no debounce is pending
-        // (catches React-driven value changes that bypass 'input' events)
         state.saveIntervalId = setInterval(() => {
             if (!state.saveDebounceTimer) this.maybeSave(state);
         }, 1000);
         CleanupRegistry.registerInterval(state.saveIntervalId);
 
-        // Restore button (shown once on page load)
-        this.maybeShowRestoreButton(state, textarea);
+        this.maybeShowRestoreButtons(state, textarea);
 
         Logger.log('Prompt Cache: initialized');
     },
@@ -107,12 +105,19 @@ const plugin = {
 
     save(state) {
         if (!state.textarea) return;
-        const val        = state.textarea.value;
+        const val = state.textarea.value;
         if (!this.hasSavableContent(val)) {
             Logger.debug('Prompt Cache: skipped save for empty prompt');
             return;
         }
-        const instanceId = this.getCurrentInstanceId();
+        const instanceId    = this.getCurrentInstanceId();
+        const currentStored = Storage.get(this.storageKeys.promptText, '');
+
+        // Rotate current → previous before overwriting (only when content actually differs)
+        if (this.hasSavableContent(currentStored) && currentStored !== val) {
+            Storage.set(this.storageKeys.promptPrevText, currentStored);
+        }
+
         Storage.set(this.storageKeys.promptText, val);
         Storage.set(this.storageKeys.instanceId,  instanceId);
         state.lastSavedValue = val;
@@ -128,13 +133,14 @@ const plugin = {
         return new URLSearchParams(window.location.search).get('instance_id') || '';
     },
 
-    // ─── restore button ───────────────────────────────────────────────────────
+    // ─── restore buttons ──────────────────────────────────────────────────────
 
-    maybeShowRestoreButton(state, textarea) {
+    maybeShowRestoreButtons(state, textarea) {
         if (state.restoreInjected) return;
 
-        const savedText       = Storage.get(this.storageKeys.promptText, '');
-        const savedInstanceId = Storage.get(this.storageKeys.instanceId,  '');
+        const savedText       = Storage.get(this.storageKeys.promptText,     '');
+        const prevText        = Storage.get(this.storageKeys.promptPrevText,  '');
+        const savedInstanceId = Storage.get(this.storageKeys.instanceId,      '');
         const currentId       = this.getCurrentInstanceId();
 
         if (!savedText || !savedInstanceId || !currentId) {
@@ -150,55 +156,111 @@ const plugin = {
             return;
         }
 
-        // DOM path: textarea → rounded-md container → div.relative wrapper → section
         const container = textarea.closest('.flex.flex-col.relative.rounded-md') || textarea.parentElement;
         const wrapper   = container ? container.parentElement : null;
         const section   = wrapper   ? wrapper.parentElement   : null;
 
         if (!section) {
-            Logger.warn('Prompt Cache: could not locate section for restore button');
+            Logger.warn('Prompt Cache: could not locate section for restore buttons');
             return;
         }
 
+        const hasPrevious = this.hasSavableContent(prevText) && prevText !== savedText;
+
+        const wrapperEl = document.createElement('div');
+        wrapperEl.setAttribute('data-fleet-prompt-cache-restore-wrapper', 'true');
+        wrapperEl.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:6px;';
+
+        if (!hasPrevious) {
+            // Single button: no confirm step — click directly restores and dismisses
+            const btn = this.makeRestoreBtn('Restore last saved prompt?');
+            btn.addEventListener('click', () => {
+                this.setTextareaValueReactFriendly(textarea, savedText);
+                this.removeRestoreButtons(state);
+                Logger.log('Prompt Cache: restored last saved prompt (single version)');
+            });
+            wrapperEl.appendChild(btn);
+        } else {
+            // Two buttons: toggle-select → confirm pattern
+            const btn1 = this.makeRestoreBtn('Restore last saved prompt?');
+            const btn2 = this.makeRestoreBtn('Restore previous to last saved prompt?');
+
+            btn1.addEventListener('click', () => {
+                if (state.selectedVersion === 'current') {
+                    this.setTextareaValueReactFriendly(textarea, savedText);
+                    this.removeRestoreButtons(state);
+                    Logger.log('Prompt Cache: confirmed restore of last saved prompt');
+                } else {
+                    state.selectedVersion = 'current';
+                    this.setBtnConfirm(btn1);
+                    this.setBtnDefault(btn2);
+                }
+            });
+
+            btn2.addEventListener('click', () => {
+                if (state.selectedVersion === 'previous') {
+                    this.setTextareaValueReactFriendly(textarea, prevText);
+                    this.removeRestoreButtons(state);
+                    Logger.log('Prompt Cache: confirmed restore of previous prompt');
+                } else {
+                    state.selectedVersion = 'previous';
+                    this.setBtnConfirm(btn2);
+                    this.setBtnDefault(btn1);
+                }
+            });
+
+            wrapperEl.appendChild(btn1);
+            wrapperEl.appendChild(btn2);
+        }
+
+        section.insertBefore(wrapperEl, wrapper);
+        state.restoreInjected    = true;
+        state.restoreWrapperEl   = wrapperEl;
+        state.restoreInitialText = textarea.value;
+        state.selectedVersion    = null;
+        Logger.info(`Prompt Cache: restore button(s) shown (hasPrev: ${hasPrevious}) for instance ${currentId}`);
+    },
+
+    makeRestoreBtn(label) {
         const btn = document.createElement('button');
         btn.type  = 'button';
         btn.setAttribute('data-fleet-prompt-cache-restore', 'true');
+        btn.setAttribute('data-fleet-restore-label', label);
         btn.className   = 'fleet-prompt-cache-restore-btn';
-        btn.textContent = 'Restore previous prompt?';
-
-        btn.addEventListener('click', () => {
-            this.setTextareaValueReactFriendly(textarea, savedText);
-            this.removeRestoreButton(state);
-            Logger.log('Prompt Cache: restored saved prompt');
-        });
-
-        section.insertBefore(btn, wrapper);
-        state.restoreInjected = true;
-        state.restoreButtonEl = btn;
-        state.restoreSourceText = savedText;
-        Logger.info('Prompt Cache: restore button shown for instance ' + currentId);
+        btn.textContent = label;
+        return btn;
     },
 
-    maybeRemoveRestoreButtonAfterTyping(state) {
-        if (!state.restoreInjected || !state.restoreButtonEl || !state.textarea) return;
-        if (state.textarea.value === state.restoreSourceText) return;
-        this.removeRestoreButton(state);
-        Logger.info('Prompt Cache: restore button removed after user changed prompt text');
+    setBtnConfirm(btn) {
+        btn.className   = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--confirm';
+        btn.textContent = 'Confirm Version';
     },
 
-    removeRestoreButton(state) {
-        if (state.restoreButtonEl && document.contains(state.restoreButtonEl)) {
-            state.restoreButtonEl.remove();
+    setBtnDefault(btn) {
+        btn.className   = 'fleet-prompt-cache-restore-btn';
+        btn.textContent = btn.getAttribute('data-fleet-restore-label') || btn.textContent;
+    },
+
+    maybeRemoveRestoreButtonsAfterTyping(state) {
+        if (!state.restoreInjected || !state.textarea) return;
+        if (state.textarea.value === state.restoreInitialText) return;
+        this.removeRestoreButtons(state);
+        Logger.info('Prompt Cache: restore buttons removed after user changed prompt text');
+    },
+
+    removeRestoreButtons(state) {
+        if (state.restoreWrapperEl && document.contains(state.restoreWrapperEl)) {
+            state.restoreWrapperEl.remove();
         }
-        state.restoreInjected = false;
-        state.restoreButtonEl = null;
-        state.restoreSourceText = '';
+        state.restoreInjected    = false;
+        state.restoreWrapperEl   = null;
+        state.restoreInitialText = '';
+        state.selectedVersion    = null;
     },
 
     // ─── status indicator ─────────────────────────────────────────────────────
 
     ensureStatusIndicator(state, textarea) {
-        // Re-use if still in DOM
         if (state.statusEl && document.contains(state.statusEl)) return;
 
         const container = textarea.closest('.flex.flex-col.relative.rounded-md') || textarea.parentElement;
@@ -220,8 +282,7 @@ const plugin = {
         labelDiv.appendChild(el);
         state.statusEl = el;
 
-        // Force re-render into the fresh element (statusCurrent is still set from before
-        // if the element was simply evicted from the DOM, so we clear it first)
+        // Re-render into the fresh element; reset current so setStatus will actually write
         const prev = state.statusCurrent;
         state.statusCurrent = null;
         const isSaved = state.lastSavedValue !== null && textarea.value === state.lastSavedValue;
@@ -229,10 +290,9 @@ const plugin = {
     },
 
     setStatus(state, status) {
-        // Guard: only touch the DOM when the status actually changes.
-        // Re-writing innerHTML on every keystroke (a) resets the spinner animation and
-        // (b) generates DOM mutations that can cause React to re-render the surrounding
-        // form and snap the textarea back to a stale value.
+        // Only touch the DOM when status transitions — avoids restarting the spinner
+        // animation and prevents DOM mutations near the textarea that can trigger
+        // React to reconcile the form with a stale value.
         if (status === state.statusCurrent) return;
         state.statusCurrent = status;
         if (!state.statusEl) return;
@@ -275,7 +335,6 @@ const plugin = {
                 width: 100%;
                 text-align: center;
                 padding: 6px 12px;
-                margin-bottom: 6px;
                 font-size: 0.75rem;
                 font-weight: 500;
                 border-radius: 4px;
@@ -284,10 +343,18 @@ const plugin = {
                 color: inherit;
                 border: 2px solid rgba(234, 179, 8, 0.9);
                 animation: fleet-prompt-cache-flash-yellow 1.2s ease-in-out infinite;
-                transition: background-color 0.15s;
+                transition: background-color 0.15s, color 0.15s, border-color 0.15s;
             }
             .fleet-prompt-cache-restore-btn:hover {
                 background-color: rgba(234, 179, 8, 0.08);
+            }
+            .fleet-prompt-cache-restore-btn--confirm {
+                border-color: rgb(34, 197, 94);
+                color: rgb(34, 197, 94);
+                animation: none;
+            }
+            .fleet-prompt-cache-restore-btn--confirm:hover {
+                background-color: rgba(34, 197, 94, 0.08);
             }
         `;
         document.head.appendChild(style);

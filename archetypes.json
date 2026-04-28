@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.76",
+  "archetypesVersion": "7.77",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -284,8 +284,8 @@
         },
         {
           "name": "prompt-cache.js",
-          "version": "1.4",
-          "hash": "sha256-eeda0ccbee468e37bbe8b92b8c2eeca313b3173b61496ec29c2732bbebe8ebfa",
+          "version": "2.0",
+          "hash": "sha256-4c7bf63ff9ce77cb20524e35783752ba093765cd2ecb30970dbd229e5ee0799c",
           "log": false
         }
       ]
