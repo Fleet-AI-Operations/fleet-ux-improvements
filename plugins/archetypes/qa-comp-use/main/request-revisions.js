@@ -23,8 +23,8 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '4.2',
-    enabledByDefault: true,
+    _version: '4.3',
+    enabledByDefault: false,
     phase: 'mutation',
     
     // ========== SUB-OPTIONS ==========
