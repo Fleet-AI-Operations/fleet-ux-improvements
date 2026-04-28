@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -24,6 +24,8 @@ const plugin = {
         saveIntervalId:       null,
         statusEl:             null,
         restoreInjected:      false,
+        restoreButtonEl:      null,
+        restoreSourceText:    '',
         stylesInjected:       false,
         missingLogged:        false
     },
@@ -62,12 +64,15 @@ const plugin = {
         state.textarea        = null;
         state.statusEl        = null;
         state.restoreInjected = false;
+        state.restoreButtonEl = null;
+        state.restoreSourceText = '';
     },
 
     setup(state, textarea) {
         // 1 s debounce on every keystroke
         // (CleanupRegistry.registerEventListener also calls addEventListener internally)
         const onInput = () => {
+            this.maybeRemoveRestoreButtonAfterTyping(state);
             this.setStatus(state, 'pending');
             if (state.saveDebounceTimer) clearTimeout(state.saveDebounceTimer);
             state.saveDebounceTimer = setTimeout(() => {
@@ -152,14 +157,31 @@ const plugin = {
 
         btn.addEventListener('click', () => {
             this.setTextareaValueReactFriendly(textarea, savedText);
-            btn.remove();
-            state.restoreInjected = false;
+            this.removeRestoreButton(state);
             Logger.log('Prompt Cache: restored saved prompt');
         });
 
         section.insertBefore(btn, wrapper);
         state.restoreInjected = true;
+        state.restoreButtonEl = btn;
+        state.restoreSourceText = savedText;
         Logger.info('Prompt Cache: restore button shown for instance ' + currentId);
+    },
+
+    maybeRemoveRestoreButtonAfterTyping(state) {
+        if (!state.restoreInjected || !state.restoreButtonEl || !state.textarea) return;
+        if (state.textarea.value === state.restoreSourceText) return;
+        this.removeRestoreButton(state);
+        Logger.info('Prompt Cache: restore button removed after user changed prompt text');
+    },
+
+    removeRestoreButton(state) {
+        if (state.restoreButtonEl && document.contains(state.restoreButtonEl)) {
+            state.restoreButtonEl.remove();
+        }
+        state.restoreInjected = false;
+        state.restoreButtonEl = null;
+        state.restoreSourceText = '';
     },
 
     // ─── status indicator ─────────────────────────────────────────────────────
