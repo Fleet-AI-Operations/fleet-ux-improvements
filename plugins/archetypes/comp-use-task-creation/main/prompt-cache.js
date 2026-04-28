@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -101,18 +101,27 @@ const plugin = {
 
     maybeSave(state) {
         if (!state.textarea) return;
+        if (!this.hasSavableContent(state.textarea.value)) return;
         if (state.textarea.value !== state.lastSavedValue) this.save(state);
     },
 
     save(state) {
         if (!state.textarea) return;
         const val        = state.textarea.value;
+        if (!this.hasSavableContent(val)) {
+            Logger.debug('Prompt Cache: skipped save for empty prompt');
+            return;
+        }
         const instanceId = this.getCurrentInstanceId();
         Storage.set(this.storageKeys.promptText, val);
         Storage.set(this.storageKeys.instanceId,  instanceId);
         state.lastSavedValue = val;
         this.setStatus(state, 'saved');
         Logger.debug(`Prompt Cache: saved ${val.length} chars (instance: ${instanceId})`);
+    },
+
+    hasSavableContent(value) {
+        return typeof value === 'string' && value.trim().length > 0;
     },
 
     getCurrentInstanceId() {
