@@ -1,16 +1,15 @@
 // ============= request-revisions-tab.js =============
-// Proof-of-concept Request Revisions tab that proxies the native modal.
+// Request Revisions tab that uses short-lived native modal transactions.
 
 const RR_TAB_MARKER = 'data-fleet-rr-tab';
 const RR_PANEL_MARKER = 'data-fleet-rr-tab-panel';
-const RR_MODAL_MANAGED_MARKER = 'data-fleet-rr-tab-managed-modal';
-const RR_BACKDROP_MANAGED_MARKER = 'data-fleet-rr-tab-managed-backdrop';
+const RR_MANAGED_MODAL_MARKER = 'data-fleet-rr-tab-transaction-modal';
 
 const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
-    description: 'Adds a Request Revisions tab that syncs Task Issues into the native hidden RR modal',
-    _version: '1.3',
+    description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -20,24 +19,20 @@ const plugin = {
         contentPanel: null,
         taskIssuesTextarea: null,
         tabActive: false,
-        modalPinned: false,
-        pinnedModal: null,
-        pinnedBackdrop: null,
-        pinObserver: null,
-        escBlocker: null,
-        openedByTab: false,
-        reopening: false,
-        dismissingPinnedModal: false,
-        syncBound: false,
+        rrData: {
+            taskIssues: ''
+        },
+        transactionInProgress: false,
+        transactionModal: null,
+        transactionBackdrop: null,
         nativeTaskTextarea: null,
         nativeToCustomHandler: null,
+        nativeSyncModal: null,
         syncingToNative: false,
         syncingFromNative: false,
         originalBodyPointerEvents: null,
         originalHtmlPointerEvents: null,
         pointerLockReleased: false,
-        outsideDismissBlocker: null,
-        replayingOutsideEvent: false,
         missingLogged: false
     },
 
@@ -58,11 +53,7 @@ const plugin = {
         }
 
         this.syncTabVisibility(state);
-        this.bindNativeTaskIssuesSync(state, this.findRequestRevisionsModal());
-
-        if (state.modalPinned) {
-            this.recheckPinnedModal(state);
-        }
+        this.bindDirectNativeModalSync(state);
     },
 
     findTabList() {
@@ -182,7 +173,10 @@ const plugin = {
         panel.className = 'absolute inset-0 z-40 hidden bg-background overflow-y-auto p-4';
 
         const wrap = document.createElement('div');
-        wrap.className = 'max-w-3xl mx-auto space-y-3';
+        wrap.className = 'max-w-3xl mx-auto space-y-4';
+
+        const fieldWrap = document.createElement('div');
+        fieldWrap.className = 'space-y-2';
 
         const label = document.createElement('label');
         label.className = 'text-sm text-muted-foreground font-medium';
@@ -193,13 +187,39 @@ const plugin = {
             'flex min-h-[160px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y';
         textarea.placeholder = 'Describe the specific issues with the task...';
         textarea.addEventListener('input', () => {
-            this.syncTaskIssuesToNativeModal(state);
+            this.updateTaskIssuesFromCustom(state, textarea.value);
         });
 
-        wrap.appendChild(label);
-        wrap.appendChild(textarea);
+        fieldWrap.appendChild(label);
+        fieldWrap.appendChild(textarea);
+
+        const buttonRow = document.createElement('div');
+        buttonRow.className = 'flex flex-wrap items-center justify-end gap-2 pt-2';
+        buttonRow.appendChild(this.createActionButton('Copy Information to Native Modal', () => {
+            this.runNativeModalTransaction(state, { mode: 'export', hidden: false });
+        }));
+        buttonRow.appendChild(this.createActionButton('Silent Request', () => {
+            this.runNativeModalTransaction(state, { mode: 'submit-silent', hidden: true });
+        }));
+        buttonRow.appendChild(this.createActionButton('Request and Notify Author', () => {
+            this.runNativeModalTransaction(state, { mode: 'submit-notify', hidden: true });
+        }, true));
+
+        wrap.appendChild(fieldWrap);
+        wrap.appendChild(buttonRow);
         panel.appendChild(wrap);
         return panel;
+    },
+
+    createActionButton(label, onClick, primary = false) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = primary
+            ? 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:text-destructive-foreground transition-colors hover:bg-destructive h-9 pl-4 pr-4 py-2'
+            : 'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 pl-4 pr-4 py-2';
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
     },
 
     activateRRTab(state) {
@@ -211,14 +231,9 @@ const plugin = {
         state.tabActive = true;
         state.contentPanel.classList.remove('hidden');
         this.syncTabState(state, true);
+        this.syncCustomControlsFromState(state);
         Logger.info('Request Revisions Tab: activated');
-        if (!state.modalPinned) {
-            this.openAndPinModal(state);
-        } else {
-            this.applyHiddenStyles(state);
-            this.ensureTaskSelected(state);
-            this.syncTaskIssuesToNativeModal(state);
-        }
+        this.runNativeModalTransaction(state, { mode: 'import', hidden: true });
     },
 
     deactivateRRTab(state) {
@@ -228,15 +243,7 @@ const plugin = {
             state.contentPanel.classList.add('hidden');
         }
         this.syncTabState(state, false);
-        this.removeOutsideDismissBlocker(state);
-        this.disconnectPinObserver(state);
-        this.removeEscBlocker(state);
-        this.unbindNativeTaskIssuesSync(state);
-        this.dismissPinnedModal(state);
-        this.restorePageInteractionLock(state);
-        state.modalPinned = false;
-        state.pinnedModal = null;
-        state.pinnedBackdrop = null;
+        this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
         Logger.info('Request Revisions Tab: deactivated');
     },
 
@@ -255,52 +262,126 @@ const plugin = {
         }
     },
 
-    async openAndPinModal(state) {
-        if (state.reopening) return;
-        state.reopening = true;
-        state.openedByTab = true;
+    updateTaskIssuesFromCustom(state, value) {
+        if (state.syncingFromNative) return;
+        state.rrData.taskIssues = value || '';
+    },
 
+    updateTaskIssuesFromNative(state, value) {
+        state.rrData.taskIssues = value || '';
+        this.syncCustomControlsFromState(state);
+    },
+
+    syncCustomControlsFromState(state) {
+        if (!state.taskIssuesTextarea) return;
+        const next = state.rrData.taskIssues || '';
+        if (state.taskIssuesTextarea.value === next) return;
+        state.syncingFromNative = true;
         try {
-            const nativeButton = document.querySelector('[data-ui="request-revisions"]');
-            if (!nativeButton) {
-                Logger.warn('Request Revisions Tab: native Request Revisions button not found');
-                return;
-            }
-
-            this.installOutsideDismissBlocker(state);
-            const existingModal = this.findRequestRevisionsModal();
-            if (!existingModal) {
-                nativeButton.click();
-            }
-
-            const modal = await this.waitForModal();
-            if (!modal) {
-                Logger.warn('Request Revisions Tab: native modal did not open');
-                return;
-            }
-
-            state.pinnedModal = modal;
-            state.pinnedBackdrop = this.findBackdropForModal(modal);
-            state.modalPinned = true;
-            state.dismissingPinnedModal = false;
-            modal.setAttribute(RR_MODAL_MANAGED_MARKER, 'true');
-            if (state.pinnedBackdrop) {
-                state.pinnedBackdrop.setAttribute(RR_BACKDROP_MANAGED_MARKER, 'true');
-            }
-
-            this.applyHiddenStyles(state);
-            this.ensureTaskSelected(state);
-            this.bindNativeTaskIssuesSync(state, modal);
-            this.syncTaskIssuesToNativeModal(state);
-            this.installEscBlocker(state);
-            this.installOutsideDismissBlocker(state);
-            this.installPinObserver(state);
-            Logger.info('Request Revisions Tab: native modal pinned behind tab');
-        } catch (error) {
-            Logger.error('Request Revisions Tab: failed to open/pin native modal', error);
+            this.setInputValue(state.taskIssuesTextarea, next);
         } finally {
-            state.reopening = false;
+            state.syncingFromNative = false;
         }
+    },
+
+    async runNativeModalTransaction(state, options) {
+        if (state.transactionInProgress) {
+            Logger.warn('Request Revisions Tab: native modal transaction already in progress');
+            return false;
+        }
+        state.transactionInProgress = true;
+        const hidden = options.hidden !== false;
+        let modal = null;
+        let closeWhenDone = hidden || options.mode !== 'export';
+        try {
+            modal = await this.openNativeModal(state, { hidden });
+            if (!modal) {
+                Logger.warn(`Request Revisions Tab: transaction "${options.mode}" could not open native modal`);
+                return false;
+            }
+
+            if (options.mode === 'import') {
+                await this.importFromNativeModal(state, modal);
+                Logger.info('Request Revisions Tab: imported native modal state');
+                return true;
+            }
+
+            await this.exportToNativeModal(state, modal);
+            if (options.mode === 'export') {
+                Logger.info(hidden
+                    ? 'Request Revisions Tab: saved custom state into hidden native modal'
+                    : 'Request Revisions Tab: copied custom state into visible native modal');
+                closeWhenDone = hidden;
+                return true;
+            }
+
+            const verified = await this.verifyNativeModalCopy(state, modal);
+            if (!verified) {
+                Logger.error('Request Revisions Tab: native modal copy verification failed; submit cancelled');
+                return false;
+            }
+
+            const buttonLabel = options.mode === 'submit-silent' ? 'Silent Request' : 'Request and Notify Author';
+            const submitButton = this.findButtonByText(modal, buttonLabel);
+            if (!submitButton) {
+                Logger.error(`Request Revisions Tab: native submit button not found: ${buttonLabel}`);
+                return false;
+            }
+            submitButton.click();
+            closeWhenDone = false;
+            Logger.info(`Request Revisions Tab: clicked native "${buttonLabel}"`);
+            return true;
+        } catch (error) {
+            Logger.error(`Request Revisions Tab: native modal transaction failed (${options.mode})`, error);
+            return false;
+        } finally {
+            if (closeWhenDone && modal && document.body.contains(modal)) {
+                this.closeNativeModal(modal);
+            }
+            this.cleanupTransactionStyles(state);
+            state.transactionModal = null;
+            state.transactionBackdrop = null;
+            state.transactionInProgress = false;
+            state.nativeSyncModal = null;
+        }
+    },
+
+    async openNativeModal(state, options) {
+        const existing = this.findRequestRevisionsModal();
+        if (existing) {
+            state.transactionModal = existing;
+            state.transactionBackdrop = this.findBackdropForModal(existing);
+            if (options.hidden) this.applyHiddenTransactionStyles(state, existing, state.transactionBackdrop);
+            return existing;
+        }
+
+        const nativeButton = this.findNativeRequestRevisionsButton();
+        if (!nativeButton) {
+            Logger.warn('Request Revisions Tab: native Request Revisions button not found');
+            return null;
+        }
+
+        let preHideObserver = null;
+        if (options.hidden) {
+            preHideObserver = new MutationObserver(() => {
+                const modal = this.findRequestRevisionsModal();
+                if (!modal) return;
+                this.applyHiddenTransactionStyles(state, modal, this.findBackdropForModal(modal));
+            });
+            preHideObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
+        nativeButton.click();
+        const modal = await this.waitForModal();
+        if (preHideObserver) preHideObserver.disconnect();
+        if (!modal) return null;
+
+        state.transactionModal = modal;
+        state.transactionBackdrop = this.findBackdropForModal(modal);
+        if (options.hidden) {
+            this.applyHiddenTransactionStyles(state, modal, state.transactionBackdrop);
+        }
+        return modal;
     },
 
     waitForModal(timeoutMs = 3000) {
@@ -348,46 +429,54 @@ const plugin = {
         return document.querySelector('div[data-aria-hidden="true"][data-state="open"][class*="bg-black"]');
     },
 
-    applyHiddenStyles(state) {
-        if (state.pinnedModal) {
-            state.pinnedModal.style.opacity = '0';
-            state.pinnedModal.style.pointerEvents = 'none';
-            state.pinnedModal.style.left = '-9999px';
-            state.pinnedModal.style.top = '0';
+    applyHiddenTransactionStyles(state, modal, backdrop) {
+        state.transactionModal = modal;
+        state.transactionBackdrop = backdrop;
+        if (modal) {
+            modal.setAttribute(RR_MANAGED_MODAL_MARKER, 'true');
+            modal.style.opacity = '0';
+            modal.style.pointerEvents = 'none';
+            modal.style.left = '-9999px';
+            modal.style.top = '0';
         }
-        if (state.pinnedBackdrop) {
-            state.pinnedBackdrop.style.opacity = '0';
-            state.pinnedBackdrop.style.pointerEvents = 'none';
+        if (backdrop) {
+            backdrop.style.opacity = '0';
+            backdrop.style.pointerEvents = 'none';
         }
         this.releasePageInteractionLock(state);
     },
 
-    restorePinnedModalVisibility(state) {
-        if (state.pinnedModal) {
-            state.pinnedModal.style.opacity = '';
-            state.pinnedModal.style.pointerEvents = '';
-            state.pinnedModal.style.left = '';
-            state.pinnedModal.style.top = '';
-            state.pinnedModal.removeAttribute(RR_MODAL_MANAGED_MARKER);
-        }
-        if (state.pinnedBackdrop) {
-            state.pinnedBackdrop.style.opacity = '';
-            state.pinnedBackdrop.style.pointerEvents = '';
-            state.pinnedBackdrop.removeAttribute(RR_BACKDROP_MANAGED_MARKER);
-        }
+    cleanupTransactionStyles(state) {
+        this.restorePageInteractionLock(state);
     },
 
-    dismissPinnedModal(state) {
-        const modal = state.pinnedModal;
-        if (!modal || !document.body.contains(modal)) return;
-        state.dismissingPinnedModal = true;
+    releasePageInteractionLock(state) {
+        if (!state.pointerLockReleased) {
+            state.originalBodyPointerEvents = document.body.style.pointerEvents || '';
+            state.originalHtmlPointerEvents = document.documentElement.style.pointerEvents || '';
+            state.pointerLockReleased = true;
+        }
+        document.body.style.pointerEvents = '';
+        document.documentElement.style.pointerEvents = '';
+    },
+
+    restorePageInteractionLock(state) {
+        if (!state.pointerLockReleased) return;
+        document.body.style.pointerEvents = state.originalBodyPointerEvents || '';
+        document.documentElement.style.pointerEvents = state.originalHtmlPointerEvents || '';
+        state.originalBodyPointerEvents = null;
+        state.originalHtmlPointerEvents = null;
+        state.pointerLockReleased = false;
+    },
+
+    closeNativeModal(modal) {
         const closeButton = this.findModalCloseButton(modal);
         if (closeButton) {
             closeButton.click();
-            Logger.info('Request Revisions Tab: dismissed hidden native modal');
-            return;
+            return true;
         }
         Logger.warn('Request Revisions Tab: modal close button not found');
+        return false;
     },
 
     findModalCloseButton(modal) {
@@ -401,47 +490,78 @@ const plugin = {
         ) || null;
     },
 
-    releasePageInteractionLock(state) {
-        if (!state.pointerLockReleased) {
-            state.originalBodyPointerEvents = document.body.style.pointerEvents || '';
-            state.originalHtmlPointerEvents = document.documentElement.style.pointerEvents || '';
-            state.pointerLockReleased = true;
+    async importFromNativeModal(state, modal) {
+        await this.ensureTaskSelected(modal);
+        const taskTextarea = await this.waitForTaskTextarea(modal);
+        if (!taskTextarea) {
+            Logger.warn('Request Revisions Tab: native Task textarea not found during import');
+            return;
         }
-        document.body.style.pointerEvents = '';
-        document.documentElement.style.pointerEvents = '';
-        requestAnimationFrame(() => {
-            if (!state.tabActive || !state.modalPinned) return;
-            document.body.style.pointerEvents = '';
-            document.documentElement.style.pointerEvents = '';
-        });
-        setTimeout(() => {
-            if (!state.tabActive || !state.modalPinned) return;
-            document.body.style.pointerEvents = '';
-            document.documentElement.style.pointerEvents = '';
-        }, 50);
+        this.updateTaskIssuesFromNative(state, taskTextarea.value || '');
     },
 
-    restorePageInteractionLock(state) {
-        if (!state.pointerLockReleased) return;
-        document.body.style.pointerEvents = state.originalBodyPointerEvents || '';
-        document.documentElement.style.pointerEvents = state.originalHtmlPointerEvents || '';
-        state.originalBodyPointerEvents = null;
-        state.originalHtmlPointerEvents = null;
-        state.pointerLockReleased = false;
+    async exportToNativeModal(state, modal) {
+        await this.ensureTaskSelected(modal);
+        const taskTextarea = await this.waitForTaskTextarea(modal);
+        if (!taskTextarea) {
+            Logger.warn('Request Revisions Tab: native Task textarea not found during export');
+            return false;
+        }
+        state.syncingToNative = true;
+        try {
+            this.setInputValue(taskTextarea, state.rrData.taskIssues || '');
+        } finally {
+            state.syncingToNative = false;
+        }
+        return true;
     },
 
-    ensureTaskSelected(state) {
-        const modal = state.pinnedModal || this.findRequestRevisionsModal();
-        if (!modal) return;
+    async verifyNativeModalCopy(state, modal) {
+        let taskTextarea = modal.querySelector('textarea#feedback-Task');
+        if (taskTextarea && taskTextarea.value === (state.rrData.taskIssues || '')) {
+            return true;
+        }
+        await this.waitForAnimationFrame();
+        taskTextarea = modal.querySelector('textarea#feedback-Task');
+        if (taskTextarea && taskTextarea.value === (state.rrData.taskIssues || '')) {
+            return true;
+        }
+        if (taskTextarea) {
+            this.setInputValue(taskTextarea, state.rrData.taskIssues || '');
+            await this.waitForAnimationFrame();
+            return taskTextarea.value === (state.rrData.taskIssues || '');
+        }
+        return false;
+    },
+
+    ensureTaskSelected(modal) {
         const taskButton = this.findIssueButton(modal, 'Task');
         if (!taskButton) {
             Logger.warn('Request Revisions Tab: Task issue button not found');
-            return;
+            return Promise.resolve(false);
         }
-        if (this.isIssueButtonSelected(taskButton)) return;
+        if (this.isIssueButtonSelected(taskButton)) return Promise.resolve(true);
         taskButton.click();
-        setTimeout(() => this.syncTaskIssuesToNativeModal(state), 0);
         Logger.info('Request Revisions Tab: Task issue section opened');
+        return this.waitForAnimationFrame().then(() => true);
+    },
+
+    waitForTaskTextarea(modal, timeoutMs = 1000) {
+        const existing = modal.querySelector('textarea#feedback-Task');
+        if (existing) return Promise.resolve(existing);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const textarea = modal.querySelector('textarea#feedback-Task');
+                if (!textarea) return;
+                observer.disconnect();
+                resolve(textarea);
+            });
+            observer.observe(modal, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(modal.querySelector('textarea#feedback-Task'));
+            }, timeoutMs);
+        });
     },
 
     findIssueButton(modal, labelText) {
@@ -465,43 +585,38 @@ const plugin = {
         return className.includes('border-brand') || className.includes('text-brand');
     },
 
-    syncTaskIssuesToNativeModal(state) {
-        if (state.syncingFromNative) return;
-        const modal = state.pinnedModal || this.findRequestRevisionsModal();
-        const source = state.taskIssuesTextarea;
-        if (!modal || !source) return;
-        const target = modal.querySelector('textarea#feedback-Task');
-        if (!target) {
-            this.ensureTaskSelected(state);
-            setTimeout(() => this.syncTaskIssuesToNativeModal(state), 0);
-            return;
-        }
-        state.syncingToNative = true;
-        try {
-            this.setInputValue(target, source.value);
-        } finally {
-            state.syncingToNative = false;
-        }
+    findButtonByText(root, labelText) {
+        return Array.from(root.querySelectorAll('button')).find((button) =>
+            button.textContent.replace(/\s+/g, ' ').trim() === labelText
+        ) || null;
     },
 
-    bindNativeTaskIssuesSync(state, modal) {
-        if (!modal) {
-            this.unbindNativeTaskIssuesSync(state);
+    bindDirectNativeModalSync(state) {
+        const modal = this.findRequestRevisionsModal();
+        if (!modal || modal === state.transactionModal || modal.hasAttribute(RR_MANAGED_MODAL_MARKER)) {
+            if (!modal) this.unbindNativeTaskIssuesSync(state);
             return;
         }
-        const target = modal.querySelector('textarea#feedback-Task');
-        if (!target) return;
-        if (state.nativeTaskTextarea === target && state.nativeToCustomHandler) {
-            this.syncNativeTaskIssuesToCustom(state);
+
+        if (state.tabActive && state.nativeSyncModal !== modal) {
+            state.nativeSyncModal = modal;
+            this.exportToNativeModal(state, modal).then(() => {
+                this.bindDirectNativeModalSync(state);
+            });
             return;
         }
+
+        const taskTextarea = modal.querySelector('textarea#feedback-Task');
+        if (!taskTextarea) return;
+        if (state.nativeTaskTextarea === taskTextarea && state.nativeToCustomHandler) return;
+
         this.unbindNativeTaskIssuesSync(state);
-        state.nativeTaskTextarea = target;
+        state.nativeTaskTextarea = taskTextarea;
         state.nativeToCustomHandler = () => this.syncNativeTaskIssuesToCustom(state);
-        target.addEventListener('input', state.nativeToCustomHandler);
-        target.addEventListener('change', state.nativeToCustomHandler);
+        taskTextarea.addEventListener('input', state.nativeToCustomHandler);
+        taskTextarea.addEventListener('change', state.nativeToCustomHandler);
         this.syncNativeTaskIssuesToCustom(state);
-        Logger.debug('Request Revisions Tab: native Task textarea sync bound');
+        Logger.debug('Request Revisions Tab: direct native Task textarea sync bound');
     },
 
     unbindNativeTaskIssuesSync(state) {
@@ -511,16 +626,14 @@ const plugin = {
         }
         state.nativeTaskTextarea = null;
         state.nativeToCustomHandler = null;
+        state.nativeSyncModal = null;
     },
 
     syncNativeTaskIssuesToCustom(state) {
-        if (state.syncingToNative) return;
-        const source = state.nativeTaskTextarea;
-        const target = state.taskIssuesTextarea;
-        if (!source || !target || target.value === source.value) return;
+        if (state.syncingToNative || !state.nativeTaskTextarea) return;
         state.syncingFromNative = true;
         try {
-            this.setInputValue(target, source.value);
+            this.updateTaskIssuesFromNative(state, state.nativeTaskTextarea.value || '');
         } finally {
             state.syncingFromNative = false;
         }
@@ -535,158 +648,7 @@ const plugin = {
         el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     },
 
-    installEscBlocker(state) {
-        if (state.escBlocker) return;
-        state.escBlocker = (event) => {
-            if (!state.tabActive || !state.modalPinned) return;
-            if (event.key !== 'Escape') return;
-            event.stopImmediatePropagation();
-            event.stopPropagation();
-            event.preventDefault();
-            Logger.debug('Request Revisions Tab: blocked Escape while modal is pinned');
-        };
-        document.addEventListener('keydown', state.escBlocker, true);
-    },
-
-    removeEscBlocker(state) {
-        if (!state.escBlocker) return;
-        document.removeEventListener('keydown', state.escBlocker, true);
-        state.escBlocker = null;
-    },
-
-    installOutsideDismissBlocker(state) {
-        if (state.outsideDismissBlocker) return;
-        state.outsideDismissBlocker = (event) => {
-            if (state.replayingOutsideEvent) return;
-            if (!state.tabActive || !state.pinnedModal || !state.modalPinned) return;
-            if (event.target === state.pinnedModal || event.target === state.pinnedBackdrop) {
-                event.stopImmediatePropagation();
-                event.stopPropagation();
-                event.preventDefault();
-                return;
-            }
-
-            const target = event.target;
-            const panel = state.contentPanel;
-            const isInCustomPanel = this.isNodeInside(panel, target);
-            if (isInCustomPanel) {
-                this.focusCustomPanelTarget(event);
-                event.stopImmediatePropagation();
-                event.stopPropagation();
-                return;
-            }
-
-            const replayTarget = this.asElement(target);
-            event.stopImmediatePropagation();
-            event.stopPropagation();
-            event.preventDefault();
-            if (event.type === 'click') {
-                this.replayOutsideClick(state, event, replayTarget);
-            }
-        };
-
-        for (const eventName of ['pointerdown', 'mousedown', 'mouseup', 'click', 'focusin']) {
-            window.addEventListener(eventName, state.outsideDismissBlocker, true);
-        }
-        Logger.debug('Request Revisions Tab: outside dismiss blocker installed');
-    },
-
-    removeOutsideDismissBlocker(state) {
-        if (!state.outsideDismissBlocker) return;
-        for (const eventName of ['pointerdown', 'mousedown', 'mouseup', 'click', 'focusin']) {
-            window.removeEventListener(eventName, state.outsideDismissBlocker, true);
-        }
-        state.outsideDismissBlocker = null;
-    },
-
-    focusCustomPanelTarget(event) {
-        const target = this.asElement(event.target);
-        if (!target) return;
-        const focusTarget = target.closest('textarea, input, button, select, [tabindex]');
-        if (!focusTarget || typeof focusTarget.focus !== 'function') return;
-        setTimeout(() => {
-            if (document.activeElement === focusTarget || typeof focusTarget.focus !== 'function') return;
-            focusTarget.focus({ preventScroll: true });
-        }, 0);
-    },
-
-    replayOutsideClick(state, originalEvent, target) {
-        if (!target || this.isNodeInside(state.contentPanel, target) || target === state.pinnedModal || target === state.pinnedBackdrop) {
-            return;
-        }
-        state.replayingOutsideEvent = true;
-        try {
-            const replay = new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                detail: originalEvent.detail,
-                screenX: originalEvent.screenX,
-                screenY: originalEvent.screenY,
-                clientX: originalEvent.clientX,
-                clientY: originalEvent.clientY,
-                ctrlKey: originalEvent.ctrlKey,
-                altKey: originalEvent.altKey,
-                shiftKey: originalEvent.shiftKey,
-                metaKey: originalEvent.metaKey,
-                button: originalEvent.button,
-                buttons: originalEvent.buttons
-            });
-            target.dispatchEvent(replay);
-        } finally {
-            state.replayingOutsideEvent = false;
-        }
-    },
-
-    isNodeInside(container, target) {
-        if (!container || !target || typeof target !== 'object' || typeof container.contains !== 'function') {
-            return false;
-        }
-        try {
-            return container === target || container.contains(target);
-        } catch (error) {
-            return false;
-        }
-    },
-
-    asElement(target) {
-        if (!target || typeof target !== 'object') return null;
-        if (typeof target.closest === 'function' && typeof target.dispatchEvent === 'function') {
-            return target;
-        }
-        return null;
-    },
-
-    installPinObserver(state) {
-        this.disconnectPinObserver(state);
-        state.pinObserver = new MutationObserver(() => {
-            this.recheckPinnedModal(state);
-        });
-        state.pinObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['data-state']
-        });
-    },
-
-    disconnectPinObserver(state) {
-        if (!state.pinObserver) return;
-        state.pinObserver.disconnect();
-        state.pinObserver = null;
-    },
-
-    recheckPinnedModal(state) {
-        if (!state.tabActive || state.reopening) return;
-        const stillOpen = state.pinnedModal &&
-            document.body.contains(state.pinnedModal) &&
-            state.pinnedModal.getAttribute('data-state') === 'open';
-        if (stillOpen) return;
-
-        state.modalPinned = false;
-        state.pinnedModal = null;
-        state.pinnedBackdrop = null;
-        Logger.warn('Request Revisions Tab: pinned native modal closed; reopening');
-        this.openAndPinModal(state);
+    waitForAnimationFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
     }
 };
