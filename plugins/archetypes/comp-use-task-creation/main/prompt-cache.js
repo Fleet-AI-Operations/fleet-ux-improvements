@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -66,6 +66,7 @@ const plugin = {
 
     setup(state, textarea) {
         // 1 s debounce on every keystroke
+        // (CleanupRegistry.registerEventListener also calls addEventListener internally)
         const onInput = () => {
             this.setStatus(state, 'pending');
             if (state.saveDebounceTimer) clearTimeout(state.saveDebounceTimer);
@@ -74,7 +75,6 @@ const plugin = {
                 state.saveDebounceTimer = null;
             }, 1000);
         };
-        textarea.addEventListener('input', onInput);
         CleanupRegistry.registerEventListener(textarea, 'input', onInput);
 
         // Interval check: also saves every 1 s when no debounce is pending
@@ -82,9 +82,7 @@ const plugin = {
         state.saveIntervalId = setInterval(() => {
             if (!state.saveDebounceTimer) this.maybeSave(state);
         }, 1000);
-        CleanupRegistry.registerCallback(() => {
-            if (state.saveIntervalId) clearInterval(state.saveIntervalId);
-        });
+        CleanupRegistry.registerInterval(state.saveIntervalId);
 
         // Restore button (shown once on page load)
         this.maybeShowRestoreButton(state, textarea);
