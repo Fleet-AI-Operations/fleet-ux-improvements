@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [feat/computer-use-prompt-cache] Fleet Workflow Builder UX Enhancer
+// @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.3.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -48,7 +48,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'feat/computer-use-prompt-cache',
+        branch: 'main',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
