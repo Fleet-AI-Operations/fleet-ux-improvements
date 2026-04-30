@@ -122,12 +122,6 @@
       ],
       "plugins": [
         {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-a3f797c53cbc1b8ecfc5034a73400267987c2a9edc6219e856735e018b5755a5",
-          "log": false
-        },
-        {
           "name": "execute-to-current-tool.js",
           "version": "2.0",
           "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
@@ -539,12 +533,6 @@
       "urlPattern": "work/problems/disputes/*",
       "disambiguationSelectors": [],
       "plugins": [
-        {
-          "name": "clear-search.js",
-          "version": "1.0",
-          "hash": "sha256-80b40af93a2889dc851f876b304f8dd015080f0d6c3acd2f3e5bc32a29795e23",
-          "log": false
-        },
         {
           "name": "copy-verifier-output.js",
           "version": "1.4",
