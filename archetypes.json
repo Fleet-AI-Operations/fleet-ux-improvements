@@ -253,12 +253,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "autocorrect-textareas.js",
-          "version": "1.3",
-          "hash": "sha256-25355c8a8267c1acfb4d883ba99454cdf5d6fe6db957d36ccc66c272e78c6ddb",
-          "log": false
-        },
-        {
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-c8e82a3baf86a8eab309ae81dbd39d65b1818ef0735a2a684991f41ba235966a",
