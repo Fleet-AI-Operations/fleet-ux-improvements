@@ -361,12 +361,6 @@
           "log": false
         },
         {
-          "name": "auto-start-recording.js",
-          "version": "1.0",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
-          "log": false
-        },
-        {
           "name": "copy-prompt.js",
           "version": "1.6",
           "hash": "sha256-e9fd5dfa0043ac0249b21407483e0f3985eebcb8c3ac1fed66f10cacc148a650",
