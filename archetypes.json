@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.80",
+  "archetypesVersion": "7.81",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -45,6 +45,12 @@
           "name": "feedback-given-today-env.js",
           "version": "2.3",
           "hash": "sha256-049455ccfd62fe91c77fd330f82a2b8ce31bf7a73211c569d3e29e8579131d0a",
+          "log": false
+        },
+        {
+          "name": "task-creation-today-env.js",
+          "version": "3.0",
+          "hash": "sha256-9ab03fd598a5046a1fcee023f30296dc3b11408e96ac64d74c6c08cb09980f53",
           "log": false
         },
         {
