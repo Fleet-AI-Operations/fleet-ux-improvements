@@ -558,12 +558,6 @@
           "log": false
         },
         {
-          "name": "tool-description-truncate.js",
-          "version": "1.0",
-          "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1",
-          "log": false
-        },
-        {
           "name": "tool-results-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70",
