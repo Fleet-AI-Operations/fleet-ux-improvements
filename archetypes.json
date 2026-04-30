@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.81",
+  "archetypesVersion": "7.82",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -42,9 +42,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "feedback-given-today-env.js",
-          "version": "2.3",
-          "hash": "sha256-049455ccfd62fe91c77fd330f82a2b8ce31bf7a73211c569d3e29e8579131d0a",
+          "name": "feedback-given-stats.js",
+          "version": "3.0",
+          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6",
           "log": false
         },
         {
