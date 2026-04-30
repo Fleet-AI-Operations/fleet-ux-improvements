@@ -349,12 +349,6 @@
           "log": false
         },
         {
-          "name": "copy-prompt.js",
-          "version": "1.6",
-          "hash": "sha256-e9fd5dfa0043ac0249b21407483e0f3985eebcb8c3ac1fed66f10cacc148a650",
-          "log": false
-        },
-        {
           "name": "copy-verifier-output.js",
           "version": "2.2",
           "hash": "sha256-342b609c73d59ef5775320488f0cc3182a8d37a4d38b9fb6b7c6d5a1243d3097",
