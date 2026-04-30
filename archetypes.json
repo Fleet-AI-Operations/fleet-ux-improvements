@@ -42,6 +42,18 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
+          "name": "feedback-given-stats.js",
+          "version": "3.0",
+          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6",
+          "log": false
+        },
+        {
+          "name": "task-creation-today-env.js",
+          "version": "3.0",
+          "hash": "sha256-9ab03fd598a5046a1fcee023f30296dc3b11408e96ac64d74c6c08cb09980f53",
+          "log": false
+        },
+        {
           "name": "disputes-reviewed-today.js",
           "version": "3.2",
           "hash": "sha256-fa20f6a8f3406a20ce18ea7be0850a5e7f73525fc76b0d0e009dffb60e5e437d",
