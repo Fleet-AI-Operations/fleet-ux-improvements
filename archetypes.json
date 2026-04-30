@@ -81,12 +81,6 @@
           "log": false
         },
         {
-          "name": "remove-textarea-gradient.js",
-          "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
@@ -143,12 +137,6 @@
           "name": "remember-layout-proportions.js",
           "version": "2.0",
           "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200",
-          "log": false
-        },
-        {
-          "name": "remove-textarea-gradient.js",
-          "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
           "log": false
         },
         {
@@ -271,12 +259,6 @@
           "log": false
         },
         {
-          "name": "remove-textarea-gradient.js",
-          "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
@@ -319,12 +301,6 @@
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
-          "log": false
-        },
-        {
-          "name": "remove-textarea-gradient.js",
-          "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
           "log": false
         }
       ]
