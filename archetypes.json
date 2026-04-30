@@ -122,12 +122,6 @@
       ],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.3",
-          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2",
-          "log": false
-        },
-        {
           "name": "clear-search.js",
           "version": "2.1",
           "hash": "sha256-a3f797c53cbc1b8ecfc5034a73400267987c2a9edc6219e856735e018b5755a5",
