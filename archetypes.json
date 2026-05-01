@@ -540,6 +540,12 @@
           "log": false
         },
         {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-e76d414ff42a25ea58764646b3912e05280a78d06c0d540bbf350dccf4087ad5",
+          "log": false
+        },
+        {
           "name": "env-load-gate.js",
           "version": "1.0",
           "hash": "sha256-84403bd9d0d3278966bc215c3eebec38c222feb277da52c0a7ff3625c2ec3ef3",
