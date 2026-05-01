@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.82",
+  "archetypesVersion": "7.83",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -531,6 +531,12 @@
           "name": "dispute-screenshot-upload-improvement.js",
           "version": "1.2",
           "hash": "sha256-a1bc305b24991917ce9e630cc23b1eb0d89cf4382fec4c9cab00f526c5ac25a3",
+          "log": false
+        },
+        {
+          "name": "embedded-urlbar-fit.js",
+          "version": "1.0",
+          "hash": "sha256-e76d414ff42a25ea58764646b3912e05280a78d06c0d540bbf350dccf4087ad5",
           "log": false
         },
         {
