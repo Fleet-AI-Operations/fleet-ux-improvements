@@ -81,12 +81,6 @@
           "log": false
         },
         {
-          "name": "remove-textarea-gradient.js",
-          "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
@@ -122,18 +116,6 @@
       ],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.3",
-          "hash": "sha256-0638eeaea59ff4cecffc2ca1a6e19c922e98c974ced1f54c018130313a2771d2",
-          "log": false
-        },
-        {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-a3f797c53cbc1b8ecfc5034a73400267987c2a9edc6219e856735e018b5755a5",
-          "log": false
-        },
-        {
           "name": "execute-to-current-tool.js",
           "version": "2.0",
           "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
@@ -155,12 +137,6 @@
           "name": "remember-layout-proportions.js",
           "version": "2.0",
           "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200",
-          "log": false
-        },
-        {
-          "name": "remove-textarea-gradient.js",
-          "version": "2.2",
-          "hash": "sha256-4d0f26a20e6ffaf5f943ad07aeafc6e26edeeca0e200198c23b1b88f6ed28c3e",
           "log": false
         },
         {
@@ -265,12 +241,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "autocorrect-textareas.js",
-          "version": "1.3",
-          "hash": "sha256-25355c8a8267c1acfb4d883ba99454cdf5d6fe6db957d36ccc66c272e78c6ddb",
-          "log": false
-        },
-        {
           "name": "corner-widgets-toggle.js",
           "version": "1.0",
           "hash": "sha256-c8e82a3baf86a8eab309ae81dbd39d65b1818ef0735a2a684991f41ba235966a",
@@ -286,12 +256,6 @@
           "name": "remember-layout-proportions.js",
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
-          "log": false
-        },
-        {
-          "name": "remove-textarea-gradient.js",
-          "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
           "log": false
         },
         {
@@ -338,12 +302,6 @@
           "version": "1.0",
           "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
           "log": false
-        },
-        {
-          "name": "remove-textarea-gradient.js",
-          "version": "1.3",
-          "hash": "sha256-c4b179cd62b8816a34e00f727d4d3780836bd67cd69441ac5f2f74b0d9656f60",
-          "log": false
         }
       ]
     },
@@ -358,18 +316,6 @@
           "name": "accept-task-modal-improvements.js",
           "version": "1.7",
           "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6",
-          "log": false
-        },
-        {
-          "name": "auto-start-recording.js",
-          "version": "1.0",
-          "hash": "sha256-39aed6bf3bdbdf92e4407b0e26a6f157cf1edac2cae5a513108a69b5d4bce143",
-          "log": false
-        },
-        {
-          "name": "copy-prompt.js",
-          "version": "1.6",
-          "hash": "sha256-e9fd5dfa0043ac0249b21407483e0f3985eebcb8c3ac1fed66f10cacc148a650",
           "log": false
         },
         {
@@ -552,12 +498,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "clear-search.js",
-          "version": "1.0",
-          "hash": "sha256-80b40af93a2889dc851f876b304f8dd015080f0d6c3acd2f3e5bc32a29795e23",
-          "log": false
-        },
-        {
           "name": "copy-verifier-output.js",
           "version": "1.4",
           "hash": "sha256-d994c8591e9d3ba6ac3c73736a1c47b31fc97ce786bbe683214aa93d627e180b",
@@ -615,12 +555,6 @@
           "name": "toggle-tool-parameters.js",
           "version": "1.0",
           "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "1.0",
-          "hash": "sha256-0d5430a1eae172431ca9692c3809b478d58d2779ccb30ea4cb277a3845f2d2d1",
           "log": false
         },
         {
