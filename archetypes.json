@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
-  "coreOnlyMode": false,
-  "archetypesVersion": "7.83",
+  "coreOnlyMode": true,
+  "archetypesVersion": "7.84",
   "logs": {
     "debug": false,
     "verbose": false,
