@@ -94,11 +94,19 @@ function screenshotKeyFromUrl(url) {
     }
 }
 
+function formatBoolMap(map) {
+    if (!map) return '';
+    return Object.keys(map)
+        .filter((key) => map[key])
+        .map((key) => key.replace(/\s+/g, ' ').slice(0, 48))
+        .join('|');
+}
+
 const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.12',
+    _version: '1.13',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -142,7 +150,102 @@ const plugin = {
         originalBodyPointerEvents: null,
         originalHtmlPointerEvents: null,
         pointerLockReleased: false,
-        missingLogged: false
+        missingLogged: false,
+        lastRrDebugDigest: '',
+        rrTextLogTimer: null,
+        rrTextLogPending: null,
+        rrNativeTextLogTimer: null,
+        rrNativeTextLogPending: null,
+        lastNativeTextDebugSig: '',
+        lastCustomTextDebugSig: ''
+    },
+
+    buildRrStateDigest(state) {
+        const d = state.rrData || {};
+        const shots = d.screenshots || [];
+        const uploadedKeys = shots
+            .filter((entry) => entry.type === 'uploaded' && entry.url)
+            .map((entry) => screenshotKeyFromUrl(entry.url));
+        const pendingMeta = shots
+            .filter((entry) => entry.type === 'pending' && entry.file)
+            .map((entry) => `${entry.file.name}:${entry.file.size}`);
+        const del = (d.deletedScreenshotUrls || []).join('|');
+        return [
+            `rej:${formatBoolMap(d.rejectionReasons)}`,
+            `qa:${formatBoolMap(d.qaChecklist)}`,
+            `pq:${d.promptQualityRating || ''}`,
+            `ssU:${uploadedKeys.join(',')}`,
+            `ssP:${pendingMeta.join(',')}`,
+            `ssD:${del}`
+        ].join('§');
+    },
+
+    debugLogRrDigestIfChanged(state, label) {
+        const digest = this.buildRrStateDigest(state);
+        if (digest === state.lastRrDebugDigest) return;
+        state.lastRrDebugDigest = digest;
+        Logger.debug(`requestRevisionsTab: ${label} rrSelectionDigest=${digest}`);
+    },
+
+    scheduleCustomTextFieldDebug(state, field, value) {
+        if (state.syncingFromNative) return;
+        state.rrTextLogPending = { field, value };
+        if (state.rrTextLogTimer) clearTimeout(state.rrTextLogTimer);
+        state.rrTextLogTimer = setTimeout(() => {
+            state.rrTextLogTimer = null;
+            const pending = state.rrTextLogPending;
+            state.rrTextLogPending = null;
+            if (!pending) return;
+            const sig = `custom:${pending.field}:${pending.value || ''}`;
+            if (sig === state.lastCustomTextDebugSig) return;
+            state.lastCustomTextDebugSig = sig;
+            const text = pending.value || '';
+            const len = text.length;
+            const head = text.slice(0, 120).replace(/\s+/g, ' ');
+            Logger.debug(
+                `requestRevisionsTab: custom textarea settled field=${pending.field} len=${len} head="${head}"`
+            );
+        }, 350);
+    },
+
+    scheduleNativeModalTextDebug(state, snapshot) {
+        if (!snapshot) return;
+        state.rrNativeTextLogPending = { snapshot };
+        if (state.rrNativeTextLogTimer) clearTimeout(state.rrNativeTextLogTimer);
+        state.rrNativeTextLogTimer = setTimeout(() => {
+            state.rrNativeTextLogTimer = null;
+            const pending = state.rrNativeTextLogPending;
+            state.rrNativeTextLogPending = null;
+            if (!pending?.snapshot) return;
+            const snap = pending.snapshot;
+            const parts = [];
+            if (snap.hasTaskIssues) {
+                const t = snap.taskIssues || '';
+                parts.push(`taskIssues len=${t.length} head="${t.slice(0, 120).replace(/\s+/g, ' ')}"`);
+            }
+            if (snap.hasAttemptedActions) {
+                const t = snap.attemptedActions || '';
+                parts.push(`attemptedActions len=${t.length} head="${t.slice(0, 120).replace(/\s+/g, ' ')}"`);
+            }
+            if (snap.hasGeneralRevisionFeedback) {
+                const t = snap.generalRevisionFeedback || '';
+                parts.push(`generalFeedback len=${t.length} head="${t.slice(0, 120).replace(/\s+/g, ' ')}"`);
+            }
+            if (snap.hasOtherReasonExplanation) {
+                const t = snap.otherReasonExplanation || '';
+                parts.push(`otherExplanation len=${t.length} head="${t.slice(0, 120).replace(/\s+/g, ' ')}"`);
+            }
+            if (!parts.length) return;
+            const sig = [
+                snap.hasTaskIssues ? snap.taskIssues || '' : '',
+                snap.hasAttemptedActions ? snap.attemptedActions || '' : '',
+                snap.hasGeneralRevisionFeedback ? snap.generalRevisionFeedback || '' : '',
+                snap.hasOtherReasonExplanation ? snap.otherReasonExplanation || '' : ''
+            ].join('§');
+            if (sig === state.lastNativeTextDebugSig) return;
+            state.lastNativeTextDebugSig = sig;
+            Logger.debug(`requestRevisionsTab: native textarea settled ${parts.join(' | ')}`);
+        }, 350);
     },
 
     onMutation(state) {
@@ -578,17 +681,20 @@ const plugin = {
         if (field === 'attemptedActions') state.rrData.attemptedActions = value || '';
         if (field === 'generalRevisionFeedback') state.rrData.generalRevisionFeedback = value || '';
         if (field === 'otherReasonExplanation') state.rrData.otherReasonExplanation = value || '';
+        this.scheduleCustomTextFieldDebug(state, field, value);
     },
 
     setQaChecklistItemFromCustom(state, label, checked) {
         if (state.syncingFromNative) return;
         state.rrData.qaChecklist[label] = Boolean(checked);
+        Logger.debug(`requestRevisionsTab: custom QA checklist "${label}" → ${Boolean(checked)}`);
     },
 
     setPromptQualityFromCustom(state, option) {
         if (state.syncingFromNative) return;
         state.rrData.promptQualityRating = option;
         this.syncCustomControlsFromState(state);
+        Logger.debug(`requestRevisionsTab: custom prompt quality → "${option}"`);
     },
 
     bindCustomScreenshotDragAndDrop(state, target) {
@@ -648,6 +754,7 @@ const plugin = {
     mergeCustomScreenshots(state, files) {
         if (!files?.length) return;
         const next = [...(state.rrData.screenshots || [])];
+        const added = [];
         for (const file of files) {
             if (next.length >= RR_MAX_SCREENSHOTS) break;
             if (!file.type?.startsWith('image/')) continue;
@@ -657,16 +764,29 @@ const plugin = {
                 file,
                 localUrl: URL.createObjectURL(file)
             });
+            added.push(file);
         }
         state.rrData.screenshots = next;
         this.syncCustomControlsFromState(state);
         this.pushPendingScreenshotsToNative(state);
-        Logger.log(`requestRevisionsTab: screenshots updated (${state.rrData.screenshots.length})`);
+        for (const file of added) {
+            Logger.debug(
+                `requestRevisionsTab: custom screenshot queued name=${file.name} bytes=${file.size} total=${state.rrData.screenshots.length}`
+            );
+        }
+        if (!added.length) {
+            Logger.debug('requestRevisionsTab: custom screenshot merge skipped (none accepted; likely at cap or non-image)');
+        }
     },
 
     removeCustomScreenshotAt(state, index) {
         const entry = state.rrData.screenshots?.[index];
         if (!entry) return;
+        const kind = entry.type;
+        const meta =
+            kind === 'pending'
+                ? `file=${entry.file?.name || '?'}`
+                : `urlKey=${screenshotKeyFromUrl(entry.url)}`;
         if (entry.type === 'pending' && entry.localUrl) {
             URL.revokeObjectURL(entry.localUrl);
         }
@@ -686,15 +806,25 @@ const plugin = {
         this.rebuildNativePendingScreenshotInput(state);
         this.pushPendingScreenshotsToNative(state);
         this.syncCustomControlsFromState(state);
+        Logger.debug(`requestRevisionsTab: custom screenshot removed idx=${index} type=${kind} ${meta}`);
     },
 
     pushPendingScreenshotsToNative(state) {
+        const pending = (state.rrData.screenshots || []).filter((entry) => entry.type === 'pending' && entry.file);
+        const deleteQueued = (state.rrData.deletedScreenshotUrls || []).length > 0;
+        if (!pending.length && !deleteQueued) return;
         const modal = this.findRequestRevisionsModal();
         if (modal && this.isNativeModalOpen(modal)) {
+            Logger.debug(
+                `requestRevisionsTab: screenshot sync to open native modal pending=${pending.length} deleteQueued=${deleteQueued}`
+            );
             void this.syncNativeScreenshots(state, modal);
             return;
         }
         if (!state.transactionInProgress) {
+            Logger.debug(
+                `requestRevisionsTab: screenshot sync via hidden native export pending=${pending.length} deleteQueued=${deleteQueued}`
+            );
             this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
         }
     },
@@ -912,23 +1042,32 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
     mergeIntoNativeScreenshotInput(input, files) {
         if (!input || !files?.length) return;
+        const before = input.files?.length || 0;
         const dt = new DataTransfer();
         const existing = Array.from(input.files || []);
         for (const file of existing) {
             if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
             dt.items.add(file);
         }
+        const accepted = [];
         for (const file of files) {
             if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
             if (!file.type?.startsWith('image/')) continue;
             if (file.size > RR_MAX_SCREENSHOT_BYTES) continue;
             dt.items.add(file);
+            accepted.push(file);
         }
-        if (dt.files.length === (input.files?.length || 0)) return;
+        if (dt.files.length === before) {
+            Logger.debug('requestRevisionsTab: native screenshot input merge no-op (unchanged or none accepted)');
+            return;
+        }
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        Logger.debug(`requestRevisionsTab: ${input.files.length} file(s) on native screenshot input`);
+        const names = accepted.map((f) => `${f.name}:${f.size}`).join(', ');
+        Logger.debug(
+            `requestRevisionsTab: native screenshot input merged +${accepted.length} (${names}) totalFiles=${input.files.length}`
+        );
     },
 
     updateTaskIssuesFromCustom(state, value) {
@@ -946,6 +1085,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             state.rrData.otherReasonExplanation = '';
         }
         this.syncCustomControlsFromState(state);
+        Logger.debug(`requestRevisionsTab: custom rejection reason "${label}" → ${Boolean(checked)}`);
     },
 
     updateTaskIssuesFromNative(state, value) {
@@ -1045,23 +1185,28 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
     async runNativeModalTransaction(state, options) {
         if (state.transactionInProgress) {
-            Logger.warn('Request Revisions Tab: native modal transaction already in progress');
+            Logger.warn('RequestRevisionsTab: native modal transaction already in progress');
             return false;
         }
         state.transactionInProgress = true;
         const hidden = options.hidden !== false;
         let modal = null;
         let closeWhenDone = hidden || options.mode !== 'export';
+        Logger.debug(
+            `requestRevisionsTab: transaction start mode=${options.mode} hidden=${hidden} closeWhenDone=${closeWhenDone}`
+        );
         try {
             modal = await this.openNativeModal(state, { hidden });
             if (!modal) {
-                Logger.warn(`Request Revisions Tab: transaction "${options.mode}" could not open native modal`);
+                Logger.warn(`requestRevisionsTab: transaction "${options.mode}" could not open native modal`);
                 return false;
             }
 
             if (options.mode === 'import') {
                 await this.importFromNativeModal(state, modal);
                 Logger.info('Request Revisions Tab: imported native modal state');
+                this.debugLogRrDigestIfChanged(state, 'after import transaction');
+                Logger.debug('requestRevisionsTab: transaction end mode=import ok=true');
                 return true;
             }
 
@@ -1070,6 +1215,8 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 Logger.info(hidden
                     ? 'Request Revisions Tab: saved custom state into hidden native modal'
                     : 'Request Revisions Tab: copied custom state into visible native modal');
+                this.debugLogRrDigestIfChanged(state, 'after export transaction');
+                Logger.debug(`requestRevisionsTab: transaction end mode=export hidden=${hidden} ok=true`);
                 closeWhenDone = hidden;
                 return true;
             }
@@ -1077,6 +1224,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             const verified = await this.verifyNativeModalCopy(state, modal);
             if (!verified) {
                 Logger.error('Request Revisions Tab: native modal copy verification failed; submit cancelled');
+                Logger.debug('requestRevisionsTab: transaction end mode=submit verifyFailed=true');
                 return false;
             }
 
@@ -1084,17 +1232,21 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             const submitButton = this.findButtonByText(modal, buttonLabel);
             if (!submitButton) {
                 Logger.error(`Request Revisions Tab: native submit button not found: ${buttonLabel}`);
+                Logger.debug(`requestRevisionsTab: transaction end mode=${options.mode} missingSubmit=true`);
                 return false;
             }
             submitButton.click();
             closeWhenDone = false;
             Logger.info(`Request Revisions Tab: clicked native "${buttonLabel}"`);
+            Logger.debug(`requestRevisionsTab: transaction end mode=${options.mode} submitted=true`);
             return true;
         } catch (error) {
             Logger.error(`Request Revisions Tab: native modal transaction failed (${options.mode})`, error);
+            Logger.debug(`requestRevisionsTab: transaction end mode=${options.mode} threw=true`);
             return false;
         } finally {
             if (closeWhenDone && modal && document.body.contains(modal)) {
+                Logger.debug('requestRevisionsTab: transaction closing native modal');
                 this.closeNativeModal(modal);
             }
             this.cleanupTransactionStyles(state);
@@ -1102,6 +1254,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             state.transactionBackdrop = null;
             state.transactionInProgress = false;
             state.nativeSyncModal = null;
+            Logger.debug('requestRevisionsTab: transaction cleanup complete');
         }
     },
 
@@ -1111,6 +1264,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             state.transactionModal = existing;
             state.transactionBackdrop = this.findBackdropForModal(existing);
             if (options.hidden) this.applyHiddenTransactionStyles(state, existing, state.transactionBackdrop);
+            Logger.debug(`requestRevisionsTab: openNativeModal reusedExisting=true hidden=${options.hidden}`);
             return existing;
         }
 
@@ -1140,6 +1294,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         if (options.hidden) {
             this.applyHiddenTransactionStyles(state, modal, state.transactionBackdrop);
         }
+        Logger.debug(`requestRevisionsTab: openNativeModal openedNew=true hidden=${options.hidden}`);
         return modal;
     },
 
@@ -1250,6 +1405,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
     },
 
     async importFromNativeModal(state, modal) {
+        Logger.debug('requestRevisionsTab: importFromNativeModal start');
         const taskTextarea = await this.ensureTaskSelected(modal);
         if (!taskTextarea) {
             Logger.warn('Request Revisions Tab: native Task textarea not found during import');
@@ -1258,9 +1414,11 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const snapshot = this.readNativeModalSnapshot(modal);
         snapshot.taskIssues = taskTextarea.value || '';
         this.updateFromNativeModalSnapshot(state, snapshot);
+        Logger.debug('requestRevisionsTab: importFromNativeModal applied snapshot');
     },
 
     async exportToNativeModal(state, modal) {
+        Logger.debug('requestRevisionsTab: exportToNativeModal start');
         const taskTextarea = await this.ensureTaskSelected(modal);
         if (!taskTextarea) {
             Logger.warn('Request Revisions Tab: native Task textarea not found during export');
@@ -1285,19 +1443,24 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         } finally {
             state.syncingToNative = false;
         }
+        Logger.debug('requestRevisionsTab: exportToNativeModal complete');
         return true;
     },
 
     async verifyNativeModalCopy(state, modal) {
+        Logger.debug('requestRevisionsTab: verifyNativeModalCopy pass1');
         if (this.nativeModalMatchesState(state, modal)) {
             return true;
         }
         await this.waitForAnimationFrame();
+        Logger.debug('requestRevisionsTab: verifyNativeModalCopy pass2');
         if (this.nativeModalMatchesState(state, modal)) {
             return true;
         }
+        Logger.debug('requestRevisionsTab: verifyNativeModalCopy re-export');
         await this.exportToNativeModal(state, modal);
         await this.waitForAnimationFrame();
+        Logger.debug('requestRevisionsTab: verifyNativeModalCopy pass3');
         if (this.nativeModalMatchesState(state, modal)) return true;
         return false;
     },
@@ -1310,7 +1473,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         }
         if (!this.isIssueButtonSelected(taskButton)) {
             taskButton.click();
-            Logger.info('Request Revisions Tab: Task issue section opened');
+            Logger.debug('requestRevisionsTab: native "Task" issue lane selected');
             await this.waitForAnimationFrame();
         }
         return this.waitForTaskTextarea(modal, 3000);
@@ -1461,6 +1624,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             if (!button) continue;
             const desired = Boolean(state.rrData.rejectionReasons?.[label]);
             if (this.isNativeCheckboxChecked(button) === desired) continue;
+            Logger.debug(`requestRevisionsTab: native rejection sync click "${label}" → ${desired}`);
             button.click();
             if (label === RR_REASON_OTHER_LABEL && desired) {
                 await this.waitForOtherReasonTextarea(modal, 2000);
@@ -1510,6 +1674,8 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             if (!button) continue;
             const desired = Boolean(state.rrData.qaChecklist?.[item]);
             if (this.isNativeCheckboxChecked(button) === desired) continue;
+            const short = item.length > 80 ? `${item.slice(0, 80)}…` : item;
+            Logger.debug(`requestRevisionsTab: native QA checklist sync click "${short}" → ${desired}`);
             button.click();
         }
     },
@@ -1563,6 +1729,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const button = map[desired];
         if (!button) return;
         if (this.isNativePromptOptionSelected(button)) return;
+        Logger.debug(`requestRevisionsTab: native prompt quality sync click → "${desired}"`);
         button.click();
     },
 
@@ -1595,10 +1762,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const input = this.findNativeScreenshotInput(modal);
         if (!input) return;
 
+        const deleteKeys = state.rrData.deletedScreenshotUrls || [];
+        if (deleteKeys.length) {
+            Logger.debug(`requestRevisionsTab: native screenshot delete queue keys=${deleteKeys.length}`);
+        }
+
         const remainingDeletes = [];
         for (const key of state.rrData.deletedScreenshotUrls || []) {
             const removeButton = this.findNativeScreenshotRemoveButton(modal, key);
             if (removeButton) {
+                Logger.debug(`requestRevisionsTab: native screenshot remove click key=${key}`);
                 removeButton.click();
                 await this.waitForNativeScreenshotRemoved(modal, key);
             } else {
@@ -1616,7 +1789,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             if (entry.type !== 'pending' || !entry.file) continue;
             dt.items.add(entry.file);
         }
-        if (!dt.files.length) return;
+        if (!dt.files.length) {
+            if (deleteKeys.length) {
+                Logger.debug('requestRevisionsTab: native screenshot sync (deletes only, no pending upload batch)');
+            }
+            return;
+        }
+        const names = pendingEntries.map((e) => `${e.file.name}:${e.file.size}`).join(', ');
+        Logger.debug(
+            `requestRevisionsTab: native screenshot upload batch files=${dt.files.length} pendingMeta=${names}`
+        );
         const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1627,6 +1809,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             5000
         );
         this.updateFromNativeModalSnapshot(state, this.readNativeModalSnapshot(modal));
+        Logger.debug('requestRevisionsTab: native screenshot sync refreshed snapshot into tab state');
     },
 
     waitForNativeScreenshotCount(modal, expectedCount, timeoutMs = 5000) {
@@ -1709,6 +1892,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         if (state.tabActive && state.nativeSyncModal !== modal) {
             state.nativeSyncModal = modal;
+            Logger.debug('requestRevisionsTab: direct native sync tab became active; exporting tab→native');
             this.exportToNativeModal(state, modal).then(() => {
                 this.bindDirectNativeModalSync(state);
             });
@@ -1718,7 +1902,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         if (state.nativeSyncModal !== modal || !state.nativeToCustomHandler) {
             this.unbindNativeTaskIssuesSync(state);
             this.bindNativeModalControls(state, modal);
-            Logger.debug('Request Revisions Tab: direct native modal sync bound');
+            Logger.debug('requestRevisionsTab: direct native modal sync bound');
         }
     },
 
@@ -1779,6 +1963,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
     },
 
     unbindNativeTaskIssuesSync(state) {
+        if (state.nativeSyncModal) {
+            Logger.debug('requestRevisionsTab: direct native modal sync unbound');
+        }
         if (state.nativeSyncBindings?.length && state.nativeToCustomHandler) {
             for (const binding of state.nativeSyncBindings) {
                 binding.element?.removeEventListener(binding.eventName, state.nativeToCustomHandler);
@@ -1804,9 +1991,11 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         try {
             const snapshot = this.readNativeModalSnapshot(state.nativeSyncModal);
             this.updateFromNativeModalSnapshot(state, snapshot);
+            this.scheduleNativeModalTextDebug(state, snapshot);
         } finally {
             state.syncingFromNative = false;
         }
+        this.debugLogRrDigestIfChanged(state, 'native→tab');
     },
 
     setTextareaValueSilently(el, value) {
