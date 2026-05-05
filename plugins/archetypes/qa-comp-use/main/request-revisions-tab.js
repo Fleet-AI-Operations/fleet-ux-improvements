@@ -74,7 +74,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.10',
+    _version: '1.11',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -99,7 +99,8 @@ const plugin = {
             rejectionReasons: createDefaultRejectionReasons(),
             qaChecklist: createDefaultQaChecklist(),
             promptQualityRating: '',
-            screenshots: []
+            screenshots: [],
+            deletedScreenshotUrls: []
         },
         transactionInProgress: false,
         transactionModal: null,
@@ -619,47 +620,94 @@ const plugin = {
 
     mergeCustomScreenshots(state, files) {
         if (!files?.length) return;
-        const dt = new DataTransfer();
-        for (const existing of state.rrData.screenshots || []) {
-            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
-            dt.items.add(existing);
-        }
+        const next = [...(state.rrData.screenshots || [])];
         for (const file of files) {
-            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            if (next.length >= RR_MAX_SCREENSHOTS) break;
             if (!file.type?.startsWith('image/')) continue;
             if (file.size > RR_MAX_SCREENSHOT_BYTES) continue;
-            dt.items.add(file);
+            next.push({
+                type: 'pending',
+                file,
+                localUrl: URL.createObjectURL(file)
+            });
         }
-        state.rrData.screenshots = Array.from(dt.files);
+        state.rrData.screenshots = next;
         this.syncCustomControlsFromState(state);
+        this.pushPendingScreenshotsToNative(state);
         Logger.log(`requestRevisionsTab: screenshots updated (${state.rrData.screenshots.length})`);
     },
 
     removeCustomScreenshotAt(state, index) {
-        const dt = new DataTransfer();
-        (state.rrData.screenshots || []).forEach((file, idx) => {
-            if (idx === index) return;
-            dt.items.add(file);
-        });
-        state.rrData.screenshots = Array.from(dt.files);
+        const entry = state.rrData.screenshots?.[index];
+        if (!entry) return;
+        if (entry.type === 'pending' && entry.localUrl) {
+            URL.revokeObjectURL(entry.localUrl);
+        }
+        if (entry.type === 'uploaded') {
+            const modal = this.findRequestRevisionsModal();
+            const removeButton = modal ? this.findNativeScreenshotRemoveButton(modal, entry.url) : null;
+            if (removeButton) {
+                removeButton.click();
+            } else {
+                state.rrData.deletedScreenshotUrls = [
+                    ...(state.rrData.deletedScreenshotUrls || []),
+                    entry.url
+                ];
+            }
+        }
+        state.rrData.screenshots = (state.rrData.screenshots || []).filter((_, idx) => idx !== index);
+        this.rebuildNativePendingScreenshotInput(state);
+        this.pushPendingScreenshotsToNative(state);
         this.syncCustomControlsFromState(state);
+    },
+
+    pushPendingScreenshotsToNative(state) {
+        const modal = this.findRequestRevisionsModal();
+        if (modal && this.isNativeModalOpen(modal)) {
+            void this.syncNativeScreenshots(state, modal);
+            return;
+        }
+        if (!state.transactionInProgress) {
+            this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
+        }
+    },
+
+    rebuildNativePendingScreenshotInput(state) {
+        const modal = this.findRequestRevisionsModal();
+        if (!modal || !this.isNativeModalOpen(modal)) return;
+        const input = this.findNativeScreenshotInput(modal);
+        if (!input) return;
+        const dt = new DataTransfer();
+        for (const entry of state.rrData.screenshots || []) {
+            if (entry.type !== 'pending' || !entry.file) continue;
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            dt.items.add(entry.file);
+        }
+        input.files = dt.files;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
     },
 
     renderCustomScreenshotPreviews(state) {
         if (!state.screenshotPreviewWrap) return;
-        for (const url of state.previewUrls || []) URL.revokeObjectURL(url);
-        state.previewUrls = [];
+        const activeLocalUrls = new Set(
+            (state.rrData.screenshots || [])
+                .filter((entry) => entry.type === 'pending' && entry.localUrl)
+                .map((entry) => entry.localUrl)
+        );
+        for (const url of state.previewUrls || []) {
+            if (!activeLocalUrls.has(url)) URL.revokeObjectURL(url);
+        }
+        state.previewUrls = Array.from(activeLocalUrls);
         state.screenshotPreviewWrap.innerHTML = '';
 
-        (state.rrData.screenshots || []).forEach((file, index) => {
+        (state.rrData.screenshots || []).forEach((entry, index) => {
             const card = document.createElement('div');
             card.className = 'group relative rounded-md border border-input overflow-hidden bg-muted/20';
             const img = document.createElement('img');
             img.className = 'w-full h-24 object-cover';
-            img.alt = file.name || `Screenshot ${index + 1}`;
-            const url = URL.createObjectURL(file);
-            state.previewUrls.push(url);
-            img.src = url;
+            img.alt = entry.alt || entry.file?.name || `Screenshot ${index + 1}`;
+            img.src = entry.type === 'uploaded' ? entry.url : entry.localUrl;
 
             const remove = document.createElement('button');
             remove.type = 'button';
@@ -738,7 +786,18 @@ const plugin = {
             state.rrData.promptQualityRating = snapshot.promptQualityRating || '';
         }
         if (snapshot.hasScreenshots) {
-            state.rrData.screenshots = snapshot.screenshots || [];
+            const deleted = new Set(state.rrData.deletedScreenshotUrls || []);
+            const uploaded = (snapshot.screenshots || []).filter((entry) => !deleted.has(entry.url));
+            const previousUploadedCount = (state.rrData.screenshots || [])
+                .filter((entry) => entry.type === 'uploaded').length;
+            const confirmedPendingCount = Math.max(0, uploaded.length - previousUploadedCount);
+            const pending = (state.rrData.screenshots || [])
+                .filter((entry) => entry.type === 'pending')
+                .slice(confirmedPendingCount);
+            state.rrData.screenshots = [
+                ...uploaded,
+                ...pending
+            ].slice(0, RR_MAX_SCREENSHOTS);
         }
         if (snapshot.hasOtherReasonExplanation) {
             state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
@@ -1031,7 +1090,7 @@ const plugin = {
                 const other = await this.waitForOtherReasonTextarea(modal, 2000);
                 if (other) this.setInputValue(other, state.rrData.otherReasonExplanation || '');
             }
-            this.syncNativeScreenshots(state, modal);
+            await this.syncNativeScreenshots(state, modal);
         } finally {
             state.syncingToNative = false;
         }
@@ -1111,6 +1170,11 @@ const plugin = {
         const qaRead = this.readNativeQaChecklist(modal);
         const promptRead = this.readNativePromptQuality(modal);
         const nativeScreenshotInput = this.findNativeScreenshotInput(modal);
+        const nativeScreenshots = this.findNativeScreenshotPreviewImgs(modal).map((img) => ({
+            type: 'uploaded',
+            url: img.src,
+            alt: img.alt || ''
+        }));
         const hasOtherSelected = Boolean(rejectionRead.reasons?.[RR_REASON_OTHER_LABEL]);
 
         return {
@@ -1129,7 +1193,7 @@ const plugin = {
             hasPromptQualityRating: promptRead.complete,
             promptQualityRating: promptRead.selected,
             hasScreenshots: Boolean(nativeScreenshotInput),
-            screenshots: nativeScreenshotInput ? Array.from(nativeScreenshotInput.files || []) : []
+            screenshots: nativeScreenshots
         };
     },
 
@@ -1312,26 +1376,87 @@ const plugin = {
         return modal.querySelector('label input[type="file"][accept*="image"]');
     },
 
-    syncNativeScreenshots(state, modal) {
+    findNativeScreenshotPreviewImgs(modal) {
+        const input = this.findNativeScreenshotInput(modal);
+        const section = input?.closest('div');
+        if (!section) return [];
+        const imgs = [];
+        for (const img of section.querySelectorAll('div.relative.group img')) {
+            if (!img.src) continue;
+            imgs.push(img);
+        }
+        return imgs;
+    },
+
+    findNativeScreenshotRemoveButton(modal, url) {
+        for (const img of this.findNativeScreenshotPreviewImgs(modal)) {
+            if (img.src !== url) continue;
+            return img.closest('div.relative.group')?.querySelector('button[type="button"]') || null;
+        }
+        return null;
+    },
+
+    async syncNativeScreenshots(state, modal) {
         const input = this.findNativeScreenshotInput(modal);
         if (!input) return;
-        const dt = new DataTransfer();
-        for (const file of state.rrData.screenshots || []) {
-            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
-            dt.items.add(file);
+
+        const remainingDeletes = [];
+        for (const url of state.rrData.deletedScreenshotUrls || []) {
+            const removeButton = this.findNativeScreenshotRemoveButton(modal, url);
+            if (removeButton) {
+                removeButton.click();
+            } else {
+                remainingDeletes.push(url);
+            }
         }
+        state.rrData.deletedScreenshotUrls = remainingDeletes;
+
+        const dt = new DataTransfer();
+        const pendingEntries = (state.rrData.screenshots || [])
+            .filter((entry) => entry.type === 'pending' && entry.file)
+            .slice(0, RR_MAX_SCREENSHOTS);
+        for (const entry of state.rrData.screenshots || []) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            if (entry.type !== 'pending' || !entry.file) continue;
+            dt.items.add(entry.file);
+        }
+        if (!dt.files.length) return;
+        const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
+        await this.waitForNativeScreenshotCount(
+            modal,
+            Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + pendingEntries.length),
+            5000
+        );
+        this.updateFromNativeModalSnapshot(state, this.readNativeModalSnapshot(modal));
+    },
+
+    waitForNativeScreenshotCount(modal, expectedCount, timeoutMs = 5000) {
+        if (this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount) {
+            return Promise.resolve(true);
+        }
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                if (this.findNativeScreenshotPreviewImgs(modal).length < expectedCount) return;
+                observer.disconnect();
+                resolve(true);
+            });
+            observer.observe(modal, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount);
+            }, timeoutMs);
+        });
     },
 
     areScreenshotListsEqual(left, right) {
-        if (left.length !== right.length) return false;
-        for (let i = 0; i < left.length; i++) {
-            const a = left[i];
-            const b = right[i];
-            if (!a || !b) return false;
-            if (a.name !== b.name || a.size !== b.size || a.type !== b.type) return false;
+        const leftUploaded = (left || []).filter((entry) => entry.type === 'uploaded').map((entry) => entry.url);
+        const rightUploaded = (right || []).filter((entry) => entry.type === 'uploaded').map((entry) => entry.url);
+        if (leftUploaded.length !== rightUploaded.length) return false;
+        for (let i = 0; i < leftUploaded.length; i++) {
+            if (leftUploaded[i] !== rightUploaded[i]) return false;
         }
         return true;
     },
