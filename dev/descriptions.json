@@ -25,11 +25,6 @@
       "description": "Makes bug report cards expandable to see full text"
     },
     {
-      "file": "corner-widgets-toggle.js",
-      "name": "Corner Widgets Toggle",
-      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
-    },
-    {
       "file": "hide-testing-environment-banner.js",
       "name": "Hide Testing Environment Banner",
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
@@ -60,11 +55,6 @@
       "file": "bug-report-expand.js",
       "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
-    },
-    {
-      "file": "corner-widgets-toggle.js",
-      "name": "Corner Widgets Toggle",
-      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -121,11 +111,6 @@
       "file": "copy-verifier-output.js",
       "name": "Copy Verifier Output",
       "description": "Add a copy button after Stdout in the Grading panel. Click copies the verifier output to the clipboard"
-    },
-    {
-      "file": "corner-widgets-toggle.js",
-      "name": "Corner Widgets Toggle",
-      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "hide-testing-environment-banner.js",
@@ -290,11 +275,6 @@
       "description": "Add favorite stars to tools list"
     },
     {
-      "file": "corner-widgets-toggle.js",
-      "name": "Corner Widgets Toggle",
-      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
-    },
-    {
       "file": "prompt-scratchpad.js",
       "name": "Scratchpad",
       "description": "Adds an adjustable height scratchpad to the page"
@@ -345,11 +325,6 @@
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
-    },
-    {
-      "file": "corner-widgets-toggle.js",
-      "name": "Corner Widgets Toggle",
-      "description": "Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar"
     },
     {
       "file": "json-editor-online.js",
