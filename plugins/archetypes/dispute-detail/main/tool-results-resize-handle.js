@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeDetailToolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false, envWaitingLogged: false },
@@ -19,7 +19,7 @@ const plugin = {
     onMutation(state) {
         if (!this.isToolEnvReady()) {
             if (!state.envWaitingLogged) {
-                Logger.debug('Result-resize-handle: waiting for tool environment');
+                Logger.debug(`${this.id}: waiting for tool environment gate`);
                 state.envWaitingLogged = true;
             }
             return;
@@ -125,6 +125,10 @@ const plugin = {
         };
         const handleMouseUp = () => {
             if (!isResizing) return;
+            const endH = resultDiv.offsetHeight;
+            if (endH !== startHeight) {
+                Logger.debug(`${this.id}: user finished resizing result box`, { fromPx: startHeight, toPx: endH });
+            }
             isResizing = false;
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
@@ -149,7 +153,7 @@ const plugin = {
             e.stopPropagation();
             e.preventDefault();
             resultDiv.style.maxHeight = '';
-            Logger.log('Result box size reset to default');
+            Logger.log(`${this.id}: user reset result box height to default`);
         });
         buttonContainer.appendChild(resetBtn);
     },

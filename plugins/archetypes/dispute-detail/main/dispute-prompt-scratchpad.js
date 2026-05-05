@@ -6,7 +6,7 @@ const plugin = {
     id: 'disputePromptScratchpad',
     name: 'Dispute Prompt Scratchpad',
     description: 'Collapsible scratchpad after the task prompt on dispute detail (not persisted)',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -22,7 +22,7 @@ const plugin = {
         const promptCard = this.findPromptCard();
         if (!promptCard || !promptCard.parentElement) {
             if (!state.missingPromptLogged) {
-                Logger.debug('Dispute Prompt Scratchpad: task prompt card not found');
+                Logger.debug(`${this.id}: task prompt card not found yet`);
                 state.missingPromptLogged = true;
             }
             return;
@@ -31,7 +31,7 @@ const plugin = {
 
         const wrap = this.buildScratchpad();
         promptCard.insertAdjacentElement('afterend', wrap);
-        Logger.log('Dispute Prompt Scratchpad: inserted collapsible scratchpad after task prompt');
+        Logger.log(`${this.id}: inserted collapsible scratchpad after task prompt`);
     },
 
     findPromptCard() {
@@ -84,6 +84,7 @@ const plugin = {
             const next = this.createChevronSvg(open);
             chevron.replaceWith(next);
             chevron = next;
+            Logger.log(`${this.id}: user toggled scratchpad`, { expanded: open });
         });
 
         inner.appendChild(btn);

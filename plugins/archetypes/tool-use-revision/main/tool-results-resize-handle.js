@@ -6,7 +6,7 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -21,7 +21,7 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.log('⚠ Workflow panel not found for tool-results-resize-handle');
+                Logger.warn(`${this.id}: workflow panel not found`);
                 state.missingLogged = true;
             }
             return;
@@ -36,7 +36,7 @@ const plugin = {
         const toolsContainer = this.findToolsArea(panel);
         if (!toolsContainer) {
             if (!state.missingLogged) {
-                Logger.log('⚠ Tools container not found for tool-results-resize-handle');
+                Logger.warn(`${this.id}: tools container not found`);
                 state.missingLogged = true;
             }
             return;
@@ -204,6 +204,10 @@ const plugin = {
 
         const handleMouseUp = () => {
             if (!isResizing) return;
+            const endH = resultDiv.offsetHeight;
+            if (endH !== startHeight) {
+                Logger.debug(`${this.id}: user finished resizing result box`, { fromPx: startHeight, toPx: endH });
+            }
             isResizing = false;
 
             if (animFrameId) {
@@ -239,7 +243,7 @@ const plugin = {
             e.stopPropagation();
             e.preventDefault();
             resultDiv.style.maxHeight = '';
-            Logger.log('Result box size reset to default');
+            Logger.log(`${this.id}: user reset result box height to default`);
         });
 
         // Insert after the divider in the result toolbar

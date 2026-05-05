@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -106,12 +106,45 @@ const plugin = {
         return null;
     },
 
-    getStatsForDate(rows, targetMonth, targetDay) {
+    /**
+     * Resolve "Submitted" (date) and "Environment" column indices from thead.
+     * Newer dashboards prepend an ID column (date at index 1, environment at 3).
+     * @returns {{ submitted: number, env: number }}
+     */
+    getTaskTableColumnIndices(table) {
+        const row = table.tHead && table.tHead.rows[0];
+        if (!row || !row.cells.length) {
+            const fallback = { submitted: 1, env: 3 };
+            Logger.warn('task-creation-today-env: missing thead row; using fallback column indices', fallback);
+            return fallback;
+        }
+        let submitted = -1;
+        let env = -1;
+        for (let i = 0; i < row.cells.length; i++) {
+            const text = (row.cells[i].textContent || '').replace(/\s+/g, ' ').trim();
+            if (submitted < 0 && /^Submitted\b/i.test(text)) submitted = i;
+            if (env < 0 && /^Environment\b/i.test(text)) env = i;
+        }
+        if (submitted >= 0 && env >= 0) {
+            Logger.debug('task-creation-today-env: resolved table columns from thead', { submitted, env, theadCells: row.cells.length });
+            return { submitted, env };
+        }
+        const legacy = row.cells.length >= 4 ? { submitted: 1, env: 3 } : { submitted: 0, env: 2 };
+        Logger.warn('task-creation-today-env: Submitted/Environment headers not matched; using heuristic', {
+            theadCells: row.cells.length,
+            ...legacy,
+        });
+        return legacy;
+    },
+
+    getStatsForDate(rows, targetMonth, targetDay, cols) {
+        const si = cols.submitted;
+        const ei = cols.env;
         let count = 0;
         const envCount = Object.create(null);
         for (const tr of rows) {
-            const dateCell = tr.cells[0];
-            const envCell = tr.cells[2];
+            const dateCell = tr.cells[si];
+            const envCell = tr.cells[ei];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
@@ -136,7 +169,8 @@ const plugin = {
         return lines.join('\n');
     },
 
-    isPastDayUncertain(rows, targetMonth, targetDay, stats) {
+    isPastDayUncertain(rows, targetMonth, targetDay, stats, cols) {
+        const si = cols.submitted;
         if (!rows || rows.length === 0) return true;
         if (!stats) return true;
         if (stats.count === 0) return true;
@@ -145,7 +179,7 @@ const plugin = {
         let lastIndex = -1;
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
+            const dateCell = tr.cells[si];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
@@ -157,7 +191,7 @@ const plugin = {
         }
         for (let i = lastIndex + 1; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
+            const dateCell = tr.cells[si];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
             if (parsed && !this.sameDate(parsed, { month: targetMonth, day: targetDay })) {
@@ -171,7 +205,7 @@ const plugin = {
         const main = Context.dom.query('main', { context: `${this.id}.main` });
         if (!main) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: main not found');
+                Logger.warn('task-creation-today-env: main not found — breakdown will not run until <main> is present');
                 state.missingLogged = true;
             }
             return;
@@ -180,7 +214,7 @@ const plugin = {
         const table = this.findTaskCreationTable(main);
         if (!table) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: Task Creation table not found');
+                Logger.warn('task-creation-today-env: Task Creation table not found (expected thead with Submitted + Environment)');
                 state.missingLogged = true;
             }
             return;
@@ -191,13 +225,14 @@ const plugin = {
         const grid = submittedHeading ? submittedHeading.closest('.grid') : (panel && panel.firstElementChild);
         if (!grid || !grid.matches('.grid')) {
             if (!state.missingLogged) {
-                Logger.debug('task-creation-today-env: 4-card grid not found in tab panel');
+                Logger.warn('task-creation-today-env: stat cards grid (.grid with h3 Submitted) not found — cannot attach breakdown block');
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
 
+        const cols = this.getTaskTableColumnIndices(table);
         const rows = Array.from(table.querySelectorAll('tbody tr'));
         let todayCount = 0;
         const envCount = Object.create(null);
@@ -205,8 +240,8 @@ const plugin = {
 
         for (let i = 0; i < rows.length; i++) {
             const tr = rows[i];
-            const dateCell = tr.cells[0];
-            const envCell = tr.cells[2];
+            const dateCell = tr.cells[cols.submitted];
+            const envCell = tr.cells[cols.env];
             const dateText = dateCell ? dateCell.textContent.trim() : '';
             const env = envCell ? envCell.textContent.trim() : '';
             const parsed = this.parseDateText(dateText);
@@ -216,6 +251,16 @@ const plugin = {
                 if (env) envCount[env] = (envCount[env] || 0) + 1;
             }
             if (i === rows.length - 1) lastRowIsToday = rowIsToday;
+        }
+
+        if (rows.length > 0 && todayCount === 0) {
+            const sample = rows[0].cells[cols.submitted];
+            const sampleText = sample ? sample.textContent.trim() : '';
+            Logger.debug('task-creation-today-env: zero matches for today after scan', {
+                rowCount: rows.length,
+                firstSubmittedCell: sampleText,
+                cols,
+            });
         }
 
         const uncertain = rows.length > 0 && lastRowIsToday;
@@ -265,12 +310,14 @@ const plugin = {
             if (prevBtn) {
                 prevBtn.addEventListener('click', () => {
                     block._wfDaysAgo = (block._wfDaysAgo || 0) + 1;
+                    Logger.log('task-creation-today-env: day navigation — previous day', { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }
             if (nextBtn) {
                 nextBtn.addEventListener('click', () => {
                     block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
+                    Logger.log('task-creation-today-env: day navigation — next day', { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }
@@ -328,14 +375,19 @@ const plugin = {
                     isUncertain = ts.uncertain || false;
                     copyText = ts.copyText || '';
                     if (dateLabelEl) dateLabelEl.textContent = '';
+                    Logger.debug('task-creation-today-env: showing today breakdown from last table scan', {
+                        count: ts.count,
+                        uncertain: !!ts.uncertain,
+                    });
                 } else {
                     const ref = self.dateNDaysAgo(daysAgo);
                     if (dateLabelEl) dateLabelEl.textContent = self.formatDateLabel(ref);
                     const panelEl = block.closest('[role="tabpanel"]');
                     const tableEl = panelEl ? panelEl.querySelector('table') : null;
                     const liveRows = tableEl ? Array.from(tableEl.querySelectorAll('tbody tr')) : [];
-                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day);
-                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats);
+                    const colIdx = block._wfColIndices || { submitted: 1, env: 3 };
+                    const stats = self.getStatsForDate(liveRows, ref.month, ref.day, colIdx);
+                    isUncertain = self.isPastDayUncertain(liveRows, ref.month, ref.day, stats, colIdx);
                     copyText = self.buildCopyTextForDate(stats, isUncertain);
                     displayCount = `${stats.count}${isUncertain ? '?' : ''}`;
                     displayBreakdown = Object.keys(stats.envCount).length === 0
@@ -344,6 +396,14 @@ const plugin = {
                             .sort((a, b) => b[1] - a[1])
                             .map(([name, count]) => `${name}: ${count}`)
                             .join(', ');
+                    Logger.log('task-creation-today-env: past-day breakdown computed', {
+                        daysAgo,
+                        target: self.formatDateLabel(ref),
+                        taskRowsInTable: liveRows.length,
+                        matchedTasks: stats.count,
+                        uncertain: isUncertain,
+                        cols: colIdx,
+                    });
                 }
 
                 if (countEl) {
@@ -373,6 +433,7 @@ const plugin = {
             Logger.log('task-creation-today-env: injected breakdown and copy block');
         }
 
+        block._wfColIndices = cols;
         block._wfTodayStats = {
             count: todayCount,
             uncertain,
@@ -383,6 +444,13 @@ const plugin = {
         if (typeof block._wfUpdateUI === 'function') {
             block._wfUpdateUI();
         }
+
+        Logger.debug('task-creation-today-env: table scan complete', {
+            rowCount: rows.length,
+            todayCount,
+            uncertain,
+            cols,
+        });
 
         if (uncertain && !state.lastUncertain) {
             Logger.info('task-creation-today-env: last visible row is today — showing uncertain count and scroll message');
