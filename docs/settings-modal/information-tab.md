@@ -1,4 +1,4 @@
-1.16
+1.17
 ## Information
 If you still cannot find a specific codename, please use the `Feedback` tab to notify me!
 #### Environment Codenames
@@ -38,6 +38,7 @@ If you still cannot find a specific codename, please use the `Feedback` tab to n
 | Torch                     | PagerDuty              |
 | Vault                     | Confluence             |
 | Ward                      | Synk                   |
+| Yelp                      | Hearth                 |
 
 #### Guidelines
 - [Tool Use (Kinesis) Guidelines](https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d)

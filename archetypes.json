@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.89",
+  "archetypesVersion": "7.90",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -26,7 +26,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.16"
+      "version": "1.17"
     },
     {
       "name": "features-tab.md",
