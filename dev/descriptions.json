@@ -40,11 +40,6 @@
       "description": "Adds an adjustable height scratchpad to the page"
     },
     {
-      "file": "remember-layout-proportions.js",
-      "name": "Remember Layout Proportions",
-      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
-    },
-    {
       "file": "remove-textarea-gradient.js",
       "name": "Remove Textarea Gradient",
       "description": "Removes the gradient fade overlay from the prompt textarea"
@@ -75,11 +70,6 @@
       "file": "hide-testing-environment-banner.js",
       "name": "Hide Testing Environment Banner",
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
-    },
-    {
-      "file": "remember-layout-proportions.js",
-      "name": "Remember Layout Proportions",
-      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
     },
     {
       "file": "remove-textarea-gradient.js",
@@ -148,11 +138,6 @@
       "description": "Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)"
     },
     {
-      "file": "remember-layout-proportions.js",
-      "name": "Remember Layout Proportions",
-      "description": "Persist and restore the main pane split (task detail vs instance) on comp-use QA pages"
-    },
-    {
       "file": "request-revisions.js",
       "name": "Request Revisions Improvements",
       "description": "Improvements to the Request Revisions Workflow"
@@ -211,11 +196,6 @@
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
-    },
-    {
-      "file": "remember-layout-proportions.js",
-      "name": "Remember Layout Proportions",
-      "description": "Persist and restore the main panel split positions on QA Tool Use pages"
     },
     {
       "file": "request-revisions.js",
@@ -380,11 +360,6 @@
       "file": "prompt-and-notes-areas.js",
       "name": "Prompt and Notes Areas Layout",
       "description": "Anchors scratchpad to bottom and makes prompt handle control both areas"
-    },
-    {
-      "file": "remember-layout-proportions.js",
-      "name": "Remember Layout Proportions",
-      "description": "Persist and restore the main panel split positions on Tool Use Task Creation pages"
     },
     {
       "file": "remove-textarea-gradient.js",

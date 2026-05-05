@@ -97,7 +97,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Favorites**: Add favorite stars to tools list
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
 - **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.
-- **Remember Layout Proportions**: Persist and restore the main panel split positions on Tool Use Task Creation pages
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
@@ -114,13 +113,11 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
-- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 
 ### Computer Use Task Revision Page
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
-- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 
 ### QA Tool Use Review Page
@@ -144,7 +141,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Hide Grading Panel Button**: Adds Hide Grading in the Grading panel header; delegates to the top Hide Grading control when grading is open.
-- **Remember Layout Proportions**: Persist and restore the main pane split (task detail vs instance) on comp-use QA pages
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
 
 ### Dispute Detail Page
@@ -162,7 +158,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Session Trace Review Page
 - **Session Trace Show/Hide Widgets**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar before Skip
-- **Remember Layout Proportions**: Save and restore panel split percentages (main columns, prompt vs comments in the left stack, transcript vs screenshot in the trace area)
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)
 
 ### Task View

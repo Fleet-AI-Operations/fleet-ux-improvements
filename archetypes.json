@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.85",
+  "archetypesVersion": "7.86",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.22"
+      "version": "1.23"
     }
   ],
   "archetypes": [
@@ -131,12 +131,6 @@
           "name": "json-editor-online.js",
           "version": "2.1",
           "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180",
-          "log": false
-        },
-        {
-          "name": "remember-layout-proportions.js",
-          "version": "2.0",
-          "hash": "sha256-1a76da94eca1432764ddc9de9acadc7aaae19606f54bcb5060a4ab80eb32c200",
           "log": false
         },
         {
@@ -253,12 +247,6 @@
           "log": false
         },
         {
-          "name": "remember-layout-proportions.js",
-          "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
@@ -295,12 +283,6 @@
           "name": "prompt-scratchpad.js",
           "version": "2.1",
           "hash": "sha256-64f89a9a1b7f2b2fc211a39ca811bff49dd4c2764c320f0a5906f9beb97845e7",
-          "log": false
-        },
-        {
-          "name": "remember-layout-proportions.js",
-          "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
           "log": false
         }
       ]
@@ -394,12 +376,6 @@
           "log": false
         },
         {
-          "name": "remember-layout-proportions.js",
-          "version": "1.0",
-          "hash": "sha256-5a69e4876f4d3eb3118d98e72390f60539cdab45182bfbcacd757d397d00e677",
-          "log": false
-        },
-        {
           "name": "auto-expand-verifier-section.js",
           "version": "1.0",
           "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
@@ -460,12 +436,6 @@
           "name": "hide-grading-panel-button.js",
           "version": "1.1",
           "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
-          "log": false
-        },
-        {
-          "name": "remember-layout-proportions.js",
-          "version": "1.0",
-          "hash": "sha256-c958e9433ff34ed1519b194fc15d3d049c87a0bacc93a1942e6b980030a0a719",
           "log": false
         },
         {
@@ -628,12 +598,6 @@
           "log": false
         },
         {
-          "name": "remember-layout-proportions.js",
-          "version": "2.1",
-          "hash": "sha256-8985981482bd2cc81e05ff4e28be3f336fce63280fcd77ed48bff381937ceee0",
-          "log": false
-        },
-        {
           "name": "source-data-explorer.js",
           "version": "4.0",
           "hash": "sha256-f8fff3deb0e23fc26053afe83da4da68b2f231f9c3961e1bdfb5ac0caa3a86f0",
@@ -731,12 +695,6 @@
           "name": "bug-report-expand.js",
           "version": "1.4",
           "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
-        {
-          "name": "remember-layout-proportions.js",
-          "version": "2.3",
-          "hash": "sha256-e0fd2c0cbaf0079253b5e7033b9240605bdf94927debbe7c6b8de2c313993fde",
           "log": false
         },
         {
