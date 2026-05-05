@@ -4,12 +4,37 @@
 const RR_TAB_MARKER = 'data-fleet-rr-tab';
 const RR_PANEL_MARKER = 'data-fleet-rr-tab-panel';
 const RR_MANAGED_MODAL_MARKER = 'data-fleet-rr-tab-transaction-modal';
+const RR_CUSTOM_REASON_MARKER = 'data-fleet-rr-reason';
+const RR_REASON_OTHER_LABEL = 'Other (please explain)';
+const RR_REJECTION_REASONS = [
+    'Prompt is unclear or ambiguous',
+    'Prompt is too simple or trivial',
+    'Prompt is unrealistic or overly contrived',
+    'Doesn\'t follow user story/scenario',
+    'Prompt contains factual errors',
+    'Task cannot be completed as described',
+    'Verifier doesn\'t correctly validate the task',
+    'Environment is broken or misconfigured',
+    'Duplicate of existing task',
+    RR_REASON_OTHER_LABEL
+];
+
+function createDefaultRejectionReasons() {
+    return RR_REJECTION_REASONS.reduce((acc, label) => {
+        acc[label] = false;
+        return acc;
+    }, {});
+}
+
+function normalizeText(value) {
+    return (value || '').replace(/\s+/g, ' ').trim();
+}
 
 const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -18,15 +43,24 @@ const plugin = {
         tabButton: null,
         contentPanel: null,
         taskIssuesTextarea: null,
+        attemptedActionsTextarea: null,
+        generalFeedbackTextarea: null,
+        otherReasonTextarea: null,
+        otherReasonWrap: null,
         tabActive: false,
         rrData: {
-            taskIssues: ''
+            taskIssues: '',
+            attemptedActions: '',
+            generalRevisionFeedback: '',
+            otherReasonExplanation: '',
+            rejectionReasons: createDefaultRejectionReasons()
         },
         transactionInProgress: false,
         transactionModal: null,
         transactionBackdrop: null,
-        nativeTaskTextarea: null,
+        nativeSyncBindings: [],
         nativeToCustomHandler: null,
+        nativeSyncObserver: null,
         nativeSyncModal: null,
         syncingToNative: false,
         syncingFromNative: false,
@@ -96,7 +130,7 @@ const plugin = {
         if (existingTab && existingPanel) {
             state.tabButton = existingTab;
             state.contentPanel = existingPanel;
-            state.taskIssuesTextarea = existingPanel.querySelector('textarea');
+            this.bindCustomControls(state, existingPanel);
             state.tabInjected = true;
             return;
         }
@@ -136,7 +170,7 @@ const plugin = {
 
         state.tabButton = tabButton;
         state.contentPanel = panel;
-        state.taskIssuesTextarea = panel.querySelector('textarea');
+        this.bindCustomControls(state, panel);
         state.tabInjected = true;
         Logger.log('Request Revisions Tab: tab injected');
     },
@@ -175,23 +209,29 @@ const plugin = {
         const wrap = document.createElement('div');
         wrap.className = 'max-w-3xl mx-auto space-y-4';
 
-        const fieldWrap = document.createElement('div');
-        fieldWrap.className = 'space-y-2';
-
-        const label = document.createElement('label');
-        label.className = 'text-sm text-muted-foreground font-medium';
-        label.textContent = 'Task Issues';
-
-        const textarea = document.createElement('textarea');
-        textarea.className =
-            'flex min-h-[160px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y';
-        textarea.placeholder = 'Describe the specific issues with the task...';
-        textarea.addEventListener('input', () => {
-            this.updateTaskIssuesFromCustom(state, textarea.value);
-        });
-
-        fieldWrap.appendChild(label);
-        fieldWrap.appendChild(textarea);
+        wrap.appendChild(this.createReasonCheckboxesSection(state));
+        wrap.appendChild(this.createOtherExplanationSection(state));
+        wrap.appendChild(this.createTextareaSection(state, {
+            title: 'Task Issues',
+            placeholder: 'Describe the specific issues with the task...',
+            minHeightClass: 'min-h-[160px]',
+            field: 'taskIssues',
+            optional: false
+        }));
+        wrap.appendChild(this.createTextareaSection(state, {
+            title: 'What did you try?',
+            placeholder: 'Describe all the things you tried to complete this task...',
+            minHeightClass: 'min-h-[100px]',
+            field: 'attemptedActions',
+            optional: false
+        }));
+        wrap.appendChild(this.createTextareaSection(state, {
+            title: 'General revision feedback',
+            placeholder: 'Optional: Add any additional general feedback about the task...',
+            minHeightClass: 'min-h-[120px]',
+            field: 'generalRevisionFeedback',
+            optional: true
+        }));
 
         const buttonRow = document.createElement('div');
         buttonRow.className = 'flex flex-wrap items-center justify-end gap-2 pt-2';
@@ -205,10 +245,82 @@ const plugin = {
             this.runNativeModalTransaction(state, { mode: 'submit-notify', hidden: true });
         }, true));
 
-        wrap.appendChild(fieldWrap);
         wrap.appendChild(buttonRow);
         panel.appendChild(wrap);
         return panel;
+    },
+
+    createReasonCheckboxesSection(state) {
+        const section = document.createElement('div');
+        section.className = 'space-y-2';
+        const label = document.createElement('div');
+        label.className = 'text-sm text-muted-foreground font-medium';
+        label.textContent = 'Reason(s) for rejection';
+        const list = document.createElement('div');
+        list.className = 'rounded-md border p-2 space-y-1 border-input';
+
+        for (const reason of RR_REJECTION_REASONS) {
+            const row = document.createElement('label');
+            row.className = 'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50 cursor-pointer';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.setAttribute(RR_CUSTOM_REASON_MARKER, reason);
+            input.className = 'size-4 rounded-sm border-input';
+            input.addEventListener('change', () => {
+                this.setRejectionReasonFromCustom(state, reason, input.checked);
+            });
+            const text = document.createElement('span');
+            text.textContent = reason;
+            row.appendChild(input);
+            row.appendChild(text);
+            list.appendChild(row);
+        }
+
+        section.appendChild(label);
+        section.appendChild(list);
+        return section;
+    },
+
+    createOtherExplanationSection(state) {
+        const section = document.createElement('div');
+        section.className = 'space-y-2 hidden';
+        section.setAttribute('data-fleet-rr-custom-other-wrap', 'true');
+
+        const label = document.createElement('label');
+        label.className = 'text-sm text-muted-foreground font-medium';
+        label.textContent = 'Please explain';
+
+        const textarea = document.createElement('textarea');
+        textarea.className =
+            'flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y';
+        textarea.placeholder = 'Explain why you are rejecting this task...';
+        textarea.setAttribute('data-fleet-rr-custom-field', 'otherReasonExplanation');
+        textarea.addEventListener('input', () => {
+            this.updateOtherReasonExplanationFromCustom(state, textarea.value);
+        });
+
+        section.appendChild(label);
+        section.appendChild(textarea);
+        return section;
+    },
+
+    createTextareaSection(state, config) {
+        const section = document.createElement('div');
+        section.className = 'space-y-2';
+        const label = document.createElement('label');
+        label.className = 'text-sm text-muted-foreground font-medium';
+        label.textContent = config.optional ? `${config.title} (optional)` : config.title;
+
+        const textarea = document.createElement('textarea');
+        textarea.className =
+            `flex ${config.minHeightClass} w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y`;
+        textarea.placeholder = config.placeholder;
+        textarea.setAttribute('data-fleet-rr-custom-field', config.field);
+        textarea.addEventListener('input', () => this.updateCustomFieldFromInput(state, config.field, textarea.value));
+
+        section.appendChild(label);
+        section.appendChild(textarea);
+        return section;
     },
 
     createActionButton(label, onClick, primary = false) {
@@ -262,23 +374,77 @@ const plugin = {
         }
     },
 
-    updateTaskIssuesFromCustom(state, value) {
+    bindCustomControls(state, panel) {
+        state.taskIssuesTextarea = panel.querySelector('[data-fleet-rr-custom-field="taskIssues"]');
+        state.attemptedActionsTextarea = panel.querySelector('[data-fleet-rr-custom-field="attemptedActions"]');
+        state.generalFeedbackTextarea = panel.querySelector('[data-fleet-rr-custom-field="generalRevisionFeedback"]');
+        state.otherReasonTextarea = panel.querySelector('[data-fleet-rr-custom-field="otherReasonExplanation"]');
+        state.otherReasonWrap = panel.querySelector('[data-fleet-rr-custom-other-wrap="true"]');
+    },
+
+    updateCustomFieldFromInput(state, field, value) {
         if (state.syncingFromNative) return;
-        state.rrData.taskIssues = value || '';
+        if (field === 'taskIssues') state.rrData.taskIssues = value || '';
+        if (field === 'attemptedActions') state.rrData.attemptedActions = value || '';
+        if (field === 'generalRevisionFeedback') state.rrData.generalRevisionFeedback = value || '';
+        if (field === 'otherReasonExplanation') state.rrData.otherReasonExplanation = value || '';
+    },
+
+    updateTaskIssuesFromCustom(state, value) {
+        this.updateCustomFieldFromInput(state, 'taskIssues', value);
+    },
+
+    updateOtherReasonExplanationFromCustom(state, value) {
+        this.updateCustomFieldFromInput(state, 'otherReasonExplanation', value);
+    },
+
+    setRejectionReasonFromCustom(state, label, checked) {
+        if (state.syncingFromNative) return;
+        state.rrData.rejectionReasons[label] = Boolean(checked);
+        if (label === RR_REASON_OTHER_LABEL && !checked) {
+            state.rrData.otherReasonExplanation = '';
+        }
+        this.syncCustomControlsFromState(state);
     },
 
     updateTaskIssuesFromNative(state, value) {
         state.rrData.taskIssues = value || '';
+    },
+
+    updateFromNativeModalSnapshot(state, snapshot) {
+        state.rrData.taskIssues = snapshot.taskIssues || '';
+        state.rrData.attemptedActions = snapshot.attemptedActions || '';
+        state.rrData.generalRevisionFeedback = snapshot.generalRevisionFeedback || '';
+        state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
+        state.rrData.rejectionReasons = {
+            ...createDefaultRejectionReasons(),
+            ...(snapshot.rejectionReasons || {})
+        };
         this.syncCustomControlsFromState(state);
     },
 
     syncCustomControlsFromState(state) {
         if (!state.taskIssuesTextarea) return;
-        const next = state.rrData.taskIssues || '';
-        if (state.taskIssuesTextarea.value === next) return;
         state.syncingFromNative = true;
         try {
-            this.setInputValue(state.taskIssuesTextarea, next);
+            this.setTextareaValueSilently(state.taskIssuesTextarea, state.rrData.taskIssues || '');
+            this.setTextareaValueSilently(state.attemptedActionsTextarea, state.rrData.attemptedActions || '');
+            this.setTextareaValueSilently(state.generalFeedbackTextarea, state.rrData.generalRevisionFeedback || '');
+
+            const reasonInputs = state.contentPanel?.querySelectorAll(`input[type="checkbox"][${RR_CUSTOM_REASON_MARKER}]`) || [];
+            for (const input of reasonInputs) {
+                const reason = input.getAttribute(RR_CUSTOM_REASON_MARKER);
+                input.checked = Boolean(state.rrData.rejectionReasons?.[reason]);
+            }
+
+            const showOther = Boolean(state.rrData.rejectionReasons?.[RR_REASON_OTHER_LABEL]);
+            if (state.otherReasonWrap) state.otherReasonWrap.classList.toggle('hidden', !showOther);
+            if (state.otherReasonTextarea) {
+                this.setTextareaValueSilently(
+                    state.otherReasonTextarea,
+                    showOther ? (state.rrData.otherReasonExplanation || '') : ''
+                );
+            }
         } finally {
             state.syncingFromNative = false;
         }
@@ -496,7 +662,9 @@ const plugin = {
             Logger.warn('Request Revisions Tab: native Task textarea not found during import');
             return;
         }
-        this.updateTaskIssuesFromNative(state, taskTextarea.value || '');
+        const snapshot = this.readNativeModalSnapshot(modal);
+        snapshot.taskIssues = taskTextarea.value || '';
+        this.updateFromNativeModalSnapshot(state, snapshot);
     },
 
     async exportToNativeModal(state, modal) {
@@ -508,6 +676,16 @@ const plugin = {
         state.syncingToNative = true;
         try {
             this.setInputValue(taskTextarea, state.rrData.taskIssues || '');
+            const attempted = modal.querySelector('textarea[id^="attempted-actions-"]');
+            const general = modal.querySelector('textarea#discard-reason');
+            if (attempted) this.setInputValue(attempted, state.rrData.attemptedActions || '');
+            if (general) this.setInputValue(general, state.rrData.generalRevisionFeedback || '');
+
+            await this.syncNativeRejectionCheckboxes(state, modal);
+            if (state.rrData.rejectionReasons?.[RR_REASON_OTHER_LABEL]) {
+                const other = await this.waitForOtherReasonTextarea(modal, 2000);
+                if (other) this.setInputValue(other, state.rrData.otherReasonExplanation || '');
+            }
         } finally {
             state.syncingToNative = false;
         }
@@ -515,20 +693,16 @@ const plugin = {
     },
 
     async verifyNativeModalCopy(state, modal) {
-        let taskTextarea = modal.querySelector('textarea#feedback-Task');
-        if (taskTextarea && taskTextarea.value === (state.rrData.taskIssues || '')) {
+        if (this.nativeModalMatchesState(state, modal)) {
             return true;
         }
         await this.waitForAnimationFrame();
-        taskTextarea = modal.querySelector('textarea#feedback-Task');
-        if (taskTextarea && taskTextarea.value === (state.rrData.taskIssues || '')) {
+        if (this.nativeModalMatchesState(state, modal)) {
             return true;
         }
-        if (taskTextarea) {
-            this.setInputValue(taskTextarea, state.rrData.taskIssues || '');
-            await this.waitForAnimationFrame();
-            return taskTextarea.value === (state.rrData.taskIssues || '');
-        }
+        await this.exportToNativeModal(state, modal);
+        await this.waitForAnimationFrame();
+        if (this.nativeModalMatchesState(state, modal)) return true;
         return false;
     },
 
@@ -562,6 +736,101 @@ const plugin = {
                 resolve(modal.querySelector('textarea#feedback-Task'));
             }, timeoutMs);
         });
+    },
+
+    waitForOtherReasonTextarea(modal, timeoutMs = 2000) {
+        const existing = modal.querySelector('textarea#other-reason-explanation');
+        if (existing) return Promise.resolve(existing);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const textarea = modal.querySelector('textarea#other-reason-explanation');
+                if (!textarea) return;
+                observer.disconnect();
+                resolve(textarea);
+            });
+            observer.observe(modal, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(modal.querySelector('textarea#other-reason-explanation'));
+            }, timeoutMs);
+        });
+    },
+
+    readNativeModalSnapshot(modal) {
+        const rejectionReasons = this.readNativeRejectionReasons(modal);
+        return {
+            taskIssues: modal.querySelector('textarea#feedback-Task')?.value || '',
+            attemptedActions: modal.querySelector('textarea[id^="attempted-actions-"]')?.value || '',
+            generalRevisionFeedback: modal.querySelector('textarea#discard-reason')?.value || '',
+            rejectionReasons,
+            otherReasonExplanation: rejectionReasons[RR_REASON_OTHER_LABEL]
+                ? (modal.querySelector('textarea#other-reason-explanation')?.value || '')
+                : ''
+        };
+    },
+
+    nativeModalMatchesState(state, modal) {
+        const snapshot = this.readNativeModalSnapshot(modal);
+        if ((snapshot.taskIssues || '') !== (state.rrData.taskIssues || '')) return false;
+        if ((snapshot.attemptedActions || '') !== (state.rrData.attemptedActions || '')) return false;
+        if ((snapshot.generalRevisionFeedback || '') !== (state.rrData.generalRevisionFeedback || '')) return false;
+        for (const reason of RR_REJECTION_REASONS) {
+            if (Boolean(snapshot.rejectionReasons[reason]) !== Boolean(state.rrData.rejectionReasons[reason])) {
+                return false;
+            }
+        }
+        if (Boolean(state.rrData.rejectionReasons[RR_REASON_OTHER_LABEL])) {
+            if ((snapshot.otherReasonExplanation || '') !== (state.rrData.otherReasonExplanation || '')) return false;
+        }
+        return true;
+    },
+
+    findNativeRejectionContainer(modal) {
+        const headings = modal.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-2');
+        for (const heading of headings) {
+            if (normalizeText(heading.textContent).includes('Reason(s) for rejection')) {
+                return heading.nextElementSibling;
+            }
+        }
+        return null;
+    },
+
+    findNativeRejectionButton(modal, reasonLabel) {
+        const container = this.findNativeRejectionContainer(modal);
+        if (!container) return null;
+        for (const label of container.querySelectorAll('label')) {
+            const text = normalizeText(label.textContent);
+            if (text !== reasonLabel) continue;
+            return label.querySelector('button[role="checkbox"]');
+        }
+        return null;
+    },
+
+    isNativeCheckboxChecked(button) {
+        if (!button) return false;
+        return button.getAttribute('aria-checked') === 'true' || button.getAttribute('data-state') === 'checked';
+    },
+
+    readNativeRejectionReasons(modal) {
+        const reasons = createDefaultRejectionReasons();
+        for (const label of RR_REJECTION_REASONS) {
+            const button = this.findNativeRejectionButton(modal, label);
+            reasons[label] = this.isNativeCheckboxChecked(button);
+        }
+        return reasons;
+    },
+
+    async syncNativeRejectionCheckboxes(state, modal) {
+        for (const label of RR_REJECTION_REASONS) {
+            const button = this.findNativeRejectionButton(modal, label);
+            if (!button) continue;
+            const desired = Boolean(state.rrData.rejectionReasons?.[label]);
+            if (this.isNativeCheckboxChecked(button) === desired) continue;
+            button.click();
+            if (label === RR_REASON_OTHER_LABEL && desired) {
+                await this.waitForOtherReasonTextarea(modal, 2000);
+            }
+        }
     },
 
     findIssueButton(modal, labelText) {
@@ -606,37 +875,80 @@ const plugin = {
             return;
         }
 
-        const taskTextarea = modal.querySelector('textarea#feedback-Task');
-        if (!taskTextarea) return;
-        if (state.nativeTaskTextarea === taskTextarea && state.nativeToCustomHandler) return;
+        if (state.nativeSyncModal !== modal || !state.nativeToCustomHandler) {
+            this.unbindNativeTaskIssuesSync(state);
+            this.bindNativeModalControls(state, modal);
+            Logger.debug('Request Revisions Tab: direct native modal sync bound');
+        }
+    },
 
-        this.unbindNativeTaskIssuesSync(state);
-        state.nativeTaskTextarea = taskTextarea;
-        state.nativeToCustomHandler = () => this.syncNativeTaskIssuesToCustom(state);
-        taskTextarea.addEventListener('input', state.nativeToCustomHandler);
-        taskTextarea.addEventListener('change', state.nativeToCustomHandler);
-        this.syncNativeTaskIssuesToCustom(state);
-        Logger.debug('Request Revisions Tab: direct native Task textarea sync bound');
+    bindNativeModalControls(state, modal) {
+        if (state.nativeSyncBindings?.length || state.nativeSyncObserver) {
+            this.unbindNativeTaskIssuesSync(state);
+        }
+        state.nativeSyncModal = modal;
+        state.nativeToCustomHandler = () => this.syncNativeModalToCustom(state);
+        const handler = state.nativeToCustomHandler;
+        state.nativeSyncBindings = [];
+
+        const bind = (element, eventName) => {
+            if (!element) return;
+            element.addEventListener(eventName, handler);
+            state.nativeSyncBindings.push({ element, eventName });
+        };
+
+        bind(modal.querySelector('textarea#feedback-Task'), 'input');
+        bind(modal.querySelector('textarea#feedback-Task'), 'change');
+        bind(modal.querySelector('textarea[id^="attempted-actions-"]'), 'input');
+        bind(modal.querySelector('textarea[id^="attempted-actions-"]'), 'change');
+        bind(modal.querySelector('textarea#discard-reason'), 'input');
+        bind(modal.querySelector('textarea#discard-reason'), 'change');
+        bind(modal.querySelector('textarea#other-reason-explanation'), 'input');
+        bind(modal.querySelector('textarea#other-reason-explanation'), 'change');
+
+        for (const reason of RR_REJECTION_REASONS) {
+            bind(this.findNativeRejectionButton(modal, reason), 'click');
+        }
+
+        state.nativeSyncObserver = new MutationObserver(() => {
+            if (!state.tabActive || state.syncingToNative) return;
+            this.bindNativeModalControls(state, modal);
+            this.syncNativeModalToCustom(state);
+        });
+        state.nativeSyncObserver.observe(modal, { childList: true, subtree: true });
+        this.syncNativeModalToCustom(state);
     },
 
     unbindNativeTaskIssuesSync(state) {
-        if (state.nativeTaskTextarea && state.nativeToCustomHandler) {
-            state.nativeTaskTextarea.removeEventListener('input', state.nativeToCustomHandler);
-            state.nativeTaskTextarea.removeEventListener('change', state.nativeToCustomHandler);
+        if (state.nativeSyncBindings?.length && state.nativeToCustomHandler) {
+            for (const binding of state.nativeSyncBindings) {
+                binding.element?.removeEventListener(binding.eventName, state.nativeToCustomHandler);
+            }
         }
-        state.nativeTaskTextarea = null;
+        state.nativeSyncObserver?.disconnect();
+        state.nativeSyncBindings = [];
         state.nativeToCustomHandler = null;
+        state.nativeSyncObserver = null;
         state.nativeSyncModal = null;
     },
 
-    syncNativeTaskIssuesToCustom(state) {
-        if (state.syncingToNative || !state.nativeTaskTextarea) return;
+    syncNativeModalToCustom(state) {
+        if (state.syncingToNative || !state.nativeSyncModal) return;
         state.syncingFromNative = true;
         try {
-            this.updateTaskIssuesFromNative(state, state.nativeTaskTextarea.value || '');
+            const snapshot = this.readNativeModalSnapshot(state.nativeSyncModal);
+            this.updateFromNativeModalSnapshot(state, snapshot);
         } finally {
             state.syncingFromNative = false;
         }
+    },
+
+    setTextareaValueSilently(el, value) {
+        if (!el) return;
+        if (el.value === value) return;
+        const setter = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value')?.set;
+        if (setter) setter.call(el, value);
+        else el.value = value;
     },
 
     setInputValue(el, value) {
