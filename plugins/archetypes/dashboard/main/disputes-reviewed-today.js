@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show today\'s disputes reviewed count and approved/rejected breakdown with copy and scroll warning',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false },
@@ -325,12 +325,14 @@ const plugin = {
             if (prevBtn) {
                 prevBtn.addEventListener('click', () => {
                     block._wfDaysAgo = (block._wfDaysAgo || 0) + 1;
+                    Logger.log(`${self.id}: day navigation — previous day`, { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }
             if (nextBtn) {
                 nextBtn.addEventListener('click', () => {
                     block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
+                    Logger.log(`${self.id}: day navigation — next day`, { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }

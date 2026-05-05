@@ -7,7 +7,7 @@ const plugin = {
     name: 'Auto-expand verifier output section',
     description:
         'Clicks the Verifier Output score/timing header once per page so expanded content is shown',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -20,6 +20,7 @@ const plugin = {
     onMutation(state) {
         const path = typeof location !== 'undefined' ? location.pathname : '';
         if (state.lastPath !== path) {
+            Logger.debug(`${this.id}: route changed — reset expand state`, { path });
             state.lastPath = path;
             state.didExpand = false;
             state.missingLogged = false;
@@ -30,7 +31,7 @@ const plugin = {
         const row = this.findVerifierScoreHeaderRow();
         if (!row) {
             if (!state.missingLogged) {
-                Logger.debug('Session Trace Auto-expand Verifier: score header row not found yet');
+                Logger.debug(`${this.id}: verifier score header row not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -39,7 +40,7 @@ const plugin = {
 
         row.click();
         state.didExpand = true;
-        Logger.log('Session Trace Auto-expand Verifier: clicked score header to expand details');
+        Logger.log(`${this.id}: programmatically expanded verifier section (score header click)`);
     },
 
     /** Row under Verifier Output with "Score:" — matches Session Trace DOM. */

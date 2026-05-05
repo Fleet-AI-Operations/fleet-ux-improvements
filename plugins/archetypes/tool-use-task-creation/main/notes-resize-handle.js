@@ -5,7 +5,7 @@ const plugin = {
     id: 'notesResizeHandle',
     name: 'Notes Resize Handle',
     description: 'Adds a vertical resize handle to the QA reviewer notes textarea',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false },
@@ -14,7 +14,7 @@ const plugin = {
         const notesTextarea = this.findNotesTextarea();
         if (!notesTextarea) {
             if (!state.missingLogged) {
-                Logger.debug('QA notes textarea not found for resize handle');
+                Logger.debug(`${this.id}: QA notes textarea not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -28,7 +28,7 @@ const plugin = {
         notesTextarea.dataset.wfNotesResizeApplied = '1';
 
         state.missingLogged = false;
-        Logger.log('✓ Enabled resize handle for QA notes textarea');
+        Logger.log(`${this.id}: DOM ready — enabled vertical resize on QA notes textarea`);
     },
 
     findNotesTextarea() {

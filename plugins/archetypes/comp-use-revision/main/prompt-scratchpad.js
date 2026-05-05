@@ -5,7 +5,7 @@ const plugin = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -208,6 +208,11 @@ const plugin = {
 
         const handleMouseUp = (e) => {
             if (!isResizing) return;
+
+            const endH = textareaWrapper.offsetHeight;
+            if (endH !== startHeight) {
+                Logger.debug(`${this.id}: user finished resizing prompt scratchpad`, { fromPx: startHeight, toPx: endH });
+            }
 
             isResizing = false;
 

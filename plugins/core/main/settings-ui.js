@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.15',
+    _version: '6.16',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -348,6 +348,15 @@ const plugin = {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+            padding: 0;
+            background: transparent;
+            border: none;
+            max-width: min(520px, calc(100vw - 32px));
+            max-height: 80vh;
+            overflow: visible;
+        `;
+
+        const contentStyle = `
             background: var(--background, white);
             border: 1px solid var(--border, #e5e5e5);
             border-radius: 12px;
@@ -504,6 +513,7 @@ const plugin = {
         ` : '';
         
         modal.innerHTML = `
+            <div id="wf-settings-content" style="${contentStyle}">
             <!-- Sticky Header -->
             <div style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: var(--background, white); border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
@@ -704,6 +714,7 @@ const plugin = {
                 ">Create GitHub Issue</button>
             </div>
             </div>
+            </div>
         `;
 
         const staleMsg = document.getElementById('wf-settings-message');
@@ -896,17 +907,19 @@ const plugin = {
             });
         }
 
-        // Click outside the panel (on the dialog backdrop) closes the settings dialog
+        // Click outside the panel (on the dialog backdrop) closes the settings dialog.
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                self._closeModal();
-                return;
-            }
-            const rect = modal.getBoundingClientRect();
-            const { clientX: x, clientY: y } = e;
-            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-                self._closeModal();
-            }
+            if (!e.isTrusted || e.target !== modal) return;
+
+            const content = Context.dom.query('#wf-settings-content', {
+                root: modal,
+                context: `${this.id}.settingsContent`
+            });
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            if (content && (path.includes(content) || content.contains(e.target))) return;
+
+            Logger.debug('settings-ui: closing settings modal from backdrop click');
+            self._closeModal();
         });
 
         // Update banner: show "Refresh Page with New Version" after newest-version link is clicked

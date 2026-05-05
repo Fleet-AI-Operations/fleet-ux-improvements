@@ -4,7 +4,7 @@ const plugin = {
     id: 'toggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -35,7 +35,7 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.log('⚠ Workflow panel not found for toggle-tool-parameters');
+                Logger.warn(`${this.id}: workflow panel not found`);
                 state.missingLogged = true;
             }
             return;
@@ -52,7 +52,7 @@ const plugin = {
         const toolsContainer = this.findToolsArea(panel);
         if (!toolsContainer) {
             if (!state.missingLogged) {
-                Logger.log('⚠ Tools container not found for toggle-tool-parameters');
+                Logger.warn(`${this.id}: tools container not found`);
                 state.missingLogged = true;
             }
             return;
@@ -194,7 +194,7 @@ const plugin = {
         const paramsDiv = this.findParametersDiv(card);
         if (paramsDiv) {
             paramsDiv.style.display = nowVisible ? '' : 'none';
-            Logger.log(`Parameters ${nowVisible ? 'shown' : 'hidden'}`);
+            Logger.log(`${this.id}: user toggled tool parameters`, { visible: nowVisible });
         }
 
         // Show/hide [Parameters...] link (visible only when params are hidden)
@@ -260,7 +260,7 @@ const plugin = {
             const toggleBtn = card.querySelector('.wf-param-toggle-btn');
             if (!toggleBtn || toggleBtn.dataset.paramVisible !== 'true') return;
             this.handleToggle(card, toggleBtn);
-            Logger.debug('Auto-collapsed parameters after execute');
+            Logger.debug(`${this.id}: auto-collapsed parameters after execute`);
         });
     }
 };
