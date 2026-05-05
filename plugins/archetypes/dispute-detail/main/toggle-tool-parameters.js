@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputeDetailToggleToolParameters',
     name: 'Toggle Tool Parameters',
     description: 'Adds a toggle to each tool header to hide/show its parameters section',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false, envWaitingLogged: false },
@@ -32,7 +32,7 @@ const plugin = {
     onMutation(state) {
         if (!this.isToolEnvReady()) {
             if (!state.envWaitingLogged) {
-                Logger.debug('Toggle-tool-parameters: waiting for tool environment');
+                Logger.debug(`${this.id}: waiting for tool environment gate`);
                 state.envWaitingLogged = true;
             }
             return;
@@ -42,7 +42,7 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.log('⚠ Workflow panel not found for toggle-tool-parameters');
+                Logger.warn(`${this.id}: workflow panel not found`);
                 state.missingLogged = true;
             }
             return;
@@ -143,6 +143,7 @@ const plugin = {
         if (paramsDiv) paramsDiv.style.display = nowVisible ? '' : 'none';
         const expandLink = card.querySelector('.wf-param-expand-link');
         if (expandLink) expandLink.style.display = nowVisible ? 'none' : 'inline-flex';
+        Logger.log(`${this.id}: user toggled tool parameters`, { visible: nowVisible });
     },
 
     findParametersDiv(card) {
@@ -185,7 +186,7 @@ const plugin = {
             const toggleBtn = card.querySelector('.wf-param-toggle-btn');
             if (!toggleBtn || toggleBtn.dataset.paramVisible !== 'true') return;
             this.handleToggle(card, toggleBtn);
-            Logger.debug('Auto-collapsed parameters after execute');
+            Logger.debug(`${this.id}: auto-collapsed parameters after execute`);
         });
     },
 

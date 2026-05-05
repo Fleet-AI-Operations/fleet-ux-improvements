@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -343,12 +343,14 @@ const plugin = {
             if (prevBtn) {
                 prevBtn.addEventListener('click', () => {
                     block._wfDaysAgo = (block._wfDaysAgo || 0) + 1;
+                    Logger.log(`${self.id}: day navigation — previous day`, { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }
             if (nextBtn) {
                 nextBtn.addEventListener('click', () => {
                     block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
+                    Logger.log(`${self.id}: day navigation — next day`, { daysAgo: block._wfDaysAgo });
                     if (typeof block._wfUpdateUI === 'function') block._wfUpdateUI();
                 });
             }

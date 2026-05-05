@@ -5,13 +5,14 @@ const plugin = {
     id: 'disputeToolEnvGate',
     name: 'Dispute Tool Environment Gate',
     description: 'Detects tool environment readiness for dispute detail pages',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         observerAttached: false,
         readyLogged: false,
-        waitingLogged: false
+        waitingLogged: false,
+        lastReady: null
     },
 
     selectors: {
@@ -39,18 +40,26 @@ const plugin = {
             attributes: true
         });
         CleanupRegistry.registerObserver(observer);
-        Logger.log('Dispute Tool Environment Gate: observer installed');
+        Logger.log(`${this.id}: MutationObserver installed on document.body for readiness`);
     },
 
     updateReadyState(state) {
         const ready = this.isToolEnvironmentReady();
         const root = document.documentElement;
+        const prev = state.lastReady;
+        state.lastReady = ready;
+
+        if (prev === true && ready === false) {
+            Logger.info(`${this.id}: tool environment no longer detected — readiness flag cleared`);
+            state.readyLogged = false;
+            state.waitingLogged = false;
+        }
 
         if (ready) {
             root.setAttribute('data-fleet-dispute-tool-env-ready', '1');
             window.__fleetDisputeToolEnvReady = true;
             if (!state.readyLogged) {
-                Logger.info('Dispute Tool Environment Gate: tool environment detected and marked ready');
+                Logger.info(`${this.id}: tool environment detected and marked ready`);
                 state.readyLogged = true;
             }
             return;
@@ -62,9 +71,9 @@ const plugin = {
         if (!state.waitingLogged) {
             const createInstanceButton = this.findCreateInstanceButton();
             if (createInstanceButton) {
-                Logger.log('Dispute Tool Environment Gate: waiting for tool environment load');
+                Logger.log(`${this.id}: waiting for tool environment load`);
             } else {
-                Logger.debug('Dispute Tool Environment Gate: create-instance button not detected yet');
+                Logger.debug(`${this.id}: create-instance button not detected yet`);
             }
             state.waitingLogged = true;
         }

@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.93",
+  "archetypesVersion": "7.94",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -43,8 +43,8 @@
       "plugins": [
         {
           "name": "feedback-given-stats.js",
-          "version": "3.0",
-          "hash": "sha256-a8043a6868f582525604584b2081ce30cd1d3c6670000a9f51ba886d992343a6",
+          "version": "3.1",
+          "hash": "sha256-38a6f372a8078b54fd10af618732b21033d0b486622189ad81a8043a2b270e72",
           "log": false
         },
         {
@@ -55,8 +55,8 @@
         },
         {
           "name": "disputes-reviewed-today.js",
-          "version": "3.2",
-          "hash": "sha256-fa20f6a8f3406a20ce18ea7be0850a5e7f73525fc76b0d0e009dffb60e5e437d",
+          "version": "3.3",
+          "hash": "sha256-dd459f42b4df5c7f16d4523c06d05cfc5666adc619c61d5e9aae46efcf30d55e",
           "log": false
         }
       ]
@@ -76,20 +76,20 @@
         },
         {
           "name": "notes-resize-handle.js",
-          "version": "1.0",
-          "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
+          "version": "1.1",
+          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
           "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "2.3",
-          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae",
+          "version": "2.4",
+          "hash": "sha256-1067b509d47620992d6298e74018c52e7408a742c401ff286c5205e3763d628c",
           "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "2.0",
-          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0",
+          "version": "2.1",
+          "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
           "log": false
         },
         {
@@ -123,8 +123,8 @@
         },
         {
           "name": "notes-resize-handle.js",
-          "version": "1.0",
-          "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
+          "version": "1.1",
+          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
           "log": false
         },
         {
@@ -135,14 +135,14 @@
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "2.3",
-          "hash": "sha256-91d127b2717d00ac5c0fe82f238d276f81b92e67d97200f560de7afb42c233ae",
+          "version": "2.4",
+          "hash": "sha256-f2e67b59d7b226eff689c669b3d8892f2fcf03c00dec57e35752303c01459e79",
           "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "2.0",
-          "hash": "sha256-c949a14b32c40af22a192941539ae09d36c14a3f908dce61eed13b7bcaa31af0",
+          "version": "2.1",
+          "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
           "log": false
         },
         {
@@ -168,20 +168,20 @@
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.1",
-          "hash": "sha256-6ab9d874928c74166fd43aadac8c5538a52268aa751acd30020d318ed415d9d9",
+          "version": "2.2",
+          "hash": "sha256-5101095eb5529be43a7ffd39fe900631c11704d9c8ff4af9c774c68125c423eb",
           "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "3.1",
-          "hash": "sha256-e842744b2c05fd5d11b3e1fc5f2ecb476fc5deb4dfca2ce7d22acd985d629331",
+          "version": "3.2",
+          "hash": "sha256-801de67fe99221bc297d5425b09ef509a6883b02323d3b0e44ba81b6d38db4ae",
           "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "3.0",
-          "hash": "sha256-052a9388e4afa5d2deb1815cf89bd35bfc4af400def565b18aa60f917a72b5f5",
+          "version": "3.1",
+          "hash": "sha256-17f4911e24ce41c6297d61fab9428532e4f21cbaf98e903258fa3bbfead2493b",
           "log": false
         }
       ]
@@ -218,14 +218,14 @@
       "plugins": [
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.0",
-          "hash": "sha256-4962576fc240f13437bc4aa42a4c6afff5b17cf32d3caa9a916da84d6f83cec5",
+          "version": "1.1",
+          "hash": "sha256-62a6d3bced59a7b0dedf6b11d6d7d884c8f04c060bea9e61d9a1e0c2b0a0038d",
           "log": false
         },
         {
           "name": "notes-resize-handle.js",
-          "version": "1.0",
-          "hash": "sha256-2addda611dbd9139173df592f2afae4aca502a518954f00de07f4c1456d547ab",
+          "version": "1.1",
+          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
           "log": false
         },
         {
@@ -245,14 +245,14 @@
       "plugins": [
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.0",
-          "hash": "sha256-d21f89e1fc36b693a2f735f9284e22292fd12274ba93254f697520043dc7032a",
+          "version": "1.1",
+          "hash": "sha256-a2ccd26d441e89d897e8dad9979894038c84c4b492b47080f92814577173a614",
           "log": false
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.1",
-          "hash": "sha256-64f89a9a1b7f2b2fc211a39ca811bff49dd4c2764c320f0a5906f9beb97845e7",
+          "version": "2.2",
+          "hash": "sha256-bc927b4a1a2100e8974283857dfdaaca33373162fe00192b8ca4b871a6b2d117",
           "log": false
         }
       ]
@@ -308,14 +308,14 @@
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "2.1",
-          "hash": "sha256-76c9ebbf39700d8e38758021084cd4cb95a57152e78a980c7897decae767602e",
+          "version": "2.2",
+          "hash": "sha256-62263d3f80435f2ca56391e44925f726523430fae313d50316207d71e224ebc6",
           "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "2.0",
-          "hash": "sha256-4222b6ccc3d55b2c996a37010868bd73b34f4b8a26438375a6ff152a89ab194b",
+          "version": "2.1",
+          "hash": "sha256-5dc33f3c47482b710fa630b0c17b52ac9353ce644555d740e99c8c2bd8d8e79a",
           "log": false
         },
         {
@@ -335,8 +335,8 @@
       "plugins": [
         {
           "name": "auto-expand-verifier-section.js",
-          "version": "1.0",
-          "hash": "sha256-e4d307748eec0aef8a58f016c519550962ff5a8f950c22b4dc608c8d526ade7d",
+          "version": "1.1",
+          "hash": "sha256-dd81bb5282a535540267530d15df6e47699f91c538ed46ab25eed901b1259ece",
           "log": false
         }
       ]
@@ -374,8 +374,8 @@
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.0",
-          "hash": "sha256-15d1ad0c1b968c8b39171db1f8e770804be302844724e9527a98559c1e0e5a48",
+          "version": "1.1",
+          "hash": "sha256-3fdb50b395300911e404fea9f7e510c566b6e4106f614eaadaa696317b392747",
           "log": false
         },
         {
@@ -421,8 +421,8 @@
         },
         {
           "name": "dispute-prompt-scratchpad.js",
-          "version": "1.1",
-          "hash": "sha256-0008ea0f12a40103417f3f741db224c89b909fb64c1c641e970e5fe62f138e37",
+          "version": "1.2",
+          "hash": "sha256-e40eb0eef751cf7cee1a82d82ec1a5fe7262701a7545274d35615d0990f954a4",
           "log": false
         },
         {
@@ -433,14 +433,14 @@
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.0",
-          "hash": "sha256-e76d414ff42a25ea58764646b3912e05280a78d06c0d540bbf350dccf4087ad5",
+          "version": "1.1",
+          "hash": "sha256-9f84363d236b768b5344a8a71bdd5843ccd1b3c7f323920b071d67091a23cf86",
           "log": false
         },
         {
           "name": "env-load-gate.js",
-          "version": "1.0",
-          "hash": "sha256-84403bd9d0d3278966bc215c3eebec38c222feb277da52c0a7ff3625c2ec3ef3",
+          "version": "1.1",
+          "hash": "sha256-a962f882c1f7c016c4b28b9db545045976fcd14430e304627a16a00813d3775d",
           "log": false
         },
         {
@@ -451,26 +451,26 @@
         },
         {
           "name": "qa-feedback-whitespace.js",
-          "version": "1.0",
-          "hash": "sha256-6d921e242e8d6870f54d6bc72e192c60fba342b6c76aa3426f872e99f284400d",
+          "version": "1.1",
+          "hash": "sha256-a86f59c0ae4e3a32929b69140749a723cfc47a48a30f4d97b8ae7e56bfc42e7d",
           "log": false
         },
         {
           "name": "toggle-tool-parameters.js",
-          "version": "1.0",
-          "hash": "sha256-13164379dd18ccc7afad0ce64a0f6be993359d0f1cffc7a0bc65d5bfec40d603",
+          "version": "1.1",
+          "hash": "sha256-7ca1bb30f8f25961a559369800fa4d6992d792fda8816af5e4231e9597259353",
           "log": false
         },
         {
           "name": "tool-results-resize-handle.js",
-          "version": "1.0",
-          "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70",
+          "version": "1.1",
+          "hash": "sha256-91ac8b14df191fc2dbbc3db18573db2b0c09087a8f04181186d2e5ebbb8d4714",
           "log": false
         },
         {
           "name": "verifier-expand-mismatch-rows.js",
-          "version": "1.0",
-          "hash": "sha256-5ac17a7bf7787e9f1f91c810b9d125e9f94d512c9b072edffa280d81925d62bc",
+          "version": "1.1",
+          "hash": "sha256-4ae6e8d7080aa18a33423f710ef76856a64a0b91fc19119bb8a2d9a350eba6af",
           "log": false
         }
       ]

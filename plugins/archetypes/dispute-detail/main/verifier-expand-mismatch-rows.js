@@ -8,7 +8,7 @@ const plugin = {
     name: 'Verifier expand mismatch rows',
     description:
         'Automatically expands Per-Field Comparison rows that failed verification (red X) so mismatch details show by default',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -18,7 +18,8 @@ const plugin = {
         pendingRaf: null,
         lastPath: null,
         sectionLogged: false,
-        missingLogged: false
+        missingLogged: false,
+        sectionLeftLogged: false
     },
 
     destroy(state) {
@@ -36,21 +37,27 @@ const plugin = {
             state.lastPath = path;
             state.sectionLogged = false;
             state.missingLogged = false;
+            state.sectionLeftLogged = false;
         }
 
         const found = this.findPerFieldSection();
         if (!found) {
+            if (state.sectionLogged && !state.sectionLeftLogged) {
+                Logger.debug(`${this.id}: Per-Field Comparison section left DOM`);
+                state.sectionLeftLogged = true;
+            }
             if (!state.missingLogged) {
-                Logger.debug('Verifier Expand Mismatch Rows: Per-Field Comparison section not found');
+                Logger.debug(`${this.id}: Per-Field Comparison section not found yet`);
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
+        state.sectionLeftLogged = false;
 
         if (!state.sectionLogged) {
             state.sectionLogged = true;
-            Logger.log('Verifier Expand Mismatch Rows: Per-Field Comparison section detected');
+            Logger.log(`${this.id}: Per-Field Comparison section detected`);
         }
 
         if (state.pendingRaf != null) {
@@ -116,7 +123,7 @@ const plugin = {
                 }
             }
             if (n > 0) {
-                Logger.log(`Verifier Expand Mismatch Rows: expanded ${n} mismatch row(s)`);
+                Logger.log(`${this.id}: expanded ${n} failed verifier row(s) for visibility`);
             }
         });
     }
