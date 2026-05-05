@@ -106,7 +106,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.13',
+    _version: '1.14',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1908,7 +1908,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
     bindNativeModalControls(state, modal) {
         if (state.nativeSyncBindings?.length || state.nativeSyncObserver) {
-            this.unbindNativeTaskIssuesSync(state);
+            // DOM mutations (e.g. prompt-quality button class swaps) intentionally re-run bind;
+            // do not log this as losing sync—it is teardown before refreshing element refs.
+            this.unbindNativeTaskIssuesSync(state, { silentRebind: true });
         }
         state.nativeSyncModal = modal;
         state.nativeToCustomHandler = () => {
@@ -1962,8 +1964,8 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         }
     },
 
-    unbindNativeTaskIssuesSync(state) {
-        if (state.nativeSyncModal) {
+    unbindNativeTaskIssuesSync(state, options = {}) {
+        if (state.nativeSyncModal && !options.silentRebind) {
             Logger.debug('requestRevisionsTab: direct native modal sync unbound');
         }
         if (state.nativeSyncBindings?.length && state.nativeToCustomHandler) {
@@ -1990,6 +1992,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         state.syncingFromNative = true;
         try {
             const snapshot = this.readNativeModalSnapshot(state.nativeSyncModal);
+            const prevPQ = state.rrData.promptQualityRating || '';
+            if (
+                snapshot.hasPromptQualityRating &&
+                snapshot.promptQualityRating &&
+                snapshot.promptQualityRating !== prevPQ
+            ) {
+                Logger.debug(
+                    `requestRevisionsTab: native Prompt Quality read → "${snapshot.promptQualityRating}" (was "${prevPQ || '(none)'}")`
+                );
+            }
             this.updateFromNativeModalSnapshot(state, snapshot);
             this.scheduleNativeModalTextDebug(state, snapshot);
         } finally {
