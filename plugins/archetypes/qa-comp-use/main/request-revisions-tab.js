@@ -6,6 +6,10 @@ const RR_PANEL_MARKER = 'data-fleet-rr-tab-panel';
 const RR_MANAGED_MODAL_MARKER = 'data-fleet-rr-tab-transaction-modal';
 const RR_CUSTOM_REASON_MARKER = 'data-fleet-rr-reason';
 const RR_REASON_OTHER_LABEL = 'Other (please explain)';
+const RR_CUSTOM_QA_MARKER = 'data-fleet-rr-qa-item';
+const RR_CUSTOM_PROMPT_MARKER = 'data-fleet-rr-prompt-rating';
+const RR_CUSTOM_SS_PREVIEW = 'data-fleet-rr-ss-preview';
+const RR_CUSTOM_SS_REMOVE = 'data-fleet-rr-ss-remove';
 const RR_REJECTION_REASONS = [
     'Prompt is unclear or ambiguous',
     'Prompt is too simple or trivial',
@@ -18,6 +22,14 @@ const RR_REJECTION_REASONS = [
     'Duplicate of existing task',
     RR_REASON_OTHER_LABEL
 ];
+const RR_QA_CHECKLIST_ITEMS = [
+    'Is the task achievable as specified with a functioning verifier?',
+    'Is there only one clear, obvious correct solution to the task? Make sure there is no room for ambiguity with e.g. other entries in the environment.',
+    'Is the task well-specified and phrased in a way that is not confusing?'
+];
+const RR_PROMPT_QUALITY_OPTIONS = ['Top 10%', 'Average', 'Bottom 10%'];
+const RR_MAX_SCREENSHOTS = 5;
+const RR_MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 
 function createDefaultRejectionReasons() {
     return RR_REJECTION_REASONS.reduce((acc, label) => {
@@ -30,11 +42,39 @@ function normalizeText(value) {
     return (value || '').replace(/\s+/g, ' ').trim();
 }
 
+function createDefaultQaChecklist() {
+    return RR_QA_CHECKLIST_ITEMS.reduce((acc, label) => {
+        acc[label] = false;
+        return acc;
+    }, {});
+}
+
+function imageFilesFromFileList(list) {
+    if (!list || !list.length) return [];
+    return Array.from(list).filter((file) => file?.type?.startsWith('image/'));
+}
+
+function imageFilesFromClipboard(clipboardData) {
+    if (!clipboardData) return [];
+    const fromFiles = imageFilesFromFileList(clipboardData.files);
+    if (fromFiles.length) return fromFiles;
+    const items = clipboardData.items;
+    if (!items) return [];
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind !== 'file') continue;
+        const file = item.getAsFile();
+        if (file && file.type.startsWith('image/')) out.push(file);
+    }
+    return out;
+}
+
 const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -47,13 +87,19 @@ const plugin = {
         generalFeedbackTextarea: null,
         otherReasonTextarea: null,
         otherReasonWrap: null,
+        screenshotPreviewWrap: null,
+        screenshotUploadButton: null,
+        screenshotPasteButton: null,
         tabActive: false,
         rrData: {
             taskIssues: '',
             attemptedActions: '',
             generalRevisionFeedback: '',
             otherReasonExplanation: '',
-            rejectionReasons: createDefaultRejectionReasons()
+            rejectionReasons: createDefaultRejectionReasons(),
+            qaChecklist: createDefaultQaChecklist(),
+            promptQualityRating: '',
+            screenshots: []
         },
         transactionInProgress: false,
         transactionModal: null,
@@ -64,6 +110,8 @@ const plugin = {
         nativeSyncModal: null,
         syncingToNative: false,
         syncingFromNative: false,
+        previewUrls: [],
+        pasteListenerAttached: false,
         originalBodyPointerEvents: null,
         originalHtmlPointerEvents: null,
         pointerLockReleased: false,
@@ -86,6 +134,7 @@ const plugin = {
             this.injectTab(state, tabList, contentHost);
         }
 
+        this.ensurePasteListener(state);
         this.syncTabVisibility(state);
         this.bindDirectNativeModalSync(state);
     },
@@ -209,15 +258,10 @@ const plugin = {
         const wrap = document.createElement('div');
         wrap.className = 'max-w-3xl mx-auto space-y-4';
 
+        wrap.appendChild(this.createQaChecklistSection(state));
+        wrap.appendChild(this.createPromptQualitySection(state));
         wrap.appendChild(this.createReasonCheckboxesSection(state));
         wrap.appendChild(this.createOtherExplanationSection(state));
-        wrap.appendChild(this.createTextareaSection(state, {
-            title: 'Task Issues',
-            placeholder: 'Describe the specific issues with the task...',
-            minHeightClass: 'min-h-[160px]',
-            field: 'taskIssues',
-            optional: false
-        }));
         wrap.appendChild(this.createTextareaSection(state, {
             title: 'What did you try?',
             placeholder: 'Describe all the things you tried to complete this task...',
@@ -225,6 +269,14 @@ const plugin = {
             field: 'attemptedActions',
             optional: false
         }));
+        wrap.appendChild(this.createTextareaSection(state, {
+            title: 'Task Issues',
+            placeholder: 'Describe the specific issues with the task...',
+            minHeightClass: 'min-h-[160px]',
+            field: 'taskIssues',
+            optional: false
+        }));
+        wrap.appendChild(this.createScreenshotSection(state));
         wrap.appendChild(this.createTextareaSection(state, {
             title: 'General revision feedback',
             placeholder: 'Optional: Add any additional general feedback about the task...',
@@ -248,6 +300,113 @@ const plugin = {
         wrap.appendChild(buttonRow);
         panel.appendChild(wrap);
         return panel;
+    },
+
+    createQaChecklistSection(state) {
+        const section = document.createElement('div');
+        section.className = 'space-y-2';
+        const title = document.createElement('div');
+        title.className = 'text-sm text-muted-foreground font-medium';
+        title.textContent = 'QA Checklist';
+        const list = document.createElement('div');
+        list.className = 'space-y-2.5 pl-1';
+
+        for (const labelText of RR_QA_CHECKLIST_ITEMS) {
+            const row = document.createElement('label');
+            row.className = 'flex items-start gap-3 cursor-pointer';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.setAttribute(RR_CUSTOM_QA_MARKER, labelText);
+            input.className = 'mt-0.5 size-4 rounded-sm border-input';
+            input.addEventListener('change', () => {
+                this.setQaChecklistItemFromCustom(state, labelText, input.checked);
+            });
+            const text = document.createElement('span');
+            text.className = 'text-sm leading-relaxed';
+            text.textContent = labelText;
+            row.appendChild(input);
+            row.appendChild(text);
+            list.appendChild(row);
+        }
+
+        section.appendChild(title);
+        section.appendChild(list);
+        return section;
+    },
+
+    createPromptQualitySection(state) {
+        const section = document.createElement('div');
+        section.className = 'border-t pt-4';
+        const title = document.createElement('div');
+        title.className = 'text-xs font-medium text-muted-foreground';
+        title.textContent = 'Prompt Quality Rating';
+        const row = document.createElement('div');
+        row.className = 'flex gap-2 mt-2';
+
+        for (const option of RR_PROMPT_QUALITY_OPTIONS) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.setAttribute(RR_CUSTOM_PROMPT_MARKER, option);
+            button.className = 'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all border-input bg-background text-muted-foreground hover:opacity-90';
+            button.textContent = option;
+            button.addEventListener('click', () => this.setPromptQualityFromCustom(state, option));
+            row.appendChild(button);
+        }
+
+        section.appendChild(title);
+        section.appendChild(row);
+        return section;
+    },
+
+    createScreenshotSection(state) {
+        const section = document.createElement('div');
+        section.className = 'space-y-2';
+        const title = document.createElement('div');
+        title.className = 'text-sm text-muted-foreground font-medium';
+        title.textContent = 'Screenshots (optional)';
+        const subtitle = document.createElement('p');
+        subtitle.className = 'text-xs text-muted-foreground';
+        subtitle.textContent = 'Attach up to 5 screenshots to document visual issues (max 5MB each)';
+
+        const controls = document.createElement('div');
+        controls.className = 'flex flex-row flex-wrap gap-2 w-full min-w-0';
+
+        const uploadButton = document.createElement('button');
+        uploadButton.type = 'button';
+        uploadButton.className = 'flex flex-1 min-w-0 items-center justify-center gap-2 px-3 py-2 rounded-md border border-dashed border-border hover:border-brand/50 hover:bg-muted/50 cursor-pointer transition-colors';
+        uploadButton.innerHTML = '<span class="text-sm whitespace-nowrap">Drag & Drop/Upload</span>';
+        uploadButton.addEventListener('click', () => this.openScreenshotPicker(state));
+        this.bindCustomScreenshotDragAndDrop(state, uploadButton);
+
+        const pasteButton = document.createElement('button');
+        pasteButton.type = 'button';
+        pasteButton.className = 'inline-flex shrink-0 items-center justify-center gap-2 px-3 py-2 rounded-md border border-dashed border-border hover:border-brand/50 hover:bg-muted/50 cursor-pointer transition-colors text-sm';
+        pasteButton.textContent = 'Paste Image';
+        pasteButton.addEventListener('click', () => this.pasteScreenshotFromClipboard(state));
+
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'file';
+        hiddenInput.accept = 'image/*';
+        hiddenInput.multiple = true;
+        hiddenInput.className = 'hidden';
+        hiddenInput.setAttribute('data-fleet-rr-custom-ss-picker', 'true');
+        hiddenInput.addEventListener('change', () => {
+            this.mergeCustomScreenshots(state, imageFilesFromFileList(hiddenInput.files));
+            hiddenInput.value = '';
+        });
+
+        const previewWrap = document.createElement('div');
+        previewWrap.className = 'grid grid-cols-2 md:grid-cols-3 gap-2';
+        previewWrap.setAttribute(RR_CUSTOM_SS_PREVIEW, 'true');
+
+        controls.appendChild(uploadButton);
+        controls.appendChild(pasteButton);
+        controls.appendChild(hiddenInput);
+        section.appendChild(title);
+        section.appendChild(subtitle);
+        section.appendChild(controls);
+        section.appendChild(previewWrap);
+        return section;
     },
 
     createReasonCheckboxesSection(state) {
@@ -380,6 +539,9 @@ const plugin = {
         state.generalFeedbackTextarea = panel.querySelector('[data-fleet-rr-custom-field="generalRevisionFeedback"]');
         state.otherReasonTextarea = panel.querySelector('[data-fleet-rr-custom-field="otherReasonExplanation"]');
         state.otherReasonWrap = panel.querySelector('[data-fleet-rr-custom-other-wrap="true"]');
+        state.screenshotPreviewWrap = panel.querySelector(`[${RR_CUSTOM_SS_PREVIEW}]`);
+        state.screenshotUploadButton = panel.querySelector('[data-fleet-rr-custom-ss-picker]')?.previousElementSibling || null;
+        state.screenshotPasteButton = panel.querySelector('[data-fleet-rr-custom-ss-picker]')?.previousElementSibling?.nextElementSibling || null;
     },
 
     updateCustomFieldFromInput(state, field, value) {
@@ -388,6 +550,149 @@ const plugin = {
         if (field === 'attemptedActions') state.rrData.attemptedActions = value || '';
         if (field === 'generalRevisionFeedback') state.rrData.generalRevisionFeedback = value || '';
         if (field === 'otherReasonExplanation') state.rrData.otherReasonExplanation = value || '';
+    },
+
+    setQaChecklistItemFromCustom(state, label, checked) {
+        if (state.syncingFromNative) return;
+        state.rrData.qaChecklist[label] = Boolean(checked);
+    },
+
+    setPromptQualityFromCustom(state, option) {
+        if (state.syncingFromNative) return;
+        state.rrData.promptQualityRating = option;
+        this.syncCustomControlsFromState(state);
+    },
+
+    bindCustomScreenshotDragAndDrop(state, target) {
+        let depth = 0;
+        const classes = ['ring-2', 'ring-brand/50'];
+        target.addEventListener('dragenter', (event) => {
+            event.preventDefault();
+            depth += 1;
+            target.classList.add(...classes);
+        });
+        target.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) target.classList.remove(...classes);
+        });
+        target.addEventListener('dragover', (event) => event.preventDefault());
+        target.addEventListener('drop', (event) => {
+            event.preventDefault();
+            depth = 0;
+            target.classList.remove(...classes);
+            this.mergeCustomScreenshots(state, imageFilesFromFileList(event.dataTransfer?.files));
+        });
+    },
+
+    openScreenshotPicker(state) {
+        const input = state.contentPanel?.querySelector('[data-fleet-rr-custom-ss-picker]');
+        if (input) input.click();
+    },
+
+    async pasteScreenshotFromClipboard(state) {
+        if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+            Logger.warn('requestRevisionsTab: Clipboard read API unavailable for screenshot paste');
+            return;
+        }
+        try {
+            const items = await navigator.clipboard.read();
+            const files = [];
+            for (const item of items) {
+                for (const type of item.types) {
+                    if (!type.startsWith('image/')) continue;
+                    const blob = await item.getType(type);
+                    const ext = (type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+                    files.push(new File([blob], `paste-${Date.now()}.${ext}`, { type: blob.type || type }));
+                    break;
+                }
+            }
+            if (!files.length) {
+                Logger.info('requestRevisionsTab: clipboard contained no image');
+                return;
+            }
+            this.mergeCustomScreenshots(state, files);
+        } catch (error) {
+            Logger.error('requestRevisionsTab: failed to read clipboard image', error);
+        }
+    },
+
+    mergeCustomScreenshots(state, files) {
+        if (!files?.length) return;
+        const dt = new DataTransfer();
+        for (const existing of state.rrData.screenshots || []) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            dt.items.add(existing);
+        }
+        for (const file of files) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            if (!file.type?.startsWith('image/')) continue;
+            if (file.size > RR_MAX_SCREENSHOT_BYTES) continue;
+            dt.items.add(file);
+        }
+        state.rrData.screenshots = Array.from(dt.files);
+        this.syncCustomControlsFromState(state);
+        Logger.log(`requestRevisionsTab: screenshots updated (${state.rrData.screenshots.length})`);
+    },
+
+    removeCustomScreenshotAt(state, index) {
+        const dt = new DataTransfer();
+        (state.rrData.screenshots || []).forEach((file, idx) => {
+            if (idx === index) return;
+            dt.items.add(file);
+        });
+        state.rrData.screenshots = Array.from(dt.files);
+        this.syncCustomControlsFromState(state);
+    },
+
+    renderCustomScreenshotPreviews(state) {
+        if (!state.screenshotPreviewWrap) return;
+        for (const url of state.previewUrls || []) URL.revokeObjectURL(url);
+        state.previewUrls = [];
+        state.screenshotPreviewWrap.innerHTML = '';
+
+        (state.rrData.screenshots || []).forEach((file, index) => {
+            const card = document.createElement('div');
+            card.className = 'group relative rounded-md border border-input overflow-hidden bg-muted/20';
+            const img = document.createElement('img');
+            img.className = 'w-full h-24 object-cover';
+            img.alt = file.name || `Screenshot ${index + 1}`;
+            const url = URL.createObjectURL(file);
+            state.previewUrls.push(url);
+            img.src = url;
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.setAttribute(RR_CUSTOM_SS_REMOVE, String(index));
+            remove.className = 'absolute top-1 right-1 h-6 w-6 rounded-full bg-red-600 text-white text-sm leading-none opacity-0 group-hover:opacity-100 transition-opacity';
+            remove.textContent = 'x';
+            remove.addEventListener('click', () => this.removeCustomScreenshotAt(state, index));
+
+            card.appendChild(img);
+            card.appendChild(remove);
+            state.screenshotPreviewWrap.appendChild(card);
+        });
+    },
+
+    ensurePasteListener(state) {
+        if (state.pasteListenerAttached) return;
+        state.pasteListenerAttached = true;
+        document.addEventListener(
+            'paste',
+            (event) => {
+                if (!state.tabActive) return;
+                const files = imageFilesFromClipboard(event.clipboardData);
+                if (!files.length) return;
+                const target = event.target;
+                if (target && target.nodeType === Node.ELEMENT_NODE && target.closest('textarea, input:not([type="file"])')) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                this.mergeCustomScreenshots(state, files);
+            },
+            true
+        );
     },
 
     updateTaskIssuesFromCustom(state, value) {
@@ -423,6 +728,18 @@ const plugin = {
                 ...(snapshot.rejectionReasons || {})
             };
         }
+        if (snapshot.hasQaChecklist) {
+            state.rrData.qaChecklist = {
+                ...createDefaultQaChecklist(),
+                ...(snapshot.qaChecklist || {})
+            };
+        }
+        if (snapshot.hasPromptQualityRating) {
+            state.rrData.promptQualityRating = snapshot.promptQualityRating || '';
+        }
+        if (snapshot.hasScreenshots) {
+            state.rrData.screenshots = snapshot.screenshots || [];
+        }
         if (snapshot.hasOtherReasonExplanation) {
             state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
         } else if (snapshot.hasRejectionReasons && !snapshot.rejectionReasons?.[RR_REASON_OTHER_LABEL]) {
@@ -453,6 +770,24 @@ const plugin = {
                     showOther ? (state.rrData.otherReasonExplanation || '') : ''
                 );
             }
+
+            const qaInputs = state.contentPanel?.querySelectorAll(`input[type="checkbox"][${RR_CUSTOM_QA_MARKER}]`) || [];
+            for (const input of qaInputs) {
+                const label = input.getAttribute(RR_CUSTOM_QA_MARKER);
+                input.checked = Boolean(state.rrData.qaChecklist?.[label]);
+            }
+
+            const promptButtons = state.contentPanel?.querySelectorAll(`button[${RR_CUSTOM_PROMPT_MARKER}]`) || [];
+            for (const button of promptButtons) {
+                const option = button.getAttribute(RR_CUSTOM_PROMPT_MARKER);
+                const selected = option === state.rrData.promptQualityRating;
+                button.classList.toggle('border-blue-500', selected);
+                button.classList.toggle('text-blue-700', selected);
+                button.classList.toggle('bg-blue-50', selected);
+                button.classList.toggle('dark:bg-blue-950/40', selected);
+            }
+
+            this.renderCustomScreenshotPreviews(state);
         } finally {
             state.syncingFromNative = false;
         }
@@ -689,11 +1024,14 @@ const plugin = {
             if (attempted) this.setInputValue(attempted, state.rrData.attemptedActions || '');
             if (general) this.setInputValue(general, state.rrData.generalRevisionFeedback || '');
 
+            await this.syncNativeQaChecklist(state, modal);
+            await this.syncNativePromptQuality(state, modal);
             await this.syncNativeRejectionCheckboxes(state, modal);
             if (state.rrData.rejectionReasons?.[RR_REASON_OTHER_LABEL]) {
                 const other = await this.waitForOtherReasonTextarea(modal, 2000);
                 if (other) this.setInputValue(other, state.rrData.otherReasonExplanation || '');
             }
+            this.syncNativeScreenshots(state, modal);
         } finally {
             state.syncingToNative = false;
         }
@@ -770,6 +1108,9 @@ const plugin = {
         const generalEl = modal.querySelector('textarea#discard-reason');
         const otherEl = modal.querySelector('textarea#other-reason-explanation');
         const rejectionRead = this.readNativeRejectionReasons(modal);
+        const qaRead = this.readNativeQaChecklist(modal);
+        const promptRead = this.readNativePromptQuality(modal);
+        const nativeScreenshotInput = this.findNativeScreenshotInput(modal);
         const hasOtherSelected = Boolean(rejectionRead.reasons?.[RR_REASON_OTHER_LABEL]);
 
         return {
@@ -782,7 +1123,13 @@ const plugin = {
             hasRejectionReasons: rejectionRead.complete,
             rejectionReasons: rejectionRead.reasons,
             hasOtherReasonExplanation: hasOtherSelected ? Boolean(otherEl) : true,
-            otherReasonExplanation: hasOtherSelected ? (otherEl?.value || '') : ''
+            otherReasonExplanation: hasOtherSelected ? (otherEl?.value || '') : '',
+            hasQaChecklist: qaRead.complete,
+            qaChecklist: qaRead.items,
+            hasPromptQualityRating: promptRead.complete,
+            promptQualityRating: promptRead.selected,
+            hasScreenshots: Boolean(nativeScreenshotInput),
+            screenshots: nativeScreenshotInput ? Array.from(nativeScreenshotInput.files || []) : []
         };
     },
 
@@ -790,6 +1137,7 @@ const plugin = {
         const snapshot = this.readNativeModalSnapshot(modal);
         if (!snapshot.hasTaskIssues || !snapshot.hasAttemptedActions || !snapshot.hasGeneralRevisionFeedback) return false;
         if (!snapshot.hasRejectionReasons) return false;
+        if (!snapshot.hasQaChecklist || !snapshot.hasPromptQualityRating || !snapshot.hasScreenshots) return false;
         if (Boolean(state.rrData.rejectionReasons[RR_REASON_OTHER_LABEL]) && !snapshot.hasOtherReasonExplanation) {
             return false;
         }
@@ -801,6 +1149,11 @@ const plugin = {
                 return false;
             }
         }
+        for (const item of RR_QA_CHECKLIST_ITEMS) {
+            if (Boolean(snapshot.qaChecklist[item]) !== Boolean(state.rrData.qaChecklist[item])) return false;
+        }
+        if ((snapshot.promptQualityRating || '') !== (state.rrData.promptQualityRating || '')) return false;
+        if (!this.areScreenshotListsEqual(snapshot.screenshots || [], state.rrData.screenshots || [])) return false;
         if (Boolean(state.rrData.rejectionReasons[RR_REASON_OTHER_LABEL])) {
             if ((snapshot.otherReasonExplanation || '') !== (state.rrData.otherReasonExplanation || '')) return false;
         }
@@ -858,6 +1211,129 @@ const plugin = {
                 await this.waitForOtherReasonTextarea(modal, 2000);
             }
         }
+    },
+
+    findNativeQaChecklistContainer(modal) {
+        const labels = modal.querySelectorAll('div.text-sm.text-muted-foreground.font-medium');
+        for (const label of labels) {
+            if (normalizeText(label.textContent).includes('QA Checklist')) {
+                return label.nextElementSibling;
+            }
+        }
+        return null;
+    },
+
+    findNativeQaChecklistButton(modal, itemLabel) {
+        const container = this.findNativeQaChecklistContainer(modal);
+        if (!container) return null;
+        for (const row of container.querySelectorAll('div.flex.items-start.gap-3')) {
+            const label = row.querySelector('label');
+            if (!label) continue;
+            if (normalizeText(label.textContent) !== normalizeText(itemLabel)) continue;
+            return row.querySelector('button[role="checkbox"]');
+        }
+        return null;
+    },
+
+    readNativeQaChecklist(modal) {
+        const items = createDefaultQaChecklist();
+        let foundCount = 0;
+        for (const item of RR_QA_CHECKLIST_ITEMS) {
+            const button = this.findNativeQaChecklistButton(modal, item);
+            if (button) foundCount += 1;
+            items[item] = this.isNativeCheckboxChecked(button);
+        }
+        return {
+            complete: foundCount === RR_QA_CHECKLIST_ITEMS.length,
+            items
+        };
+    },
+
+    async syncNativeQaChecklist(state, modal) {
+        for (const item of RR_QA_CHECKLIST_ITEMS) {
+            const button = this.findNativeQaChecklistButton(modal, item);
+            if (!button) continue;
+            const desired = Boolean(state.rrData.qaChecklist?.[item]);
+            if (this.isNativeCheckboxChecked(button) === desired) continue;
+            button.click();
+        }
+    },
+
+    findNativePromptQualityButtons(modal) {
+        const out = {};
+        const labels = modal.querySelectorAll('div.text-xs.font-medium.text-muted-foreground, div.text-sm.text-muted-foreground.font-medium');
+        let container = null;
+        for (const label of labels) {
+            if (!normalizeText(label.textContent).includes('Prompt Quality Rating')) continue;
+            container = label.parentElement?.querySelector('div.flex.gap-2') || label.nextElementSibling;
+            if (container) break;
+        }
+        if (!container) return out;
+        for (const button of container.querySelectorAll('button')) {
+            const text = normalizeText(button.textContent);
+            if (RR_PROMPT_QUALITY_OPTIONS.includes(text)) out[text] = button;
+        }
+        return out;
+    },
+
+    isNativePromptOptionSelected(button) {
+        if (!button) return false;
+        const classes = button.getAttribute('class') || '';
+        return classes.includes('border-blue') || classes.includes('bg-blue') || classes.includes('text-blue');
+    },
+
+    readNativePromptQuality(modal) {
+        const map = this.findNativePromptQualityButtons(modal);
+        const keys = Object.keys(map);
+        let selected = '';
+        for (const option of RR_PROMPT_QUALITY_OPTIONS) {
+            if (this.isNativePromptOptionSelected(map[option])) {
+                selected = option;
+                break;
+            }
+        }
+        return {
+            complete: keys.length === RR_PROMPT_QUALITY_OPTIONS.length,
+            selected
+        };
+    },
+
+    async syncNativePromptQuality(state, modal) {
+        const desired = state.rrData.promptQualityRating || '';
+        if (!desired) return;
+        const map = this.findNativePromptQualityButtons(modal);
+        const button = map[desired];
+        if (!button) return;
+        if (this.isNativePromptOptionSelected(button)) return;
+        button.click();
+    },
+
+    findNativeScreenshotInput(modal) {
+        return modal.querySelector('label input[type="file"][accept*="image"]');
+    },
+
+    syncNativeScreenshots(state, modal) {
+        const input = this.findNativeScreenshotInput(modal);
+        if (!input) return;
+        const dt = new DataTransfer();
+        for (const file of state.rrData.screenshots || []) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            dt.items.add(file);
+        }
+        input.files = dt.files;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+
+    areScreenshotListsEqual(left, right) {
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i++) {
+            const a = left[i];
+            const b = right[i];
+            if (!a || !b) return false;
+            if (a.name !== b.name || a.size !== b.size || a.type !== b.type) return false;
+        }
+        return true;
     },
 
     findIssueButton(modal, labelText) {
@@ -932,9 +1408,17 @@ const plugin = {
         bind(modal.querySelector('textarea#discard-reason'), 'change');
         bind(modal.querySelector('textarea#other-reason-explanation'), 'input');
         bind(modal.querySelector('textarea#other-reason-explanation'), 'change');
+        bind(this.findNativeScreenshotInput(modal), 'change');
 
         for (const reason of RR_REJECTION_REASONS) {
             bind(this.findNativeRejectionButton(modal, reason), 'click');
+        }
+        for (const item of RR_QA_CHECKLIST_ITEMS) {
+            bind(this.findNativeQaChecklistButton(modal, item), 'click');
+        }
+        const promptButtons = this.findNativePromptQualityButtons(modal);
+        for (const option of RR_PROMPT_QUALITY_OPTIONS) {
+            bind(promptButtons[option], 'click');
         }
 
         state.nativeSyncObserver = new MutationObserver(() => {
