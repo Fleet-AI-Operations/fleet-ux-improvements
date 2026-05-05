@@ -74,7 +74,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.9',
+    _version: '1.10',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1423,6 +1423,7 @@ const plugin = {
 
         state.nativeSyncObserver = new MutationObserver(() => {
             if (!state.tabActive || state.syncingToNative) return;
+            if (!this.isNativeModalOpen(modal)) return;
             this.bindNativeModalControls(state, modal);
             this.syncNativeModalToCustom(state);
         });
@@ -1443,8 +1444,15 @@ const plugin = {
         state.nativeSyncModal = null;
     },
 
+    isNativeModalOpen(modal) {
+        return Boolean(modal) &&
+            document.body.contains(modal) &&
+            modal.getAttribute('data-state') === 'open';
+    },
+
     syncNativeModalToCustom(state) {
         if (state.syncingToNative || !state.nativeSyncModal) return;
+        if (!this.isNativeModalOpen(state.nativeSyncModal)) return;
         state.syncingFromNative = true;
         try {
             const snapshot = this.readNativeModalSnapshot(state.nativeSyncModal);
