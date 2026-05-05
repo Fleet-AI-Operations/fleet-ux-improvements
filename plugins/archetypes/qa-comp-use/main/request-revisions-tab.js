@@ -9,7 +9,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -491,8 +491,7 @@ const plugin = {
     },
 
     async importFromNativeModal(state, modal) {
-        await this.ensureTaskSelected(modal);
-        const taskTextarea = await this.waitForTaskTextarea(modal);
+        const taskTextarea = await this.ensureTaskSelected(modal);
         if (!taskTextarea) {
             Logger.warn('Request Revisions Tab: native Task textarea not found during import');
             return;
@@ -501,8 +500,7 @@ const plugin = {
     },
 
     async exportToNativeModal(state, modal) {
-        await this.ensureTaskSelected(modal);
-        const taskTextarea = await this.waitForTaskTextarea(modal);
+        const taskTextarea = await this.ensureTaskSelected(modal);
         if (!taskTextarea) {
             Logger.warn('Request Revisions Tab: native Task textarea not found during export');
             return false;
@@ -534,19 +532,21 @@ const plugin = {
         return false;
     },
 
-    ensureTaskSelected(modal) {
+    async ensureTaskSelected(modal) {
         const taskButton = this.findIssueButton(modal, 'Task');
         if (!taskButton) {
             Logger.warn('Request Revisions Tab: Task issue button not found');
-            return Promise.resolve(false);
+            return null;
         }
-        if (this.isIssueButtonSelected(taskButton)) return Promise.resolve(true);
-        taskButton.click();
-        Logger.info('Request Revisions Tab: Task issue section opened');
-        return this.waitForAnimationFrame().then(() => true);
+        if (!this.isIssueButtonSelected(taskButton)) {
+            taskButton.click();
+            Logger.info('Request Revisions Tab: Task issue section opened');
+            await this.waitForAnimationFrame();
+        }
+        return this.waitForTaskTextarea(modal, 3000);
     },
 
-    waitForTaskTextarea(modal, timeoutMs = 1000) {
+    waitForTaskTextarea(modal, timeoutMs = 3000) {
         const existing = modal.querySelector('textarea#feedback-Task');
         if (existing) return Promise.resolve(existing);
         return new Promise((resolve) => {
