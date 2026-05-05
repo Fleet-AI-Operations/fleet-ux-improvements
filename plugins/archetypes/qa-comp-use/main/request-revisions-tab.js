@@ -9,7 +9,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -581,8 +581,8 @@ const plugin = {
     },
 
     isIssueButtonSelected(button) {
-        const className = button.getAttribute('class') || '';
-        return className.includes('border-brand') || className.includes('text-brand');
+        const classes = new Set((button.getAttribute('class') || '').split(/\s+/));
+        return classes.has('border-brand') || classes.has('text-brand');
     },
 
     findButtonByText(root, labelText) {
