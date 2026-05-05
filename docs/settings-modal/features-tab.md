@@ -1,4 +1,4 @@
-1.27
+1.28
 
 ## Features
 
@@ -74,6 +74,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 
 ### Task View
 *No production plugins are configured for this archetype.*

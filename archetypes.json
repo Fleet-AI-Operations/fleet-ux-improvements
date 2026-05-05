@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.91",
+  "archetypesVersion": "7.92",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.27"
+      "version": "1.28"
     }
   ],
   "archetypes": [
@@ -465,6 +465,12 @@
           "name": "tool-results-resize-handle.js",
           "version": "1.0",
           "hash": "sha256-0f8cfd666edeb33ca97796b097bafbdc1eabcf2a5a1524313edb6f7c259bbd70",
+          "log": false
+        },
+        {
+          "name": "verifier-expand-mismatch-rows.js",
+          "version": "1.0",
+          "hash": "sha256-5ac17a7bf7787e9f1f91c810b9d125e9f94d512c9b072edffa280d81925d62bc",
           "log": false
         }
       ]
