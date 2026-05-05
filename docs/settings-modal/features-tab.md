@@ -1,4 +1,4 @@
-1.24
+1.25
 
 ## Features
 
@@ -55,7 +55,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
-- **Hide Grading Panel Button**: Adds Hide Grading in the Grading panel header; delegates to the top Hide Grading control when grading is open.
 - **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
 - **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
@@ -68,7 +67,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Corner Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; button in the top bar
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
-- **Hide Grading Panel Button**: Adds Hide Grading in the Grading panel header; delegates to the top Hide Grading control when grading is open.
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
 
 ### Dispute Detail Page

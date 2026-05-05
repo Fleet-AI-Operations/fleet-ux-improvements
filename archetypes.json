@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.87",
+  "archetypesVersion": "7.88",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.24"
+      "version": "1.25"
     }
   ],
   "archetypes": [
@@ -319,12 +319,6 @@
           "log": false
         },
         {
-          "name": "hide-grading-panel-button.js",
-          "version": "1.1",
-          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
-          "log": false
-        },
-        {
           "name": "request-revisions.js",
           "version": "5.2",
           "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa",
@@ -430,12 +424,6 @@
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
-          "log": false
-        },
-        {
-          "name": "hide-grading-panel-button.js",
-          "version": "1.1",
-          "hash": "sha256-1dc570e2137afa59627bc0ce6a4adfb37487b346b5317ddd629db7ce84aa6f88",
           "log": false
         },
         {
