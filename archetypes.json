@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.86",
+  "archetypesVersion": "7.87",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.23"
+      "version": "1.24"
     }
   ],
   "archetypes": [
@@ -471,12 +471,6 @@
           "name": "copy-verifier-output.js",
           "version": "1.4",
           "hash": "sha256-d994c8591e9d3ba6ac3c73736a1c47b31fc97ce786bbe683214aa93d627e180b",
-          "log": false
-        },
-        {
-          "name": "create-instance-autoclick.js",
-          "version": "1.1",
-          "hash": "sha256-347d7d13d41af849764a88acbcf392c3b2e0c5a487cf2c6e456c2fd930d3004f",
           "log": false
         },
         {

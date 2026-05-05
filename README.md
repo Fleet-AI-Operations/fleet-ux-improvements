@@ -146,7 +146,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
-- **Create Instance Autoclick**: Automatically clicks the "Create Instance" button once when it becomes visible.
 - **Dispute Resolution Widgets Toggle**: Toggle visibility (CSS only) of bottom-right Pylon chat and Report a bug FAB; control in the top bar
 - **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
