@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.92",
+  "archetypesVersion": "7.93",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -49,8 +49,8 @@
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "3.0",
-          "hash": "sha256-9ab03fd598a5046a1fcee023f30296dc3b11408e96ac64d74c6c08cb09980f53",
+          "version": "3.1",
+          "hash": "sha256-ef31307640f64715533d9f121f5faf24e172a13b8f1e32fa6b0f9cdc0f08c763",
           "log": false
         },
         {
