@@ -10,6 +10,11 @@ const RR_CUSTOM_QA_MARKER = 'data-fleet-rr-qa-item';
 const RR_CUSTOM_PROMPT_MARKER = 'data-fleet-rr-prompt-rating';
 const RR_CUSTOM_SS_PREVIEW = 'data-fleet-rr-ss-preview';
 const RR_CUSTOM_SS_REMOVE = 'data-fleet-rr-ss-remove';
+const RR_NATIVE_SS_CONTROLS_ATTR = 'data-fleet-rr-native-screenshot-controls';
+const RR_NATIVE_SS_UPLOAD_ATTR = 'data-fleet-rr-native-screenshot-upload';
+const RR_NATIVE_SS_PASTE_ATTR = 'data-fleet-rr-native-screenshot-paste';
+const RR_NATIVE_SS_LABEL_ATTR = 'data-fleet-rr-native-screenshot-label';
+const RR_NATIVE_SS_INPUT_ATTR = 'data-fleet-rr-native-screenshot-input';
 const RR_REJECTION_REASONS = [
     'Prompt is unclear or ambiguous',
     'Prompt is too simple or trivial',
@@ -70,11 +75,30 @@ function imageFilesFromClipboard(clipboardData) {
     return out;
 }
 
+function shouldIgnorePasteTarget(target) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE) return false;
+    const el = target;
+    if (el.closest('textarea, select, [contenteditable="true"]')) return true;
+    const input = el.closest('input');
+    if (!input) return false;
+    const type = (input.getAttribute('type') || 'text').toLowerCase();
+    return !new Set(['file', 'button', 'submit', 'reset', 'checkbox', 'radio', 'hidden']).has(type);
+}
+
+function screenshotKeyFromUrl(url) {
+    if (!url) return '';
+    try {
+        return new URL(url, window.location.href).pathname;
+    } catch (_error) {
+        return String(url).split('?')[0];
+    }
+}
+
 const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.11',
+    _version: '1.12',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -111,6 +135,8 @@ const plugin = {
         nativeSyncModal: null,
         syncingToNative: false,
         syncingFromNative: false,
+        nativeScreenshotStylesReady: false,
+        nativeScreenshotControlsLogged: false,
         previewUrls: [],
         pasteListenerAttached: false,
         originalBodyPointerEvents: null,
@@ -138,6 +164,7 @@ const plugin = {
         this.ensurePasteListener(state);
         this.syncTabVisibility(state);
         this.bindDirectNativeModalSync(state);
+        this.ensureNativeScreenshotUploadControls(state);
     },
 
     findTabList() {
@@ -651,7 +678,7 @@ const plugin = {
             } else {
                 state.rrData.deletedScreenshotUrls = [
                     ...(state.rrData.deletedScreenshotUrls || []),
-                    entry.url
+                    screenshotKeyFromUrl(entry.url)
                 ];
             }
         }
@@ -728,19 +755,180 @@ const plugin = {
         document.addEventListener(
             'paste',
             (event) => {
-                if (!state.tabActive) return;
                 const files = imageFilesFromClipboard(event.clipboardData);
                 if (!files.length) return;
-                const target = event.target;
-                if (target && target.nodeType === Node.ELEMENT_NODE && target.closest('textarea, input:not([type="file"])')) {
+                if (shouldIgnorePasteTarget(event.target)) return;
+                const nativeInput = document.querySelector(`input[${RR_NATIVE_SS_INPUT_ATTR}]`);
+                if (nativeInput && document.contains(nativeInput)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.mergeIntoNativeScreenshotInput(nativeInput, files);
                     return;
                 }
+                if (!state.tabActive) return;
                 event.preventDefault();
                 event.stopPropagation();
                 this.mergeCustomScreenshots(state, files);
             },
             true
         );
+    },
+
+    ensureNativeScreenshotUploadControls(state) {
+        this.ensureNativeScreenshotStyles(state);
+        const modal = this.findRequestRevisionsModal();
+        if (!modal || modal.hasAttribute(RR_MANAGED_MODAL_MARKER) || !this.isNativeModalOpen(modal)) return;
+        const input = this.findNativeScreenshotInput(modal);
+        const label = input?.closest('label');
+        if (!input || !label) return;
+
+        const zone = label.parentElement;
+        if (!zone) return;
+        this.removeDuplicateNativeScreenshotControls(zone, label);
+        if (zone.querySelector(`[${RR_NATIVE_SS_CONTROLS_ATTR}]`)) return;
+
+        label.setAttribute(RR_NATIVE_SS_LABEL_ATTR, 'true');
+        input.setAttribute(RR_NATIVE_SS_INPUT_ATTR, 'true');
+
+        const row = document.createElement('div');
+        row.setAttribute(RR_NATIVE_SS_CONTROLS_ATTR, 'true');
+        row.setAttribute('data-fleet-plugin', this.id);
+        row.className = 'flex flex-row flex-wrap gap-2 w-full min-w-0';
+
+        const upload = document.createElement('button');
+        upload.type = 'button';
+        upload.setAttribute(RR_NATIVE_SS_UPLOAD_ATTR, 'true');
+        upload.className = 'flex flex-1 min-w-0 items-center justify-center gap-2 px-3 py-2 rounded-md border border-dashed border-border hover:border-brand/50 hover:bg-muted/50 cursor-pointer transition-colors';
+        upload.setAttribute('aria-label', 'Drag and drop images here or click to upload screenshots');
+        upload.innerHTML = '<span class="text-sm whitespace-nowrap">Drag &amp; Drop/Upload</span>';
+        upload.addEventListener('click', () => input.click());
+        this.bindNativeScreenshotDragAndDrop(upload, input);
+
+        const paste = document.createElement('button');
+        paste.type = 'button';
+        paste.setAttribute(RR_NATIVE_SS_PASTE_ATTR, 'true');
+        paste.className = 'inline-flex shrink-0 items-center justify-center gap-2 px-3 py-2 rounded-md border border-dashed border-border hover:border-brand/50 hover:bg-muted/50 cursor-pointer transition-colors text-sm';
+        paste.textContent = 'Paste Image';
+        paste.setAttribute('aria-label', 'Paste image from clipboard');
+        paste.addEventListener('click', () => this.pasteImageIntoNativeInput(input));
+
+        row.appendChild(upload);
+        row.appendChild(paste);
+        label.parentNode.insertBefore(row, label);
+
+        if (!state.nativeScreenshotControlsLogged) {
+            Logger.log('requestRevisionsTab: native screenshot upload controls injected');
+            state.nativeScreenshotControlsLogged = true;
+        }
+    },
+
+    ensureNativeScreenshotStyles(state) {
+        const styleId = 'fleet-request-revisions-tab-native-screenshot-style';
+        if (state.nativeScreenshotStylesReady && document.getElementById(styleId)) return;
+        let style = document.getElementById(styleId);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = styleId;
+            style.setAttribute('data-fleet-plugin', this.id);
+            document.head.appendChild(style);
+        }
+        style.textContent = `
+label[${RR_NATIVE_SS_LABEL_ATTR}] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+`;
+        state.nativeScreenshotStylesReady = true;
+    },
+
+    removeDuplicateNativeScreenshotControls(zone, label) {
+        if (!zone.contains(label)) return;
+        const rows = zone.querySelectorAll(`[${RR_NATIVE_SS_CONTROLS_ATTR}]`);
+        for (let i = 1; i < rows.length; i++) rows[i].remove();
+    },
+
+    bindNativeScreenshotDragAndDrop(target, input) {
+        let depth = 0;
+        const classes = ['ring-2', 'ring-brand/50'];
+        target.addEventListener('dragenter', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            depth += 1;
+            target.classList.add(...classes);
+        });
+        target.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) target.classList.remove(...classes);
+        });
+        target.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        target.addEventListener('drop', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            depth = 0;
+            target.classList.remove(...classes);
+            this.mergeIntoNativeScreenshotInput(input, imageFilesFromFileList(event.dataTransfer?.files));
+        });
+    },
+
+    async pasteImageIntoNativeInput(input) {
+        if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+            Logger.warn('requestRevisionsTab: Clipboard read API unavailable for native screenshot paste');
+            return;
+        }
+        try {
+            const items = await navigator.clipboard.read();
+            const files = [];
+            for (const item of items) {
+                for (const type of item.types) {
+                    if (!type.startsWith('image/')) continue;
+                    const blob = await item.getType(type);
+                    const ext = (type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+                    files.push(new File([blob], `paste-${Date.now()}.${ext}`, { type: blob.type || type }));
+                    break;
+                }
+            }
+            if (!files.length) {
+                Logger.info('requestRevisionsTab: clipboard contained no native screenshot image');
+                return;
+            }
+            this.mergeIntoNativeScreenshotInput(input, files);
+        } catch (error) {
+            Logger.error('requestRevisionsTab: failed to paste native screenshot image', error);
+        }
+    },
+
+    mergeIntoNativeScreenshotInput(input, files) {
+        if (!input || !files?.length) return;
+        const dt = new DataTransfer();
+        const existing = Array.from(input.files || []);
+        for (const file of existing) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            dt.items.add(file);
+        }
+        for (const file of files) {
+            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
+            if (!file.type?.startsWith('image/')) continue;
+            if (file.size > RR_MAX_SCREENSHOT_BYTES) continue;
+            dt.items.add(file);
+        }
+        if (dt.files.length === (input.files?.length || 0)) return;
+        input.files = dt.files;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        Logger.debug(`requestRevisionsTab: ${input.files.length} file(s) on native screenshot input`);
     },
 
     updateTaskIssuesFromCustom(state, value) {
@@ -783,11 +971,14 @@ const plugin = {
             };
         }
         if (snapshot.hasPromptQualityRating) {
-            state.rrData.promptQualityRating = snapshot.promptQualityRating || '';
+            if (snapshot.promptQualityRating) {
+                state.rrData.promptQualityRating = snapshot.promptQualityRating;
+            }
         }
         if (snapshot.hasScreenshots) {
             const deleted = new Set(state.rrData.deletedScreenshotUrls || []);
-            const uploaded = (snapshot.screenshots || []).filter((entry) => !deleted.has(entry.url));
+            const uploaded = (snapshot.screenshots || [])
+                .filter((entry) => !deleted.has(screenshotKeyFromUrl(entry.url)));
             const previousUploadedCount = (state.rrData.screenshots || [])
                 .filter((entry) => entry.type === 'uploaded').length;
             const confirmedPendingCount = Math.max(0, uploaded.length - previousUploadedCount);
@@ -1342,8 +1533,11 @@ const plugin = {
 
     isNativePromptOptionSelected(button) {
         if (!button) return false;
-        const classes = button.getAttribute('class') || '';
-        return classes.includes('border-blue') || classes.includes('bg-blue') || classes.includes('text-blue');
+        const classes = new Set((button.getAttribute('class') || '').split(/\s+/));
+        return classes.has('border-gray-300') ||
+            classes.has('bg-gray-50') ||
+            classes.has('text-gray-600') ||
+            classes.has('dark:bg-gray-800/50');
     },
 
     readNativePromptQuality(modal) {
@@ -1389,8 +1583,9 @@ const plugin = {
     },
 
     findNativeScreenshotRemoveButton(modal, url) {
+        const targetKey = screenshotKeyFromUrl(url);
         for (const img of this.findNativeScreenshotPreviewImgs(modal)) {
-            if (img.src !== url) continue;
+            if (screenshotKeyFromUrl(img.src) !== targetKey) continue;
             return img.closest('div.relative.group')?.querySelector('button[type="button"]') || null;
         }
         return null;
@@ -1401,12 +1596,13 @@ const plugin = {
         if (!input) return;
 
         const remainingDeletes = [];
-        for (const url of state.rrData.deletedScreenshotUrls || []) {
-            const removeButton = this.findNativeScreenshotRemoveButton(modal, url);
+        for (const key of state.rrData.deletedScreenshotUrls || []) {
+            const removeButton = this.findNativeScreenshotRemoveButton(modal, key);
             if (removeButton) {
                 removeButton.click();
+                await this.waitForNativeScreenshotRemoved(modal, key);
             } else {
-                remainingDeletes.push(url);
+                remainingDeletes.push(key);
             }
         }
         state.rrData.deletedScreenshotUrls = remainingDeletes;
@@ -1451,9 +1647,25 @@ const plugin = {
         });
     },
 
+    waitForNativeScreenshotRemoved(modal, key, timeoutMs = 2000) {
+        if (!this.findNativeScreenshotRemoveButton(modal, key)) return Promise.resolve(true);
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                if (this.findNativeScreenshotRemoveButton(modal, key)) return;
+                observer.disconnect();
+                resolve(true);
+            });
+            observer.observe(modal, { childList: true, subtree: true });
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(!this.findNativeScreenshotRemoveButton(modal, key));
+            }, timeoutMs);
+        });
+    },
+
     areScreenshotListsEqual(left, right) {
-        const leftUploaded = (left || []).filter((entry) => entry.type === 'uploaded').map((entry) => entry.url);
-        const rightUploaded = (right || []).filter((entry) => entry.type === 'uploaded').map((entry) => entry.url);
+        const leftUploaded = (left || []).filter((entry) => entry.type === 'uploaded').map((entry) => screenshotKeyFromUrl(entry.url));
+        const rightUploaded = (right || []).filter((entry) => entry.type === 'uploaded').map((entry) => screenshotKeyFromUrl(entry.url));
         if (leftUploaded.length !== rightUploaded.length) return false;
         for (let i = 0; i < leftUploaded.length; i++) {
             if (leftUploaded[i] !== rightUploaded[i]) return false;
@@ -1515,7 +1727,9 @@ const plugin = {
             this.unbindNativeTaskIssuesSync(state);
         }
         state.nativeSyncModal = modal;
-        state.nativeToCustomHandler = () => this.syncNativeModalToCustom(state);
+        state.nativeToCustomHandler = () => {
+            requestAnimationFrame(() => this.syncNativeModalToCustom(state));
+        };
         const handler = state.nativeToCustomHandler;
         state.nativeSyncBindings = [];
 
@@ -1552,8 +1766,16 @@ const plugin = {
             this.bindNativeModalControls(state, modal);
             this.syncNativeModalToCustom(state);
         });
-        state.nativeSyncObserver.observe(modal, { childList: true, subtree: true });
+        state.nativeSyncObserver.observe(modal, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-state', 'aria-checked']
+        });
         this.syncNativeModalToCustom(state);
+        if (state.rrData.promptQualityRating && !this.readNativePromptQuality(modal).selected) {
+            void this.syncNativePromptQuality(state, modal);
+        }
     },
 
     unbindNativeTaskIssuesSync(state) {
