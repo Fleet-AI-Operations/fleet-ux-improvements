@@ -69,21 +69,15 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.1",
           "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
           "log": false
         },
         {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.4",
-          "hash": "sha256-1067b509d47620992d6298e74018c52e7408a742c401ff286c5205e3763d628c",
+          "name": "json-editor-online.js",
+          "version": "2.2",
+          "hash": "sha256-59028c229418c123e8dd2edf6f8103c7928d858ea7ea251359b4b3b846a84b48",
           "log": false
         },
         {
@@ -97,6 +91,12 @@
           "version": "2.0",
           "hash": "sha256-cbe1b187968425d30a2bcd61f80cf187397d43b1e686d4db75c27186ceac19e9",
           "log": false
+        },
+        {
+          "name": "text-sanitizer.js",
+          "version": "3.4",
+          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
+          "log": false
         }
       ]
     },
@@ -109,12 +109,6 @@
         "text:Task Designers - Special Projects Tasks"
       ],
       "plugins": [
-        {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
-          "log": false
-        },
         {
           "name": "json-editor-online.js",
           "version": "2.1",
@@ -131,12 +125,6 @@
           "name": "text-sanitizer.js",
           "version": "3.3",
           "hash": "sha256-00fb0fa32015a92797b2c70a9e5e00a8a552670addee1aeb9b72cb2ce309a8b4",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.4",
-          "hash": "sha256-f2e67b59d7b226eff689c669b3d8892f2fcf03c00dec57e35752303c01459e79",
           "log": false
         },
         {
@@ -161,21 +149,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "execute-to-current-tool.js",
-          "version": "3.0",
-          "hash": "sha256-ff34686d136205e519afdfc017deb48012e9f2dc116a4d375987a83b36c932a2",
-          "log": false
-        },
-        {
           "name": "prompt-scratchpad.js",
           "version": "2.2",
           "hash": "sha256-5101095eb5529be43a7ffd39fe900631c11704d9c8ff4af9c774c68125c423eb",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "3.2",
-          "hash": "sha256-801de67fe99221bc297d5425b09ef509a6883b02323d3b0e44ba81b6d38db4ae",
           "log": false
         },
         {
@@ -277,12 +253,6 @@
           "log": false
         },
         {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-430bec914ed32d755da7477788c34586d55a288d7b30dffdbb19a01ae0e45161",
-          "log": false
-        },
-        {
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
@@ -304,12 +274,6 @@
           "name": "text-sanitizer.js",
           "version": "2.7",
           "hash": "sha256-765afbc6c1807b1952303b48ed421234947b566a1afba7cac0f7741222f3bcc0",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.2",
-          "hash": "sha256-62263d3f80435f2ca56391e44925f726523430fae313d50316207d71e224ebc6",
           "log": false
         },
         {
@@ -450,21 +414,9 @@
           "log": false
         },
         {
-          "name": "execute-to-current-tool.js",
-          "version": "1.0",
-          "hash": "sha256-edd3970d03416214ee6d948232316accb36d19853199f92ccf233d3bb9d0f80e",
-          "log": false
-        },
-        {
           "name": "qa-feedback-whitespace.js",
           "version": "1.1",
           "hash": "sha256-a86f59c0ae4e3a32929b69140749a723cfc47a48a30f4d97b8ae7e56bfc42e7d",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "1.1",
-          "hash": "sha256-7ca1bb30f8f25961a559369800fa4d6992d792fda8816af5e4231e9597259353",
           "log": false
         },
         {
@@ -514,45 +466,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-6976f18b8d791403d9ae3d6f6a581e08b22d01a1add34c3735067235b14fc040",
-          "log": false
-        },
-        {
-          "name": "json-editor-online.js",
-          "version": "2.2",
-          "hash": "sha256-59028c229418c123e8dd2edf6f8103c7928d858ea7ea251359b4b3b846a84b48",
-          "log": false
-        },
-        {
-          "name": "prompt-and-notes-areas.js",
-          "version": "3.2",
-          "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
-          "log": false
-        },
-        {
           "name": "source-data-explorer.js",
           "version": "4.0",
           "hash": "sha256-f8fff3deb0e23fc26053afe83da4da68b2f231f9c3961e1bdfb5ac0caa3a86f0",
-          "log": false
-        },
-        {
-          "name": "text-sanitizer.js",
-          "version": "3.4",
-          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-41c64df6199c00cc477fe315a496d1542071e4d8a338c2caf7a3f30a5154bc62",
           "log": false
         },
         {
