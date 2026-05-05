@@ -34,7 +34,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -412,14 +412,22 @@ const plugin = {
     },
 
     updateFromNativeModalSnapshot(state, snapshot) {
-        state.rrData.taskIssues = snapshot.taskIssues || '';
-        state.rrData.attemptedActions = snapshot.attemptedActions || '';
-        state.rrData.generalRevisionFeedback = snapshot.generalRevisionFeedback || '';
-        state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
-        state.rrData.rejectionReasons = {
-            ...createDefaultRejectionReasons(),
-            ...(snapshot.rejectionReasons || {})
-        };
+        if (snapshot.hasTaskIssues) state.rrData.taskIssues = snapshot.taskIssues || '';
+        if (snapshot.hasAttemptedActions) state.rrData.attemptedActions = snapshot.attemptedActions || '';
+        if (snapshot.hasGeneralRevisionFeedback) {
+            state.rrData.generalRevisionFeedback = snapshot.generalRevisionFeedback || '';
+        }
+        if (snapshot.hasRejectionReasons) {
+            state.rrData.rejectionReasons = {
+                ...createDefaultRejectionReasons(),
+                ...(snapshot.rejectionReasons || {})
+            };
+        }
+        if (snapshot.hasOtherReasonExplanation) {
+            state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
+        } else if (snapshot.hasRejectionReasons && !snapshot.rejectionReasons?.[RR_REASON_OTHER_LABEL]) {
+            state.rrData.otherReasonExplanation = '';
+        }
         this.syncCustomControlsFromState(state);
     },
 
@@ -757,20 +765,34 @@ const plugin = {
     },
 
     readNativeModalSnapshot(modal) {
-        const rejectionReasons = this.readNativeRejectionReasons(modal);
+        const taskIssuesEl = modal.querySelector('textarea#feedback-Task');
+        const attemptedEl = modal.querySelector('textarea[id^="attempted-actions-"]');
+        const generalEl = modal.querySelector('textarea#discard-reason');
+        const otherEl = modal.querySelector('textarea#other-reason-explanation');
+        const rejectionRead = this.readNativeRejectionReasons(modal);
+        const hasOtherSelected = Boolean(rejectionRead.reasons?.[RR_REASON_OTHER_LABEL]);
+
         return {
-            taskIssues: modal.querySelector('textarea#feedback-Task')?.value || '',
-            attemptedActions: modal.querySelector('textarea[id^="attempted-actions-"]')?.value || '',
-            generalRevisionFeedback: modal.querySelector('textarea#discard-reason')?.value || '',
-            rejectionReasons,
-            otherReasonExplanation: rejectionReasons[RR_REASON_OTHER_LABEL]
-                ? (modal.querySelector('textarea#other-reason-explanation')?.value || '')
-                : ''
+            hasTaskIssues: Boolean(taskIssuesEl),
+            taskIssues: taskIssuesEl?.value || '',
+            hasAttemptedActions: Boolean(attemptedEl),
+            attemptedActions: attemptedEl?.value || '',
+            hasGeneralRevisionFeedback: Boolean(generalEl),
+            generalRevisionFeedback: generalEl?.value || '',
+            hasRejectionReasons: rejectionRead.complete,
+            rejectionReasons: rejectionRead.reasons,
+            hasOtherReasonExplanation: hasOtherSelected ? Boolean(otherEl) : true,
+            otherReasonExplanation: hasOtherSelected ? (otherEl?.value || '') : ''
         };
     },
 
     nativeModalMatchesState(state, modal) {
         const snapshot = this.readNativeModalSnapshot(modal);
+        if (!snapshot.hasTaskIssues || !snapshot.hasAttemptedActions || !snapshot.hasGeneralRevisionFeedback) return false;
+        if (!snapshot.hasRejectionReasons) return false;
+        if (Boolean(state.rrData.rejectionReasons[RR_REASON_OTHER_LABEL]) && !snapshot.hasOtherReasonExplanation) {
+            return false;
+        }
         if ((snapshot.taskIssues || '') !== (state.rrData.taskIssues || '')) return false;
         if ((snapshot.attemptedActions || '') !== (state.rrData.attemptedActions || '')) return false;
         if ((snapshot.generalRevisionFeedback || '') !== (state.rrData.generalRevisionFeedback || '')) return false;
@@ -813,11 +835,16 @@ const plugin = {
 
     readNativeRejectionReasons(modal) {
         const reasons = createDefaultRejectionReasons();
+        let foundCount = 0;
         for (const label of RR_REJECTION_REASONS) {
             const button = this.findNativeRejectionButton(modal, label);
+            if (button) foundCount += 1;
             reasons[label] = this.isNativeCheckboxChecked(button);
         }
-        return reasons;
+        return {
+            complete: foundCount === RR_REJECTION_REASONS.length,
+            reasons
+        };
     },
 
     async syncNativeRejectionCheckboxes(state, modal) {
