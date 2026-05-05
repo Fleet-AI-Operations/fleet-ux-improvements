@@ -106,7 +106,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.15',
+    _version: '1.16',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -157,7 +157,9 @@ const plugin = {
         rrNativeTextLogTimer: null,
         rrNativeTextLogPending: null,
         lastNativeTextDebugSig: '',
-        lastCustomTextDebugSig: ''
+        lastCustomTextDebugSig: '',
+        promptQualitySource: '',
+        nativePromptQualityClickAt: 0
     },
 
     buildRrStateDigest(state) {
@@ -692,6 +694,7 @@ const plugin = {
 
     setPromptQualityFromCustom(state, option) {
         if (state.syncingFromNative) return;
+        state.promptQualitySource = 'custom';
         state.rrData.promptQualityRating = option;
         this.syncCustomControlsFromState(state);
         Logger.debug(`requestRevisionsTab: custom prompt quality → "${option}"`);
@@ -1927,6 +1930,17 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             element.addEventListener(eventName, handler);
             state.nativeSyncBindings.push({ element, eventName });
         };
+        const bindNativePromptQuality = (button, option) => {
+            if (!button) return;
+            const promptHandler = () => {
+                state.promptQualitySource = 'native';
+                state.nativePromptQualityClickAt = Date.now();
+                Logger.debug(`requestRevisionsTab: native Prompt Quality click → "${option}"`);
+                requestAnimationFrame(() => this.syncNativeModalToCustom(state));
+            };
+            button.addEventListener('click', promptHandler);
+            state.nativeSyncBindings.push({ element: button, eventName: 'click', handler: promptHandler });
+        };
 
         bind(modal.querySelector('textarea#feedback-Task'), 'input');
         bind(modal.querySelector('textarea#feedback-Task'), 'change');
@@ -1946,7 +1960,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         }
         const promptButtons = this.findNativePromptQualityButtons(modal);
         for (const option of RR_PROMPT_QUALITY_OPTIONS) {
-            bind(promptButtons[option], 'click');
+            bindNativePromptQuality(promptButtons[option], option);
         }
 
         state.nativeSyncObserver = new MutationObserver(() => {
@@ -1962,7 +1976,14 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             attributeFilter: ['class', 'data-state', 'aria-checked']
         });
         this.syncNativeModalToCustom(state);
-        if (state.rrData.promptQualityRating && !this.readNativePromptQuality(modal).selected) {
+        const nativePromptRead = this.readNativePromptQuality(modal);
+        const nativeClickRecent = Date.now() - (state.nativePromptQualityClickAt || 0) < 750;
+        if (
+            state.rrData.promptQualityRating &&
+            !nativePromptRead.selected &&
+            state.promptQualitySource !== 'native' &&
+            !nativeClickRecent
+        ) {
             void this.syncNativePromptQuality(state, modal);
         }
     },
@@ -1973,7 +1994,10 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         }
         if (state.nativeSyncBindings?.length && state.nativeToCustomHandler) {
             for (const binding of state.nativeSyncBindings) {
-                binding.element?.removeEventListener(binding.eventName, state.nativeToCustomHandler);
+                binding.element?.removeEventListener(
+                    binding.eventName,
+                    binding.handler || state.nativeToCustomHandler
+                );
             }
         }
         state.nativeSyncObserver?.disconnect();
@@ -2001,6 +2025,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 snapshot.promptQualityRating &&
                 snapshot.promptQualityRating !== prevPQ
             ) {
+                state.promptQualitySource = 'native';
                 Logger.debug(
                     `requestRevisionsTab: native Prompt Quality read → "${snapshot.promptQualityRating}" (was "${prevPQ || '(none)'}")`
                 );
