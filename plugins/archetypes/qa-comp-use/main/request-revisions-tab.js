@@ -106,7 +106,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.14',
+    _version: '1.15',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1682,7 +1682,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
     findNativePromptQualityButtons(modal) {
         const out = {};
-        const labels = modal.querySelectorAll('div.text-xs.font-medium.text-muted-foreground, div.text-sm.text-muted-foreground.font-medium');
+        const labels = modal.querySelectorAll('div.text-xs.font-medium.text-muted-foreground, label.text-xs.font-medium.text-muted-foreground, div.text-sm.text-muted-foreground.font-medium');
         let container = null;
         for (const label of labels) {
             if (!normalizeText(label.textContent).includes('Prompt Quality Rating')) continue;
@@ -1693,6 +1693,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         for (const button of container.querySelectorAll('button')) {
             const text = normalizeText(button.textContent);
             if (RR_PROMPT_QUALITY_OPTIONS.includes(text)) out[text] = button;
+        }
+        if (Object.keys(out).length < RR_PROMPT_QUALITY_OPTIONS.length) {
+            Logger.warn(`requestRevisionsTab: native Prompt Quality buttons incomplete (${Object.keys(out).length}/${RR_PROMPT_QUALITY_OPTIONS.length})`);
         }
         return out;
     },
