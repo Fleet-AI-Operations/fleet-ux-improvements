@@ -4,18 +4,20 @@
 // Default data-flow (single in-memory mirror: `state.rrData`; exceptions may be added later):
 // 1) Treat the most recently opened / focused RR surface as authoritative while it is active.
 // 2) Leaving the custom tab runs a hidden native export so the native RR form mirrors the tab;
-//    opening the custom tab runs a hidden import so the tab mirrors native. Both directions
-//    skip screenshots — pending screenshots are only pushed to native via the action buttons.
+//    opening the custom tab runs a hidden import so the tab mirrors native. Exports also apply
+//    the screenshot queue (pending uploads + queued native removes) once the native modal is open.
 // 3) If the native RR dialog opens while the custom tab is active, tab state is exported into
-//    the dialog first (text + checkboxes only, never screenshots); edits in the dialog stream
+//    the dialog first (form fields + screenshot queue); edits in the dialog stream
 //    into `state.rrData` while it stays open. When the dialog closes, we run one final
 //    native→tab snapshot read (when the DOM node is still readable) so the tab stays a mirror
 //    even if the last edit did not emit an event.
 //
 // Screenshots:
-// - Adding a screenshot to the custom tab keeps it as `pending` in `state.rrData.screenshots`;
-//   it is NOT uploaded to the native modal until the worker clicks an action button. The tab
-//   caps the pending+uploaded count at RR_MAX_SCREENSHOTS (= 5).
+// - Tab add/remove are queue intents. Pending files upload when the native modal runs a sync
+//   (tab deactivation export, native dialog opens on top of the tab, or a stepped action button).
+//   Removing an uploaded row from the tab only clears the tab UI and enqueues a native remove;
+//   the real delete is the native preview's X when the queue runs. Add+remove a pending file
+//   before any sync is a no-op. The tab caps pending+uploaded at RR_MAX_SCREENSHOTS (= 5).
 // - When the native RR dialog closes, we recount uploaded screenshots from native and reflect
 //   that count in the tab counter (preserving any still-pending tab screenshots, capped at 5).
 // - Action buttons (Simulate R&NA, Silent Request, Request and Notify Author) all run a
@@ -89,7 +91,6 @@ const RR_PROMPT_QUALITY_STYLES = {
 };
 const RR_MAX_SCREENSHOTS = 5;
 const RR_MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
-const RR_DELETE_FLUSH_DELAY_MS = 200;
 
 function createDefaultRejectionReasons() {
     return RR_REJECTION_REASONS.reduce((acc, label) => {
@@ -161,7 +162,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '2.3',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -217,7 +218,6 @@ const plugin = {
         promptQualitySource: '',
         nativePromptQualityClickAt: 0,
         lastScreenshotSyncResult: null,
-        deleteFlushTimer: null,
         promptQualityRatingLastSyncedToNative: ''
     },
 
@@ -629,7 +629,7 @@ const plugin = {
 
         const subtitle = document.createElement('p');
         subtitle.className = 'text-xs text-muted-foreground';
-        subtitle.textContent = `Attach up to ${RR_MAX_SCREENSHOTS} screenshots to document visual issues (max 5MB each). Uploads happen when you click an action button.`;
+        subtitle.textContent = `Attach up to ${RR_MAX_SCREENSHOTS} screenshots to document visual issues (max 5MB each). Queued uploads/removals run when the native Request Revisions dialog is next opened (or when this tab is saved).`;
 
         const controls = document.createElement('div');
         controls.className = 'flex flex-row flex-wrap gap-2 w-full min-w-0';
@@ -777,7 +777,7 @@ const plugin = {
             state.contentPanel.classList.add('hidden');
         }
         this.syncTabState(state, false);
-        this.runNativeModalTransaction(state, { mode: 'export', hidden: true, skipScreenshots: true });
+        this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
         Logger.info('Request Revisions Tab: deactivated');
     },
 
@@ -919,7 +919,7 @@ const plugin = {
         this.syncCustomControlsFromState(state);
         for (const file of added) {
             Logger.log(
-                `Request Revisions Tab: screenshot added to tab name=${file.name} bytes=${file.size} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS} (will upload to native on action button click)`
+                `Request Revisions Tab: screenshot added to tab name=${file.name} bytes=${file.size} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS} (queued until native modal sync)`
             );
         }
         if (droppedAtCap.length) {
@@ -937,6 +937,9 @@ const plugin = {
         if (!added.length && !droppedAtCap.length && !droppedNonImage.length && !droppedOversized.length) {
             Logger.debug('requestRevisionsTab: custom screenshot merge skipped (no candidates)');
         }
+        if (added.length) {
+            this.flushScreenshotQueueIfNativeVisible(state);
+        }
     },
 
     removeCustomScreenshotAt(state, index) {
@@ -951,29 +954,48 @@ const plugin = {
         if (entry.type === 'pending' && entry.localUrl) {
             URL.revokeObjectURL(entry.localUrl);
         }
+        let queuedNativeDelete = false;
         if (entry.type === 'uploaded') {
-            const visible = this.findRequestRevisionsModal();
-            const visibleNative = visible && !visible.hasAttribute(RR_MANAGED_MODAL_MARKER) && this.isNativeModalOpen(visible);
-            const removeButton = visibleNative ? this.findNativeScreenshotRemoveButton(visible, entry.url) : null;
-            if (removeButton) {
-                Logger.log(`Request Revisions Tab: clicking remove on visible native modal urlKey=${urlKey}`);
-                removeButton.click();
-            } else {
-                this.queueScreenshotDeleteToNative(state, urlKey);
-            }
+            this.queueScreenshotDeleteToNative(state, urlKey);
+            queuedNativeDelete = true;
         }
         state.rrData.screenshots = (state.rrData.screenshots || []).filter((_, idx) => idx !== index);
         this.syncCustomControlsFromState(state);
         Logger.log(
             `Request Revisions Tab: screenshot removed from tab idx=${index} type=${kind} ${meta} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS}`
         );
+        if (queuedNativeDelete) {
+            this.flushScreenshotQueueIfNativeVisible(state);
+        }
     },
 
     /**
-     * Queues a previously-uploaded screenshot URL for deletion in the native modal and
-     * schedules a single hidden-modal flush pass shortly after (debounced so a burst of
-     * X-clicks in the tab translates into ONE open/delete-many/close cycle, not many).
-     * Used when no native dialog is visible at the moment of the tab delete.
+     * When a worker-visible native RR modal is open (not a managed hidden transaction),
+     * drain screenshot queues immediately (native X for queued removes, sequential file input
+     * for pending uploads) so state does not wait for tab deactivation or an action button.
+     */
+    flushScreenshotQueueIfNativeVisible(state) {
+        const modal = this.findRequestRevisionsModal();
+        if (!modal || !this.isNativeModalOpen(modal)) return;
+        if (modal.hasAttribute(RR_MANAGED_MODAL_MARKER)) return;
+        if (state.transactionInProgress || state.syncingToNative) return;
+        state.syncingToNative = true;
+        void (async () => {
+            try {
+                await this.syncNativeScreenshots(state, modal, null);
+            } catch (err) {
+                Logger.error('Request Revisions Tab: flushScreenshotQueueIfNativeVisible failed', err);
+            } finally {
+                state.syncingToNative = false;
+                requestAnimationFrame(() => this.syncNativeModalToCustom(state));
+            }
+        })();
+    },
+
+    /**
+     * Queues a previously-uploaded screenshot pathname key for removal in the native modal.
+     * The remove runs during the next `syncNativeScreenshots` (export, visible modal flush, or
+     * stepped submit) — native's preview X is clicked; we do not auto-open a hidden modal.
      */
     queueScreenshotDeleteToNative(state, urlKey) {
         if (!urlKey) return;
@@ -984,75 +1006,6 @@ const plugin = {
         Logger.log(
             `Request Revisions Tab: queued native screenshot delete urlKey=${urlKey} queueDepth=${state.rrData.deletedScreenshotUrls.length}`
         );
-        if (state.deleteFlushTimer) clearTimeout(state.deleteFlushTimer);
-        state.deleteFlushTimer = setTimeout(() => {
-            state.deleteFlushTimer = null;
-            void this.flushPendingScreenshotDeletes(state);
-        }, RR_DELETE_FLUSH_DELAY_MS);
-    },
-
-    /**
-     * Opens the native modal hidden, clicks the X on each queued (already-uploaded) URL,
-     * and closes the modal. Skips itself silently if a transaction is already in
-     * progress (the action button's stepped submit also processes the delete queue) and
-     * reschedules so the deletes still get applied once the in-flight transaction ends.
-     */
-    async flushPendingScreenshotDeletes(state) {
-        const queue = (state.rrData.deletedScreenshotUrls || []).slice();
-        if (!queue.length) return;
-        if (state.transactionInProgress) {
-            Logger.debug(`requestRevisionsTab: deferring native screenshot delete flush — transaction in progress (queueDepth=${queue.length})`);
-            if (state.deleteFlushTimer) clearTimeout(state.deleteFlushTimer);
-            state.deleteFlushTimer = setTimeout(() => {
-                state.deleteFlushTimer = null;
-                void this.flushPendingScreenshotDeletes(state);
-            }, RR_DELETE_FLUSH_DELAY_MS * 2);
-            return;
-        }
-
-        state.transactionInProgress = true;
-        let modal = null;
-        const startedAt = Date.now();
-        Logger.log(`Request Revisions Tab: native screenshot delete flush START queueDepth=${queue.length}`);
-        try {
-            modal = await this.openNativeModal(state, { hidden: true });
-            if (!modal) {
-                Logger.warn('Request Revisions Tab: native screenshot delete flush could not open hidden modal');
-                return;
-            }
-            const remaining = [];
-            let removed = 0;
-            for (const urlKey of queue) {
-                const removeButton = this.findNativeScreenshotRemoveButton(modal, urlKey);
-                if (!removeButton) {
-                    Logger.debug(`requestRevisionsTab: native screenshot to delete not found in modal urlKey=${urlKey} (already gone?)`);
-                    continue;
-                }
-                removeButton.click();
-                await this.waitForNativeScreenshotRemoved(modal, urlKey, 3000);
-                if (this.findNativeScreenshotRemoveButton(modal, urlKey)) {
-                    Logger.warn(`Request Revisions Tab: native screenshot still present after click urlKey=${urlKey}`);
-                    remaining.push(urlKey);
-                } else {
-                    removed += 1;
-                }
-            }
-            state.rrData.deletedScreenshotUrls = remaining;
-            Logger.log(
-                `Request Revisions Tab: native screenshot delete flush FINISH removed=${removed}/${queue.length} took=${Date.now() - startedAt}ms`
-            );
-        } catch (err) {
-            Logger.error('Request Revisions Tab: native screenshot delete flush threw', err);
-        } finally {
-            if (modal && document.body.contains(modal)) {
-                this.closeNativeModal(modal);
-            }
-            this.cleanupTransactionStyles(state);
-            state.transactionModal = null;
-            state.transactionBackdrop = null;
-            state.transactionInProgress = false;
-            state.nativeSyncModal = null;
-        }
     },
 
     /**
@@ -1367,8 +1320,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         }
         if (snapshot.hasScreenshots) {
             const deleted = new Set(state.rrData.deletedScreenshotUrls || []);
-            const uploaded = (snapshot.screenshots || [])
+            const rawUploaded = (snapshot.screenshots || [])
                 .filter((entry) => !deleted.has(screenshotKeyFromUrl(entry.url)));
+            const seenKeys = new Set();
+            const uploaded = [];
+            for (const entry of rawUploaded) {
+                const k = screenshotKeyFromUrl(entry.url);
+                if (!k || seenKeys.has(k)) continue;
+                seenKeys.add(k);
+                uploaded.push(entry);
+            }
             if (screenshotMergeMode === 'replace-with-uploaded') {
                 state.rrData.screenshots = uploaded.slice(0, RR_MAX_SCREENSHOTS);
             } else {
@@ -2540,106 +2501,184 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const section = input?.closest('div');
         if (!section) return [];
         const imgs = [];
-        for (const img of section.querySelectorAll('div.relative.group img')) {
+        const primary = section.querySelectorAll('div.relative.group img');
+        if (primary.length) {
+            for (const img of primary) {
+                if (img.src) imgs.push(img);
+            }
+            return imgs;
+        }
+        for (const img of section.querySelectorAll('img')) {
             if (!img.src) continue;
+            if (img.closest('label')) continue;
             imgs.push(img);
         }
         return imgs;
     },
 
-    findNativeScreenshotRemoveButton(modal, url) {
-        const targetKey = screenshotKeyFromUrl(url);
+    findNativeScreenshotRemoveButton(modal, urlOrKey) {
+        const targetKey = screenshotKeyFromUrl(urlOrKey);
+        if (!targetKey) return null;
         for (const img of this.findNativeScreenshotPreviewImgs(modal)) {
             if (screenshotKeyFromUrl(img.src) !== targetKey) continue;
-            return img.closest('div.relative.group')?.querySelector('button[type="button"]') || null;
+            const tile =
+                img.closest('div.relative.group') ||
+                img.closest('div.group.relative') ||
+                img.closest('[class*="group"]');
+            if (!tile) continue;
+            const candidates = tile.querySelectorAll('button, [role="button"]');
+            for (const el of candidates) {
+                const aria = (el.getAttribute('aria-label') || el.getAttribute('title') || '').toLowerCase();
+                const txt = (el.textContent || '').trim();
+                if (aria.includes('remove') || aria.includes('delete') || aria.includes('close')) return el;
+                if (txt === '×' || txt === '✕') return el;
+            }
+            const buttons = tile.querySelectorAll('button');
+            for (let i = buttons.length - 1; i >= 0; i--) {
+                const b = buttons[i];
+                const cls = b.getAttribute('class') || '';
+                if (cls.includes('absolute') && (cls.includes('rounded-full') || cls.includes('rounded-md'))) return b;
+            }
+            if (buttons.length) return buttons[buttons.length - 1];
         }
+        Logger.debug(`requestRevisionsTab: native screenshot remove control not found for key=${targetKey}`);
         return null;
     },
 
     /**
-     * Pushes pending screenshots from `state.rrData.screenshots` into the native modal's
-     * `<input type="file">`, processes any queued deletes, and waits for the native React
-     * component to render preview images for each new upload (signal that the upload
-     * round-trip finished). Returns `{ uploaded, expected }` so callers can verify count.
+     * After a full successful pending→native upload batch, rebuild `state.rrData.screenshots`
+     * from native preview URLs so the tab cannot show duplicate pending+uploaded entries.
+     */
+    reconcileTabScreenshotsAfterSuccessfulUpload(state, modal, uploadedBatch) {
+        const imgs = this.findNativeScreenshotPreviewImgs(modal);
+        const uploadedFromNative = imgs.map((img) => ({
+            type: 'uploaded',
+            url: img.src,
+            alt: img.alt || ''
+        }));
+        const batch = new Set(uploadedBatch || []);
+        const residualPending = [];
+        for (const e of state.rrData.screenshots || []) {
+            if (e.type === 'pending' && batch.has(e)) {
+                if (e.localUrl) URL.revokeObjectURL(e.localUrl);
+                continue;
+            }
+            if (e.type === 'pending') residualPending.push(e);
+        }
+        state.rrData.screenshots = [...uploadedFromNative, ...residualPending].slice(0, RR_MAX_SCREENSHOTS);
+        this.syncCustomControlsFromState(state);
+    },
+
+    /**
+     * Processes queued native removes (preview X) then uploads pending files one at a time
+     * so each upload is verified before the next. Rebuilds tab screenshot state from native
+     * after a full success to prevent duplicate pending+uploaded rows.
      */
     async syncNativeScreenshots(state, modal, progressCallback = null) {
         const input = this.findNativeScreenshotInput(modal);
         if (!input) return { uploaded: 0, expected: 0, newlyUploaded: 0, requiredNewUploads: 0, strictOk: true };
 
-        const deleteKeys = state.rrData.deletedScreenshotUrls || [];
-        if (deleteKeys.length) {
-            Logger.debug(`requestRevisionsTab: native screenshot delete queue keys=${deleteKeys.length}`);
+        const deleteQueue = [...(state.rrData.deletedScreenshotUrls || [])];
+        if (deleteQueue.length) {
+            Logger.debug(`requestRevisionsTab: native screenshot delete queue keys=${deleteQueue.length}`);
         }
 
         const remainingDeletes = [];
-        for (const key of state.rrData.deletedScreenshotUrls || []) {
+        for (const key of deleteQueue) {
+            const stillHas = this.findNativeScreenshotPreviewImgs(modal).some((img) => screenshotKeyFromUrl(img.src) === key);
+            if (!stillHas) {
+                continue;
+            }
             const removeButton = this.findNativeScreenshotRemoveButton(modal, key);
-            if (removeButton) {
-                Logger.log(`Request Revisions Tab: removing uploaded screenshot in native key=${key}`);
-                removeButton.click();
-                await this.waitForNativeScreenshotRemoved(modal, key);
-            } else {
+            if (!removeButton) {
+                Logger.warn(`Request Revisions Tab: queued native delete but remove control missing urlKey=${key}`);
+                remainingDeletes.push(key);
+                continue;
+            }
+            Logger.log(`Request Revisions Tab: native screenshot remove click urlKey=${key}`);
+            removeButton.click();
+            const gone = await this.waitForNativeScreenshotRemoved(modal, key, 6000);
+            if (!gone || this.findNativeScreenshotRemoveButton(modal, key)) {
+                Logger.warn(`Request Revisions Tab: native screenshot still present after remove urlKey=${key}`);
                 remainingDeletes.push(key);
             }
         }
         state.rrData.deletedScreenshotUrls = remainingDeletes;
 
-        const dt = new DataTransfer();
         const pendingEntries = (state.rrData.screenshots || [])
             .filter((entry) => entry.type === 'pending' && entry.file)
             .slice(0, RR_MAX_SCREENSHOTS);
+        const requiredNewUploads = pendingEntries.length;
+        const preUploadBaseline = this.findNativeScreenshotPreviewImgs(modal).length;
+        const expectedFinalCount = Math.min(RR_MAX_SCREENSHOTS, preUploadBaseline + requiredNewUploads);
+
+        if (!pendingEntries.length) {
+            const finalOnlyDeletes = this.findNativeScreenshotPreviewImgs(modal).length;
+            if (deleteQueue.length) {
+                Logger.debug('requestRevisionsTab: native screenshot sync (deletes only, no pending uploads)');
+            }
+            return {
+                uploaded: finalOnlyDeletes,
+                expected: finalOnlyDeletes,
+                newlyUploaded: 0,
+                requiredNewUploads: 0,
+                strictOk: remainingDeletes.length === 0
+            };
+        }
+
+        const names = pendingEntries.map((e) => e.file.name).join(', ');
+        Logger.log(
+            `Request Revisions Tab: screenshot upload START — ${requiredNewUploads} file(s) batched: ${names} (existingPreviews=${preUploadBaseline})`
+        );
+
+        const dt = new DataTransfer();
         for (const entry of pendingEntries) {
             if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
             dt.items.add(entry.file);
         }
-        const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
-        const requiredNewUploads = pendingEntries.length;
-        if (!dt.files.length) {
-            if (deleteKeys.length) {
-                Logger.debug('requestRevisionsTab: native screenshot sync (deletes only, no pending upload batch)');
-            }
-            return { uploaded: previousUploadedCount, expected: previousUploadedCount, newlyUploaded: 0, requiredNewUploads: 0, strictOk: true };
-        }
-
-        const names = pendingEntries.map((e) => e.file.name).join(', ');
-        const expected = Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + requiredNewUploads);
-        Logger.log(
-            `Request Revisions Tab: screenshot upload START — ${requiredNewUploads} file(s): ${names} (${previousUploadedCount} already uploaded, expecting ${expected} total)`
-        );
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
 
-        // Track each image individually so the status modal can show per-image progress.
-        // All files were dispatched at once; we poll for each successive count milestone.
         let newlyUploaded = 0;
-        const maxToTrack = Math.min(requiredNewUploads, RR_MAX_SCREENSHOTS - previousUploadedCount);
-        for (let i = 0; i < maxToTrack; i++) {
+        let baselineCount = preUploadBaseline;
+        for (let i = 0; i < pendingEntries.length; i++) {
             const stepId = `screenshot-${i}`;
             if (progressCallback) progressCallback(stepId, 'start');
-            const targetCount = previousUploadedCount + i + 1;
-            const appeared = await this.waitForNativeScreenshotCount(modal, targetCount, 8000);
-            const actualCount = this.findNativeScreenshotPreviewImgs(modal).length;
-            if (appeared && actualCount >= targetCount) {
+            const targetCount = baselineCount + i + 1;
+            const ok = await this.waitForNativeScreenshotCount(modal, targetCount, 15000);
+            const actual = this.findNativeScreenshotPreviewImgs(modal).length;
+            if (ok && actual >= targetCount) {
                 if (progressCallback) progressCallback(stepId, 'ok');
-                newlyUploaded++;
+                newlyUploaded += 1;
             } else {
-                if (progressCallback) progressCallback(stepId, 'fail', `Upload timed out (${actualCount}/${targetCount})`);
+                if (progressCallback) progressCallback(stepId, 'fail', `Expected ≥${targetCount} previews, have ${actual}`);
+                Logger.warn(
+                    `Request Revisions Tab: screenshot batch stalled waiting for preview #${i + 1} file="${pendingEntries[i].file.name}" (${newlyUploaded}/${requiredNewUploads} confirmed)`
+                );
+                break;
             }
         }
 
         const finalCount = this.findNativeScreenshotPreviewImgs(modal).length;
-        const strictOk = newlyUploaded >= requiredNewUploads;
+        const strictOk = remainingDeletes.length === 0 && newlyUploaded >= requiredNewUploads && finalCount >= expectedFinalCount;
         if (strictOk) {
+            this.reconcileTabScreenshotsAfterSuccessfulUpload(state, modal, pendingEntries);
             Logger.log(
-                `Request Revisions Tab: screenshot upload done — all ${newlyUploaded}/${requiredNewUploads} new uploads succeeded (total: ${finalCount})`
+                `Request Revisions Tab: screenshot upload done — all ${newlyUploaded}/${requiredNewUploads} ok (total previews: ${finalCount})`
             );
         } else {
             Logger.warn(
-                `Request Revisions Tab: screenshot upload partial — ${newlyUploaded}/${requiredNewUploads} new uploads succeeded (total: ${finalCount}/${expected})`
+                `Request Revisions Tab: screenshot upload partial — ${newlyUploaded}/${requiredNewUploads} ok (total: ${finalCount}/${expectedFinalCount}) deletesPending=${remainingDeletes.length}`
             );
         }
-        return { uploaded: finalCount, expected, newlyUploaded, requiredNewUploads, strictOk };
+        return {
+            uploaded: finalCount,
+            expected: expectedFinalCount,
+            newlyUploaded,
+            requiredNewUploads,
+            strictOk
+        };
     },
 
     waitForNativeScreenshotCount(modal, expectedCount, timeoutMs = 5000) {
@@ -2647,32 +2686,66 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             return Promise.resolve(true);
         }
         return new Promise((resolve) => {
-            const observer = new MutationObserver(() => {
-                if (this.findNativeScreenshotPreviewImgs(modal).length < expectedCount) return;
+            let settled = false;
+            let rafId = 0;
+            const finish = (ok) => {
+                if (settled) return;
+                settled = true;
                 observer.disconnect();
-                resolve(true);
-            });
+                cancelAnimationFrame(rafId);
+                clearTimeout(timer);
+                resolve(ok);
+            };
+            const tick = () => {
+                if (settled) return;
+                if (this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount) {
+                    finish(true);
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    finish(this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount);
+                    return;
+                }
+                rafId = requestAnimationFrame(tick);
+            };
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(tick);
             observer.observe(modal, { childList: true, subtree: true });
-            setTimeout(() => {
-                observer.disconnect();
-                resolve(this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount);
-            }, timeoutMs);
+            const timer = setTimeout(() => finish(this.findNativeScreenshotPreviewImgs(modal).length >= expectedCount), timeoutMs);
+            tick();
         });
     },
 
     waitForNativeScreenshotRemoved(modal, key, timeoutMs = 2000) {
         if (!this.findNativeScreenshotRemoveButton(modal, key)) return Promise.resolve(true);
         return new Promise((resolve) => {
-            const observer = new MutationObserver(() => {
-                if (this.findNativeScreenshotRemoveButton(modal, key)) return;
+            let settled = false;
+            let rafId = 0;
+            const finish = (ok) => {
+                if (settled) return;
+                settled = true;
                 observer.disconnect();
-                resolve(true);
-            });
+                cancelAnimationFrame(rafId);
+                clearTimeout(timer);
+                resolve(ok);
+            };
+            const deadline = Date.now() + timeoutMs;
+            const tick = () => {
+                if (settled) return;
+                if (!this.findNativeScreenshotRemoveButton(modal, key)) {
+                    finish(true);
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    finish(!this.findNativeScreenshotRemoveButton(modal, key));
+                    return;
+                }
+                rafId = requestAnimationFrame(tick);
+            };
+            const observer = new MutationObserver(tick);
             observer.observe(modal, { childList: true, subtree: true });
-            setTimeout(() => {
-                observer.disconnect();
-                resolve(!this.findNativeScreenshotRemoveButton(modal, key));
-            }, timeoutMs);
+            const timer = setTimeout(() => finish(!this.findNativeScreenshotRemoveButton(modal, key)), timeoutMs);
+            tick();
         });
     },
 
@@ -2751,8 +2824,8 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         if (state.tabActive && state.nativeSyncModal !== modal) {
             state.nativeSyncModal = modal;
-            Logger.debug('requestRevisionsTab: direct native sync tab became active; exporting tab→native (skipScreenshots)');
-            this.exportToNativeModal(state, modal, { skipScreenshots: true }).then(() => {
+            Logger.debug('requestRevisionsTab: direct native sync tab became active; exporting tab→native (incl. screenshot queue)');
+            this.exportToNativeModal(state, modal, { skipScreenshots: false }).then(() => {
                 this.bindDirectNativeModalSync(state);
             });
             return;
