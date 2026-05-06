@@ -1,5 +1,14 @@
 // ============= request-revisions-tab.js =============
 // Request Revisions tab that uses short-lived native modal transactions.
+//
+// Default data-flow (single in-memory mirror: `state.rrData`; exceptions may be added later):
+// 1) Treat the most recently opened / focused RR surface as authoritative while it is active.
+// 2) Leaving the custom tab runs a hidden native export so the native RR form mirrors the tab;
+//    opening the custom tab runs a hidden import so the tab mirrors native.
+// 3) If the native RR dialog opens while the custom tab is active, tab state is exported into
+//    the dialog first; edits in the dialog stream into `state.rrData` while it stays open.
+//    When the dialog closes, we run one final native→tab snapshot read (when the DOM node is
+//    still readable) so the tab stays a mirror even if the last edit did not emit an event.
 
 const RR_TAB_MARKER = 'data-fleet-rr-tab';
 const RR_PANEL_MARKER = 'data-fleet-rr-tab-panel';
@@ -106,7 +115,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.16',
+    _version: '1.17',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1889,10 +1898,35 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         ) || null;
     },
 
+    /**
+     * When the native RR dialog is no longer open but we were syncing it, pull a final snapshot
+     * into `state.rrData` so the custom tab mirrors native after close (see file header data-flow).
+     */
+    syncNativeModalIntoTabBeforeUnbind(state) {
+        if (state.transactionInProgress) return;
+        const modalEl = state.nativeSyncModal;
+        if (!modalEl || !state.tabActive) return;
+        if (!document.body.contains(modalEl)) return;
+        try {
+            state.syncingFromNative = true;
+            const snapshot = this.readNativeModalSnapshot(modalEl);
+            this.updateFromNativeModalSnapshot(state, snapshot);
+            Logger.log('Request Revisions Tab: mirrored native Request Revisions dialog into custom tab on close');
+        } catch (error) {
+            Logger.warn('Request Revisions Tab: native→tab mirror on dialog close failed', error);
+        } finally {
+            state.syncingFromNative = false;
+        }
+        this.debugLogRrDigestIfChanged(state, 'native→tab after dialog close');
+    },
+
     bindDirectNativeModalSync(state) {
         const modal = this.findRequestRevisionsModal();
         if (!modal || modal === state.transactionModal || modal.hasAttribute(RR_MANAGED_MODAL_MARKER)) {
-            if (!modal) this.unbindNativeTaskIssuesSync(state);
+            if (!modal) {
+                this.syncNativeModalIntoTabBeforeUnbind(state);
+                this.unbindNativeTaskIssuesSync(state);
+            }
             return;
         }
 
