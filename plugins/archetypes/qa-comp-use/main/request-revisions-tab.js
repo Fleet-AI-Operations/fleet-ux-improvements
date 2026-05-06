@@ -4,11 +4,26 @@
 // Default data-flow (single in-memory mirror: `state.rrData`; exceptions may be added later):
 // 1) Treat the most recently opened / focused RR surface as authoritative while it is active.
 // 2) Leaving the custom tab runs a hidden native export so the native RR form mirrors the tab;
-//    opening the custom tab runs a hidden import so the tab mirrors native.
+//    opening the custom tab runs a hidden import so the tab mirrors native. Both directions
+//    skip screenshots — pending screenshots are only pushed to native via the action buttons.
 // 3) If the native RR dialog opens while the custom tab is active, tab state is exported into
-//    the dialog first; edits in the dialog stream into `state.rrData` while it stays open.
-//    When the dialog closes, we run one final native→tab snapshot read (when the DOM node is
-//    still readable) so the tab stays a mirror even if the last edit did not emit an event.
+//    the dialog first (text + checkboxes only, never screenshots); edits in the dialog stream
+//    into `state.rrData` while it stays open. When the dialog closes, we run one final
+//    native→tab snapshot read (when the DOM node is still readable) so the tab stays a mirror
+//    even if the last edit did not emit an event.
+//
+// Screenshots:
+// - Adding a screenshot to the custom tab keeps it as `pending` in `state.rrData.screenshots`;
+//   it is NOT uploaded to the native modal until the worker clicks an action button. The tab
+//   caps the pending+uploaded count at RR_MAX_SCREENSHOTS (= 5).
+// - When the native RR dialog closes, we recount uploaded screenshots from native and reflect
+//   that count in the tab counter (preserving any still-pending tab screenshots, capped at 5).
+// - Action buttons (Simulate R&NA, Silent Request, Request and Notify Author) all run a
+//   stepped sync inside a hidden native modal. A status modal in the page iterates over each
+//   sync step (QA Checklist → Prompt Quality → Rejection reasons → each textbox →
+//   Screenshots) and verifies the native form before clicking the corresponding native submit
+//   button. If any step fails to verify, the hidden native modal is revealed so the worker can
+//   complete it manually. "Simulate R&NA" runs the same stepped sync but never clicks submit.
 
 const RR_TAB_MARKER = 'data-fleet-rr-tab';
 const RR_PANEL_MARKER = 'data-fleet-rr-tab-panel';
@@ -115,7 +130,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '1.17',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -131,6 +146,7 @@ const plugin = {
         screenshotPreviewWrap: null,
         screenshotUploadButton: null,
         screenshotPasteButton: null,
+        screenshotCountLabel: null,
         tabActive: false,
         rrData: {
             taskIssues: '',
@@ -168,7 +184,8 @@ const plugin = {
         lastNativeTextDebugSig: '',
         lastCustomTextDebugSig: '',
         promptQualitySource: '',
-        nativePromptQualityClickAt: 0
+        nativePromptQualityClickAt: 0,
+        lastScreenshotSyncResult: null
     },
 
     buildRrStateDigest(state) {
@@ -429,14 +446,16 @@ const plugin = {
 
         const buttonRow = document.createElement('div');
         buttonRow.className = 'flex flex-wrap items-center justify-end gap-2 pt-2';
-        buttonRow.appendChild(this.createActionButton('Copy Information to Native Modal', () => {
-            this.runNativeModalTransaction(state, { mode: 'export', hidden: false });
-        }));
+        const simulateButton = this.createActionButton('Simulate R&NA', () => {
+            void this.runSteppedSubmit(state, { mode: 'simulate' });
+        });
+        simulateButton.title = 'Dev/debug: run the full sync flow against the hidden native modal without clicking the real submit button';
+        buttonRow.appendChild(simulateButton);
         buttonRow.appendChild(this.createActionButton('Silent Request', () => {
-            this.runNativeModalTransaction(state, { mode: 'submit-silent', hidden: true });
+            void this.runSteppedSubmit(state, { mode: 'submit-silent' });
         }));
         buttonRow.appendChild(this.createActionButton('Request and Notify Author', () => {
-            this.runNativeModalTransaction(state, { mode: 'submit-notify', hidden: true });
+            void this.runSteppedSubmit(state, { mode: 'submit-notify' });
         }, true));
 
         wrap.appendChild(buttonRow);
@@ -503,12 +522,22 @@ const plugin = {
     createScreenshotSection(state) {
         const section = document.createElement('div');
         section.className = 'space-y-2';
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'flex items-center justify-between gap-2';
         const title = document.createElement('div');
         title.className = 'text-sm text-muted-foreground font-medium';
         title.textContent = 'Screenshots (optional)';
+        const counter = document.createElement('span');
+        counter.className = 'text-xs text-muted-foreground tabular-nums';
+        counter.setAttribute('data-fleet-rr-ss-counter', 'true');
+        counter.textContent = `0/${RR_MAX_SCREENSHOTS}`;
+        titleRow.appendChild(title);
+        titleRow.appendChild(counter);
+
         const subtitle = document.createElement('p');
         subtitle.className = 'text-xs text-muted-foreground';
-        subtitle.textContent = 'Attach up to 5 screenshots to document visual issues (max 5MB each)';
+        subtitle.textContent = `Attach up to ${RR_MAX_SCREENSHOTS} screenshots to document visual issues (max 5MB each). Uploads happen when you click an action button.`;
 
         const controls = document.createElement('div');
         controls.className = 'flex flex-row flex-wrap gap-2 w-full min-w-0';
@@ -544,7 +573,7 @@ const plugin = {
         controls.appendChild(uploadButton);
         controls.appendChild(pasteButton);
         controls.appendChild(hiddenInput);
-        section.appendChild(title);
+        section.appendChild(titleRow);
         section.appendChild(subtitle);
         section.appendChild(controls);
         section.appendChild(previewWrap);
@@ -656,7 +685,7 @@ const plugin = {
             state.contentPanel.classList.add('hidden');
         }
         this.syncTabState(state, false);
-        this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
+        this.runNativeModalTransaction(state, { mode: 'export', hidden: true, skipScreenshots: true });
         Logger.info('Request Revisions Tab: deactivated');
     },
 
@@ -682,8 +711,11 @@ const plugin = {
         state.otherReasonTextarea = panel.querySelector('[data-fleet-rr-custom-field="otherReasonExplanation"]');
         state.otherReasonWrap = panel.querySelector('[data-fleet-rr-custom-other-wrap="true"]');
         state.screenshotPreviewWrap = panel.querySelector(`[${RR_CUSTOM_SS_PREVIEW}]`);
-        state.screenshotUploadButton = panel.querySelector('[data-fleet-rr-custom-ss-picker]')?.previousElementSibling || null;
-        state.screenshotPasteButton = panel.querySelector('[data-fleet-rr-custom-ss-picker]')?.previousElementSibling?.nextElementSibling || null;
+        const picker = panel.querySelector('[data-fleet-rr-custom-ss-picker]');
+        const controlsRow = picker?.parentElement;
+        state.screenshotUploadButton = controlsRow?.querySelector('button:nth-of-type(1)') || null;
+        state.screenshotPasteButton = controlsRow?.querySelector('button:nth-of-type(2)') || null;
+        state.screenshotCountLabel = panel.querySelector('[data-fleet-rr-ss-counter="true"]');
     },
 
     updateCustomFieldFromInput(state, field, value) {
@@ -766,11 +798,24 @@ const plugin = {
     mergeCustomScreenshots(state, files) {
         if (!files?.length) return;
         const next = [...(state.rrData.screenshots || [])];
+        const beforeCount = next.length;
         const added = [];
+        const droppedAtCap = [];
+        const droppedNonImage = [];
+        const droppedOversized = [];
         for (const file of files) {
-            if (next.length >= RR_MAX_SCREENSHOTS) break;
-            if (!file.type?.startsWith('image/')) continue;
-            if (file.size > RR_MAX_SCREENSHOT_BYTES) continue;
+            if (next.length >= RR_MAX_SCREENSHOTS) {
+                droppedAtCap.push(file);
+                continue;
+            }
+            if (!file.type?.startsWith('image/')) {
+                droppedNonImage.push(file);
+                continue;
+            }
+            if (file.size > RR_MAX_SCREENSHOT_BYTES) {
+                droppedOversized.push(file);
+                continue;
+            }
             next.push({
                 type: 'pending',
                 file,
@@ -780,14 +825,25 @@ const plugin = {
         }
         state.rrData.screenshots = next;
         this.syncCustomControlsFromState(state);
-        this.pushPendingScreenshotsToNative(state);
         for (const file of added) {
-            Logger.debug(
-                `requestRevisionsTab: custom screenshot queued name=${file.name} bytes=${file.size} total=${state.rrData.screenshots.length}`
+            Logger.log(
+                `Request Revisions Tab: screenshot added to tab name=${file.name} bytes=${file.size} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS} (will upload to native on action button click)`
             );
         }
-        if (!added.length) {
-            Logger.debug('requestRevisionsTab: custom screenshot merge skipped (none accepted; likely at cap or non-image)');
+        if (droppedAtCap.length) {
+            Logger.warn(
+                `Request Revisions Tab: ${droppedAtCap.length} screenshot(s) ignored — tab is at cap (${beforeCount}/${RR_MAX_SCREENSHOTS}); remove one before adding more`
+            );
+        }
+        if (droppedNonImage.length) {
+            Logger.warn(`Request Revisions Tab: ${droppedNonImage.length} non-image file(s) ignored`);
+        }
+        if (droppedOversized.length) {
+            const names = droppedOversized.map((f) => f.name).join(', ');
+            Logger.warn(`Request Revisions Tab: ${droppedOversized.length} screenshot(s) over 5MB ignored (${names})`);
+        }
+        if (!added.length && !droppedAtCap.length && !droppedNonImage.length && !droppedOversized.length) {
+            Logger.debug('requestRevisionsTab: custom screenshot merge skipped (no candidates)');
         }
     },
 
@@ -804,7 +860,9 @@ const plugin = {
         }
         if (entry.type === 'uploaded') {
             const modal = this.findRequestRevisionsModal();
-            const removeButton = modal ? this.findNativeScreenshotRemoveButton(modal, entry.url) : null;
+            const removeButton = modal && !modal.hasAttribute(RR_MANAGED_MODAL_MARKER)
+                ? this.findNativeScreenshotRemoveButton(modal, entry.url)
+                : null;
             if (removeButton) {
                 removeButton.click();
             } else {
@@ -815,46 +873,39 @@ const plugin = {
             }
         }
         state.rrData.screenshots = (state.rrData.screenshots || []).filter((_, idx) => idx !== index);
-        this.rebuildNativePendingScreenshotInput(state);
-        this.pushPendingScreenshotsToNative(state);
         this.syncCustomControlsFromState(state);
-        Logger.debug(`requestRevisionsTab: custom screenshot removed idx=${index} type=${kind} ${meta}`);
+        Logger.log(
+            `Request Revisions Tab: screenshot removed from tab idx=${index} type=${kind} ${meta} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS}`
+        );
     },
 
-    pushPendingScreenshotsToNative(state) {
-        const pending = (state.rrData.screenshots || []).filter((entry) => entry.type === 'pending' && entry.file);
-        const deleteQueued = (state.rrData.deletedScreenshotUrls || []).length > 0;
-        if (!pending.length && !deleteQueued) return;
-        const modal = this.findRequestRevisionsModal();
-        if (modal && this.isNativeModalOpen(modal)) {
-            Logger.debug(
-                `requestRevisionsTab: screenshot sync to open native modal pending=${pending.length} deleteQueued=${deleteQueued}`
-            );
-            void this.syncNativeScreenshots(state, modal);
-            return;
-        }
-        if (!state.transactionInProgress) {
-            Logger.debug(
-                `requestRevisionsTab: screenshot sync via hidden native export pending=${pending.length} deleteQueued=${deleteQueued}`
-            );
-            this.runNativeModalTransaction(state, { mode: 'export', hidden: true });
-        }
+    /**
+     * Returns total tab screenshots = uploaded + pending. Used for the visible counter
+     * and to enforce RR_MAX_SCREENSHOTS on the upload/paste buttons.
+     */
+    countTabScreenshots(state) {
+        return (state.rrData.screenshots || []).length;
     },
 
-    rebuildNativePendingScreenshotInput(state) {
-        const modal = this.findRequestRevisionsModal();
-        if (!modal || !this.isNativeModalOpen(modal)) return;
-        const input = this.findNativeScreenshotInput(modal);
-        if (!input) return;
-        const dt = new DataTransfer();
-        for (const entry of state.rrData.screenshots || []) {
-            if (entry.type !== 'pending' || !entry.file) continue;
-            if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
-            dt.items.add(entry.file);
+    /**
+     * Disables the tab's upload/paste buttons when the tab is at RR_MAX_SCREENSHOTS so
+     * workers cannot add more (the native modal still enforces its own limit). Updates the
+     * "X/RR_MAX_SCREENSHOTS" counter shown next to the section title.
+     */
+    updateScreenshotControlsAvailability(state) {
+        const total = this.countTabScreenshots(state);
+        const atCap = total >= RR_MAX_SCREENSHOTS;
+        if (state.screenshotCountLabel) {
+            state.screenshotCountLabel.textContent = `${total}/${RR_MAX_SCREENSHOTS}`;
+            state.screenshotCountLabel.classList.toggle('text-red-600', atCap);
         }
-        input.files = dt.files;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
+        for (const btn of [state.screenshotUploadButton, state.screenshotPasteButton]) {
+            if (!btn) continue;
+            btn.disabled = atCap;
+            btn.classList.toggle('opacity-50', atCap);
+            btn.classList.toggle('cursor-not-allowed', atCap);
+            btn.title = atCap ? `At cap of ${RR_MAX_SCREENSHOTS} screenshots — remove one to add more` : '';
+        }
     },
 
     renderCustomScreenshotPreviews(state) {
@@ -1073,13 +1124,13 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             Logger.debug('requestRevisionsTab: native screenshot input merge no-op (unchanged or none accepted)');
             return;
         }
+        const names = accepted.map((f) => `${f.name}:${f.size}`).join(', ');
+        Logger.log(
+            `Request Revisions Tab: native screenshot upload START (direct-to-native) files=+${accepted.length} (${names}) totalFiles=${dt.files.length}`
+        );
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        const names = accepted.map((f) => `${f.name}:${f.size}`).join(', ');
-        Logger.debug(
-            `requestRevisionsTab: native screenshot input merged +${accepted.length} (${names}) totalFiles=${input.files.length}`
-        );
     },
 
     updateTaskIssuesFromCustom(state, value) {
@@ -1104,7 +1155,18 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         state.rrData.taskIssues = value || '';
     },
 
-    updateFromNativeModalSnapshot(state, snapshot) {
+    /**
+     * Merge a native-modal snapshot into `state.rrData`.
+     * `options.screenshotMergeMode`:
+     *   - 'preserve-pending' (default): tab pending screenshots are kept; total = uploaded
+     *     from native + tab pending, capped at RR_MAX_SCREENSHOTS. Used after manual native
+     *     close and during live native↔tab sync.
+     *   - 'replace-with-uploaded': drop all tab pending and use exactly native's uploaded
+     *     list. Used after the stepped action button has just uploaded everything via the
+     *     hidden modal — pending entries have all become uploaded server-side.
+     */
+    updateFromNativeModalSnapshot(state, snapshot, options = {}) {
+        const screenshotMergeMode = options.screenshotMergeMode || 'preserve-pending';
         if (snapshot.hasTaskIssues) state.rrData.taskIssues = snapshot.taskIssues || '';
         if (snapshot.hasAttemptedActions) state.rrData.attemptedActions = snapshot.attemptedActions || '';
         if (snapshot.hasGeneralRevisionFeedback) {
@@ -1131,16 +1193,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             const deleted = new Set(state.rrData.deletedScreenshotUrls || []);
             const uploaded = (snapshot.screenshots || [])
                 .filter((entry) => !deleted.has(screenshotKeyFromUrl(entry.url)));
-            const previousUploadedCount = (state.rrData.screenshots || [])
-                .filter((entry) => entry.type === 'uploaded').length;
-            const confirmedPendingCount = Math.max(0, uploaded.length - previousUploadedCount);
-            const pending = (state.rrData.screenshots || [])
-                .filter((entry) => entry.type === 'pending')
-                .slice(confirmedPendingCount);
-            state.rrData.screenshots = [
-                ...uploaded,
-                ...pending
-            ].slice(0, RR_MAX_SCREENSHOTS);
+            if (screenshotMergeMode === 'replace-with-uploaded') {
+                state.rrData.screenshots = uploaded.slice(0, RR_MAX_SCREENSHOTS);
+            } else {
+                const pending = (state.rrData.screenshots || [])
+                    .filter((entry) => entry.type === 'pending');
+                state.rrData.screenshots = [
+                    ...uploaded,
+                    ...pending
+                ].slice(0, RR_MAX_SCREENSHOTS);
+            }
         }
         if (snapshot.hasOtherReasonExplanation) {
             state.rrData.otherReasonExplanation = snapshot.otherReasonExplanation || '';
@@ -1190,6 +1252,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             }
 
             this.renderCustomScreenshotPreviews(state);
+            this.updateScreenshotControlsAvailability(state);
         } finally {
             state.syncingFromNative = false;
         }
@@ -1222,7 +1285,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 return true;
             }
 
-            await this.exportToNativeModal(state, modal);
+            await this.exportToNativeModal(state, modal, { skipScreenshots: options.skipScreenshots === true });
             if (options.mode === 'export') {
                 Logger.info(hidden
                     ? 'Request Revisions Tab: saved custom state into hidden native modal'
@@ -1268,6 +1331,411 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             state.nativeSyncModal = null;
             Logger.debug('requestRevisionsTab: transaction cleanup complete');
         }
+    },
+
+    /**
+     * Stepped submit: opens a hidden native modal, shows an in-page status modal that
+     * iterates over each sync step (QA Checklist → Prompt Quality → Rejection reasons →
+     * Task Issues → Attempted Actions → General feedback → Other reason → Screenshots),
+     * verifies each step, and then either clicks the matching native submit button (for
+     * 'submit-silent' / 'submit-notify') or just closes the hidden modal (for 'simulate').
+     *
+     * If any step fails verification, the hidden native modal is revealed so the worker
+     * can complete it manually. The status modal stays open with details about which step
+     * failed; the worker can dismiss it via the Close button.
+     */
+    async runSteppedSubmit(state, { mode }) {
+        if (state.transactionInProgress) {
+            Logger.warn('Request Revisions Tab: stepped submit ignored — another transaction is in progress');
+            return false;
+        }
+        const buttonLabelByMode = {
+            'simulate': 'Simulate R&NA',
+            'submit-silent': 'Silent Request',
+            'submit-notify': 'Request and Notify Author'
+        };
+        const friendly = buttonLabelByMode[mode] || mode;
+        const stepDefs = this.buildStepDefs(state);
+        const status = this.openSyncStatusModal({
+            title: `Sync to native — ${friendly}`,
+            steps: stepDefs.map((s) => ({ id: s.id, label: s.label }))
+        });
+
+        state.transactionInProgress = true;
+        let modal = null;
+        let revealedOnFail = false;
+        let success = false;
+        Logger.log(`Request Revisions Tab: stepped submit START mode=${mode}`);
+
+        try {
+            modal = await this.openNativeModal(state, { hidden: true });
+            if (!modal) {
+                status.failHard('Native Request Revisions modal could not be opened');
+                Logger.error('Request Revisions Tab: stepped submit could not open native modal');
+                return false;
+            }
+            const taskTextarea = await this.ensureTaskSelected(modal);
+            if (!taskTextarea) {
+                status.failHard('Could not select the Task issue lane in the native modal');
+                this.revealNativeModal(state, modal);
+                revealedOnFail = true;
+                return false;
+            }
+
+            state.syncingToNative = true;
+            try {
+                for (const step of stepDefs) {
+                    if (step.skip && step.skip()) {
+                        status.skip(step.id);
+                        continue;
+                    }
+                    status.start(step.id);
+                    try {
+                        await step.run(modal, taskTextarea);
+                        await this.waitForAnimationFrame();
+                        const verdict = await step.verify(modal, taskTextarea);
+                        if (verdict === true) {
+                            status.ok(step.id);
+                        } else {
+                            const reason = typeof verdict === 'string' && verdict
+                                ? verdict
+                                : 'Native form did not reflect tab state after sync';
+                            status.fail(step.id, reason);
+                            Logger.error(`Request Revisions Tab: stepped submit FAIL step=${step.id} reason=${reason}`);
+                            this.revealNativeModal(state, modal);
+                            revealedOnFail = true;
+                            return false;
+                        }
+                    } catch (stepError) {
+                        const msg = stepError?.message || String(stepError);
+                        status.fail(step.id, msg);
+                        Logger.error(`Request Revisions Tab: stepped submit threw step=${step.id}`, stepError);
+                        this.revealNativeModal(state, modal);
+                        revealedOnFail = true;
+                        return false;
+                    }
+                }
+            } finally {
+                state.syncingToNative = false;
+            }
+
+            if (mode === 'simulate') {
+                success = true;
+                status.complete('All fields synced. (Simulate mode — no submission performed.)');
+                Logger.log('Request Revisions Tab: stepped submit OK mode=simulate (no native submit clicked)');
+                return true;
+            }
+
+            const submitLabel = mode === 'submit-silent' ? 'Silent Request' : 'Request and Notify Author';
+            const submitButton = this.findButtonByText(modal, submitLabel);
+            if (!submitButton) {
+                status.failHard(`Native "${submitLabel}" button not found after sync`);
+                Logger.error(`Request Revisions Tab: stepped submit missing native button "${submitLabel}"`);
+                this.revealNativeModal(state, modal);
+                revealedOnFail = true;
+                return false;
+            }
+            submitButton.click();
+            success = true;
+            status.complete(`Submitted via native "${submitLabel}".`);
+            Logger.log(`Request Revisions Tab: stepped submit OK clicked native "${submitLabel}"`);
+            return true;
+        } catch (error) {
+            Logger.error(`Request Revisions Tab: stepped submit failed unexpectedly (${mode})`, error);
+            status.failHard(error?.message || String(error));
+            if (modal) {
+                this.revealNativeModal(state, modal);
+                revealedOnFail = true;
+            }
+            return false;
+        } finally {
+            if (modal && document.body.contains(modal) && !revealedOnFail) {
+                if (mode === 'simulate' && success) {
+                    Logger.debug('requestRevisionsTab: stepped submit closing hidden modal (simulate success)');
+                    this.closeNativeModal(modal);
+                } else if (!success) {
+                    this.closeNativeModal(modal);
+                }
+            }
+            this.cleanupTransactionStyles(state);
+            state.transactionModal = null;
+            state.transactionBackdrop = null;
+            state.transactionInProgress = false;
+            state.nativeSyncModal = null;
+            if (success) status.scheduleAutoClose(2500);
+            Logger.debug(`requestRevisionsTab: stepped submit cleanup complete success=${success} revealed=${revealedOnFail}`);
+        }
+    },
+
+    /**
+     * Builds the ordered list of sync steps the status modal iterates over.
+     * Each step has: id, label, optional skip() (returns true to skip),
+     * run(modal, taskTextarea) to perform the sync, verify(modal, taskTextarea) to
+     * confirm the native form matches tab state (returns true or a string reason).
+     */
+    buildStepDefs(state) {
+        const defs = [
+            {
+                id: 'qa-checklist',
+                label: 'QA Checklist',
+                run: async (modal) => { await this.syncNativeQaChecklist(state, modal); },
+                verify: (modal) => {
+                    const read = this.readNativeQaChecklist(modal);
+                    if (!read.complete) return 'Native QA Checklist controls missing';
+                    for (const item of RR_QA_CHECKLIST_ITEMS) {
+                        const want = Boolean(state.rrData.qaChecklist?.[item]);
+                        if (Boolean(read.items[item]) !== want) {
+                            return `QA item "${item.slice(0, 60)}…" did not match (want=${want})`;
+                        }
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'prompt-quality',
+                label: 'Prompt Quality Rating',
+                skip: () => !state.rrData.promptQualityRating,
+                run: async (modal) => { await this.syncNativePromptQuality(state, modal); },
+                verify: (modal) => {
+                    const read = this.readNativePromptQuality(modal);
+                    if (!read.complete) return 'Native Prompt Quality controls missing';
+                    if (read.selected !== state.rrData.promptQualityRating) {
+                        return `want="${state.rrData.promptQualityRating}" got="${read.selected || '(none)'}"`;
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'rejection-reasons',
+                label: 'Rejection reasons',
+                run: async (modal) => { await this.syncNativeRejectionCheckboxes(state, modal); },
+                verify: (modal) => {
+                    const read = this.readNativeRejectionReasons(modal);
+                    if (!read.complete) return 'Native rejection reason controls missing';
+                    for (const reason of RR_REJECTION_REASONS) {
+                        const want = Boolean(state.rrData.rejectionReasons?.[reason]);
+                        if (Boolean(read.reasons[reason]) !== want) {
+                            return `reason "${reason}" did not match (want=${want})`;
+                        }
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'task-issues',
+                label: 'Task Issues textarea',
+                run: async (_modal, taskTextarea) => {
+                    this.setInputValue(taskTextarea, state.rrData.taskIssues || '');
+                },
+                verify: (_modal, taskTextarea) => {
+                    if ((taskTextarea?.value || '') !== (state.rrData.taskIssues || '')) {
+                        return 'Native Task textarea value mismatch';
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'attempted-actions',
+                label: 'Attempted Actions textarea',
+                run: async (modal) => {
+                    const attempted = modal.querySelector('textarea[id^="attempted-actions-"]');
+                    if (!attempted) return;
+                    this.setInputValue(attempted, state.rrData.attemptedActions || '');
+                },
+                verify: (modal) => {
+                    const attempted = modal.querySelector('textarea[id^="attempted-actions-"]');
+                    if (!attempted) return 'Native Attempted Actions textarea missing';
+                    if ((attempted.value || '') !== (state.rrData.attemptedActions || '')) {
+                        return 'Native Attempted Actions value mismatch';
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'general-feedback',
+                label: 'General revision feedback textarea',
+                run: async (modal) => {
+                    const general = modal.querySelector('textarea#discard-reason');
+                    if (!general) return;
+                    this.setInputValue(general, state.rrData.generalRevisionFeedback || '');
+                },
+                verify: (modal) => {
+                    const general = modal.querySelector('textarea#discard-reason');
+                    if (!general) return 'Native General feedback textarea missing';
+                    if ((general.value || '') !== (state.rrData.generalRevisionFeedback || '')) {
+                        return 'Native General feedback value mismatch';
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'other-reason',
+                label: 'Other reason explanation',
+                skip: () => !state.rrData.rejectionReasons?.[RR_REASON_OTHER_LABEL],
+                run: async (modal) => {
+                    const other = await this.waitForOtherReasonTextarea(modal, 2000);
+                    if (other) this.setInputValue(other, state.rrData.otherReasonExplanation || '');
+                },
+                verify: (modal) => {
+                    const other = modal.querySelector('textarea#other-reason-explanation');
+                    if (!other) return 'Native Other-reason textarea missing';
+                    if ((other.value || '') !== (state.rrData.otherReasonExplanation || '')) {
+                        return 'Native Other-reason value mismatch';
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'screenshots',
+                label: 'Screenshots',
+                run: async (modal) => {
+                    const result = await this.syncNativeScreenshots(state, modal);
+                    state.lastScreenshotSyncResult = result;
+                },
+                verify: (modal) => {
+                    const result = state.lastScreenshotSyncResult || { uploaded: 0, expected: 0 };
+                    if (result.uploaded < result.expected) {
+                        return `Native uploaded ${result.uploaded}/${result.expected} screenshots`;
+                    }
+                    this.updateFromNativeModalSnapshot(state, this.readNativeModalSnapshot(modal), {
+                        screenshotMergeMode: 'replace-with-uploaded'
+                    });
+                    return true;
+                }
+            }
+        ];
+        return defs;
+    },
+
+    /**
+     * Removes the inline styles + marker that hide the native modal during a transaction
+     * so the worker can finish the request manually after a stepped sync failure.
+     */
+    revealNativeModal(state, modal) {
+        if (!modal) return;
+        modal.removeAttribute(RR_MANAGED_MODAL_MARKER);
+        modal.style.opacity = '';
+        modal.style.pointerEvents = '';
+        modal.style.left = '';
+        modal.style.top = '';
+        const backdrop = state.transactionBackdrop || this.findBackdropForModal(modal);
+        if (backdrop) {
+            backdrop.style.opacity = '';
+            backdrop.style.pointerEvents = '';
+        }
+        Logger.info('Request Revisions Tab: revealed hidden native modal due to sync failure — complete manually');
+    },
+
+    /**
+     * Renders a small in-page status overlay listing each sync step with live status
+     * (pending → running → ok / failed / skipped). Returns a controller with start/ok/
+     * fail/skip/complete/failHard/scheduleAutoClose/close methods.
+     */
+    openSyncStatusModal({ title, steps }) {
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/30';
+        overlay.setAttribute('data-fleet-rr-status-overlay', 'true');
+        overlay.setAttribute('data-fleet-plugin', this.id);
+
+        const card = document.createElement('div');
+        card.className = 'w-[min(28rem,90vw)] max-h-[85vh] overflow-y-auto rounded-lg border border-input bg-background shadow-xl p-4 space-y-3';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'text-sm font-semibold text-foreground';
+        titleEl.textContent = title;
+        card.appendChild(titleEl);
+
+        const list = document.createElement('ul');
+        list.className = 'space-y-1.5';
+        const itemEls = new Map();
+        for (const step of steps) {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2 text-sm';
+            const icon = document.createElement('span');
+            icon.className = 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground tabular-nums';
+            icon.textContent = '•';
+            const label = document.createElement('span');
+            label.className = 'flex-1 text-foreground';
+            label.textContent = step.label;
+            const reason = document.createElement('span');
+            reason.className = 'block text-xs text-red-600 mt-0.5 hidden';
+            li.appendChild(icon);
+            const labelWrap = document.createElement('div');
+            labelWrap.className = 'flex-1';
+            labelWrap.appendChild(label);
+            labelWrap.appendChild(reason);
+            li.appendChild(labelWrap);
+            list.appendChild(li);
+            itemEls.set(step.id, { icon, label, reason, li });
+        }
+        card.appendChild(list);
+
+        const banner = document.createElement('div');
+        banner.className = 'text-sm font-medium hidden';
+        card.appendChild(banner);
+
+        const footer = document.createElement('div');
+        footer.className = 'flex items-center justify-end pt-1';
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'inline-flex items-center justify-center rounded-sm text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3';
+        closeBtn.textContent = 'Close';
+        closeBtn.addEventListener('click', () => api.close());
+        footer.appendChild(closeBtn);
+        card.appendChild(footer);
+
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        let autoCloseTimer = null;
+        const setIcon = (id, char, classes) => {
+            const node = itemEls.get(id);
+            if (!node) return;
+            node.icon.textContent = char;
+            node.icon.className = `mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center tabular-nums ${classes}`;
+        };
+        const setReason = (id, text) => {
+            const node = itemEls.get(id);
+            if (!node || !text) return;
+            node.reason.textContent = text;
+            node.reason.classList.remove('hidden');
+        };
+
+        const api = {
+            start(id) {
+                setIcon(id, '…', 'text-blue-600');
+            },
+            ok(id) {
+                setIcon(id, '✓', 'text-green-600');
+            },
+            fail(id, reason) {
+                setIcon(id, '✗', 'text-red-600');
+                setReason(id, reason);
+            },
+            skip(id) {
+                setIcon(id, '–', 'text-muted-foreground');
+                const node = itemEls.get(id);
+                if (node) node.label.classList.add('text-muted-foreground');
+            },
+            complete(message) {
+                banner.textContent = message;
+                banner.className = 'text-sm font-medium text-green-700 dark:text-green-400';
+            },
+            failHard(message) {
+                banner.textContent = message;
+                banner.className = 'text-sm font-medium text-red-600';
+            },
+            scheduleAutoClose(ms) {
+                if (autoCloseTimer) clearTimeout(autoCloseTimer);
+                autoCloseTimer = setTimeout(() => api.close(), ms);
+            },
+            close() {
+                if (autoCloseTimer) clearTimeout(autoCloseTimer);
+                autoCloseTimer = null;
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            }
+        };
+        return api;
     },
 
     async openNativeModal(state, options) {
@@ -1429,8 +1897,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         Logger.debug('requestRevisionsTab: importFromNativeModal applied snapshot');
     },
 
-    async exportToNativeModal(state, modal) {
-        Logger.debug('requestRevisionsTab: exportToNativeModal start');
+    async exportToNativeModal(state, modal, options = {}) {
+        const skipScreenshots = options.skipScreenshots === true;
+        Logger.debug(`requestRevisionsTab: exportToNativeModal start skipScreenshots=${skipScreenshots}`);
         const taskTextarea = await this.ensureTaskSelected(modal);
         if (!taskTextarea) {
             Logger.warn('Request Revisions Tab: native Task textarea not found during export');
@@ -1451,7 +1920,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 const other = await this.waitForOtherReasonTextarea(modal, 2000);
                 if (other) this.setInputValue(other, state.rrData.otherReasonExplanation || '');
             }
-            await this.syncNativeScreenshots(state, modal);
+            if (!skipScreenshots) {
+                await this.syncNativeScreenshots(state, modal);
+            }
         } finally {
             state.syncingToNative = false;
         }
@@ -1773,9 +2244,15 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         return null;
     },
 
+    /**
+     * Pushes pending screenshots from `state.rrData.screenshots` into the native modal's
+     * `<input type="file">`, processes any queued deletes, and waits for the native React
+     * component to render preview images for each new upload (signal that the upload
+     * round-trip finished). Returns `{ uploaded, expected }` so callers can verify count.
+     */
     async syncNativeScreenshots(state, modal) {
         const input = this.findNativeScreenshotInput(modal);
-        if (!input) return;
+        if (!input) return { uploaded: 0, expected: 0 };
 
         const deleteKeys = state.rrData.deletedScreenshotUrls || [];
         if (deleteKeys.length) {
@@ -1786,7 +2263,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         for (const key of state.rrData.deletedScreenshotUrls || []) {
             const removeButton = this.findNativeScreenshotRemoveButton(modal, key);
             if (removeButton) {
-                Logger.debug(`requestRevisionsTab: native screenshot remove click key=${key}`);
+                Logger.log(`Request Revisions Tab: removing uploaded screenshot in native key=${key}`);
                 removeButton.click();
                 await this.waitForNativeScreenshotRemoved(modal, key);
             } else {
@@ -1799,32 +2276,39 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const pendingEntries = (state.rrData.screenshots || [])
             .filter((entry) => entry.type === 'pending' && entry.file)
             .slice(0, RR_MAX_SCREENSHOTS);
-        for (const entry of state.rrData.screenshots || []) {
+        for (const entry of pendingEntries) {
             if (dt.items.length >= RR_MAX_SCREENSHOTS) break;
-            if (entry.type !== 'pending' || !entry.file) continue;
             dt.items.add(entry.file);
         }
+        const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
         if (!dt.files.length) {
             if (deleteKeys.length) {
                 Logger.debug('requestRevisionsTab: native screenshot sync (deletes only, no pending upload batch)');
             }
-            return;
+            return { uploaded: previousUploadedCount, expected: previousUploadedCount };
         }
         const names = pendingEntries.map((e) => `${e.file.name}:${e.file.size}`).join(', ');
-        Logger.debug(
-            `requestRevisionsTab: native screenshot upload batch files=${dt.files.length} pendingMeta=${names}`
+        const expected = Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + pendingEntries.length);
+        const startedAt = Date.now();
+        Logger.log(
+            `Request Revisions Tab: native screenshot upload START files=${dt.files.length} (${names}) previousUploaded=${previousUploadedCount} expectedAfter=${expected}`
         );
-        const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        await this.waitForNativeScreenshotCount(
-            modal,
-            Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + pendingEntries.length),
-            5000
-        );
-        this.updateFromNativeModalSnapshot(state, this.readNativeModalSnapshot(modal));
-        Logger.debug('requestRevisionsTab: native screenshot sync refreshed snapshot into tab state');
+        const reachedCount = await this.waitForNativeScreenshotCount(modal, expected, 8000);
+        const finalCount = this.findNativeScreenshotPreviewImgs(modal).length;
+        const elapsed = Date.now() - startedAt;
+        if (reachedCount && finalCount >= expected) {
+            Logger.log(
+                `Request Revisions Tab: native screenshot upload FINISH ok=true uploaded=${finalCount}/${expected} took=${elapsed}ms`
+            );
+        } else {
+            Logger.warn(
+                `Request Revisions Tab: native screenshot upload FINISH ok=false uploaded=${finalCount}/${expected} took=${elapsed}ms (timeout or partial)`
+            );
+        }
+        return { uploaded: finalCount, expected };
     },
 
     waitForNativeScreenshotCount(modal, expectedCount, timeoutMs = 5000) {
@@ -1910,8 +2394,12 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         try {
             state.syncingFromNative = true;
             const snapshot = this.readNativeModalSnapshot(modalEl);
+            const uploadedCount = (snapshot.screenshots || []).length;
             this.updateFromNativeModalSnapshot(state, snapshot);
-            Logger.log('Request Revisions Tab: mirrored native Request Revisions dialog into custom tab on close');
+            const totalAfter = (state.rrData.screenshots || []).length;
+            Logger.log(
+                `Request Revisions Tab: mirrored native dialog into custom tab on close (uploadedFromNative=${uploadedCount}, totalAfter=${totalAfter}/${RR_MAX_SCREENSHOTS})`
+            );
         } catch (error) {
             Logger.warn('Request Revisions Tab: native→tab mirror on dialog close failed', error);
         } finally {
@@ -1932,8 +2420,8 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         if (state.tabActive && state.nativeSyncModal !== modal) {
             state.nativeSyncModal = modal;
-            Logger.debug('requestRevisionsTab: direct native sync tab became active; exporting tab→native');
-            this.exportToNativeModal(state, modal).then(() => {
+            Logger.debug('requestRevisionsTab: direct native sync tab became active; exporting tab→native (skipScreenshots)');
+            this.exportToNativeModal(state, modal, { skipScreenshots: true }).then(() => {
                 this.bindDirectNativeModalSync(state);
             });
             return;
