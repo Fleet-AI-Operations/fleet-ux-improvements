@@ -57,8 +57,39 @@ const RR_QA_CHECKLIST_ITEMS = [
     'Is the task well-specified and phrased in a way that is not confusing?'
 ];
 const RR_PROMPT_QUALITY_OPTIONS = ['Top 10%', 'Average', 'Bottom 10%'];
+// Per-option button styling that mirrors the native Request Revisions modal
+// (see local/context/comp-use/qa/quality-buttons-selected.html and rr-quality-ratings.html).
+// NOTE: the native "Average" option has IDENTICAL classes selected vs. unselected, so it is
+// impossible to detect Average's selection from classes alone — the click handler in
+// `bindNativePromptQuality` writes `state.rrData.promptQualityRating` directly so we can
+// still reflect Average selections in the tab without reading them back from native.
+const RR_PROMPT_QUALITY_BASE_CLASS = 'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500';
+const RR_PROMPT_QUALITY_STYLES = {
+    'Top 10%': {
+        selected: 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+        unselected: 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400',
+        iconPaths: [
+            'M7 10v12',
+            'M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z'
+        ]
+    },
+    'Average': {
+        selected: 'border-gray-300 bg-gray-50 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400',
+        unselected: 'border-gray-300 bg-gray-50 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400',
+        iconPaths: ['M5 12h14']
+    },
+    'Bottom 10%': {
+        selected: 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+        unselected: 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400',
+        iconPaths: [
+            'M17 14V2',
+            'M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z'
+        ]
+    }
+};
 const RR_MAX_SCREENSHOTS = 5;
 const RR_MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
+const RR_DELETE_FLUSH_DELAY_MS = 200;
 
 function createDefaultRejectionReasons() {
     return RR_REJECTION_REASONS.reduce((acc, label) => {
@@ -130,7 +161,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -185,7 +216,8 @@ const plugin = {
         lastCustomTextDebugSig: '',
         promptQualitySource: '',
         nativePromptQualityClickAt: 0,
-        lastScreenshotSyncResult: null
+        lastScreenshotSyncResult: null,
+        deleteFlushTimer: null
     },
 
     buildRrStateDigest(state) {
@@ -505,11 +537,13 @@ const plugin = {
         row.className = 'flex gap-2 mt-2';
 
         for (const option of RR_PROMPT_QUALITY_OPTIONS) {
+            const styles = RR_PROMPT_QUALITY_STYLES[option];
             const button = document.createElement('button');
             button.type = 'button';
             button.setAttribute(RR_CUSTOM_PROMPT_MARKER, option);
-            button.className = 'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all border-input bg-background text-muted-foreground hover:opacity-90';
-            button.textContent = option;
+            button.className = `${RR_PROMPT_QUALITY_BASE_CLASS} ${styles.unselected}`;
+            button.appendChild(this.createPromptQualityIcon(styles.iconPaths));
+            button.appendChild(document.createTextNode(option));
             button.addEventListener('click', () => this.setPromptQualityFromCustom(state, option));
             row.appendChild(button);
         }
@@ -517,6 +551,31 @@ const plugin = {
         section.appendChild(title);
         section.appendChild(row);
         return section;
+    },
+
+    /**
+     * Creates the SVG icon used in each prompt-quality button (matches the icons rendered
+     * by the native Request Revisions modal — see context HTML files in
+     * local/context/comp-use/qa/).
+     */
+    createPromptQualityIcon(paths) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.setAttribute('width', '24');
+        svg.setAttribute('height', '24');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        svg.setAttribute('class', 'h-3.5 w-3.5');
+        for (const d of paths) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            svg.appendChild(path);
+        }
+        return svg;
     },
 
     createScreenshotSection(state) {
@@ -851,25 +910,23 @@ const plugin = {
         const entry = state.rrData.screenshots?.[index];
         if (!entry) return;
         const kind = entry.type;
+        const urlKey = entry.type === 'uploaded' ? screenshotKeyFromUrl(entry.url) : '';
         const meta =
             kind === 'pending'
                 ? `file=${entry.file?.name || '?'}`
-                : `urlKey=${screenshotKeyFromUrl(entry.url)}`;
+                : `urlKey=${urlKey}`;
         if (entry.type === 'pending' && entry.localUrl) {
             URL.revokeObjectURL(entry.localUrl);
         }
         if (entry.type === 'uploaded') {
-            const modal = this.findRequestRevisionsModal();
-            const removeButton = modal && !modal.hasAttribute(RR_MANAGED_MODAL_MARKER)
-                ? this.findNativeScreenshotRemoveButton(modal, entry.url)
-                : null;
+            const visible = this.findRequestRevisionsModal();
+            const visibleNative = visible && !visible.hasAttribute(RR_MANAGED_MODAL_MARKER) && this.isNativeModalOpen(visible);
+            const removeButton = visibleNative ? this.findNativeScreenshotRemoveButton(visible, entry.url) : null;
             if (removeButton) {
+                Logger.log(`Request Revisions Tab: clicking remove on visible native modal urlKey=${urlKey}`);
                 removeButton.click();
             } else {
-                state.rrData.deletedScreenshotUrls = [
-                    ...(state.rrData.deletedScreenshotUrls || []),
-                    screenshotKeyFromUrl(entry.url)
-                ];
+                this.queueScreenshotDeleteToNative(state, urlKey);
             }
         }
         state.rrData.screenshots = (state.rrData.screenshots || []).filter((_, idx) => idx !== index);
@@ -877,6 +934,92 @@ const plugin = {
         Logger.log(
             `Request Revisions Tab: screenshot removed from tab idx=${index} type=${kind} ${meta} total=${state.rrData.screenshots.length}/${RR_MAX_SCREENSHOTS}`
         );
+    },
+
+    /**
+     * Queues a previously-uploaded screenshot URL for deletion in the native modal and
+     * schedules a single hidden-modal flush pass shortly after (debounced so a burst of
+     * X-clicks in the tab translates into ONE open/delete-many/close cycle, not many).
+     * Used when no native dialog is visible at the moment of the tab delete.
+     */
+    queueScreenshotDeleteToNative(state, urlKey) {
+        if (!urlKey) return;
+        const queue = state.rrData.deletedScreenshotUrls || [];
+        if (!queue.includes(urlKey)) {
+            state.rrData.deletedScreenshotUrls = [...queue, urlKey];
+        }
+        Logger.log(
+            `Request Revisions Tab: queued native screenshot delete urlKey=${urlKey} queueDepth=${state.rrData.deletedScreenshotUrls.length}`
+        );
+        if (state.deleteFlushTimer) clearTimeout(state.deleteFlushTimer);
+        state.deleteFlushTimer = setTimeout(() => {
+            state.deleteFlushTimer = null;
+            void this.flushPendingScreenshotDeletes(state);
+        }, RR_DELETE_FLUSH_DELAY_MS);
+    },
+
+    /**
+     * Opens the native modal hidden, clicks the X on each queued (already-uploaded) URL,
+     * and closes the modal. Skips itself silently if a transaction is already in
+     * progress (the action button's stepped submit also processes the delete queue) and
+     * reschedules so the deletes still get applied once the in-flight transaction ends.
+     */
+    async flushPendingScreenshotDeletes(state) {
+        const queue = (state.rrData.deletedScreenshotUrls || []).slice();
+        if (!queue.length) return;
+        if (state.transactionInProgress) {
+            Logger.debug(`requestRevisionsTab: deferring native screenshot delete flush — transaction in progress (queueDepth=${queue.length})`);
+            if (state.deleteFlushTimer) clearTimeout(state.deleteFlushTimer);
+            state.deleteFlushTimer = setTimeout(() => {
+                state.deleteFlushTimer = null;
+                void this.flushPendingScreenshotDeletes(state);
+            }, RR_DELETE_FLUSH_DELAY_MS * 2);
+            return;
+        }
+
+        state.transactionInProgress = true;
+        let modal = null;
+        const startedAt = Date.now();
+        Logger.log(`Request Revisions Tab: native screenshot delete flush START queueDepth=${queue.length}`);
+        try {
+            modal = await this.openNativeModal(state, { hidden: true });
+            if (!modal) {
+                Logger.warn('Request Revisions Tab: native screenshot delete flush could not open hidden modal');
+                return;
+            }
+            const remaining = [];
+            let removed = 0;
+            for (const urlKey of queue) {
+                const removeButton = this.findNativeScreenshotRemoveButton(modal, urlKey);
+                if (!removeButton) {
+                    Logger.debug(`requestRevisionsTab: native screenshot to delete not found in modal urlKey=${urlKey} (already gone?)`);
+                    continue;
+                }
+                removeButton.click();
+                await this.waitForNativeScreenshotRemoved(modal, urlKey, 3000);
+                if (this.findNativeScreenshotRemoveButton(modal, urlKey)) {
+                    Logger.warn(`Request Revisions Tab: native screenshot still present after click urlKey=${urlKey}`);
+                    remaining.push(urlKey);
+                } else {
+                    removed += 1;
+                }
+            }
+            state.rrData.deletedScreenshotUrls = remaining;
+            Logger.log(
+                `Request Revisions Tab: native screenshot delete flush FINISH removed=${removed}/${queue.length} took=${Date.now() - startedAt}ms`
+            );
+        } catch (err) {
+            Logger.error('Request Revisions Tab: native screenshot delete flush threw', err);
+        } finally {
+            if (modal && document.body.contains(modal)) {
+                this.closeNativeModal(modal);
+            }
+            this.cleanupTransactionStyles(state);
+            state.transactionModal = null;
+            state.transactionBackdrop = null;
+            state.transactionInProgress = false;
+            state.nativeSyncModal = null;
+        }
     },
 
     /**
@@ -1244,11 +1387,11 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             const promptButtons = state.contentPanel?.querySelectorAll(`button[${RR_CUSTOM_PROMPT_MARKER}]`) || [];
             for (const button of promptButtons) {
                 const option = button.getAttribute(RR_CUSTOM_PROMPT_MARKER);
+                const styles = RR_PROMPT_QUALITY_STYLES[option];
+                if (!styles) continue;
                 const selected = option === state.rrData.promptQualityRating;
-                button.classList.toggle('border-blue-500', selected);
-                button.classList.toggle('text-blue-700', selected);
-                button.classList.toggle('bg-blue-50', selected);
-                button.classList.toggle('dark:bg-blue-950/40', selected);
+                const variant = selected ? styles.selected : styles.unselected;
+                button.className = `${RR_PROMPT_QUALITY_BASE_CLASS} ${variant}`;
             }
 
             this.renderCustomScreenshotPreviews(state);
@@ -1369,12 +1512,14 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         try {
             modal = await this.openNativeModal(state, { hidden: true });
+            if (status.isCancelled()) return false;
             if (!modal) {
                 status.failHard('Native Request Revisions modal could not be opened');
                 Logger.error('Request Revisions Tab: stepped submit could not open native modal');
                 return false;
             }
             const taskTextarea = await this.ensureTaskSelected(modal);
+            if (status.isCancelled()) return false;
             if (!taskTextarea) {
                 status.failHard('Could not select the Task issue lane in the native modal');
                 this.revealNativeModal(state, modal);
@@ -1385,6 +1530,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             state.syncingToNative = true;
             try {
                 for (const step of stepDefs) {
+                    if (status.isCancelled()) return false;
                     if (step.skip && step.skip()) {
                         status.skip(step.id);
                         continue;
@@ -1392,8 +1538,10 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                     status.start(step.id);
                     try {
                         await step.run(modal, taskTextarea);
+                        if (status.isCancelled()) return false;
                         await this.waitForAnimationFrame();
                         const verdict = await step.verify(modal, taskTextarea);
+                        if (status.isCancelled()) return false;
                         if (verdict === true) {
                             status.ok(step.id);
                         } else {
@@ -1419,6 +1567,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 state.syncingToNative = false;
             }
 
+            if (status.isCancelled()) return false;
             if (mode === 'simulate') {
                 success = true;
                 status.complete('All fields synced. (Simulate mode — no submission performed.)');
@@ -1627,23 +1776,44 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
     },
 
     /**
-     * Renders a small in-page status overlay listing each sync step with live status
-     * (pending → running → ok / failed / skipped). Returns a controller with start/ok/
-     * fail/skip/complete/failHard/scheduleAutoClose/close methods.
+     * Renders a top-most in-page status overlay listing each sync step with live status
+     * (pending → running → ok / failed / skipped). Has an X cancel button that aborts the
+     * in-flight stepped submit at the next safe boundary. Returns a controller with
+     * start/ok/fail/skip/complete/failHard/scheduleAutoClose/close/isCancelled methods.
+     *
+     * Notes:
+     * - Forces position:fixed + z-index 2147483647 inline so it always floats above the
+     *   RR tab (which sits in a z-40 absolute container with its own stacking context).
+     * - Uses a darker backdrop (bg-black/55) and disables clicks behind it so the worker
+     *   cannot accidentally interact with the page during the sync.
      */
     openSyncStatusModal({ title, steps }) {
         const overlay = document.createElement('div');
-        overlay.className = 'fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/30';
+        overlay.className = 'flex items-center justify-center bg-black/55';
         overlay.setAttribute('data-fleet-rr-status-overlay', 'true');
         overlay.setAttribute('data-fleet-plugin', this.id);
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.left = '0';
+        overlay.style.zIndex = '2147483647';
+        overlay.style.pointerEvents = 'auto';
 
         const card = document.createElement('div');
-        card.className = 'w-[min(28rem,90vw)] max-h-[85vh] overflow-y-auto rounded-lg border border-input bg-background shadow-xl p-4 space-y-3';
+        card.className = 'relative w-[min(28rem,90vw)] max-h-[85vh] overflow-y-auto rounded-lg border border-input bg-background shadow-2xl p-4 pr-10 space-y-3';
 
         const titleEl = document.createElement('div');
-        titleEl.className = 'text-sm font-semibold text-foreground';
+        titleEl.className = 'text-sm font-semibold text-foreground pr-4';
         titleEl.textContent = title;
         card.appendChild(titleEl);
+
+        const xButton = document.createElement('button');
+        xButton.type = 'button';
+        xButton.setAttribute('aria-label', 'Cancel sync');
+        xButton.className = 'absolute top-2 right-2 inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground text-lg leading-none';
+        xButton.innerHTML = '&times;';
+        card.appendChild(xButton);
 
         const list = document.createElement('ul');
         list.className = 'space-y-1.5';
@@ -1688,6 +1858,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         document.body.appendChild(overlay);
 
         let autoCloseTimer = null;
+        let cancelled = false;
         const setIcon = (id, char, classes) => {
             const node = itemEls.get(id);
             if (!node) return;
@@ -1700,6 +1871,12 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             node.reason.textContent = text;
             node.reason.classList.remove('hidden');
         };
+
+        xButton.addEventListener('click', () => {
+            cancelled = true;
+            Logger.warn('Request Revisions Tab: status modal cancel (X) clicked — aborting stepped submit at next boundary');
+            api.close();
+        });
 
         const api = {
             start(id) {
@@ -1728,6 +1905,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             scheduleAutoClose(ms) {
                 if (autoCloseTimer) clearTimeout(autoCloseTimer);
                 autoCloseTimer = setTimeout(() => api.close(), ms);
+            },
+            isCancelled() {
+                return cancelled;
             },
             close() {
                 if (autoCloseTimer) clearTimeout(autoCloseTimer);
@@ -2183,13 +2363,29 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         return out;
     },
 
-    isNativePromptOptionSelected(button) {
+    /**
+     * Detect whether a native prompt-quality button is currently selected.
+     *
+     * IMPORTANT: the native modal styles "Average" identically in selected and unselected
+     * states (see local/context/comp-use/qa/quality-buttons-selected.html), so this returns
+     * `false` for Average regardless of state. The promptHandler in
+     * `bindNativeModalControls` writes `state.rrData.promptQualityRating` directly when the
+     * user clicks any native prompt-quality button, so we don't need to read Average back.
+     */
+    isNativePromptOptionSelected(button, option) {
         if (!button) return false;
         const classes = new Set((button.getAttribute('class') || '').split(/\s+/));
-        return classes.has('border-gray-300') ||
-            classes.has('bg-gray-50') ||
-            classes.has('text-gray-600') ||
-            classes.has('dark:bg-gray-800/50');
+        if (option === 'Top 10%') {
+            return classes.has('border-emerald-500')
+                || classes.has('bg-emerald-50')
+                || classes.has('text-emerald-700');
+        }
+        if (option === 'Bottom 10%') {
+            return classes.has('border-red-500')
+                || classes.has('bg-red-50')
+                || classes.has('text-red-700');
+        }
+        return false;
     },
 
     readNativePromptQuality(modal) {
@@ -2197,7 +2393,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const keys = Object.keys(map);
         let selected = '';
         for (const option of RR_PROMPT_QUALITY_OPTIONS) {
-            if (this.isNativePromptOptionSelected(map[option])) {
+            if (this.isNativePromptOptionSelected(map[option], option)) {
                 selected = option;
                 break;
             }
@@ -2214,7 +2410,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
         const map = this.findNativePromptQualityButtons(modal);
         const button = map[desired];
         if (!button) return;
-        if (this.isNativePromptOptionSelected(button)) return;
+        if (this.isNativePromptOptionSelected(button, desired)) return;
         Logger.debug(`requestRevisionsTab: native prompt quality sync click → "${desired}"`);
         button.click();
     },
@@ -2457,8 +2653,21 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             const promptHandler = () => {
                 state.promptQualitySource = 'native';
                 state.nativePromptQualityClickAt = Date.now();
-                Logger.debug(`requestRevisionsTab: native Prompt Quality click → "${option}"`);
-                requestAnimationFrame(() => this.syncNativeModalToCustom(state));
+                // Authoritatively mirror the native click into tab state. Class-based
+                // detection cannot tell whether "Average" is selected (its classes are
+                // identical in both states), so without this we'd lose selections to
+                // Average and fail to detect any change away from a previous tab choice.
+                state.rrData.promptQualityRating = option;
+                Logger.log(`Request Revisions Tab: native Prompt Quality click → "${option}" (mirrored to tab)`);
+                requestAnimationFrame(() => {
+                    state.syncingFromNative = true;
+                    try {
+                        this.syncCustomControlsFromState(state);
+                    } finally {
+                        state.syncingFromNative = false;
+                    }
+                    this.debugLogRrDigestIfChanged(state, 'native prompt-quality click');
+                });
             };
             button.addEventListener('click', promptHandler);
             state.nativeSyncBindings.push({ element: button, eventName: 'click', handler: promptHandler });
