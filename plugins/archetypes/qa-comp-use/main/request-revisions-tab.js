@@ -75,7 +75,7 @@ const RR_PROMPT_QUALITY_STYLES = {
     },
     'Average': {
         selected: 'border-gray-300 bg-gray-50 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400',
-        unselected: 'border-gray-300 bg-gray-50 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400',
+        unselected: 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400',
         iconPaths: ['M5 12h14']
     },
     'Bottom 10%': {
@@ -161,7 +161,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1689,6 +1689,11 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                         if (read.selected) return `want="(cleared)" got="${read.selected}"`;
                         return true;
                     }
+                    if (state.rrData.promptQualityRating === 'Average' && !read.selected) {
+                        // Native "Average" cannot be detected from classes, so no selected signal
+                        // is expected even when Average is correctly set.
+                        return true;
+                    }
                     if (read.selected !== state.rrData.promptQualityRating) {
                         return `want="${state.rrData.promptQualityRating}" got="${read.selected || '(none)'}"`;
                     }
@@ -2513,6 +2518,10 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         const button = map[desired];
         if (!button) return;
+        if (desired === 'Average' && state.promptQualityRatingLastSyncedToNative === 'Average') {
+            // Avoid toggling Average off by repeatedly clicking when we cannot detect state.
+            return;
+        }
         if (this.isNativePromptOptionSelected(button, desired)) {
             state.promptQualityRatingLastSyncedToNative = desired;
             return;
