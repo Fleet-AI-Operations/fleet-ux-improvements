@@ -161,7 +161,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -217,7 +217,8 @@ const plugin = {
         promptQualitySource: '',
         nativePromptQualityClickAt: 0,
         lastScreenshotSyncResult: null,
-        deleteFlushTimer: null
+        deleteFlushTimer: null,
+        promptQualityRatingLastSyncedToNative: ''
     },
 
     buildRrStateDigest(state) {
@@ -244,7 +245,21 @@ const plugin = {
         const digest = this.buildRrStateDigest(state);
         if (digest === state.lastRrDebugDigest) return;
         state.lastRrDebugDigest = digest;
-        Logger.debug(`requestRevisionsTab: ${label} rrSelectionDigest=${digest}`);
+        const d = state.rrData || {};
+        const activeReasons = Object.keys(d.rejectionReasons || {}).filter((k) => d.rejectionReasons[k]);
+        const activeQa = Object.keys(d.qaChecklist || {}).filter((k) => d.qaChecklist[k]);
+        const uploaded = (d.screenshots || []).filter((e) => e.type === 'uploaded').length;
+        const pending = (d.screenshots || []).filter((e) => e.type === 'pending').length;
+        const reasonSummary = activeReasons.length
+            ? activeReasons.map((r) => r.slice(0, 40)).join('; ')
+            : 'none';
+        Logger.debug(
+            `requestRevisionsTab: ${label} — ` +
+            `promptQuality="${d.promptQualityRating || 'none'}", ` +
+            `reasons=[${reasonSummary}], ` +
+            `qaChecklist=${activeQa.length}/${RR_QA_CHECKLIST_ITEMS.length} checked, ` +
+            `screenshots(uploaded=${uploaded} pending=${pending} deleteQueue=${(d.deletedScreenshotUrls || []).length})`
+        );
     },
 
     scheduleCustomTextFieldDebug(state, field, value) {
@@ -547,6 +562,24 @@ const plugin = {
             button.addEventListener('click', () => this.setPromptQualityFromCustom(state, option));
             row.appendChild(button);
         }
+
+        const divider = document.createElement('span');
+        divider.className = 'self-stretch w-px bg-border mx-0.5 shrink-0';
+        divider.setAttribute('aria-hidden', 'true');
+        row.appendChild(divider);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.setAttribute('data-fleet-rr-pq-clear', 'true');
+        clearBtn.className = 'flex items-center px-2 py-1.5 text-xs text-muted-foreground rounded-md border border-transparent hover:border-input hover:bg-accent hover:text-accent-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500';
+        clearBtn.textContent = 'Clear';
+        clearBtn.addEventListener('click', () => {
+            if (state.syncingFromNative) return;
+            state.rrData.promptQualityRating = '';
+            this.syncCustomControlsFromState(state);
+            Logger.debug('requestRevisionsTab: custom prompt quality cleared');
+        });
+        row.appendChild(clearBtn);
 
         section.appendChild(title);
         section.appendChild(row);
@@ -1503,6 +1536,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             title: `Sync to native — ${friendly}`,
             steps: stepDefs.map((s) => ({ id: s.id, label: s.label }))
         });
+        for (const step of stepDefs) {
+            if (step.addRows) step.addRows(status);
+        }
 
         state.transactionInProgress = true;
         let modal = null;
@@ -1537,7 +1573,7 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                     }
                     status.start(step.id);
                     try {
-                        await step.run(modal, taskTextarea);
+                        await step.run(modal, taskTextarea, status);
                         if (status.isCancelled()) return false;
                         await this.waitForAnimationFrame();
                         const verdict = await step.verify(modal, taskTextarea);
@@ -1643,11 +1679,16 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             {
                 id: 'prompt-quality',
                 label: 'Prompt Quality Rating',
-                skip: () => !state.rrData.promptQualityRating,
                 run: async (modal) => { await this.syncNativePromptQuality(state, modal); },
                 verify: (modal) => {
                     const read = this.readNativePromptQuality(modal);
                     if (!read.complete) return 'Native Prompt Quality controls missing';
+                    if (!state.rrData.promptQualityRating) {
+                        // Average cannot be detected from classes; only fail if a colour-coded
+                        // option is still showing selected after we tried to clear it.
+                        if (read.selected) return `want="(cleared)" got="${read.selected}"`;
+                        return true;
+                    }
                     if (read.selected !== state.rrData.promptQualityRating) {
                         return `want="${state.rrData.promptQualityRating}" got="${read.selected || '(none)'}"`;
                     }
@@ -1737,14 +1778,30 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             {
                 id: 'screenshots',
                 label: 'Screenshots',
-                run: async (modal) => {
-                    const result = await this.syncNativeScreenshots(state, modal);
+                addRows: (statusApi) => {
+                    const pending = (state.rrData.screenshots || [])
+                        .filter((e) => e.type === 'pending' && e.file);
+                    for (let i = 0; i < pending.length; i++) {
+                        const name = pending[i].file.name;
+                        const displayName = name.length > 36 ? `${name.slice(0, 36)}…` : name;
+                        statusApi.addRow(`screenshot-${i}`, `↳ ${displayName}`);
+                    }
+                },
+                run: async (modal, _taskTextarea, statusApi) => {
+                    const progress = statusApi
+                        ? (id, phase, reason) => {
+                            if (phase === 'start') statusApi.start(id);
+                            else if (phase === 'ok') statusApi.ok(id);
+                            else statusApi.fail(id, reason || 'Upload failed');
+                        }
+                        : null;
+                    const result = await this.syncNativeScreenshots(state, modal, progress);
                     state.lastScreenshotSyncResult = result;
                 },
                 verify: (modal) => {
-                    const result = state.lastScreenshotSyncResult || { uploaded: 0, expected: 0 };
-                    if (result.uploaded < result.expected) {
-                        return `Native uploaded ${result.uploaded}/${result.expected} screenshots`;
+                    const result = state.lastScreenshotSyncResult || { uploaded: 0, expected: 0, strictOk: true };
+                    if (!result.strictOk || result.uploaded < result.expected) {
+                        return `Uploaded ${result.uploaded}/${result.expected} screenshots — ${result.newlyUploaded ?? 0}/${result.requiredNewUploads ?? 0} new uploads succeeded`;
                     }
                     this.updateFromNativeModalSnapshot(state, this.readNativeModalSnapshot(modal), {
                         screenshotMergeMode: 'replace-with-uploaded'
@@ -1878,9 +1935,33 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             api.close();
         });
 
+        const makeRowInList = (id, label) => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2 text-sm';
+            const icon = document.createElement('span');
+            icon.className = 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground tabular-nums';
+            icon.textContent = '•';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'flex-1 text-foreground';
+            labelEl.textContent = label;
+            const reason = document.createElement('span');
+            reason.className = 'block text-xs text-red-600 mt-0.5 hidden';
+            const labelWrap = document.createElement('div');
+            labelWrap.className = 'flex-1';
+            labelWrap.appendChild(labelEl);
+            labelWrap.appendChild(reason);
+            li.appendChild(icon);
+            li.appendChild(labelWrap);
+            list.appendChild(li);
+            itemEls.set(id, { icon, label: labelEl, reason, li });
+        };
+
         const api = {
+            addRow(id, label) {
+                if (!itemEls.has(id)) makeRowInList(id, label);
+            },
             start(id) {
-                setIcon(id, '…', 'text-blue-600');
+                setIcon(id, '…', 'text-blue-600 animate-spin');
             },
             ok(id) {
                 setIcon(id, '✓', 'text-green-600');
@@ -2406,13 +2487,39 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
     async syncNativePromptQuality(state, modal) {
         const desired = state.rrData.promptQualityRating || '';
-        if (!desired) return;
         const map = this.findNativePromptQualityButtons(modal);
+
+        if (!desired) {
+            // Deselect any colour-coded option (Top 10% / Bottom 10%) that is visibly selected.
+            // Average cannot be detected from classes, but if it was the last value we synced
+            // to native we click it once to toggle it off.
+            let deselected = false;
+            for (const opt of ['Top 10%', 'Bottom 10%']) {
+                const btn = map[opt];
+                if (btn && this.isNativePromptOptionSelected(btn, opt)) {
+                    Logger.debug(`requestRevisionsTab: native prompt quality clear — deselecting "${opt}"`);
+                    btn.click();
+                    deselected = true;
+                    break;
+                }
+            }
+            if (!deselected && state.promptQualityRatingLastSyncedToNative === 'Average' && map['Average']) {
+                Logger.debug('requestRevisionsTab: native prompt quality clear — deselecting "Average" (was last synced)');
+                map['Average'].click();
+            }
+            state.promptQualityRatingLastSyncedToNative = '';
+            return;
+        }
+
         const button = map[desired];
         if (!button) return;
-        if (this.isNativePromptOptionSelected(button, desired)) return;
+        if (this.isNativePromptOptionSelected(button, desired)) {
+            state.promptQualityRatingLastSyncedToNative = desired;
+            return;
+        }
         Logger.debug(`requestRevisionsTab: native prompt quality sync click → "${desired}"`);
         button.click();
+        state.promptQualityRatingLastSyncedToNative = desired;
     },
 
     findNativeScreenshotInput(modal) {
@@ -2446,9 +2553,9 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
      * component to render preview images for each new upload (signal that the upload
      * round-trip finished). Returns `{ uploaded, expected }` so callers can verify count.
      */
-    async syncNativeScreenshots(state, modal) {
+    async syncNativeScreenshots(state, modal, progressCallback = null) {
         const input = this.findNativeScreenshotInput(modal);
-        if (!input) return { uploaded: 0, expected: 0 };
+        if (!input) return { uploaded: 0, expected: 0, newlyUploaded: 0, requiredNewUploads: 0, strictOk: true };
 
         const deleteKeys = state.rrData.deletedScreenshotUrls || [];
         if (deleteKeys.length) {
@@ -2477,34 +2584,53 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
             dt.items.add(entry.file);
         }
         const previousUploadedCount = this.findNativeScreenshotPreviewImgs(modal).length;
+        const requiredNewUploads = pendingEntries.length;
         if (!dt.files.length) {
             if (deleteKeys.length) {
                 Logger.debug('requestRevisionsTab: native screenshot sync (deletes only, no pending upload batch)');
             }
-            return { uploaded: previousUploadedCount, expected: previousUploadedCount };
+            return { uploaded: previousUploadedCount, expected: previousUploadedCount, newlyUploaded: 0, requiredNewUploads: 0, strictOk: true };
         }
-        const names = pendingEntries.map((e) => `${e.file.name}:${e.file.size}`).join(', ');
-        const expected = Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + pendingEntries.length);
-        const startedAt = Date.now();
+
+        const names = pendingEntries.map((e) => e.file.name).join(', ');
+        const expected = Math.min(RR_MAX_SCREENSHOTS, previousUploadedCount + requiredNewUploads);
         Logger.log(
-            `Request Revisions Tab: native screenshot upload START files=${dt.files.length} (${names}) previousUploaded=${previousUploadedCount} expectedAfter=${expected}`
+            `Request Revisions Tab: screenshot upload START — ${requiredNewUploads} file(s): ${names} (${previousUploadedCount} already uploaded, expecting ${expected} total)`
         );
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        const reachedCount = await this.waitForNativeScreenshotCount(modal, expected, 8000);
+
+        // Track each image individually so the status modal can show per-image progress.
+        // All files were dispatched at once; we poll for each successive count milestone.
+        let newlyUploaded = 0;
+        const maxToTrack = Math.min(requiredNewUploads, RR_MAX_SCREENSHOTS - previousUploadedCount);
+        for (let i = 0; i < maxToTrack; i++) {
+            const stepId = `screenshot-${i}`;
+            if (progressCallback) progressCallback(stepId, 'start');
+            const targetCount = previousUploadedCount + i + 1;
+            const appeared = await this.waitForNativeScreenshotCount(modal, targetCount, 8000);
+            const actualCount = this.findNativeScreenshotPreviewImgs(modal).length;
+            if (appeared && actualCount >= targetCount) {
+                if (progressCallback) progressCallback(stepId, 'ok');
+                newlyUploaded++;
+            } else {
+                if (progressCallback) progressCallback(stepId, 'fail', `Upload timed out (${actualCount}/${targetCount})`);
+            }
+        }
+
         const finalCount = this.findNativeScreenshotPreviewImgs(modal).length;
-        const elapsed = Date.now() - startedAt;
-        if (reachedCount && finalCount >= expected) {
+        const strictOk = newlyUploaded >= requiredNewUploads;
+        if (strictOk) {
             Logger.log(
-                `Request Revisions Tab: native screenshot upload FINISH ok=true uploaded=${finalCount}/${expected} took=${elapsed}ms`
+                `Request Revisions Tab: screenshot upload done — all ${newlyUploaded}/${requiredNewUploads} new uploads succeeded (total: ${finalCount})`
             );
         } else {
             Logger.warn(
-                `Request Revisions Tab: native screenshot upload FINISH ok=false uploaded=${finalCount}/${expected} took=${elapsed}ms (timeout or partial)`
+                `Request Revisions Tab: screenshot upload partial — ${newlyUploaded}/${requiredNewUploads} new uploads succeeded (total: ${finalCount}/${expected})`
             );
         }
-        return { uploaded: finalCount, expected };
+        return { uploaded: finalCount, expected, newlyUploaded, requiredNewUploads, strictOk };
     },
 
     waitForNativeScreenshotCount(modal, expectedCount, timeoutMs = 5000) {

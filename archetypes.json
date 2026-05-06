@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.100",
+  "archetypesVersion": "7.101",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -356,8 +356,8 @@
         },
         {
           "name": "request-revisions-tab.js",
-          "version": "2.1",
-          "hash": "sha256-e34295a158c96a01094775a832dc2f26302ff29a0995365d4bb49e1cbf50b2c6",
+          "version": "2.2",
+          "hash": "sha256-d7e09751593743baf4fc4bc50228dc8b46fd665b19b07c0a59777d5224050f51",
           "log": false
         }
       ]
