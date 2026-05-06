@@ -160,7 +160,7 @@ const plugin = {
     id: 'requestRevisionsTab',
     name: 'Request Revisions Tab',
     description: 'Adds a Request Revisions tab that imports, exports, and submits through short-lived native modal transactions',
-    _version: '2.6',
+    _version: '2.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -1797,6 +1797,23 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
      *   cannot accidentally interact with the page during the sync.
      */
     openSyncStatusModal({ title, steps }) {
+        if (!document.getElementById('fleet-rr-status-modal-styles')) {
+            const style = document.createElement('style');
+            style.id = 'fleet-rr-status-modal-styles';
+            style.setAttribute('data-fleet-plugin', this.id);
+            style.textContent = `
+@keyframes fleet-rr-status-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.fleet-rr-status-spinner {
+  animation: fleet-rr-status-spin 1s linear infinite;
+  display: block;
+}
+`;
+            document.head.appendChild(style);
+        }
+
         const overlay = document.createElement('div');
         overlay.className = 'flex items-center justify-center bg-black/55';
         overlay.setAttribute('data-fleet-rr-status-overlay', 'true');
@@ -1868,10 +1885,19 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
 
         let autoCloseTimer = null;
         let cancelled = false;
-        const setIcon = (id, char, classes) => {
+        const setIconText = (id, char, classes) => {
             const node = itemEls.get(id);
             if (!node) return;
+            node.icon.innerHTML = '';
             node.icon.textContent = char;
+            node.icon.className = `mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center tabular-nums ${classes}`;
+        };
+        const setIconSpinner = (id, classes) => {
+            const node = itemEls.get(id);
+            if (!node) return;
+            node.icon.textContent = '';
+            node.icon.innerHTML =
+                '<svg class="fleet-rr-status-spinner" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
             node.icon.className = `mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center tabular-nums ${classes}`;
         };
         const setReason = (id, text) => {
@@ -1913,17 +1939,17 @@ label[${RR_NATIVE_SS_LABEL_ATTR}] {
                 if (!itemEls.has(id)) makeRowInList(id, label);
             },
             start(id) {
-                setIcon(id, '…', 'text-blue-600 animate-spin');
+                setIconSpinner(id, 'text-blue-600');
             },
             ok(id) {
-                setIcon(id, '✓', 'text-green-600');
+                setIconText(id, '✓', 'text-green-600');
             },
             fail(id, reason) {
-                setIcon(id, '✗', 'text-red-600');
+                setIconText(id, '✗', 'text-red-600');
                 setReason(id, reason);
             },
             skip(id) {
-                setIcon(id, '–', 'text-muted-foreground');
+                setIconText(id, '–', 'text-muted-foreground');
                 const node = itemEls.get(id);
                 if (node) node.label.classList.add('text-muted-foreground');
             },
