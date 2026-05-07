@@ -5,18 +5,16 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Source Data Explorer',
     description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: false,
     phase: 'mutation',
-    initialState: { buttonAdded: false, missingLogged: false, interceptionInstalled: false },
+    initialState: { missingLogged: false, interceptionInstalled: false },
     
     onMutation(state, context) {
         if (!state.interceptionInstalled) {
             this.installNetworkInterception(context, state);
         }
 
-        if (state.buttonAdded) return;
-        
         let buttonContainer = null;
         const workflowEditor = document.querySelector('[data-ui="workflow-editor"]');
         const headerScope = workflowEditor?.previousElementSibling || document;
@@ -57,18 +55,38 @@ const plugin = {
         
         if (!buttonContainer) {
             if (!state.missingLogged) {
-                Logger.debug('Button container not found for Source Data Explorer button');
+                Logger.debug('sourceDataExplorer: Button container not found for Source Data Explorer button');
                 state.missingLogged = true;
             }
             return;
         }
 
-        if (!context.source) {
-            return;
-        }
+        state.missingLogged = false;
 
-        this.addSourceButton(buttonContainer, context);
-        state.buttonAdded = true;
+        const button = this.ensureSourceButton(buttonContainer, context);
+        if (button) {
+            this.updateSourceButton(button, context);
+        }
+    },
+
+    /**
+     * True when pathname targets the MCP endpoint (aligned with plugins/global/network-interception.js, plus /…/mcp suffix).
+     */
+    _isMcpPathname(pathname) {
+        if (!pathname || typeof pathname !== 'string') return false;
+        return pathname === '/mcp' || pathname.endsWith('/mcp');
+    },
+
+    /** Turn captured MCP request URL into the instance page opened in a new tab (strip trailing /mcp). */
+    sourceHrefToOpenUrl(href, context) {
+        const pageWindow = context.getPageWindow();
+        const u = new URL(href, pageWindow.location.href);
+        let p = u.pathname;
+        if (p === '/mcp' || p.endsWith('/mcp')) {
+            p = p.slice(0, -4) || '/';
+        }
+        u.pathname = p.startsWith('/') ? p : `/${p}`;
+        return u.toString();
     },
 
     installNetworkInterception(context, state) {
@@ -81,25 +99,40 @@ const plugin = {
 
         pageWindow.__fleetNetworkInterceptionInstalled = true;
 
+        const pluginSelf = this;
         const originalFetch = pageWindow.fetch;
         if (typeof originalFetch === 'function') {
             pageWindow.fetch = function(...args) {
-                const [resource, config] = args;
+                const [resource, init] = args;
                 let url;
-                try {
-                    url = new URL(resource, pageWindow.location.href);
-                } catch (e) {
-                    url = { href: resource, pathname: '' };
+                let method = 'GET';
+
+                const Req = pageWindow.Request;
+                if (Req && resource instanceof Req) {
+                    try {
+                        url = new URL(resource.url, pageWindow.location.href);
+                    } catch (e) {
+                        url = { href: resource.url, pathname: '' };
+                    }
+                    method = (resource.method || 'GET').toUpperCase();
+                } else {
+                    try {
+                        url = new URL(resource, pageWindow.location.href);
+                    } catch (e) {
+                        url = { href: resource, pathname: '' };
+                    }
+                    method = ((init && init.method) || 'GET').toUpperCase();
                 }
 
-                if (url.pathname === '/mcp' && config && config.method === 'POST') {
+                if (method === 'POST' && pluginSelf._isMcpPathname(url.pathname)) {
                     const previousSource = context.source;
+                    const href = typeof url.href === 'string' ? url.href : String(resource);
                     if (previousSource === null) {
-                        context.source = url.href;
-                        Logger.log(`✓ Source URL captured (fetch): ${url.href}`);
-                    } else if (previousSource !== url.href) {
-                        context.source = url.href;
-                        Logger.log(`✓ Source URL updated (fetch): ${previousSource} → ${url.href}`);
+                        context.source = href;
+                        Logger.log(`sourceDataExplorer: ✓ Source URL captured (fetch): ${href}`);
+                    } else if (previousSource !== href) {
+                        context.source = href;
+                        Logger.log(`sourceDataExplorer: ✓ Source URL updated (fetch): ${previousSource} → ${href}`);
                     }
                 }
                 return originalFetch.apply(this, args);
@@ -116,45 +149,71 @@ const plugin = {
         };
 
         pageWindow.XMLHttpRequest.prototype.send = function(body) {
-            if (this._interceptedMethod === 'POST' && this._interceptedURL && this._interceptedURL.includes('/mcp')) {
+            const m = (this._interceptedMethod || '').toUpperCase();
+            const reqUrl = this._interceptedURL;
+            let pathMatches = false;
+            try {
+                pathMatches = pluginSelf._isMcpPathname(new URL(reqUrl, pageWindow.location.href).pathname);
+            } catch (e) {
+                pathMatches = typeof reqUrl === 'string' && reqUrl.includes('/mcp');
+            }
+
+            if (m === 'POST' && reqUrl && pathMatches) {
                 const previousSource = context.source;
                 if (previousSource === null) {
-                    context.source = this._interceptedURL;
-                    Logger.log(`✓ Source URL captured (XHR): ${this._interceptedURL}`);
-                } else if (previousSource !== this._interceptedURL) {
-                    context.source = this._interceptedURL;
-                    Logger.log(`✓ Source URL updated (XHR): ${previousSource} → ${this._interceptedURL}`);
+                    context.source = reqUrl;
+                    Logger.log(`sourceDataExplorer: ✓ Source URL captured (XHR): ${reqUrl}`);
+                } else if (previousSource !== reqUrl) {
+                    context.source = reqUrl;
+                    Logger.log(`sourceDataExplorer: ✓ Source URL updated (XHR): ${previousSource} → ${reqUrl}`);
                 }
             }
             return originalXHRSend.apply(this, [body]);
         };
 
-        // Expose getter globally for debugging
         pageWindow.getFleetSource = () => context.source;
 
         state.interceptionInstalled = true;
-        Logger.log('✓ Network interception installed');
+        Logger.log('sourceDataExplorer: ✓ Network interception installed (fetch + XHR)');
     },
-    
-    addSourceButton(buttonContainer, context) {
+
+    ensureSourceButton(buttonContainer, context) {
+        const existing = buttonContainer.querySelector(
+            '[data-fleet-plugin="sourceDataExplorer"][data-slot="source-data-button"]'
+        );
+        if (existing) {
+            return existing;
+        }
+
+        const pageWindow = context.getPageWindow();
         const button = document.createElement('button');
-        button.className = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 gap-2 text-xs relative border-amber-300 dark:border-amber-700';
+        button.setAttribute('data-fleet-plugin', this.id);
+        button.setAttribute('data-slot', 'source-data-button');
+        button.className =
+            'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 gap-2 text-xs relative border-amber-300 dark:border-amber-700';
+        button.type = 'button';
         button.textContent = '📊 Source Data';
-        button.title = 'Open source data in new tab';
-        
-        button.onclick = () => {
-            if (context.source) {
-                const sourceUrl = context.source.replace('/mcp', '');
-                window.open(sourceUrl, '_blank');
-                Logger.log('Opening source data:', sourceUrl);
-            } else {
-                alert('Source data URL not captured yet. Try refreshing the page.');
-                Logger.warn('Source URL not available');
+
+        button.addEventListener('click', () => {
+            if (!context.source) {
+                Logger.warn('sourceDataExplorer: Source URL not available (no MCP POST observed yet)');
+                return;
             }
-        };
-        
-        // Insert as first child of the button container
+            const sourceUrl = this.sourceHrefToOpenUrl(context.source, context);
+            pageWindow.open(sourceUrl, '_blank');
+            Logger.log('sourceDataExplorer: Opening source data:', sourceUrl);
+        });
+
         buttonContainer.insertBefore(button, buttonContainer.firstChild);
-        Logger.log('✓ Source Data Explorer button added');
+        Logger.log('sourceDataExplorer: ✓ Source Data Explorer button added');
+        return button;
+    },
+
+    updateSourceButton(button, context) {
+        const hasSource = Boolean(context.source);
+        button.disabled = !hasSource;
+        button.title = hasSource
+            ? 'Open source data in new tab'
+            : 'Waiting for source URL (POST to /mcp or a /.../mcp path; run the workflow, then this enables)';
     }
 };
