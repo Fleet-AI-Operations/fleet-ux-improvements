@@ -81,6 +81,12 @@
           "log": false
         },
         {
+          "name": "source-data-explorer.js",
+          "version": "4.2",
+          "hash": "sha256-e52708aaaf824be4db88db61097859189c621eb314cd5bd6a00e3b7e8e500bfb",
+          "log": false
+        },
+        {
           "name": "toggle-tool-parameters.js",
           "version": "2.4",
           "hash": "sha256-1067b509d47620992d6298e74018c52e7408a742c401ff286c5205e3763d628c",
@@ -298,6 +304,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.0",
           "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
+          "log": false
+        },
+        {
+          "name": "source-data-explorer.js",
+          "version": "1.4",
+          "hash": "sha256-dcd8197e411e98eeca3d8473a0cf78363d1c5d329159f8cca14b2db2f068e84e",
           "log": false
         },
         {
@@ -532,12 +544,6 @@
           "log": false
         },
         {
-          "name": "source-data-explorer.js",
-          "version": "4.2",
-          "hash": "sha256-e52708aaaf824be4db88db61097859189c621eb314cd5bd6a00e3b7e8e500bfb",
-          "log": false
-        },
-        {
           "name": "text-sanitizer.js",
           "version": "3.4",
           "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
@@ -635,12 +641,6 @@
           "name": "reorganize-request-revisions.js",
           "version": "1.2",
           "hash": "sha256-2836fbebd730b9fad29d7b6c76525bf246f6b9d71fbc9083a652713a977fe514",
-          "log": false
-        },
-        {
-          "name": "source-data-explorer.js",
-          "version": "1.4",
-          "hash": "sha256-dcd8197e411e98eeca3d8473a0cf78363d1c5d329159f8cca14b2db2f068e84e",
           "log": false
         },
         {
