@@ -5,7 +5,7 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Source Data Explorer',
     description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: false,
     phase: 'mutation',
     initialState: { missingLogged: false, interceptionInstalled: false },
@@ -42,6 +42,22 @@ const plugin = {
         }
     },
 
+    _isMcpPathname(pathname) {
+        if (!pathname || typeof pathname !== 'string') return false;
+        const normalized = pathname.toLowerCase();
+        return /(^|\/)mcp(\/|$)/.test(normalized);
+    },
+
+    _instanceRootFromHref(href, context) {
+        const pageWindow = context.getPageWindow();
+        const u = new URL(href, pageWindow.location.href);
+        return `${u.origin}/`;
+    },
+
+    sourceHrefToOpenUrl(href, context) {
+        return this._instanceRootFromHref(href, context);
+    },
+
     installNetworkInterception(context, state) {
         const pageWindow = context.getPageWindow();
 
@@ -52,25 +68,41 @@ const plugin = {
 
         pageWindow.__fleetNetworkInterceptionInstalled = true;
 
+        const pluginSelf = this;
         const originalFetch = pageWindow.fetch;
         if (typeof originalFetch === 'function') {
             pageWindow.fetch = function(...args) {
-                const [resource, config] = args;
+                const [resource, init] = args;
                 let url;
-                try {
-                    url = new URL(resource, pageWindow.location.href);
-                } catch (e) {
-                    url = { href: resource, pathname: '' };
+                let method = 'GET';
+
+                const Req = pageWindow.Request;
+                if (Req && resource instanceof Req) {
+                    try {
+                        url = new URL(resource.url, pageWindow.location.href);
+                    } catch (e) {
+                        url = { href: resource.url, pathname: '' };
+                    }
+                    method = ((init && init.method) || resource.method || 'GET').toUpperCase();
+                } else {
+                    try {
+                        url = new URL(resource, pageWindow.location.href);
+                    } catch (e) {
+                        url = { href: resource, pathname: '' };
+                    }
+                    method = ((init && init.method) || 'GET').toUpperCase();
                 }
 
-                if (url.pathname === '/mcp' && config && config.method === 'POST') {
+                const href = typeof url.href === 'string' ? url.href : String(resource);
+                const pathMatches = pluginSelf._isMcpPathname(url.pathname) || href.toLowerCase().includes('/mcp');
+                if (method === 'POST' && pathMatches) {
                     const previousSource = context.source;
                     if (previousSource === null) {
-                        context.source = url.href;
-                        Logger.log(`✓ Source URL captured (fetch): ${url.href}`);
-                    } else if (previousSource !== url.href) {
-                        context.source = url.href;
-                        Logger.log(`✓ Source URL updated (fetch): ${previousSource} → ${url.href}`);
+                        context.source = href;
+                        Logger.log(`sourceDataExplorer: ✓ Source URL captured (fetch): ${href}`);
+                    } else if (previousSource !== href) {
+                        context.source = href;
+                        Logger.log(`sourceDataExplorer: ✓ Source URL updated (fetch): ${previousSource} → ${href}`);
                     }
                 }
                 return originalFetch.apply(this, args);
@@ -87,14 +119,23 @@ const plugin = {
         };
 
         pageWindow.XMLHttpRequest.prototype.send = function(body) {
-            if (this._interceptedMethod === 'POST' && this._interceptedURL && this._interceptedURL.includes('/mcp')) {
+            const m = (this._interceptedMethod || '').toUpperCase();
+            const reqUrl = this._interceptedURL;
+            let pathMatches = false;
+            try {
+                pathMatches = pluginSelf._isMcpPathname(new URL(reqUrl, pageWindow.location.href).pathname);
+            } catch (e) {
+                pathMatches = typeof reqUrl === 'string' && reqUrl.includes('/mcp');
+            }
+
+            if (m === 'POST' && reqUrl && pathMatches) {
                 const previousSource = context.source;
                 if (previousSource === null) {
-                    context.source = this._interceptedURL;
-                    Logger.log(`✓ Source URL captured (XHR): ${this._interceptedURL}`);
-                } else if (previousSource !== this._interceptedURL) {
-                    context.source = this._interceptedURL;
-                    Logger.log(`✓ Source URL updated (XHR): ${previousSource} → ${this._interceptedURL}`);
+                    context.source = reqUrl;
+                    Logger.log(`sourceDataExplorer: ✓ Source URL captured (XHR): ${reqUrl}`);
+                } else if (previousSource !== reqUrl) {
+                    context.source = reqUrl;
+                    Logger.log(`sourceDataExplorer: ✓ Source URL updated (XHR): ${previousSource} → ${reqUrl}`);
                 }
             }
             return originalXHRSend.apply(this, [body]);
@@ -104,7 +145,7 @@ const plugin = {
         pageWindow.getFleetSource = () => context.source;
 
         state.interceptionInstalled = true;
-        Logger.log('✓ Network interception installed');
+        Logger.log('sourceDataExplorer: ✓ Network interception installed (fetch + XHR)');
     },
     
     ensureSourceButton(centerContainer, context) {
@@ -124,12 +165,11 @@ const plugin = {
 
         button.addEventListener('click', () => {
             if (context.source) {
-                const sourceUrl = context.source.replace('/mcp', '');
+                const sourceUrl = this.sourceHrefToOpenUrl(context.source, context);
                 window.open(sourceUrl, '_blank');
-                Logger.log('Opening source data:', sourceUrl);
+                Logger.log('sourceDataExplorer: Opening source data:', sourceUrl);
             } else {
-                alert('Source data URL not captured yet. Try refreshing the page.');
-                Logger.warn('Source URL not available');
+                Logger.warn('sourceDataExplorer: Source URL not available (no MCP POST observed yet)');
             }
         });
 
@@ -159,7 +199,14 @@ const plugin = {
         const hasSource = Boolean(context.source);
         button.disabled = !hasSource;
         button.title = hasSource
-            ? 'Open source data in new tab'
-            : 'Waiting for source URL (trigger /mcp request, then try again)';
+            ? 'Open environment root (origin only)'
+            : 'Waiting for MCP POST; opens env root, not a specific app path';
     }
 };
+
+try {
+    plugin.installNetworkInterception(Context, { interceptionInstalled: false });
+    Logger.debug('sourceDataExplorer: early interception bootstrap attempted at plugin load');
+} catch (e) {
+    Logger.warn('sourceDataExplorer: early interception bootstrap failed; will retry during mutation phase', e);
+}

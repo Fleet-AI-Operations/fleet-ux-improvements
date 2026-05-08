@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.106",
+  "archetypesVersion": "7.107",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -461,8 +461,8 @@
       "plugins": [
         {
           "name": "source-data-explorer.js",
-          "version": "4.1",
-          "hash": "sha256-e526fa3464149e5a3f3bf412ce1ea67ffa008bcf281c3ff5daf30f58dfc5e556",
+          "version": "4.2",
+          "hash": "sha256-e52708aaaf824be4db88db61097859189c621eb314cd5bd6a00e3b7e8e500bfb",
           "log": false
         },
         {
@@ -555,8 +555,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "1.3",
-          "hash": "sha256-8770f8edc00b55148e48267415c6804339e687dcee1a24f42a901df84eba1095",
+          "version": "1.4",
+          "hash": "sha256-dcd8197e411e98eeca3d8473a0cf78363d1c5d329159f8cca14b2db2f068e84e",
           "log": false
         },
         {

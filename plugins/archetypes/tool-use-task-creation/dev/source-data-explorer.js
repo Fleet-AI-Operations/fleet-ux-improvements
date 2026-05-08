@@ -5,7 +5,7 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Source Data Explorer',
     description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '4.1',
+    _version: '4.2',
     enabledByDefault: false,
     phase: 'mutation',
     initialState: { missingLogged: false, interceptionInstalled: false },
@@ -74,19 +74,19 @@ const plugin = {
      */
     _isMcpPathname(pathname) {
         if (!pathname || typeof pathname !== 'string') return false;
-        return pathname === '/mcp' || pathname.endsWith('/mcp');
+        const normalized = pathname.toLowerCase();
+        return /(^|\/)mcp(\/|$)/.test(normalized);
     },
 
-    /** Turn captured MCP request URL into the instance page opened in a new tab (strip trailing /mcp). */
-    sourceHrefToOpenUrl(href, context) {
+    _instanceRootFromHref(href, context) {
         const pageWindow = context.getPageWindow();
         const u = new URL(href, pageWindow.location.href);
-        let p = u.pathname;
-        if (p === '/mcp' || p.endsWith('/mcp')) {
-            p = p.slice(0, -4) || '/';
-        }
-        u.pathname = p.startsWith('/') ? p : `/${p}`;
-        return u.toString();
+        return `${u.origin}/`;
+    },
+
+    /** Open only the instance root domain regardless of endpoint-specific paths. */
+    sourceHrefToOpenUrl(href, context) {
+        return this._instanceRootFromHref(href, context);
     },
 
     installNetworkInterception(context, state) {
@@ -114,7 +114,7 @@ const plugin = {
                     } catch (e) {
                         url = { href: resource.url, pathname: '' };
                     }
-                    method = (resource.method || 'GET').toUpperCase();
+                    method = ((init && init.method) || resource.method || 'GET').toUpperCase();
                 } else {
                     try {
                         url = new URL(resource, pageWindow.location.href);
@@ -124,9 +124,10 @@ const plugin = {
                     method = ((init && init.method) || 'GET').toUpperCase();
                 }
 
-                if (method === 'POST' && pluginSelf._isMcpPathname(url.pathname)) {
+                const href = typeof url.href === 'string' ? url.href : String(resource);
+                const pathMatches = pluginSelf._isMcpPathname(url.pathname) || href.toLowerCase().includes('/mcp');
+                if (method === 'POST' && pathMatches) {
                     const previousSource = context.source;
-                    const href = typeof url.href === 'string' ? url.href : String(resource);
                     if (previousSource === null) {
                         context.source = href;
                         Logger.log(`sourceDataExplorer: ✓ Source URL captured (fetch): ${href}`);
@@ -213,7 +214,14 @@ const plugin = {
         const hasSource = Boolean(context.source);
         button.disabled = !hasSource;
         button.title = hasSource
-            ? 'Open source data in new tab'
-            : 'Waiting for source URL (POST to /mcp or a /.../mcp path; run the workflow, then this enables)';
+            ? 'Open environment root (origin only)'
+            : 'Waiting for MCP POST; opens env root, not a specific app path';
     }
 };
+
+try {
+    plugin.installNetworkInterception(Context, { interceptionInstalled: false });
+    Logger.debug('sourceDataExplorer: early interception bootstrap attempted at plugin load');
+} catch (e) {
+    Logger.warn('sourceDataExplorer: early interception bootstrap failed; will retry during mutation phase', e);
+}
