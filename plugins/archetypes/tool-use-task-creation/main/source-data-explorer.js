@@ -5,8 +5,8 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Source Data Explorer',
     description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '4.2',
-    enabledByDefault: false,
+    _version: '4.3',
+    enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, interceptionInstalled: false },
     

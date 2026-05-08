@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.107",
+  "archetypesVersion": "7.108",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -82,8 +82,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "4.2",
-          "hash": "sha256-e52708aaaf824be4db88db61097859189c621eb314cd5bd6a00e3b7e8e500bfb",
+          "version": "4.3",
+          "hash": "sha256-13f154d6308dd412522103ba85f231464942e1ef1feedcb0b3e5ed49f1a703cf",
           "log": false
         },
         {
@@ -308,8 +308,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "1.4",
-          "hash": "sha256-dcd8197e411e98eeca3d8473a0cf78363d1c5d329159f8cca14b2db2f068e84e",
+          "version": "1.5",
+          "hash": "sha256-a517bc26114f719be064336eaa5dddf748b375b278c53038cd75d16dde96cdf4",
           "log": false
         },
         {
