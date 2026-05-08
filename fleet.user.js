@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         Fleet Workflow Builder UX Enhancer
+// @name         [feat/source-data-button-main] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      7.3.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -15,8 +15,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/fix/various-issues/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat/source-data-button-main/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat/source-data-button-main/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -48,7 +48,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'main',
+        branch: 'feat/source-data-button-main',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
