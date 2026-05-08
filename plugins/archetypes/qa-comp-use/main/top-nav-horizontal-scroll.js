@@ -1,44 +1,47 @@
 // ============= top-nav-horizontal-scroll.js =============
-// Makes the main app header’s tab / action cluster horizontally scrollable when it overflows.
+// Makes the QA review header action row horizontally scrollable when it overflows.
 
-const ATTR = 'data-fleet-qa-top-nav-scroll';
+const ATTR_SCROLL = 'data-fleet-qa-top-nav-scroll';
+const ATTR_WRAP = 'data-fleet-qa-top-nav-scroll-wrap';
+const ATTR_INNER = 'data-fleet-qa-top-nav-scroll-inner';
 
 const plugin = {
     id: 'qaCompUseTopNavScroll',
     name: 'Top nav horizontal scroll',
     description:
-        'Allows horizontal scrolling in the main top bar when tabs and action buttons exceed the viewport width',
-    _version: '1.0',
+        'Allows horizontal scrolling on the QA header ([data-ui="qa-header"]) when action buttons exceed the viewport width',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         missingLogged: false,
         activationLogged: false,
-        hadRow: false,
+        hadHeader: false,
         styleInjected: false
     },
 
-    findAppTopBarRow() {
-        const main = document.querySelector('main');
-        if (!main) return null;
-        const rows = main.querySelectorAll('.flex.items-center.justify-between');
-        for (const row of rows) {
-            if (row.querySelector('[role="tablist"]') && row.querySelector('a[href="/"]')) {
-                return row;
-            }
-        }
-        return null;
+    findQaHeader() {
+        return document.querySelector('[data-ui="qa-header"]');
     },
 
-    findTabClusterHost(row) {
-        const tablist = row.querySelector('[role="tablist"]');
-        if (!tablist) return null;
-        let el = tablist;
-        while (el.parentElement && el.parentElement !== row) {
-            el = el.parentElement;
+    findHeaderInnerRow(header) {
+        const direct = header.querySelector(':scope > .flex.items-center');
+        return direct || null;
+    },
+
+    findCenterCluster(innerRow) {
+        for (const child of innerRow.children) {
+            if (child.classList && child.classList.contains('flex-1')) {
+                return child;
+            }
         }
-        return el.parentElement === row ? el : null;
+        const byApprove = innerRow.querySelector('[data-ui="approve-task"]');
+        if (byApprove) {
+            let el = byApprove.closest('.flex.flex-1');
+            if (el && el.parentElement === innerRow) return el;
+        }
+        return null;
     },
 
     ensureScrollStyles(state) {
@@ -52,52 +55,76 @@ const plugin = {
         style.id = id;
         style.setAttribute('data-fleet-plugin', this.id);
         style.textContent = `
-[${ATTR}="true"] {
+[${ATTR_WRAP}="true"] {
+    min-width: 0;
+    max-width: 100%;
+}
+[${ATTR_INNER}="true"] {
+    min-width: 0;
+}
+[${ATTR_SCROLL}="true"] {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
+    justify-content: flex-start !important;
 }
 `;
         document.head.appendChild(style);
         state.styleInjected = true;
     },
 
-    applyToHost(host, state) {
+    applyWrap(header, innerRow, center, state) {
         this.ensureScrollStyles(state);
-        host.setAttribute(ATTR, 'true');
-        host.setAttribute('data-fleet-plugin', this.id);
-        host.classList.add('min-w-0', 'flex-1', 'overflow-x-auto', 'overflow-y-hidden');
-        if (host.classList.contains('flex')) {
-            host.classList.add('flex-nowrap');
+        header.setAttribute(ATTR_WRAP, 'true');
+        innerRow.setAttribute(ATTR_INNER, 'true');
+        innerRow.classList.add('w-full', 'min-w-0');
+
+        center.setAttribute(ATTR_SCROLL, 'true');
+        center.setAttribute('data-fleet-plugin', this.id);
+        center.classList.add(
+            'min-w-0',
+            'flex-1',
+            'overflow-x-auto',
+            'overflow-y-hidden',
+            'justify-start'
+        );
+        if (center.classList.contains('flex')) {
+            center.classList.add('flex-nowrap');
         }
     },
 
     onMutation(state) {
-        const row = this.findAppTopBarRow();
-        if (!row) {
-            if (state.hadRow) {
-                Logger.debug(`${this.id}: main header row left DOM — scroll hint inactive`);
-                state.hadRow = false;
+        const header = this.findQaHeader();
+        if (!header) {
+            if (state.hadHeader) {
+                Logger.debug(`${this.id}: [data-ui="qa-header"] left DOM — scroll inactive`);
+                state.hadHeader = false;
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: main header row not found yet`);
+                Logger.debug(`${this.id}: QA header not found yet`);
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
-        state.hadRow = true;
+        state.hadHeader = true;
 
-        const host = this.findTabClusterHost(row);
-        if (!host) {
-            Logger.warn(`${this.id}: header row found but tab cluster host could not be resolved`);
+        const innerRow = this.findHeaderInnerRow(header);
+        if (!innerRow) {
+            Logger.warn(`${this.id}: QA header found but inner flex row missing`);
             return;
         }
 
-        this.applyToHost(host, state);
+        const center = this.findCenterCluster(innerRow);
+        if (!center) {
+            Logger.warn(`${this.id}: QA header inner row has no flex-1 center cluster`);
+            return;
+        }
+
+        this.applyWrap(header, innerRow, center, state);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: horizontal scroll enabled on top tab cluster`);
+            Logger.log(`${this.id}: horizontal scroll enabled on QA header action cluster`);
             state.activationLogged = true;
         }
     }

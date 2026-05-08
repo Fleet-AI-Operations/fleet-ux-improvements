@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.109",
+  "archetypesVersion": "7.110",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -320,8 +320,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.0",
-          "hash": "sha256-776ae5b7d8b96f15d653367551729855a315044d492562b4d67b5e00f722607b",
+          "version": "1.1",
+          "hash": "sha256-6d158742912ce5c8b246903c50db712a4013066dce5ee131caaeb374759bd9db",
           "log": false
         },
         {
@@ -359,8 +359,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.0",
-          "hash": "sha256-92ec05565c2c268c9b122dcd9dbf3123adce3906527b5ae91c718080866ed679",
+          "version": "1.1",
+          "hash": "sha256-ffade6bbd99aa2c9922b1acfa7313719a5354f5dedb0662d2d46c557e99daade",
           "log": false
         }
       ]
@@ -410,8 +410,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.0",
-          "hash": "sha256-8bbe8eeab14671db4767e936cc019045840a03168e51364009351f94ba4da642",
+          "version": "1.1",
+          "hash": "sha256-ab65e41862ffac8e2377de8d40bd242761eb168fa5e9b4faee2c5d427ce20b75",
           "log": false
         },
         {
