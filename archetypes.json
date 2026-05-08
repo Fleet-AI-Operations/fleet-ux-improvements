@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.108",
+  "archetypesVersion": "7.110",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -319,6 +319,12 @@
           "log": false
         },
         {
+          "name": "top-nav-horizontal-scroll.js",
+          "version": "1.1",
+          "hash": "sha256-6d158742912ce5c8b246903c50db712a4013066dce5ee131caaeb374759bd9db",
+          "log": false
+        },
+        {
           "name": "toggle-tool-parameters.js",
           "version": "2.2",
           "hash": "sha256-62263d3f80435f2ca56391e44925f726523430fae313d50316207d71e224ebc6",
@@ -349,6 +355,12 @@
           "name": "auto-expand-verifier-section.js",
           "version": "1.1",
           "hash": "sha256-dd81bb5282a535540267530d15df6e47699f91c538ed46ab25eed901b1259ece",
+          "log": false
+        },
+        {
+          "name": "top-nav-horizontal-scroll.js",
+          "version": "1.1",
+          "hash": "sha256-ffade6bbd99aa2c9922b1acfa7313719a5354f5dedb0662d2d46c557e99daade",
           "log": false
         }
       ]
@@ -394,6 +406,12 @@
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
+          "log": false
+        },
+        {
+          "name": "top-nav-horizontal-scroll.js",
+          "version": "1.1",
+          "hash": "sha256-ab65e41862ffac8e2377de8d40bd242761eb168fa5e9b4faee2c5d427ce20b75",
           "log": false
         },
         {
