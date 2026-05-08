@@ -100,7 +100,7 @@ new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header
     $name =~ s/^\s+|\s+$//g;
     ($ENV{BRANCH} eq "main" ? $p . $name : $p . "[" . $ENV{BRANCH} . "] " . $name) . $eol
   }mge;
-  s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/)([^/]+)(/fleet\.user\.js)}{$1.$ENV{BRANCH}.$3}ge;
+  s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/).+?(/fleet\.user\.js)}{$1.$ENV{BRANCH}.$2}ge;
   s{(branch:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
   s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{HEADER_VERSION}.$3}ge;
 ')"
@@ -121,14 +121,14 @@ needs_name_change() {
 }
 needs_download_url_change() {
   BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) {
+    if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/(.+?)\/fleet\.user\.js/m) {
       print($1 ne $ENV{BRANCH} ? "1" : "0");
     }
   ' "$file_path"
 }
 needs_update_url_change() {
   BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/fleet\.user\.js/m) {
+    if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/(.+?)\/fleet\.user\.js/m) {
       print($1 ne $ENV{BRANCH} ? "1" : "0");
     }
   ' "$file_path"
