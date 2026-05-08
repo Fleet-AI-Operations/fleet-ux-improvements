@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.107",
+  "archetypesVersion": "8.0",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -161,6 +161,14 @@
           "log": false
         }
       ]
+    },
+    {
+      "id": "view-tool-use",
+      "name": "View Tool Use Task",
+      "description": "Read-only page for viewing a tool-use workflow task",
+      "urlPattern": "work/problems/view-tool-use/*",
+      "disambiguationSelectors": [],
+      "plugins": []
     },
     {
       "id": "create-task-project-selection",
@@ -466,6 +474,12 @@
           "log": false
         },
         {
+          "name": "workflow-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-6fe489459b50b0a3ad0ded10ecfec2b325ad594e45b6b4349d2ba221e54bfa64",
+          "log": false
+        },
+        {
           "name": "workflow-integrity-check.js",
           "version": "2.0",
           "hash": "sha256-73c0cfacead59b2325ac1d937bf27a2c8c07b82331ef9657c5e8003e4f4829f0",
@@ -531,6 +545,21 @@
           "name": "workflow-cache.js",
           "version": "2.1",
           "hash": "sha256-17c3e5acd6cb2e18e446a9fcc97b09ec2f3ab001a8986ee01b9d4e990812bdd7",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "view-tool-use",
+      "name": "View Tool Use Task",
+      "description": "Read-only page for viewing a tool-use workflow task",
+      "urlPattern": "work/problems/view-tool-use/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "workflow-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-6fe489459b50b0a3ad0ded10ecfec2b325ad594e45b6b4349d2ba221e54bfa64",
           "log": false
         }
       ]
