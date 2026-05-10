@@ -3,9 +3,9 @@
 
 const plugin = {
     id: 'sourceDataExplorer',
-    name: 'Source Data Explorer',
-    description: 'Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '1.5',
+    name: 'Explore GUI',
+    description: 'Adds an Explore GUI button that opens the underlying environment in a new tab so you can inspect data without parsing JSON. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, interceptionInstalled: false },
@@ -27,7 +27,7 @@ const plugin = {
 
         if (!center) {
             if (!state.missingLogged) {
-                Logger.debug('Action bar center not found for Source Data Explorer button');
+                Logger.debug('Action bar center not found for Explore GUI button');
                 state.missingLogged = true;
             }
             return;
@@ -160,14 +160,14 @@ const plugin = {
 
         const label = document.createElement('span');
         label.className = 'whitespace-nowrap text-md font-medium';
-        label.textContent = 'Source Data';
+        label.textContent = 'Explore GUI';
         button.appendChild(label);
 
         button.addEventListener('click', () => {
             if (context.source) {
                 const sourceUrl = this.sourceHrefToOpenUrl(context.source, context);
                 window.open(sourceUrl, '_blank');
-                Logger.log('sourceDataExplorer: Opening source data:', sourceUrl);
+                Logger.log('sourceDataExplorer: Opening Explore GUI (instance root):', sourceUrl);
             } else {
                 Logger.warn('sourceDataExplorer: Source URL not available (no MCP POST observed yet)');
             }
@@ -191,7 +191,7 @@ const plugin = {
             centerContainer.appendChild(button);
         }
 
-        Logger.log('✓ Source Data Explorer button added (action bar)');
+        Logger.log('sourceDataExplorer: ✓ Explore GUI button added (action bar)');
         return button;
     },
 

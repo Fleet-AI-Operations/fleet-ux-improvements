@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '2.1',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -76,10 +76,10 @@ const plugin = {
             }
         }
         
-        // Strategy 4: Look for Source Data button and use its container
+        // Strategy 4: Look for Explore GUI button and use its container
         if (!buttonContainer) {
-            const sourceDataBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-                btn.textContent.includes('Source Data')
+            const sourceDataBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+                btn.textContent.includes('Explore GUI')
             );
             if (sourceDataBtn) {
                 buttonContainer = sourceDataBtn.parentElement;
@@ -114,9 +114,9 @@ const plugin = {
             Logger.log('Opening JSON Editor Online');
         };
         
-        // Insert after Source Data button if it exists, otherwise as first child
-        const sourceDataBtn = Array.from(buttonContainer.querySelectorAll('button')).find(btn => 
-            btn.textContent.includes('Source Data')
+        // Insert after Explore GUI button if it exists, otherwise as first child
+        const sourceDataBtn = Array.from(buttonContainer.querySelectorAll('button')).find(btn =>
+            btn.textContent.includes('Explore GUI')
         );
         if (sourceDataBtn) {
             sourceDataBtn.insertAdjacentElement('afterend', button);

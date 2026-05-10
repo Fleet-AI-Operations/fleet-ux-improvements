@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.110",
+  "archetypesVersion": "7.111",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -82,8 +82,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "4.3",
-          "hash": "sha256-13f154d6308dd412522103ba85f231464942e1ef1feedcb0b3e5ed49f1a703cf",
+          "version": "4.4",
+          "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
           "log": false
         },
         {
@@ -123,8 +123,8 @@
         },
         {
           "name": "json-editor-online.js",
-          "version": "2.1",
-          "hash": "sha256-d592dc27ec9a77d267d003eb6bf14817ad829c74510b61b96dc6737a4d93f180",
+          "version": "2.3",
+          "hash": "sha256-54e10e97c1d6544aaef0011b2ad49c113943cd4204415b727b89bcb809d0dfc6",
           "log": false
         },
         {
@@ -304,12 +304,6 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.0",
           "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
-          "log": false
-        },
-        {
-          "name": "source-data-explorer.js",
-          "version": "1.5",
-          "hash": "sha256-a517bc26114f719be064336eaa5dddf748b375b278c53038cd75d16dde96cdf4",
           "log": false
         },
         {
@@ -551,8 +545,8 @@
         },
         {
           "name": "json-editor-online.js",
-          "version": "2.2",
-          "hash": "sha256-59028c229418c123e8dd2edf6f8103c7928d858ea7ea251359b4b3b846a84b48",
+          "version": "2.3",
+          "hash": "sha256-b55d5eda727fa9ecc0dce714234666f1455f6546f7d290783b978a7ab5f7d028",
           "log": false
         },
         {
@@ -575,8 +569,8 @@
         },
         {
           "name": "workflow-integrity-check.js",
-          "version": "2.0",
-          "hash": "sha256-73c0cfacead59b2325ac1d937bf27a2c8c07b82331ef9657c5e8003e4f4829f0",
+          "version": "2.1",
+          "hash": "sha256-c3f2993835bbd82e3af4daf56e996ba44da79e50988c91b70e8c48b2363457d3",
           "log": false
         }
       ]
@@ -659,6 +653,12 @@
           "name": "reorganize-request-revisions.js",
           "version": "1.2",
           "hash": "sha256-2836fbebd730b9fad29d7b6c76525bf246f6b9d71fbc9083a652713a977fe514",
+          "log": false
+        },
+        {
+          "name": "source-data-explorer.js",
+          "version": "1.6",
+          "hash": "sha256-31e86494667aa9cfe9eea1b113ab639579277963ac73c58eb62cea1ec8bdf1e2",
           "log": false
         },
         {
