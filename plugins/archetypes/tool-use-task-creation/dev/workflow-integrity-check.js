@@ -3,7 +3,7 @@ const plugin = {
     id: 'workflowIntegrityCheck',
     name: 'Workflow Integrity Check',
     description: 'Adds button to check workflow integrity by verifying tool inputs exist in prompt or previous outputs',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -70,10 +70,10 @@ const plugin = {
             }
         }
         
-        // Strategy 4: Look for Source Data button and use its container
+        // Strategy 4: Look for Explore GUI button and use its container
         if (!buttonContainer) {
-            const sourceDataBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-                btn.textContent.includes('Source Data')
+            const sourceDataBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+                btn.textContent.includes('Explore GUI')
             );
             if (sourceDataBtn) {
                 buttonContainer = sourceDataBtn.parentElement;
