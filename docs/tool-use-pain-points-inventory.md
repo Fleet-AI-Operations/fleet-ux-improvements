@@ -15,7 +15,7 @@ Inventory of **open GitHub issues** that mention tool use, verifier, or grading 
 Issues below were `OPEN` as of the date this file was generated. Most have only auto-generated bodies; the **pain point or request** is taken from the **title** (and archetype hint in the template footer where present).
 
 | # | Title (pain point / request) | Notes |
-|---|------------------------------|--------|
+|---|------------------------------|-------|
 | [122](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/122) | Prevent opening tools descriptions when called | Template: global. Unwanted expansion/interaction when tool descriptions open during execution or navigation. |
 | [118](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/118) | Hide verifier on tool use QA | Template: `qa-tool-use`. Need to collapse or hide verifier UI during QA review. |
 | [117](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/117) | Change verifier output copy to backtick enclosed | Template: `qa-comp-use`. Clipboard format for verifier output (same underlying verifier copy concern as tool-use QA). |
@@ -75,7 +75,6 @@ These ship in dev archetype builds; several default to **off** in settings.
 | Module | Pain point addressed |
 |--------|----------------------|
 | `bug-report-expand.js` | **Bug report** snippets are **line-clamped / truncated**; need **expandable cards** to read full text. |
-| `clear-search.js` | Clearing the **tool search** requires selecting all text; need a **clear (X) control** when the box has content. |
 | `json-editor-online.js` | Same as OpenClaw production: **JSON Editor Online** integration. |
 | `prompt-and-notes-areas.js` | **Prompt vs scratchpad layout** fights the default stack; need **scratchpad anchored to bottom**, **shared resize handle**, optional **remember scratchpad text**. |
 | `text-sanitizer.js` | Same as OpenClaw: **text normalization** helpers. |
@@ -94,7 +93,6 @@ These ship in dev archetype builds; several default to **off** in settings.
 | Module | Pain point addressed |
 |--------|----------------------|
 | `bug-report-expand.js` | Same: **readable bug reports**. |
-| `clear-search.js` | Same: **clear tool search**. |
 | `text-sanitizer.js` | Same: **sanitizer** on revision page. |
 | `tool-description-truncate.js` | Same: **tool description truncation** in picker. |
 | `workflow-cache.js` | **Workflow loss** on clear, error, or **reload**; **restore** from cache (`devArchetypes` only for this page). |

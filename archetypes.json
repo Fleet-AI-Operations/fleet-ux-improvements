@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.113",
+  "archetypesVersion": "7.115",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -78,6 +78,12 @@
           "name": "source-data-explorer.js",
           "version": "4.4",
           "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
+          "log": false
+        },
+        {
+          "name": "text-sanitizer.js",
+          "version": "3.4",
+          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
           "log": false
         },
         {
@@ -232,12 +238,6 @@
           "name": "copy-verifier-output.js",
           "version": "2.2",
           "hash": "sha256-342b609c73d59ef5775320488f0cc3182a8d37a4d38b9fb6b7c6d5a1243d3097",
-          "log": false
-        },
-        {
-          "name": "hide-grading-autoclick.js",
-          "version": "1.0",
-          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
           "log": false
         },
         {
@@ -460,18 +460,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-6976f18b8d791403d9ae3d6f6a581e08b22d01a1add34c3735067235b14fc040",
-          "log": false
-        },
-        {
           "name": "json-editor-online.js",
           "version": "2.3",
           "hash": "sha256-b55d5eda727fa9ecc0dce714234666f1455f6546f7d290783b978a7ab5f7d028",
@@ -481,24 +469,6 @@
           "name": "prompt-and-notes-areas.js",
           "version": "3.2",
           "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
-          "log": false
-        },
-        {
-          "name": "text-sanitizer.js",
-          "version": "3.4",
-          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-41c64df6199c00cc477fe315a496d1542071e4d8a338c2caf7a3f30a5154bc62",
-          "log": false
-        },
-        {
-          "name": "workflow-integrity-check.js",
-          "version": "2.1",
-          "hash": "sha256-c3f2993835bbd82e3af4daf56e996ba44da79e50988c91b70e8c48b2363457d3",
           "log": false
         }
       ]
@@ -517,12 +487,6 @@
           "version": "3.3",
           "hash": "sha256-f3077fd030eac9b28a8c5669d664096b2afd06ea6a9031125d46f1682fc16d19",
           "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.2",
-          "hash": "sha256-39e3660beef1dc7e6aefbc03c512fdfe28f8b87d25edb187c71cb86eb712826c",
-          "log": false
         }
       ]
     },
@@ -534,33 +498,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-78492652b1e371ffdb509ea8f98794e155ac3eee5bdf7da22fa041338989f2f6",
-          "log": false
-        },
-        {
           "name": "text-sanitizer.js",
           "version": "3.2",
           "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-b2e13b297d843857b68daf118e55dfeaea28fbada737ee3056af25f9e8af4414",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.1",
-          "hash": "sha256-17c3e5acd6cb2e18e446a9fcc97b09ec2f3ab001a8986ee01b9d4e990812bdd7",
           "log": false
         }
       ]
@@ -571,18 +511,6 @@
       "urlPattern": "work/problems/qa-tool-use/*",
       "disambiguationSelectors": [],
       "plugins": [
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
-        {
-          "name": "reorganize-request-revisions.js",
-          "version": "1.2",
-          "hash": "sha256-2836fbebd730b9fad29d7b6c76525bf246f6b9d71fbc9083a652713a977fe514",
-          "log": false
-        },
         {
           "name": "source-data-explorer.js",
           "version": "1.6",
@@ -596,27 +524,9 @@
           "log": false
         },
         {
-          "name": "tool-description-truncate.js",
-          "version": "1.4",
-          "hash": "sha256-73bed7578a9f8215beaf2974021b944ad45da62985708addd5d8972a5dc3f397",
-          "log": false
-        },
-        {
           "name": "workflow-cache-dev.js",
           "version": "1.28",
           "hash": "sha256-b85c357d09c230dc8eac41f65fa39f21e4fdd2ae50625f8bb912cfab36cb8423",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.2",
-          "hash": "sha256-b018272701844288693500120efbbb8eac202f95c6cd21ab95c129a14f2db125",
-          "log": false
-        },
-        {
-          "name": "workflow-integrity-check.js",
-          "version": "1.1",
-          "hash": "sha256-3e3478682d1f7379e40d933e399fcb234df7ee1e7dc52305fc61559d08835867",
           "log": false
         }
       ]
@@ -643,12 +553,6 @@
           "log": false
         },
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
           "name": "hide-testing-environment-banner.js",
           "version": "1.1",
           "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
@@ -667,12 +571,6 @@
           "name": "auto-toggle-fullscreen-mode.js",
           "version": "1.2",
           "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
           "log": false
         },
         {
