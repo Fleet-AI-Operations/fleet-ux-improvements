@@ -330,11 +330,6 @@
       "file": "tool-results-resize-handle.js",
       "name": "Tool Results Resize Handle",
       "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
-    },
-    {
-      "file": "workflow-cache.js",
-      "name": "Workflow Cache",
-      "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
     }
   ],
   "archetypes/tool-use-task-creation/dev": [

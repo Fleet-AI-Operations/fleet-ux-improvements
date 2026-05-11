@@ -84,7 +84,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Tool Use Task Creation Page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
-- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
 
 ### Tool Use Task Creation Page (OpenClaw / Special Projects)
 *Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*
@@ -95,7 +94,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
-- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
 
 ### Tool Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page

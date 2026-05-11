@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.112",
+  "archetypesVersion": "7.113",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.29"
+      "version": "1.30"
     }
   ],
   "archetypes": [
@@ -85,12 +85,6 @@
           "version": "2.1",
           "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
           "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.0",
-          "hash": "sha256-cbe1b187968425d30a2bcd61f80cf187397d43b1e686d4db75c27186ceac19e9",
-          "log": false
         }
       ]
     },
@@ -125,12 +119,6 @@
           "name": "tool-results-resize-handle.js",
           "version": "2.1",
           "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.1",
-          "hash": "sha256-46ab5c6741a7d67dad4ef348353d4f1f4cf25d5fb5e746b8759077bdfc30e0bd",
           "log": false
         }
       ]

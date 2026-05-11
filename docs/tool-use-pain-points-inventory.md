@@ -4,6 +4,8 @@ Inventory of **open GitHub issues** that mention tool use, verifier, or grading 
 
 **Update:** `execute-to-current-tool.js` and `toggle-tool-parameters.js` were **deprecated** (moved under each archetype’s `deprecated/`, removed from `archetypes.json`). Fleet now provides **execute-to-current** and **tool parameter** visibility **natively**; this doc still lists the pain points those plugins historically addressed.
 
+**Update:** Production **`workflow-cache.js`** for **`tool-use-task-creation`** and **`tool-use-task-creation-openclaw`** was deprecated (same `deprecated/` + `archetypes.json` removal pattern). **`devArchetypes`** still load `workflow-cache.js` / `workflow-cache-dev.js` where listed.
+
 **Archetypes in scope:** `tool-use-task-creation`, `tool-use-task-creation-openclaw`, `tool-use-revision`, `qa-tool-use` (production `archetypes` entries plus `devArchetypes` plugins for those ids). `dispute-detail` also shipped the same two plugins until the same deprecation.
 
 ---
@@ -31,11 +33,10 @@ Issues below were `OPEN` as of the date this file was generated. Most have only 
 | `notes-resize-handle.js` | **“Notes for QA reviewer”** textarea is awkward to edit at default height; need **vertical resize** like a normal resizable field. |
 | `source-data-explorer.js` | Understanding **live instance / MCP data** requires parsing JSON or leaving the page; need **“Explore GUI”** to open the real environment in a new tab for inspection (with warning about writes). |
 | `tool-results-resize-handle.js` | **Tool result** areas have a **fixed short viewport**; need **drag-to-resize height** (and reset) to read long stdout/JSON. |
-| `workflow-cache.js` | **Workflow loss** on clear, error, or **reload**; need **restore last workflow** from cache keyed to the page. |
 
 ### `tool-use-task-creation-openclaw`
 
-Shares **notes resize**, **tool results resize**, and **workflow cache** with standard tool use creation. Additionally:
+Shares **notes resize** and **tool results resize** with standard tool use creation. Additionally:
 
 | Module | Pain point addressed |
 |--------|----------------------|
@@ -96,7 +97,7 @@ These ship in dev archetype builds; several default to **off** in settings.
 | `clear-search.js` | Same: **clear tool search**. |
 | `text-sanitizer.js` | Same: **sanitizer** on revision page. |
 | `tool-description-truncate.js` | Same: **tool description truncation** in picker. |
-| `workflow-cache.js` | Same as production creation/revision cache behavior where loaded for revision **dev** (restore / snapshot tooling). |
+| `workflow-cache.js` | **Workflow loss** on clear, error, or **reload**; **restore** from cache (`devArchetypes` only for this page). |
 
 ### `qa-tool-use` (dev)
 
@@ -108,7 +109,7 @@ These ship in dev archetype builds; several default to **off** in settings.
 | `text-sanitizer.js` | Same: **sanitizer** on QA. |
 | `tool-description-truncate.js` | Same: **tool picker description** length on QA. |
 | `workflow-cache-dev.js` | **Deeper workflow debugging**: observe add/delete/execute, capture snapshots, extra **dev JSON** storage alongside shared cache keys. |
-| `workflow-cache.js` | Same production **restore workflow** behavior when enabled in QA dev. |
+| `workflow-cache.js` | **Restore workflow** when enabled in QA **dev** builds (same plugin family / storage keys as historical production task creation). |
 | `workflow-integrity-check.js` | Same **integrity check** button for workflows under QA. |
 
 ---
