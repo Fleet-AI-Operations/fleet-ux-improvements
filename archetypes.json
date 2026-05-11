@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.111",
+  "archetypesVersion": "7.113",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.28"
+      "version": "1.30"
     }
   ],
   "archetypes": [
@@ -69,12 +69,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
-          "log": false
-        },
-        {
           "name": "notes-resize-handle.js",
           "version": "1.1",
           "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
@@ -87,21 +81,9 @@
           "log": false
         },
         {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.4",
-          "hash": "sha256-1067b509d47620992d6298e74018c52e7408a742c401ff286c5205e3763d628c",
-          "log": false
-        },
-        {
           "name": "tool-results-resize-handle.js",
           "version": "2.1",
           "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.0",
-          "hash": "sha256-cbe1b187968425d30a2bcd61f80cf187397d43b1e686d4db75c27186ceac19e9",
           "log": false
         }
       ]
@@ -115,12 +97,6 @@
         "text:Task Designers - Special Projects Tasks"
       ],
       "plugins": [
-        {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-c1366496dfa3747ebe7f8f1f82562b1dc79035bcb598f04e2a4f22cc6ee9a2cf",
-          "log": false
-        },
         {
           "name": "json-editor-online.js",
           "version": "2.3",
@@ -140,21 +116,9 @@
           "log": false
         },
         {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.4",
-          "hash": "sha256-f2e67b59d7b226eff689c669b3d8892f2fcf03c00dec57e35752303c01459e79",
-          "log": false
-        },
-        {
           "name": "tool-results-resize-handle.js",
           "version": "2.1",
           "hash": "sha256-83810049da1a7d5900e27ea30c7013eba4cbc1b295d6c08a5fd30c83ec96d047",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.1",
-          "hash": "sha256-46ab5c6741a7d67dad4ef348353d4f1f4cf25d5fb5e746b8759077bdfc30e0bd",
           "log": false
         }
       ]
@@ -167,21 +131,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "execute-to-current-tool.js",
-          "version": "3.0",
-          "hash": "sha256-ff34686d136205e519afdfc017deb48012e9f2dc116a4d375987a83b36c932a2",
-          "log": false
-        },
-        {
           "name": "prompt-scratchpad.js",
           "version": "2.2",
           "hash": "sha256-5101095eb5529be43a7ffd39fe900631c11704d9c8ff4af9c774c68125c423eb",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "3.2",
-          "hash": "sha256-801de67fe99221bc297d5425b09ef509a6883b02323d3b0e44ba81b6d38db4ae",
           "log": false
         },
         {
@@ -283,12 +235,6 @@
           "log": false
         },
         {
-          "name": "execute-to-current-tool.js",
-          "version": "2.0",
-          "hash": "sha256-430bec914ed32d755da7477788c34586d55a288d7b30dffdbb19a01ae0e45161",
-          "log": false
-        },
-        {
           "name": "hide-grading-autoclick.js",
           "version": "1.0",
           "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
@@ -316,12 +262,6 @@
           "name": "top-nav-horizontal-scroll.js",
           "version": "1.1",
           "hash": "sha256-6d158742912ce5c8b246903c50db712a4013066dce5ee131caaeb374759bd9db",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "2.2",
-          "hash": "sha256-62263d3f80435f2ca56391e44925f726523430fae313d50316207d71e224ebc6",
           "log": false
         },
         {
@@ -468,21 +408,9 @@
           "log": false
         },
         {
-          "name": "execute-to-current-tool.js",
-          "version": "1.0",
-          "hash": "sha256-edd3970d03416214ee6d948232316accb36d19853199f92ccf233d3bb9d0f80e",
-          "log": false
-        },
-        {
           "name": "qa-feedback-whitespace.js",
           "version": "1.1",
           "hash": "sha256-a86f59c0ae4e3a32929b69140749a723cfc47a48a30f4d97b8ae7e56bfc42e7d",
-          "log": false
-        },
-        {
-          "name": "toggle-tool-parameters.js",
-          "version": "1.1",
-          "hash": "sha256-7ca1bb30f8f25961a559369800fa4d6992d792fda8816af5e4231e9597259353",
           "log": false
         },
         {

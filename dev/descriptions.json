@@ -173,11 +173,6 @@
       "description": "Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard"
     },
     {
-      "file": "execute-to-current-tool.js",
-      "name": "Execute to Current Tool",
-      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
-    },
-    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
@@ -191,11 +186,6 @@
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
       "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
-    },
-    {
-      "file": "toggle-tool-parameters.js",
-      "name": "Toggle Tool Parameters",
-      "description": "Adds a toggle to each tool header to hide/show its parameters section"
     },
     {
       "file": "tool-description-truncate.js",
@@ -265,11 +255,6 @@
       "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
-      "file": "execute-to-current-tool.js",
-      "name": "Execute to Current Tool",
-      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
-    },
-    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
@@ -283,11 +268,6 @@
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
       "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
-    },
-    {
-      "file": "toggle-tool-parameters.js",
-      "name": "Toggle Tool Parameters",
-      "description": "Adds a toggle to each tool header to hide/show its parameters section"
     },
     {
       "file": "tool-description-truncate.js",
@@ -317,11 +297,6 @@
       "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
-      "file": "execute-to-current-tool.js",
-      "name": "Execute to Current Tool",
-      "description": "Adds button to execute all tools from the beginning up to and including the current tool"
-    },
-    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
@@ -347,11 +322,6 @@
       "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
     },
     {
-      "file": "toggle-tool-parameters.js",
-      "name": "Toggle Tool Parameters",
-      "description": "Adds a toggle to each tool header to hide/show its parameters section"
-    },
-    {
       "file": "tool-description-truncate.js",
       "name": "Tool Description Truncation",
       "description": "Limits the length tool descriptions to make the tool picker more manageable"
@@ -360,11 +330,6 @@
       "file": "tool-results-resize-handle.js",
       "name": "Tool Results Resize Handle",
       "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
-    },
-    {
-      "file": "workflow-cache.js",
-      "name": "Workflow Cache",
-      "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
     }
   ],
   "archetypes/tool-use-task-creation/dev": [

@@ -1,4 +1,4 @@
-1.28
+1.30
 
 ## Features
 
@@ -10,29 +10,21 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning
 
 ### Tool Use Task Creation Page
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
-- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
-- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
 
 ### Tool Use Task Creation Page (OpenClaw / Special Projects)
 *Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*
 - **Bug Report Readability Fix**: Makes bug report cards expandable to see full text
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Tool Favorites**: Add favorite stars to tools list
 - **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
-- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
-- **Workflow Cache**: Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded
 
 ### Tool Use Task Revision Page
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
-- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 
 ### Computer Use Task Creation Page
@@ -48,10 +40,8 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Auto Start Recording**: Automatically clicks the "Start Recording" button once when it appears on the page.
 - **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
-- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
 
@@ -69,9 +59,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Dispute Prompt Scratchpad**: Collapsible notes between the task prompt and writer dispute (default collapsed; not saved across reloads)
 - **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
-- **Execute to Current Tool**: Adds button to execute all tools from the beginning up to and including the current tool
 - **Tool Favorites**: Add favorite stars to tools list
-- **Toggle Tool Parameters**: Adds a toggle to each tool header to hide/show its parameters section
 - **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
