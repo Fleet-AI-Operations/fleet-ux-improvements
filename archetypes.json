@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.113",
+  "archetypesVersion": "7.114",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -466,12 +466,6 @@
           "log": false
         },
         {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-6976f18b8d791403d9ae3d6f6a581e08b22d01a1add34c3735067235b14fc040",
-          "log": false
-        },
-        {
           "name": "json-editor-online.js",
           "version": "2.3",
           "hash": "sha256-b55d5eda727fa9ecc0dce714234666f1455f6546f7d290783b978a7ab5f7d028",
@@ -537,12 +531,6 @@
           "name": "bug-report-expand.js",
           "version": "1.4",
           "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
-          "name": "clear-search.js",
-          "version": "2.1",
-          "hash": "sha256-78492652b1e371ffdb509ea8f98794e155ac3eee5bdf7da22fa041338989f2f6",
           "log": false
         },
         {

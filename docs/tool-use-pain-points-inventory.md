@@ -75,7 +75,6 @@ These ship in dev archetype builds; several default to **off** in settings.
 | Module | Pain point addressed |
 |--------|----------------------|
 | `bug-report-expand.js` | **Bug report** snippets are **line-clamped / truncated**; need **expandable cards** to read full text. |
-| `clear-search.js` | Clearing the **tool search** requires selecting all text; need a **clear (X) control** when the box has content. |
 | `json-editor-online.js` | Same as OpenClaw production: **JSON Editor Online** integration. |
 | `prompt-and-notes-areas.js` | **Prompt vs scratchpad layout** fights the default stack; need **scratchpad anchored to bottom**, **shared resize handle**, optional **remember scratchpad text**. |
 | `text-sanitizer.js` | Same as OpenClaw: **text normalization** helpers. |
@@ -94,7 +93,6 @@ These ship in dev archetype builds; several default to **off** in settings.
 | Module | Pain point addressed |
 |--------|----------------------|
 | `bug-report-expand.js` | Same: **readable bug reports**. |
-| `clear-search.js` | Same: **clear tool search**. |
 | `text-sanitizer.js` | Same: **sanitizer** on revision page. |
 | `tool-description-truncate.js` | Same: **tool description truncation** in picker. |
 | `workflow-cache.js` | **Workflow loss** on clear, error, or **reload**; **restore** from cache (`devArchetypes` only for this page). |

@@ -158,11 +158,6 @@
       "description": "Makes bug report cards expandable to see full text"
     },
     {
-      "file": "clear-search.js",
-      "name": "Clear Tool Search",
-      "description": "Adds a clear `X` button to the tool search box when it has text"
-    },
-    {
       "file": "copy-prompt.js",
       "name": "Copy Prompt",
       "description": "Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard"
@@ -250,11 +245,6 @@
       "description": "Makes bug report cards expandable to see full text"
     },
     {
-      "file": "clear-search.js",
-      "name": "Clear Tool Search",
-      "description": "Adds a clear `X` button to the tool search box when it has text"
-    },
-    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
@@ -290,11 +280,6 @@
       "file": "bug-report-expand.js",
       "name": "Bug Report Readability Fix",
       "description": "Makes bug report cards expandable to see full text"
-    },
-    {
-      "file": "clear-search.js",
-      "name": "Clear Tool Search",
-      "description": "Adds a clear `X` button to the tool search box when it has text"
     },
     {
       "file": "favorites.js",
