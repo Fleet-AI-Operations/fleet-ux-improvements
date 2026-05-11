@@ -508,12 +508,6 @@
           "version": "3.2",
           "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
           "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.1",
-          "hash": "sha256-17c3e5acd6cb2e18e446a9fcc97b09ec2f3ab001a8986ee01b9d4e990812bdd7",
-          "log": false
         }
       ]
     },
@@ -539,12 +533,6 @@
           "name": "workflow-cache-dev.js",
           "version": "1.28",
           "hash": "sha256-b85c357d09c230dc8eac41f65fa39f21e4fdd2ae50625f8bb912cfab36cb8423",
-          "log": false
-        },
-        {
-          "name": "workflow-cache.js",
-          "version": "2.2",
-          "hash": "sha256-b018272701844288693500120efbbb8eac202f95c6cd21ab95c129a14f2db125",
           "log": false
         }
       ]
