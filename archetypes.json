@@ -466,12 +466,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
           "name": "json-editor-online.js",
           "version": "2.3",
           "hash": "sha256-b55d5eda727fa9ecc0dce714234666f1455f6546f7d290783b978a7ab5f7d028",
@@ -516,12 +510,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
           "name": "text-sanitizer.js",
           "version": "3.2",
           "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
@@ -541,12 +529,6 @@
       "urlPattern": "work/problems/qa-tool-use/*",
       "disambiguationSelectors": [],
       "plugins": [
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-fcb18f9b332cbf6175bf3b7421c820ea5997988353aadbfa80721245c4a4ca2f",
-          "log": false
-        },
         {
           "name": "reorganize-request-revisions.js",
           "version": "1.2",
@@ -607,12 +589,6 @@
           "log": false
         },
         {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
-          "log": false
-        },
-        {
           "name": "hide-testing-environment-banner.js",
           "version": "1.1",
           "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
@@ -631,12 +607,6 @@
           "name": "auto-toggle-fullscreen-mode.js",
           "version": "1.2",
           "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "bug-report-expand.js",
-          "version": "1.4",
-          "hash": "sha256-362e7249fd54a291472d6f761d38a51477959d9130365e726c0cf5623fd272e7",
           "log": false
         },
         {
