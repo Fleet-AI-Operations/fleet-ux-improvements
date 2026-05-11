@@ -2,9 +2,9 @@
 
 Inventory of **open GitHub issues** that mention tool use, verifier, or grading (keyword scan of the open issue list) and of **Fleet Enhancer modules** loaded for tool-use archetypes in `archetypes.json`.
 
-**Excluded by request:** `toggle-tool-parameters.js` (parameter visibility is now native in Fleet).
+**Update:** `execute-to-current-tool.js` and `toggle-tool-parameters.js` were **deprecated** (moved under each archetype’s `deprecated/`, removed from `archetypes.json`). Fleet now provides **execute-to-current** and **tool parameter** visibility **natively**; this doc still lists the pain points those plugins historically addressed.
 
-**Archetypes in scope:** `tool-use-task-creation`, `tool-use-task-creation-openclaw`, `tool-use-revision`, `qa-tool-use` (production `archetypes` entries plus `devArchetypes` plugins for those ids).
+**Archetypes in scope:** `tool-use-task-creation`, `tool-use-task-creation-openclaw`, `tool-use-revision`, `qa-tool-use` (production `archetypes` entries plus `devArchetypes` plugins for those ids). `dispute-detail` also shipped the same two plugins until the same deprecation.
 
 ---
 
@@ -28,7 +28,6 @@ Issues below were `OPEN` as of the date this file was generated. Most have only 
 
 | Module | Pain point addressed |
 |--------|----------------------|
-| `execute-to-current-tool.js` | Running the workflow step-by-step is tedious; need a **single control to execute from the start through the current tool** inclusive. |
 | `notes-resize-handle.js` | **“Notes for QA reviewer”** textarea is awkward to edit at default height; need **vertical resize** like a normal resizable field. |
 | `source-data-explorer.js` | Understanding **live instance / MCP data** requires parsing JSON or leaving the page; need **“Explore GUI”** to open the real environment in a new tab for inspection (with warning about writes). |
 | `tool-results-resize-handle.js` | **Tool result** areas have a **fixed short viewport**; need **drag-to-resize height** (and reset) to read long stdout/JSON. |
@@ -36,7 +35,7 @@ Issues below were `OPEN` as of the date this file was generated. Most have only 
 
 ### `tool-use-task-creation-openclaw`
 
-Same pain points as `tool-use-task-creation` for the shared modules, plus:
+Shares **notes resize**, **tool results resize**, and **workflow cache** with standard tool use creation. Additionally:
 
 | Module | Pain point addressed |
 |--------|----------------------|
@@ -47,7 +46,6 @@ Same pain points as `tool-use-task-creation` for the shared modules, plus:
 
 | Module | Pain point addressed |
 |--------|----------------------|
-| `execute-to-current-tool.js` | Same as creation: **bulk execute to current tool** on the revision workflow panel. |
 | `prompt-scratchpad.js` | Revising tasks needs **scratch space** (notes, snippets) **without leaving the page**; need **resizable scratchpad** after the prompt. |
 | `tool-results-resize-handle.js` | Same as creation: **resize tool result** panes on revision. |
 
@@ -57,7 +55,6 @@ Same pain points as `tool-use-task-creation` for the shared modules, plus:
 |--------|----------------------|
 | `accept-task-modal-improvements.js` | Approving tasks often needs a **quick positive signal** for the worker; **“Motivate worker”** one-click blurbs above optional comments. |
 | `copy-verifier-output.js` | **Verifier output** is hard to reuse in feedback or tickets; need **copy** for classic stdout and checklist layouts (including **raw output** when expanded). |
-| `execute-to-current-tool.js` | QA reviewers need to **re-run the workflow to the current tool** without manual per-step clicks. |
 | `hide-grading-autoclick.js` | **Grading UI** clutters or distracts the first-pass QA view; **auto-click “Hide Grading”** once when the control becomes available. |
 | `request-revisions.js` | **Request Revisions** flow is slow and error-prone: need **copy prompt**, **copy verifier**, **guideline links**, **prompt quality** controls, and related modal affordances. |
 | `request-revisions-screenshot-upload-improvement.js` | Native screenshot upload target is **small and fiddly**; need a **full-width drag / paste / click** zone forwarding to the real file input. |
