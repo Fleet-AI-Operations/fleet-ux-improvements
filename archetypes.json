@@ -476,12 +476,6 @@
           "version": "3.2",
           "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
           "log": false
-        },
-        {
-          "name": "workflow-integrity-check.js",
-          "version": "2.1",
-          "hash": "sha256-c3f2993835bbd82e3af4daf56e996ba44da79e50988c91b70e8c48b2363457d3",
-          "log": false
         }
       ]
     },
@@ -557,12 +551,6 @@
           "name": "workflow-cache.js",
           "version": "2.2",
           "hash": "sha256-b018272701844288693500120efbbb8eac202f95c6cd21ab95c129a14f2db125",
-          "log": false
-        },
-        {
-          "name": "workflow-integrity-check.js",
-          "version": "1.1",
-          "hash": "sha256-3e3478682d1f7379e40d933e399fcb234df7ee1e7dc52305fc61559d08835867",
           "log": false
         }
       ]
