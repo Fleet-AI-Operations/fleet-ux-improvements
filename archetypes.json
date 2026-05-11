@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.114",
+  "archetypesVersion": "7.115",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -78,6 +78,12 @@
           "name": "source-data-explorer.js",
           "version": "4.4",
           "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
+          "log": false
+        },
+        {
+          "name": "text-sanitizer.js",
+          "version": "3.4",
+          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
           "log": false
         },
         {
@@ -475,12 +481,6 @@
           "name": "prompt-and-notes-areas.js",
           "version": "3.2",
           "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
-          "log": false
-        },
-        {
-          "name": "text-sanitizer.js",
-          "version": "3.4",
-          "hash": "sha256-a08135e51187958c1a17739b5c35e7fe2b312b87429920b4b0db51d0070442e7",
           "log": false
         },
         {
