@@ -15,7 +15,7 @@ Inventory of **open GitHub issues** that mention tool use, verifier, or grading 
 Issues below were `OPEN` as of the date this file was generated. Most have only auto-generated bodies; the **pain point or request** is taken from the **title** (and archetype hint in the template footer where present).
 
 | # | Title (pain point / request) | Notes |
-|---|------------------------------|--------|
+|---|------------------------------|-------|
 | [122](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/122) | Prevent opening tools descriptions when called | Template: global. Unwanted expansion/interaction when tool descriptions open during execution or navigation. |
 | [118](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/118) | Hide verifier on tool use QA | Template: `qa-tool-use`. Need to collapse or hide verifier UI during QA review. |
 | [117](https://github.com/Fleet-AI-Operations/fleet-ux-improvements/issues/117) | Change verifier output copy to backtick enclosed | Template: `qa-comp-use`. Clipboard format for verifier output (same underlying verifier copy concern as tool-use QA). |
