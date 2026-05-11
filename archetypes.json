@@ -484,12 +484,6 @@
           "log": false
         },
         {
-          "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-41c64df6199c00cc477fe315a496d1542071e4d8a338c2caf7a3f30a5154bc62",
-          "log": false
-        },
-        {
           "name": "workflow-integrity-check.js",
           "version": "2.1",
           "hash": "sha256-c3f2993835bbd82e3af4daf56e996ba44da79e50988c91b70e8c48b2363457d3",
@@ -511,12 +505,6 @@
           "version": "3.3",
           "hash": "sha256-f3077fd030eac9b28a8c5669d664096b2afd06ea6a9031125d46f1682fc16d19",
           "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.2",
-          "hash": "sha256-39e3660beef1dc7e6aefbc03c512fdfe28f8b87d25edb187c71cb86eb712826c",
-          "log": false
         }
       ]
     },
@@ -537,12 +525,6 @@
           "name": "text-sanitizer.js",
           "version": "3.2",
           "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "2.1",
-          "hash": "sha256-b2e13b297d843857b68daf118e55dfeaea28fbada737ee3056af25f9e8af4414",
           "log": false
         },
         {
@@ -581,12 +563,6 @@
           "name": "text-sanitizer.js",
           "version": "2.7",
           "hash": "sha256-765afbc6c1807b1952303b48ed421234947b566a1afba7cac0f7741222f3bcc0",
-          "log": false
-        },
-        {
-          "name": "tool-description-truncate.js",
-          "version": "1.4",
-          "hash": "sha256-73bed7578a9f8215beaf2974021b944ad45da62985708addd5d8972a5dc3f397",
           "log": false
         },
         {
