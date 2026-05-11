@@ -524,12 +524,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "reorganize-request-revisions.js",
-          "version": "1.2",
-          "hash": "sha256-2836fbebd730b9fad29d7b6c76525bf246f6b9d71fbc9083a652713a977fe514",
-          "log": false
-        },
-        {
           "name": "source-data-explorer.js",
           "version": "1.6",
           "hash": "sha256-31e86494667aa9cfe9eea1b113ab639579277963ac73c58eb62cea1ec8bdf1e2",
