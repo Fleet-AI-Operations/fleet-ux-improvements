@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.115",
+  "archetypesVersion": "7.116",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -140,6 +140,12 @@
           "name": "prompt-scratchpad.js",
           "version": "2.2",
           "hash": "sha256-5101095eb5529be43a7ffd39fe900631c11704d9c8ff4af9c774c68125c423eb",
+          "log": false
+        },
+        {
+          "name": "source-data-explorer.js",
+          "version": "4.4",
+          "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
           "log": false
         },
         {

@@ -255,6 +255,11 @@
       "description": "Adds an adjustable height scratchpad to the page"
     },
     {
+      "file": "source-data-explorer.js",
+      "name": "Explore GUI",
+      "description": "Adds an Explore GUI control that opens the underlying environment in a new tab so you can inspect data without parsing JSON. Captures the MCP instance URL from network traffic; includes an acknowledgment modal before opening."
+    },
+    {
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
       "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"

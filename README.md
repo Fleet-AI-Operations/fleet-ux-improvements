@@ -96,6 +96,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 
 ### Tool Use Task Revision Page
+- **Explore GUI**: Opens the underlying tool environment in a new tab (captures MCP instance URL from network traffic; acknowledgment modal before opening)
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 
