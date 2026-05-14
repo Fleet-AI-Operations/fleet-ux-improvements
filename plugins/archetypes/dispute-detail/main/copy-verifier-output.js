@@ -13,7 +13,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '1.5',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 

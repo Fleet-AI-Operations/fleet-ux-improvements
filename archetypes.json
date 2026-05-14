@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.119",
+  "archetypesVersion": "7.120",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -242,14 +242,14 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "2.3",
-          "hash": "sha256-e1394f6fc25bda344a0535207fcf67a30103121003b0769df7b7765e816fac3b",
+          "version": "3.0",
+          "hash": "sha256-f37585a84956d0e6c63d81fb47e51ac19cf1e6a5eb4ac52851f248e26cfb9e4e",
           "log": false
         },
         {
           "name": "request-revisions.js",
-          "version": "5.3",
-          "hash": "sha256-9ef33b46144881306c071c71c220136945efef2b4ad2e66fa2f2b4fadd562c49",
+          "version": "6.0",
+          "hash": "sha256-82b3376ce1bc094c78e71f104545c08ce8f1a11e3bc7f90dfa801c63c1fc3cda",
           "log": false
         },
         {
@@ -332,8 +332,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.12",
-          "hash": "sha256-981af4c5399194f81e9ff653ac4eafe4679f22df092edfa80c6dcae9ee42c477",
+          "version": "2.0",
+          "hash": "sha256-1d25759c574d6dcfa68526fe9783c6a82ff975ad16154ef90209df4e946e8c1b",
           "log": false
         },
         {
@@ -356,8 +356,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "4.3",
-          "hash": "sha256-0f2ef1d7f36ab8128a62fa77d4cc28413d4c0f3dcb19636707925cff12da521d",
+          "version": "5.0",
+          "hash": "sha256-05545602ff7098b1e8917afcd10a13b7895227e31fdaa6104fab2f5ec4581612",
           "log": false
         },
         {
@@ -385,8 +385,8 @@
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "1.5",
-          "hash": "sha256-eeba5970440f586c70b12abec63cdf1bb56c9f1026f0e537d1aafe4c098b1c9e",
+          "version": "2.0",
+          "hash": "sha256-02697aa5972fe8ffec6dc50dce0280d281c7c2c3afc9177fa80c50215b7cfdce",
           "log": false
         },
         {

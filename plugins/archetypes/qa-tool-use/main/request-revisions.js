@@ -23,7 +23,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '5.3',
+    _version: '6.0',
     enabledByDefault: true,
     phase: 'mutation',
     

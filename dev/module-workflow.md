@@ -186,9 +186,8 @@ When a plugin is changed, **all of the following must be updated and kept in syn
 
 Version increment rules:
 
-- **Minor change**: increment by `0.1`.
-- **Major change**: increment by `1.0`.
-- Not base-10: `1.9 + 0.1 = 1.10`.
+- **Minor change**: bump the second segment by `0.1` (segment-wise, not base-10 decimal): e.g. `3.0` → `3.1`, `1.9 + 0.1` → `1.10`.
+- **Major change**: bump the first segment by `1` and set the second segment to **`0`**: e.g. `2.12` → `3.0`, `5.3` → `6.0`.
 
 ### Version Update Tooling
 
