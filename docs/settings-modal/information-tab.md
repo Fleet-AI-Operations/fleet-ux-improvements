@@ -1,4 +1,4 @@
-1.17
+1.18
 ## Information
 If you still cannot find a specific codename, please use the `Feedback` tab to notify me!
 #### Environment Codenames
@@ -41,12 +41,10 @@ If you still cannot find a specific codename, please use the `Feedback` tab to n
 | Yelp                      | Hearth                 |
 
 #### Guidelines
-- [Tool Use (Kinesis) Guidelines](https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d)
-- [Computer Use (Meridian) Guidelines](https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477)
-- [Computer Use Step-By-Step (Iterum) Guidelines](https://www.notion.so/fleetai/Computer-Use-Step-by-Step-Iterum-Guidelines-307fe5dd3fba800da81bd306ec207224)
-- [Metadata Tags](https://www.notion.so/fleetai/Metadata-Tags-308fe5dd3fba80f2a60bcd0021289fb5)
-- [QA Guidelines](https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56)
-- [Time Submission Guidelines](https://www.notion.so/fleetai/Time-Approval-Guidelines-30dfe5dd3fba814f863bf02e95e3ee43)
+- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)
+- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)
+- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)
+- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)
 
 #### Community
 - [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)

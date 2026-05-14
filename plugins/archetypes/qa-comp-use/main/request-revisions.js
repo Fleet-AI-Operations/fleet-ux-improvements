@@ -1,10 +1,19 @@
 // ============= request-revisions.js =============
 // Improvements to the Request Revisions Workflow (qa-comp-use)
 
-const GUIDELINE_LINKS = {
-    qaGuidelines: 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56',
-    meridian: 'https://fleetai.notion.site/Project-Meridian-Guidelines-2eafe5dd3fba80079b86de5dce865477'
+const FLEET_GUIDELINES = {
+    general: 'https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3',
+    toolUse: 'https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b',
+    qa: 'https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43',
+    timeSubmission: 'https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c'
 };
+
+const GUIDELINE_BUTTON_SPECS = [
+    { group: 'general', subOptionId: 'copy-link-general-guidelines', title: 'General Guidelines', url: FLEET_GUIDELINES.general },
+    { group: 'tool-use', subOptionId: 'copy-link-tool-use-guidelines', title: 'Tool Use Guidelines', url: FLEET_GUIDELINES.toolUse },
+    { group: 'qa-guidelines', subOptionId: 'copy-link-qa-guidelines', title: 'QA Guidelines', url: FLEET_GUIDELINES.qa },
+    { group: 'time-submission', subOptionId: 'copy-link-time-submission-guidelines', title: 'Time Submission Guidelines', url: FLEET_GUIDELINES.timeSubmission }
+];
 
 const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
 const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
@@ -23,7 +32,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '5.0',
+    _version: '5.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -42,15 +51,27 @@ const plugin = {
             enabledByDefault: true
         },
         {
-            id: 'copy-link-qa-guidelines',
-            name: 'QA Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens QA Guidelines in a new tab',
+            id: 'copy-link-general-guidelines',
+            name: 'General Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens Fleet General guidelines in a new tab',
             enabledByDefault: true
         },
         {
-            id: 'copy-link-meridian-guidelines',
-            name: 'Meridian Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens Meridian Guidelines in a new tab',
+            id: 'copy-link-tool-use-guidelines',
+            name: 'Tool Use Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens Fleet Tool Use guidelines in a new tab',
+            enabledByDefault: true
+        },
+        {
+            id: 'copy-link-qa-guidelines',
+            name: 'QA Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens Fleet QA guidelines in a new tab',
+            enabledByDefault: true
+        },
+        {
+            id: 'copy-link-time-submission-guidelines',
+            name: 'Time Submission Guidelines',
+            description: 'Show a button under "Where are the issues?" that opens Fleet Time Submission guidelines in a new tab',
             enabledByDefault: true
         }
     ],
@@ -182,12 +203,12 @@ const plugin = {
         const buttonRow = this.findWhereAreTheIssuesButtonRow(modal);
         if (!buttonRow) return;
 
-        let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
-        const qaGuidelinesEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-qa-guidelines', true);
-        const meridianEnabled = Storage.getSubOptionEnabled(this.id, 'copy-link-meridian-guidelines', true);
+        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
 
+        let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
         if (wrapper) {
-            this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled);
+            this.removeLegacyGuidelineGroups(wrapper);
+            this.syncGuidelineCopyButtons(state, wrapper, buttonClass);
             return;
         }
 
@@ -196,25 +217,10 @@ const plugin = {
         wrapper.setAttribute(GUIDELINE_COPY_WRAPPER_MARKER, 'true');
         wrapper.className = 'flex flex-wrap gap-2 mt-2';
 
-        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
+        for (const spec of GUIDELINE_BUTTON_SPECS) {
+            wrapper.appendChild(this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title));
+        }
 
-        const qaBtn = this.createGuidelineOpenButton(
-            buttonClass,
-            'qa-guidelines',
-            GUIDELINE_LINKS.qaGuidelines,
-            'QA Guidelines'
-        );
-        wrapper.appendChild(qaBtn);
-
-        const meridianBtn = this.createGuidelineOpenButton(
-            buttonClass,
-            'meridian',
-            GUIDELINE_LINKS.meridian,
-            'Meridian Guidelines'
-        );
-        wrapper.appendChild(meridianBtn);
-
-        // Only add Copy Result Params button if the target grid exists
         if (this.hasResultParamsGrid()) {
             const copyResultParamsBtn = document.createElement('button');
             copyResultParamsBtn.type = 'button';
@@ -226,9 +232,37 @@ const plugin = {
             wrapper.appendChild(copyResultParamsBtn);
         }
 
-        this.syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled);
         buttonRow.insertAdjacentElement('afterend', wrapper);
         Logger.log('Request Revisions: guideline buttons added');
+        this.removeLegacyGuidelineGroups(wrapper);
+        this.syncGuidelineCopyButtons(state, wrapper, buttonClass);
+    },
+
+    removeLegacyGuidelineGroups(wrapper) {
+        for (const legacy of ['kinesis', 'meridian']) {
+            const n = wrapper.querySelector(`[data-guideline-group="${legacy}"]`);
+            if (n) n.remove();
+        }
+    },
+
+    _reorderGuidelineGroupsAfterUtilities(wrapper, orderedGroupIds) {
+        let lastUtility = null;
+        const v = wrapper.querySelector(`[${COPY_VERIFIER_OUTPUT_MARKER}="true"]`);
+        const p = wrapper.querySelector(`[${COPY_PROMPT_MARKER}="true"]`);
+        if (v) lastUtility = v;
+        if (p) lastUtility = p;
+        let ref = lastUtility;
+        for (const gid of orderedGroupIds) {
+            const node = wrapper.querySelector(`[data-guideline-group="${gid}"]`);
+            if (!node || node.style.display === 'none') continue;
+            if (ref) {
+                if (ref.nextSibling !== node) wrapper.insertBefore(node, ref.nextSibling);
+                ref = node;
+            } else {
+                wrapper.insertBefore(node, wrapper.firstChild);
+                ref = node;
+            }
+        }
     },
 
     createGuidelineOpenButton(buttonClass, groupId, url, shortTitle) {
@@ -256,48 +290,43 @@ const plugin = {
         Logger.debug(`Request Revisions: migrated legacy ${shortTitle} control to open-only button`);
     },
 
-    syncGuidelineCopyButtons(state, wrapper, meridianEnabled, qaGuidelinesEnabled) {
-        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-        this.migrateLegacyGuidelineOpenControl(wrapper, 'qa-guidelines', GUIDELINE_LINKS.qaGuidelines, 'QA Guidelines', buttonClass);
-        this.migrateLegacyGuidelineOpenControl(wrapper, 'meridian', GUIDELINE_LINKS.meridian, 'Meridian Guidelines', buttonClass);
-
-        let qaGroup = wrapper.querySelector('[data-guideline-group="qa-guidelines"]');
-        if (!qaGroup) {
-            qaGroup = this.createGuidelineOpenButton(
-                buttonClass,
-                'qa-guidelines',
-                GUIDELINE_LINKS.qaGuidelines,
-                'QA Guidelines'
-            );
-            const meridianEl = wrapper.querySelector('[data-guideline-group="meridian"]');
-            if (meridianEl) {
-                wrapper.insertBefore(qaGroup, meridianEl);
+    syncGuidelineCopyButtons(state, wrapper, buttonClass) {
+        this.removeLegacyGuidelineGroups(wrapper);
+        for (const spec of GUIDELINE_BUTTON_SPECS) {
+            this.migrateLegacyGuidelineOpenControl(wrapper, spec.group, spec.url, spec.title, buttonClass);
+        }
+        for (const spec of GUIDELINE_BUTTON_SPECS) {
+            const enabled = Storage.getSubOptionEnabled(this.id, spec.subOptionId, true);
+            let el = wrapper.querySelector(`[data-guideline-group="${spec.group}"]`);
+            if (!enabled) {
+                if (el) el.style.display = 'none';
+                continue;
+            }
+            if (!el) {
+                el = this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title);
+                wrapper.appendChild(el);
             } else {
-                wrapper.insertBefore(qaGroup, wrapper.firstChild);
+                el.style.display = '';
+                if (el.textContent !== spec.title) {
+                    el.replaceWith(this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title));
+                }
             }
         }
-        qaGroup.style.display = qaGuidelinesEnabled ? '' : 'none';
-
-        const meridianGroup = wrapper.querySelector('[data-guideline-group="meridian"]');
-        if (meridianGroup) meridianGroup.style.display = meridianEnabled ? '' : 'none';
 
         const copyVerifierEnabled = Storage.getSubOptionEnabled(this.id, COPY_VERIFIER_SUBOPTION_ID, true);
         this.syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass);
         const copyPromptEnabled = Storage.getSubOptionEnabled(this.id, COPY_PROMPT_SUBOPTION_ID, true);
         this.syncCopyPromptButton(state, wrapper, copyPromptEnabled, buttonClass);
-        
-        // Handle Copy Result Params button visibility based on whether the grid exists
+        this._reorderGuidelineGroupsAfterUtilities(wrapper, GUIDELINE_BUTTON_SPECS.map(s => s.group));
+
         const hasGrid = this.hasResultParamsGrid();
         const copyResultParamsBtn = Array.from(wrapper.querySelectorAll('button[data-fleet-plugin="requestRevisions"]'))
             .find(btn => btn.textContent === 'Copy Result Params and Inputs');
-        
+
         if (hasGrid) {
-            // Grid exists - ensure button is visible or create it if missing
             if (copyResultParamsBtn) {
                 copyResultParamsBtn.style.display = '';
             } else {
-                // Button doesn't exist but grid does - create it
-                const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
                 const newBtn = document.createElement('button');
                 newBtn.type = 'button';
                 newBtn.className = buttonClass;
@@ -308,12 +337,13 @@ const plugin = {
                 wrapper.appendChild(newBtn);
                 Logger.debug('Request Revisions: Copy Result Params button created dynamically');
             }
-        } else {
-            // Grid doesn't exist - hide button if it exists
-            if (copyResultParamsBtn) {
-                copyResultParamsBtn.style.display = 'none';
-            }
+        } else if (copyResultParamsBtn) {
+            copyResultParamsBtn.style.display = 'none';
         }
+
+        const copyRp = Array.from(wrapper.querySelectorAll('button[data-fleet-plugin="requestRevisions"]'))
+            .find(btn => btn.textContent === 'Copy Result Params and Inputs');
+        if (copyRp && copyRp.style.display !== 'none') wrapper.appendChild(copyRp);
     },
 
     syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass) {

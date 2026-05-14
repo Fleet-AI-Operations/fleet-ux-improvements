@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.120",
+  "archetypesVersion": "7.121",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -26,7 +26,7 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.17"
+      "version": "1.18"
     },
     {
       "name": "features-tab.md",
@@ -248,8 +248,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "6.0",
-          "hash": "sha256-82b3376ce1bc094c78e71f104545c08ce8f1a11e3bc7f90dfa801c63c1fc3cda",
+          "version": "6.1",
+          "hash": "sha256-eff4b95d01c82041974ff81026b7724bcf19548cc281c6753060b0a985c913aa",
           "log": false
         },
         {
@@ -278,8 +278,8 @@
         },
         {
           "name": "useful-links-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-92914ecd1790fa86c7054308c509d23e81defabfd98719f0c7b9720112339ff8",
+          "version": "2.2",
+          "hash": "sha256-d01b454fc0a153eaba3f2afa0328f780d502b742ec6f9bcaec681d4eeb411dbb",
           "log": false
         }
       ]
@@ -356,8 +356,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "5.0",
-          "hash": "sha256-05545602ff7098b1e8917afcd10a13b7895227e31fdaa6104fab2f5ec4581612",
+          "version": "5.1",
+          "hash": "sha256-0d703c0db3461ce34c061131e8c1f41e2997b4fad5b6a5e72974377b39300ae4",
           "log": false
         },
         {
