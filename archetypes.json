@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.117",
+  "archetypesVersion": "7.118",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -30,7 +30,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.30"
+      "version": "1.31"
     }
   ],
   "archetypes": [
@@ -387,12 +387,6 @@
           "name": "copy-verifier-output.js",
           "version": "1.4",
           "hash": "sha256-d994c8591e9d3ba6ac3c73736a1c47b31fc97ce786bbe683214aa93d627e180b",
-          "log": false
-        },
-        {
-          "name": "dispute-prompt-scratchpad.js",
-          "version": "1.2",
-          "hash": "sha256-e40eb0eef751cf7cee1a82d82ec1a5fe7262701a7545274d35615d0990f954a4",
           "log": false
         },
         {
