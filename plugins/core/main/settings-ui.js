@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.16',
+    _version: '6.17',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1327,6 +1327,7 @@ const plugin = {
                 const url = 'https://github.com/' + owner + '/' + repo + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
                 window.open(url, '_blank', 'noopener,noreferrer');
                 Logger.log('Opened GitHub issue draft: ' + title);
+                self._closeModal();
             });
             feedbackSubmitBtn.addEventListener('mouseenter', () => {
                 feedbackSubmitBtn.style.background = 'var(--brand-hover, #4338ca)';
