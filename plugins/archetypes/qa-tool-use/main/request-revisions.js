@@ -23,7 +23,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '5.2',
+    _version: '5.3',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -521,17 +521,30 @@ const plugin = {
         if (successes.length > 0) {
             lines.push('#### Successes');
             for (const t of successes) {
-                lines.push(`> ✅ ${t}`);
+                lines.push(`✅ ${t}`);
             }
         }
         if (failures.length > 0) {
             lines.push('');
             lines.push('#### Failures');
             for (const t of failures) {
-                lines.push(`> ❌ ${t}`);
+                lines.push(`❌ ${t}`);
             }
         }
-        return lines.join('\n');
+        const body = lines.join('\n');
+        let maxRun = 0;
+        let run = 0;
+        for (let i = 0; i < body.length; i++) {
+            if (body[i] === '`') {
+                run++;
+                if (run > maxRun) maxRun = run;
+            } else {
+                run = 0;
+            }
+        }
+        const fenceLen = Math.max(3, maxRun + 1);
+        const fence = '`'.repeat(fenceLen);
+        return `${fence}\n${body}\n${fence}`;
     },
 
     getVerifierPreFromContainer(container) {
