@@ -1,11 +1,18 @@
 // ============= useful-links-buttons.js =============
 // Modular link buttons below the QA scratchpad. Wraps when panel is narrow.
 
-const QA_GUIDELINES_LINK = 'https://fleetai.notion.site/QA-Guidelines-2f5fe5dd3fba80daa9b8f63a6ba85c56';
+const FLEET_GUIDELINES = {
+    general: 'https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3',
+    toolUse: 'https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b',
+    qa: 'https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43',
+    timeSubmission: 'https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c'
+};
 
 const BUTTONS = [
-    { id: 'qa-guidelines', title: 'QA Guidelines', link: QA_GUIDELINES_LINK },
-    { id: 'kinesis-guidelines', title: 'Kinesis Guidelines', link: 'https://fleetai.notion.site/Project-Kinesis-Guidelines-2d6fe5dd3fba8023aa78e345939dac3d' },
+    { id: 'general-guidelines', title: 'General Guidelines', link: FLEET_GUIDELINES.general },
+    { id: 'tool-use-guidelines', title: 'Tool Use Guidelines', link: FLEET_GUIDELINES.toolUse },
+    { id: 'qa-guidelines', title: 'QA Guidelines', link: FLEET_GUIDELINES.qa },
+    { id: 'time-submission-guidelines', title: 'Time Submission Guidelines', link: FLEET_GUIDELINES.timeSubmission },
     { id: 'json-editor', title: '{ } JSON Editor', link: 'https://jsoneditoronline.org' }
 ];
 
@@ -13,7 +20,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 

@@ -1,4 +1,4 @@
-1.30
+1.31
 
 ## Features
 
@@ -56,7 +56,6 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
-- **Dispute Prompt Scratchpad**: Collapsible notes between the task prompt and writer dispute (default collapsed; not saved across reloads)
 - **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
 - **Tool Favorites**: Add favorite stars to tools list

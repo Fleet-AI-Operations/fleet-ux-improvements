@@ -1,7 +1,7 @@
 {
   "version": "7.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.116",
+  "archetypesVersion": "7.121",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -10,8 +10,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.16",
-      "hash": "sha256-058d22a9fcb56a46fb2d0a1fcf8c7c546ef7936d5815dcefa6d75bfe6e7c7b0d",
+      "version": "6.17",
+      "hash": "sha256-371f6f8fcf51709b917c869423a14d42c0b252a74769722eead5b57202110bba",
       "log": false
     }
   ],
@@ -26,11 +26,11 @@
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.17"
+      "version": "1.18"
     },
     {
       "name": "features-tab.md",
-      "version": "1.30"
+      "version": "1.31"
     }
   ],
   "archetypes": [
@@ -242,14 +242,14 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "2.2",
-          "hash": "sha256-342b609c73d59ef5775320488f0cc3182a8d37a4d38b9fb6b7c6d5a1243d3097",
+          "version": "3.0",
+          "hash": "sha256-f37585a84956d0e6c63d81fb47e51ac19cf1e6a5eb4ac52851f248e26cfb9e4e",
           "log": false
         },
         {
           "name": "request-revisions.js",
-          "version": "5.2",
-          "hash": "sha256-4318f2eec2c9aa5d0816d3030bedc2a5703767c8b1908b76e60aafb2436bb0aa",
+          "version": "6.1",
+          "hash": "sha256-eff4b95d01c82041974ff81026b7724bcf19548cc281c6753060b0a985c913aa",
           "log": false
         },
         {
@@ -278,8 +278,8 @@
         },
         {
           "name": "useful-links-buttons.js",
-          "version": "2.1",
-          "hash": "sha256-92914ecd1790fa86c7054308c509d23e81defabfd98719f0c7b9720112339ff8",
+          "version": "2.2",
+          "hash": "sha256-d01b454fc0a153eaba3f2afa0328f780d502b742ec6f9bcaec681d4eeb411dbb",
           "log": false
         }
       ]
@@ -332,8 +332,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "1.11",
-          "hash": "sha256-4e0365560103973d433ece5ab9c1b2847cd44c11ee8cae626bd0ae2e3de06831",
+          "version": "2.0",
+          "hash": "sha256-1d25759c574d6dcfa68526fe9783c6a82ff975ad16154ef90209df4e946e8c1b",
           "log": false
         },
         {
@@ -356,8 +356,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "4.2",
-          "hash": "sha256-d7eb46b8245703dd1a37129d4ee7c497dde218e956f3b9779a6171e44c36fa71",
+          "version": "5.1",
+          "hash": "sha256-0d703c0db3461ce34c061131e8c1f41e2997b4fad5b6a5e72974377b39300ae4",
           "log": false
         },
         {
@@ -385,14 +385,8 @@
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "1.4",
-          "hash": "sha256-d994c8591e9d3ba6ac3c73736a1c47b31fc97ce786bbe683214aa93d627e180b",
-          "log": false
-        },
-        {
-          "name": "dispute-prompt-scratchpad.js",
-          "version": "1.2",
-          "hash": "sha256-e40eb0eef751cf7cee1a82d82ec1a5fe7262701a7545274d35615d0990f954a4",
+          "version": "2.0",
+          "hash": "sha256-02697aa5972fe8ffec6dc50dce0280d281c7c2c3afc9177fa80c50215b7cfdce",
           "log": false
         },
         {

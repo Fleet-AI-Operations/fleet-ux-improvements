@@ -1,5 +1,0 @@
-- The favorite star should be on the left if the tool label to ensure continuity
-- The tools should not open automatically wen they are executed (either in the workflow or in the sidebar)
-- Some environment tool tool names in the workflow have a weird CSS thing going on where the labels are displayed as two separate styles
-- There is no way to hide the verifier tab once it's been opened
-- 
