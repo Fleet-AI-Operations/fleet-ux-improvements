@@ -93,6 +93,8 @@
         remoteLogging: { debug: false, verbose: false, submodule: false },
         /** Filenames (archetypes `name`) with `log: true` */
         remoteModuleLogByFile: {},
+        /** From archetypes.json `opsAccess` (password gate for Ops settings tab). */
+        opsAccess: null,
     };
 
     const RefreshGuard = {
@@ -708,6 +710,7 @@
                 'page-refresh-confirmation-enabled',
                 'extension-refresh-confirmation-enabled',
                 'ops-tab-enabled',
+                'ops-tab-unlocked',
                 'debug',
                 'verbose',
                 'submodule-logging',
@@ -1124,6 +1127,9 @@
                                 // Always log archetypes version (cannot be disabled)
                                 Context.archetypesVersion = config.archetypesVersion || null;
                                 Context.coreOnlyMode = config.coreOnlyMode === true;
+                                Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
+                                    ? config.opsAccess
+                                    : null;
                                 applyArchetypeRemoteLoggingConfig(config);
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
                                 if (Context.coreOnlyMode) {

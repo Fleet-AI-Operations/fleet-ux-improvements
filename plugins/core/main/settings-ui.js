@@ -15,7 +15,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -394,7 +394,10 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
-        const opsTabEnabled = this._getOpsTabEnabled();
+        const opsAccessConfigured = this._isOpsAccessConfigured();
+        const opsWantsEnabled = this._getOpsTabWanted();
+        const opsTabActive = this._getOpsTabEnabled();
+        const opsNeedsPassword = opsWantsEnabled && !this._getOpsTabUnlocked() && opsAccessConfigured;
         const defaultTab = this._getDefaultSettingsTabId();
         const paneDisplay = (tabId) => (tabId === defaultTab ? 'block' : 'none');
         const noPluginsMsg = Context.isOutdated
@@ -602,13 +605,43 @@ const plugin = {
             <!-- Ops Tab Toggle -->
             <div style="margin-bottom: 20px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <div>
+                    <div style="min-width: 0; padding-right: 10px;">
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Tab</div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
-                            Adds an Ops tab with operator tools (first tab when the modal opens).
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px; line-height: 1.45;">
+                            ${opsAccessConfigured
+                                ? 'Adds an Ops tab with operator tools (password required; first tab when unlocked).'
+                                : 'Ops access is not configured (<code style="font-size: 11px;">opsAccess.passwordHash</code> in archetypes.json).'}
                         </div>
                     </div>
-                    ${this._createSwitchHTML('wf-ops-tab-enabled', opsTabEnabled)}
+                    ${this._createSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled, null, !opsAccessConfigured)}
+                </div>
+                <div id="wf-ops-password-panel" style="display: ${opsNeedsPassword ? 'block' : 'none'}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops password</label>
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" placeholder="Enter password" style="
+                            flex: 1;
+                            min-width: 0;
+                            padding: 8px 12px;
+                            font-size: 13px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                        ">
+                        <button type="button" id="wf-ops-password-submit" style="
+                            flex-shrink: 0;
+                            padding: 8px 14px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: white;
+                            background: var(--brand, #4f46e5);
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                        ">Unlock</button>
+                    </div>
+                    <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
                 </div>
             </div>
 
@@ -975,6 +1008,7 @@ const plugin = {
         // Tab buttons
         this._attachTabListeners(modal);
         this._attachOpsTabListeners(modal);
+        this._attachOpsPasswordListeners(modal);
         this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
         // Global toggle (regular plugins only)
@@ -1009,11 +1043,42 @@ const plugin = {
         });
         if (opsTabToggle) {
             opsTabToggle.addEventListener('change', (e) => {
+                const wantsEnabled = e.target.checked;
+                if (!wantsEnabled) {
+                    this._handleToggleChange(e);
+                    this._setOpsTabWanted(false);
+                    this._setOpsTabUnlocked(false);
+                    this._setOpsPasswordPanelVisible(modal, false);
+                    this._setOpsPasswordError(modal, '');
+                    Logger.log('settings-ui: ops tab disabled');
+                    this._rebuildSettingsTabRow(modal, 'information');
+                    return;
+                }
+                if (!this._isOpsAccessConfigured()) {
+                    e.target.checked = false;
+                    this._handleToggleChange(e);
+                    Logger.warn('settings-ui: ops tab enable blocked (password hash not configured)');
+                    return;
+                }
+                this._setOpsTabWanted(true);
+                if (this._getOpsTabUnlocked()) {
+                    this._handleToggleChange(e);
+                    Logger.log('settings-ui: ops tab enabled');
+                    this._rebuildSettingsTabRow(modal, 'ops');
+                    return;
+                }
+                e.target.checked = false;
                 this._handleToggleChange(e);
-                const enabled = e.target.checked;
-                this._setOpsTabEnabled(enabled);
-                Logger.log(`settings-ui: ops tab ${enabled ? 'enabled' : 'disabled'}`);
-                this._rebuildSettingsTabRow(modal, enabled ? 'ops' : 'information');
+                this._setOpsPasswordPanelVisible(modal, true);
+                this._setOpsPasswordError(modal, '');
+                const input = Context.dom.query('#wf-ops-password-input', {
+                    root: modal,
+                    context: `${this.id}.opsPasswordInputFocus`
+                });
+                if (input) {
+                    input.focus();
+                }
+                Logger.log('settings-ui: ops tab unlock required');
             });
         }
 
@@ -1986,16 +2051,142 @@ const plugin = {
         }
     },
     
-    _getOpsTabEnabled() {
+    _getOpsPasswordHash() {
+        const hash = Context.opsAccess && Context.opsAccess.passwordHash;
+        return typeof hash === 'string' && hash.length > 0 ? hash : null;
+    },
+
+    _isOpsAccessConfigured() {
+        return Boolean(this._getOpsPasswordHash());
+    },
+
+    _getOpsTabWanted() {
         return Storage.get('ops-tab-enabled', false);
     },
 
-    _setOpsTabEnabled(enabled) {
+    _setOpsTabWanted(enabled) {
         Storage.set('ops-tab-enabled', enabled);
+    },
+
+    _getOpsTabUnlocked() {
+        return Storage.get('ops-tab-unlocked', false);
+    },
+
+    _setOpsTabUnlocked(unlocked) {
+        Storage.set('ops-tab-unlocked', unlocked);
+    },
+
+    _getOpsTabEnabled() {
+        return this._getOpsTabWanted() && this._getOpsTabUnlocked() && this._isOpsAccessConfigured();
     },
 
     _getDefaultSettingsTabId() {
         return this._getOpsTabEnabled() ? 'ops' : 'information';
+    },
+
+    _setOpsPasswordPanelVisible(modal, visible) {
+        const panel = Context.dom.query('#wf-ops-password-panel', {
+            root: modal,
+            context: `${this.id}.opsPasswordPanel`
+        });
+        if (panel) {
+            panel.style.display = visible ? 'block' : 'none';
+        }
+    },
+
+    _setOpsPasswordError(modal, message) {
+        const err = Context.dom.query('#wf-ops-password-error', {
+            root: modal,
+            context: `${this.id}.opsPasswordError`
+        });
+        if (!err) return;
+        if (message) {
+            err.textContent = message;
+            err.style.display = 'block';
+        } else {
+            err.textContent = '';
+            err.style.display = 'none';
+        }
+    },
+
+    async _verifyOpsPassword(password) {
+        const expected = this._getOpsPasswordHash();
+        if (!expected || !password) return false;
+        try {
+            const computed = await PluginManager.computeHash(password);
+            return computed === expected;
+        } catch (err) {
+            Logger.error('settings-ui: ops password verification failed', err);
+            return false;
+        }
+    },
+
+    async _submitOpsPassword(modal, toggle) {
+        const input = Context.dom.query('#wf-ops-password-input', {
+            root: modal,
+            context: `${this.id}.opsPasswordInputSubmit`
+        });
+        if (!input) return false;
+
+        const password = input.value;
+        if (!password) {
+            this._setOpsPasswordError(modal, 'Enter the Ops password.');
+            Logger.warn('settings-ui: ops unlock skipped (empty password)');
+            return false;
+        }
+
+        const ok = await this._verifyOpsPassword(password);
+        if (!ok) {
+            this._setOpsPasswordError(modal, 'Incorrect password.');
+            Logger.warn('settings-ui: ops unlock failed (incorrect password)');
+            return false;
+        }
+
+        input.value = '';
+        this._setOpsPasswordError(modal, '');
+        this._setOpsTabUnlocked(true);
+        this._setOpsPasswordPanelVisible(modal, false);
+        if (toggle) {
+            toggle.checked = true;
+            this._handleToggleChange({ target: toggle });
+        }
+        Logger.log('settings-ui: ops tab unlocked');
+        this._rebuildSettingsTabRow(modal, 'ops');
+        return true;
+    },
+
+    _attachOpsPasswordListeners(modal) {
+        if (!modal || modal.dataset.wfOpsPasswordListenersAttached === '1') return;
+        modal.dataset.wfOpsPasswordListenersAttached = '1';
+
+        const submitBtn = Context.dom.query('#wf-ops-password-submit', {
+            root: modal,
+            context: `${this.id}.opsPasswordSubmit`
+        });
+        const input = Context.dom.query('#wf-ops-password-input', {
+            root: modal,
+            context: `${this.id}.opsPasswordInputAttach`
+        });
+        const toggle = Context.dom.query('#wf-ops-tab-enabled', {
+            root: modal,
+            context: `${this.id}.opsTabTogglePassword`
+        });
+
+        const submit = () => {
+            void this._submitOpsPassword(modal, toggle);
+        };
+
+        if (submitBtn) {
+            submitBtn.addEventListener('click', submit);
+        }
+        if (input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submit();
+                }
+            });
+        }
     },
 
     _extractOpsTaskIdentifier(raw) {
