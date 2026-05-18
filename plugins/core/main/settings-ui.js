@@ -6,7 +6,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.17',
+    _version: '6.18',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -385,8 +385,6 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
-        const pageRefreshConfirmEnabled = this._getPageRefreshConfirmationEnabled();
-        const extensionRefreshConfirmEnabled = this._getExtensionRefreshConfirmationEnabled();
         const noPluginsMsg = Context.isOutdated
             ? 'No plugins will load until you update the userscript.'
             : 'No plugins loaded for this page.';
@@ -586,47 +584,6 @@ const plugin = {
                         cursor: pointer;
                         transition: all 0.2s;
                     ">All Off</button>
-                </div>
-            </div>
-
-            <!-- Refresh Confirmation -->
-            <div style="margin-bottom: 20px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
-                    Refresh Confirmation
-                </h3>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div style="padding: 10px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                            <label style="font-size: 13px; color: var(--foreground, #333);" for="wf-page-refresh-confirmation-enabled">Page refresh confirmation dialog</label>
-                            ${this._createSwitchHTML('wf-page-refresh-confirmation-enabled', pageRefreshConfirmEnabled, null, false, { variant: 'main' })}
-                        </div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
-                            This will show a confirmation dialog before any refresh that is initiated by the Fleet website. If you are experiencing nuisance refreshes, this should allow you to prevent them from affecting you.
-                        </div>
-                        <details class="wf-refresh-additional-notes" style="margin-top: 8px; margin-left: 12px;">
-                            <summary style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; line-height: 1.45; list-style-position: outside;">Additional notes</summary>
-                            <div style="margin-top: 8px; padding-left: 2px; line-height: 1.45;">
-                                <div style="font-size: 12px; color: #b45309;">
-                                    When this is on, the same confirmation appears for manual reloads too (browser refresh button or <code style="font-size: 11px;">Ctrl/Cmd + R</code>), not only when Fleet initiates a reload.
-                                </div>
-                            </div>
-                        </details>
-                    </div>
-                    <div style="padding: 10px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                            <label style="font-size: 13px; color: var(--foreground, #333);" for="wf-extension-refresh-confirmation-enabled">Confirm before refreshes initiated by this extension?</label>
-                            ${this._createSwitchHTML('wf-extension-refresh-confirmation-enabled', extensionRefreshConfirmEnabled, null, false, { variant: 'sub' })}
-                        </div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 8px; line-height: 1.45;">
-                            This will show a confirmation dialog before any page refresh, including refreshes initiated by this extension.
-                        </div>
-                        <details class="wf-refresh-additional-notes" style="margin-top: 8px; margin-left: 12px;">
-                            <summary style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; line-height: 1.45; list-style-position: outside;">Additional notes</summary>
-                            <div style="font-size: 12px; color: #b45309; margin-top: 8px; padding-left: 2px; line-height: 1.45;">
-                                This extension reloads the page when you navigate to a URL that loads plugins, so only turn this on while debugging. If you need it to stop unwanted reloads, open the &quot;Feedback&quot; tab and report that right away.
-                            </div>
-                        </details>
-                    </div>
                 </div>
             </div>
 
@@ -1253,30 +1210,6 @@ const plugin = {
             });
         }
 
-        const pageRefreshConfirmationToggle = Context.dom.query('#wf-page-refresh-confirmation-enabled', {
-            root: modal,
-            context: `${this.id}.pageRefreshConfirmationToggle`
-        });
-        if (pageRefreshConfirmationToggle) {
-            pageRefreshConfirmationToggle.addEventListener('change', (e) => {
-                this._handleToggleChange(e);
-                this._setPageRefreshConfirmationEnabled(e.target.checked);
-                this._updateSettingsMessage(modal, plugins);
-            });
-        }
-
-        const extensionRefreshConfirmationToggle = Context.dom.query('#wf-extension-refresh-confirmation-enabled', {
-            root: modal,
-            context: `${this.id}.extensionRefreshConfirmationToggle`
-        });
-        if (extensionRefreshConfirmationToggle) {
-            extensionRefreshConfirmationToggle.addEventListener('change', (e) => {
-                this._handleToggleChange(e);
-                this._setExtensionRefreshConfirmationEnabled(e.target.checked);
-                this._updateSettingsMessage(modal, plugins);
-            });
-        }
-        
         // Clear cache button
         const clearCacheBtn = Context.dom.query('#wf-clear-cache', {
             root: modal,
