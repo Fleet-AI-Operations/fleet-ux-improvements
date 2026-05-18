@@ -21,7 +21,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.5',
+    _version: '7.6',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -650,6 +650,9 @@ const plugin = {
             ${devPaneHTML}
             <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${paneDisplay('ops')}; overflow-y: auto; min-height: 200px;">
                 <div style="margin-bottom: 16px;">
+                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                        Task View Link Generator
+                    </h3>
                     <label for="wf-ops-task-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Task ID or UUID</label>
                     <input type="text" id="wf-ops-task-input" placeholder="task_… or UUID" autocomplete="off" style="
                         width: 100%;
