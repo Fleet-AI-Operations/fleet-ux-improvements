@@ -2,11 +2,20 @@
 // settings-ui.js
 // Core plugin that provides the settings UI - persists across navigation
 
+const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
+const OPS_UUID_URL_PREFIX = 'https://www.fleetai.com/work/problems/view-task/';
+const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
+const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const COPY_SUCCESS_FLASH_MS = 1000;
+const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
+const COPY_FAILURE_PULSE_MS = 500;
+const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
+
 const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '6.18',
+    _version: '7.0',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -385,6 +394,9 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
+        const opsTabEnabled = this._getOpsTabEnabled();
+        const defaultTab = this._getDefaultSettingsTabId();
+        const paneDisplay = (tabId) => (tabId === defaultTab ? 'block' : 'none');
         const noPluginsMsg = Context.isOutdated
             ? 'No plugins will load until you update the userscript.'
             : 'No plugins loaded for this page.';
@@ -412,7 +424,7 @@ const plugin = {
         
         const hasDevSettings = this._hasActiveDevSettings();
         const tabs = this._getSettingsTabs();
-        const tabRowHTML = this._createTabRowHTML(tabs);
+        const tabRowHTML = this._createTabRowHTML(tabs, defaultTab);
         
         // Build the Dev pane content
         const devGlobalEnabled = this._getDevGlobalEnabled();
@@ -587,6 +599,19 @@ const plugin = {
                 </div>
             </div>
 
+            <!-- Ops Tab Toggle -->
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Tab</div>
+                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
+                            Adds an Ops tab with operator tools (first tab when the modal opens).
+                        </div>
+                    </div>
+                    ${this._createSwitchHTML('wf-ops-tab-enabled', opsTabEnabled)}
+                </div>
+            </div>
+
             <!-- Outdated Plugins Warning -->
             ${outdatedPluginsHTML}
             
@@ -623,7 +648,56 @@ const plugin = {
             </div>
             </div>
             ${devPaneHTML}
-            <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: block; overflow-y: auto; min-height: 200px;"></div>
+            <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${paneDisplay('ops')}; overflow-y: auto; min-height: 200px;">
+                <div style="margin-bottom: 16px;">
+                    <label for="wf-ops-task-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Task ID or UUID</label>
+                    <input type="text" id="wf-ops-task-input" placeholder="task_… or UUID" autocomplete="off" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                    ">
+                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 8px 0 0 0; line-height: 1.45;">
+                        Paste a task ID (<code style="font-size: 11px;">task_…</code>) or UUID; the matching Fleet link appears below.
+                    </p>
+                </div>
+                <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
+                    <button type="button" id="wf-ops-open-link" style="
+                        flex: 1;
+                        min-width: 0;
+                        padding: 10px 12px;
+                        font-size: 12px;
+                        font-weight: 500;
+                        text-align: left;
+                        color: var(--brand, #4f46e5);
+                        background: var(--card, #fafafa);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        cursor: pointer;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                        transition: background 0.2s;
+                    "></button>
+                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
+                        flex-shrink: 0;
+                        padding: 10px 12px;
+                        font-size: 12px;
+                        font-weight: 500;
+                        color: var(--foreground, #333);
+                        background: var(--card, #fafafa);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: background 0.2s, color 0.2s;
+                    ">Copy</button>
+                </div>
+            </div>
+            <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: ${paneDisplay('information')}; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
                 <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0 0 16px 0; line-height: 1.5;">
@@ -900,7 +974,8 @@ const plugin = {
 
         // Tab buttons
         this._attachTabListeners(modal);
-        this._switchSettingsTab(modal, 'information');
+        this._attachOpsTabListeners(modal);
+        this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
         // Global toggle (regular plugins only)
         const globalToggle = Context.dom.query('#wf-global-enabled', {
@@ -925,6 +1000,20 @@ const plugin = {
                 this._attachPluginToggleListeners(modal, plugins);
                 this._attachPluginReorderListeners(modal, plugins);
                 this._updateSettingsMessage(modal, plugins);
+            });
+        }
+
+        const opsTabToggle = Context.dom.query('#wf-ops-tab-enabled', {
+            root: modal,
+            context: `${this.id}.opsTabToggle`
+        });
+        if (opsTabToggle) {
+            opsTabToggle.addEventListener('change', (e) => {
+                this._handleToggleChange(e);
+                const enabled = e.target.checked;
+                this._setOpsTabEnabled(enabled);
+                Logger.log(`settings-ui: ops tab ${enabled ? 'enabled' : 'disabled'}`);
+                this._rebuildSettingsTabRow(modal, enabled ? 'ops' : 'information');
             });
         }
 
@@ -1897,11 +1986,234 @@ const plugin = {
         }
     },
     
+    _getOpsTabEnabled() {
+        return Storage.get('ops-tab-enabled', false);
+    },
+
+    _setOpsTabEnabled(enabled) {
+        Storage.set('ops-tab-enabled', enabled);
+    },
+
+    _getDefaultSettingsTabId() {
+        return this._getOpsTabEnabled() ? 'ops' : 'information';
+    },
+
+    _extractOpsTaskIdentifier(raw) {
+        const trimmed = (raw || '').trim();
+        if (!trimmed) return '';
+        const fromUrl = trimmed.match(OPS_TASK_ID_FROM_URL_RE);
+        return fromUrl ? fromUrl[1] : trimmed;
+    },
+
+    _buildOpsTaskUrl(raw) {
+        const id = this._extractOpsTaskIdentifier(raw);
+        if (!id) return null;
+        if (/^task_/i.test(id)) {
+            return `${OPS_TASK_URL_PREFIX}${id}`;
+        }
+        if (OPS_UUID_RE.test(id)) {
+            return `${OPS_UUID_URL_PREFIX}${id}`;
+        }
+        return null;
+    },
+
+    _getActiveSettingsTabId(modal) {
+        if (!modal) return this._getDefaultSettingsTabId();
+        let active = null;
+        modal.querySelectorAll('.wf-settings-pane').forEach(pane => {
+            if (pane.style.display !== 'none') {
+                active = pane.getAttribute('data-tab');
+            }
+        });
+        return active || this._getDefaultSettingsTabId();
+    },
+
+    _rebuildSettingsTabRow(modal, preferredTabId) {
+        const tabRow = Context.dom.query('#wf-settings-tab-row', {
+            root: modal,
+            context: `${this.id}.tabRowRebuild`
+        });
+        if (!tabRow) return;
+        const tabs = this._getSettingsTabs();
+        const validIds = tabs.map(t => t.id);
+        let nextActive = preferredTabId || this._getActiveSettingsTabId(modal);
+        if (!validIds.includes(nextActive)) {
+            nextActive = this._getDefaultSettingsTabId();
+        }
+        const replacement = document.createElement('div');
+        replacement.innerHTML = this._createTabRowHTML(tabs, nextActive);
+        tabRow.replaceWith(replacement.firstElementChild);
+        this._attachTabListeners(modal);
+        this._switchSettingsTab(modal, nextActive);
+    },
+
+    _clearOpsCopyButtonFeedback(button) {
+        if (!button) return;
+        if (button._copySuccessFlashTimeout) {
+            clearTimeout(button._copySuccessFlashTimeout);
+            button._copySuccessFlashTimeout = null;
+        }
+        if (button._copyFailurePulseTimeout) {
+            clearTimeout(button._copyFailurePulseTimeout);
+            button._copyFailurePulseTimeout = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    _showOpsCopySuccessFlash(button) {
+        this._clearOpsCopyButtonFeedback(button);
+        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
+        button.style.color = '#ffffff';
+        button._copySuccessFlashTimeout = setTimeout(() => {
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            button._copySuccessFlashTimeout = null;
+        }, COPY_SUCCESS_FLASH_MS);
+    },
+
+    _showOpsCopyFailurePulse(button) {
+        this._clearOpsCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = COPY_FAILURE_RED_BG;
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition = `background-color ${COPY_FAILURE_PULSE_MS}ms ease-out, color ${COPY_FAILURE_PULSE_MS}ms ease-out`;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._copyFailurePulseTimeout = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._copyFailurePulseTimeout = null;
+        }, COPY_FAILURE_PULSE_MS);
+    },
+
+    async _copyOpsTextToClipboard(text) {
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (_e) { /* fall through */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (_e2) {
+            return false;
+        }
+    },
+
+    _updateOpsTaskLinkUI(modal) {
+        const input = Context.dom.query('#wf-ops-task-input', {
+            root: modal,
+            context: `${this.id}.opsTaskInput`
+        });
+        const linkRow = Context.dom.query('#wf-ops-link-row', {
+            root: modal,
+            context: `${this.id}.opsLinkRow`
+        });
+        const openBtn = Context.dom.query('#wf-ops-open-link', {
+            root: modal,
+            context: `${this.id}.opsOpenLink`
+        });
+        const copyBtn = Context.dom.query('#wf-ops-copy-link', {
+            root: modal,
+            context: `${this.id}.opsCopyLink`
+        });
+        if (!input || !linkRow || !openBtn || !copyBtn) return;
+
+        const url = this._buildOpsTaskUrl(input.value);
+        if (!url) {
+            linkRow.style.display = 'none';
+            openBtn.removeAttribute('data-wf-ops-url');
+            openBtn.textContent = '';
+            copyBtn.removeAttribute('data-wf-ops-url');
+            return;
+        }
+
+        linkRow.style.display = 'flex';
+        openBtn.textContent = url;
+        openBtn.setAttribute('data-wf-ops-url', url);
+        copyBtn.setAttribute('data-wf-ops-url', url);
+    },
+
+    _attachOpsTabListeners(modal) {
+        if (!modal || modal.dataset.wfOpsListenersAttached === '1') return;
+        modal.dataset.wfOpsListenersAttached = '1';
+
+        const input = Context.dom.query('#wf-ops-task-input', {
+            root: modal,
+            context: `${this.id}.opsTaskInputAttach`
+        });
+        const openBtn = Context.dom.query('#wf-ops-open-link', {
+            root: modal,
+            context: `${this.id}.opsOpenLinkAttach`
+        });
+        const copyBtn = Context.dom.query('#wf-ops-copy-link', {
+            root: modal,
+            context: `${this.id}.opsCopyLinkAttach`
+        });
+
+        if (input) {
+            input.addEventListener('input', () => {
+                this._updateOpsTaskLinkUI(modal);
+            });
+            input.addEventListener('paste', () => {
+                requestAnimationFrame(() => this._updateOpsTaskLinkUI(modal));
+            });
+        }
+
+        if (openBtn) {
+            openBtn.addEventListener('click', () => {
+                const url = openBtn.getAttribute('data-wf-ops-url');
+                if (!url) {
+                    Logger.warn('settings-ui: ops open link skipped (no URL)');
+                    return;
+                }
+                window.open(url, '_blank', 'noopener,noreferrer');
+                Logger.log('settings-ui: ops task link opened');
+            });
+        }
+
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                const url = copyBtn.getAttribute('data-wf-ops-url');
+                if (!url) {
+                    Logger.warn('settings-ui: ops copy skipped (no URL)');
+                    this._showOpsCopyFailurePulse(copyBtn);
+                    return;
+                }
+                const ok = await this._copyOpsTextToClipboard(url);
+                if (ok) {
+                    this._showOpsCopySuccessFlash(copyBtn);
+                    Logger.log(`settings-ui: ops link copied (${url.length} chars)`);
+                } else {
+                    this._showOpsCopyFailurePulse(copyBtn);
+                    Logger.warn('settings-ui: ops link copy failed');
+                }
+            });
+        }
+    },
+
     _getSettingsTabs() {
-        const tabs = [
+        const tabs = [];
+        if (this._getOpsTabEnabled()) {
+            tabs.push({ id: 'ops', label: 'Ops' });
+        }
+        tabs.push(
             { id: 'information', label: 'Information', doc: 'information-tab.md' },
-            { id: 'settings', label: 'Settings' },
-        ];
+            { id: 'settings', label: 'Settings' }
+        );
         if (this._hasActiveDevSettings()) {
             tabs.push({ id: 'dev', label: 'Dev' });
         }
@@ -1912,8 +2224,8 @@ const plugin = {
         return tabs;
     },
 
-    _createTabRowHTML(tabs) {
-        const activeTab = 'information';
+    _createTabRowHTML(tabs, activeTabId) {
+        const activeTab = activeTabId || this._getDefaultSettingsTabId();
         const buttons = tabs.map(t => {
             const isActive = t.id === activeTab;
             return `<button type="button" class="wf-settings-tab" data-tab="${t.id}" style="
