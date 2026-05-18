@@ -11,15 +11,17 @@
 #   ./sync-branch-config.sh --fleet PATH # read/write this file instead of <root>/fleet.user.js
 #   ./sync-branch-config.sh --branch NAME # use NAME instead of git HEAD (ignored if -m)
 #
-# Run from repo root (or anywhere; uses git to find root). Updates:
+# Run from repo root (or anywhere; uses git to find root). Owner, repo, and @name base
+# always come from git (origin remote + origin/main:fleet.user.js), never from existing
+# script contents. Updates:
 #   - fleet.user.js
-#   - @name: add "[branch] " prefix when not main, remove when main
-#   - @downloadURL / @updateURL: set segment to current branch
-#   - GITHUB_CONFIG.branch: set to current branch
-#   - const VERSION: set from header @version
+#   - @name: base from origin/main; "[branch] " prefix when not main
+#   - @downloadURL / @updateURL: full raw URL from origin owner/repo + target branch
+#   - GITHUB_CONFIG.owner / .repo / .branch: from origin remote + target branch
+#   - const VERSION: set from header @version in the file being synced
 #   - dev/fleet-dev-id.user.js
-#   - @downloadURL / @updateURL: set segment to current branch
-#   - const BRANCH_NAME: set to current branch
+#   - @downloadURL / @updateURL: full raw URL from origin owner/repo + target branch
+#   - const BRANCH_NAME: set to target branch
 #
 # Used by checkout.sh and test.sh; may be run directly.
 #
@@ -77,7 +79,7 @@ else
 fi
 
 if [[ "$print_commit_message" == true ]]; then
-  printf '%s\n' "Sync fleet.user.js branch config to $branch"
+  printf '%s\n' "Sync branch config to $branch"
   exit 0
 fi
 
@@ -95,6 +97,41 @@ if [[ ! -f "$dev_id_path" ]]; then
   exit 1
 fi
 
+if ! origin_url="$(git -C "$root" remote get-url origin 2>/dev/null)"; then
+  echo "[error] No git remote named 'origin'" >&2
+  exit 1
+fi
+if ! origin_owner="$(printf '%s' "$origin_url" | perl -ne 'if (m{github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?\s*$}i) { print $1; exit }')"; then
+  echo "[error] Could not parse GitHub owner from origin URL: $origin_url" >&2
+  exit 1
+fi
+if ! origin_repo="$(printf '%s' "$origin_url" | perl -ne 'if (m{github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?\s*$}i) { print $2; exit }')"; then
+  echo "[error] Could not parse GitHub repo from origin URL: $origin_url" >&2
+  exit 1
+fi
+
+if ! git -C "$root" rev-parse --verify origin/main >/dev/null 2>&1; then
+  echo "[error] origin/main is required (run: git fetch origin main)" >&2
+  exit 1
+fi
+
+fleet_base_name="$(git -C "$root" show origin/main:fleet.user.js | perl -ne '
+  if (/^\/\/ \@name\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/) { print $1; exit }
+' || true)"
+if [[ -z "$fleet_base_name" ]]; then
+  echo "[error] Could not read @name base from origin/main:fleet.user.js" >&2
+  exit 1
+fi
+
+if [[ "$branch" == "main" ]]; then
+  fleet_display_name="$fleet_base_name"
+else
+  fleet_display_name="[${branch}] ${fleet_base_name}"
+fi
+
+fleet_raw_url="https://raw.githubusercontent.com/${origin_owner}/${origin_repo}/${branch}/fleet.user.js"
+dev_id_raw_url="https://raw.githubusercontent.com/${origin_owner}/${origin_repo}/${branch}/dev/fleet-dev-id.user.js"
+
 header_version="$(
   awk '/^\/\/ @version[[:space:]]+/ {print $3; exit}' "$file_path"
 )"
@@ -104,52 +141,75 @@ if [[ -z "$header_version" ]]; then
 fi
 
 content="$(cat "$file_path")"
-new_content="$(printf "%s" "$content" | BRANCH="$branch" HEADER_VERSION="$header_version" perl -0pe '
-  s{(// \@name\s+)(\[[^\]]+\]\s+)?(.+?)(\r?\n|\z)}{
-    my ($p, $tag, $name, $eol) = ($1, $2, $3, $4);
-    $name =~ s/^\s+|\s+$//g;
-    ($ENV{BRANCH} eq "main" ? $p . $name : $p . "[" . $ENV{BRANCH} . "] " . $name) . $eol
-  }mge;
-  s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/).+?(/fleet\.user\.js)}{$1.$ENV{BRANCH}.$2}ge;
-  s{(branch:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
-  s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{HEADER_VERSION}.$3}ge;
+new_content="$(printf "%s" "$content" | \
+  BRANCH="$branch" \
+  ORIGIN_OWNER="$origin_owner" \
+  ORIGIN_REPO="$origin_repo" \
+  FLEET_DISPLAY_NAME="$fleet_display_name" \
+  FLEET_RAW_URL="$fleet_raw_url" \
+  HEADER_VERSION="$header_version" \
+  perl -0pe '
+  s{^(// \@name\s+).*$}{$1$ENV{FLEET_DISPLAY_NAME}}mg;
+  s{^(// \@downloadURL\s+).*$}{$1$ENV{FLEET_RAW_URL}}mg;
+  s{^(// \@updateURL\s+).*$}{$1$ENV{FLEET_RAW_URL}}mg;
+  s{(owner:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{ORIGIN_OWNER}$3}g;
+  s{(repo:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{ORIGIN_REPO}$3}g;
+  s{(branch:\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{BRANCH}$3}g;
+  s{(const VERSION\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{HEADER_VERSION}$3}g;
 ')"
 
 dev_id_content="$(cat "$dev_id_path")"
-dev_id_new_content="$(printf "%s" "$dev_id_content" | BRANCH="$branch" perl -0pe '
-  s{(// @(?:download|update)URL\s+https://raw\.githubusercontent\.com/[^/]+/[^/]+/)([^/]+)(/dev/fleet-dev-id\.user\.js)}{$1.$ENV{BRANCH}.$3}ge;
-  s{(const BRANCH_NAME\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1.$ENV{BRANCH}.$3}ge;
+dev_id_new_content="$(printf "%s" "$dev_id_content" | \
+  BRANCH="$branch" \
+  DEV_ID_RAW_URL="$dev_id_raw_url" \
+  perl -0pe '
+  s{^(// \@downloadURL\s+).*$}{$1$ENV{DEV_ID_RAW_URL}}mg;
+  s{^(// \@updateURL\s+).*$}{$1$ENV{DEV_ID_RAW_URL}}mg;
+  s{(const BRANCH_NAME\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{BRANCH}$3}g;
 ')"
 
 needs_name_change() {
-  BRANCH="$branch" perl -0ne '
-    if (/^\/\/ \@name\s+(\[[^\]]+\]\s+)?(.+?)(?:\r?\n|\z)/m) {
-      my ($tag, $name) = ($1, $2);
-      $name =~ s/^\s+|\s+$//g;
-      if ($ENV{BRANCH} eq "main") {
-        print($tag ? "1" : "0");
-      } else {
-        my $expected = "[" . $ENV{BRANCH} . "] ";
-        print((!defined $tag || $tag ne $expected) ? "1" : "0");
-      }
+  FLEET_DISPLAY_NAME="$fleet_display_name" perl -0ne '
+    if (/^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{FLEET_DISPLAY_NAME} ? "1" : "0");
     }
   ' "$file_path"
 }
 needs_download_url_change() {
-  BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/(.+?)\/fleet\.user\.js/m) {
-      print($1 ne $ENV{BRANCH} ? "1" : "0");
+  FLEET_RAW_URL="$fleet_raw_url" perl -0ne '
+    if (/^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{FLEET_RAW_URL} ? "1" : "0");
     }
   ' "$file_path"
 }
 needs_update_url_change() {
-  BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/(.+?)\/fleet\.user\.js/m) {
-      print($1 ne $ENV{BRANCH} ? "1" : "0");
+  FLEET_RAW_URL="$fleet_raw_url" perl -0ne '
+    if (/^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{FLEET_RAW_URL} ? "1" : "0");
     }
   ' "$file_path"
 }
-needs_github_config_change() {
+needs_github_owner_change() {
+  ORIGIN_OWNER="$origin_owner" perl -0ne '
+    if (/owner:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) {
+      print($1 ne $ENV{ORIGIN_OWNER} ? "1" : "0");
+    }
+  ' "$file_path"
+}
+needs_github_repo_change() {
+  ORIGIN_REPO="$origin_repo" perl -0ne '
+    if (/repo:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) {
+      print($1 ne $ENV{ORIGIN_REPO} ? "1" : "0");
+    }
+  ' "$file_path"
+}
+needs_github_branch_change() {
   BRANCH="$branch" perl -0ne '
     if (/branch:\s*[\"\x27]([^\"\x27]+)[\"\x27]/) {
       print($1 ne $ENV{BRANCH} ? "1" : "0");
@@ -165,17 +225,21 @@ needs_version_constant_change() {
 }
 
 needs_dev_id_download_url_change() {
-  BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/dev\/fleet-dev-id\.user\.js/m) {
-      print($1 ne $ENV{BRANCH} ? "1" : "0");
+  DEV_ID_RAW_URL="$dev_id_raw_url" perl -0ne '
+    if (/^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{DEV_ID_RAW_URL} ? "1" : "0");
     }
   ' "$dev_id_path"
 }
 
 needs_dev_id_update_url_change() {
-  BRANCH="$branch" perl -0ne '
-    if (/^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/([^\/]+)\/dev\/fleet-dev-id\.user\.js/m) {
-      print($1 ne $ENV{BRANCH} ? "1" : "0");
+  DEV_ID_RAW_URL="$dev_id_raw_url" perl -0ne '
+    if (/^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{DEV_ID_RAW_URL} ? "1" : "0");
     }
   ' "$dev_id_path"
 }
@@ -206,7 +270,17 @@ print_fleet_changes() {
     new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@updateURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     echo "  fleet.user.js: @updateURL: \"$cur\" -> \"$new\""
   fi
-  if [[ "$github_change" == "1" ]]; then
+  if [[ "$github_owner_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /owner:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /owner:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: GITHUB_CONFIG.owner: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$github_repo_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /repo:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /repo:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  fleet.user.js: GITHUB_CONFIG.repo: \"$cur\" -> \"$new\""
+  fi
+  if [[ "$github_branch_change" == "1" ]]; then
     cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     new="$(printf '%s' "$n" | perl -0ne 'print $1 if /branch:\s*["\x27]([^"\x27]+)["\x27]/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     echo "  fleet.user.js: GITHUB_CONFIG.branch: \"$cur\" -> \"$new\""
@@ -242,7 +316,9 @@ if [[ "$dry_run" == true ]]; then
   name_change="$(needs_name_change)"
   download_change="$(needs_download_url_change)"
   update_change="$(needs_update_url_change)"
-  github_change="$(needs_github_config_change)"
+  github_owner_change="$(needs_github_owner_change)"
+  github_repo_change="$(needs_github_repo_change)"
+  github_branch_change="$(needs_github_branch_change)"
   version_change="$(needs_version_constant_change)"
   dev_id_download_change="$(needs_dev_id_download_url_change)"
   dev_id_update_change="$(needs_dev_id_update_url_change)"
@@ -251,7 +327,9 @@ if [[ "$dry_run" == true ]]; then
   [[ "$name_change" == "1" ]] && changed+=("@name")
   [[ "$download_change" == "1" ]] && changed+=("@downloadURL")
   [[ "$update_change" == "1" ]] && changed+=("@updateURL")
-  [[ "$github_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
+  [[ "$github_owner_change" == "1" ]] && changed+=("GITHUB_CONFIG.owner")
+  [[ "$github_repo_change" == "1" ]] && changed+=("GITHUB_CONFIG.repo")
+  [[ "$github_branch_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
   [[ "$version_change" == "1" ]] && changed+=("VERSION constant")
   [[ "$dev_id_download_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @downloadURL")
   [[ "$dev_id_update_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @updateURL")
