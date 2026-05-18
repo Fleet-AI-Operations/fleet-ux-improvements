@@ -21,7 +21,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.3',
+    _version: '7.4',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -1018,14 +1018,16 @@ const plugin = {
                     this._setOpsPasswordPanelVisible(modal, false);
                     this._setOpsPasswordError(modal, '');
                     Logger.log('settings-ui: ops tab disabled');
-                    this._rebuildSettingsTabRow(modal, 'information');
+                    const activeTab = this._getActiveSettingsTabId(modal);
+                    const nextTab = activeTab === 'ops' ? 'information' : activeTab;
+                    this._rebuildSettingsTabRow(modal, nextTab);
                     return;
                 }
                 this._setOpsTabWanted(true);
                 if (this._hasOpsStoredPassword()) {
                     this._handleToggleChange(e);
                     Logger.log('settings-ui: ops tab enabled');
-                    this._rebuildSettingsTabRow(modal, 'ops');
+                    this._rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
                     return;
                 }
                 e.target.checked = false;
@@ -2095,7 +2097,7 @@ const plugin = {
     },
 
     _getDefaultSettingsTabId() {
-        return this._getOpsTabEnabled() ? 'ops' : 'information';
+        return 'information';
     },
 
     _setOpsPasswordPanelVisible(modal, visible) {
@@ -2166,7 +2168,7 @@ const plugin = {
             this._handleToggleChange({ target: toggle });
         }
         Logger.log('settings-ui: ops password saved on device');
-        this._rebuildSettingsTabRow(modal, 'ops');
+        this._rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
         return true;
     },
 
@@ -2246,23 +2248,50 @@ const plugin = {
         return active || this._getDefaultSettingsTabId();
     },
 
-    _rebuildSettingsTabRow(modal, preferredTabId) {
+    _syncTabRowActiveState(modal, tabId) {
+        const tabRow = Context.dom.query('#wf-settings-tab-row', {
+            root: modal,
+            context: `${this.id}.tabRowSync`
+        });
+        if (!tabRow) return;
+        tabRow.querySelectorAll('.wf-settings-tab').forEach(btn => {
+            const id = btn.getAttribute('data-tab');
+            const isActive = id === tabId;
+            btn.style.color = isActive ? 'var(--foreground, #333)' : 'var(--muted-foreground, #666)';
+            btn.style.background = isActive ? 'var(--card, #fafafa)' : 'transparent';
+            btn.style.border = isActive ? '1px solid var(--border, #e5e5e5)' : '1px solid transparent';
+        });
+    },
+
+    _rebuildSettingsTabRow(modal, preferredTabId, options = {}) {
         const tabRow = Context.dom.query('#wf-settings-tab-row', {
             root: modal,
             context: `${this.id}.tabRowRebuild`
         });
         if (!tabRow) return;
+        const keepCurrentPane = options.keepCurrentPane === true;
         const tabs = this._getSettingsTabs();
         const validIds = tabs.map(t => t.id);
-        let nextActive = preferredTabId || this._getActiveSettingsTabId(modal);
-        if (!validIds.includes(nextActive)) {
-            nextActive = this._getDefaultSettingsTabId();
+        let highlightTabId;
+        if (keepCurrentPane) {
+            highlightTabId = this._getActiveSettingsTabId(modal);
+        } else if (preferredTabId != null) {
+            highlightTabId = preferredTabId;
+        } else {
+            highlightTabId = this._getActiveSettingsTabId(modal);
+        }
+        if (!validIds.includes(highlightTabId)) {
+            highlightTabId = this._getDefaultSettingsTabId();
         }
         const replacement = document.createElement('div');
-        replacement.innerHTML = this._createTabRowHTML(tabs, nextActive);
+        replacement.innerHTML = this._createTabRowHTML(tabs, highlightTabId);
         tabRow.replaceWith(replacement.firstElementChild);
         this._attachTabListeners(modal);
-        this._switchSettingsTab(modal, nextActive);
+        if (keepCurrentPane) {
+            this._syncTabRowActiveState(modal, highlightTabId);
+            return;
+        }
+        this._switchSettingsTab(modal, highlightTabId);
     },
 
     _clearOpsCopyButtonFeedback(button) {
@@ -2478,16 +2507,7 @@ const plugin = {
 
     _switchSettingsTab(modal, tabId) {
         const tabs = this._getSettingsTabs();
-        const tabRow = Context.dom.query('#wf-settings-tab-row', { root: modal, context: `${this.id}.tabRowSwitch` });
-        if (tabRow) {
-            tabRow.querySelectorAll('.wf-settings-tab').forEach(btn => {
-                const id = btn.getAttribute('data-tab');
-                const isActive = id === tabId;
-                btn.style.color = isActive ? 'var(--foreground, #333)' : 'var(--muted-foreground, #666)';
-                btn.style.background = isActive ? 'var(--card, #fafafa)' : 'transparent';
-                btn.style.border = isActive ? '1px solid var(--border, #e5e5e5)' : '1px solid transparent';
-            });
-        }
+        this._syncTabRowActiveState(modal, tabId);
         modal.querySelectorAll('.wf-settings-pane').forEach(pane => {
             const id = pane.getAttribute('data-tab');
             pane.style.display = id === tabId ? 'block' : 'none';
