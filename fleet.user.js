@@ -15,8 +15,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
 // ==/UserScript==
 
 (function() {

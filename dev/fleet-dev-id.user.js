@@ -9,8 +9,8 @@
 // @match        https://fleetai.com/*
 // @include      /^https:\/\/[^/]+\.env\.[^/]+\.fleetai\.com/
 // @connect      raw.githubusercontent.com
-// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat-update-dev-id/dev/fleet-dev-id.user.js
-// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat-update-dev-id/dev/fleet-dev-id.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/dev/fleet-dev-id.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/dev/fleet-dev-id.user.js
 // @run-at       document-start
 // ==/UserScript==
 
@@ -22,7 +22,7 @@
     }
 
     const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
-    const BRANCH_NAME = 'feat-update-dev-id';
+    const BRANCH_NAME = 'feat/update-dev-id-2';
 
     try {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
