@@ -18,18 +18,21 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
 
+      - name: Fetch main for sync baseline
+        run: git fetch origin main
+
       - name: Sync fleet.user.js for main
         run: |
           ./dev/utils/sync-branch-config.sh -m
 
-          if git diff --quiet fleet.user.js; then
-            echo "fleet.user.js is already configured for main."
+          if git diff --quiet fleet.user.js dev/fleet-dev-id.user.js; then
+            echo "Branch config files are already configured for main."
             exit 0
           fi
 
-          echo "fleet.user.js was not synced for main. Committing fix."
+          echo "Branch config was not synced for main. Committing fix."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add fleet.user.js
+          git add fleet.user.js dev/fleet-dev-id.user.js
           git commit -m "CI: sync branch config for main"
-          git push
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
