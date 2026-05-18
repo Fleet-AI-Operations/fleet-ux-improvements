@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         [feat/update-dev-id-2] Fleet Workflow Builder UX Enhancer
+// @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      8.0.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
@@ -15,8 +15,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/update-dev-id-2/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -48,7 +48,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'feat/update-dev-id-2',
+        branch: 'main',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
