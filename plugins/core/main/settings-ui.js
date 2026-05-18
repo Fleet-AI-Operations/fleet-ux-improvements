@@ -21,7 +21,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.4',
+    _version: '7.5',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2097,7 +2097,7 @@ const plugin = {
     },
 
     _getDefaultSettingsTabId() {
-        return 'information';
+        return this._getOpsTabEnabled() ? 'ops' : 'information';
     },
 
     _setOpsPasswordPanelVisible(modal, visible) {
