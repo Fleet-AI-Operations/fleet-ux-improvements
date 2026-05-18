@@ -1,17 +1,20 @@
 {
-  "version": "7.3.0",
+  "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "7.121",
+  "archetypesVersion": "8.8",
   "logs": {
     "debug": false,
     "verbose": false,
     "submodule": false
   },
+  "opsAccess": {
+    "passwordHash": "sha256-ea3ce89b146e2c740dd16a64af38849998d703e4b5ecc66cde39f97a756272cb"
+  },
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "6.17",
-      "hash": "sha256-371f6f8fcf51709b917c869423a14d42c0b252a74769722eead5b57202110bba",
+      "version": "7.7",
+      "hash": "sha256-c779a1643f6b0c1afe97756f5ccda95a5a72f46b526da6631668185d58cfbe51",
       "log": false
     }
   ],

@@ -24,10 +24,9 @@
 #   4. Commits these changes with the message from sync-branch-config.sh (--print-commit-message)
 #      and pushes the new
 #      branch to origin.
-#   5. Prints the GitHub tree URL for the branch so you can install the branch-specific
-#      userscript for development and testing.
+#   5. Prints raw install URLs for dev/fleet-dev-id.user.js and fleet.user.js on this branch.
 #
-# Use this when starting work on a feature: install the script from the printed URL
+# Use this when starting work on a feature: install both scripts from the printed URLs
 # and develop against that branch; publish.sh merges the branch into main when done.
 #
 # Prerequisites: run from anywhere inside the repo; main must exist; branch name
@@ -75,6 +74,12 @@ if [[ "$dry_run" == true ]]; then
   echo "[dry-run] Would run: git add ."
   echo "[dry-run] Would run: git commit -m \"$_commit_msg\""
   echo "[dry-run] Would run: git push -u origin $BRANCH"
+  url="$(cd "$root" && gh browse --no-browser "$BRANCH")"
+  ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
+  ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)(?:/|$)}')
+  echo "[dry-run] Would print install URLs for dev/fleet-dev-id.user.js and fleet.user.js on branch $BRANCH"
+  echo "[dry-run]   DEV-ID: https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/dev/fleet-dev-id.user.js"
+  echo "[dry-run]   Main:   https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/fleet.user.js"
   exit 0
 fi
 
@@ -93,11 +98,11 @@ git -C "$root" push -u origin "$BRANCH"
 url="$(cd "$root" && gh browse --no-browser "$BRANCH")"
 ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
 ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)(?:/|$)}')
-RAW_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/fleet.user.js"
-BLOB_URL="https://github.com/$ghuser/$ghrepo/blob/$BRANCH/fleet.user.js"
+DEV_ID_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/dev/fleet-dev-id.user.js"
+MAIN_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$BRANCH/fleet.user.js"
 
 echo "You MUST test and develop using this $BRANCH specific userscript."
-echo "View on GitHub:"
-echo "$BLOB_URL"
-echo "Install it at (raw):"
-echo "$RAW_INSTALL_URL"
+echo "Install DEV-ID userscript (raw):"
+echo "$DEV_ID_INSTALL_URL"
+echo "Install branch userscript (raw):"
+echo "$MAIN_INSTALL_URL"
