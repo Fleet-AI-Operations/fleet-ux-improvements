@@ -21,7 +21,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.6',
+    _version: '7.7',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2479,6 +2479,8 @@ const plugin = {
         const buttons = tabs.map(t => {
             const isActive = t.id === activeTab;
             return `<button type="button" class="wf-settings-tab" data-tab="${t.id}" style="
+                flex-shrink: 0;
+                white-space: nowrap;
                 padding: 6px 14px;
                 font-size: 13px;
                 font-weight: 500;
@@ -2490,7 +2492,7 @@ const plugin = {
                 transition: all 0.2s;
             ">${t.label}</button>`;
         }).join('');
-        return `<div id="wf-settings-tab-row" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">${buttons}</div>`;
+        return `<div id="wf-settings-tab-row" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%; -webkit-overflow-scrolling: touch;">${buttons}</div>`;
     },
 
     _attachTabListeners(modal) {
