@@ -11,11 +11,17 @@ const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
+async function computeSha256Hex(text) {
+    const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `sha256-${hex}`;
+}
+
 const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.2',
+    _version: '7.3',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2121,7 +2127,7 @@ const plugin = {
         const expected = this._getOpsPasswordHash();
         if (!expected || !password) return false;
         try {
-            const computed = await PluginManager.computeHash(password);
+            const computed = await computeSha256Hex(password);
             return computed === expected;
         } catch (err) {
             Logger.error('settings-ui: ops password verification failed', err);
