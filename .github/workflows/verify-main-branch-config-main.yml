@@ -1,0 +1,30 @@
+name: Sync main branch config (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-branch-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Sync fleet.user.js for main
+        run: |
+          ./dev/utils/sync-branch-config.sh -m
+
+          if git diff --quiet fleet.user.js; then
+            echo "fleet.user.js is already configured for main."
+            exit 0
+          fi
+
+          echo "fleet.user.js was not configured for main. Committing fix."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add fleet.user.js
+          git commit -m "CI: sync branch config for main"
+          git push

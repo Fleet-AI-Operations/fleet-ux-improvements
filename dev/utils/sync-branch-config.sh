@@ -17,7 +17,9 @@
 #   - GITHUB_CONFIG.branch: set to current branch
 #   - const VERSION: set from header @version
 #
-# Used by checkout.sh and test.sh; may be run directly.
+# Used by checkout.sh (always -m) and test.sh (branch-scoped for update testing); may be run directly.
+# checkout.sh keeps main config on feature branches; use sync without -m only when you intentionally
+# want branch-scoped @downloadURL / @updateURL (e.g. test.sh).
 #
 
 set -euo pipefail
@@ -209,10 +211,20 @@ else
 fi
 
 if [[ "$commit_after" == true ]]; then
+  if git -C "$root" diff --name-only --diff-filter=U | grep -q .; then
+    echo "[error] Cannot commit: repository has unresolved merge conflicts. Resolve or abort the merge first." >&2
+    exit 1
+  fi
   if [[ "$changed_write" == true ]]; then
     git -C "$root" add -- "$file_path"
-    git -C "$root" commit -m "Sync fleet.user.js branch config to $branch"
-    echo "[info] Committed fleet.user.js for branch: $branch"
+    if git -C "$root" diff --cached --quiet -- "$file_path"; then
+      echo "[info] No commit (-c): fleet.user.js matches HEAD after sync"
+    elif git -C "$root" commit -m "Sync fleet.user.js branch config to $branch"; then
+      echo "[info] Committed fleet.user.js for branch: $branch"
+    else
+      echo "[error] git commit failed" >&2
+      exit 1
+    fi
   else
     echo "[info] No commit (-c): fleet.user.js was already in sync"
   fi
