@@ -8,7 +8,7 @@
     "submodule": false
   },
   "opsAccess": {
-    "passwordHash": ""
+    "passwordHash": "sha256-ea3ce89b146e2c740dd16a64af38849998d703e4b5ecc66cde39f97a756272cb"
   },
   "corePlugins": [
     {
