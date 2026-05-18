@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/update-dev-id-2] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      8.0.0
+// @version      8.0.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '8.0.0';
+    const VERSION = '8.0.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -93,7 +93,6 @@
         remoteLogging: { debug: false, verbose: false, submodule: false },
         /** Filenames (archetypes `name`) with `log: true` */
         remoteModuleLogByFile: {},
-        /** From archetypes.json `opsAccess` (password gate for Ops settings tab). */
         opsAccess: null,
     };
 
@@ -710,7 +709,7 @@
                 'page-refresh-confirmation-enabled',
                 'extension-refresh-confirmation-enabled',
                 'ops-tab-enabled',
-                'ops-tab-unlocked',
+                'ops-tab-stored-password',
                 'debug',
                 'verbose',
                 'submodule-logging',
