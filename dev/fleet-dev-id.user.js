@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DEV-ID - Fleet UX Enhancer - (dev identifier)
+// @name         [feat/update-dev-id-2] DEV-ID - Fleet UX Enhancer - (dev identifier)
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Dev-only branch identifier for Fleet UX Enhancer dev builds.
