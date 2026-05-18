@@ -20,6 +20,7 @@
 #   - GITHUB_CONFIG.owner / .repo / .branch: from origin remote + target branch
 #   - const VERSION: set from header @version in the file being synced
 #   - dev/fleet-dev-id.user.js
+#   - @name: base from origin/main dev script; "[branch] " prefix when not main
 #   - @downloadURL / @updateURL: full raw URL from origin owner/repo + target branch
 #   - const BRANCH_NAME: set to target branch
 #
@@ -129,6 +130,28 @@ else
   fleet_display_name="[${branch}] ${fleet_base_name}"
 fi
 
+if git -C "$root" cat-file -e "origin/main:dev/fleet-dev-id.user.js" 2>/dev/null; then
+  dev_id_base_name="$(git -C "$root" show origin/main:dev/fleet-dev-id.user.js | perl -ne '
+    if (/^\/\/ \@name\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/) { print $1; exit }
+  ' || true)"
+elif git -C "$root" cat-file -e "origin/main:dev/fleet-godmode.user.js" 2>/dev/null; then
+  # Main still has legacy godmode file; use canonical DEV-ID title until main is updated.
+  dev_id_base_name="DEV-ID - Fleet UX Enhancer - (dev identifier)"
+else
+  echo "[error] Could not read dev ID @name base from origin/main (dev/fleet-dev-id.user.js or dev/fleet-godmode.user.js)" >&2
+  exit 1
+fi
+if [[ -z "$dev_id_base_name" ]]; then
+  echo "[error] Could not read @name base from origin/main:dev/fleet-dev-id.user.js" >&2
+  exit 1
+fi
+
+if [[ "$branch" == "main" ]]; then
+  dev_id_display_name="$dev_id_base_name"
+else
+  dev_id_display_name="[${branch}] ${dev_id_base_name}"
+fi
+
 fleet_raw_url="https://raw.githubusercontent.com/${origin_owner}/${origin_repo}/${branch}/fleet.user.js"
 dev_id_raw_url="https://raw.githubusercontent.com/${origin_owner}/${origin_repo}/${branch}/dev/fleet-dev-id.user.js"
 
@@ -161,8 +184,10 @@ new_content="$(printf "%s" "$content" | \
 dev_id_content="$(cat "$dev_id_path")"
 dev_id_new_content="$(printf "%s" "$dev_id_content" | \
   BRANCH="$branch" \
+  DEV_ID_DISPLAY_NAME="$dev_id_display_name" \
   DEV_ID_RAW_URL="$dev_id_raw_url" \
   perl -0pe '
+  s{^(// \@name\s+).*$}{$1$ENV{DEV_ID_DISPLAY_NAME}}mg;
   s{^(// \@downloadURL\s+).*$}{$1$ENV{DEV_ID_RAW_URL}}mg;
   s{^(// \@updateURL\s+).*$}{$1$ENV{DEV_ID_RAW_URL}}mg;
   s{(const BRANCH_NAME\s*=\s*[\"\x27])([^\"\x27]+)([\"\x27])}{$1$ENV{BRANCH}$3}g;
@@ -222,6 +247,16 @@ needs_version_constant_change() {
       print($1 ne $ENV{HEADER_VERSION} ? "1" : "0");
     }
   ' "$file_path"
+}
+
+needs_dev_id_name_change() {
+  DEV_ID_DISPLAY_NAME="$dev_id_display_name" perl -0ne '
+    if (/^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m) {
+      my $cur = $1;
+      $cur =~ s/^\s+|\s+$//g;
+      print($cur ne $ENV{DEV_ID_DISPLAY_NAME} ? "1" : "0");
+    }
+  ' "$dev_id_path"
 }
 
 needs_dev_id_download_url_change() {
@@ -295,6 +330,11 @@ print_fleet_changes() {
 print_dev_id_changes() {
   local c="$1" n="$2"
   local cur new
+  if [[ "$dev_id_name_change" == "1" ]]; then
+    cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@name\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "  dev/fleet-dev-id.user.js: @name: \"$cur\" -> \"$new\""
+  fi
   if [[ "$dev_id_download_change" == "1" ]]; then
     cur="$(printf '%s' "$c" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     new="$(printf '%s' "$n" | perl -0ne 'print $1 if /^\/\/ \@downloadURL\s+(.+?)(?:\r?\n|\z)/m' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
@@ -320,6 +360,7 @@ if [[ "$dry_run" == true ]]; then
   github_repo_change="$(needs_github_repo_change)"
   github_branch_change="$(needs_github_branch_change)"
   version_change="$(needs_version_constant_change)"
+  dev_id_name_change="$(needs_dev_id_name_change)"
   dev_id_download_change="$(needs_dev_id_download_url_change)"
   dev_id_update_change="$(needs_dev_id_update_url_change)"
   dev_id_branch_change="$(needs_dev_id_branch_change)"
@@ -331,6 +372,7 @@ if [[ "$dry_run" == true ]]; then
   [[ "$github_repo_change" == "1" ]] && changed+=("GITHUB_CONFIG.repo")
   [[ "$github_branch_change" == "1" ]] && changed+=("GITHUB_CONFIG.branch")
   [[ "$version_change" == "1" ]] && changed+=("VERSION constant")
+  [[ "$dev_id_name_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @name")
   [[ "$dev_id_download_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @downloadURL")
   [[ "$dev_id_update_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js @updateURL")
   [[ "$dev_id_branch_change" == "1" ]] && changed+=("dev/fleet-dev-id.user.js BRANCH_NAME")
