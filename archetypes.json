@@ -1,7 +1,7 @@
 {
   "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.11",
+  "archetypesVersion": "8.12",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -361,6 +361,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.0",
           "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
+          "log": false
+        },
+        {
+          "name": "show-verifier-on-run.js",
+          "version": "1.0",
+          "hash": "sha256-5ff2cfc3d0a083cad31bf940e51bc87ca37be03c764b5e7eedd10c73bb2d0ce6",
           "log": false
         }
       ]
