@@ -6,8 +6,8 @@ const plugin = {
     id: 'showVerifierOnRun',
     name: 'Show Verifier On Run',
     description:
-        'Automatically clicks "Show Grading" when the verifier starts running so output is visible.',
-    _version: '1.1',
+        'Automatically clicks "Show Grading" when the verifier runs if the grading panel is hidden; no-op when already visible.',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -15,7 +15,8 @@ const plugin = {
         showClickedForRun: false,
         runStartLogged: false,
         showGradingMissingLogged: false,
-        showGradingNotClickableLogged: false
+        showGradingNotClickableLogged: false,
+        gradingVisibleLogged: false
     },
 
     onMutation(state) {
@@ -29,6 +30,7 @@ const plugin = {
             state.runStartLogged = false;
             state.showGradingMissingLogged = false;
             state.showGradingNotClickableLogged = false;
+            state.gradingVisibleLogged = false;
             return;
         }
 
@@ -37,6 +39,7 @@ const plugin = {
             state.showClickedForRun = false;
             state.showGradingMissingLogged = false;
             state.showGradingNotClickableLogged = false;
+            state.gradingVisibleLogged = false;
             if (!state.runStartLogged) {
                 state.runStartLogged = true;
                 Logger.log(`${this.id}: verifier run detected — will show grading panel`);
@@ -44,6 +47,15 @@ const plugin = {
         }
 
         if (state.showClickedForRun) {
+            return;
+        }
+
+        if (this.isGradingPanelVisible()) {
+            state.showClickedForRun = true;
+            if (!state.gradingVisibleLogged) {
+                state.gradingVisibleLogged = true;
+                Logger.debug(`${this.id}: grading panel already visible (Hide Grading present)`);
+            }
             return;
         }
 
@@ -91,8 +103,8 @@ const plugin = {
         return false;
     },
 
-    findShowGradingButton() {
-        const options = { context: `${this.id}.findShowGradingButton` };
+    findGradingToggleButton(label) {
+        const options = { context: `${this.id}.findGradingToggleButton` };
         const buttons =
             typeof Context !== 'undefined' && Context.dom
                 ? Context.dom.queryAll('button', options)
@@ -100,11 +112,19 @@ const plugin = {
 
         for (const btn of buttons) {
             const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
-            if (text === 'Show Grading') {
+            if (text === label) {
                 return btn;
             }
         }
         return null;
+    },
+
+    isGradingPanelVisible() {
+        return Boolean(this.findGradingToggleButton('Hide Grading'));
+    },
+
+    findShowGradingButton() {
+        return this.findGradingToggleButton('Show Grading');
     },
 
     isButtonClickable(button) {
