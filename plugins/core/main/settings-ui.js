@@ -22,7 +22,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.8',
+    _version: '7.9',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -696,7 +696,7 @@ const plugin = {
                         transition: background 0.2s, color 0.2s;
                     ">Copy</button>
                 </div>
-                <div style="margin-top: 16px;">
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
                     <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
                         display: block;
                         width: 100%;
