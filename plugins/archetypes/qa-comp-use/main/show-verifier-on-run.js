@@ -1,21 +1,21 @@
 // ============= show-verifier-on-run.js =============
-// When the verifier is running ("Running Verifier..." in the QA header), clicks "Show Verifier"
-// so verifier output stays visible while hidden by default.
+// When the verifier is running ("Running Verifier..." in the QA header), clicks "Show Grading"
+// so verifier output stays visible while the grading panel is hidden by default.
 
 const plugin = {
     id: 'showVerifierOnRun',
     name: 'Show Verifier On Run',
     description:
-        'Automatically clicks "Show Verifier" when the verifier starts running so output is visible.',
-    _version: '1.0',
+        'Automatically clicks "Show Grading" when the verifier starts running so output is visible.',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         verifierRunning: false,
         showClickedForRun: false,
         runStartLogged: false,
-        showVerifierMissingLogged: false,
-        showVerifierNotClickableLogged: false
+        showGradingMissingLogged: false,
+        showGradingNotClickableLogged: false
     },
 
     onMutation(state) {
@@ -27,19 +27,19 @@ const plugin = {
             state.verifierRunning = false;
             state.showClickedForRun = false;
             state.runStartLogged = false;
-            state.showVerifierMissingLogged = false;
-            state.showVerifierNotClickableLogged = false;
+            state.showGradingMissingLogged = false;
+            state.showGradingNotClickableLogged = false;
             return;
         }
 
         if (!state.verifierRunning) {
             state.verifierRunning = true;
             state.showClickedForRun = false;
-            state.showVerifierMissingLogged = false;
-            state.showVerifierNotClickableLogged = false;
+            state.showGradingMissingLogged = false;
+            state.showGradingNotClickableLogged = false;
             if (!state.runStartLogged) {
                 state.runStartLogged = true;
-                Logger.log(`${this.id}: verifier run detected — will show verifier panel`);
+                Logger.log(`${this.id}: verifier run detected — will show grading panel`);
             }
         }
 
@@ -47,19 +47,19 @@ const plugin = {
             return;
         }
 
-        const button = this.findShowVerifierButton();
+        const button = this.findShowGradingButton();
         if (!button) {
-            if (!state.showVerifierMissingLogged) {
-                Logger.debug(`${this.id}: "Show Verifier" button not found yet`);
-                state.showVerifierMissingLogged = true;
+            if (!state.showGradingMissingLogged) {
+                Logger.debug(`${this.id}: "Show Grading" button not found yet`);
+                state.showGradingMissingLogged = true;
             }
             return;
         }
 
         if (!this.isButtonClickable(button)) {
-            if (!state.showVerifierNotClickableLogged) {
-                Logger.debug(`${this.id}: "Show Verifier" not clickable yet`);
-                state.showVerifierNotClickableLogged = true;
+            if (!state.showGradingNotClickableLogged) {
+                Logger.debug(`${this.id}: "Show Grading" not clickable yet`);
+                state.showGradingNotClickableLogged = true;
             }
             return;
         }
@@ -67,9 +67,9 @@ const plugin = {
         try {
             button.click();
             state.showClickedForRun = true;
-            Logger.log(`${this.id}: clicked "Show Verifier"`);
+            Logger.log(`${this.id}: clicked "Show Grading"`);
         } catch (error) {
-            Logger.error(`${this.id}: failed to click "Show Verifier"`, error);
+            Logger.error(`${this.id}: failed to click "Show Grading"`, error);
         }
     },
 
@@ -91,8 +91,8 @@ const plugin = {
         return false;
     },
 
-    findShowVerifierButton() {
-        const options = { context: `${this.id}.findShowVerifierButton` };
+    findShowGradingButton() {
+        const options = { context: `${this.id}.findShowGradingButton` };
         const buttons =
             typeof Context !== 'undefined' && Context.dom
                 ? Context.dom.queryAll('button', options)
@@ -100,7 +100,7 @@ const plugin = {
 
         for (const btn of buttons) {
             const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
-            if (text === 'Show Verifier') {
+            if (text === 'Show Grading') {
                 return btn;
             }
         }

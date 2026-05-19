@@ -1,7 +1,7 @@
 {
   "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.12",
+  "archetypesVersion": "8.13",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -365,8 +365,8 @@
         },
         {
           "name": "show-verifier-on-run.js",
-          "version": "1.0",
-          "hash": "sha256-5ff2cfc3d0a083cad31bf940e51bc87ca37be03c764b5e7eedd10c73bb2d0ce6",
+          "version": "1.1",
+          "hash": "sha256-cfe38867ca5376cc471d35e9dcf51811b87803f278877e4fc585e90f56ee5b93",
           "log": false
         }
       ]
