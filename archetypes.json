@@ -1,7 +1,7 @@
 {
   "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.8",
+  "archetypesVersion": "8.14",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -13,8 +13,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "7.7",
-      "hash": "sha256-c779a1643f6b0c1afe97756f5ccda95a5a72f46b526da6631668185d58cfbe51",
+      "version": "7.9",
+      "hash": "sha256-142bc23dab0de46a62e333562ceac4038c5536eb1980c151879a3943bf6e99f6",
       "log": false
     }
   ],
@@ -346,12 +346,6 @@
           "log": false
         },
         {
-          "name": "hide-grading-autoclick.js",
-          "version": "1.0",
-          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
-          "log": false
-        },
-        {
           "name": "top-nav-horizontal-scroll.js",
           "version": "1.1",
           "hash": "sha256-ab65e41862ffac8e2377de8d40bd242761eb168fa5e9b4faee2c5d427ce20b75",
@@ -367,6 +361,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.0",
           "hash": "sha256-3076e0f0c1a0329b851bb54d9c746bd546d5b576911418bcb2c5b6db335a85b9",
+          "log": false
+        },
+        {
+          "name": "show-verifier-on-run.js",
+          "version": "1.2",
+          "hash": "sha256-73f6e96934291cfdf8af77412aa7765768aefe52114d32b4ba5428bbd6002a5a",
           "log": false
         }
       ]
