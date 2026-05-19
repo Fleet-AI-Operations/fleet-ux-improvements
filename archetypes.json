@@ -1,7 +1,7 @@
 {
   "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.10",
+  "archetypesVersion": "8.11",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -343,12 +343,6 @@
           "name": "embedded-urlbar-fit.js",
           "version": "1.1",
           "hash": "sha256-3fdb50b395300911e404fea9f7e510c566b6e4106f614eaadaa696317b392747",
-          "log": false
-        },
-        {
-          "name": "hide-grading-autoclick.js",
-          "version": "1.0",
-          "hash": "sha256-aeda5bf0b0af514c12ddd6702d4f3381368ea0abae4fbc4715ed3bb1ab38ef37",
           "log": false
         },
         {
