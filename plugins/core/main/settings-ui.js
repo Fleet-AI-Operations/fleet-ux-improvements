@@ -4,6 +4,7 @@
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_UUID_URL_PREFIX = 'https://www.fleetai.com/work/problems/view-task/';
+const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
 const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COPY_SUCCESS_FLASH_MS = 1000;
@@ -21,7 +22,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.7',
+    _version: '7.8',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -653,8 +654,7 @@ const plugin = {
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
                         Task View Link Generator
                     </h3>
-                    <label for="wf-ops-task-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Task ID or UUID</label>
-                    <input type="text" id="wf-ops-task-input" placeholder="task_… or UUID" autocomplete="off" style="
+                    <input type="text" id="wf-ops-task-input" placeholder="Paste task key or UUID" autocomplete="off" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 13px;
@@ -664,9 +664,6 @@ const plugin = {
                         color: var(--foreground, #333);
                         box-sizing: border-box;
                     ">
-                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 8px 0 0 0; line-height: 1.45;">
-                        Paste a task ID (<code style="font-size: 11px;">task_…</code>) or UUID; the matching Fleet link appears below.
-                    </p>
                 </div>
                 <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
                     <button type="button" id="wf-ops-open-link" style="
@@ -698,6 +695,24 @@ const plugin = {
                         cursor: pointer;
                         transition: background 0.2s, color 0.2s;
                     ">Copy</button>
+                </div>
+                <div style="margin-top: 16px;">
+                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
+                        display: block;
+                        width: 100%;
+                        padding: 10px 16px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        text-align: center;
+                        text-decoration: none;
+                        color: white;
+                        background: var(--brand, #4f46e5);
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        box-sizing: border-box;
+                        transition: background 0.2s;
+                    ">Grade Assessments</a>
                 </div>
             </div>
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: ${paneDisplay('information')}; overflow-y: auto; min-height: 200px;"></div>
@@ -2451,6 +2466,16 @@ const plugin = {
                     this._showOpsCopyFailurePulse(copyBtn);
                     Logger.warn('settings-ui: ops link copy failed');
                 }
+            });
+        }
+
+        const gradeAssessmentsLink = Context.dom.query('#wf-ops-grade-assessments', {
+            root: modal,
+            context: `${this.id}.opsGradeAssessmentsAttach`
+        });
+        if (gradeAssessmentsLink) {
+            gradeAssessmentsLink.addEventListener('click', () => {
+                Logger.log('settings-ui: grade assessments opened');
             });
         }
     },
