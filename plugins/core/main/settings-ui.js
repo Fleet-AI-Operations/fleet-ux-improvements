@@ -3,7 +3,6 @@
 // Core plugin that provides the settings UI - persists across navigation
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
-const OPS_UUID_URL_PREFIX = 'https://www.fleetai.com/work/problems/view-task/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
 const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -22,7 +21,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.9',
+    _version: '7.10',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2246,11 +2245,8 @@ const plugin = {
     _buildOpsTaskUrl(raw) {
         const id = this._extractOpsTaskIdentifier(raw);
         if (!id) return null;
-        if (/^task_/i.test(id)) {
+        if (/^task_/i.test(id) || OPS_UUID_RE.test(id)) {
             return `${OPS_TASK_URL_PREFIX}${id}`;
-        }
-        if (OPS_UUID_RE.test(id)) {
-            return `${OPS_UUID_URL_PREFIX}${id}`;
         }
         return null;
     },
