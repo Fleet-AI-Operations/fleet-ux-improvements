@@ -1,7 +1,7 @@
 {
-  "version": "8.0.1",
+  "version": "9.0.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.33",
+  "archetypesVersion": "8.34",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -12,9 +12,15 @@
   },
   "corePlugins": [
     {
+      "name": "ops-tab.js",
+      "version": "1.0",
+      "hash": "sha256-bc59c6868e8f03afbb2014974d475dd620f4629cd450f4ce0544ed05f80869a4",
+      "log": false
+    },
+    {
       "name": "settings-ui.js",
-      "version": "7.28",
-      "hash": "sha256-8c87253fd614ba4b6242ae9affc9e764d47edf93e5ffe1ea1d1a917fa77e3a23",
+      "version": "8.0",
+      "hash": "sha256-efeb91abf4c5c488ac9d201597fd340193c2a4e1ecc9203c86655fc47b9af530",
       "log": false
     }
   ],

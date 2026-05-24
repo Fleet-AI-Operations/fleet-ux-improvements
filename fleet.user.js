@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/get-verifier] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      8.0.1
+// @version      9.0.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -29,7 +29,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '8.0.1';
+    const VERSION = '9.0.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1070,6 +1070,269 @@
     };
     
     Context.dom = DomUtils;
+
+    // ============= NETWORK OBSERVER =============
+    /**
+     * Stable extension-owned keys for runtime access values stored in Fleet page localStorage.
+     * Discovered live from Supabase fetch traffic; consumed by Ops verifier fetcher (and any
+     * future modules that need shared API config) via `Context.networkObserver.getRuntimeAccess()`.
+     */
+    const RUNTIME_ACCESS_STORAGE_KEYS = {
+        supabaseRestBaseUrl: 'fleet-ux:supabase-rest-base-url',
+        supabaseAnonKey: 'fleet-ux:supabase-anon-key',
+        supabaseProjectRef: 'fleet-ux:supabase-project-ref'
+    };
+
+    /**
+     * Central page-fetch interception. Owned by the main userscript so dynamic API endpoint
+     * discovery happens exactly once and is shared across modules through `Context.networkObserver`.
+     * Subscribers register matchers and optional onRequest/onResponse callbacks; subscriber errors
+     * are caught and never block the page request, and the original fetch result is always returned.
+     */
+    const NetworkObserver = {
+        _installed: false,
+        _subscribers: new Map(),
+        _runtimeAccess: {
+            supabaseRestBaseUrl: null,
+            supabaseAnonKey: null,
+            supabaseProjectRef: null
+        },
+
+        init() {
+            if (this._installed) return;
+            const pageWindow = Context.getPageWindow();
+            if (!pageWindow || typeof pageWindow.fetch !== 'function') {
+                Logger.warn('NetworkObserver: page fetch unavailable; observer disabled');
+                return;
+            }
+            this._loadRuntimeAccessFromStorage(pageWindow);
+            this._installFetchHook(pageWindow);
+            this._installed = true;
+            Logger.log('✓ NetworkObserver installed');
+        },
+
+        _loadRuntimeAccessFromStorage(pageWindow) {
+            try {
+                const storage = pageWindow.localStorage;
+                if (!storage) return;
+                const baseUrl = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
+                const anonKey = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
+                const projectRef = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseProjectRef);
+
+                const anonKeyValid = anonKey ? this._jwtIsAnonForRef(anonKey, projectRef) : false;
+                const baseUrlValid = baseUrl ? this._validRestBaseUrlForRef(baseUrl, projectRef) : false;
+
+                if (anonKey && !anonKeyValid) {
+                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
+                    Logger.warn('NetworkObserver: discarded stale anon key from localStorage');
+                }
+                if (baseUrl && !baseUrlValid) {
+                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
+                    Logger.warn('NetworkObserver: discarded stale Supabase REST base URL from localStorage');
+                }
+
+                this._runtimeAccess = {
+                    supabaseRestBaseUrl: baseUrlValid ? baseUrl : null,
+                    supabaseAnonKey: anonKeyValid ? anonKey : null,
+                    supabaseProjectRef: projectRef || null
+                };
+            } catch (e) {
+                Logger.debug('NetworkObserver: hydrating runtime access from localStorage failed', e);
+            }
+        },
+
+        _installFetchHook(pageWindow) {
+            const observer = this;
+            const originalFetch = pageWindow.fetch.bind(pageWindow);
+            pageWindow.fetch = function patchedFleetFetch(...args) {
+                const [resource, config] = args;
+                const meta = observer._buildRequestMeta(resource, config, pageWindow);
+                try {
+                    observer._captureSupabaseConfig(meta);
+                } catch (e) {
+                    Logger.debug('NetworkObserver: capture failed', e);
+                }
+                const matched = observer._matchSubscribers(meta);
+                matched.forEach((sub) => {
+                    if (typeof sub.onRequest === 'function') {
+                        try { sub.onRequest(meta); } catch (e) { Logger.debug(`NetworkObserver: subscriber ${sub.id} onRequest threw`, e); }
+                    }
+                });
+                const promise = originalFetch.apply(this, args);
+                const wantsResponse = matched.some(s => typeof s.onResponse === 'function');
+                if (!wantsResponse) return promise;
+                return promise.then((response) => {
+                    matched
+                        .filter(s => typeof s.onResponse === 'function')
+                        .forEach((sub) => {
+                            try {
+                                sub.onResponse(meta, response.clone());
+                            } catch (e) {
+                                Logger.debug(`NetworkObserver: subscriber ${sub.id} onResponse threw`, e);
+                            }
+                        });
+                    return response;
+                });
+            };
+        },
+
+        _buildRequestMeta(resource, config, pageWindow) {
+            let url = '';
+            let urlObj = null;
+            try {
+                if (typeof resource === 'string') {
+                    urlObj = new URL(resource, pageWindow.location.href);
+                } else if (resource && typeof resource === 'object' && typeof resource.url === 'string') {
+                    urlObj = new URL(resource.url, pageWindow.location.href);
+                }
+                if (urlObj) url = urlObj.toString();
+            } catch (_e) { /* ignore */ }
+            const method = (config && config.method) || (resource && resource.method) || 'GET';
+            const headers = (config && config.headers) || (resource && resource.headers) || null;
+            return { url, urlObj, method: String(method).toUpperCase(), headers, pageWindow };
+        },
+
+        _matchSubscribers(meta) {
+            const out = [];
+            for (const sub of this._subscribers.values()) {
+                try {
+                    if (typeof sub.matches !== 'function' || sub.matches(meta)) {
+                        out.push(sub);
+                    }
+                } catch (e) {
+                    Logger.debug(`NetworkObserver: subscriber ${sub.id} matches threw`, e);
+                }
+            }
+            return out;
+        },
+
+        _captureSupabaseConfig(meta) {
+            if (!meta.urlObj) return;
+            const host = meta.urlObj.hostname || '';
+            if (!host.endsWith('.supabase.co')) return;
+            if (!meta.urlObj.pathname.startsWith('/rest/v1')) return;
+
+            const refMatch = host.match(/^([^.]+)\.supabase\.co$/);
+            const ref = refMatch ? refMatch[1] : null;
+            const restBase = `${meta.urlObj.protocol}//${host}/rest/v1`;
+            const apikey = this._readHeader(meta.headers, 'apikey');
+
+            const update = { supabaseProjectRef: ref || undefined, supabaseRestBaseUrl: restBase };
+            if (apikey && this._jwtIsAnonForRef(apikey, ref)) {
+                update.supabaseAnonKey = apikey;
+            }
+            this._persistRuntimeAccess(meta.pageWindow, update);
+        },
+
+        _readHeader(headers, name) {
+            if (!headers) return null;
+            const lower = name.toLowerCase();
+            try {
+                if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+                    return headers.get(name);
+                }
+                const pageWindow = Context.getPageWindow();
+                if (pageWindow && pageWindow.Headers && headers instanceof pageWindow.Headers) {
+                    return headers.get(name);
+                }
+                if (Array.isArray(headers)) {
+                    const found = headers.find(([k]) => String(k).toLowerCase() === lower);
+                    return found ? found[1] : null;
+                }
+                if (typeof headers === 'object') {
+                    for (const k of Object.keys(headers)) {
+                        if (String(k).toLowerCase() === lower) return headers[k];
+                    }
+                }
+            } catch (_e) { /* ignore */ }
+            return null;
+        },
+
+        _decodeJwtPayload(jwt) {
+            if (!jwt || typeof jwt !== 'string') return null;
+            const parts = jwt.split('.');
+            if (parts.length !== 3) return null;
+            try {
+                const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+                return JSON.parse(atob(padded));
+            } catch (_e) {
+                return null;
+            }
+        },
+
+        _jwtIsAnonForRef(jwt, expectedRef) {
+            const payload = this._decodeJwtPayload(jwt);
+            if (!payload || payload.role !== 'anon') return false;
+            if (!expectedRef) return true;
+            return payload.ref === expectedRef;
+        },
+
+        _validRestBaseUrlForRef(baseUrl, ref) {
+            try {
+                const u = new URL(baseUrl);
+                if (!u.hostname.endsWith('.supabase.co')) return false;
+                if (!u.pathname.startsWith('/rest/v1')) return false;
+                if (!ref) return true;
+                return u.hostname === `${ref}.supabase.co`;
+            } catch (_e) {
+                return false;
+            }
+        },
+
+        _persistRuntimeAccess(pageWindow, partial) {
+            const storage = pageWindow && pageWindow.localStorage;
+            let changed = false;
+            const setKey = (storageKey, value) => {
+                if (!value) return;
+                if (this._runtimeAccess[storageKey] === value) return;
+                this._runtimeAccess[storageKey] = value;
+                if (storage) {
+                    try { storage.setItem(RUNTIME_ACCESS_STORAGE_KEYS[storageKey], value); } catch (_e) { /* ignore */ }
+                }
+                changed = true;
+            };
+            setKey('supabaseProjectRef', partial.supabaseProjectRef);
+            setKey('supabaseRestBaseUrl', partial.supabaseRestBaseUrl);
+            setKey('supabaseAnonKey', partial.supabaseAnonKey);
+            if (changed) {
+                Logger.debug('NetworkObserver: runtime access updated', {
+                    supabaseProjectRef: this._runtimeAccess.supabaseProjectRef,
+                    supabaseRestBaseUrl: this._runtimeAccess.supabaseRestBaseUrl,
+                    hasAnonKey: !!this._runtimeAccess.supabaseAnonKey
+                });
+            }
+        },
+
+        subscribe(opts) {
+            if (!opts || typeof opts !== 'object') return () => {};
+            const id = opts.id || `subscriber-${Math.random().toString(36).slice(2, 10)}`;
+            this._subscribers.set(id, {
+                id,
+                matches: opts.matches,
+                onRequest: opts.onRequest,
+                onResponse: opts.onResponse
+            });
+            Logger.debug(`NetworkObserver: subscriber ${id} registered`);
+            return () => this.unsubscribe(id);
+        },
+
+        unsubscribe(id) {
+            if (this._subscribers.delete(id)) {
+                Logger.debug(`NetworkObserver: subscriber ${id} removed`);
+            }
+        },
+
+        getRuntimeAccess() {
+            return { ...this._runtimeAccess };
+        }
+    };
+
+    Context.networkObserver = {
+        subscribe: (opts) => NetworkObserver.subscribe(opts),
+        unsubscribe: (id) => NetworkObserver.unsubscribe(id),
+        getRuntimeAccess: () => NetworkObserver.getRuntimeAccess()
+    };
 
     // ============= ARCHETYPE MANAGER =============
     const ArchetypeManager = {
@@ -2624,7 +2887,10 @@
         // Always log script version (cannot be disabled)
         console.log(`${LOG_PREFIX} v${VERSION}`);
         Logger.log('Starting...');
-        
+
+        // Install central network observer ASAP so any subsequent page fetches are observed.
+        NetworkObserver.init();
+
         // Initialize navigation monitoring FIRST
         NavigationManager.init();
         NavigationManager.onNavigate(handleNavigation);
