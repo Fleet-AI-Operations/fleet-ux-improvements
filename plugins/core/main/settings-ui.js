@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.23',
+    _version: '7.24',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2910,9 +2910,9 @@ const plugin = {
             taskId,
             taskKey,
             teamId,
-            verifierId: parsed.verifierId || verifierId || '',
-            verifierKey: parsed.verifierKey || verifierKey || '',
-            verifierVersion: parsed.verifierVersion ?? verifierVersion ?? null
+            verifierId: verifierId || parsed.verifierId || '',
+            verifierKey: verifierKey || parsed.verifierKey || '',
+            verifierVersion: verifierVersion ?? parsed.verifierVersion ?? null
         };
     },
 
