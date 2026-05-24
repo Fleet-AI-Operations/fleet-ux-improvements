@@ -25,7 +25,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.12',
+    _version: '7.14',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2603,8 +2603,9 @@ const plugin = {
         };
         const capturedApikey = pageWindow.__fleetSessionTraceCapturedApikey || window.__fleetSessionTraceCapturedApikey;
         const capturedAuth = pageWindow.__fleetSessionTraceCapturedAuth || window.__fleetSessionTraceCapturedAuth;
+        const capturedAuthToken = capturedAuth ? String(capturedAuth).replace(/^Bearer\s+/i, '') : '';
         const token = !capturedAuth ? this._getOpsSupabaseAccessToken(pageWindow) : '';
-        if (capturedApikey) headers.apikey = capturedApikey;
+        if (capturedApikey || token || capturedAuthToken) headers.apikey = capturedApikey || token || capturedAuthToken;
         if (capturedAuth) {
             headers.authorization = capturedAuth;
         } else if (token) {
