@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.19',
+    _version: '7.20',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2968,48 +2968,101 @@ const plugin = {
         return null;
     },
 
+    async _resolveOpsTeamId(pageWindow) {
+        try {
+            const params = { select: 'team_id', limit: 1 };
+            const rows = await this._opsPostgrestGet('team_members', params);
+            const row = Array.isArray(rows) ? rows[0] : rows;
+            if (row?.team_id) {
+                Logger.debug(`settings-ui: ops resolved team_id from team_members: ${row.team_id}`);
+                return row.team_id;
+            }
+        } catch (e) {
+            Logger.debug('settings-ui: ops team_members lookup failed', e);
+        }
+        return '';
+    },
+
     async _fetchOpsVerifierCodeFromOrchestrator(resolved) {
-        if (!resolved.verifierId || !resolved.teamId) return null;
         const pageWindow = this._getOpsPageWindow();
         const jwt = this._extractOpsJwtToken(pageWindow);
-        if (!jwt) return null;
+        if (!jwt) {
+            Logger.debug('settings-ui: ops orchestrator skipped — no JWT');
+            return null;
+        }
+        if (!resolved.verifierId) {
+            Logger.debug('settings-ui: ops orchestrator skipped — no verifier_id');
+            return null;
+        }
+        let teamId = resolved.teamId;
+        if (!teamId) {
+            Logger.debug('settings-ui: ops orchestrator — no teamId in resolved, attempting team discovery');
+            teamId = await this._resolveOpsTeamId(pageWindow);
+        }
+        if (!teamId) {
+            Logger.debug('settings-ui: ops orchestrator — no team_id after discovery, will attempt without it');
+        }
         const requestFetch = pageWindow.fetch || fetch;
         const url = `https://orchestrator.fleetai.com/v1/verifiers/${encodeURIComponent(resolved.verifierId)}`;
+        const requestHeaders = { accept: 'application/json', 'x-jwt-token': jwt };
+        if (teamId) requestHeaders['x-team-id'] = teamId;
+        Logger.debug(`settings-ui: ops orchestrator fetch ${url} teamId=${teamId || '(none)'}`);
         try {
             const res = await requestFetch.call(pageWindow, url, {
                 method: 'GET',
-                headers: {
-                    accept: 'application/json',
-                    'x-jwt-token': jwt,
-                    'x-team-id': resolved.teamId
-                },
+                headers: requestHeaders,
                 credentials: 'omit'
             });
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                Logger.debug(`settings-ui: ops orchestrator verifier fetch failed HTTP ${res.status}`, text || url);
+                Logger.debug(`settings-ui: ops orchestrator HTTP ${res.status} for ${resolved.verifierId}`, text.slice(0, 200));
+                if (!teamId) return null;
+                Logger.debug('settings-ui: ops orchestrator retry without team_id not applicable (already tried without)');
                 return null;
             }
             const body = await res.json().catch(() => null);
-            const parsed = this._extractOpsOrchestratorVerifierSource(body);
-            if (!parsed || !parsed.source) return null;
+            Logger.debug('settings-ui: ops orchestrator response keys', body ? Object.keys(body).join(', ') : 'null');
+            const parsedSource = this._extractOpsOrchestratorVerifierSource(body);
+            if (!parsedSource || !parsedSource.source) {
+                Logger.debug('settings-ui: ops orchestrator response had no display_src');
+                return null;
+            }
+            Logger.debug(`settings-ui: ops orchestrator got display_src (${parsedSource.source.length} chars) v${parsedSource.version}`);
             return {
                 ...resolved,
-                version: parsed.version,
-                versionId: parsed.versionId,
-                createdAt: parsed.createdAt,
-                source: parsed.source
+                teamId: teamId || resolved.teamId,
+                version: parsedSource.version,
+                versionId: parsedSource.versionId,
+                createdAt: parsedSource.createdAt,
+                source: parsedSource.source
             };
         } catch (e) {
-            Logger.debug('settings-ui: ops orchestrator verifier fetch failed', e);
+            Logger.debug('settings-ui: ops orchestrator fetch threw', e);
             return null;
         }
     },
 
     async _fetchOpsVerifierCode(parsed) {
+        Logger.debug('settings-ui: ops verifier fetch start', {
+            taskKey: parsed.taskKey || '(none)',
+            taskId: parsed.taskId || '(none)',
+            verifierId: parsed.verifierId || '(none)',
+            verifierKey: parsed.verifierKey || '(none)',
+            teamId: parsed.teamId || '(none)',
+            verifierVersion: parsed.verifierVersion ?? '(none)'
+        });
         const resolved = await this._resolveOpsVerifierId(parsed);
+        Logger.debug('settings-ui: ops verifier resolved', {
+            verifierId: resolved.verifierId || '(none)',
+            verifierKey: resolved.verifierKey || '(none)',
+            teamId: resolved.teamId || '(none)'
+        });
         const orchestratorResult = await this._fetchOpsVerifierCodeFromOrchestrator(resolved);
-        if (orchestratorResult) return orchestratorResult;
+        if (orchestratorResult) {
+            Logger.debug('settings-ui: ops verifier code from orchestrator');
+            return orchestratorResult;
+        }
+        Logger.debug(`settings-ui: ops verifier falling back to Supabase verifier_versions for ${resolved.verifierId}`);
         const params = {
             select: 'id,version,created_at,display_src',
             verifier_id: `eq.${resolved.verifierId}`,
@@ -3019,10 +3072,16 @@ const plugin = {
             params.version = `eq.${resolved.verifierVersion}`;
             delete params.order;
         }
+        Logger.debug('settings-ui: ops verifier_versions query params', JSON.stringify(params));
         const rows = await this._opsPostgrestGet('verifier_versions', params);
+        Logger.debug(`settings-ui: ops verifier_versions rows returned: ${Array.isArray(rows) ? rows.length : (rows ? 1 : 0)}`);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
-            throw new Error(`No verifier version found for ${resolved.verifierId}.`);
+            throw new Error(
+                `No verifier version found for ${resolved.verifierId}. ` +
+                `The verifier_versions table may require a team context. ` +
+                `Try adding the team ID in the override field (e.g. d148bdea-e60a-4ca3-b414-380f7b0b5949).`
+            );
         }
         if (!row.display_src) {
             throw new Error(`Verifier version ${row.version ?? '?'} has no display_src.`);
@@ -3093,13 +3152,25 @@ const plugin = {
         }
         this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
         this._setOpsVerifierOutput(modal, '');
+        Logger.debug('settings-ui: ops verifier handle fetch', {
+            input: (input.value || '').slice(0, 120),
+            teamOverride: teamInput ? (teamInput.value || '').slice(0, 40) : '(none)',
+            parsed: {
+                taskKey: parsed.taskKey || '',
+                taskId: parsed.taskId || '',
+                verifierId: parsed.verifierId || '',
+                verifierKey: parsed.verifierKey || '',
+                teamId: parsed.teamId || ''
+            }
+        });
         try {
             const result = await this._fetchOpsVerifierCode(parsed);
             this._setOpsVerifierOutput(modal, result.source);
             const versionText = result.version != null ? `v${result.version}` : 'latest version';
+            const teamNote = result.teamId ? ` (team ${result.teamId.slice(0, 8)}...)` : '';
             this._setOpsVerifierStatus(
                 modal,
-                `Fetched ${versionText} (${result.source.length} chars) from verifier_versions.display_src.`
+                `Fetched ${versionText} (${result.source.length} chars)${teamNote}.`
             );
             Logger.log(`settings-ui: ops verifier fetched ${result.verifierId} ${versionText}`);
         } catch (e) {
