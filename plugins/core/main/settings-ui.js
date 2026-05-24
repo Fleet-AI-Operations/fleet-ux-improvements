@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.15',
+    _version: '7.16',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2737,6 +2737,7 @@ const plugin = {
         const jsonTeamId = this._matchOpsJsonString(text, 'team_id');
         const jsonVerifierKey = this._matchOpsJsonString(text, 'verifier_key');
         const versionMetadataVerifierKey = text.match(/"version_metadata"\s*:\s*\{[^}]*"verifier_key"\s*:\s*"([^"]+)"/);
+        const versionMetadataVerifierVersion = text.match(/"version_metadata"\s*:\s*\{[^}]*"verifier_version"\s*:\s*(\d+)/);
         const versionNo = this._matchOpsJsonNumber(text, 'verifier_version');
         const uuidMatch = text.match(OPS_UUID_FIND_RE);
         const urlOrRawId = String(fromUrl || '').trim();
@@ -2747,14 +2748,16 @@ const plugin = {
             verifierId: jsonVerifierId || (!taskKeyMatch && !jsonTeamId && uuidMatch ? uuidMatch[0] : ''),
             verifierKey: jsonVerifierKey || (versionMetadataVerifierKey ? versionMetadataVerifierKey[1] : '') || (verifierKeyMatch ? verifierKeyMatch[0] : ''),
             teamId: explicitTeamId || jsonTeamId || '',
-            verifierVersion: Number.isFinite(versionNo) ? versionNo : null
+            verifierVersion: Number.isFinite(versionNo)
+                ? versionNo
+                : (versionMetadataVerifierVersion ? Number(versionMetadataVerifierVersion[1]) : null)
         };
     },
 
     async _resolveOpsVerifierFromTask(parsed) {
-        if (!parsed.taskKey && !parsed.taskId) return parsed;
+        if ((!parsed.taskKey && !parsed.taskId) || parsed.verifierId) return parsed;
         const params = {
-            select: 'id,key,team_id,verifier_id,version_metadata',
+            select: 'id,key,team_id,version_metadata',
             limit: 1
         };
         if (parsed.taskKey) {
@@ -2767,15 +2770,21 @@ const plugin = {
         if (!row) {
             throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
         }
-        const meta = row.version_metadata || {};
+        let meta = row.version_metadata || {};
+        if (typeof meta === 'string') {
+            try {
+                meta = JSON.parse(meta);
+            } catch (_e) {
+                meta = {};
+            }
+        }
         return {
             ...parsed,
             taskId: parsed.taskId || row.id || '',
             taskKey: parsed.taskKey || row.key || '',
             teamId: parsed.teamId || row.team_id || '',
-            verifierId: parsed.verifierId || row.verifier_id || '',
             verifierKey: parsed.verifierKey || meta.verifier_key || '',
-            verifierVersion: parsed.verifierVersion || meta.verifier_version || null
+            verifierVersion: parsed.verifierVersion ?? meta.verifier_version ?? null
         };
     },
 
@@ -2804,8 +2813,7 @@ const plugin = {
         const params = {
             select: 'id,version,created_at,display_src',
             verifier_id: `eq.${resolved.verifierId}`,
-            order: 'version.desc',
-            limit: 1
+            order: 'version.desc'
         };
         if (resolved.verifierVersion != null) {
             params.version = `eq.${resolved.verifierVersion}`;

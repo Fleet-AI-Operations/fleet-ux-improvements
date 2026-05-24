@@ -1,7 +1,7 @@
 {
   "version": "8.0.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.20",
+  "archetypesVersion": "8.21",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -13,8 +13,8 @@
   "corePlugins": [
     {
       "name": "settings-ui.js",
-      "version": "7.15",
-      "hash": "sha256-773685b22cfd634e14fc0d049a6348991c38336cae3bbb2c59f5ce5307b5384e",
+      "version": "7.16",
+      "hash": "sha256-b18111aefbab64de6618a96728c49163bd4a9a92da49ad097474fa5ed3abdf35",
       "log": false
     }
   ],
