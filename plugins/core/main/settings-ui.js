@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.22',
+    _version: '7.23',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2833,10 +2833,11 @@ const plugin = {
         const uuidMatch = text.match(OPS_UUID_FIND_RE);
         const urlOrRawId = String(fromUrl || '').trim();
 
+        const bareUuid = !taskKeyMatch && !jsonTeamId && !jsonVerifierId && uuidMatch ? uuidMatch[0] : '';
         return {
-            taskId: OPS_UUID_RE.test(urlOrRawId) ? urlOrRawId : '',
+            taskId: OPS_UUID_RE.test(urlOrRawId) ? urlOrRawId : (bareUuid || ''),
             taskKey: /^task_/i.test(urlOrRawId) ? urlOrRawId : (taskKeyMatch ? taskKeyMatch[0] : ''),
-            verifierId: jsonVerifierId || (!taskKeyMatch && !jsonTeamId && uuidMatch ? uuidMatch[0] : ''),
+            verifierId: jsonVerifierId || bareUuid || '',
             verifierKey: jsonVerifierKey || (versionMetadataVerifierKey ? versionMetadataVerifierKey[1] : '') || (verifierKeyMatch ? verifierKeyMatch[0] : ''),
             teamId: explicitTeamId || jsonTeamId || '',
             verifierVersion: Number.isFinite(versionNo)
@@ -2846,7 +2847,7 @@ const plugin = {
     },
 
     async _resolveOpsVerifierFromTask(parsed) {
-        if ((!parsed.taskKey && !parsed.taskId) || parsed.verifierId) return parsed;
+        if (!parsed.taskKey && !parsed.taskId) return parsed;
 
         // Step 1: eval_tasks → get current_version_id + team_id
         let taskRow = null;
@@ -2866,7 +2867,10 @@ const plugin = {
         }
 
         if (!taskRow) {
-            throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
+            // No task with this ID/key — if we already have a verifierId it may be a real verifier UUID;
+            // return parsed as-is so the orchestrator path can try it directly.
+            Logger.debug(`settings-ui: ops eval_tasks no row for ${parsed.taskKey || parsed.taskId} — treating input as verifier ID`);
+            return parsed;
         }
 
         const teamId = parsed.teamId || taskRow.team_id || '';
