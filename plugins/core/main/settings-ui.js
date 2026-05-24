@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.27',
+    _version: '7.28',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -41,6 +41,14 @@ const plugin = {
     _pulseInterval: null,
     _docPaneCache: {},
     _opsVerifierFetchState: null,
+    _opsTabState: {
+        taskInput: '',
+        verifierInput: '',
+        verifierStatus: '',
+        verifierStatusIsError: false,
+        verifierOutput: '',
+        verifierFetchState: null
+    },
     
     init(state, context) {
         this._ensureDialogBackdropStyles();
@@ -232,8 +240,10 @@ const plugin = {
         if (this._modalOpen && modal) {
             this._closeModal();
         } else {
-            // Always recreate modal content when opening to get fresh plugin list
-            if (modal) modal.remove();
+            if (modal) {
+                this._captureOpsTabState(modal);
+                modal.remove();
+            }
             modal = this._createModal();
             try {
                 if (typeof modal.showModal === 'function') {
@@ -272,6 +282,9 @@ const plugin = {
     _closeModal() {
         this._stopForeignModalObserver();
         const modal = document.getElementById('wf-settings-modal');
+        if (modal) {
+            this._captureOpsTabState(modal);
+        }
         if (modal && typeof modal.close === 'function') {
             if (modal.open) {
                 modal.close();
@@ -724,18 +737,6 @@ const plugin = {
                     </p>
                     <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
                         width: 100%;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    ">
-                    <input type="text" id="wf-ops-verifier-team-id" placeholder="Optional team ID override" autocomplete="off" style="
-                        width: 100%;
-                        margin-top: 8px;
                         padding: 8px 12px;
                         font-size: 12px;
                         border: 1px solid var(--border, #e5e5e5);
@@ -2526,6 +2527,83 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
+    _captureOpsTabState(modal) {
+        if (!modal) return;
+        const taskInput = Context.dom.query('#wf-ops-task-input', {
+            root: modal,
+            context: `${this.id}.opsTaskInputCapture`
+        });
+        const verifierInput = Context.dom.query('#wf-ops-verifier-input', {
+            root: modal,
+            context: `${this.id}.opsVerifierInputCapture`
+        });
+        const status = Context.dom.query('#wf-ops-verifier-status', {
+            root: modal,
+            context: `${this.id}.opsVerifierStatusCapture`
+        });
+        const output = Context.dom.query('#wf-ops-verifier-output', {
+            root: modal,
+            context: `${this.id}.opsVerifierOutputCapture`
+        });
+        const fetchState = this._opsVerifierFetchState;
+        this._opsTabState = {
+            taskInput: taskInput ? taskInput.value : '',
+            verifierInput: verifierInput ? verifierInput.value : '',
+            verifierStatus: status && status.style.display !== 'none' ? (status.textContent || '') : '',
+            verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
+            verifierOutput: output ? output.value : '',
+            verifierFetchState: fetchState
+                ? {
+                    resolved: fetchState.resolved,
+                    versions: fetchState.versions,
+                    selectedVersion: fetchState.selectedVersion
+                }
+                : null
+        };
+    },
+
+    _restoreOpsTabState(modal) {
+        if (!modal) return;
+        const state = this._opsTabState;
+        if (!state) return;
+
+        const taskInput = Context.dom.query('#wf-ops-task-input', {
+            root: modal,
+            context: `${this.id}.opsTaskInputRestore`
+        });
+        if (taskInput && state.taskInput) {
+            taskInput.value = state.taskInput;
+            this._updateOpsTaskLinkUI(modal);
+        }
+
+        const verifierInput = Context.dom.query('#wf-ops-verifier-input', {
+            root: modal,
+            context: `${this.id}.opsVerifierInputRestore`
+        });
+        if (verifierInput && state.verifierInput) {
+            verifierInput.value = state.verifierInput;
+        }
+
+        if (state.verifierStatus) {
+            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
+        }
+
+        if (state.verifierOutput) {
+            this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+
+        if (state.verifierFetchState?.versions?.length) {
+            this._setOpsVerifierVersionPicker(
+                modal,
+                state.verifierFetchState.resolved,
+                state.verifierFetchState.versions,
+                state.verifierFetchState.selectedVersion
+            );
+        } else {
+            this._opsVerifierFetchState = null;
+        }
+    },
+
     _getOpsPageWindow() {
         try {
             if (typeof Context !== 'undefined' && Context.getPageWindow) {
@@ -2853,11 +2931,9 @@ const plugin = {
         return match ? Number(match[1]) : null;
     },
 
-    _parseOpsVerifierInput(raw, teamOverride) {
+    _parseOpsVerifierInput(raw) {
         const text = String(raw || '').trim();
-        const teamText = String(teamOverride || '').trim();
         const fromUrl = this._extractOpsTaskIdentifier(text);
-        const explicitTeamId = OPS_UUID_RE.test(teamText) ? teamText : '';
         const verifierKeyMatch = text.match(OPS_VERIFIER_KEY_RE);
         const taskKeyMatch = verifierKeyMatch ? null : text.match(OPS_TASK_KEY_RE);
         const jsonVerifierId = this._matchOpsJsonString(text, 'verifier_id');
@@ -2875,7 +2951,7 @@ const plugin = {
             taskKey: /^task_/i.test(urlOrRawId) ? urlOrRawId : (taskKeyMatch ? taskKeyMatch[0] : ''),
             verifierId: jsonVerifierId || bareUuid || '',
             verifierKey: jsonVerifierKey || (versionMetadataVerifierKey ? versionMetadataVerifierKey[1] : '') || (verifierKeyMatch ? verifierKeyMatch[0] : ''),
-            teamId: explicitTeamId || jsonTeamId || '',
+            teamId: jsonTeamId || '',
             verifierVersion: Number.isFinite(versionNo)
                 ? versionNo
                 : (versionMetadataVerifierVersion ? Number(versionMetadataVerifierVersion[1]) : null)
@@ -3173,7 +3249,7 @@ const plugin = {
         if (!row) {
             const hint = resolved.teamId
                 ? `The verifier_versions table returned no rows for team ${resolved.teamId.slice(0, 8)}…`
-                : 'The verifier_versions table may require a team context — add the team ID in the override field.';
+                : 'The verifier_versions table may require a team context that could not be resolved automatically.';
             throw new Error(`No verifier version found for ${resolved.verifierId}. ${hint}`);
         }
         if (!row.display_src) {
@@ -3263,6 +3339,7 @@ const plugin = {
             Logger.warn('settings-ui: ops verifier version change failed', e);
         } finally {
             select.disabled = false;
+            this._captureOpsTabState(modal);
         }
     },
 
@@ -3333,19 +3410,16 @@ const plugin = {
             root: modal,
             context: `${this.id}.opsVerifierInput`
         });
-        const teamInput = Context.dom.query('#wf-ops-verifier-team-id', {
-            root: modal,
-            context: `${this.id}.opsVerifierTeamInput`
-        });
         const fetchBtn = Context.dom.query('#wf-ops-fetch-verifier', {
             root: modal,
             context: `${this.id}.opsVerifierFetch`
         });
         if (!input) return;
-        const parsed = this._parseOpsVerifierInput(input.value, teamInput ? teamInput.value : '');
+        const parsed = this._parseOpsVerifierInput(input.value);
         if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
             this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
             this._setOpsVerifierOutput(modal, '');
+            this._captureOpsTabState(modal);
             return;
         }
         if (fetchBtn) {
@@ -3357,7 +3431,6 @@ const plugin = {
         this._setOpsVerifierOutput(modal, '');
         Logger.debug('settings-ui: ops verifier handle fetch', {
             input: (input.value || '').slice(0, 120),
-            teamOverride: teamInput ? (teamInput.value || '').slice(0, 40) : '(none)',
             parsed: {
                 taskKey: parsed.taskKey || '',
                 taskId: parsed.taskId || '',
@@ -3386,6 +3459,7 @@ const plugin = {
                 fetchBtn.disabled = false;
                 fetchBtn.textContent = 'Fetch Verifier';
             }
+            this._captureOpsTabState(modal);
         }
     },
 
@@ -3430,9 +3504,13 @@ const plugin = {
         if (input) {
             input.addEventListener('input', () => {
                 this._updateOpsTaskLinkUI(modal);
+                this._captureOpsTabState(modal);
             });
             input.addEventListener('paste', () => {
-                requestAnimationFrame(() => this._updateOpsTaskLinkUI(modal));
+                requestAnimationFrame(() => {
+                    this._updateOpsTaskLinkUI(modal);
+                    this._captureOpsTabState(modal);
+                });
             });
         }
 
@@ -3490,10 +3568,12 @@ const plugin = {
             verifierInput.addEventListener('paste', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
+                requestAnimationFrame(() => this._captureOpsTabState(modal));
             });
             verifierInput.addEventListener('input', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
+                this._captureOpsTabState(modal);
             });
         }
 
@@ -3535,6 +3615,8 @@ const plugin = {
                 Logger.log('settings-ui: grade assessments opened');
             });
         }
+
+        this._restoreOpsTabState(modal);
     },
 
     _getSettingsTabs() {
