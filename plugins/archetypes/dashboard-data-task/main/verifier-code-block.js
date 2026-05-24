@@ -21,7 +21,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -195,6 +195,99 @@ const plugin = {
         headerRow.appendChild(actions);
     },
 
+    _attachResizeHandle(pre) {
+        if (!pre || pre.dataset.wfVerifierResizeAttached === '1') return;
+
+        const defaultMaxHeightPx = 384;
+        pre.style.maxHeight = defaultMaxHeightPx + 'px';
+        pre.style.overflow = 'auto';
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'wf-verifier-resize-handle';
+        resizeHandle.setAttribute('data-fleet-plugin', PLUGIN_ID);
+        resizeHandle.setAttribute('data-slot', 'resize-handle');
+        Object.assign(resizeHandle.style, {
+            height: '8px',
+            cursor: 'ns-resize',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: '0',
+            transition: 'opacity 0.15s',
+            userSelect: 'none',
+            color: 'var(--muted-foreground, #666)'
+        });
+
+        const handleBar = document.createElement('div');
+        Object.assign(handleBar.style, {
+            width: '40px',
+            height: '3px',
+            borderRadius: '1.5px',
+            backgroundColor: 'currentColor',
+            opacity: '0.3'
+        });
+        resizeHandle.appendChild(handleBar);
+
+        const showHandle = () => { resizeHandle.style.opacity = '1'; };
+        const hideHandle = (e, partner) => {
+            if (!e.relatedTarget || !partner.contains(e.relatedTarget)) {
+                resizeHandle.style.opacity = '0';
+            }
+        };
+
+        pre.addEventListener('mouseenter', showHandle);
+        pre.addEventListener('mouseleave', (e) => hideHandle(e, resizeHandle));
+        resizeHandle.addEventListener('mouseenter', showHandle);
+        resizeHandle.addEventListener('mouseleave', (e) => hideHandle(e, pre));
+        CleanupRegistry.registerEventListener(pre, 'mouseenter', showHandle);
+        CleanupRegistry.registerEventListener(pre, 'mouseleave', (e) => hideHandle(e, resizeHandle));
+        CleanupRegistry.registerEventListener(resizeHandle, 'mouseenter', showHandle);
+        CleanupRegistry.registerEventListener(resizeHandle, 'mouseleave', (e) => hideHandle(e, pre));
+
+        pre.insertAdjacentElement('afterend', resizeHandle);
+
+        const minHeight = 80;
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        const handleMouseMove = (e) => {
+            if (!isResizing) return;
+            const newHeight = Math.max(minHeight, startHeight + (e.clientY - startY));
+            pre.style.maxHeight = newHeight + 'px';
+        };
+
+        const handleMouseUp = () => {
+            if (!isResizing) return;
+            const endHeight = pre.offsetHeight;
+            if (endHeight !== startHeight) {
+                Logger.log(PLUGIN_ID + ': resize ' + startHeight + 'px→' + endHeight + 'px');
+            }
+            isResizing = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        const handleMouseDown = (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = pre.offsetHeight;
+            e.preventDefault();
+            e.stopPropagation();
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+        };
+
+        resizeHandle.addEventListener('mousedown', handleMouseDown);
+        CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
+
+        pre.dataset.wfVerifierResizeAttached = '1';
+    },
+
     async _fetchAndRender(state, slot, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchVerifierCode !== 'function') {
@@ -237,6 +330,8 @@ const plugin = {
             pre.appendChild(code);
             wrap.appendChild(pre);
             slot.parent.appendChild(wrap);
+
+            this._attachResizeHandle(pre);
 
             if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
                 await Context.highlightJs.highlightCodeElement(code, { text: source, language: 'python' });
