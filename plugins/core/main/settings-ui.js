@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.26',
+    _version: '7.27',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -40,6 +40,7 @@ const plugin = {
     _presenceInterval: null,
     _pulseInterval: null,
     _docPaneCache: {},
+    _opsVerifierFetchState: null,
     
     init(state, context) {
         this._ensureDialogBackdropStyles();
@@ -771,6 +772,19 @@ const plugin = {
                         ">Copy Code</button>
                     </div>
                     <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
+                        display: none;
+                        width: 100%;
+                        margin-top: 8px;
+                        padding: 8px 12px;
+                        font-size: 12px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                    "></select>
                     <textarea id="wf-ops-verifier-output" readonly rows="10" style="
                         display: none;
                         width: 100%;
@@ -3064,7 +3078,8 @@ const plugin = {
             Logger.debug('settings-ui: ops orchestrator — no team_id after discovery, will attempt without it');
         }
         const requestFetch = pageWindow.fetch || fetch;
-        const url = `https://orchestrator.fleetai.com/v1/verifiers/${encodeURIComponent(resolved.verifierId)}`;
+        const versionQuery = resolved.verifierVersion != null ? `?version=${encodeURIComponent(resolved.verifierVersion)}` : '';
+        const url = `https://orchestrator.fleetai.com/v1/verifiers/${encodeURIComponent(resolved.verifierId)}${versionQuery}`;
         const requestHeaders = { accept: 'application/json', 'x-jwt-token': jwt };
         if (teamId) requestHeaders['x-team-id'] = teamId;
         Logger.debug(`settings-ui: ops orchestrator fetch ${url}`, {
@@ -3106,39 +3121,54 @@ const plugin = {
         }
     },
 
-    async _fetchOpsVerifierCode(parsed) {
-        Logger.debug('settings-ui: ops verifier fetch start', {
-            taskKey: parsed.taskKey || '(none)',
-            taskId: parsed.taskId || '(none)',
-            verifierId: parsed.verifierId || '(none)',
-            verifierKey: parsed.verifierKey || '(none)',
-            teamId: parsed.teamId || '(none)',
-            verifierVersion: parsed.verifierVersion ?? '(none)'
-        });
-        const resolved = await this._resolveOpsVerifierId(parsed);
-        Logger.debug('settings-ui: ops verifier resolved', {
-            verifierId: resolved.verifierId || '(none)',
-            verifierKey: resolved.verifierKey || '(none)',
-            teamId: resolved.teamId || '(none)'
-        });
-        const orchestratorResult = await this._fetchOpsVerifierCodeFromOrchestrator(resolved);
-        if (orchestratorResult) {
-            Logger.debug('settings-ui: ops verifier code from orchestrator');
-            return orchestratorResult;
+    _formatOpsVerifierVersionLabel(entry, isLatest = false) {
+        const versionText = entry.version != null ? `v${entry.version}` : 'unknown version';
+        const dateText = entry.createdAt ? entry.createdAt.slice(0, 10) : '';
+        const latestText = isLatest ? ' · latest' : '';
+        return dateText ? `${versionText} · ${dateText}${latestText}` : `${versionText}${latestText}`;
+    },
+
+    async _listOpsVerifierVersions(resolved) {
+        if (!resolved?.verifierId) return [];
+        try {
+            const rows = await this._opsPostgrestGet('verifier_versions', {
+                select: 'id,version,created_at',
+                verifier_id: `eq.${resolved.verifierId}`,
+                order: 'version.desc'
+            });
+            const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+            return list
+                .filter(row => row && row.version != null)
+                .map(row => ({
+                    version: row.version,
+                    versionId: row.id,
+                    createdAt: row.created_at || ''
+                }));
+        } catch (e) {
+            Logger.debug('settings-ui: ops list verifier versions failed', e);
+            return [];
         }
-        Logger.debug(`settings-ui: ops verifier falling back to Supabase verifier_versions for ${resolved.verifierId}`);
+    },
+
+    async _fetchOpsVerifierCodeForVersion(resolved, version) {
+        const request = {
+            ...resolved,
+            verifierVersion: version != null ? version : resolved.verifierVersion
+        };
+        const orchestratorResult = await this._fetchOpsVerifierCodeFromOrchestrator(request);
+        if (orchestratorResult) return orchestratorResult;
+
         const params = {
             select: 'id,version,created_at,display_src',
             verifier_id: `eq.${resolved.verifierId}`,
             order: 'version.desc'
         };
-        if (resolved.verifierVersion != null) {
-            params.version = `eq.${resolved.verifierVersion}`;
+        if (version != null) {
+            params.version = `eq.${version}`;
             delete params.order;
         }
-        Logger.debug('settings-ui: ops verifier_versions query params', JSON.stringify(params));
+        Logger.debug('settings-ui: ops verifier_versions fetch params', JSON.stringify(params));
         const rows = await this._opsPostgrestGet('verifier_versions', params);
-        Logger.debug(`settings-ui: ops verifier_versions rows returned: ${Array.isArray(rows) ? rows.length : (rows ? 1 : 0)}`);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
             const hint = resolved.teamId
@@ -3155,6 +3185,115 @@ const plugin = {
             versionId: row.id,
             createdAt: row.created_at,
             source: row.display_src
+        };
+    },
+
+    _clearOpsVerifierVersionPicker(modal) {
+        const select = Context.dom.query('#wf-ops-verifier-version', {
+            root: modal,
+            context: `${this.id}.opsVerifierVersionClear`
+        });
+        if (select) {
+            select.innerHTML = '';
+            select.style.display = 'none';
+            select.disabled = false;
+        }
+        this._opsVerifierFetchState = null;
+    },
+
+    _setOpsVerifierVersionPicker(modal, resolved, versions, selectedVersion) {
+        const select = Context.dom.query('#wf-ops-verifier-version', {
+            root: modal,
+            context: `${this.id}.opsVerifierVersionSet`
+        });
+        if (!select) return;
+
+        select.innerHTML = '';
+        if (!Array.isArray(versions) || versions.length <= 1) {
+            select.style.display = 'none';
+            this._opsVerifierFetchState = versions?.length === 1
+                ? { resolved, versions, selectedVersion: versions[0].version }
+                : null;
+            return;
+        }
+
+        versions.forEach((entry, index) => {
+            const option = document.createElement('option');
+            option.value = String(entry.version);
+            option.textContent = this._formatOpsVerifierVersionLabel(entry, index === 0);
+            select.appendChild(option);
+        });
+
+        const selected = selectedVersion != null ? String(selectedVersion) : String(versions[0].version);
+        if ([...select.options].some(opt => opt.value === selected)) {
+            select.value = selected;
+        }
+
+        select.style.display = 'block';
+        this._opsVerifierFetchState = { resolved, versions, selectedVersion: Number(select.value) };
+        Logger.debug(`settings-ui: ops verifier version picker shown (${versions.length} versions)`);
+    },
+
+    async _handleOpsVerifierVersionChange(modal) {
+        const select = Context.dom.query('#wf-ops-verifier-version', {
+            root: modal,
+            context: `${this.id}.opsVerifierVersionChange`
+        });
+        const state = this._opsVerifierFetchState;
+        if (!select || !state?.resolved) return;
+
+        const version = Number(select.value);
+        if (!Number.isFinite(version)) return;
+
+        state.selectedVersion = version;
+        select.disabled = true;
+        this._setOpsVerifierStatus(modal, `Loading verifier v${version}...`);
+        try {
+            const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, version);
+            this._setOpsVerifierOutput(modal, result.source);
+            const teamNote = result.teamId ? ` (team ${result.teamId.slice(0, 8)}...)` : '';
+            this._setOpsVerifierStatus(
+                modal,
+                `Showing v${result.version ?? version} (${result.source.length} chars)${teamNote}.`
+            );
+            Logger.log(`settings-ui: ops verifier version selected ${result.verifierId} v${result.version ?? version}`);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this._setOpsVerifierStatus(modal, message, true);
+            Logger.warn('settings-ui: ops verifier version change failed', e);
+        } finally {
+            select.disabled = false;
+        }
+    },
+
+    async _fetchOpsVerifierCode(parsed) {
+        Logger.debug('settings-ui: ops verifier fetch start', {
+            taskKey: parsed.taskKey || '(none)',
+            taskId: parsed.taskId || '(none)',
+            verifierId: parsed.verifierId || '(none)',
+            verifierKey: parsed.verifierKey || '(none)',
+            teamId: parsed.teamId || '(none)',
+            verifierVersion: parsed.verifierVersion ?? '(none)'
+        });
+        const resolved = await this._resolveOpsVerifierId(parsed);
+        Logger.debug('settings-ui: ops verifier resolved', {
+            verifierId: resolved.verifierId || '(none)',
+            verifierKey: resolved.verifierKey || '(none)',
+            teamId: resolved.teamId || '(none)'
+        });
+
+        const versions = await this._listOpsVerifierVersions(resolved);
+        Logger.debug(`settings-ui: ops verifier versions listed: ${versions.length}`);
+
+        const defaultVersion = parsed.verifierVersion != null
+            ? parsed.verifierVersion
+            : (versions[0]?.version ?? null);
+        const result = await this._fetchOpsVerifierCodeForVersion(resolved, defaultVersion);
+
+        return {
+            ...result,
+            versions,
+            selectedVersion: result.version ?? defaultVersion
         };
     },
 
@@ -3214,6 +3353,7 @@ const plugin = {
             fetchBtn.textContent = 'Fetching...';
         }
         this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
+        this._clearOpsVerifierVersionPicker(modal);
         this._setOpsVerifierOutput(modal, '');
         Logger.debug('settings-ui: ops verifier handle fetch', {
             input: (input.value || '').slice(0, 120),
@@ -3228,6 +3368,7 @@ const plugin = {
         });
         try {
             const result = await this._fetchOpsVerifierCode(parsed);
+            this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
             this._setOpsVerifierOutput(modal, result.source);
             const versionText = result.version != null ? `v${result.version}` : 'latest version';
             const teamNote = result.teamId ? ` (team ${result.teamId.slice(0, 8)}...)` : '';
@@ -3280,6 +3421,10 @@ const plugin = {
         const verifierInput = Context.dom.query('#wf-ops-verifier-input', {
             root: modal,
             context: `${this.id}.opsVerifierInputAttach`
+        });
+        const verifierVersionSelect = Context.dom.query('#wf-ops-verifier-version', {
+            root: modal,
+            context: `${this.id}.opsVerifierVersionAttach`
         });
 
         if (input) {
@@ -3344,9 +3489,17 @@ const plugin = {
         if (verifierInput) {
             verifierInput.addEventListener('paste', () => {
                 this._setOpsVerifierStatus(modal, '');
+                this._clearOpsVerifierVersionPicker(modal);
             });
             verifierInput.addEventListener('input', () => {
                 this._setOpsVerifierStatus(modal, '');
+                this._clearOpsVerifierVersionPicker(modal);
+            });
+        }
+
+        if (verifierVersionSelect) {
+            verifierVersionSelect.addEventListener('change', () => {
+                void this._handleOpsVerifierVersionChange(modal);
             });
         }
 
