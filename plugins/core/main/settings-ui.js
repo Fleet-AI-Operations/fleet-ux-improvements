@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.21',
+    _version: '7.22',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2847,39 +2847,68 @@ const plugin = {
 
     async _resolveOpsVerifierFromTask(parsed) {
         if ((!parsed.taskKey && !parsed.taskId) || parsed.verifierId) return parsed;
-        let row = null;
+
+        // Step 1: eval_tasks → get current_version_id + team_id
+        let taskRow = null;
         try {
-            const params = {
-                select: '*',
-                limit: 1
-            };
-            if (parsed.taskKey) {
-                params.key = `eq.${parsed.taskKey}`;
-            } else {
-                params.id = `eq.${parsed.taskId}`;
-            }
+            const params = { select: 'id,key,current_version_id,team_id', limit: 1 };
+            if (parsed.taskKey) params.key = `eq.${parsed.taskKey}`;
+            else params.id = `eq.${parsed.taskId}`;
             const rows = await this._opsPostgrestGet('eval_tasks', params);
-            row = Array.isArray(rows) ? rows[0] : rows;
+            taskRow = Array.isArray(rows) ? rows[0] : rows;
+            Logger.debug(
+                `settings-ui: ops eval_tasks → id=${taskRow?.id || '(none)'} ` +
+                `current_version_id=${taskRow?.current_version_id || '(none)'} ` +
+                `team_id=${taskRow?.team_id || '(none)'}`
+            );
         } catch (e) {
             Logger.debug('settings-ui: ops eval_tasks lookup failed', e);
         }
-        const hints = row ? this._extractOpsVerifierHints(row) : {};
-        const versionHints = await this._resolveOpsVerifierFromTaskVersions(
-            parsed.taskId || row?.id || '',
-            parsed.teamId || row?.team_id || ''
-        );
-        const pageHints = await this._resolveOpsVerifierFromTaskPage(parsed.taskKey || row?.key || '');
-        if (!row && !pageHints.verifierId && !pageHints.verifierKey) {
+
+        if (!taskRow) {
             throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
         }
+
+        const teamId = parsed.teamId || taskRow.team_id || '';
+        const taskId = parsed.taskId || taskRow.id || '';
+        const taskKey = parsed.taskKey || taskRow.key || '';
+
+        // Step 2: eval_task_versions (current version) → get verifier_id directly
+        let verifierId = '';
+        let verifierKey = '';
+        let verifierVersion = null;
+        if (taskRow.current_version_id) {
+            try {
+                const vRows = await this._opsPostgrestGet('eval_task_versions', {
+                    select: 'verifier_id,metadata',
+                    id: `eq.${taskRow.current_version_id}`,
+                    limit: 1
+                });
+                const vRow = Array.isArray(vRows) ? vRows[0] : vRows;
+                if (vRow) {
+                    verifierId = vRow.verifier_id || '';
+                    verifierKey = vRow.metadata?.verifier_key || '';
+                    verifierVersion = vRow.metadata?.verifier_version ?? null;
+                    Logger.debug(
+                        `settings-ui: ops eval_task_versions → verifier_id=${verifierId || '(none)'} ` +
+                        `key=${verifierKey || '(none)'} version=${verifierVersion ?? '(none)'}`
+                    );
+                }
+            } catch (e) {
+                Logger.debug('settings-ui: ops eval_task_versions lookup failed', e);
+            }
+        } else {
+            Logger.debug('settings-ui: ops eval_tasks had no current_version_id');
+        }
+
         return {
             ...parsed,
-            taskId: parsed.taskId || row?.id || '',
-            taskKey: parsed.taskKey || row?.key || '',
-            teamId: parsed.teamId || row?.team_id || pageHints.teamId || '',
-            verifierId: parsed.verifierId || hints.verifierId || versionHints.verifierId || pageHints.verifierId || '',
-            verifierKey: parsed.verifierKey || hints.verifierKey || versionHints.verifierKey || pageHints.verifierKey || '',
-            verifierVersion: parsed.verifierVersion ?? hints.verifierVersion ?? versionHints.verifierVersion ?? pageHints.verifierVersion ?? null
+            taskId,
+            taskKey,
+            teamId,
+            verifierId: parsed.verifierId || verifierId || '',
+            verifierKey: parsed.verifierKey || verifierKey || '',
+            verifierVersion: parsed.verifierVersion ?? verifierVersion ?? null
         };
     },
 
