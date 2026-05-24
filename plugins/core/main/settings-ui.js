@@ -4,8 +4,12 @@
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
+const OPS_POSTGREST_BASE_URL = 'https://api.fleetai.com/rest/v1';
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
+const OPS_TASK_KEY_RE = /task_[A-Za-z0-9_]+/;
+const OPS_VERIFIER_KEY_RE = /verifier-task_[A-Za-z0-9_.-]+/;
 const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OPS_UUID_FIND_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const COPY_SUCCESS_FLASH_MS = 1000;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
@@ -21,7 +25,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.10',
+    _version: '7.11',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -694,6 +698,80 @@ const plugin = {
                         cursor: pointer;
                         transition: background 0.2s, color 0.2s;
                     ">Copy</button>
+                </div>
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
+                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #333);">
+                        Verifier Code Fetcher
+                    </h3>
+                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Uses your current Fleet login to fetch verifier_versions.display_src.
+                    </p>
+                    <textarea id="wf-ops-verifier-input" placeholder="Paste task key, verifier key, verifier ID, task URL, or seed data" rows="3" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        font-size: 12px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                        resize: vertical;
+                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                    "></textarea>
+                    <input type="text" id="wf-ops-verifier-team-id" placeholder="Optional team ID override" autocomplete="off" style="
+                        width: 100%;
+                        margin-top: 8px;
+                        padding: 8px 12px;
+                        font-size: 12px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                    ">
+                    <div style="display: flex; align-items: stretch; gap: 8px; margin-top: 8px;">
+                        <button type="button" id="wf-ops-fetch-verifier" style="
+                            flex: 1;
+                            padding: 10px 12px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: white;
+                            background: var(--brand, #4f46e5);
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                        ">Fetch Verifier</button>
+                        <button type="button" id="wf-ops-copy-verifier" disabled style="
+                            flex-shrink: 0;
+                            padding: 10px 12px;
+                            font-size: 12px;
+                            font-weight: 500;
+                            color: var(--foreground, #333);
+                            background: var(--card, #fafafa);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            cursor: pointer;
+                            opacity: 0.55;
+                            transition: background 0.2s, color 0.2s, opacity 0.2s;
+                        ">Copy Code</button>
+                    </div>
+                    <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                    <textarea id="wf-ops-verifier-output" readonly rows="10" style="
+                        display: none;
+                        width: 100%;
+                        margin-top: 8px;
+                        padding: 8px 12px;
+                        font-size: 12px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--card, #fafafa);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                        resize: vertical;
+                        white-space: pre;
+                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                    "></textarea>
                 </div>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
                     <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
@@ -2408,6 +2486,258 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
+    _getOpsSupabaseAccessToken() {
+        try {
+            const ls = window.localStorage;
+            for (let i = 0; i < ls.length; i++) {
+                const key = ls.key(i);
+                if (!key || !key.startsWith('sb-') || !key.includes('auth-token')) continue;
+                const raw = ls.getItem(key);
+                if (!raw) continue;
+                const parsed = JSON.parse(raw);
+                const token =
+                    parsed?.access_token ||
+                    parsed?.currentSession?.access_token ||
+                    parsed?.session?.access_token;
+                if (typeof token === 'string' && token.length > 0) return token;
+            }
+        } catch (e) {
+            Logger.debug('settings-ui: ops verifier token read failed', e);
+        }
+        return '';
+    },
+
+    _getOpsPostgrestHeaders() {
+        const headers = {
+            accept: 'application/json',
+            'accept-profile': 'public',
+            'x-client-info': `fleet-ux-settings-ui/${this._version}`
+        };
+        const capturedApikey = window.__fleetSessionTraceCapturedApikey;
+        const capturedAuth = window.__fleetSessionTraceCapturedAuth;
+        const token = !capturedAuth ? this._getOpsSupabaseAccessToken() : '';
+        if (capturedApikey) headers.apikey = capturedApikey;
+        if (capturedAuth) {
+            headers.authorization = capturedAuth;
+        } else if (token) {
+            headers.authorization = `Bearer ${token}`;
+        }
+        return headers;
+    },
+
+    async _opsPostgrestGet(table, params) {
+        const url = new URL(`${OPS_POSTGREST_BASE_URL}/${table}`);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value != null && value !== '') url.searchParams.set(key, String(value));
+        });
+        const headers = this._getOpsPostgrestHeaders();
+        if (!headers.authorization && !headers.apikey) {
+            throw new Error('No Fleet auth token found. Open Fleet while logged in, then try again.');
+        }
+        const res = await fetch(url.toString(), {
+            method: 'GET',
+            headers,
+            credentials: 'omit'
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(`Fleet API ${res.status}: ${text || res.statusText}`);
+        }
+        return res.json();
+    },
+
+    _matchOpsJsonString(raw, key) {
+        const re = new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`);
+        const match = String(raw || '').match(re);
+        return match ? match[1] : '';
+    },
+
+    _matchOpsJsonNumber(raw, key) {
+        const re = new RegExp(`"${key}"\\s*:\\s*(\\d+)`);
+        const match = String(raw || '').match(re);
+        return match ? Number(match[1]) : null;
+    },
+
+    _parseOpsVerifierInput(raw, teamOverride) {
+        const text = String(raw || '').trim();
+        const teamText = String(teamOverride || '').trim();
+        const fromUrl = this._extractOpsTaskIdentifier(text);
+        const explicitTeamId = OPS_UUID_RE.test(teamText) ? teamText : '';
+        const verifierKeyMatch = text.match(OPS_VERIFIER_KEY_RE);
+        const taskKeyMatch = verifierKeyMatch ? null : text.match(OPS_TASK_KEY_RE);
+        const jsonVerifierId = this._matchOpsJsonString(text, 'verifier_id');
+        const jsonTeamId = this._matchOpsJsonString(text, 'team_id');
+        const jsonVerifierKey = this._matchOpsJsonString(text, 'verifier_key');
+        const versionMetadataVerifierKey = text.match(/"version_metadata"\s*:\s*\{[^}]*"verifier_key"\s*:\s*"([^"]+)"/);
+        const versionNo = this._matchOpsJsonNumber(text, 'verifier_version');
+        const uuidMatch = text.match(OPS_UUID_FIND_RE);
+        const urlOrRawId = String(fromUrl || '').trim();
+
+        return {
+            taskId: OPS_UUID_RE.test(urlOrRawId) ? urlOrRawId : '',
+            taskKey: /^task_/i.test(urlOrRawId) ? urlOrRawId : (taskKeyMatch ? taskKeyMatch[0] : ''),
+            verifierId: jsonVerifierId || (!taskKeyMatch && !jsonTeamId && uuidMatch ? uuidMatch[0] : ''),
+            verifierKey: jsonVerifierKey || (versionMetadataVerifierKey ? versionMetadataVerifierKey[1] : '') || (verifierKeyMatch ? verifierKeyMatch[0] : ''),
+            teamId: explicitTeamId || jsonTeamId || '',
+            verifierVersion: Number.isFinite(versionNo) ? versionNo : null
+        };
+    },
+
+    async _resolveOpsVerifierFromTask(parsed) {
+        if (!parsed.taskKey && !parsed.taskId) return parsed;
+        const params = {
+            select: 'id,key,team_id,verifier_id,version_metadata',
+            limit: 1
+        };
+        if (parsed.taskKey) {
+            params.key = `eq.${parsed.taskKey}`;
+        } else {
+            params.id = `eq.${parsed.taskId}`;
+        }
+        const rows = await this._opsPostgrestGet('eval_tasks', params);
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (!row) {
+            throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
+        }
+        const meta = row.version_metadata || {};
+        return {
+            ...parsed,
+            taskId: parsed.taskId || row.id || '',
+            taskKey: parsed.taskKey || row.key || '',
+            teamId: parsed.teamId || row.team_id || '',
+            verifierId: parsed.verifierId || row.verifier_id || '',
+            verifierKey: parsed.verifierKey || meta.verifier_key || '',
+            verifierVersion: parsed.verifierVersion || meta.verifier_version || null
+        };
+    },
+
+    async _resolveOpsVerifierId(parsed) {
+        const resolved = await this._resolveOpsVerifierFromTask(parsed);
+        if (resolved.verifierId) return resolved;
+        if (!resolved.verifierKey) {
+            throw new Error('No verifier ID or verifier key found. Paste a task key, verifier key, verifier ID, or seed data.');
+        }
+        const params = {
+            select: 'id',
+            key: `eq.${resolved.verifierKey}`,
+            limit: 1
+        };
+        if (resolved.teamId) params.team_id = `eq.${resolved.teamId}`;
+        const rows = await this._opsPostgrestGet('verifiers', params);
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (!row?.id) {
+            throw new Error(`No verifier found for ${resolved.verifierKey}.`);
+        }
+        return { ...resolved, verifierId: row.id };
+    },
+
+    async _fetchOpsVerifierCode(parsed) {
+        const resolved = await this._resolveOpsVerifierId(parsed);
+        const params = {
+            select: 'id,version,created_at,display_src',
+            verifier_id: `eq.${resolved.verifierId}`,
+            order: 'version.desc',
+            limit: 1
+        };
+        if (resolved.verifierVersion != null) {
+            params.version = `eq.${resolved.verifierVersion}`;
+            delete params.order;
+        }
+        const rows = await this._opsPostgrestGet('verifier_versions', params);
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (!row) {
+            throw new Error(`No verifier version found for ${resolved.verifierId}.`);
+        }
+        if (!row.display_src) {
+            throw new Error(`Verifier version ${row.version ?? '?'} has no display_src.`);
+        }
+        return {
+            ...resolved,
+            version: row.version,
+            versionId: row.id,
+            createdAt: row.created_at,
+            source: row.display_src
+        };
+    },
+
+    _setOpsVerifierStatus(modal, message, isError = false) {
+        const status = Context.dom.query('#wf-ops-verifier-status', {
+            root: modal,
+            context: `${this.id}.opsVerifierStatus`
+        });
+        if (!status) return;
+        status.textContent = message || '';
+        status.style.display = message ? 'block' : 'none';
+        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+    },
+
+    _setOpsVerifierOutput(modal, value) {
+        const output = Context.dom.query('#wf-ops-verifier-output', {
+            root: modal,
+            context: `${this.id}.opsVerifierOutput`
+        });
+        const copyBtn = Context.dom.query('#wf-ops-copy-verifier', {
+            root: modal,
+            context: `${this.id}.opsVerifierCopy`
+        });
+        if (output) {
+            output.value = value || '';
+            output.style.display = value ? 'block' : 'none';
+        }
+        if (copyBtn) {
+            copyBtn.disabled = !value;
+            copyBtn.style.opacity = value ? '1' : '0.55';
+            copyBtn.style.cursor = value ? 'pointer' : 'not-allowed';
+        }
+    },
+
+    async _handleOpsVerifierFetch(modal) {
+        const input = Context.dom.query('#wf-ops-verifier-input', {
+            root: modal,
+            context: `${this.id}.opsVerifierInput`
+        });
+        const teamInput = Context.dom.query('#wf-ops-verifier-team-id', {
+            root: modal,
+            context: `${this.id}.opsVerifierTeamInput`
+        });
+        const fetchBtn = Context.dom.query('#wf-ops-fetch-verifier', {
+            root: modal,
+            context: `${this.id}.opsVerifierFetch`
+        });
+        if (!input) return;
+        const parsed = this._parseOpsVerifierInput(input.value, teamInput ? teamInput.value : '');
+        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
+            this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
+            this._setOpsVerifierOutput(modal, '');
+            return;
+        }
+        if (fetchBtn) {
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
+        }
+        this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
+        this._setOpsVerifierOutput(modal, '');
+        try {
+            const result = await this._fetchOpsVerifierCode(parsed);
+            this._setOpsVerifierOutput(modal, result.source);
+            const versionText = result.version != null ? `v${result.version}` : 'latest version';
+            this._setOpsVerifierStatus(
+                modal,
+                `Fetched ${versionText} (${result.source.length} chars) from verifier_versions.display_src.`
+            );
+            Logger.log(`settings-ui: ops verifier fetched ${result.verifierId} ${versionText}`);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this._setOpsVerifierStatus(modal, message, true);
+            Logger.warn('settings-ui: ops verifier fetch failed', e);
+        } finally {
+            if (fetchBtn) {
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Fetch Verifier';
+            }
+        }
+    },
+
     _attachOpsTabListeners(modal) {
         if (!modal || modal.dataset.wfOpsListenersAttached === '1') return;
         modal.dataset.wfOpsListenersAttached = '1';
@@ -2423,6 +2753,18 @@ const plugin = {
         const copyBtn = Context.dom.query('#wf-ops-copy-link', {
             root: modal,
             context: `${this.id}.opsCopyLinkAttach`
+        });
+        const verifierFetchBtn = Context.dom.query('#wf-ops-fetch-verifier', {
+            root: modal,
+            context: `${this.id}.opsVerifierFetchAttach`
+        });
+        const verifierCopyBtn = Context.dom.query('#wf-ops-copy-verifier', {
+            root: modal,
+            context: `${this.id}.opsVerifierCopyAttach`
+        });
+        const verifierInput = Context.dom.query('#wf-ops-verifier-input', {
+            root: modal,
+            context: `${this.id}.opsVerifierInputAttach`
         });
 
         if (input) {
@@ -2461,6 +2803,44 @@ const plugin = {
                 } else {
                     this._showOpsCopyFailurePulse(copyBtn);
                     Logger.warn('settings-ui: ops link copy failed');
+                }
+            });
+        }
+
+        if (verifierFetchBtn) {
+            verifierFetchBtn.addEventListener('click', () => {
+                void this._handleOpsVerifierFetch(modal);
+            });
+        }
+
+        if (verifierInput) {
+            verifierInput.addEventListener('paste', () => {
+                this._setOpsVerifierStatus(modal, '');
+            });
+            verifierInput.addEventListener('input', () => {
+                this._setOpsVerifierStatus(modal, '');
+            });
+        }
+
+        if (verifierCopyBtn) {
+            verifierCopyBtn.addEventListener('click', async () => {
+                const output = Context.dom.query('#wf-ops-verifier-output', {
+                    root: modal,
+                    context: `${this.id}.opsVerifierOutputCopy`
+                });
+                const value = output ? output.value : '';
+                if (!value) {
+                    this._showOpsCopyFailurePulse(verifierCopyBtn);
+                    Logger.warn('settings-ui: ops verifier copy skipped (no code)');
+                    return;
+                }
+                const ok = await this._copyOpsTextToClipboard(value);
+                if (ok) {
+                    this._showOpsCopySuccessFlash(verifierCopyBtn);
+                    Logger.log(`settings-ui: ops verifier code copied (${value.length} chars)`);
+                } else {
+                    this._showOpsCopyFailurePulse(verifierCopyBtn);
+                    Logger.warn('settings-ui: ops verifier copy failed');
                 }
             });
         }
