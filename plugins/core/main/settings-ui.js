@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.18',
+    _version: '7.19',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2883,24 +2883,57 @@ const plugin = {
         };
     },
 
+    async _resolveOpsVerifierByTaskKey(taskKey, teamId) {
+        if (!taskKey) return null;
+        const prefix = `verifier-${taskKey}-`;
+        const params = {
+            select: 'id,key',
+            key: `like.${prefix}%`,
+            order: 'created_at.desc',
+            limit: 1
+        };
+        if (teamId) params.team_id = `eq.${teamId}`;
+        try {
+            const rows = await this._opsPostgrestGet('verifiers', params);
+            const row = Array.isArray(rows) ? rows[0] : rows;
+            if (row?.id) return { verifierId: row.id, verifierKey: row.key || '' };
+        } catch (e) {
+            Logger.debug('settings-ui: ops verifiers task-key like-query failed', e);
+        }
+        return null;
+    },
+
     async _resolveOpsVerifierId(parsed) {
         const resolved = await this._resolveOpsVerifierFromTask(parsed);
         if (resolved.verifierId) return resolved;
-        if (!resolved.verifierKey) {
-            throw new Error('No verifier ID or verifier key found. Paste a task key, verifier key, verifier ID, or seed data.');
+
+        if (resolved.verifierKey) {
+            const params = {
+                select: 'id',
+                key: `eq.${resolved.verifierKey}`,
+                limit: 1
+            };
+            if (resolved.teamId) params.team_id = `eq.${resolved.teamId}`;
+            const rows = await this._opsPostgrestGet('verifiers', params);
+            const row = Array.isArray(rows) ? rows[0] : rows;
+            if (!row?.id) {
+                throw new Error(`No verifier found for key: ${resolved.verifierKey}.`);
+            }
+            return { ...resolved, verifierId: row.id };
         }
-        const params = {
-            select: 'id',
-            key: `eq.${resolved.verifierKey}`,
-            limit: 1
-        };
-        if (resolved.teamId) params.team_id = `eq.${resolved.teamId}`;
-        const rows = await this._opsPostgrestGet('verifiers', params);
-        const row = Array.isArray(rows) ? rows[0] : rows;
-        if (!row?.id) {
-            throw new Error(`No verifier found for ${resolved.verifierKey}.`);
+
+        const taskKey = resolved.taskKey;
+        if (taskKey) {
+            const match = await this._resolveOpsVerifierByTaskKey(taskKey, resolved.teamId);
+            if (match) {
+                return { ...resolved, verifierId: match.verifierId, verifierKey: match.verifierKey };
+            }
         }
-        return { ...resolved, verifierId: row.id };
+
+        throw new Error(
+            'Could not find a verifier for this task. ' +
+            'Try pasting a verifier ID, verifier key, or a seed snippet containing "verifier_id".'
+        );
     },
 
     _extractOpsJwtToken(pageWindow) {
