@@ -27,11 +27,12 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
+    _opsVerifierSourceText: '',
     _opsTabState: {
         taskInput: '',
         verifierInput: '',
@@ -54,7 +55,9 @@ const plugin = {
             onPaneOpened: (modal, settingsPlugin) => this._onOpsPaneOpened(modal, settingsPlugin),
             captureState: (modal) => this._captureOpsTabState(modal),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
-            clearStoredPassword: () => this._clearOpsStoredPassword()
+            clearStoredPassword: () => this._clearOpsStoredPassword(),
+            fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
+            parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
     },
@@ -829,17 +832,30 @@ const plugin = {
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
     },
 
-    _setOpsVerifierOutput(modal, value) {
+    async _setOpsVerifierOutput(modal, value) {
+        const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
         const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
         const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
+        const text = value || '';
+        this._opsVerifierSourceText = text;
+
+        if (wrap) {
+            wrap.style.display = text ? 'block' : 'none';
+        }
         if (output) {
-            output.value = value || '';
-            output.style.display = value ? 'block' : 'none';
+            if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
+                await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
+            } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
+                Context.highlightJs.setPlainCode(output, text);
+            } else {
+                output.textContent = text;
+                output.className = text ? 'language-python' : 'language-plaintext';
+            }
         }
         if (copyBtn) {
-            copyBtn.disabled = !value;
-            copyBtn.style.opacity = value ? '1' : '0.55';
-            copyBtn.style.cursor = value ? 'pointer' : 'not-allowed';
+            copyBtn.disabled = !text;
+            copyBtn.style.opacity = text ? '1' : '0.55';
+            copyBtn.style.cursor = text ? 'pointer' : 'not-allowed';
         }
     },
 
@@ -888,14 +904,13 @@ const plugin = {
         const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
         const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
-        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputCapture');
         const fetchState = this._opsVerifierFetchState;
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
             verifierInput: verifierInput ? verifierInput.value : '',
             verifierStatus: status && status.style.display !== 'none' ? (status.textContent || '') : '',
             verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
-            verifierOutput: output ? output.value : '',
+            verifierOutput: this._opsVerifierSourceText || '',
             verifierFetchState: fetchState
                 ? {
                     resolved: fetchState.resolved,
@@ -927,7 +942,7 @@ const plugin = {
         }
 
         if (state.verifierOutput) {
-            this._setOpsVerifierOutput(modal, state.verifierOutput);
+            void this._setOpsVerifierOutput(modal, state.verifierOutput);
         }
 
         if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
@@ -1212,21 +1227,28 @@ const plugin = {
                         box-sizing: border-box;
                         font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                     "></select>
-                    <textarea id="wf-ops-verifier-output" readonly rows="10" style="
+                    <div id="wf-ops-verifier-output-wrap" style="
                         display: none;
                         width: 100%;
                         margin-top: 8px;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--card, #fafafa);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        resize: vertical;
-                        white-space: pre;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    "></textarea>
+                    ">
+                        <pre style="
+                            width: 100%;
+                            margin: 0;
+                            padding: 8px 12px;
+                            font-size: 12px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--card, #fafafa);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                            max-height: 320px;
+                            overflow: auto;
+                            white-space: pre-wrap;
+                            word-break: break-word;
+                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                        "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
+                    </div>
                 </div>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
                     <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
@@ -1257,7 +1279,7 @@ const plugin = {
         const parsed = this._parseOpsVerifierInput(input.value);
         if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
             this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
-            this._setOpsVerifierOutput(modal, '');
+            void this._setOpsVerifierOutput(modal, '');
             this._captureOpsTabState(modal);
             return;
         }
@@ -1267,7 +1289,7 @@ const plugin = {
         }
         this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
         this._clearOpsVerifierVersionPicker(modal);
-        this._setOpsVerifierOutput(modal, '');
+        void this._setOpsVerifierOutput(modal, '');
         Logger.debug('ops-tab: handle verifier fetch', {
             input: (input.value || '').slice(0, 120),
             parsed: {
@@ -1281,7 +1303,7 @@ const plugin = {
         try {
             const result = await this._fetchOpsVerifierCode(parsed);
             this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
-            this._setOpsVerifierOutput(modal, result.source);
+            await this._setOpsVerifierOutput(modal, result.source);
             const versionText = result.version != null ? 'v' + result.version : 'latest version';
             const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
             this._setOpsVerifierStatus(
@@ -1315,7 +1337,7 @@ const plugin = {
         this._setOpsVerifierStatus(modal, 'Loading verifier v' + version + '...');
         try {
             const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, version);
-            this._setOpsVerifierOutput(modal, result.source);
+            await this._setOpsVerifierOutput(modal, result.source);
             const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
             this._setOpsVerifierStatus(
                 modal,
@@ -1507,8 +1529,7 @@ const plugin = {
 
         if (verifierCopyBtn) {
             verifierCopyBtn.addEventListener('click', async () => {
-                const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputCopy');
-                const value = output ? output.value : '';
+                const value = this._opsVerifierSourceText || '';
                 if (!value) {
                     this._showOpsCopyFailurePulse(verifierCopyBtn);
                     Logger.warn('ops-tab: verifier copy skipped (no code)');
