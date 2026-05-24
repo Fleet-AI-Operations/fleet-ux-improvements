@@ -4,7 +4,11 @@
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
-const OPS_POSTGREST_BASE_URL = 'https://api.fleetai.com/rest/v1';
+/** Fleet production Supabase PostgREST (same host the dashboard VerifierCodeViewer uses). */
+const OPS_SUPABASE_REST_BASE_URL = 'https://ehefoavidbttssbleuyv.supabase.co/rest/v1';
+/** Public anon key (role=anon); safe to embed — also shipped in Fleet's client bundle. */
+const OPS_SUPABASE_ANON_KEY =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoZWZvYXZpZGJ0dHNzYmxldXl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODc4OTg2MjIsImV4cCI6MjAwMzQ3NDYyMn0.npXG_66bjHFUXguOXS2jhFWtXC9NdfsmN_30-c8SrRo';
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
 const OPS_TASK_KEY_RE = /task_[A-Za-z0-9_]+/;
 const OPS_VERIFIER_KEY_RE = /verifier-task_[A-Za-z0-9_.-]+/;
@@ -25,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.14',
+    _version: '7.15',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2594,18 +2598,91 @@ const plugin = {
         return '';
     },
 
+    _decodeOpsJwtPayload(jwt) {
+        if (!jwt || typeof jwt !== 'string') return null;
+        const parts = jwt.split('.');
+        if (parts.length !== 3) return null;
+        try {
+            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+            return JSON.parse(atob(padded));
+        } catch (_e) {
+            return null;
+        }
+    },
+
+    _isOpsSupabaseAnonKey(key) {
+        const payload = this._decodeOpsJwtPayload(key);
+        return payload?.role === 'anon';
+    },
+
+    _getOpsSupabaseAnonKey(pageWindow) {
+        const captured = pageWindow.__fleetSessionTraceCapturedApikey || window.__fleetSessionTraceCapturedApikey;
+        if (captured && this._isOpsSupabaseAnonKey(captured)) return captured;
+        return OPS_SUPABASE_ANON_KEY;
+    },
+
+    _captureOpsSupabaseFetchAuth(pageWindow, config) {
+        if (!config || !config.headers) return;
+        try {
+            const H = pageWindow.Headers;
+            let h;
+            if (config.headers instanceof H) {
+                h = config.headers;
+            } else if (typeof config.headers === 'object') {
+                h = new H();
+                for (const [k, v] of Object.entries(config.headers)) {
+                    if (v != null) h.set(k, String(v));
+                }
+            } else {
+                return;
+            }
+            const apikey = h.get('apikey');
+            if (apikey && this._isOpsSupabaseAnonKey(apikey)) {
+                pageWindow.__fleetSessionTraceCapturedApikey = apikey;
+            }
+            const auth = h.get('authorization');
+            if (auth) {
+                pageWindow.__fleetSessionTraceCapturedAuth = auth;
+            }
+        } catch (e) {
+            Logger.debug('settings-ui: ops supabase header capture failed', e);
+        }
+    },
+
+    _ensureOpsSupabaseFetchCapture(pageWindow) {
+        if (!pageWindow || pageWindow.__fleetOpsSupabaseFetchCaptureInstalled) return;
+        pageWindow.__fleetOpsSupabaseFetchCaptureInstalled = true;
+        const self = this;
+        const originalFetch = pageWindow.fetch;
+        if (typeof originalFetch !== 'function') return;
+        pageWindow.fetch = function (...args) {
+            const [resource, config] = args;
+            let url;
+            try {
+                url = new URL(resource, pageWindow.location.href);
+            } catch (_e) {
+                url = { hostname: '' };
+            }
+            if (url.hostname && url.hostname.endsWith('.supabase.co')) {
+                self._captureOpsSupabaseFetchAuth(pageWindow, config);
+            }
+            return originalFetch.apply(this, args);
+        };
+        Logger.debug('settings-ui: ops supabase fetch capture installed');
+    },
+
     _getOpsPostgrestHeaders() {
         const pageWindow = this._getOpsPageWindow();
+        this._ensureOpsSupabaseFetchCapture(pageWindow);
         const headers = {
             accept: 'application/json',
             'accept-profile': 'public',
+            apikey: this._getOpsSupabaseAnonKey(pageWindow),
             'x-client-info': `fleet-ux-settings-ui/${this._version}`
         };
-        const capturedApikey = pageWindow.__fleetSessionTraceCapturedApikey || window.__fleetSessionTraceCapturedApikey;
         const capturedAuth = pageWindow.__fleetSessionTraceCapturedAuth || window.__fleetSessionTraceCapturedAuth;
-        const capturedAuthToken = capturedAuth ? String(capturedAuth).replace(/^Bearer\s+/i, '') : '';
         const token = !capturedAuth ? this._getOpsSupabaseAccessToken(pageWindow) : '';
-        if (capturedApikey || token || capturedAuthToken) headers.apikey = capturedApikey || token || capturedAuthToken;
         if (capturedAuth) {
             headers.authorization = capturedAuth;
         } else if (token) {
@@ -2615,13 +2692,13 @@ const plugin = {
     },
 
     async _opsPostgrestGet(table, params) {
-        const url = new URL(`${OPS_POSTGREST_BASE_URL}/${table}`);
+        const url = new URL(`${OPS_SUPABASE_REST_BASE_URL}/${table}`);
         Object.entries(params || {}).forEach(([key, value]) => {
             if (value != null && value !== '') url.searchParams.set(key, String(value));
         });
         const headers = this._getOpsPostgrestHeaders();
-        if (!headers.authorization && !headers.apikey) {
-            throw new Error('No Fleet auth token found. Open Fleet while logged in, then try again.');
+        if (!headers.authorization) {
+            throw new Error('No Fleet session token found. Open Fleet while logged in, then try again.');
         }
         const pageWindow = this._getOpsPageWindow();
         const requestFetch = pageWindow.fetch || fetch;
@@ -2632,7 +2709,7 @@ const plugin = {
         });
         if (!res.ok) {
             const text = await res.text().catch(() => '');
-            throw new Error(`Fleet API ${res.status}: ${text || res.statusText}`);
+            throw new Error(`Supabase API ${res.status}: ${text || res.statusText}`);
         }
         return res.json();
     },
@@ -2832,6 +2909,7 @@ const plugin = {
     _attachOpsTabListeners(modal) {
         if (!modal || modal.dataset.wfOpsListenersAttached === '1') return;
         modal.dataset.wfOpsListenersAttached = '1';
+        this._ensureOpsSupabaseFetchCapture(this._getOpsPageWindow());
 
         const input = Context.dom.query('#wf-ops-task-input', {
             root: modal,
