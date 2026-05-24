@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.16',
+    _version: '7.17',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2714,6 +2714,58 @@ const plugin = {
         return res.json();
     },
 
+    _extractOpsVerifierHints(source) {
+        const out = {
+            verifierId: '',
+            verifierKey: '',
+            verifierVersion: null
+        };
+        const from = source && typeof source === 'object' ? source : {};
+        const meta = typeof from.version_metadata === 'string'
+            ? (() => {
+                try { return JSON.parse(from.version_metadata); } catch (_e) { return {}; }
+            })()
+            : (from.version_metadata || {});
+        out.verifierId =
+            from.verifier_id ||
+            from.verifierId ||
+            from.verifier?.id ||
+            meta.verifier_id ||
+            '';
+        out.verifierKey =
+            from.verifier_key ||
+            from.verifierKey ||
+            from.verifier?.key ||
+            meta.verifier_key ||
+            '';
+        out.verifierVersion = Number.isFinite(from.verifier_version)
+            ? from.verifier_version
+            : Number.isFinite(meta.verifier_version)
+                ? meta.verifier_version
+                : null;
+        return out;
+    },
+
+    async _resolveOpsVerifierFromTaskVersions(taskId, teamId) {
+        if (!taskId) return {};
+        try {
+            const params = {
+                select: '*',
+                task_id: `eq.${taskId}`,
+                order: 'created_at.desc',
+                limit: 1
+            };
+            if (teamId) params.team_id = `eq.${teamId}`;
+            const rows = await this._opsPostgrestGet('task_versions', params);
+            const row = Array.isArray(rows) ? rows[0] : rows;
+            if (!row) return {};
+            return this._extractOpsVerifierHints(row);
+        } catch (e) {
+            Logger.debug('settings-ui: ops task_versions fallback failed', e);
+            return {};
+        }
+    },
+
     _matchOpsJsonString(raw, key) {
         const re = new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`);
         const match = String(raw || '').match(re);
@@ -2757,7 +2809,7 @@ const plugin = {
     async _resolveOpsVerifierFromTask(parsed) {
         if ((!parsed.taskKey && !parsed.taskId) || parsed.verifierId) return parsed;
         const params = {
-            select: 'id,key,team_id,version_metadata',
+            select: '*',
             limit: 1
         };
         if (parsed.taskKey) {
@@ -2770,21 +2822,19 @@ const plugin = {
         if (!row) {
             throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
         }
-        let meta = row.version_metadata || {};
-        if (typeof meta === 'string') {
-            try {
-                meta = JSON.parse(meta);
-            } catch (_e) {
-                meta = {};
-            }
-        }
+        const hints = this._extractOpsVerifierHints(row);
+        const versionHints = await this._resolveOpsVerifierFromTaskVersions(
+            parsed.taskId || row.id || '',
+            parsed.teamId || row.team_id || ''
+        );
         return {
             ...parsed,
             taskId: parsed.taskId || row.id || '',
             taskKey: parsed.taskKey || row.key || '',
             teamId: parsed.teamId || row.team_id || '',
-            verifierKey: parsed.verifierKey || meta.verifier_key || '',
-            verifierVersion: parsed.verifierVersion ?? meta.verifier_version ?? null
+            verifierId: parsed.verifierId || hints.verifierId || versionHints.verifierId || '',
+            verifierKey: parsed.verifierKey || hints.verifierKey || versionHints.verifierKey || '',
+            verifierVersion: parsed.verifierVersion ?? hints.verifierVersion ?? versionHints.verifierVersion ?? null
         };
     },
 
@@ -2808,8 +2858,80 @@ const plugin = {
         return { ...resolved, verifierId: row.id };
     },
 
+    _extractOpsJwtToken(pageWindow) {
+        const capturedAuth = pageWindow.__fleetSessionTraceCapturedAuth || window.__fleetSessionTraceCapturedAuth;
+        if (capturedAuth && /^Bearer\s+/i.test(capturedAuth)) {
+            return String(capturedAuth).replace(/^Bearer\s+/i, '').trim();
+        }
+        return this._getOpsSupabaseAccessToken(pageWindow);
+    },
+
+    _extractOpsOrchestratorVerifierSource(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+        const seen = new Set();
+        const queue = [payload];
+        while (queue.length > 0) {
+            const node = queue.shift();
+            if (!node || typeof node !== 'object') continue;
+            if (seen.has(node)) continue;
+            seen.add(node);
+            if (typeof node.display_src === 'string' && node.display_src.length > 0) {
+                return {
+                    source: node.display_src,
+                    version: Number.isFinite(node.version) ? node.version : null,
+                    versionId: node.id || null,
+                    createdAt: node.created_at || null
+                };
+            }
+            Object.values(node).forEach(v => {
+                if (v && typeof v === 'object') queue.push(v);
+            });
+        }
+        return null;
+    },
+
+    async _fetchOpsVerifierCodeFromOrchestrator(resolved) {
+        if (!resolved.verifierId || !resolved.teamId) return null;
+        const pageWindow = this._getOpsPageWindow();
+        const jwt = this._extractOpsJwtToken(pageWindow);
+        if (!jwt) return null;
+        const requestFetch = pageWindow.fetch || fetch;
+        const url = `https://orchestrator.fleetai.com/v1/verifiers/${encodeURIComponent(resolved.verifierId)}`;
+        try {
+            const res = await requestFetch.call(pageWindow, url, {
+                method: 'GET',
+                headers: {
+                    accept: 'application/json',
+                    'x-jwt-token': jwt,
+                    'x-team-id': resolved.teamId
+                },
+                credentials: 'omit'
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                Logger.debug(`settings-ui: ops orchestrator verifier fetch failed HTTP ${res.status}`, text || url);
+                return null;
+            }
+            const body = await res.json().catch(() => null);
+            const parsed = this._extractOpsOrchestratorVerifierSource(body);
+            if (!parsed || !parsed.source) return null;
+            return {
+                ...resolved,
+                version: parsed.version,
+                versionId: parsed.versionId,
+                createdAt: parsed.createdAt,
+                source: parsed.source
+            };
+        } catch (e) {
+            Logger.debug('settings-ui: ops orchestrator verifier fetch failed', e);
+            return null;
+        }
+    },
+
     async _fetchOpsVerifierCode(parsed) {
         const resolved = await this._resolveOpsVerifierId(parsed);
+        const orchestratorResult = await this._fetchOpsVerifierCodeFromOrchestrator(resolved);
+        if (orchestratorResult) return orchestratorResult;
         const params = {
             select: 'id,version,created_at,display_src',
             verifier_id: `eq.${resolved.verifierId}`,
