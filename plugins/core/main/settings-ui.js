@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.17',
+    _version: '7.18',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2746,6 +2746,45 @@ const plugin = {
         return out;
     },
 
+    _extractOpsVerifierHintsFromText(text) {
+        const raw = String(text || '');
+        if (!raw) return { verifierId: '', verifierKey: '', verifierVersion: null, teamId: '' };
+        const verifierId = this._matchOpsJsonString(raw, 'verifier_id');
+        const verifierKey =
+            this._matchOpsJsonString(raw, 'verifier_key') ||
+            ((raw.match(/"version_metadata"\s*:\s*\{[^}]*"verifier_key"\s*:\s*"([^"]+)"/) || [])[1] || '');
+        const teamId = this._matchOpsJsonString(raw, 'team_id');
+        const versionNo = this._matchOpsJsonNumber(raw, 'verifier_version');
+        return {
+            verifierId: verifierId || '',
+            verifierKey: verifierKey || '',
+            verifierVersion: Number.isFinite(versionNo) ? versionNo : null,
+            teamId: teamId || ''
+        };
+    },
+
+    async _resolveOpsVerifierFromTaskPage(taskKey) {
+        if (!taskKey) return {};
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const taskUrl = `${OPS_TASK_URL_PREFIX}${encodeURIComponent(taskKey)}`;
+        try {
+            const res = await requestFetch.call(pageWindow, taskUrl, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            if (!res.ok) {
+                Logger.debug(`settings-ui: ops task page fallback HTTP ${res.status}`, taskUrl);
+                return {};
+            }
+            const text = await res.text();
+            return this._extractOpsVerifierHintsFromText(text);
+        } catch (e) {
+            Logger.debug('settings-ui: ops task page fallback failed', e);
+            return {};
+        }
+    },
+
     async _resolveOpsVerifierFromTaskVersions(taskId, teamId) {
         if (!taskId) return {};
         try {
@@ -2808,33 +2847,39 @@ const plugin = {
 
     async _resolveOpsVerifierFromTask(parsed) {
         if ((!parsed.taskKey && !parsed.taskId) || parsed.verifierId) return parsed;
-        const params = {
-            select: '*',
-            limit: 1
-        };
-        if (parsed.taskKey) {
-            params.key = `eq.${parsed.taskKey}`;
-        } else {
-            params.id = `eq.${parsed.taskId}`;
+        let row = null;
+        try {
+            const params = {
+                select: '*',
+                limit: 1
+            };
+            if (parsed.taskKey) {
+                params.key = `eq.${parsed.taskKey}`;
+            } else {
+                params.id = `eq.${parsed.taskId}`;
+            }
+            const rows = await this._opsPostgrestGet('eval_tasks', params);
+            row = Array.isArray(rows) ? rows[0] : rows;
+        } catch (e) {
+            Logger.debug('settings-ui: ops eval_tasks lookup failed', e);
         }
-        const rows = await this._opsPostgrestGet('eval_tasks', params);
-        const row = Array.isArray(rows) ? rows[0] : rows;
-        if (!row) {
+        const hints = row ? this._extractOpsVerifierHints(row) : {};
+        const versionHints = await this._resolveOpsVerifierFromTaskVersions(
+            parsed.taskId || row?.id || '',
+            parsed.teamId || row?.team_id || ''
+        );
+        const pageHints = await this._resolveOpsVerifierFromTaskPage(parsed.taskKey || row?.key || '');
+        if (!row && !pageHints.verifierId && !pageHints.verifierKey) {
             throw new Error(`No task found for ${parsed.taskKey || parsed.taskId}.`);
         }
-        const hints = this._extractOpsVerifierHints(row);
-        const versionHints = await this._resolveOpsVerifierFromTaskVersions(
-            parsed.taskId || row.id || '',
-            parsed.teamId || row.team_id || ''
-        );
         return {
             ...parsed,
-            taskId: parsed.taskId || row.id || '',
-            taskKey: parsed.taskKey || row.key || '',
-            teamId: parsed.teamId || row.team_id || '',
-            verifierId: parsed.verifierId || hints.verifierId || versionHints.verifierId || '',
-            verifierKey: parsed.verifierKey || hints.verifierKey || versionHints.verifierKey || '',
-            verifierVersion: parsed.verifierVersion ?? hints.verifierVersion ?? versionHints.verifierVersion ?? null
+            taskId: parsed.taskId || row?.id || '',
+            taskKey: parsed.taskKey || row?.key || '',
+            teamId: parsed.teamId || row?.team_id || pageHints.teamId || '',
+            verifierId: parsed.verifierId || hints.verifierId || versionHints.verifierId || pageHints.verifierId || '',
+            verifierKey: parsed.verifierKey || hints.verifierKey || versionHints.verifierKey || pageHints.verifierKey || '',
+            verifierVersion: parsed.verifierVersion ?? hints.verifierVersion ?? versionHints.verifierVersion ?? pageHints.verifierVersion ?? null
         };
     },
 
