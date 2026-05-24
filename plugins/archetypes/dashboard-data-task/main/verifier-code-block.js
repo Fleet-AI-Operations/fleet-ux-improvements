@@ -21,7 +21,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -82,7 +82,7 @@ const plugin = {
             if (!parent) continue;
             const label = parent.querySelector('.font-medium.mb-2, .text-sm.text-muted-foreground.font-medium.mb-2');
             if (!label || (label.textContent || '').trim() !== VERIFIER_LABEL_TEXT) continue;
-            return { parent, placeholder: el };
+            return { parent, placeholder: el, label };
         }
         return null;
     },
@@ -155,9 +155,6 @@ const plugin = {
     },
 
     _createCopyButton(source) {
-        const toolbar = document.createElement('div');
-        toolbar.className = 'mb-2 flex items-center justify-end gap-1';
-
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = COPY_BTN_CLASS;
@@ -176,8 +173,26 @@ const plugin = {
             }
         });
 
-        toolbar.appendChild(copyBtn);
-        return toolbar;
+        return copyBtn;
+    },
+
+    _attachCopyButtonToVerifierHeader(slot, source) {
+        const { parent, label } = slot;
+        if (!label || !parent) return;
+        if (parent.querySelector('[data-slot="copy-verifier"]')) return;
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'mb-2 flex flex-wrap items-center justify-between gap-2';
+        headerRow.setAttribute('data-fleet-plugin', PLUGIN_ID + '-header');
+
+        parent.insertBefore(headerRow, label);
+        headerRow.appendChild(label);
+        label.classList.remove('mb-2');
+
+        const actions = document.createElement('div');
+        actions.className = 'flex items-center gap-1';
+        actions.appendChild(this._createCopyButton(source));
+        headerRow.appendChild(actions);
     },
 
     async _fetchAndRender(state, slot, taskKey) {
@@ -206,11 +221,11 @@ const plugin = {
             slot.placeholder.classList.add('fleet-wf-hidden-no-verifier');
             slot.placeholder.style.display = 'none';
 
+            this._attachCopyButtonToVerifierHeader(slot, source);
+
             const wrap = document.createElement('div');
             wrap.setAttribute('data-fleet-plugin', PLUGIN_ID);
             wrap.className = 'fleet-wf-verifier-code-wrap';
-
-            wrap.appendChild(this._createCopyButton(source));
 
             const pre = document.createElement('pre');
             pre.className = 'bg-muted/40 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';

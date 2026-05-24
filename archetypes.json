@@ -1,7 +1,7 @@
 {
   "version": "9.1.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.36",
+  "archetypesVersion": "8.37",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -459,8 +459,8 @@
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "1.1",
-          "hash": "sha256-3baf7d67d59d913e1eddeb10e87dbf407cb995688e947d7e60b36a73e4bfe43d",
+          "version": "1.2",
+          "hash": "sha256-42acddad86d35a7f8bb25aa7c0a39f9b164224ac6ab06cd9611579b695da1774",
           "log": false
         }
       ]
