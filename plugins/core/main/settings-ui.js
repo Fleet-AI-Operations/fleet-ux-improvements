@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.25',
+    _version: '7.26',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -721,7 +721,7 @@ const plugin = {
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
                         Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
                     </p>
-                    <textarea id="wf-ops-verifier-input" placeholder="Paste here" rows="3" style="
+                    <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 12px;
@@ -730,9 +730,8 @@ const plugin = {
                         background: var(--background, white);
                         color: var(--foreground, #333);
                         box-sizing: border-box;
-                        resize: vertical;
                         font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    "></textarea>
+                    ">
                     <input type="text" id="wf-ops-verifier-team-id" placeholder="Optional team ID override" autocomplete="off" style="
                         width: 100%;
                         margin-top: 8px;
