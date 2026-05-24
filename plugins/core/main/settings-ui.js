@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.20',
+    _version: '7.21',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2953,11 +2953,17 @@ const plugin = {
             if (!node || typeof node !== 'object') continue;
             if (seen.has(node)) continue;
             seen.add(node);
-            if (typeof node.display_src === 'string' && node.display_src.length > 0) {
+            // Orchestrator returns `code`; Supabase verifier_versions uses `display_src`
+            const src = (typeof node.display_src === 'string' && node.display_src.length > 0)
+                ? node.display_src
+                : (typeof node.code === 'string' && node.code.length > 0)
+                    ? node.code
+                    : null;
+            if (src) {
                 return {
-                    source: node.display_src,
+                    source: src,
                     version: Number.isFinite(node.version) ? node.version : null,
-                    versionId: node.id || null,
+                    versionId: node.id || node.verifier_id || null,
                     createdAt: node.created_at || null
                 };
             }
@@ -3006,7 +3012,10 @@ const plugin = {
         const url = `https://orchestrator.fleetai.com/v1/verifiers/${encodeURIComponent(resolved.verifierId)}`;
         const requestHeaders = { accept: 'application/json', 'x-jwt-token': jwt };
         if (teamId) requestHeaders['x-team-id'] = teamId;
-        Logger.debug(`settings-ui: ops orchestrator fetch ${url} teamId=${teamId || '(none)'}`);
+        Logger.debug(`settings-ui: ops orchestrator fetch ${url}`, {
+            teamId: teamId || '(none)',
+            jwtSub: (() => { try { return JSON.parse(atob(jwt.split('.')[1])).sub; } catch { return '?'; } })()
+        });
         try {
             const res = await requestFetch.call(pageWindow, url, {
                 method: 'GET',
@@ -3077,11 +3086,10 @@ const plugin = {
         Logger.debug(`settings-ui: ops verifier_versions rows returned: ${Array.isArray(rows) ? rows.length : (rows ? 1 : 0)}`);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
-            throw new Error(
-                `No verifier version found for ${resolved.verifierId}. ` +
-                `The verifier_versions table may require a team context. ` +
-                `Try adding the team ID in the override field (e.g. d148bdea-e60a-4ca3-b414-380f7b0b5949).`
-            );
+            const hint = resolved.teamId
+                ? `The verifier_versions table returned no rows for team ${resolved.teamId.slice(0, 8)}…`
+                : 'The verifier_versions table may require a team context — add the team ID in the override field.';
+            throw new Error(`No verifier version found for ${resolved.verifierId}. ${hint}`);
         }
         if (!row.display_src) {
             throw new Error(`Verifier version ${row.version ?? '?'} has no display_src.`);
