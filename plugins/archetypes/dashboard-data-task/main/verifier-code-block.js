@@ -5,12 +5,23 @@ const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
 const PLUGIN_ID = 'verifier-code-block';
 const NO_VERIFIER_TEXT = 'No verifier';
 const VERIFIER_LABEL_TEXT = 'Verifier';
+const COPY_SUCCESS_FLASH_MS = 1000;
+const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
+const COPY_FAILURE_PULSE_MS = 500;
+const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
+const COPY_BTN_CLASS =
+    'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground h-7 text-xs pl-2 pr-2 py-1 gap-1.5';
+const COPY_ICON_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5">' +
+    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>' +
+    '</svg>';
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -76,6 +87,99 @@ const plugin = {
         return null;
     },
 
+    _clearCopyButtonFeedback(button) {
+        if (!button) return;
+        if (button._copySuccessFlashTimeout) {
+            clearTimeout(button._copySuccessFlashTimeout);
+            button._copySuccessFlashTimeout = null;
+        }
+        if (button._copyFailurePulseTimeout) {
+            clearTimeout(button._copyFailurePulseTimeout);
+            button._copyFailurePulseTimeout = null;
+        }
+        button.style.transition = '';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+    },
+
+    _showCopySuccessFlash(button) {
+        this._clearCopyButtonFeedback(button);
+        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
+        button.style.color = '#ffffff';
+        button._copySuccessFlashTimeout = setTimeout(() => {
+            button.style.backgroundColor = '';
+            button.style.color = '';
+            button._copySuccessFlashTimeout = null;
+        }, COPY_SUCCESS_FLASH_MS);
+    },
+
+    _showCopyFailurePulse(button) {
+        this._clearCopyButtonFeedback(button);
+        const prevTransition = button.style.transition;
+        button.style.transition = 'none';
+        button.style.backgroundColor = COPY_FAILURE_RED_BG;
+        button.style.color = '#ffffff';
+        void button.offsetHeight;
+        button.style.transition =
+            'background-color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out, color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out';
+        button.style.backgroundColor = '';
+        button.style.color = '';
+        button._copyFailurePulseTimeout = setTimeout(() => {
+            button.style.transition = prevTransition || '';
+            button._copyFailurePulseTimeout = null;
+        }, COPY_FAILURE_PULSE_MS);
+    },
+
+    async _copyTextToClipboard(text) {
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (_e) { /* fall through */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (_e2) {
+            return false;
+        }
+    },
+
+    _createCopyButton(source) {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'mb-2 flex items-center justify-end gap-1';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = COPY_BTN_CLASS;
+        copyBtn.setAttribute('data-fleet-plugin', PLUGIN_ID);
+        copyBtn.setAttribute('data-slot', 'copy-verifier');
+        copyBtn.innerHTML = COPY_ICON_SVG + 'Copy';
+
+        copyBtn.addEventListener('click', async () => {
+            const ok = await this._copyTextToClipboard(source);
+            if (ok) {
+                this._showCopySuccessFlash(copyBtn);
+                Logger.log(PLUGIN_ID + ': verifier code copied (' + source.length + ' chars)');
+            } else {
+                this._showCopyFailurePulse(copyBtn);
+                Logger.warn(PLUGIN_ID + ': verifier copy failed');
+            }
+        });
+
+        toolbar.appendChild(copyBtn);
+        return toolbar;
+    },
+
     async _fetchAndRender(state, slot, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchVerifierCode !== 'function') {
@@ -105,6 +209,8 @@ const plugin = {
             const wrap = document.createElement('div');
             wrap.setAttribute('data-fleet-plugin', PLUGIN_ID);
             wrap.className = 'fleet-wf-verifier-code-wrap';
+
+            wrap.appendChild(this._createCopyButton(source));
 
             const pre = document.createElement('pre');
             pre.className = 'bg-muted/40 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
