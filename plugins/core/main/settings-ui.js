@@ -29,7 +29,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.24',
+    _version: '7.25',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -679,17 +679,28 @@ const plugin = {
                         padding: 10px 12px;
                         font-size: 12px;
                         font-weight: 500;
-                        text-align: left;
+                        text-align: center;
                         color: var(--brand, #4f46e5);
                         background: var(--card, #fafafa);
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
                         cursor: pointer;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
                         transition: background 0.2s;
-                    "></button>
+                    ">Open</button>
+                    <button type="button" id="wf-ops-open-link-new-tab" style="
+                        flex: 1;
+                        min-width: 0;
+                        padding: 10px 12px;
+                        font-size: 12px;
+                        font-weight: 500;
+                        text-align: center;
+                        color: var(--brand, #4f46e5);
+                        background: var(--card, #fafafa);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: background 0.2s;
+                    ">Open in New Tab</button>
                     <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
                         flex-shrink: 0;
                         padding: 10px 12px;
@@ -708,9 +719,9 @@ const plugin = {
                         Verifier Code Fetcher
                     </h3>
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
-                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Uses your current Fleet login to fetch verifier_versions.display_src.
+                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
                     </p>
-                    <textarea id="wf-ops-verifier-input" placeholder="Paste task key, verifier key, verifier ID, task URL, or seed data" rows="3" style="
+                    <textarea id="wf-ops-verifier-input" placeholder="Paste here" rows="3" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 12px;
@@ -2320,8 +2331,16 @@ const plugin = {
     _extractOpsTaskIdentifier(raw) {
         const trimmed = (raw || '').trim();
         if (!trimmed) return '';
-        const fromUrl = trimmed.match(OPS_TASK_ID_FROM_URL_RE);
-        return fromUrl ? fromUrl[1] : trimmed;
+        const fromPath = trimmed.match(OPS_TASK_ID_FROM_URL_RE);
+        if (fromPath) return fromPath[1];
+        const looksLikeUrl = /^https?:\/\//i.test(trimmed) || trimmed.includes('://');
+        if (looksLikeUrl) {
+            const taskKeyMatch = trimmed.match(OPS_TASK_KEY_RE);
+            if (taskKeyMatch) return taskKeyMatch[0];
+            const uuidMatch = trimmed.match(OPS_UUID_FIND_RE);
+            if (uuidMatch) return uuidMatch[0];
+        }
+        return trimmed;
     },
 
     _buildOpsTaskUrl(raw) {
@@ -2469,24 +2488,28 @@ const plugin = {
             root: modal,
             context: `${this.id}.opsOpenLink`
         });
+        const openNewTabBtn = Context.dom.query('#wf-ops-open-link-new-tab', {
+            root: modal,
+            context: `${this.id}.opsOpenLinkNewTab`
+        });
         const copyBtn = Context.dom.query('#wf-ops-copy-link', {
             root: modal,
             context: `${this.id}.opsCopyLink`
         });
-        if (!input || !linkRow || !openBtn || !copyBtn) return;
+        if (!input || !linkRow || !openBtn || !openNewTabBtn || !copyBtn) return;
 
         const url = this._buildOpsTaskUrl(input.value);
         if (!url) {
             linkRow.style.display = 'none';
             openBtn.removeAttribute('data-wf-ops-url');
-            openBtn.textContent = '';
+            openNewTabBtn.removeAttribute('data-wf-ops-url');
             copyBtn.removeAttribute('data-wf-ops-url');
             return;
         }
 
         linkRow.style.display = 'flex';
-        openBtn.textContent = url;
         openBtn.setAttribute('data-wf-ops-url', url);
+        openNewTabBtn.setAttribute('data-wf-ops-url', url);
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
@@ -3239,6 +3262,10 @@ const plugin = {
             root: modal,
             context: `${this.id}.opsOpenLinkAttach`
         });
+        const openNewTabBtn = Context.dom.query('#wf-ops-open-link-new-tab', {
+            root: modal,
+            context: `${this.id}.opsOpenLinkNewTabAttach`
+        });
         const copyBtn = Context.dom.query('#wf-ops-copy-link', {
             root: modal,
             context: `${this.id}.opsCopyLinkAttach`
@@ -3272,8 +3299,21 @@ const plugin = {
                     Logger.warn('settings-ui: ops open link skipped (no URL)');
                     return;
                 }
+                const pageWindow = this._getOpsPageWindow();
+                pageWindow.location.href = url;
+                Logger.log('settings-ui: ops task link opened (current tab)');
+            });
+        }
+
+        if (openNewTabBtn) {
+            openNewTabBtn.addEventListener('click', () => {
+                const url = openNewTabBtn.getAttribute('data-wf-ops-url');
+                if (!url) {
+                    Logger.warn('settings-ui: ops open link new tab skipped (no URL)');
+                    return;
+                }
                 window.open(url, '_blank', 'noopener,noreferrer');
-                Logger.log('settings-ui: ops task link opened');
+                Logger.log('settings-ui: ops task link opened (new tab)');
             });
         }
 
