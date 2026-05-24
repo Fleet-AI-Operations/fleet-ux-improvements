@@ -1,30 +1,17 @@
 
 // settings-ui.js
-// Core plugin that provides the settings UI - persists across navigation
-
-const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
-const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
-const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
-const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COPY_SUCCESS_FLASH_MS = 1000;
-const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
-const COPY_FAILURE_PULSE_MS = 500;
-const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
-
-async function computeSha256Hex(text) {
-    const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return `sha256-${hex}`;
-}
+// Core plugin that provides the settings UI - persists across navigation.
+// Ops tab functionality (task link generator, verifier fetcher, password gate)
+// lives in ops-tab.js and is consumed here via Context.opsTab.
 
 const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.10',
+    _version: '8.0',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
-    
+
     // Internal state (not reset on navigation)
     _buttonCreated: false,
     _modalOpen: false,
@@ -223,8 +210,10 @@ const plugin = {
         if (this._modalOpen && modal) {
             this._closeModal();
         } else {
-            // Always recreate modal content when opening to get fresh plugin list
-            if (modal) modal.remove();
+            if (modal) {
+                this._captureOpsState(modal);
+                modal.remove();
+            }
             modal = this._createModal();
             try {
                 if (typeof modal.showModal === 'function') {
@@ -263,6 +252,9 @@ const plugin = {
     _closeModal() {
         this._stopForeignModalObserver();
         const modal = document.getElementById('wf-settings-modal');
+        if (modal) {
+            this._captureOpsState(modal);
+        }
         if (modal && typeof modal.close === 'function') {
             if (modal.open) {
                 modal.close();
@@ -400,11 +392,8 @@ const plugin = {
         // Build plugin toggles HTML
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
         const globalEnabled = this._getGlobalEnabled();
-        const opsWantsEnabled = this._getOpsTabWanted();
-        const opsHasStoredPassword = this._hasOpsStoredPassword();
-        const opsNeedsPassword = opsWantsEnabled && !opsHasStoredPassword;
-        const opsSettingsHTML = this._isOpsAccessConfigured()
-            ? this._createOpsSettingsSectionHTML(opsWantsEnabled, opsNeedsPassword)
+        const opsSettingsHTML = this._isOpsAccessConfigured() && Context.opsTab
+            ? Context.opsTab.renderSettingsSection()
             : '';
         const defaultTab = this._getDefaultSettingsTabId();
         const paneDisplay = (tabId) => (tabId === defaultTab ? 'block' : 'none');
@@ -532,7 +521,15 @@ const plugin = {
             </div>
             </div>
         ` : '';
-        
+
+        const opsPaneHTML = Context.opsTab
+            ? Context.opsTab.renderPane(paneDisplay('ops'))
+            : `<div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${paneDisplay('ops')}; overflow-y: auto; min-height: 200px;">
+                <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0;">
+                    Ops module not loaded.
+                </p>
+            </div>`;
+
         modal.innerHTML = `
             <div id="wf-settings-content" style="${contentStyle}">
             <!-- Sticky Header -->
@@ -648,72 +645,7 @@ const plugin = {
             </div>
             </div>
             ${devPaneHTML}
-            <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${paneDisplay('ops')}; overflow-y: auto; min-height: 200px;">
-                <div style="margin-bottom: 16px;">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
-                        Task View Link Generator
-                    </h3>
-                    <input type="text" id="wf-ops-task-input" placeholder="Paste task key or UUID" autocomplete="off" style="
-                        width: 100%;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                    ">
-                </div>
-                <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
-                    <button type="button" id="wf-ops-open-link" style="
-                        flex: 1;
-                        min-width: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
-                        font-weight: 500;
-                        text-align: left;
-                        color: var(--brand, #4f46e5);
-                        background: var(--card, #fafafa);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        cursor: pointer;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                        transition: background 0.2s;
-                    "></button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
-                        flex-shrink: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
-                        font-weight: 500;
-                        color: var(--foreground, #333);
-                        background: var(--card, #fafafa);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        cursor: pointer;
-                        transition: background 0.2s, color 0.2s;
-                    ">Copy</button>
-                </div>
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
-                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
-                        display: block;
-                        width: 100%;
-                        padding: 10px 16px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        text-align: center;
-                        text-decoration: none;
-                        color: white;
-                        background: var(--brand, #4f46e5);
-                        border: none;
-                        border-radius: 6px;
-                        cursor: pointer;
-                        box-sizing: border-box;
-                        transition: background 0.2s;
-                    ">Grade Assessments</a>
-                </div>
-            </div>
+            ${opsPaneHTML}
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: ${paneDisplay('information')}; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
@@ -991,9 +923,12 @@ const plugin = {
 
         // Tab buttons
         this._attachTabListeners(modal);
-        this._attachOpsTabListeners(modal);
-        this._attachOpsPasswordListeners(modal);
-        void this._revalidateOpsStoredPassword(modal);
+        if (Context.opsTab) {
+            Context.opsTab.attachListeners(modal, this);
+            Context.opsTab.onPaneOpened(modal, this);
+        } else {
+            Logger.warn('settings-ui: Context.opsTab unavailable; Ops listeners skipped');
+        }
         this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
         // Global toggle (regular plugins only)
@@ -1019,46 +954,6 @@ const plugin = {
                 this._attachPluginToggleListeners(modal, plugins);
                 this._attachPluginReorderListeners(modal, plugins);
                 this._updateSettingsMessage(modal, plugins);
-            });
-        }
-
-        const opsTabToggle = Context.dom.query('#wf-ops-tab-enabled', {
-            root: modal,
-            context: `${this.id}.opsTabToggle`
-        });
-        if (opsTabToggle) {
-            opsTabToggle.addEventListener('change', (e) => {
-                const wantsEnabled = e.target.checked;
-                if (!wantsEnabled) {
-                    this._handleToggleChange(e);
-                    this._setOpsTabWanted(false);
-                    this._setOpsPasswordPanelVisible(modal, false);
-                    this._setOpsPasswordError(modal, '');
-                    Logger.log('settings-ui: ops tab disabled');
-                    const activeTab = this._getActiveSettingsTabId(modal);
-                    const nextTab = activeTab === 'ops' ? 'information' : activeTab;
-                    this._rebuildSettingsTabRow(modal, nextTab);
-                    return;
-                }
-                this._setOpsTabWanted(true);
-                if (this._hasOpsStoredPassword()) {
-                    this._handleToggleChange(e);
-                    Logger.log('settings-ui: ops tab enabled');
-                    this._rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
-                    return;
-                }
-                e.target.checked = false;
-                this._handleToggleChange(e);
-                this._setOpsPasswordPanelVisible(modal, true);
-                this._setOpsPasswordError(modal, '');
-                const input = Context.dom.query('#wf-ops-password-input', {
-                    root: modal,
-                    context: `${this.id}.opsPasswordInputFocus`
-                });
-                if (input) {
-                    input.focus();
-                }
-                Logger.log('settings-ui: ops tab unlock required');
             });
         }
 
@@ -2031,224 +1926,31 @@ const plugin = {
         }
     },
     
-    _getOpsPasswordHash() {
-        const hash = Context.opsAccess && Context.opsAccess.passwordHash;
-        return typeof hash === 'string' && hash.length > 0 ? hash : null;
-    },
-
     _isOpsAccessConfigured() {
-        return Boolean(this._getOpsPasswordHash());
-    },
-
-    _getOpsTabWanted() {
-        return Storage.get('ops-tab-enabled', false);
-    },
-
-    _setOpsTabWanted(enabled) {
-        Storage.set('ops-tab-enabled', enabled);
-    },
-
-    _getOpsStoredPassword() {
-        const value = Storage.get('ops-tab-stored-password', '');
-        return typeof value === 'string' ? value : '';
-    },
-
-    _setOpsStoredPassword(password) {
-        Storage.set('ops-tab-stored-password', password);
-    },
-
-    _clearOpsStoredPassword() {
-        Storage.delete('ops-tab-stored-password');
-    },
-
-    _hasOpsStoredPassword() {
-        return this._getOpsStoredPassword().length > 0;
-    },
-
-    _getOpsTabEnabled() {
-        return this._getOpsTabWanted() && this._hasOpsStoredPassword() && this._isOpsAccessConfigured();
-    },
-
-    _createOpsSettingsSectionHTML(opsWantsEnabled, opsNeedsPassword) {
-        return `
-            <!-- Ops Tab Toggle -->
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <div style="min-width: 0; padding-right: 10px;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Tab</div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px; line-height: 1.45;">
-                            Adds an Ops tab with operator tools. Enter the Ops password once; it is saved on this device.
-                        </div>
-                    </div>
-                    ${this._createSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled)}
-                </div>
-                <div id="wf-ops-password-panel" style="display: ${opsNeedsPassword ? 'block' : 'none'}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops password</label>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" placeholder="Enter password" style="
-                            flex: 1;
-                            min-width: 0;
-                            padding: 8px 12px;
-                            font-size: 13px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--background, white);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                        ">
-                        <button type="button" id="wf-ops-password-submit" style="
-                            flex-shrink: 0;
-                            padding: 8px 14px;
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
-                            border-radius: 6px;
-                            cursor: pointer;
-                        ">Unlock</button>
-                    </div>
-                    <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
-                </div>
-            </div>`;
+        return Context.opsTab ? Context.opsTab.isAccessConfigured() : false;
     },
 
     _getDefaultSettingsTabId() {
-        return this._getOpsTabEnabled() ? 'ops' : 'information';
+        return Context.opsTab ? Context.opsTab.getDefaultTabId('information') : 'information';
     },
 
-    _setOpsPasswordPanelVisible(modal, visible) {
-        const panel = Context.dom.query('#wf-ops-password-panel', {
-            root: modal,
-            context: `${this.id}.opsPasswordPanel`
-        });
-        if (panel) {
-            panel.style.display = visible ? 'block' : 'none';
+    _captureOpsState(modal) {
+        if (Context.opsTab && typeof Context.opsTab.captureState === 'function') {
+            Context.opsTab.captureState(modal);
         }
     },
 
-    _setOpsPasswordError(modal, message) {
-        const err = Context.dom.query('#wf-ops-password-error', {
-            root: modal,
-            context: `${this.id}.opsPasswordError`
-        });
-        if (!err) return;
-        if (message) {
-            err.textContent = message;
-            err.style.display = 'block';
-        } else {
-            err.textContent = '';
-            err.style.display = 'none';
-        }
+    /** Public wrappers exposed for `Context.opsTab` (and potentially other core modules). */
+    handleToggleChange(e) {
+        return this._handleToggleChange(e);
     },
 
-    async _verifyOpsPassword(password) {
-        const expected = this._getOpsPasswordHash();
-        if (!expected || !password) return false;
-        try {
-            const computed = await computeSha256Hex(password);
-            return computed === expected;
-        } catch (err) {
-            Logger.error('settings-ui: ops password verification failed', err);
-            return false;
-        }
+    rebuildSettingsTabRow(modal, preferredTabId, options) {
+        return this._rebuildSettingsTabRow(modal, preferredTabId, options);
     },
 
-    async _submitOpsPassword(modal, toggle) {
-        const input = Context.dom.query('#wf-ops-password-input', {
-            root: modal,
-            context: `${this.id}.opsPasswordInputSubmit`
-        });
-        if (!input) return false;
-
-        const password = input.value;
-        if (!password) {
-            this._setOpsPasswordError(modal, 'Enter a password.');
-            Logger.warn('settings-ui: ops password empty');
-            return false;
-        }
-
-        const ok = await this._verifyOpsPassword(password);
-        if (!ok) {
-            this._setOpsPasswordError(modal, 'Incorrect password.');
-            Logger.warn('settings-ui: ops password rejected');
-            return false;
-        }
-
-        this._setOpsStoredPassword(password);
-        input.value = '';
-        this._setOpsPasswordError(modal, '');
-        this._setOpsTabWanted(true);
-        this._setOpsPasswordPanelVisible(modal, false);
-        if (toggle) {
-            toggle.checked = true;
-            this._handleToggleChange({ target: toggle });
-        }
-        Logger.log('settings-ui: ops password saved on device');
-        this._rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
-        return true;
-    },
-
-    async _revalidateOpsStoredPassword(modal) {
-        if (!this._hasOpsStoredPassword() || !this._isOpsAccessConfigured()) return;
-        const ok = await this._verifyOpsPassword(this._getOpsStoredPassword());
-        if (ok) return;
-        this._clearOpsStoredPassword();
-        if (this._getOpsTabWanted()) {
-            this._setOpsPasswordPanelVisible(modal, true);
-        }
-        this._rebuildSettingsTabRow(modal, 'information');
-        Logger.debug('settings-ui: cleared invalid ops stored password');
-    },
-
-    _attachOpsPasswordListeners(modal) {
-        if (!modal || modal.dataset.wfOpsPasswordListenersAttached === '1') return;
-        modal.dataset.wfOpsPasswordListenersAttached = '1';
-
-        const submitBtn = Context.dom.query('#wf-ops-password-submit', {
-            root: modal,
-            context: `${this.id}.opsPasswordSubmit`
-        });
-        const input = Context.dom.query('#wf-ops-password-input', {
-            root: modal,
-            context: `${this.id}.opsPasswordInputAttach`
-        });
-        const toggle = Context.dom.query('#wf-ops-tab-enabled', {
-            root: modal,
-            context: `${this.id}.opsTabTogglePassword`
-        });
-
-        const submit = () => {
-            void this._submitOpsPassword(modal, toggle);
-        };
-
-        if (submitBtn) {
-            submitBtn.addEventListener('click', submit);
-        }
-        if (input) {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submit();
-                }
-            });
-        }
-    },
-
-    _extractOpsTaskIdentifier(raw) {
-        const trimmed = (raw || '').trim();
-        if (!trimmed) return '';
-        const fromUrl = trimmed.match(OPS_TASK_ID_FROM_URL_RE);
-        return fromUrl ? fromUrl[1] : trimmed;
-    },
-
-    _buildOpsTaskUrl(raw) {
-        const id = this._extractOpsTaskIdentifier(raw);
-        if (!id) return null;
-        if (/^task_/i.test(id) || OPS_UUID_RE.test(id)) {
-            return `${OPS_TASK_URL_PREFIX}${id}`;
-        }
-        return null;
+    getActiveSettingsTabId(modal) {
+        return this._getActiveSettingsTabId(modal);
     },
 
     _getActiveSettingsTabId(modal) {
@@ -2308,177 +2010,10 @@ const plugin = {
         this._switchSettingsTab(modal, highlightTabId);
     },
 
-    _clearOpsCopyButtonFeedback(button) {
-        if (!button) return;
-        if (button._copySuccessFlashTimeout) {
-            clearTimeout(button._copySuccessFlashTimeout);
-            button._copySuccessFlashTimeout = null;
-        }
-        if (button._copyFailurePulseTimeout) {
-            clearTimeout(button._copyFailurePulseTimeout);
-            button._copyFailurePulseTimeout = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
-    },
-
-    _showOpsCopySuccessFlash(button) {
-        this._clearOpsCopyButtonFeedback(button);
-        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
-        button.style.color = '#ffffff';
-        button._copySuccessFlashTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._copySuccessFlashTimeout = null;
-        }, COPY_SUCCESS_FLASH_MS);
-    },
-
-    _showOpsCopyFailurePulse(button) {
-        this._clearOpsCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = COPY_FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition = `background-color ${COPY_FAILURE_PULSE_MS}ms ease-out, color ${COPY_FAILURE_PULSE_MS}ms ease-out`;
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyFailurePulseTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._copyFailurePulseTimeout = null;
-        }, COPY_FAILURE_PULSE_MS);
-    },
-
-    async _copyOpsTextToClipboard(text) {
-        if (!text) return false;
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(text);
-                return true;
-            }
-        } catch (_e) { /* fall through */ }
-        try {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.setAttribute('readonly', '');
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            const ok = document.execCommand('copy');
-            document.body.removeChild(ta);
-            return ok;
-        } catch (_e2) {
-            return false;
-        }
-    },
-
-    _updateOpsTaskLinkUI(modal) {
-        const input = Context.dom.query('#wf-ops-task-input', {
-            root: modal,
-            context: `${this.id}.opsTaskInput`
-        });
-        const linkRow = Context.dom.query('#wf-ops-link-row', {
-            root: modal,
-            context: `${this.id}.opsLinkRow`
-        });
-        const openBtn = Context.dom.query('#wf-ops-open-link', {
-            root: modal,
-            context: `${this.id}.opsOpenLink`
-        });
-        const copyBtn = Context.dom.query('#wf-ops-copy-link', {
-            root: modal,
-            context: `${this.id}.opsCopyLink`
-        });
-        if (!input || !linkRow || !openBtn || !copyBtn) return;
-
-        const url = this._buildOpsTaskUrl(input.value);
-        if (!url) {
-            linkRow.style.display = 'none';
-            openBtn.removeAttribute('data-wf-ops-url');
-            openBtn.textContent = '';
-            copyBtn.removeAttribute('data-wf-ops-url');
-            return;
-        }
-
-        linkRow.style.display = 'flex';
-        openBtn.textContent = url;
-        openBtn.setAttribute('data-wf-ops-url', url);
-        copyBtn.setAttribute('data-wf-ops-url', url);
-    },
-
-    _attachOpsTabListeners(modal) {
-        if (!modal || modal.dataset.wfOpsListenersAttached === '1') return;
-        modal.dataset.wfOpsListenersAttached = '1';
-
-        const input = Context.dom.query('#wf-ops-task-input', {
-            root: modal,
-            context: `${this.id}.opsTaskInputAttach`
-        });
-        const openBtn = Context.dom.query('#wf-ops-open-link', {
-            root: modal,
-            context: `${this.id}.opsOpenLinkAttach`
-        });
-        const copyBtn = Context.dom.query('#wf-ops-copy-link', {
-            root: modal,
-            context: `${this.id}.opsCopyLinkAttach`
-        });
-
-        if (input) {
-            input.addEventListener('input', () => {
-                this._updateOpsTaskLinkUI(modal);
-            });
-            input.addEventListener('paste', () => {
-                requestAnimationFrame(() => this._updateOpsTaskLinkUI(modal));
-            });
-        }
-
-        if (openBtn) {
-            openBtn.addEventListener('click', () => {
-                const url = openBtn.getAttribute('data-wf-ops-url');
-                if (!url) {
-                    Logger.warn('settings-ui: ops open link skipped (no URL)');
-                    return;
-                }
-                window.open(url, '_blank', 'noopener,noreferrer');
-                Logger.log('settings-ui: ops task link opened');
-            });
-        }
-
-        if (copyBtn) {
-            copyBtn.addEventListener('click', async () => {
-                const url = copyBtn.getAttribute('data-wf-ops-url');
-                if (!url) {
-                    Logger.warn('settings-ui: ops copy skipped (no URL)');
-                    this._showOpsCopyFailurePulse(copyBtn);
-                    return;
-                }
-                const ok = await this._copyOpsTextToClipboard(url);
-                if (ok) {
-                    this._showOpsCopySuccessFlash(copyBtn);
-                    Logger.log(`settings-ui: ops link copied (${url.length} chars)`);
-                } else {
-                    this._showOpsCopyFailurePulse(copyBtn);
-                    Logger.warn('settings-ui: ops link copy failed');
-                }
-            });
-        }
-
-        const gradeAssessmentsLink = Context.dom.query('#wf-ops-grade-assessments', {
-            root: modal,
-            context: `${this.id}.opsGradeAssessmentsAttach`
-        });
-        if (gradeAssessmentsLink) {
-            gradeAssessmentsLink.addEventListener('click', () => {
-                Logger.log('settings-ui: grade assessments opened');
-            });
-        }
-    },
 
     _getSettingsTabs() {
         const tabs = [];
-        if (this._getOpsTabEnabled()) {
+        if (Context.opsTab && Context.opsTab.isEnabled()) {
             tabs.push({ id: 'ops', label: 'Ops' });
         }
         tabs.push(

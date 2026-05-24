@@ -1,7 +1,7 @@
 {
-  "version": "8.0.1",
+  "version": "9.1.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "8.15",
+  "archetypesVersion": "8.38",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -12,9 +12,21 @@
   },
   "corePlugins": [
     {
+      "name": "highlight-js.js",
+      "version": "1.0",
+      "hash": "sha256-a0865ecf28064393a3f23f19f280b8de44afbbc61f170bae484314eb7fb81b97",
+      "log": false
+    },
+    {
+      "name": "ops-tab.js",
+      "version": "1.1",
+      "hash": "sha256-649ca2f6cec6200707952d99349af7eab320001826df9c3045caca7c568744b9",
+      "log": false
+    },
+    {
       "name": "settings-ui.js",
-      "version": "7.10",
-      "hash": "sha256-94c70a5ebf1733ea6cc0fb707e6d2c0aeff54c199d2dafff01d12a544c92bf89",
+      "version": "8.0",
+      "hash": "sha256-efeb91abf4c5c488ac9d201597fd340193c2a4e1ecc9203c86655fc47b9af530",
       "log": false
     }
   ],
@@ -437,6 +449,21 @@
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
       "plugins": []
+    },
+    {
+      "id": "dashboard-data-task",
+      "name": "Dashboard Data Task View",
+      "description": "Dashboard task detail page at dashboard/data/tasks/task_*",
+      "urlPattern": "dashboard/data/tasks/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "verifier-code-block.js",
+          "version": "1.3",
+          "hash": "sha256-905f8b805953c56d5c7809373f221eef9150333509565346823af6a6506262ad",
+          "log": false
+        }
+      ]
     },
     {
       "id": "no-vnc",

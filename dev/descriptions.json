@@ -1,6 +1,11 @@
 {
   "core/main": [
     {
+      "file": "highlight-js.js",
+      "name": "Highlight.js Loader",
+      "description": "Lazy-loads highlight.js from jsDelivr for Python syntax highlighting"
+    },
+    {
       "file": "settings-ui.js",
       "name": "Settings UI",
       "description": "Provides the settings panel for managing plugins"
@@ -339,6 +344,13 @@
       "file": "dispute-ids-enhancer.js",
       "name": "Dispute IDs Enhancer",
       "description": "Surface Dispute and Task IDs at top of dispute cards."
+    }
+  ],
+  "archetypes/dashboard-data-task/main": [
+    {
+      "file": "verifier-code-block.js",
+      "name": "Verifier Code Block",
+      "description": "Fetches and displays verifier Python code on dashboard task pages that show \"No verifier\""
     }
   ]
 }
