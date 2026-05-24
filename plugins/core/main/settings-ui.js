@@ -25,7 +25,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '7.11',
+    _version: '7.12',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
     
@@ -2486,21 +2486,108 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
-    _getOpsSupabaseAccessToken() {
+    _getOpsPageWindow() {
         try {
-            const ls = window.localStorage;
-            for (let i = 0; i < ls.length; i++) {
-                const key = ls.key(i);
-                if (!key || !key.startsWith('sb-') || !key.includes('auth-token')) continue;
-                const raw = ls.getItem(key);
-                if (!raw) continue;
-                const parsed = JSON.parse(raw);
-                const token =
-                    parsed?.access_token ||
-                    parsed?.currentSession?.access_token ||
-                    parsed?.session?.access_token;
-                if (typeof token === 'string' && token.length > 0) return token;
+            if (typeof Context !== 'undefined' && Context.getPageWindow) {
+                return Context.getPageWindow() || window;
             }
+        } catch (e) {
+            Logger.debug('settings-ui: ops page window lookup failed', e);
+        }
+        return window;
+    },
+
+    _extractOpsAccessTokenFromValue(value) {
+        if (!value || typeof value !== 'string') return '';
+        try {
+            let candidate = value;
+            if (candidate.startsWith('base64-')) {
+                candidate = atob(candidate.slice('base64-'.length));
+            }
+            const parsed = JSON.parse(candidate);
+            const direct =
+                parsed?.access_token ||
+                parsed?.currentSession?.access_token ||
+                parsed?.session?.access_token ||
+                (Array.isArray(parsed) && (
+                    parsed[0]?.access_token ||
+                    parsed[1]?.access_token ||
+                    parsed[0]?.currentSession?.access_token ||
+                    parsed[1]?.currentSession?.access_token ||
+                    parsed[0]?.session?.access_token ||
+                    parsed[1]?.session?.access_token
+                ));
+            if (typeof direct === 'string' && direct.length > 0) return direct;
+        } catch (_e) {
+            /* fall through to regex extraction */
+        }
+        const match = value.match(/"access_token"\s*:\s*"([^"]+)"/);
+        return match ? match[1] : '';
+    },
+
+    _getOpsSupabaseAccessTokenFromStorage(storage) {
+        if (!storage) return '';
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (!key) continue;
+            const raw = storage.getItem(key);
+            if (!raw) continue;
+            const shouldInspect =
+                key.startsWith('sb-') ||
+                key.toLowerCase().includes('supabase') ||
+                raw.includes('"access_token"');
+            if (!shouldInspect) continue;
+            const token = this._extractOpsAccessTokenFromValue(raw);
+            if (token) return token;
+        }
+        return '';
+    },
+
+    _getOpsSupabaseAccessTokenFromCookies(pageWindow) {
+        try {
+            const cookie = pageWindow.document?.cookie || document.cookie || '';
+            if (!cookie) return '';
+            const parts = cookie.split(/;\s*/);
+            const authParts = parts
+                .map(part => {
+                    const eq = part.indexOf('=');
+                    return eq >= 0 ? [part.slice(0, eq), part.slice(eq + 1)] : [part, ''];
+                })
+                .filter(([key]) => key.startsWith('sb-') && key.includes('auth-token'));
+            const grouped = new Map();
+            authParts.forEach(([key, value]) => {
+                const base = key.replace(/\.\d+$/, '');
+                const indexMatch = key.match(/\.(\d+)$/);
+                const index = indexMatch ? Number(indexMatch[1]) : 0;
+                if (!grouped.has(base)) grouped.set(base, []);
+                grouped.get(base).push({ index, value });
+            });
+            for (const group of grouped.values()) {
+                const decoded = group
+                    .sort((a, b) => a.index - b.index)
+                    .map(({ value }) => decodeURIComponent(value || ''))
+                    .join('');
+                const token = this._extractOpsAccessTokenFromValue(decoded);
+                if (token) return token;
+            }
+            for (const [, value] of authParts) {
+                const decoded = decodeURIComponent(value || '');
+                const token = this._extractOpsAccessTokenFromValue(decoded);
+                if (token) return token;
+            }
+        } catch (e) {
+            Logger.debug('settings-ui: ops verifier cookie token read failed', e);
+        }
+        return '';
+    },
+
+    _getOpsSupabaseAccessToken(pageWindow = this._getOpsPageWindow()) {
+        try {
+            return (
+                this._getOpsSupabaseAccessTokenFromStorage(pageWindow.localStorage) ||
+                this._getOpsSupabaseAccessTokenFromStorage(pageWindow.sessionStorage) ||
+                this._getOpsSupabaseAccessTokenFromCookies(pageWindow)
+            );
         } catch (e) {
             Logger.debug('settings-ui: ops verifier token read failed', e);
         }
@@ -2508,14 +2595,15 @@ const plugin = {
     },
 
     _getOpsPostgrestHeaders() {
+        const pageWindow = this._getOpsPageWindow();
         const headers = {
             accept: 'application/json',
             'accept-profile': 'public',
             'x-client-info': `fleet-ux-settings-ui/${this._version}`
         };
-        const capturedApikey = window.__fleetSessionTraceCapturedApikey;
-        const capturedAuth = window.__fleetSessionTraceCapturedAuth;
-        const token = !capturedAuth ? this._getOpsSupabaseAccessToken() : '';
+        const capturedApikey = pageWindow.__fleetSessionTraceCapturedApikey || window.__fleetSessionTraceCapturedApikey;
+        const capturedAuth = pageWindow.__fleetSessionTraceCapturedAuth || window.__fleetSessionTraceCapturedAuth;
+        const token = !capturedAuth ? this._getOpsSupabaseAccessToken(pageWindow) : '';
         if (capturedApikey) headers.apikey = capturedApikey;
         if (capturedAuth) {
             headers.authorization = capturedAuth;
@@ -2534,7 +2622,9 @@ const plugin = {
         if (!headers.authorization && !headers.apikey) {
             throw new Error('No Fleet auth token found. Open Fleet while logged in, then try again.');
         }
-        const res = await fetch(url.toString(), {
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
             method: 'GET',
             headers,
             credentials: 'omit'
