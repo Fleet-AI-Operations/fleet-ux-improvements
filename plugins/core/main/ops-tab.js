@@ -127,7 +127,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.9',
+    _version: '2.10',
     phase: 'core',
     enabledByDefault: true,
 
@@ -893,8 +893,10 @@ const plugin = {
         style.id = 'wf-ops-spinner-style';
         style.textContent = [
             '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
-            '.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
-            '.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}'
+            '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
+            '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
+            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}'
         ].join('');
         document.head.appendChild(style);
     },
@@ -1091,7 +1093,7 @@ const plugin = {
                     '</div>' +
                     '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
                 '</div>' +
-                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-btn" ' +
+                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-action-btn wf-ops-profile-btn" ' +
                     'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);text-decoration:none;' +
                     'padding:4px 8px;border:1px solid var(--border,#e5e5e5);border-radius:4px;background:var(--background,white);white-space:nowrap;">' +
                     'Visit Profile' +
@@ -1569,9 +1571,7 @@ const plugin = {
             }
         }
         if (copyBtn) {
-            copyBtn.disabled = !text;
-            copyBtn.style.opacity = text ? '1' : '0.55';
-            copyBtn.style.cursor = text ? 'pointer' : 'not-allowed';
+            copyBtn.style.display = text ? 'inline-block' : 'none';
         }
     },
 
@@ -1792,16 +1792,15 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">
-                        <button type="button" id="wf-ops-password-submit" style="
+                        <button type="button" id="wf-ops-password-submit" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
                             padding: 8px 14px;
                             font-size: 13px;
                             font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                            cursor: pointer;
                         ">Unlock</button>
                     </div>
                     <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
@@ -1865,16 +1864,15 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">
-                        <button type="button" id="wf-ops-team-search-btn" style="
+                        <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
                             padding: 8px 14px;
                             font-size: 12px;
                             font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                            cursor: pointer;
                         ">Search</button>
                     </div>
                     <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px; align-items: stretch; gap: 8px; flex-wrap: nowrap;">
@@ -1967,7 +1965,7 @@ const plugin = {
                     ">
                 </div>
                 <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
-                    <button type="button" id="wf-ops-open-link" style="
+                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
                         flex: 1;
                         min-width: 0;
                         padding: 10px 12px;
@@ -1975,13 +1973,11 @@ const plugin = {
                         font-weight: 500;
                         text-align: center;
                         color: var(--brand, #4f46e5);
-                        background: var(--card, #fafafa);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
-                        transition: background 0.2s;
                     ">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" style="
+                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
                         flex: 1;
                         min-width: 0;
                         padding: 10px 12px;
@@ -1989,21 +1985,19 @@ const plugin = {
                         font-weight: 500;
                         text-align: center;
                         color: var(--brand, #4f46e5);
-                        background: var(--card, #fafafa);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
-                        transition: background 0.2s;
                     ">Open in New Tab</button>
                     <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
                         flex-shrink: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
+                        padding: 2px 10px;
+                        font-size: 11px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
-                        background: var(--card, #fafafa);
+                        color: var(--muted-foreground, #666);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
+                        border-radius: 4px;
                         cursor: pointer;
                         transition: background 0.2s, color 0.2s;
                     ">Copy</button>
@@ -2015,42 +2009,42 @@ const plugin = {
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
                         Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
                     </p>
-                    <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                        width: 100%;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    ">
-                    <div style="display: flex; align-items: stretch; gap: 8px; margin-top: 8px;">
-                        <button type="button" id="wf-ops-fetch-verifier" style="
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
                             flex: 1;
-                            padding: 10px 12px;
+                            min-width: 0;
+                            padding: 8px 12px;
                             font-size: 12px;
-                            font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
-                            border-radius: 6px;
-                            cursor: pointer;
-                        ">Fetch Verifier</button>
-                        <button type="button" id="wf-ops-copy-verifier" disabled style="
-                            flex-shrink: 0;
-                            padding: 10px 12px;
-                            font-size: 12px;
-                            font-weight: 500;
-                            color: var(--foreground, #333);
-                            background: var(--card, #fafafa);
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                        ">
+                        <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
+                            flex-shrink: 0;
+                            padding: 8px 14px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                        ">Fetch</button>
+                        <button type="button" id="wf-ops-copy-verifier" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 2px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 4px;
                             cursor: pointer;
-                            opacity: 0.55;
-                            transition: background 0.2s, color 0.2s, opacity 0.2s;
-                        ">Copy Code</button>
+                            transition: background 0.2s, color 0.2s;
+                        ">Copy</button>
                     </div>
                     <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                     <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
@@ -2090,7 +2084,7 @@ const plugin = {
                     </div>
                 </div>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
-                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
+                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" class="wf-ops-action-btn" style="
                         display: block;
                         width: 100%;
                         padding: 10px 16px;
@@ -2098,13 +2092,11 @@ const plugin = {
                         font-weight: 600;
                         text-align: center;
                         text-decoration: none;
-                        color: white;
-                        background: var(--brand, #4f46e5);
-                        border: none;
+                        color: var(--brand, #4f46e5);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
                         box-sizing: border-box;
-                        transition: background 0.2s;
                     ">Grade Assessments</a>
                 </div>
             </div>
@@ -2157,7 +2149,7 @@ const plugin = {
         } finally {
             if (fetchBtn) {
                 fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Fetch Verifier';
+                fetchBtn.textContent = 'Fetch';
             }
             this._captureOpsTabState(modal);
         }
@@ -2266,6 +2258,7 @@ const plugin = {
 
     _attachOpsListeners(modal, settingsPlugin) {
         if (!modal) return;
+        this._injectOpsSpinnerStyle();
         this._attachOpsPasswordListeners(modal, settingsPlugin);
         this._attachOpsTabToggleListener(modal, settingsPlugin);
 
