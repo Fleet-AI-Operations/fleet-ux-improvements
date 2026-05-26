@@ -32,6 +32,8 @@ const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b'
 /** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
 const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+/** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
 
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -109,7 +111,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -860,12 +862,25 @@ const plugin = {
         if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
     },
 
+    _opsMemberQualifiesForUiBadge(member) {
+        const teamLabels = member.teamLabels;
+        if (!teamLabels || teamLabels.size === 0) return false;
+        for (const label of teamLabels) {
+            if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
+        }
+        return false;
+    },
+
     _renderOpsTeamMemberTileHtml(member, allTeams) {
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
         const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
         const teamLabels = member.teamLabels || new Set();
         const permissions = Array.isArray(member.permissions) ? member.permissions : [];
+        const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
+        const uiBadgeHtml = showUiBadge
+            ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
+            : '';
 
         const teamsColHtml = allTeams.map(([, label]) => {
             const isIn = teamLabels.has(label);
@@ -891,7 +906,9 @@ const plugin = {
         return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
                 '<div style="min-width:0;flex:1;">' +
-                    '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</div>' +
+                    '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                        uiBadgeHtml + '<span>' + name + '</span>' +
+                    '</div>' +
                     '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
                 '</div>' +
                 '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-btn" ' +
