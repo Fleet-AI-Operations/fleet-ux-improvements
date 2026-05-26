@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.15',
+    _version: '2.16',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1200,17 +1200,21 @@ const plugin = {
     async _opsPostOrchestratorPrivate(url, body) {
         const pageWindow = this._getOpsPageWindow();
         const requestFetch = pageWindow.fetch || fetch;
+        const teamId = this._getOpsCookieValue('current-team-id');
+        const headers = {
+            accept: 'application/json, text/plain, */*',
+            'content-type': 'application/json'
+        };
+        if (teamId) headers['x-fleet-team-id'] = teamId;
         const res = await requestFetch.call(pageWindow, url, {
             method: 'POST',
-            headers: {
-                accept: 'application/json, text/plain, */*',
-                'content-type': 'application/json'
-            },
+            headers,
             body: JSON.stringify(body),
             credentials: 'include'
         });
         if (!res.ok) {
             const text = await res.text().catch(() => '');
+            Logger.debug('ops-tab: orchestrator-private ' + res.status + ' body: ' + text.slice(0, 400));
             throw new Error('HTTP ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
         }
         return res.json().catch(() => null);
@@ -1251,14 +1255,14 @@ const plugin = {
         const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchTileUpdate');
         if (!wrap) return;
 
-        const existing = wrap.querySelector('.wf-ops-member-details[data-member-id="' + memberId + '"]');
-        const wasOpen = forceOpen === true || (existing && existing.open);
+        const attrId = this._opsEscapeAttr(memberId);
+        const tileEl = wrap.querySelector('[data-ops-member-tile="' + attrId + '"]');
+        const detailsEl = tileEl ? tileEl.querySelector('.wf-ops-member-details') : null;
+        const wasOpen = forceOpen === true || (detailsEl && detailsEl.open);
         const html = this._renderOpsTeamMemberTileHtml(member, cache.allTeams, wasOpen);
 
-        if (existing) {
-            existing.outerHTML = html;
-            const updated = wrap.querySelector('.wf-ops-member-details[data-member-id="' + memberId + '"]');
-            if (updated && wasOpen) updated.open = true;
+        if (tileEl) {
+            tileEl.outerHTML = html;
         }
     },
 
@@ -1472,7 +1476,7 @@ const plugin = {
 
         const openAttr = isOpen ? ' open' : '';
 
-        return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
+        return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
                 '<div style="min-width:0;flex:1;">' +
                     '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
