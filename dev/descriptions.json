@@ -352,5 +352,17 @@
       "name": "Verifier Code Block",
       "description": "Fetches and displays verifier Python code on dashboard task pages that show \"No verifier\""
     }
+  ],
+  "archetypes/dashboard-data-expert/main": [
+    {
+      "file": "expert-datasets-task-actions.js",
+      "name": "Expert Datasets Task Actions",
+      "description": "On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab"
+    },
+    {
+      "file": "expert-feedback-tooltip.js",
+      "name": "Expert Feedback Tooltip Fix",
+      "description": "Fixes Recent Feedback tooltip body text color on expert profile pages so it matches the heading"
+    }
   ]
 }
