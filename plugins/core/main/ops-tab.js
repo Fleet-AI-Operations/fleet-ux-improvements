@@ -128,7 +128,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.13',
+    _version: '2.14',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1256,12 +1256,12 @@ const plugin = {
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
 
         const finishTeamSearch = (teamLabel) => {
-            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
-                this._opsFellowsSearchComplete = true;
-            }
             pendingCount--;
             doneCount++;
             if (this._opsTeamSearchActive !== sessionId) return;
+            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
+                this._opsFellowsSearchComplete = true;
+            }
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
