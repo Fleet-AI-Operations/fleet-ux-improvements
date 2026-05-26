@@ -26,6 +26,13 @@ const OPS_CRYPTO_IV_BYTES = 12;
 /** Must match dev/utils/ops-password-crypto.mjs AES_GCM_TAG_LENGTH */
 const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
+const OPS_TEAM_SEARCH_URL = 'https://www.fleetai.com/dashboard/team';
+/** Next.js server action hash for the team member list action; may need updating after Fleet redeployments */
+const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b';
+/** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
+const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
+const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
     const hex = Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -102,7 +109,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -120,7 +127,11 @@ const plugin = {
         verifierStatus: '',
         verifierStatusIsError: false,
         verifierOutput: '',
-        verifierFetchState: null
+        verifierFetchState: null,
+        teamSearchQuery: '',
+        teamSearchStatus: '',
+        teamSearchStatusIsError: false,
+        teamSearchOutput: ''
     },
 
     init(state, context) {
@@ -729,6 +740,128 @@ const plugin = {
         return '';
     },
 
+    _getOpsCookieValue(name) {
+        try {
+            const win = this._getOpsPageWindow();
+            const cookie = (win.document && win.document.cookie) || document.cookie || '';
+            if (!cookie) return '';
+            for (const part of cookie.split(/;\s*/)) {
+                const eq = part.indexOf('=');
+                if (eq < 0) continue;
+                if (part.slice(0, eq).trim() === name) {
+                    return decodeURIComponent(part.slice(eq + 1));
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: cookie read failed for ' + name, e);
+        }
+        return '';
+    },
+
+    _getOpsCurrentUserId() {
+        return this._getOpsCookieValue('current-user-id');
+    },
+
+    _getOpsTeamUuidByLabel(label) {
+        const secrets = this._getOpsSecretsJson();
+        if (!secrets || !Array.isArray(secrets['team-uuids'])) return '';
+        const entry = secrets['team-uuids'].find(pair => Array.isArray(pair) && pair[1] === label);
+        return entry ? String(entry[0]) : '';
+    },
+
+    _getOpsNextDeploymentId(pageWindow) {
+        try {
+            const win = pageWindow || this._getOpsPageWindow();
+            const nd = win.__NEXT_DATA__;
+            if (nd && nd.deploymentId && typeof nd.deploymentId === 'string') return nd.deploymentId;
+        } catch (e) {
+            Logger.debug('ops-tab: __NEXT_DATA__ deploymentId read failed', e);
+        }
+        return '';
+    },
+
+    async _fetchOpsTeamSearch(teamId, userId, query) {
+        if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
+        if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+
+        const headers = {
+            'accept': 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': OPS_TEAM_SEARCH_NEXT_ACTION,
+            'next-router-state-tree': OPS_TEAM_SEARCH_ROUTER_STATE
+        };
+        if (deploymentId) {
+            headers['x-deployment-id'] = deploymentId;
+        }
+
+        const body = JSON.stringify([teamId, userId, 0, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
+
+        Logger.debug('ops-tab: team search fetch', {
+            teamId: teamId.slice(0, 8) + '...',
+            userId: userId.slice(0, 8) + '...',
+            query: query || '(empty)',
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, OPS_TEAM_SEARCH_URL, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+
+        const text = await res.text().catch(() => '');
+        if (!res.ok) {
+            throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
+        }
+        return text;
+    },
+
+    _setOpsTeamSearchStatus(modal, message, isError) {
+        const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
+        if (!status) return;
+        status.textContent = message || '';
+        status.style.display = message ? 'block' : 'none';
+        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+    },
+
+    _setOpsTeamSearchOutput(modal, text) {
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputWrap');
+        const output = this._opsQuery(modal, '#wf-ops-team-search-output', 'teamSearchOutput');
+        if (wrap) wrap.style.display = text ? 'block' : 'none';
+        if (output) output.textContent = text || '';
+    },
+
+    async _handleOpsTeamSearch(modal) {
+        const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInput');
+        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
+        const query = input ? input.value.trim() : '';
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
+        this._setOpsTeamSearchStatus(modal, 'Searching...');
+        this._setOpsTeamSearchOutput(modal, '');
+
+        try {
+            const teamId = this._getOpsTeamUuidByLabel('Computer Use');
+            const userId = this._getOpsCurrentUserId();
+            const raw = await this._fetchOpsTeamSearch(teamId, userId, query);
+            this._setOpsTeamSearchOutput(modal, raw);
+            this._setOpsTeamSearchStatus(modal, 'Done (' + raw.length + ' bytes). Query: "' + (query || '') + '"');
+            Logger.log('ops-tab: team search done (' + raw.length + ' bytes)');
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            this._setOpsTeamSearchStatus(modal, msg, true);
+            Logger.warn('ops-tab: team search failed', e);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
+            this._captureOpsTabState(modal);
+        }
+    },
+
     _extractOpsOrchestratorVerifierSource(payload) {
         if (!payload || typeof payload !== 'object') return null;
         const seen = new Set();
@@ -1098,6 +1231,9 @@ const plugin = {
         const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
         const fetchState = this._opsVerifierFetchState;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
+        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
+        const teamSearchOutput = this._opsQuery(modal, '#wf-ops-team-search-output', 'teamSearchOutputCapture');
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
             verifierInput: verifierInput ? verifierInput.value : '',
@@ -1110,7 +1246,11 @@ const plugin = {
                     versions: fetchState.versions,
                     selectedVersion: fetchState.selectedVersion
                 }
-                : null
+                : null,
+            teamSearchQuery: teamSearchInput ? teamSearchInput.value : '',
+            teamSearchStatus: teamSearchStatus && teamSearchStatus.style.display !== 'none' ? (teamSearchStatus.textContent || '') : '',
+            teamSearchStatusIsError: teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false,
+            teamSearchOutput: teamSearchOutput ? teamSearchOutput.textContent : ''
         };
     },
 
@@ -1147,6 +1287,17 @@ const plugin = {
             );
         } else {
             this._opsVerifierFetchState = null;
+        }
+
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
+        if (teamSearchInput && state.teamSearchQuery != null) {
+            teamSearchInput.value = state.teamSearchQuery;
+        }
+        if (state.teamSearchStatus) {
+            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError);
+        }
+        if (state.teamSearchOutput) {
+            this._setOpsTeamSearchOutput(modal, state.teamSearchOutput);
         }
     },
 
@@ -1306,6 +1457,55 @@ const plugin = {
         const display = paneDisplay || 'none';
         return `
             <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${display}; overflow-y: auto; min-height: 200px;">
+                <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #e5e5e5);">
+                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #333);">
+                        Team Member Search
+                    </h3>
+                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                        Search the Computer Use team by name or email. Leave blank to list all members.
+                    </p>
+                    <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        background: var(--background, white);
+                        color: var(--foreground, #333);
+                        box-sizing: border-box;
+                    ">
+                    <div style="margin-top: 8px;">
+                        <button type="button" id="wf-ops-team-search-btn" style="
+                            padding: 10px 16px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: white;
+                            background: var(--brand, #4f46e5);
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                        ">Search</button>
+                    </div>
+                    <div id="wf-ops-team-search-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                    <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px;">
+                        <pre style="
+                            width: 100%;
+                            margin: 0;
+                            padding: 8px 12px;
+                            font-size: 11px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--card, #fafafa);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                            max-height: 280px;
+                            overflow: auto;
+                            white-space: pre-wrap;
+                            word-break: break-all;
+                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                        "><code id="wf-ops-team-search-output"></code></pre>
+                    </div>
+                </div>
                 <div style="margin-bottom: 16px;">
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
                         Task View Link Generator
@@ -1629,6 +1829,26 @@ const plugin = {
             return;
         }
         modal.dataset.wfOpsListenersAttached = '1';
+
+        const teamSearchBtn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnAttach');
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputAttach');
+
+        if (teamSearchBtn) {
+            teamSearchBtn.addEventListener('click', () => {
+                void this._handleOpsTeamSearch(modal);
+            });
+        }
+        if (teamSearchInput) {
+            teamSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void this._handleOpsTeamSearch(modal);
+                }
+            });
+            teamSearchInput.addEventListener('input', () => {
+                this._captureOpsTabState(modal);
+            });
+        }
 
         const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputAttach');
         const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLinkAttach');
