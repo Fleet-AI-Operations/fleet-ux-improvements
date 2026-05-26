@@ -362,7 +362,7 @@
     {
       "file": "expert-feedback-tooltip.js",
       "name": "Expert Feedback Tooltip Fix",
-      "description": "Fixes Recent Feedback tooltip body text color on expert profile pages so it matches the heading"
+      "description": "Fixes Recent Feedback tooltip text color and enables scrolling for long feedback on expert profile pages"
     }
   ]
 }
