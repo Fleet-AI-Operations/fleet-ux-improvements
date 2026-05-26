@@ -18,7 +18,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -124,12 +124,12 @@ const plugin = {
 
         const wrapper = document.createElement('div');
         wrapper.className =
-            'mb-1 rounded-sm -mx-1 px-1 py-0.5 transition-colors hover:bg-accent';
+            'group mb-1 rounded-sm -mx-1 px-1 py-0.5 transition-colors hover:bg-accent';
 
         const button = document.createElement('button');
         button.type = 'button';
         button.className =
-            'font-medium text-sm text-left cursor-pointer w-full block bg-transparent border-0 p-0';
+            'font-medium group-hover:font-bold text-sm text-left cursor-pointer w-full block bg-transparent border-0 p-0';
         button.textContent = taskKey;
         button.title = 'Copy task ID';
         button.setAttribute('aria-label', 'Copy task ID');
