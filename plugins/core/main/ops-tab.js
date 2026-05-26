@@ -32,6 +32,8 @@ const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b'
 /** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
 const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
+const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
 const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
 const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
@@ -128,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.14',
+    _version: '2.15',
     phase: 'core',
     enabledByDefault: true,
 
@@ -139,6 +141,8 @@ const plugin = {
     _opsTeamSearchSelectedTeams: null,
     /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
     _opsFellowsSearchComplete: null,
+    /** memberId → staged edit session while permissions tray is in edit mode */
+    _opsMemberEditState: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -909,7 +913,23 @@ const plugin = {
             '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
             '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
             '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
-            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}'
+            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
+            '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
+            '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
+            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:var(--brand,#4f46e5);background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-edit-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
+            '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
+            '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
+            '.wf-ops-confirm-btn:disabled:hover{background:transparent!important;color:#9ca3af!important;}',
+            '.wf-ops-cancel-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#dc2626;background:transparent;border:1px solid #dc2626;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
+            '.wf-ops-cancel-btn:hover{background:#dc2626!important;color:#fff!important;}',
+            '.wf-ops-cancel-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
+            '.wf-ops-staged-add{background:rgba(34,197,94,0.14)!important;}',
+            '.wf-ops-staged-remove{background:rgba(239,68,68,0.14)!important;}',
+            '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
+            '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
+            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}'
         ].join('');
         document.head.appendChild(style);
     },
@@ -947,6 +967,7 @@ const plugin = {
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
         this._opsFellowsSearchComplete = null;
+        this._clearOpsMemberEditState();
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
 
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
@@ -969,6 +990,7 @@ const plugin = {
     _onOpsModalClosed() {
         this._detachOpsTeamFilterDropdownOutsideListener();
         this._opsTeamSearchSelectedTeams = new Set();
+        this._clearOpsMemberEditState();
     },
 
     _attachOpsTeamFilterDropdownOutsideListener() {
@@ -1088,40 +1110,367 @@ const plugin = {
         return false;
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams) {
+    _opsMemberEditStateMap() {
+        if (!(this._opsMemberEditState instanceof Map)) {
+            this._opsMemberEditState = new Map();
+        }
+        return this._opsMemberEditState;
+    },
+
+    _clearOpsMemberEditState() {
+        this._opsMemberEditState = new Map();
+    },
+
+    _opsCloneStringSet(setOrArray) {
+        if (setOrArray instanceof Set) return new Set(setOrArray);
+        if (Array.isArray(setOrArray)) return new Set(setOrArray);
+        return new Set();
+    },
+
+    _opsSetsEqual(a, b) {
+        if (!a || !b || a.size !== b.size) return false;
+        for (const value of a) {
+            if (!b.has(value)) return false;
+        }
+        return true;
+    },
+
+    _getOpsMemberEditSession(memberId) {
+        return this._opsMemberEditStateMap().get(memberId) || null;
+    },
+
+    _startOpsMemberEdit(member) {
+        const memberId = member.id;
+        const session = {
+            editing: true,
+            email: member.email || '',
+            baselineTeams: this._opsCloneStringSet(member.teamLabels),
+            baselinePerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
+            stagedTeams: this._opsCloneStringSet(member.teamLabels),
+            stagedPerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
+            applying: false
+        };
+        this._opsMemberEditStateMap().set(memberId, session);
+        Logger.log('ops-tab: member edit started for ' + (member.email || memberId));
+        return session;
+    },
+
+    _cancelOpsMemberEdit(memberId) {
+        if (this._opsMemberEditStateMap().has(memberId)) {
+            this._opsMemberEditStateMap().delete(memberId);
+            Logger.log('ops-tab: member edit cancelled for ' + memberId);
+        }
+    },
+
+    _opsMemberEditHasChanges(session) {
+        if (!session) return false;
+        return !this._opsSetsEqual(session.baselineTeams, session.stagedTeams) ||
+            !this._opsSetsEqual(session.baselinePerms, session.stagedPerms);
+    },
+
+    _toggleOpsMemberEditTeam(session, label) {
+        if (!session || !session.baselineTeams.has(label)) return;
+        if (session.stagedTeams.has(label)) {
+            session.stagedTeams.delete(label);
+        } else {
+            session.stagedTeams.add(label);
+        }
+    },
+
+    _toggleOpsMemberEditPermission(session, permKey) {
+        if (!session) return;
+        if (session.stagedPerms.has(permKey)) {
+            session.stagedPerms.delete(permKey);
+        } else {
+            session.stagedPerms.add(permKey);
+        }
+    },
+
+    _captureOpsOpenMemberDetails(modal) {
+        const openIds = new Set();
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOpenCapture');
+        if (!wrap) return openIds;
+        wrap.querySelectorAll('.wf-ops-member-details[open][data-member-id]').forEach((el) => {
+            const id = el.getAttribute('data-member-id');
+            if (id) openIds.add(id);
+        });
+        return openIds;
+    },
+
+    async _opsPostOrchestratorPrivate(url, body) {
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            headers: {
+                accept: 'application/json, text/plain, */*',
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify(body),
+            credentials: 'include'
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('HTTP ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
+        }
+        return res.json().catch(() => null);
+    },
+
+    async _opsRemoveMemberFromTeam(teamId, email) {
+        if (!teamId || !email) throw new Error('Missing team or email for bulk remove');
+        await this._opsPostOrchestratorPrivate(OPS_TEAM_BULK_REMOVE_URL, {
+            team_id: teamId,
+            emails: [email]
+        });
+        Logger.debug('ops-tab: removed ' + email + ' from team ' + teamId.slice(0, 8) + '…');
+    },
+
+    async _opsModifyMemberPermission(profileId, permission, action) {
+        if (!profileId || !permission || !action) {
+            throw new Error('Missing profile, permission, or action');
+        }
+        await this._opsPostOrchestratorPrivate(OPS_TEAM_USER_PERMISSIONS_URL, {
+            profile_id: profileId,
+            permission,
+            action
+        });
+        Logger.debug('ops-tab: permission ' + action + ' ' + permission + ' for ' + profileId.slice(0, 8) + '…');
+    },
+
+    _getOpsMemberFromCache(memberId) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache || !cache.memberMap) return null;
+        return cache.memberMap.get(memberId) || null;
+    },
+
+    _updateOpsMemberTileDom(modal, memberId, forceOpen) {
+        const cache = this._opsTeamSearchMemberCache;
+        const member = this._getOpsMemberFromCache(memberId);
+        if (!cache || !member) return;
+
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchTileUpdate');
+        if (!wrap) return;
+
+        const existing = wrap.querySelector('.wf-ops-member-details[data-member-id="' + memberId + '"]');
+        const wasOpen = forceOpen === true || (existing && existing.open);
+        const html = this._renderOpsTeamMemberTileHtml(member, cache.allTeams, wasOpen);
+
+        if (existing) {
+            existing.outerHTML = html;
+            const updated = wrap.querySelector('.wf-ops-member-details[data-member-id="' + memberId + '"]');
+            if (updated && wasOpen) updated.open = true;
+        }
+    },
+
+    async _applyOpsMemberEditChanges(modal, memberId) {
+        const session = this._getOpsMemberEditSession(memberId);
+        const member = this._getOpsMemberFromCache(memberId);
+        const cache = this._opsTeamSearchMemberCache;
+        if (!session || !member || !cache || session.applying) return;
+        if (!this._opsMemberEditHasChanges(session)) return;
+
+        const teamRemovals = [...session.baselineTeams].filter((label) => !session.stagedTeams.has(label));
+        const permAdds = [...session.stagedPerms].filter((key) => !session.baselinePerms.has(key));
+        const permRemovals = [...session.baselinePerms].filter((key) => !session.stagedPerms.has(key));
+
+        session.applying = true;
+        this._updateOpsMemberTileDom(modal, memberId, true);
+
+        try {
+            for (const label of teamRemovals) {
+                const teamId = this._getOpsTeamUuidByLabel(label);
+                if (!teamId) throw new Error('No team UUID for "' + label + '"');
+                await this._opsRemoveMemberFromTeam(teamId, session.email);
+            }
+            for (const permKey of permAdds) {
+                await this._opsModifyMemberPermission(memberId, permKey, 'add');
+            }
+            for (const permKey of permRemovals) {
+                await this._opsModifyMemberPermission(memberId, permKey, 'remove');
+            }
+
+            member.teamLabels = this._opsCloneStringSet(session.stagedTeams);
+            member.permissions = [...session.stagedPerms];
+            this._cancelOpsMemberEdit(memberId);
+
+            Logger.log('ops-tab: member edit applied for ' + session.email +
+                ' (teams -' + teamRemovals.length + ', perms +' + permAdds.length + ' -' + permRemovals.length + ')');
+
+            const openIds = this._captureOpsOpenMemberDetails(modal);
+            openIds.add(memberId);
+            this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0, openIds);
+        } catch (e) {
+            session.applying = false;
+            Logger.error('ops-tab: member edit failed for ' + memberId, e);
+            this._setOpsTeamSearchStatus(modal,
+                'Failed to apply changes: ' + (e && e.message ? e.message : String(e)), true, false, true);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+        }
+    },
+
+    _handleOpsMemberEditClick(e, modal) {
+        const actionEl = e.target.closest('[data-ops-action][data-ops-member-id]');
+        if (!actionEl || !modal.contains(actionEl)) return;
+        if (!actionEl.closest('#wf-ops-team-search-output-wrap')) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const memberId = actionEl.getAttribute('data-ops-member-id');
+        const action = actionEl.getAttribute('data-ops-action');
+        if (!memberId || !action) return;
+
+        const member = this._getOpsMemberFromCache(memberId);
+        if (!member) {
+            Logger.warn('ops-tab: member edit action skipped — member not in cache');
+            return;
+        }
+
+        if (action === 'edit') {
+            this._startOpsMemberEdit(member);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        const session = this._getOpsMemberEditSession(memberId);
+        if (!session) return;
+
+        if (action === 'cancel') {
+            if (session.applying) return;
+            this._cancelOpsMemberEdit(memberId);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        if (action === 'confirm') {
+            if (session.applying || !this._opsMemberEditHasChanges(session)) return;
+            void this._applyOpsMemberEditChanges(modal, memberId);
+            return;
+        }
+
+        if (session.applying) return;
+
+        if (action === 'toggle-team') {
+            const label = actionEl.getAttribute('data-ops-team-label');
+            if (!label) return;
+            this._toggleOpsMemberEditTeam(session, label);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        if (action === 'toggle-perm') {
+            const permKey = actionEl.getAttribute('data-ops-perm-key');
+            if (!permKey) return;
+            this._toggleOpsMemberEditPermission(session, permKey);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+        }
+    },
+
+    _renderOpsMemberEditActionsHtml(memberId, session) {
+        const attrId = this._opsEscapeAttr(memberId);
+        if (session && session.editing) {
+            const hasChanges = this._opsMemberEditHasChanges(session);
+            const confirmDisabled = !hasChanges || session.applying;
+            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
+                '<button type="button" class="wf-ops-confirm-btn" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
+                    (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
+                '<button type="button" class="wf-ops-cancel-btn" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
+                    (session.applying ? ' disabled' : '') + '>Cancel</button>' +
+                '</span>';
+        }
+        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
+            '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
+            '</span>';
+    },
+
+    _renderOpsMemberTeamRowHtml(label, member, session) {
+        const memberId = member.id || '';
+        const attrId = this._opsEscapeAttr(memberId);
+        const attrLabel = this._opsEscapeAttr(label);
+        const editing = session && session.editing;
+        const teamLabels = member.teamLabels || new Set();
+        const inBaseline = editing ? session.baselineTeams.has(label) : teamLabels.has(label);
+        const inStaged = editing ? session.stagedTeams.has(label) : inBaseline;
+
+        if (editing) {
+            if (!inBaseline) {
+                return '<div style="font-size:11px;padding:2px 4px;color:var(--muted-foreground,#999);">' +
+                    '<span style="opacity:0.35;">—</span> ' + this._opsEscapeHtml(label) + '</div>';
+            }
+            const changed = inStaged !== inBaseline;
+            const stagedClass = changed ? ' wf-ops-staged-remove' : '';
+            const icon = changed ? '❌ ' : '✅ ';
+            const color = 'var(--foreground,#333)';
+            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-team" data-ops-member-id="' +
+                attrId + '" data-ops-team-label="' + attrLabel + '" style="font-size:11px;color:' + color + ';">' +
+                icon + this._opsEscapeHtml(label) + '</button>';
+        }
+
+        return '<div style="font-size:11px;padding:2px 0;color:' +
+            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+            this._opsEscapeHtml(label) + '</div>';
+    },
+
+    _renderOpsMemberPermRowHtml(permKey, permLabel, member, session) {
+        const memberId = member.id || '';
+        const attrId = this._opsEscapeAttr(memberId);
+        const attrPerm = this._opsEscapeAttr(permKey);
+        const editing = session && session.editing;
+        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
+        const inBaseline = editing ? session.baselinePerms.has(permKey) : permissionKeys.has(permKey);
+        const inStaged = editing ? session.stagedPerms.has(permKey) : inBaseline;
+
+        if (editing) {
+            const changed = inStaged !== inBaseline;
+            const stagedClass = changed ? (inStaged ? ' wf-ops-staged-add' : ' wf-ops-staged-remove') : '';
+            let icon;
+            if (changed) {
+                icon = inStaged ? '✅ ' : '❌ ';
+            } else {
+                icon = inStaged ? '✅ ' : '<span style="opacity:0.35;">—</span> ';
+            }
+            const color = inStaged || changed ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)';
+            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-perm" data-ops-member-id="' +
+                attrId + '" data-ops-perm-key="' + attrPerm + '" style="font-size:11px;color:' + color + ';">' +
+                icon + this._opsEscapeHtml(permLabel) + '</button>';
+        }
+
+        return '<div style="font-size:11px;padding:2px 0;color:' +
+            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+            this._opsEscapeHtml(permLabel) + '</div>';
+    },
+
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
+        const memberId = member.id || '';
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
         const teamLabels = member.teamLabels || new Set();
-        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
-        const knownPermCount = this._opsMemberKnownPermissionCount(member);
+        const session = this._getOpsMemberEditSession(memberId);
+        const displayTeamLabels = session ? session.stagedTeams : teamLabels;
+        const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
+        const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
         const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
         const uiBadgeHtml = showUiBadge
             ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
             : '';
 
-        const teamsColHtml = allTeams.map(([, label]) => {
-            const isIn = teamLabels.has(label);
-            return '<div style="font-size:11px;padding:2px 0;color:' +
-                (isIn ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-                (isIn ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-                this._opsEscapeHtml(label) + '</div>';
-        }).join('');
+        const teamsColHtml = allTeams.map(([, label]) =>
+            this._renderOpsMemberTeamRowHtml(label, member, session)).join('');
 
-        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) => {
-            const hasPerm = permissionKeys.has(permKey);
-            return '<div style="font-size:11px;padding:2px 0;color:' +
-                (hasPerm ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-                (hasPerm ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-                this._opsEscapeHtml(permLabel) + '</div>';
-        }).join('');
+        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) =>
+            this._renderOpsMemberPermRowHtml(permKey, permLabel, member, session)).join('');
 
-        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
+        const summaryLabel = 'Teams (' + displayTeamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
             knownPermCount + '/' + OPS_ALL_PERMISSIONS.length + ')';
 
         const colHeader = (text) =>
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
             text + '</div>';
+
+        const openAttr = isOpen ? ' open' : '';
 
         return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
@@ -1137,9 +1486,10 @@ const plugin = {
                     'Visit Profile' +
                 '</a>' +
             '</div>' +
-            '<details style="margin-top:8px;">' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;">' +
-                    '▸ ' + this._opsEscapeHtml(summaryLabel) +
+            '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
+                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+                    '<span style="min-width:0;">▸ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
+                    this._renderOpsMemberEditActionsHtml(memberId, session) +
                 '</summary>' +
                 '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
                     'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
@@ -1169,12 +1519,15 @@ const plugin = {
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
     },
 
-    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount) {
+    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount, openMemberIds) {
         const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchCards');
         if (!wrap) return;
 
         const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
         const filterText = filterInput ? filterInput.value : '';
+        const openIds = openMemberIds instanceof Set
+            ? openMemberIds
+            : this._captureOpsOpenMemberDetails(modal);
 
         let members = [...memberMap.values()];
 
@@ -1206,7 +1559,8 @@ const plugin = {
         });
 
         wrap.style.display = 'block';
-        wrap.innerHTML = members.map(m => this._renderOpsTeamMemberTileHtml(m, allTeams)).join('');
+        wrap.innerHTML = members.map((m) =>
+            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
     },
 
     async _handleOpsTeamSearch(modal) {
@@ -1232,6 +1586,7 @@ const plugin = {
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
+        this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
@@ -2377,6 +2732,13 @@ const plugin = {
         if (teamSearchClearBtn) {
             teamSearchClearBtn.addEventListener('click', () => {
                 this._clearOpsTeamSearchResults(modal);
+            });
+        }
+
+        if (!modal.dataset.wfOpsMemberEditDelegation) {
+            modal.dataset.wfOpsMemberEditDelegation = '1';
+            modal.addEventListener('click', (e) => {
+                this._handleOpsMemberEditClick(e, modal);
             });
         }
 
