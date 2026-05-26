@@ -1,7 +1,7 @@
 {
   "version": "9.1.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.3",
+  "archetypesVersion": "9.4",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -476,6 +476,12 @@
           "name": "expert-datasets-task-actions.js",
           "version": "1.4",
           "hash": "sha256-229c5b4c893d323abfc0447907bc74de30adc57c3ece5c87a18fb860b91c72f6",
+          "log": false
+        },
+        {
+          "name": "expert-feedback-tooltip.js",
+          "version": "1.0",
+          "hash": "sha256-6ba862395f11336bdb59fa051f0473349e51b7c4ec543b7debd0f6ce0bd00bd1",
           "log": false
         }
       ]
