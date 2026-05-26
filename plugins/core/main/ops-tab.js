@@ -34,6 +34,7 @@ const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(pla
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
 const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
+const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
 /** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
 const OPS_ALL_PERMISSIONS = [
     ['QA_CUA_TASKS', 'QA CUA Tasks'],
@@ -127,7 +128,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.10',
+    _version: '2.12',
     phase: 'core',
     enabledByDefault: true,
 
@@ -136,6 +137,8 @@ const plugin = {
     _opsTeamSearchActive: null,
     _opsTeamSearchMemberCache: null,
     _opsTeamSearchSelectedTeams: null,
+    /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
+    _opsFellowsSearchComplete: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -870,6 +873,16 @@ const plugin = {
         return allMembers;
     },
 
+    _mergeOpsTeamSearchMembers(memberMap, members, teamLabel) {
+        if (!members || !members.length) return;
+        for (const member of members) {
+            if (!memberMap.has(member.id)) {
+                memberMap.set(member.id, { ...member, teamLabels: new Set() });
+            }
+            memberMap.get(member.id).teamLabels.add(teamLabel);
+        }
+    },
+
     _getOpsPermissionDisplayLabel(permKey) {
         return OPS_PERMISSION_LABEL_BY_KEY[permKey] || String(permKey || '').replace(/_/g, ' ');
     },
@@ -933,6 +946,7 @@ const plugin = {
     _clearOpsTeamSearchResults(modal) {
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
+        this._opsFellowsSearchComplete = null;
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
 
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
@@ -1043,7 +1057,9 @@ const plugin = {
     _opsMemberQualifiesForUiBadge(member) {
         const teamLabels = member.teamLabels;
         if (!teamLabels || teamLabels.size === 0) return false;
-        if (teamLabels.has('Fleet Fellows')) return false;
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
+        // No UI badges until the full Fleet Fellows search has finished.
+        if (this._opsFellowsSearchComplete !== true) return false;
         for (const label of teamLabels) {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
@@ -1211,37 +1227,42 @@ const plugin = {
         let pendingCount = allTeams.length;
         let doneCount = 0;
 
+        const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
+        this._opsFellowsSearchComplete = fellowsEntry ? false : true;
+
         const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
+
+        const finishTeamSearch = (teamLabel) => {
+            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
+                this._opsFellowsSearchComplete = true;
+            }
+            pendingCount--;
+            doneCount++;
+            if (this._opsTeamSearchActive !== sessionId) return;
+            this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
+            if (pendingCount > 0) {
+                this._setOpsTeamSearchStatus(modal,
+                    spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
+                    false, true, false);
+            } else {
+                this._setOpsTeamSearchStatus(modal,
+                    memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
+                    false, false, true);
+                Logger.log('ops-tab: team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
+            }
+        };
 
         const searches = allTeams.map(async ([teamId, teamLabel]) => {
             try {
                 const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
                 if (this._opsTeamSearchActive !== sessionId) return;
-                for (const member of members) {
-                    if (!memberMap.has(member.id)) {
-                        memberMap.set(member.id, { ...member, teamLabels: new Set() });
-                    }
-                    memberMap.get(member.id).teamLabels.add(teamLabel);
-                }
+                this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
                 Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
                 Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
             } finally {
-                pendingCount--;
-                doneCount++;
-                if (this._opsTeamSearchActive !== sessionId) return;
-                this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
-                if (pendingCount > 0) {
-                    this._setOpsTeamSearchStatus(modal,
-                        spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
-                        false, true, false);
-                } else {
-                    this._setOpsTeamSearchStatus(modal,
-                        memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
-                        false, false, true);
-                    Logger.log('ops-tab: team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
-                }
+                finishTeamSearch(teamLabel);
             }
         });
 
