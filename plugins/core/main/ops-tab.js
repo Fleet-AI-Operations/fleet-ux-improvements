@@ -34,6 +34,22 @@ const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(pla
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
 const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
+/** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
+const OPS_ALL_PERMISSIONS = [
+    ['QA_CUA_TASKS', 'QA CUA Tasks'],
+    ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
+    ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
+    ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
+    ['MAKE_TUNDRA_TASKS', 'Make Tundra Tasks'],
+    ['QA_CUA_ENVS', 'QA CUA Environments'],
+    ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
+    ['QA_SESSIONS', 'QA Agent Sessions'],
+    ['COMMENT_AGENT_SESSIONS', 'Comment Agent Sessions'],
+    ['REVIEW_DISPUTES', 'Review Disputes (Senior QA)'],
+    ['VIEW_OWN_TASK_RESULTS', 'View Own Task Results'],
+    ['REVIEW_CONTRACTOR_APPLICATIONS', 'Contractor Review']
+];
+const OPS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(OPS_ALL_PERMISSIONS);
 
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -111,7 +127,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.8',
+    _version: '2.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -785,13 +801,14 @@ const plugin = {
         return '';
     },
 
-    async _fetchOpsTeamSearch(teamId, userId, query) {
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
         if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
 
         const pageWindow = this._getOpsPageWindow();
         const requestFetch = pageWindow.fetch || fetch;
         const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const pageOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
 
         const headers = {
             'accept': 'text/x-component',
@@ -803,12 +820,13 @@ const plugin = {
             headers['x-deployment-id'] = deploymentId;
         }
 
-        const body = JSON.stringify([teamId, userId, 0, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
+        const body = JSON.stringify([teamId, userId, pageOffset, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
 
         Logger.debug('ops-tab: team search fetch', {
             teamId: teamId.slice(0, 8) + '...',
             userId: userId.slice(0, 8) + '...',
             query: query || '(empty)',
+            offset: pageOffset,
             hasDeploymentId: !!deploymentId
         });
 
@@ -824,6 +842,45 @@ const plugin = {
             throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
         }
         return text;
+    },
+
+    async _fetchOpsTeamSearchAllMembers(teamId, userId, query) {
+        const allMembers = [];
+        let offset = 0;
+        let hasMore = true;
+        let pageCount = 0;
+        const maxPages = 200;
+
+        while (hasMore && pageCount < maxPages) {
+            pageCount++;
+            const raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset);
+            const parsed = this._parseOpsTeamSearchResponse(raw);
+            if (!parsed || !Array.isArray(parsed.members)) break;
+
+            allMembers.push(...parsed.members);
+            hasMore = parsed.hasMore === true && parsed.members.length > 0;
+            offset += OPS_TEAM_SEARCH_PAGE_LIMIT;
+
+            if (hasMore) {
+                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + parsed.members.length +
+                    ' members (total ' + allMembers.length + ', hasMore)');
+            }
+        }
+
+        return allMembers;
+    },
+
+    _getOpsPermissionDisplayLabel(permKey) {
+        return OPS_PERMISSION_LABEL_BY_KEY[permKey] || String(permKey || '').replace(/_/g, ' ');
+    },
+
+    _opsMemberPermissionKeys(member) {
+        return Array.isArray(member.permissions) ? member.permissions : [];
+    },
+
+    _opsMemberKnownPermissionCount(member) {
+        const keys = new Set(this._opsMemberPermissionKeys(member));
+        return OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
     },
 
     _opsEscapeHtml(str) {
@@ -996,7 +1053,8 @@ const plugin = {
         const email = this._opsEscapeHtml(member.email || '');
         const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
         const teamLabels = member.teamLabels || new Set();
-        const permissions = Array.isArray(member.permissions) ? member.permissions : [];
+        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
+        const knownPermCount = this._opsMemberKnownPermissionCount(member);
         const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
         const uiBadgeHtml = showUiBadge
             ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
@@ -1010,14 +1068,16 @@ const plugin = {
                 this._opsEscapeHtml(label) + '</div>';
         }).join('');
 
-        const permsColHtml = permissions.length > 0
-            ? permissions.map(p =>
-                '<div style="font-size:11px;padding:2px 0;color:var(--foreground,#333);">' +
-                this._opsEscapeHtml(p.replace(/_/g, ' ')) + '</div>'
-            ).join('')
-            : '<div style="font-size:11px;color:var(--muted-foreground,#999);">None</div>';
+        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) => {
+            const hasPerm = permissionKeys.has(permKey);
+            return '<div style="font-size:11px;padding:2px 0;color:' +
+                (hasPerm ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+                (hasPerm ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+                this._opsEscapeHtml(permLabel) + '</div>';
+        }).join('');
 
-        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' + permissions.length + ')';
+        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
+            knownPermCount + '/' + OPS_ALL_PERMISSIONS.length + ')';
 
         const colHeader = (text) =>
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
@@ -1053,12 +1113,12 @@ const plugin = {
     _opsTeamMemberMatchesFilter(member, allTeams, filterText) {
         if (!filterText) return true;
         const teamLabels = member.teamLabels || new Set();
-        const perms = Array.isArray(member.permissions) ? member.permissions : [];
+        const perms = this._opsMemberPermissionKeys(member);
         const haystack = [
             member.full_name || '',
             member.email || '',
             ...[...teamLabels],
-            ...perms.map(p => p.replace(/_/g, ' '))
+            ...perms.map((p) => this._getOpsPermissionDisplayLabel(p))
         ].join(' ').toLowerCase();
         return filterText.toLowerCase().split(/\s+/).filter(Boolean).every(t => haystack.includes(t));
     },
@@ -1154,18 +1214,15 @@ const plugin = {
 
         const searches = allTeams.map(async ([teamId, teamLabel]) => {
             try {
-                const raw = await this._fetchOpsTeamSearch(teamId, userId, query);
+                const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
                 if (this._opsTeamSearchActive !== sessionId) return;
-                const parsed = this._parseOpsTeamSearchResponse(raw);
-                if (parsed && Array.isArray(parsed.members)) {
-                    for (const member of parsed.members) {
-                        if (!memberMap.has(member.id)) {
-                            memberMap.set(member.id, { ...member, teamLabels: new Set() });
-                        }
-                        memberMap.get(member.id).teamLabels.add(teamLabel);
+                for (const member of members) {
+                    if (!memberMap.has(member.id)) {
+                        memberMap.set(member.id, { ...member, teamLabels: new Set() });
                     }
+                    memberMap.get(member.id).teamLabels.add(teamLabel);
                 }
-                Logger.debug('ops-tab: team search got ' + ((parsed && parsed.members) ? parsed.members.length : 0) + ' members from ' + teamLabel);
+                Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
                 Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
             } finally {
@@ -1820,22 +1877,7 @@ const plugin = {
                             cursor: pointer;
                         ">Search</button>
                     </div>
-                    <div id="wf-ops-team-search-status-row" style="display: none; margin-top: 8px; align-items: center; justify-content: space-between; gap: 8px;">
-                        <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                        <button type="button" id="wf-ops-team-search-clear-btn" style="
-                            display: none;
-                            flex-shrink: 0;
-                            padding: 2px 10px;
-                            font-size: 11px;
-                            font-weight: 500;
-                            color: var(--muted-foreground, #666);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 4px;
-                            cursor: pointer;
-                        ">Clear</button>
-                    </div>
-                    <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px; align-items: stretch; gap: 8px;">
+                    <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px; align-items: stretch; gap: 8px; flex-wrap: nowrap;">
                         <input type="text" id="wf-ops-team-filter-input" placeholder="Filter results by name, email, team, or permission…" autocomplete="off" style="
                             flex: 1;
                             min-width: 0;
@@ -1889,6 +1931,21 @@ const plugin = {
                                 <div id="wf-ops-team-filter-checkboxes" style="margin-top: 6px;"></div>
                             </div>
                         </div>
+                    </div>
+                    <div id="wf-ops-team-search-status-row" style="display: none; margin-top: 8px; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        <button type="button" id="wf-ops-team-search-clear-btn" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 2px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 4px;
+                            cursor: pointer;
+                        ">Clear</button>
                     </div>
                     <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; max-height: 360px; overflow-y: auto;">
                         <div id="wf-ops-team-search-cards"></div>
