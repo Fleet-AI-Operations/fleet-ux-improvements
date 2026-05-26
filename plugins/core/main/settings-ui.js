@@ -8,7 +8,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -254,6 +254,9 @@ const plugin = {
         const modal = document.getElementById('wf-settings-modal');
         if (modal) {
             this._captureOpsState(modal);
+        }
+        if (Context.opsTab && typeof Context.opsTab.onModalClosed === 'function') {
+            Context.opsTab.onModalClosed();
         }
         if (modal && typeof modal.close === 'function') {
             if (modal.open) {
