@@ -111,7 +111,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -853,13 +853,41 @@ const plugin = {
         return null;
     },
 
-    _setOpsTeamSearchStatus(modal, message, isError, isHtml) {
+    _setOpsTeamSearchStatus(modal, message, isError, isHtml, showClear) {
+        const row = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRow');
         const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
+        const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
         if (!status) return;
-        if (!message) { status.style.display = 'none'; return; }
-        status.style.display = 'block';
+        if (!message) {
+            if (row) row.style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'none';
+            return;
+        }
+        if (row) row.style.display = 'flex';
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
         if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
+        if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
+    },
+
+    _clearOpsTeamSearchResults(modal) {
+        this._opsTeamSearchActive = null;
+        this._opsTeamSearchMemberCache = null;
+        this._setOpsTeamSearchStatus(modal, '', false, false, false);
+
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputClear');
+        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputClear');
+        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
+
+        if (filterWrap) filterWrap.style.display = 'none';
+        if (filterInput) filterInput.value = '';
+        if (outputWrap) {
+            outputWrap.style.display = 'none';
+            outputWrap.innerHTML = '<div id="wf-ops-team-search-cards"></div>';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
+        this._captureOpsTabState(modal);
+        Logger.log('ops-tab: team search results cleared');
     },
 
     _opsMemberQualifiesForUiBadge(member) {
@@ -1018,7 +1046,7 @@ const plugin = {
         let doneCount = 0;
 
         const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
-        this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true);
+        this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
 
         const searches = allTeams.map(async ([teamId, teamLabel]) => {
             try {
@@ -1044,10 +1072,11 @@ const plugin = {
                 if (pendingCount > 0) {
                     this._setOpsTeamSearchStatus(modal,
                         spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
-                        false, true);
+                        false, true, false);
                 } else {
                     this._setOpsTeamSearchStatus(modal,
-                        memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.');
+                        memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
+                        false, false, true);
                     Logger.log('ops-tab: team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
                 }
             }
@@ -1432,6 +1461,7 @@ const plugin = {
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
         const fetchState = this._opsVerifierFetchState;
         const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
+        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
         const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
@@ -1447,7 +1477,9 @@ const plugin = {
                 }
                 : null,
             teamSearchQuery: teamSearchInput ? teamSearchInput.value : '',
-            teamSearchStatus: teamSearchStatus && teamSearchStatus.style.display !== 'none' ? (teamSearchStatus.textContent || '') : '',
+            teamSearchStatus: teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
+                ? (teamSearchStatus.textContent || '')
+                : '',
             teamSearchStatusIsError: teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false
         };
     },
@@ -1492,7 +1524,8 @@ const plugin = {
             teamSearchInput.value = state.teamSearchQuery;
         }
         if (state.teamSearchStatus) {
-            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError);
+            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
+            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
         }
     },
 
@@ -1683,7 +1716,21 @@ const plugin = {
                             cursor: pointer;
                         ">Search</button>
                     </div>
-                    <div id="wf-ops-team-search-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                    <div id="wf-ops-team-search-status-row" style="display: none; margin-top: 8px; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        <button type="button" id="wf-ops-team-search-clear-btn" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 2px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 4px;
+                            cursor: pointer;
+                        ">Clear</button>
+                    </div>
                     <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px;">
                         <input type="text" id="wf-ops-team-filter-input" placeholder="Filter results by name, email, team, or permission…" autocomplete="off" style="
                             width: 100%;
@@ -2048,6 +2095,13 @@ const plugin = {
         if (teamFilterInput) {
             teamFilterInput.addEventListener('input', () => {
                 this._filterOpsTeamSearchCards(modal);
+            });
+        }
+
+        const teamSearchClearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtnAttach');
+        if (teamSearchClearBtn) {
+            teamSearchClearBtn.addEventListener('click', () => {
+                this._clearOpsTeamSearchResults(modal);
             });
         }
 
