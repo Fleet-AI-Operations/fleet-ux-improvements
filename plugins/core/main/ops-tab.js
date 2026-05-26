@@ -16,6 +16,41 @@ const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const OPS_NO_RUNTIME_CONFIG_MESSAGE =
     'Supabase API config not yet discovered. Open a Fleet page that loads dashboard data, then retry.';
+const OPS_SECRETS_ENC_FILENAME_DEFAULT = 'ops-secrets.enc.json';
+/** Must match dev/utils/ops-password-crypto.mjs */
+const OPS_CRYPTO_FORMAT_PREFIX = 'fleet-ops1';
+const OPS_CRYPTO_FORMAT_VERSION = 1;
+const OPS_CRYPTO_PBKDF2_ITERATIONS = 310000;
+const OPS_CRYPTO_SALT_BYTES = 16;
+const OPS_CRYPTO_IV_BYTES = 12;
+/** Must match dev/utils/ops-password-crypto.mjs AES_GCM_TAG_LENGTH */
+const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
+
+const OPS_TEAM_SEARCH_URL = 'https://www.fleetai.com/dashboard/team';
+/** Next.js server action hash for the team member list action; may need updating after Fleet redeployments */
+const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b';
+/** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
+const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
+const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+/** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
+const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
+/** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
+const OPS_ALL_PERMISSIONS = [
+    ['QA_CUA_TASKS', 'QA CUA Tasks'],
+    ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
+    ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
+    ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
+    ['MAKE_TUNDRA_TASKS', 'Make Tundra Tasks'],
+    ['QA_CUA_ENVS', 'QA CUA Environments'],
+    ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
+    ['QA_SESSIONS', 'QA Agent Sessions'],
+    ['COMMENT_AGENT_SESSIONS', 'Comment Agent Sessions'],
+    ['REVIEW_DISPUTES', 'Review Disputes (Senior QA)'],
+    ['VIEW_OWN_TASK_RESULTS', 'View Own Task Results'],
+    ['REVIEW_CONTRACTOR_APPLICATIONS', 'Contractor Review']
+];
+const OPS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(OPS_ALL_PERMISSIONS);
 
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -23,23 +58,103 @@ async function computeSha256Hex(text) {
     return 'sha256-' + hex;
 }
 
+function opsBase64Decode(str) {
+    const binary = atob(str);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        out[i] = binary.charCodeAt(i);
+    }
+    return out;
+}
+
+function opsUnpackEncryptedBlob(blob) {
+    const prefix = OPS_CRYPTO_FORMAT_PREFIX + ':';
+    if (!blob || typeof blob !== 'string' || !blob.startsWith(prefix)) {
+        throw new Error('Invalid encrypted blob prefix');
+    }
+    const raw = opsBase64Decode(blob.slice(prefix.length));
+    if (raw.length < 1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES + 16) {
+        throw new Error('Encrypted blob too short');
+    }
+    if (raw[0] !== OPS_CRYPTO_FORMAT_VERSION) {
+        throw new Error('Unsupported blob version');
+    }
+    return {
+        salt: raw.slice(1, 1 + OPS_CRYPTO_SALT_BYTES),
+        iv: raw.slice(1 + OPS_CRYPTO_SALT_BYTES, 1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES),
+        ciphertext: raw.slice(1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES)
+    };
+}
+
+async function opsDeriveAesKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(password),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt,
+            iterations: OPS_CRYPTO_PBKDF2_ITERATIONS,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+async function opsDecryptWithPassword(blob, password) {
+    const { salt, iv, ciphertext } = opsUnpackEncryptedBlob(blob);
+    const key = await opsDeriveAesKey(password, salt);
+    try {
+        const plain = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv, tagLength: OPS_CRYPTO_AES_GCM_TAG_LENGTH },
+            key,
+            ciphertext
+        );
+        return new TextDecoder().decode(plain);
+    } catch (_e) {
+        throw new Error('Decryption failed');
+    }
+}
+
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '1.1',
+    _version: '2.14',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
     _opsVerifierSourceText: '',
+    _opsTeamSearchActive: null,
+    _opsTeamSearchMemberCache: null,
+    _opsTeamSearchSelectedTeams: null,
+    /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
+    _opsFellowsSearchComplete: null,
+    _opsSecretsCache: {
+        json: null,
+        loadError: null,
+        loading: false,
+        missingLogged: false
+    },
     _opsTabState: {
         taskInput: '',
         verifierInput: '',
         verifierStatus: '',
         verifierStatusIsError: false,
         verifierOutput: '',
-        verifierFetchState: null
+        verifierFetchState: null,
+        teamSearchQuery: '',
+        teamSearchStatus: '',
+        teamSearchStatusIsError: false
     },
 
     init(state, context) {
@@ -54,12 +169,18 @@ const plugin = {
             attachListeners: (modal, settingsPlugin) => this._attachOpsListeners(modal, settingsPlugin),
             onPaneOpened: (modal, settingsPlugin) => this._onOpsPaneOpened(modal, settingsPlugin),
             captureState: (modal) => this._captureOpsTabState(modal),
+            onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
-            parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw)
+            parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
+            getSecrets: () => this._getOpsSecretsJson(),
+            reloadSecrets: (force) => this._loadOpsSecrets(force !== false)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
+        if (this._getOpsTabEnabled()) {
+            void this._loadOpsSecrets(false);
+        }
     },
 
     _isOpsAccessConfigured() {
@@ -91,6 +212,113 @@ const plugin = {
 
     _clearOpsStoredPassword() {
         Storage.delete('ops-tab-stored-password');
+        this._clearOpsSecretsCache();
+    },
+
+    _getOpsSecretsEncryptedFilename() {
+        const cfg = Context.opsSecrets && typeof Context.opsSecrets === 'object'
+            ? Context.opsSecrets
+            : null;
+        const name = cfg && cfg.encryptedFile;
+        return typeof name === 'string' && name.length > 0 ? name : OPS_SECRETS_ENC_FILENAME_DEFAULT;
+    },
+
+    _getOpsSecretsEncryptedUrl() {
+        const owner = Context.githubOwner || 'Fleet-AI-Operations';
+        const repo = Context.githubRepo || 'fleet-ux-improvements';
+        const branch = Context.githubBranch || 'main';
+        const file = this._getOpsSecretsEncryptedFilename();
+        return 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + branch + '/' + file + '?t=' + Date.now();
+    },
+
+    _fetchOpsSecretsEncryptedWrapper() {
+        const url = this._getOpsSecretsEncryptedUrl();
+        return new Promise((resolve, reject) => {
+            if (typeof GM_xmlhttpRequest !== 'function') {
+                reject(new Error('GM_xmlhttpRequest unavailable'));
+                return;
+            }
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    Pragma: 'no-cache'
+                },
+                onload: (response) => {
+                    if (response.status === 404) {
+                        resolve(null);
+                        return;
+                    }
+                    if (response.status !== 200) {
+                        reject(new Error('HTTP ' + response.status + ' loading ops secrets'));
+                        return;
+                    }
+                    try {
+                        resolve(JSON.parse(response.responseText));
+                    } catch (e) {
+                        reject(new Error('ops secrets JSON parse failed'));
+                    }
+                },
+                onerror: () => {
+                    reject(new Error('Network error loading ops secrets'));
+                }
+            });
+        });
+    },
+
+    _clearOpsSecretsCache() {
+        this._opsSecretsCache.json = null;
+        this._opsSecretsCache.loadError = null;
+        this._opsSecretsCache.loading = false;
+        this._opsSecretsCache.missingLogged = false;
+    },
+
+    _getOpsSecretsJson() {
+        return this._opsSecretsCache.json;
+    },
+
+    async _loadOpsSecrets(force) {
+        if (!this._hasOpsStoredPassword()) {
+            this._clearOpsSecretsCache();
+            return;
+        }
+        const password = this._getOpsStoredPassword();
+        if (!password) {
+            this._clearOpsSecretsCache();
+            return;
+        }
+        if (this._opsSecretsCache.loading && !force) {
+            return;
+        }
+        if (this._opsSecretsCache.json && !force) {
+            return;
+        }
+
+        this._opsSecretsCache.loading = true;
+        this._opsSecretsCache.loadError = null;
+        try {
+            const wrapped = await this._fetchOpsSecretsEncryptedWrapper();
+            if (!wrapped || typeof wrapped.encrypted !== 'string' || !wrapped.encrypted) {
+                if (!this._opsSecretsCache.missingLogged) {
+                    Logger.debug('ops-tab: no encrypted secrets file on branch');
+                    this._opsSecretsCache.missingLogged = true;
+                }
+                this._opsSecretsCache.json = null;
+                return;
+            }
+            const plaintext = await opsDecryptWithPassword(wrapped.encrypted, password);
+            const parsed = JSON.parse(plaintext);
+            this._opsSecretsCache.json = parsed;
+            const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
+            Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
+        } catch (e) {
+            this._opsSecretsCache.json = null;
+            this._opsSecretsCache.loadError = e;
+            Logger.warn('ops-tab: secrets decrypt failed', e);
+        } finally {
+            this._opsSecretsCache.loading = false;
+        }
     },
 
     _hasOpsStoredPassword() {
@@ -536,6 +764,539 @@ const plugin = {
         return '';
     },
 
+    _getOpsCookieValue(name) {
+        try {
+            const win = this._getOpsPageWindow();
+            const cookie = (win.document && win.document.cookie) || document.cookie || '';
+            if (!cookie) return '';
+            for (const part of cookie.split(/;\s*/)) {
+                const eq = part.indexOf('=');
+                if (eq < 0) continue;
+                if (part.slice(0, eq).trim() === name) {
+                    return decodeURIComponent(part.slice(eq + 1));
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: cookie read failed for ' + name, e);
+        }
+        return '';
+    },
+
+    _getOpsCurrentUserId() {
+        return this._getOpsCookieValue('current-user-id');
+    },
+
+    _getOpsTeamUuidByLabel(label) {
+        const secrets = this._getOpsSecretsJson();
+        if (!secrets || !Array.isArray(secrets['team-uuids'])) return '';
+        const entry = secrets['team-uuids'].find(pair => Array.isArray(pair) && pair[1] === label);
+        return entry ? String(entry[0]) : '';
+    },
+
+    _getOpsNextDeploymentId(pageWindow) {
+        try {
+            const win = pageWindow || this._getOpsPageWindow();
+            const nd = win.__NEXT_DATA__;
+            if (nd && nd.deploymentId && typeof nd.deploymentId === 'string') return nd.deploymentId;
+        } catch (e) {
+            Logger.debug('ops-tab: __NEXT_DATA__ deploymentId read failed', e);
+        }
+        return '';
+    },
+
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
+        if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
+        if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const pageOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
+
+        const headers = {
+            'accept': 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': OPS_TEAM_SEARCH_NEXT_ACTION,
+            'next-router-state-tree': OPS_TEAM_SEARCH_ROUTER_STATE
+        };
+        if (deploymentId) {
+            headers['x-deployment-id'] = deploymentId;
+        }
+
+        const body = JSON.stringify([teamId, userId, pageOffset, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
+
+        Logger.debug('ops-tab: team search fetch', {
+            teamId: teamId.slice(0, 8) + '...',
+            userId: userId.slice(0, 8) + '...',
+            query: query || '(empty)',
+            offset: pageOffset,
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, OPS_TEAM_SEARCH_URL, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+
+        const text = await res.text().catch(() => '');
+        if (!res.ok) {
+            throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
+        }
+        return text;
+    },
+
+    async _fetchOpsTeamSearchAllMembers(teamId, userId, query) {
+        const allMembers = [];
+        let offset = 0;
+        let hasMore = true;
+        let pageCount = 0;
+        const maxPages = 200;
+
+        while (hasMore && pageCount < maxPages) {
+            pageCount++;
+            const raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset);
+            const parsed = this._parseOpsTeamSearchResponse(raw);
+            if (!parsed || !Array.isArray(parsed.members)) break;
+
+            allMembers.push(...parsed.members);
+            hasMore = parsed.hasMore === true && parsed.members.length > 0;
+            offset += OPS_TEAM_SEARCH_PAGE_LIMIT;
+
+            if (hasMore) {
+                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + parsed.members.length +
+                    ' members (total ' + allMembers.length + ', hasMore)');
+            }
+        }
+
+        return allMembers;
+    },
+
+    _mergeOpsTeamSearchMembers(memberMap, members, teamLabel) {
+        if (!members || !members.length) return;
+        for (const member of members) {
+            if (!memberMap.has(member.id)) {
+                memberMap.set(member.id, { ...member, teamLabels: new Set() });
+            }
+            memberMap.get(member.id).teamLabels.add(teamLabel);
+        }
+    },
+
+    _getOpsPermissionDisplayLabel(permKey) {
+        return OPS_PERMISSION_LABEL_BY_KEY[permKey] || String(permKey || '').replace(/_/g, ' ');
+    },
+
+    _opsMemberPermissionKeys(member) {
+        return Array.isArray(member.permissions) ? member.permissions : [];
+    },
+
+    _opsMemberKnownPermissionCount(member) {
+        const keys = new Set(this._opsMemberPermissionKeys(member));
+        return OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
+    },
+
+    _opsEscapeHtml(str) {
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    },
+
+    _injectOpsSpinnerStyle() {
+        if (document.getElementById('wf-ops-spinner-style')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-ops-spinner-style';
+        style.textContent = [
+            '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
+            '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
+            '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
+            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}'
+        ].join('');
+        document.head.appendChild(style);
+    },
+
+    _parseOpsTeamSearchResponse(text) {
+        if (!text) return null;
+        for (const line of text.split('\n')) {
+            const t = line.trim();
+            if (t.startsWith('1:{') || t.startsWith('1:{"')) {
+                try { return JSON.parse(t.slice(2)); } catch (_e) { /* try next */ }
+            }
+        }
+        const m = text.match(/^1:(\{.+\})\s*$/m);
+        if (m) { try { return JSON.parse(m[1]); } catch (_e) {} }
+        return null;
+    },
+
+    _setOpsTeamSearchStatus(modal, message, isError, isHtml, showClear) {
+        const row = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRow');
+        const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
+        const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
+        if (!status) return;
+        if (!message) {
+            if (row) row.style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'none';
+            return;
+        }
+        if (row) row.style.display = 'flex';
+        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+        if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
+        if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
+    },
+
+    _clearOpsTeamSearchResults(modal) {
+        this._opsTeamSearchActive = null;
+        this._opsTeamSearchMemberCache = null;
+        this._opsFellowsSearchComplete = null;
+        this._setOpsTeamSearchStatus(modal, '', false, false, false);
+
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputClear');
+        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputClear');
+        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
+
+        if (filterWrap) filterWrap.style.display = 'none';
+        if (filterInput) filterInput.value = '';
+        this._resetOpsTeamSearchTeamFilter(modal);
+        if (outputWrap) {
+            outputWrap.style.display = 'none';
+            outputWrap.innerHTML = '<div id="wf-ops-team-search-cards"></div>';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
+        this._captureOpsTabState(modal);
+        Logger.log('ops-tab: team search results cleared');
+    },
+
+    _onOpsModalClosed() {
+        this._detachOpsTeamFilterDropdownOutsideListener();
+        this._opsTeamSearchSelectedTeams = new Set();
+    },
+
+    _attachOpsTeamFilterDropdownOutsideListener() {
+        if (this._opsTeamFilterDropdownOutsideListener) return;
+        this._opsTeamFilterDropdownOutsideListener = (e) => {
+            const openModal = document.getElementById('wf-settings-modal');
+            if (!openModal || !openModal.open) return;
+            const wrap = openModal.querySelector('#wf-ops-team-filter-dropdown-wrap');
+            const panel = openModal.querySelector('#wf-ops-team-filter-dropdown-panel');
+            if (!wrap || !panel || panel.style.display === 'none') return;
+            if (!wrap.contains(e.target)) {
+                panel.style.display = 'none';
+            }
+        };
+        document.addEventListener('click', this._opsTeamFilterDropdownOutsideListener);
+    },
+
+    _detachOpsTeamFilterDropdownOutsideListener() {
+        if (!this._opsTeamFilterDropdownOutsideListener) return;
+        document.removeEventListener('click', this._opsTeamFilterDropdownOutsideListener);
+        this._opsTeamFilterDropdownOutsideListener = null;
+    },
+
+    _getOpsTeamSearchSelectedTeams() {
+        return this._opsTeamSearchSelectedTeams instanceof Set ? this._opsTeamSearchSelectedTeams : new Set();
+    },
+
+    _syncOpsTeamSearchSelectedTeamsFromDom(modal) {
+        const container = this._opsQuery(modal, '#wf-ops-team-filter-checkboxes', 'teamFilterCheckboxesSync');
+        const selected = new Set();
+        if (container) {
+            container.querySelectorAll('input[type="checkbox"][data-ops-team-label]').forEach((cb) => {
+                if (cb.checked) {
+                    const label = cb.getAttribute('data-ops-team-label');
+                    if (label) selected.add(label);
+                }
+            });
+        }
+        this._opsTeamSearchSelectedTeams = selected;
+        return selected;
+    },
+
+    _opsTeamMemberMatchesTeamFilter(member, selectedTeams) {
+        if (!selectedTeams || selectedTeams.size === 0) return true;
+        const teamLabels = member.teamLabels || new Set();
+        for (const label of selectedTeams) {
+            if (teamLabels.has(label)) return true;
+        }
+        return false;
+    },
+
+    _opsEscapeAttr(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    },
+
+    _populateOpsTeamFilterDropdown(modal, allTeams) {
+        const container = this._opsQuery(modal, '#wf-ops-team-filter-checkboxes', 'teamFilterCheckboxesPopulate');
+        if (!container || !allTeams || !allTeams.length) return;
+        const selected = this._getOpsTeamSearchSelectedTeams();
+        container.innerHTML = allTeams.map(([, label]) => {
+            const checked = selected.has(label) ? ' checked' : '';
+            const attrLabel = this._opsEscapeAttr(label);
+            return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer;color:var(--foreground,#333);">' +
+                '<input type="checkbox" data-ops-team-label="' + attrLabel + '" style="cursor:pointer;flex-shrink:0;"' + checked + '>' +
+                '<span style="min-width:0;">' + this._opsEscapeHtml(label) + '</span>' +
+                '</label>';
+        }).join('');
+        this._updateOpsTeamFilterDropdownBtn(modal);
+    },
+
+    _updateOpsTeamFilterDropdownBtn(modal) {
+        const btn = this._opsQuery(modal, '#wf-ops-team-filter-dropdown-btn', 'teamFilterDropdownBtn');
+        const selected = this._getOpsTeamSearchSelectedTeams();
+        if (!btn) return;
+        btn.textContent = selected.size === 0 ? 'Teams' : 'Teams (' + selected.size + ')';
+        this._updateOpsTeamFilterToggleAllBtn(modal);
+    },
+
+    _updateOpsTeamFilterToggleAllBtn(modal) {
+        const toggleBtn = this._opsQuery(modal, '#wf-ops-team-filter-toggle-all', 'teamFilterToggleAll');
+        const container = this._opsQuery(modal, '#wf-ops-team-filter-checkboxes', 'teamFilterCheckboxesToggle');
+        if (!toggleBtn || !container) return;
+        const boxes = container.querySelectorAll('input[type="checkbox"]');
+        const allChecked = boxes.length > 0 && [...boxes].every((cb) => cb.checked);
+        toggleBtn.textContent = allChecked ? 'Uncheck all' : 'Check all';
+    },
+
+    _resetOpsTeamSearchTeamFilter(modal) {
+        this._opsTeamSearchSelectedTeams = new Set();
+        if (!modal) return;
+        const container = this._opsQuery(modal, '#wf-ops-team-filter-checkboxes', 'teamFilterCheckboxesReset');
+        if (container) {
+            container.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+        }
+        this._updateOpsTeamFilterDropdownBtn(modal);
+        const panel = this._opsQuery(modal, '#wf-ops-team-filter-dropdown-panel', 'teamFilterPanelReset');
+        if (panel) panel.style.display = 'none';
+    },
+
+    _setOpsTeamFilterDropdownOpen(modal, open) {
+        const panel = this._opsQuery(modal, '#wf-ops-team-filter-dropdown-panel', 'teamFilterPanelToggle');
+        if (panel) panel.style.display = open ? 'block' : 'none';
+    },
+
+    _opsMemberQualifiesForUiBadge(member) {
+        const teamLabels = member.teamLabels;
+        if (!teamLabels || teamLabels.size === 0) return false;
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
+        // No UI badges until the full Fleet Fellows search has finished.
+        if (this._opsFellowsSearchComplete !== true) return false;
+        for (const label of teamLabels) {
+            if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
+        }
+        return false;
+    },
+
+    _renderOpsTeamMemberTileHtml(member, allTeams) {
+        const name = this._opsEscapeHtml(member.full_name || 'Unknown');
+        const email = this._opsEscapeHtml(member.email || '');
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        const teamLabels = member.teamLabels || new Set();
+        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
+        const knownPermCount = this._opsMemberKnownPermissionCount(member);
+        const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
+        const uiBadgeHtml = showUiBadge
+            ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
+            : '';
+
+        const teamsColHtml = allTeams.map(([, label]) => {
+            const isIn = teamLabels.has(label);
+            return '<div style="font-size:11px;padding:2px 0;color:' +
+                (isIn ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+                (isIn ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+                this._opsEscapeHtml(label) + '</div>';
+        }).join('');
+
+        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) => {
+            const hasPerm = permissionKeys.has(permKey);
+            return '<div style="font-size:11px;padding:2px 0;color:' +
+                (hasPerm ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+                (hasPerm ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+                this._opsEscapeHtml(permLabel) + '</div>';
+        }).join('');
+
+        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
+            knownPermCount + '/' + OPS_ALL_PERMISSIONS.length + ')';
+
+        const colHeader = (text) =>
+            '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
+            text + '</div>';
+
+        return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
+            '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
+                '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                        uiBadgeHtml + '<span>' + name + '</span>' +
+                    '</div>' +
+                    '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
+                '</div>' +
+                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-action-btn wf-ops-profile-btn" ' +
+                    'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);text-decoration:none;' +
+                    'padding:4px 8px;border:1px solid var(--border,#e5e5e5);border-radius:4px;background:var(--background,white);white-space:nowrap;">' +
+                    'Visit Profile' +
+                '</a>' +
+            '</div>' +
+            '<details style="margin-top:8px;">' +
+                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;">' +
+                    '▸ ' + this._opsEscapeHtml(summaryLabel) +
+                '</summary>' +
+                '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
+                    'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
+                    '<div>' + colHeader('Teams') + teamsColHtml + '</div>' +
+                    '<div>' + colHeader('Permissions') + permsColHtml + '</div>' +
+                '</div>' +
+            '</details>' +
+        '</div>';
+    },
+
+    _opsTeamMemberMatchesFilter(member, allTeams, filterText) {
+        if (!filterText) return true;
+        const teamLabels = member.teamLabels || new Set();
+        const perms = this._opsMemberPermissionKeys(member);
+        const haystack = [
+            member.full_name || '',
+            member.email || '',
+            ...[...teamLabels],
+            ...perms.map((p) => this._getOpsPermissionDisplayLabel(p))
+        ].join(' ').toLowerCase();
+        return filterText.toLowerCase().split(/\s+/).filter(Boolean).every(t => haystack.includes(t));
+    },
+
+    _filterOpsTeamSearchCards(modal) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) return;
+        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+    },
+
+    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount) {
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchCards');
+        if (!wrap) return;
+
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
+        const filterText = filterInput ? filterInput.value : '';
+
+        let members = [...memberMap.values()];
+
+        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
+        if (selectedTeams.size > 0) {
+            members = members.filter((m) => this._opsTeamMemberMatchesTeamFilter(m, selectedTeams));
+        }
+        if (filterText) {
+            members = members.filter(m => this._opsTeamMemberMatchesFilter(m, allTeams, filterText));
+        }
+
+        if (members.length === 0) {
+            if (pendingCount > 0) {
+                wrap.style.display = 'none';
+            } else {
+                wrap.style.display = 'block';
+                let msg = 'No members found.';
+                if (filterText && selectedTeams.size > 0) msg = 'No results match filters.';
+                else if (filterText) msg = 'No results match filter.';
+                else if (selectedTeams.size > 0) msg = 'No members in selected teams.';
+                wrap.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
+            }
+            return;
+        }
+
+        members.sort((a, b) => {
+            const diff = (b.teamLabels ? b.teamLabels.size : 0) - (a.teamLabels ? a.teamLabels.size : 0);
+            return diff !== 0 ? diff : (a.full_name || '').localeCompare(b.full_name || '');
+        });
+
+        wrap.style.display = 'block';
+        wrap.innerHTML = members.map(m => this._renderOpsTeamMemberTileHtml(m, allTeams)).join('');
+    },
+
+    async _handleOpsTeamSearch(modal) {
+        const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInput');
+        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
+        const query = input ? input.value.trim() : '';
+
+        const secrets = this._getOpsSecretsJson();
+        const allTeams = secrets && Array.isArray(secrets['team-uuids']) ? secrets['team-uuids'] : [];
+
+        if (!allTeams.length) {
+            this._setOpsTeamSearchStatus(modal, 'No teams found in secrets. Ensure ops secrets are decrypted.', true);
+            return;
+        }
+        const userId = this._getOpsCurrentUserId();
+        if (!userId) {
+            this._setOpsTeamSearchStatus(modal, 'No user ID found. Open Fleet while logged in and try again.', true);
+            return;
+        }
+
+        this._injectOpsSpinnerStyle();
+
+        const sessionId = Date.now();
+        this._opsTeamSearchActive = sessionId;
+        this._opsTeamSearchMemberCache = null;
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
+
+        // Show filter row; clear text filter only (retain team checkbox selections)
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputReset');
+        if (filterWrap) filterWrap.style.display = 'flex';
+        if (filterInput) filterInput.value = '';
+        if (this._opsTeamSearchSelectedTeams == null) {
+            this._opsTeamSearchSelectedTeams = new Set();
+        }
+        this._populateOpsTeamFilterDropdown(modal, allTeams);
+
+        const memberMap = new Map();
+        let pendingCount = allTeams.length;
+        let doneCount = 0;
+
+        const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
+        this._opsFellowsSearchComplete = fellowsEntry ? false : true;
+
+        const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
+        this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
+
+        const finishTeamSearch = (teamLabel) => {
+            pendingCount--;
+            doneCount++;
+            if (this._opsTeamSearchActive !== sessionId) return;
+            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
+                this._opsFellowsSearchComplete = true;
+            }
+            this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
+            if (pendingCount > 0) {
+                this._setOpsTeamSearchStatus(modal,
+                    spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
+                    false, true, false);
+            } else {
+                this._setOpsTeamSearchStatus(modal,
+                    memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
+                    false, false, true);
+                Logger.log('ops-tab: team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
+            }
+        };
+
+        const searches = allTeams.map(async ([teamId, teamLabel]) => {
+            try {
+                const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
+                if (this._opsTeamSearchActive !== sessionId) return;
+                this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
+                Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
+            } catch (e) {
+                Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+            } finally {
+                finishTeamSearch(teamLabel);
+            }
+        });
+
+        await Promise.allSettled(searches);
+
+        if (this._opsTeamSearchActive === sessionId) {
+            this._opsTeamSearchMemberCache = { memberMap, allTeams };
+            if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
+            this._captureOpsTabState(modal);
+        }
+    },
+
     _extractOpsOrchestratorVerifierSource(payload) {
         if (!payload || typeof payload !== 'object') return null;
         const seen = new Set();
@@ -853,9 +1614,7 @@ const plugin = {
             }
         }
         if (copyBtn) {
-            copyBtn.disabled = !text;
-            copyBtn.style.opacity = text ? '1' : '0.55';
-            copyBtn.style.cursor = text ? 'pointer' : 'not-allowed';
+            copyBtn.style.display = text ? 'inline-block' : 'none';
         }
     },
 
@@ -905,6 +1664,9 @@ const plugin = {
         const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
         const fetchState = this._opsVerifierFetchState;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
+        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
+        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
             verifierInput: verifierInput ? verifierInput.value : '',
@@ -917,7 +1679,12 @@ const plugin = {
                     versions: fetchState.versions,
                     selectedVersion: fetchState.selectedVersion
                 }
-                : null
+                : null,
+            teamSearchQuery: teamSearchInput ? teamSearchInput.value : '',
+            teamSearchStatus: teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
+                ? (teamSearchStatus.textContent || '')
+                : '',
+            teamSearchStatusIsError: teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false
         };
     },
 
@@ -954,6 +1721,15 @@ const plugin = {
             );
         } else {
             this._opsVerifierFetchState = null;
+        }
+
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
+        if (teamSearchInput && state.teamSearchQuery != null) {
+            teamSearchInput.value = state.teamSearchQuery;
+        }
+        if (state.teamSearchStatus) {
+            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
+            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
         }
     },
 
@@ -1006,6 +1782,7 @@ const plugin = {
             }
         }
         Logger.log('ops-tab: password saved on device');
+        void this._loadOpsSecrets(true);
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
         }
@@ -1058,16 +1835,15 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">
-                        <button type="button" id="wf-ops-password-submit" style="
+                        <button type="button" id="wf-ops-password-submit" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
                             padding: 8px 14px;
                             font-size: 13px;
                             font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                            cursor: pointer;
                         ">Unlock</button>
                     </div>
                     <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
@@ -1112,6 +1888,110 @@ const plugin = {
         const display = paneDisplay || 'none';
         return `
             <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${display}; overflow-y: auto; min-height: 200px;">
+                <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #e5e5e5);">
+                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #333);">
+                        Team Member Search
+                    </h3>
+                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                        Search the Computer Use team by name or email. Leave blank to list all members.
+                    </p>
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="
+                            flex: 1;
+                            min-width: 0;
+                            padding: 8px 12px;
+                            font-size: 13px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                        ">
+                        <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="
+                            flex-shrink: 0;
+                            padding: 8px 14px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                        ">Search</button>
+                    </div>
+                    <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px; align-items: stretch; gap: 8px; flex-wrap: nowrap;">
+                        <input type="text" id="wf-ops-team-filter-input" placeholder="Filter results by name, email, team, or permission…" autocomplete="off" style="
+                            flex: 1;
+                            min-width: 0;
+                            padding: 6px 12px;
+                            font-size: 12px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                        ">
+                        <div id="wf-ops-team-filter-dropdown-wrap" style="position: relative; flex-shrink: 0;">
+                            <button type="button" id="wf-ops-team-filter-dropdown-btn" style="
+                                height: 100%;
+                                padding: 6px 12px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--foreground, #333);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                white-space: nowrap;
+                            ">Teams</button>
+                            <div id="wf-ops-team-filter-dropdown-panel" style="
+                                display: none;
+                                position: absolute;
+                                right: 0;
+                                top: calc(100% + 4px);
+                                z-index: 20;
+                                min-width: 220px;
+                                max-height: 280px;
+                                overflow-y: auto;
+                                padding: 8px;
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+                            ">
+                                <button type="button" id="wf-ops-team-filter-toggle-all" style="
+                                    width: 100%;
+                                    padding: 4px 8px;
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: var(--brand, #4f46e5);
+                                    background: transparent;
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                ">Check all</button>
+                                <div id="wf-ops-team-filter-checkboxes" style="margin-top: 6px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="wf-ops-team-search-status-row" style="display: none; margin-top: 8px; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        <button type="button" id="wf-ops-team-search-clear-btn" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 2px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 4px;
+                            cursor: pointer;
+                        ">Clear</button>
+                    </div>
+                    <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; max-height: 360px; overflow-y: auto;">
+                        <div id="wf-ops-team-search-cards"></div>
+                    </div>
+                </div>
                 <div style="margin-bottom: 16px;">
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
                         Task View Link Generator
@@ -1128,7 +2008,7 @@ const plugin = {
                     ">
                 </div>
                 <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
-                    <button type="button" id="wf-ops-open-link" style="
+                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
                         flex: 1;
                         min-width: 0;
                         padding: 10px 12px;
@@ -1136,13 +2016,11 @@ const plugin = {
                         font-weight: 500;
                         text-align: center;
                         color: var(--brand, #4f46e5);
-                        background: var(--card, #fafafa);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
-                        transition: background 0.2s;
                     ">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" style="
+                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
                         flex: 1;
                         min-width: 0;
                         padding: 10px 12px;
@@ -1150,21 +2028,19 @@ const plugin = {
                         font-weight: 500;
                         text-align: center;
                         color: var(--brand, #4f46e5);
-                        background: var(--card, #fafafa);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
-                        transition: background 0.2s;
                     ">Open in New Tab</button>
                     <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
                         flex-shrink: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
+                        padding: 2px 10px;
+                        font-size: 11px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
-                        background: var(--card, #fafafa);
+                        color: var(--muted-foreground, #666);
+                        background: var(--background, white);
                         border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
+                        border-radius: 4px;
                         cursor: pointer;
                         transition: background 0.2s, color 0.2s;
                     ">Copy</button>
@@ -1176,42 +2052,42 @@ const plugin = {
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
                         Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
                     </p>
-                    <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                        width: 100%;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    ">
-                    <div style="display: flex; align-items: stretch; gap: 8px; margin-top: 8px;">
-                        <button type="button" id="wf-ops-fetch-verifier" style="
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
                             flex: 1;
-                            padding: 10px 12px;
+                            min-width: 0;
+                            padding: 8px 12px;
                             font-size: 12px;
-                            font-weight: 600;
-                            color: white;
-                            background: var(--brand, #4f46e5);
-                            border: none;
-                            border-radius: 6px;
-                            cursor: pointer;
-                        ">Fetch Verifier</button>
-                        <button type="button" id="wf-ops-copy-verifier" disabled style="
-                            flex-shrink: 0;
-                            padding: 10px 12px;
-                            font-size: 12px;
-                            font-weight: 500;
-                            color: var(--foreground, #333);
-                            background: var(--card, #fafafa);
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                        ">
+                        <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
+                            flex-shrink: 0;
+                            padding: 8px 14px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                        ">Fetch</button>
+                        <button type="button" id="wf-ops-copy-verifier" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 2px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 4px;
                             cursor: pointer;
-                            opacity: 0.55;
-                            transition: background 0.2s, color 0.2s, opacity 0.2s;
-                        ">Copy Code</button>
+                            transition: background 0.2s, color 0.2s;
+                        ">Copy</button>
                     </div>
                     <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                     <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
@@ -1251,7 +2127,7 @@ const plugin = {
                     </div>
                 </div>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
-                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" style="
+                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" class="wf-ops-action-btn" style="
                         display: block;
                         width: 100%;
                         padding: 10px 16px;
@@ -1259,13 +2135,11 @@ const plugin = {
                         font-weight: 600;
                         text-align: center;
                         text-decoration: none;
-                        color: white;
-                        background: var(--brand, #4f46e5);
-                        border: none;
+                        color: var(--brand, #4f46e5);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        cursor: pointer;
                         box-sizing: border-box;
-                        transition: background 0.2s;
                     ">Grade Assessments</a>
                 </div>
             </div>
@@ -1318,7 +2192,7 @@ const plugin = {
         } finally {
             if (fetchBtn) {
                 fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Fetch Verifier';
+                fetchBtn.textContent = 'Fetch';
             }
             this._captureOpsTabState(modal);
         }
@@ -1427,6 +2301,7 @@ const plugin = {
 
     _attachOpsListeners(modal, settingsPlugin) {
         if (!modal) return;
+        this._injectOpsSpinnerStyle();
         this._attachOpsPasswordListeners(modal, settingsPlugin);
         this._attachOpsTabToggleListener(modal, settingsPlugin);
 
@@ -1435,6 +2310,75 @@ const plugin = {
             return;
         }
         modal.dataset.wfOpsListenersAttached = '1';
+
+        const teamSearchBtn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnAttach');
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputAttach');
+
+        if (teamSearchBtn) {
+            teamSearchBtn.addEventListener('click', () => {
+                void this._handleOpsTeamSearch(modal);
+            });
+        }
+        if (teamSearchInput) {
+            teamSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void this._handleOpsTeamSearch(modal);
+                }
+            });
+            teamSearchInput.addEventListener('input', () => {
+                this._captureOpsTabState(modal);
+            });
+        }
+
+        const teamFilterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputAttach');
+        if (teamFilterInput) {
+            teamFilterInput.addEventListener('input', () => {
+                this._filterOpsTeamSearchCards(modal);
+            });
+        }
+
+        const teamFilterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapAttach');
+        if (teamFilterWrap) {
+            teamFilterWrap.addEventListener('click', (e) => {
+                const toggleAllBtn = e.target.closest('#wf-ops-team-filter-toggle-all');
+                if (toggleAllBtn) {
+                    e.preventDefault();
+                    const container = this._opsQuery(modal, '#wf-ops-team-filter-checkboxes', 'teamFilterCheckboxesToggleClick');
+                    if (!container) return;
+                    const boxes = container.querySelectorAll('input[type="checkbox"]');
+                    const allChecked = boxes.length > 0 && [...boxes].every((cb) => cb.checked);
+                    boxes.forEach((cb) => { cb.checked = !allChecked; });
+                    this._syncOpsTeamSearchSelectedTeamsFromDom(modal);
+                    this._updateOpsTeamFilterDropdownBtn(modal);
+                    this._filterOpsTeamSearchCards(modal);
+                    return;
+                }
+                const dropdownBtn = e.target.closest('#wf-ops-team-filter-dropdown-btn');
+                if (dropdownBtn) {
+                    e.preventDefault();
+                    const panel = this._opsQuery(modal, '#wf-ops-team-filter-dropdown-panel', 'teamFilterPanelClick');
+                    const isOpen = panel && panel.style.display !== 'none';
+                    this._setOpsTeamFilterDropdownOpen(modal, !isOpen);
+                }
+            });
+            teamFilterWrap.addEventListener('change', (e) => {
+                if (e.target.matches('#wf-ops-team-filter-checkboxes input[type="checkbox"]')) {
+                    this._syncOpsTeamSearchSelectedTeamsFromDom(modal);
+                    this._updateOpsTeamFilterDropdownBtn(modal);
+                    this._filterOpsTeamSearchCards(modal);
+                }
+            });
+        }
+
+        this._attachOpsTeamFilterDropdownOutsideListener();
+
+        const teamSearchClearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtnAttach');
+        if (teamSearchClearBtn) {
+            teamSearchClearBtn.addEventListener('click', () => {
+                this._clearOpsTeamSearchResults(modal);
+            });
+        }
 
         const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputAttach');
         const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLinkAttach');
@@ -1558,6 +2502,10 @@ const plugin = {
 
     _onOpsPaneOpened(modal, settingsPlugin) {
         if (!modal) return;
-        void this._revalidateOpsStoredPassword(modal, settingsPlugin);
+        void this._revalidateOpsStoredPassword(modal, settingsPlugin).then(() => {
+            if (this._getOpsTabEnabled()) {
+                void this._loadOpsSecrets(false);
+            }
+        });
     }
 };

@@ -44,6 +44,7 @@ dev/
     delete-branch.sh         # Delete the current branch locally and on origin
     toggle-core-only-mode.sh # Toggle coreOnlyMode in archetypes.json
     hash-ops-password.sh     # Generate a hashed ops-tab password
+    encrypt-ops-secrets.sh   # Encrypt local/ops-secrets.json → ops-secrets.enc.json
   tools/
     archetypes-flags-tui/    # Interactive TUI to toggle archetypes.json boolean flags
 docs/
@@ -112,6 +113,7 @@ Plugins can declare a `subOptions` array to expose per-plugin toggles in the set
 | `coreOnlyMode` | boolean | When `true`, archetype plugins are skipped; core plugins (settings UI) still run. Toggle with `toggle-core-only-mode.sh`. |
 | `logs` | object | Remote log flags: `{ debug, verbose, submodule }`. When set, overrides local GM storage defaults. Used to enable logging for all users without them changing settings. |
 | `opsAccess` | object | `{ passwordHash: "sha256-..." }`. Hash for the ops tab password gate. Generate with `hash-ops-password.sh`. |
+| `opsSecrets` | object | `{ encryptedFile: "ops-secrets.enc.json" }`. Path (repo root) to the committed encrypted secrets JSON. Plaintext lives in gitignored `local/ops-secrets.json`; encrypt with `encrypt-ops-secrets.sh`. |
 | `corePlugins` | array | Core plugins loaded on every page (all branches). |
 | `devPlugins` | array | Dev-only core plugins; only loaded on non-main-like branches. |
 | `settingsModalDocs` | array | Markdown docs to fetch and cache for the settings modal. Format: `[{ name, version }]`. Files live in `docs/settings-modal/`. |
@@ -185,6 +187,7 @@ Scripts in `dev/utils/` automate branch creation, `fleet.user.js` sync, version 
 | **delete-branch.sh** | Delete the current branch locally and on origin. Use after a branch has been merged. |
 | **toggle-core-only-mode.sh** | Toggle `coreOnlyMode` in `archetypes.json` (and compute hashes). |
 | **hash-ops-password.sh** | Generate a SHA-256 hash for the ops tab password and print the value to paste into `archetypes.json`. |
+| **encrypt-ops-secrets.sh** | Encrypt gitignored `local/ops-secrets.json` with the Ops password into committed `ops-secrets.enc.json` (AES-256-GCM + PBKDF2). The Ops tab decrypts this file at runtime using the password stored on the device. |
 
 Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
@@ -234,6 +237,19 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 **compute-hashes.sh** — `./dev/utils/compute-hashes.sh`
 
 - Computes SHA-256 hashes for all plugin files referenced in `archetypes.json` and writes the `hash` field for each. Must be run after `update-versions.sh` when any plugin file changes. CI enforces that hashes are up to date.
+
+**encrypt-ops-secrets.sh** — `./dev/utils/encrypt-ops-secrets.sh encrypt`
+
+Operator-only JSON (team UUID mappings, etc.) for the Ops tab:
+
+1. Copy `ops-secrets.example.json` to `local/ops-secrets.json` (`local/` is gitignored).
+2. Edit `local/ops-secrets.json`.
+3. Run `./dev/utils/encrypt-ops-secrets.sh encrypt` using the **same password** as the Ops tab (`OPS_PASSWORD` env, `--password`, or prompt).
+4. Commit the generated `ops-secrets.enc.json` at the repo root. Never commit `local/ops-secrets.json`.
+
+At runtime, when the Ops tab is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` from the current GitHub branch (see `opsSecrets.encryptedFile` in `archetypes.json`) and decrypts it in memory with the device-stored Ops password. Use `Context.opsTab.getSecrets()` to read the parsed JSON; call `Context.opsTab.reloadSecrets(true)` to force a refresh.
+
+`./dev/utils/encrypt-ops-secrets.sh decrypt` prints decrypted JSON to stdout for local verification.
 
 Run all scripts from repo root.
 
