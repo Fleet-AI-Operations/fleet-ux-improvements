@@ -128,7 +128,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.12',
+    _version: '2.13',
     phase: 'core',
     enabledByDefault: true,
 
@@ -967,7 +967,29 @@ const plugin = {
     },
 
     _onOpsModalClosed() {
+        this._detachOpsTeamFilterDropdownOutsideListener();
         this._opsTeamSearchSelectedTeams = new Set();
+    },
+
+    _attachOpsTeamFilterDropdownOutsideListener() {
+        if (this._opsTeamFilterDropdownOutsideListener) return;
+        this._opsTeamFilterDropdownOutsideListener = (e) => {
+            const openModal = document.getElementById('wf-settings-modal');
+            if (!openModal || !openModal.open) return;
+            const wrap = openModal.querySelector('#wf-ops-team-filter-dropdown-wrap');
+            const panel = openModal.querySelector('#wf-ops-team-filter-dropdown-panel');
+            if (!wrap || !panel || panel.style.display === 'none') return;
+            if (!wrap.contains(e.target)) {
+                panel.style.display = 'none';
+            }
+        };
+        document.addEventListener('click', this._opsTeamFilterDropdownOutsideListener);
+    },
+
+    _detachOpsTeamFilterDropdownOutsideListener() {
+        if (!this._opsTeamFilterDropdownOutsideListener) return;
+        document.removeEventListener('click', this._opsTeamFilterDropdownOutsideListener);
+        this._opsTeamFilterDropdownOutsideListener = null;
     },
 
     _getOpsTeamSearchSelectedTeams() {
@@ -2349,19 +2371,7 @@ const plugin = {
             });
         }
 
-        if (!this._opsTeamFilterDropdownOutsideListener) {
-            this._opsTeamFilterDropdownOutsideListener = (e) => {
-                const openModal = document.getElementById('wf-settings-modal');
-                if (!openModal || !openModal.open) return;
-                const wrap = openModal.querySelector('#wf-ops-team-filter-dropdown-wrap');
-                const panel = openModal.querySelector('#wf-ops-team-filter-dropdown-panel');
-                if (!wrap || !panel || panel.style.display === 'none') return;
-                if (!wrap.contains(e.target)) {
-                    panel.style.display = 'none';
-                }
-            };
-            document.addEventListener('click', this._opsTeamFilterDropdownOutsideListener);
-        }
+        this._attachOpsTeamFilterDropdownOutsideListener();
 
         const teamSearchClearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtnAttach');
         if (teamSearchClearBtn) {
