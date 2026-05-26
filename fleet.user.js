@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/search] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.1.0
+// @version      9.1.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.1.0';
+    const VERSION = '9.1.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -95,6 +95,8 @@
         /** Filenames (archetypes `name`) with `log: true` */
         remoteModuleLogByFile: {},
         opsAccess: null,
+        /** From archetypes.json `opsSecrets` (encrypted secrets file path). */
+        opsSecrets: null,
     };
 
     const RefreshGuard = {
@@ -1392,6 +1394,9 @@
                                 Context.coreOnlyMode = config.coreOnlyMode === true;
                                 Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
                                     ? config.opsAccess
+                                    : null;
+                                Context.opsSecrets = config.opsSecrets && typeof config.opsSecrets === 'object'
+                                    ? config.opsSecrets
                                     : null;
                                 applyArchetypeRemoteLoggingConfig(config);
                                 console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);

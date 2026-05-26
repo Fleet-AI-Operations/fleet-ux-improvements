@@ -16,6 +16,15 @@ const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const OPS_NO_RUNTIME_CONFIG_MESSAGE =
     'Supabase API config not yet discovered. Open a Fleet page that loads dashboard data, then retry.';
+const OPS_SECRETS_ENC_FILENAME_DEFAULT = 'ops-secrets.enc.json';
+/** Must match dev/utils/ops-password-crypto.mjs */
+const OPS_CRYPTO_FORMAT_PREFIX = 'fleet-ops1';
+const OPS_CRYPTO_FORMAT_VERSION = 1;
+const OPS_CRYPTO_PBKDF2_ITERATIONS = 310000;
+const OPS_CRYPTO_SALT_BYTES = 16;
+const OPS_CRYPTO_IV_BYTES = 12;
+/** Must match dev/utils/ops-password-crypto.mjs AES_GCM_TAG_LENGTH */
+const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -23,16 +32,88 @@ async function computeSha256Hex(text) {
     return 'sha256-' + hex;
 }
 
+function opsBase64Decode(str) {
+    const binary = atob(str);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        out[i] = binary.charCodeAt(i);
+    }
+    return out;
+}
+
+function opsUnpackEncryptedBlob(blob) {
+    const prefix = OPS_CRYPTO_FORMAT_PREFIX + ':';
+    if (!blob || typeof blob !== 'string' || !blob.startsWith(prefix)) {
+        throw new Error('Invalid encrypted blob prefix');
+    }
+    const raw = opsBase64Decode(blob.slice(prefix.length));
+    if (raw.length < 1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES + 16) {
+        throw new Error('Encrypted blob too short');
+    }
+    if (raw[0] !== OPS_CRYPTO_FORMAT_VERSION) {
+        throw new Error('Unsupported blob version');
+    }
+    return {
+        salt: raw.slice(1, 1 + OPS_CRYPTO_SALT_BYTES),
+        iv: raw.slice(1 + OPS_CRYPTO_SALT_BYTES, 1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES),
+        ciphertext: raw.slice(1 + OPS_CRYPTO_SALT_BYTES + OPS_CRYPTO_IV_BYTES)
+    };
+}
+
+async function opsDeriveAesKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(password),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt,
+            iterations: OPS_CRYPTO_PBKDF2_ITERATIONS,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+async function opsDecryptWithPassword(blob, password) {
+    const { salt, iv, ciphertext } = opsUnpackEncryptedBlob(blob);
+    const key = await opsDeriveAesKey(password, salt);
+    try {
+        const plain = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv, tagLength: OPS_CRYPTO_AES_GCM_TAG_LENGTH },
+            key,
+            ciphertext
+        );
+        return new TextDecoder().decode(plain);
+    } catch (_e) {
+        throw new Error('Decryption failed');
+    }
+}
+
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '1.1',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
     _opsVerifierSourceText: '',
+    _opsSecretsCache: {
+        json: null,
+        loadError: null,
+        loading: false,
+        missingLogged: false
+    },
     _opsTabState: {
         taskInput: '',
         verifierInput: '',
@@ -57,9 +138,14 @@ const plugin = {
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
-            parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw)
+            parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
+            getSecrets: () => this._getOpsSecretsJson(),
+            reloadSecrets: (force) => this._loadOpsSecrets(force !== false)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
+        if (this._getOpsTabEnabled()) {
+            void this._loadOpsSecrets(false);
+        }
     },
 
     _isOpsAccessConfigured() {
@@ -91,6 +177,113 @@ const plugin = {
 
     _clearOpsStoredPassword() {
         Storage.delete('ops-tab-stored-password');
+        this._clearOpsSecretsCache();
+    },
+
+    _getOpsSecretsEncryptedFilename() {
+        const cfg = Context.opsSecrets && typeof Context.opsSecrets === 'object'
+            ? Context.opsSecrets
+            : null;
+        const name = cfg && cfg.encryptedFile;
+        return typeof name === 'string' && name.length > 0 ? name : OPS_SECRETS_ENC_FILENAME_DEFAULT;
+    },
+
+    _getOpsSecretsEncryptedUrl() {
+        const owner = Context.githubOwner || 'Fleet-AI-Operations';
+        const repo = Context.githubRepo || 'fleet-ux-improvements';
+        const branch = Context.githubBranch || 'main';
+        const file = this._getOpsSecretsEncryptedFilename();
+        return 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + branch + '/' + file + '?t=' + Date.now();
+    },
+
+    _fetchOpsSecretsEncryptedWrapper() {
+        const url = this._getOpsSecretsEncryptedUrl();
+        return new Promise((resolve, reject) => {
+            if (typeof GM_xmlhttpRequest !== 'function') {
+                reject(new Error('GM_xmlhttpRequest unavailable'));
+                return;
+            }
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    Pragma: 'no-cache'
+                },
+                onload: (response) => {
+                    if (response.status === 404) {
+                        resolve(null);
+                        return;
+                    }
+                    if (response.status !== 200) {
+                        reject(new Error('HTTP ' + response.status + ' loading ops secrets'));
+                        return;
+                    }
+                    try {
+                        resolve(JSON.parse(response.responseText));
+                    } catch (e) {
+                        reject(new Error('ops secrets JSON parse failed'));
+                    }
+                },
+                onerror: () => {
+                    reject(new Error('Network error loading ops secrets'));
+                }
+            });
+        });
+    },
+
+    _clearOpsSecretsCache() {
+        this._opsSecretsCache.json = null;
+        this._opsSecretsCache.loadError = null;
+        this._opsSecretsCache.loading = false;
+        this._opsSecretsCache.missingLogged = false;
+    },
+
+    _getOpsSecretsJson() {
+        return this._opsSecretsCache.json;
+    },
+
+    async _loadOpsSecrets(force) {
+        if (!this._hasOpsStoredPassword()) {
+            this._clearOpsSecretsCache();
+            return;
+        }
+        const password = this._getOpsStoredPassword();
+        if (!password) {
+            this._clearOpsSecretsCache();
+            return;
+        }
+        if (this._opsSecretsCache.loading && !force) {
+            return;
+        }
+        if (this._opsSecretsCache.json && !force) {
+            return;
+        }
+
+        this._opsSecretsCache.loading = true;
+        this._opsSecretsCache.loadError = null;
+        try {
+            const wrapped = await this._fetchOpsSecretsEncryptedWrapper();
+            if (!wrapped || typeof wrapped.encrypted !== 'string' || !wrapped.encrypted) {
+                if (!this._opsSecretsCache.missingLogged) {
+                    Logger.debug('ops-tab: no encrypted secrets file on branch');
+                    this._opsSecretsCache.missingLogged = true;
+                }
+                this._opsSecretsCache.json = null;
+                return;
+            }
+            const plaintext = await opsDecryptWithPassword(wrapped.encrypted, password);
+            const parsed = JSON.parse(plaintext);
+            this._opsSecretsCache.json = parsed;
+            const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
+            Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
+        } catch (e) {
+            this._opsSecretsCache.json = null;
+            this._opsSecretsCache.loadError = e;
+            Logger.warn('ops-tab: secrets decrypt failed', e);
+        } finally {
+            this._opsSecretsCache.loading = false;
+        }
     },
 
     _hasOpsStoredPassword() {
@@ -1006,6 +1199,7 @@ const plugin = {
             }
         }
         Logger.log('ops-tab: password saved on device');
+        void this._loadOpsSecrets(true);
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
         }
@@ -1558,6 +1752,10 @@ const plugin = {
 
     _onOpsPaneOpened(modal, settingsPlugin) {
         if (!modal) return;
-        void this._revalidateOpsStoredPassword(modal, settingsPlugin);
+        void this._revalidateOpsStoredPassword(modal, settingsPlugin).then(() => {
+            if (this._getOpsTabEnabled()) {
+                void this._loadOpsSecrets(false);
+            }
+        });
     }
 };

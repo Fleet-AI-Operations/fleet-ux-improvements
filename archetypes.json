@@ -1,7 +1,7 @@
 {
-  "version": "9.1.0",
+  "version": "9.1.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.5",
+  "archetypesVersion": "9.9",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -9,6 +9,9 @@
   },
   "opsAccess": {
     "passwordHash": "sha256-ea3ce89b146e2c740dd16a64af38849998d703e4b5ecc66cde39f97a756272cb"
+  },
+  "opsSecrets": {
+    "encryptedFile": "ops-secrets.enc.json"
   },
   "corePlugins": [
     {
@@ -19,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "1.1",
-      "hash": "sha256-649ca2f6cec6200707952d99349af7eab320001826df9c3045caca7c568744b9",
+      "version": "2.1",
+      "hash": "sha256-7b19c0cec296fe167b61d9150830da01d4c685af15196cbd7566caa730d38691",
       "log": false
     },
     {
