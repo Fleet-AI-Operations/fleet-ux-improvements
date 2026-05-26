@@ -18,7 +18,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -124,7 +124,7 @@ const plugin = {
 
         const wrapper = document.createElement('div');
         wrapper.className =
-            'mb-1 rounded-sm -mx-1 px-1 py-0.5 transition-colors duration-150 hover:bg-muted';
+            'mb-1 rounded-sm -mx-1 px-1 py-0.5 transition-colors hover:bg-accent';
 
         const button = document.createElement('button');
         button.type = 'button';
