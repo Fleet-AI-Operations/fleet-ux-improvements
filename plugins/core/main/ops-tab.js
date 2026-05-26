@@ -109,13 +109,14 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
     _opsVerifierSourceText: '',
     _opsTeamSearchActive: null,
+    _opsTeamSearchMemberCache: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -829,7 +830,11 @@ const plugin = {
         if (document.getElementById('wf-ops-spinner-style')) return;
         const style = document.createElement('style');
         style.id = 'wf-ops-spinner-style';
-        style.textContent = '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+        style.textContent = [
+            '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
+            '.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
+            '.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}'
+        ].join('');
         document.head.appendChild(style);
     },
 
@@ -862,20 +867,26 @@ const plugin = {
         const teamLabels = member.teamLabels || new Set();
         const permissions = Array.isArray(member.permissions) ? member.permissions : [];
 
-        const teamsHtml = allTeams.map(([, label]) => {
+        const teamsColHtml = allTeams.map(([, label]) => {
             const isIn = teamLabels.has(label);
             return '<div style="font-size:11px;padding:2px 0;color:' +
                 (isIn ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-                (isIn ? '✅ ' : '<span style="opacity:0.4;">—</span> ') +
+                (isIn ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
                 this._opsEscapeHtml(label) + '</div>';
         }).join('');
 
-        const permsHtml = permissions.length > 0
+        const permsColHtml = permissions.length > 0
             ? permissions.map(p =>
-                '<span style="display:inline-block;font-size:10px;padding:1px 5px;border:1px solid var(--border,#e5e5e5);border-radius:3px;background:var(--background,white);color:var(--foreground,#333);margin:1px 2px 1px 0;">' +
-                this._opsEscapeHtml(p) + '</span>'
+                '<div style="font-size:11px;padding:2px 0;color:var(--foreground,#333);">' +
+                this._opsEscapeHtml(p.replace(/_/g, ' ')) + '</div>'
             ).join('')
-            : '<span style="font-size:11px;color:var(--muted-foreground,#999);">None</span>';
+            : '<div style="font-size:11px;color:var(--muted-foreground,#999);">None</div>';
+
+        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' + permissions.length + ')';
+
+        const colHeader = (text) =>
+            '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
+            text + '</div>';
 
         return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
@@ -883,7 +894,7 @@ const plugin = {
                     '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</div>' +
                     '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
                 '</div>' +
-                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" ' +
+                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-btn" ' +
                     'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);text-decoration:none;' +
                     'padding:4px 8px;border:1px solid var(--border,#e5e5e5);border-radius:4px;background:var(--background,white);white-space:nowrap;">' +
                     'Visit Profile' +
@@ -891,34 +902,55 @@ const plugin = {
             '</div>' +
             '<details style="margin-top:8px;">' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;">' +
-                    '▸ Teams (' + teamLabels.size + '/' + allTeams.length + ')' +
+                    '▸ ' + this._opsEscapeHtml(summaryLabel) +
                 '</summary>' +
-                '<div style="margin-top:5px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;">' +
-                    teamsHtml +
-                '</div>' +
-            '</details>' +
-            '<details style="margin-top:4px;">' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;">' +
-                    '▸ Permissions (' + permissions.length + ')' +
-                '</summary>' +
-                '<div style="margin-top:5px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;display:flex;flex-wrap:wrap;gap:0;">' +
-                    permsHtml +
+                '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
+                    'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
+                    '<div>' + colHeader('Teams') + teamsColHtml + '</div>' +
+                    '<div>' + colHeader('Permissions') + permsColHtml + '</div>' +
                 '</div>' +
             '</details>' +
         '</div>';
     },
 
+    _opsTeamMemberMatchesFilter(member, allTeams, filterText) {
+        if (!filterText) return true;
+        const teamLabels = member.teamLabels || new Set();
+        const perms = Array.isArray(member.permissions) ? member.permissions : [];
+        const haystack = [
+            member.full_name || '',
+            member.email || '',
+            ...[...teamLabels],
+            ...perms.map(p => p.replace(/_/g, ' '))
+        ].join(' ').toLowerCase();
+        return filterText.toLowerCase().split(/\s+/).filter(Boolean).every(t => haystack.includes(t));
+    },
+
+    _filterOpsTeamSearchCards(modal) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) return;
+        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+    },
+
     _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount) {
         const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchCards');
         if (!wrap) return;
-        const members = [...memberMap.values()];
+
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
+        const filterText = filterInput ? filterInput.value : '';
+
+        let members = [...memberMap.values()];
+        if (filterText) {
+            members = members.filter(m => this._opsTeamMemberMatchesFilter(m, allTeams, filterText));
+        }
 
         if (members.length === 0) {
             if (pendingCount > 0) {
                 wrap.style.display = 'none';
             } else {
                 wrap.style.display = 'block';
-                wrap.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">No members found.</div>';
+                const msg = filterText ? 'No results match filter.' : 'No members found.';
+                wrap.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
             return;
         }
@@ -954,8 +986,15 @@ const plugin = {
 
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
+        this._opsTeamSearchMemberCache = null;
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
+
+        // Show and clear the filter bar immediately when a search starts
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
+        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputReset');
+        if (filterWrap) filterWrap.style.display = 'block';
+        if (filterInput) filterInput.value = '';
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -1000,6 +1039,7 @@ const plugin = {
         await Promise.allSettled(searches);
 
         if (this._opsTeamSearchActive === sessionId) {
+            this._opsTeamSearchMemberCache = { memberMap, allTeams };
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
             this._captureOpsTabState(modal);
         }
@@ -1602,19 +1642,21 @@ const plugin = {
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
                         Search the Computer Use team by name or email. Leave blank to list all members.
                     </p>
-                    <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="
-                        width: 100%;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                    ">
-                    <div style="margin-top: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="
+                            flex: 1;
+                            min-width: 0;
+                            padding: 8px 12px;
+                            font-size: 13px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                        ">
                         <button type="button" id="wf-ops-team-search-btn" style="
-                            padding: 10px 16px;
+                            flex-shrink: 0;
+                            padding: 8px 14px;
                             font-size: 12px;
                             font-weight: 600;
                             color: white;
@@ -1625,6 +1667,18 @@ const plugin = {
                         ">Search</button>
                     </div>
                     <div id="wf-ops-team-search-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                    <div id="wf-ops-team-filter-wrap" style="display: none; margin-top: 6px;">
+                        <input type="text" id="wf-ops-team-filter-input" placeholder="Filter results by name, email, team, or permission…" autocomplete="off" style="
+                            width: 100%;
+                            padding: 6px 12px;
+                            font-size: 12px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                        ">
+                    </div>
                     <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; max-height: 360px; overflow-y: auto;">
                         <div id="wf-ops-team-search-cards"></div>
                     </div>
@@ -1970,6 +2024,13 @@ const plugin = {
             });
             teamSearchInput.addEventListener('input', () => {
                 this._captureOpsTabState(modal);
+            });
+        }
+
+        const teamFilterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputAttach');
+        if (teamFilterInput) {
+            teamFilterInput.addEventListener('input', () => {
+                this._filterOpsTeamSearchCards(modal);
             });
         }
 
