@@ -7,7 +7,7 @@ const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const ROW_ENHANCED_ATTR = 'data-fleet-expert-datasets-enhanced';
 const COPY_BTN_ATTR = 'data-fleet-expert-datasets-copy';
 const OPEN_BTN_ATTR = 'data-fleet-expert-datasets-open';
-const COPY_SUCCESS_FLASH_MS = 1000;
+const COPY_SUCCESS_FLASH_MS = 300;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
@@ -18,7 +18,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -98,7 +98,20 @@ const plugin = {
         return count;
     },
 
+    _findTaskIdTitleEl(row) {
+        const existing = row.querySelector('.max-w-md [' + COPY_BTN_ATTR + '="1"]');
+        if (existing) return null;
+        const titleEl = row.querySelector('.max-w-md .font-medium.text-sm.mb-1');
+        if (titleEl && titleEl.getAttribute(COPY_BTN_ATTR) === '1') return null;
+        return titleEl;
+    },
+
     _extractTaskKeyFromRow(row) {
+        const copyBtn = row.querySelector('.max-w-md [' + COPY_BTN_ATTR + '="1"]');
+        if (copyBtn) {
+            const text = (copyBtn.textContent || '').trim();
+            return TASK_KEY_RE.test(text) ? text : '';
+        }
         const titleEl = row.querySelector('.max-w-md .font-medium.text-sm.mb-1');
         if (!titleEl) return '';
         const text = (titleEl.textContent || '').trim();
@@ -106,13 +119,17 @@ const plugin = {
     },
 
     _enhanceTaskIdCopy(row, taskKey) {
-        const titleEl = row.querySelector('.max-w-md .font-medium.text-sm.mb-1');
+        const titleEl = this._findTaskIdTitleEl(row);
         if (!titleEl) return false;
-        if (titleEl.getAttribute(COPY_BTN_ATTR) === '1') return true;
+
+        const wrapper = document.createElement('div');
+        wrapper.className =
+            'mb-1 rounded-sm -mx-1 px-1 py-0.5 transition-colors duration-150 hover:bg-muted';
 
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = titleEl.className + ' text-left cursor-pointer hover:underline';
+        button.className =
+            'font-medium text-sm text-left cursor-pointer w-full block bg-transparent border-0 p-0';
         button.textContent = taskKey;
         button.title = 'Copy task ID';
         button.setAttribute('aria-label', 'Copy task ID');
@@ -125,7 +142,8 @@ const plugin = {
             void this._copyTaskId(button, taskKey);
         });
 
-        titleEl.replaceWith(button);
+        wrapper.appendChild(button);
+        titleEl.replaceWith(wrapper);
         return true;
     },
 
@@ -187,6 +205,12 @@ const plugin = {
         Logger.log(PLUGIN_ID + ': opened task in new tab');
     },
 
+    _copyFeedbackTarget(button) {
+        const wrapper = button && button.parentElement;
+        if (wrapper && wrapper.querySelector('[' + COPY_BTN_ATTR + '="1"]') === button) return wrapper;
+        return button;
+    },
+
     _clearCopyFeedback(button) {
         if (!button) return;
         if (button._copySuccessFlashTimeout) {
@@ -197,17 +221,24 @@ const plugin = {
             clearTimeout(button._copyFailurePulseTimeout);
             button._copyFailurePulseTimeout = null;
         }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
+        const target = this._copyFeedbackTarget(button);
+        if (target) {
+            target.style.transition = '';
+            target.style.backgroundColor = '';
+        }
         button.style.color = '';
     },
 
     _showCopySuccessFlash(button) {
         this._clearCopyFeedback(button);
-        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
+        const target = this._copyFeedbackTarget(button);
+        target.style.transition =
+            'background-color ' + COPY_SUCCESS_FLASH_MS + 'ms ease-out, color ' + COPY_SUCCESS_FLASH_MS + 'ms ease-out';
+        target.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
         button.style.color = '#ffffff';
         button._copySuccessFlashTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
+            target.style.backgroundColor = '';
+            target.style.transition = '';
             button.style.color = '';
             button._copySuccessFlashTimeout = null;
         }, COPY_SUCCESS_FLASH_MS);
@@ -215,17 +246,18 @@ const plugin = {
 
     _showCopyFailurePulse(button) {
         this._clearCopyFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = COPY_FAILURE_RED_BG;
+        const target = this._copyFeedbackTarget(button);
+        const prevTransition = target.style.transition;
+        target.style.transition = 'none';
+        target.style.backgroundColor = COPY_FAILURE_RED_BG;
         button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition =
+        void target.offsetHeight;
+        target.style.transition =
             'background-color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out, color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out';
-        button.style.backgroundColor = '';
+        target.style.backgroundColor = '';
         button.style.color = '';
         button._copyFailurePulseTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
+            target.style.transition = prevTransition || '';
             button._copyFailurePulseTimeout = null;
         }, COPY_FAILURE_PULSE_MS);
     },

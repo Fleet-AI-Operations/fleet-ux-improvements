@@ -1,7 +1,7 @@
 {
   "version": "9.1.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.0",
+  "archetypesVersion": "9.1",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -474,8 +474,8 @@
       "plugins": [
         {
           "name": "expert-datasets-task-actions.js",
-          "version": "1.1",
-          "hash": "sha256-372ecc1a260ab19b40dde396b549b0d85dae611d0e9e77b6be20e7aa5e0d2298",
+          "version": "1.2",
+          "hash": "sha256-c56048a5ce6a5e60c8286bd16b59624b02c1afcb719a0e00854b2e3b49641ad1",
           "log": false
         }
       ]
