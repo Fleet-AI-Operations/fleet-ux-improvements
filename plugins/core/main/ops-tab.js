@@ -43,7 +43,7 @@ const OPS_ALL_PERMISSIONS = [
     ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
     ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
     ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
-    ['MAKE_TUNDRA_TASKS', 'Make Tundra Tasks'],
+    ['MAKE_TAIGA_TASKS', 'Make Tundra Tasks'],
     ['QA_CUA_ENVS', 'QA CUA Environments'],
     ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
     ['QA_SESSIONS', 'QA Agent Sessions'],
@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.16',
+    _version: '2.17',
     phase: 'core',
     enabledByDefault: true,
 
