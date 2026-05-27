@@ -27,11 +27,11 @@ const OPS_CRYPTO_IV_BYTES = 12;
 const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
 const OPS_TEAM_SEARCH_URL = 'https://www.fleetai.com/dashboard/team';
-/** Next.js server action hash for the team member list action; may need updating after Fleet redeployments */
-const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b';
-/** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
-const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+/** localStorage key for the dynamically captured Next.js server action hash for team member search */
+const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
+/** localStorage key for the dynamically captured Next.js router state tree for team member search */
+const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
 const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
 const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.17',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -143,6 +143,10 @@ const plugin = {
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
     _opsMemberEditState: null,
+    /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
+    _opsTeamSearchActionCache: { nextAction: null, routerState: null },
+    /** Deduplication handle: in-flight bootstrap Promise (null when idle) */
+    _opsTeamSearchBootstrapping: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -182,6 +186,8 @@ const plugin = {
             reloadSecrets: (force) => this._loadOpsSecrets(force !== false)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
+        this._loadOpsTeamSearchActionFromStorage();
+        this._subscribeOpsTeamSearchActionCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
         }
@@ -808,24 +814,205 @@ const plugin = {
         return '';
     },
 
-    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
+    _opsReadHeader(headers, name) {
+        if (!headers) return null;
+        const lower = name.toLowerCase();
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow && pageWindow.Headers && headers instanceof pageWindow.Headers) return headers.get(name);
+            if (Array.isArray(headers)) {
+                const found = headers.find(([k]) => String(k).toLowerCase() === lower);
+                return found ? found[1] : null;
+            }
+            if (typeof headers === 'object') {
+                for (const k of Object.keys(headers)) {
+                    if (String(k).toLowerCase() === lower) return headers[k];
+                }
+            }
+        } catch (_e) {}
+        return null;
+    },
+
+    _loadOpsTeamSearchActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: team search action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsTeamSearchAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsTeamSearchActionCache.nextAction;
+        this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: team search action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsTeamSearchActionCache() {
+        this._opsTeamSearchActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action cache clear failed', e);
+        }
+        Logger.info('ops-tab: team search action cache cleared (will re-discover on next search)');
+    },
+
+    _subscribeOpsTeamSearchActionCapture() {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.debug('ops-tab: NetworkObserver unavailable; passive team action capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'ops-tab-team-search-action',
+            matches(meta) {
+                return meta.method === 'POST'
+                    && !!meta.urlObj
+                    && meta.urlObj.pathname === '/dashboard/team';
+            },
+            onRequest(meta) {
+                const nextAction = self._opsReadHeader(meta.headers, 'next-action');
+                const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
+                if (nextAction && nextAction !== self._opsTeamSearchActionCache.nextAction) {
+                    self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
+                    Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                }
+            }
+        });
+        Logger.debug('ops-tab: team search action passive watcher registered');
+    },
+
+    _bootstrapOpsTeamSearchAction() {
+        if (this._opsTeamSearchBootstrapping) return this._opsTeamSearchBootstrapping;
+        const promise = this._doOpsTeamSearchActionBootstrap();
+        this._opsTeamSearchBootstrapping = promise;
+        promise.finally(() => { this._opsTeamSearchBootstrapping = null; });
+        return promise;
+    },
+
+    _doOpsTeamSearchActionBootstrap() {
+        const pageWindow = this._getOpsPageWindow();
+        const pageDocument = pageWindow && pageWindow.document;
+        if (!pageDocument || !pageDocument.body) {
+            Logger.warn('ops-tab: team action bootstrap — no document body available');
+            return Promise.resolve(false);
+        }
+        Logger.log('ops-tab: bootstrapping team search action via hidden iframe');
+
+        return new Promise((resolve) => {
+            const TIMEOUT_MS = 15000;
+            let resolved = false;
+            const iframe = pageDocument.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;border:none;z-index:-9999;top:-9999px;left:-9999px;';
+            pageDocument.body.appendChild(iframe);
+
+            const cleanup = () => {
+                try { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (_e) {}
+            };
+            const done = (success) => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                resolve(success);
+            };
+
+            let iframeWin;
+            try { iframeWin = iframe.contentWindow; } catch (_e) {}
+            if (!iframeWin || typeof iframeWin.fetch !== 'function') {
+                Logger.warn('ops-tab: team action bootstrap — iframe contentWindow.fetch unavailable');
+                cleanup();
+                resolve(false);
+                return;
+            }
+
+            const self = this;
+            const originalFetch = iframeWin.fetch.bind(iframeWin);
+
+            // Hook iframe fetch BEFORE src is set; same window object is preserved on same-origin navigation
+            iframeWin.fetch = function bootstrapCaptureFetch(...args) {
+                const [resource, config] = args;
+                try {
+                    const url = typeof resource === 'string' ? resource
+                        : (resource && typeof resource.url === 'string' ? resource.url : '');
+                    const method = (config && config.method) || (resource && resource.method) || 'GET';
+                    const headers = (config && config.headers) || (resource && resource.headers) || {};
+                    if (method.toUpperCase() === 'POST' && url.includes('/dashboard/team')) {
+                        const nextAction = self._opsReadHeader(headers, 'next-action');
+                        const routerState = self._opsReadHeader(headers, 'next-router-state-tree');
+                        if (nextAction) {
+                            self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
+                            Logger.info('ops-tab: team search action captured via bootstrap iframe');
+                            done(true);
+                        }
+                    }
+                } catch (_e) {}
+                return originalFetch.apply(this, args);
+            };
+
+            iframe.src = OPS_TEAM_SEARCH_URL;
+            setTimeout(() => {
+                if (!resolved) {
+                    Logger.warn('ops-tab: team search action bootstrap timed out after ' + (TIMEOUT_MS / 1000) + 's');
+                    done(false);
+                }
+            }, TIMEOUT_MS);
+        });
+    },
+
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset, _isRetry) {
         if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
+
+        // Ensure we have a dynamically discovered server action hash; bootstrap via iframe if needed
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            Logger.log('ops-tab: team search action not cached — running bootstrap');
+            const ok = await this._bootstrapOpsTeamSearchAction();
+            if (!ok || !this._opsTeamSearchActionCache.nextAction) {
+                throw new Error(
+                    'Team search server action not yet discovered. ' +
+                    'Navigate to Dashboard → Team while logged in, then retry.'
+                );
+            }
+        }
 
         const pageWindow = this._getOpsPageWindow();
         const requestFetch = pageWindow.fetch || fetch;
         const deploymentId = this._getOpsNextDeploymentId(pageWindow);
         const pageOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
+        const { nextAction, routerState } = this._opsTeamSearchActionCache;
 
         const headers = {
             'accept': 'text/x-component',
             'content-type': 'text/plain;charset=UTF-8',
-            'next-action': OPS_TEAM_SEARCH_NEXT_ACTION,
-            'next-router-state-tree': OPS_TEAM_SEARCH_ROUTER_STATE
+            'next-action': nextAction
         };
-        if (deploymentId) {
-            headers['x-deployment-id'] = deploymentId;
-        }
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
 
         const body = JSON.stringify([teamId, userId, pageOffset, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
 
@@ -834,6 +1021,7 @@ const plugin = {
             userId: userId.slice(0, 8) + '...',
             query: query || '(empty)',
             offset: pageOffset,
+            action: nextAction.slice(0, 12) + '…',
             hasDeploymentId: !!deploymentId
         });
 
@@ -845,6 +1033,20 @@ const plugin = {
         });
 
         const text = await res.text().catch(() => '');
+
+        if (res.status === 404 && !_isRetry) {
+            Logger.warn('ops-tab: team search got 404 — server action stale, clearing cache and re-bootstrapping');
+            this._clearOpsTeamSearchActionCache();
+            const ok = await this._bootstrapOpsTeamSearchAction();
+            if (ok && this._opsTeamSearchActionCache.nextAction) {
+                return this._fetchOpsTeamSearchPage(teamId, userId, query, offset, true);
+            }
+            throw new Error(
+                'Team search action stale (404) and re-bootstrap failed. ' +
+                'Navigate to Dashboard → Team to refresh, then retry.'
+            );
+        }
+
         if (!res.ok) {
             throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
         }
