@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -145,8 +145,6 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
-    /** Deduplication handle: in-flight bootstrap Promise (null when idle) */
-    _opsTeamSearchBootstrapping: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -907,97 +905,70 @@ const plugin = {
         Logger.debug('ops-tab: team search action passive watcher registered');
     },
 
-    _bootstrapOpsTeamSearchAction() {
-        if (this._opsTeamSearchBootstrapping) return this._opsTeamSearchBootstrapping;
-        const promise = this._doOpsTeamSearchActionBootstrap();
-        this._opsTeamSearchBootstrapping = promise;
-        promise.finally(() => { this._opsTeamSearchBootstrapping = null; });
-        return promise;
+    _opsTeamSearchActionStaleError() {
+        const err = new Error('Team search credentials are stale or missing.');
+        err.opsTeamSearchActionStale = true;
+        return err;
     },
 
-    _doOpsTeamSearchActionBootstrap() {
-        const pageWindow = this._getOpsPageWindow();
-        const pageDocument = pageWindow && pageWindow.document;
-        if (!pageDocument || !pageDocument.body) {
-            Logger.warn('ops-tab: team action bootstrap — no document body available');
-            return Promise.resolve(false);
-        }
-        Logger.log('ops-tab: bootstrapping team search action via hidden iframe');
+    _isOpsTeamSearchActionStaleError(err) {
+        return !!(err && err.opsTeamSearchActionStale);
+    },
 
-        return new Promise((resolve) => {
-            const TIMEOUT_MS = 15000;
-            let resolved = false;
-            const iframe = pageDocument.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;border:none;z-index:-9999;top:-9999px;left:-9999px;';
-            pageDocument.body.appendChild(iframe);
+    _renderOpsTeamSearchActionRefreshBannerHtml() {
+        const teamUrl = OPS_TEAM_SEARCH_URL;
+        return [
+            '<div id="wf-ops-team-search-action-refresh-banner" style="',
+            'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: #fee2e2;',
+            'border: 2px solid #dc2626;border-radius: 8px;">',
+            '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
+            '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
+            '<line x1="12" y1="9" x2="12" y2="13"></line>',
+            '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
+            '</svg>',
+            '<div style="flex: 1;">',
+            '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
+            '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
+            'Team search credentials are missing or out of date after a Fleet update. ',
+            'Open the Team page to refresh them, then return here and search again.',
+            '</p>',
+            '</div>',
+            '</div>',
+            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
+            '<a href="', this._opsEscapeAttr(teamUrl), '" target="_blank" rel="noopener noreferrer" id="wf-ops-team-search-go-now" style="',
+            'display: inline-block;padding: 8px 14px;font-size: 13px;font-weight: 600;',
+            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
+            'cursor: pointer;text-decoration: none;">Go now</a>',
+            '</div>',
+            '</div>'
+        ].join('');
+    },
 
-            const cleanup = () => {
-                try { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (_e) {}
-            };
-            const done = (success) => {
-                if (resolved) return;
-                resolved = true;
-                cleanup();
-                resolve(success);
-            };
-
-            let iframeWin;
-            try { iframeWin = iframe.contentWindow; } catch (_e) {}
-            if (!iframeWin || typeof iframeWin.fetch !== 'function') {
-                Logger.warn('ops-tab: team action bootstrap — iframe contentWindow.fetch unavailable');
-                cleanup();
-                resolve(false);
-                return;
+    _showOpsTeamSearchActionRefreshBanner(modal) {
+        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchStaleBanner');
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapStaleHide');
+        if (filterWrap) filterWrap.style.display = 'none';
+        if (outputWrap) {
+            outputWrap.style.display = 'block';
+            outputWrap.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
+            const goNow = outputWrap.querySelector('#wf-ops-team-search-go-now');
+            if (goNow) {
+                goNow.addEventListener('click', () => {
+                    Logger.log('ops-tab: team search refresh link opened (new tab)');
+                });
             }
-
-            const self = this;
-            const originalFetch = iframeWin.fetch.bind(iframeWin);
-
-            // Hook iframe fetch BEFORE src is set; same window object is preserved on same-origin navigation
-            iframeWin.fetch = function bootstrapCaptureFetch(...args) {
-                const [resource, config] = args;
-                try {
-                    const url = typeof resource === 'string' ? resource
-                        : (resource && typeof resource.url === 'string' ? resource.url : '');
-                    const method = (config && config.method) || (resource && resource.method) || 'GET';
-                    const headers = (config && config.headers) || (resource && resource.headers) || {};
-                    if (method.toUpperCase() === 'POST' && url.includes('/dashboard/team')) {
-                        const nextAction = self._opsReadHeader(headers, 'next-action');
-                        const routerState = self._opsReadHeader(headers, 'next-router-state-tree');
-                        if (nextAction) {
-                            self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
-                            Logger.info('ops-tab: team search action captured via bootstrap iframe');
-                            done(true);
-                        }
-                    }
-                } catch (_e) {}
-                return originalFetch.apply(this, args);
-            };
-
-            iframe.src = OPS_TEAM_SEARCH_URL;
-            setTimeout(() => {
-                if (!resolved) {
-                    Logger.warn('ops-tab: team search action bootstrap timed out after ' + (TIMEOUT_MS / 1000) + 's');
-                    done(false);
-                }
-            }, TIMEOUT_MS);
-        });
+        }
+        this._setOpsTeamSearchStatus(modal, '', false, false, false);
+        Logger.info('ops-tab: team search refresh banner shown — user must visit /dashboard/team');
     },
 
-    async _fetchOpsTeamSearchPage(teamId, userId, query, offset, _isRetry) {
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
         if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
 
-        // Ensure we have a dynamically discovered server action hash; bootstrap via iframe if needed
         if (!this._opsTeamSearchActionCache.nextAction) {
-            Logger.log('ops-tab: team search action not cached — running bootstrap');
-            const ok = await this._bootstrapOpsTeamSearchAction();
-            if (!ok || !this._opsTeamSearchActionCache.nextAction) {
-                throw new Error(
-                    'Team search server action not yet discovered. ' +
-                    'Navigate to Dashboard → Team while logged in, then retry.'
-                );
-            }
+            throw this._opsTeamSearchActionStaleError();
         }
 
         const pageWindow = this._getOpsPageWindow();
@@ -1034,17 +1005,10 @@ const plugin = {
 
         const text = await res.text().catch(() => '');
 
-        if (res.status === 404 && !_isRetry) {
-            Logger.warn('ops-tab: team search got 404 — server action stale, clearing cache and re-bootstrapping');
+        if (res.status === 404) {
+            Logger.warn('ops-tab: team search got 404 — server action stale, clearing cache');
             this._clearOpsTeamSearchActionCache();
-            const ok = await this._bootstrapOpsTeamSearchAction();
-            if (ok && this._opsTeamSearchActionCache.nextAction) {
-                return this._fetchOpsTeamSearchPage(teamId, userId, query, offset, true);
-            }
-            throw new Error(
-                'Team search action stale (404) and re-bootstrap failed. ' +
-                'Navigate to Dashboard → Team to refresh, then retry.'
-            );
+            throw this._opsTeamSearchActionStaleError();
         }
 
         if (!res.ok) {
@@ -1787,6 +1751,11 @@ const plugin = {
             return;
         }
 
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            this._showOpsTeamSearchActionRefreshBanner(modal);
+            return;
+        }
+
         this._injectOpsSpinnerStyle();
 
         const sessionId = Date.now();
@@ -1809,6 +1778,7 @@ const plugin = {
         const memberMap = new Map();
         let pendingCount = allTeams.length;
         let doneCount = 0;
+        let staleActionDetected = false;
 
         const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
         this._opsFellowsSearchComplete = fellowsEntry ? false : true;
@@ -1840,10 +1810,16 @@ const plugin = {
             try {
                 const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
                 if (this._opsTeamSearchActive !== sessionId) return;
+                if (staleActionDetected) return;
                 this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
                 Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
-                Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+                if (this._isOpsTeamSearchActionStaleError(e)) {
+                    staleActionDetected = true;
+                    Logger.warn('ops-tab: team search credentials stale for ' + teamLabel);
+                } else {
+                    Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+                }
             } finally {
                 finishTeamSearch(teamLabel);
             }
@@ -1852,7 +1828,12 @@ const plugin = {
         await Promise.allSettled(searches);
 
         if (this._opsTeamSearchActive === sessionId) {
-            this._opsTeamSearchMemberCache = { memberMap, allTeams };
+            if (staleActionDetected) {
+                this._showOpsTeamSearchActionRefreshBanner(modal);
+                this._opsTeamSearchMemberCache = null;
+            } else {
+                this._opsTeamSearchMemberCache = { memberMap, allTeams };
+            }
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
             this._captureOpsTabState(modal);
         }

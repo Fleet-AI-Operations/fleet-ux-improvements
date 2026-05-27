@@ -8,7 +8,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -2480,7 +2480,7 @@ const plugin = {
                         </p>
                     </div>
                 </div>
-                <div id="wf-update-refresh-row" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;">
+                <div id="wf-update-refresh-row" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">
                     <button type="button" id="wf-update-refresh-btn" style="
                         padding: 8px 14px;
                         font-size: 13px;
