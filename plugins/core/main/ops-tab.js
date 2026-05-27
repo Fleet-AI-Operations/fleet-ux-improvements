@@ -27,11 +27,13 @@ const OPS_CRYPTO_IV_BYTES = 12;
 const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
 const OPS_TEAM_SEARCH_URL = 'https://www.fleetai.com/dashboard/team';
-/** Next.js server action hash for the team member list action; may need updating after Fleet redeployments */
-const OPS_TEAM_SEARCH_NEXT_ACTION = '7c046b629ffc3300a398e03fc1085383ad28b9c28b';
-/** URL-encoded Next.js router state tree for /dashboard/team (structural, stable for this route) */
-const OPS_TEAM_SEARCH_ROUTER_STATE = '%5B%22%22%2C%7B%22children%22%3A%5B%22(platform)%22%2C%7B%22children%22%3A%5B%22dashboard%22%2C%7B%22children%22%3A%5B%22team%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C0%5D%7D%2Cnull%2Cnull%2C4%5D%7D%2Cnull%2Cnull%2C8%5D%7D%2Cnull%2Cnull%2C24%5D';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+/** localStorage key for the dynamically captured Next.js server action hash for team member search */
+const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
+/** localStorage key for the dynamically captured Next.js router state tree for team member search */
+const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
+const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
+const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
 const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
 const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
@@ -41,7 +43,7 @@ const OPS_ALL_PERMISSIONS = [
     ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
     ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
     ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
-    ['MAKE_TUNDRA_TASKS', 'Make Tundra Tasks'],
+    ['MAKE_TAIGA_TASKS', 'Make Tundra Tasks'],
     ['QA_CUA_ENVS', 'QA CUA Environments'],
     ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
     ['QA_SESSIONS', 'QA Agent Sessions'],
@@ -128,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '2.14',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -139,6 +141,10 @@ const plugin = {
     _opsTeamSearchSelectedTeams: null,
     /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
     _opsFellowsSearchComplete: null,
+    /** memberId → staged edit session while permissions tray is in edit mode */
+    _opsMemberEditState: null,
+    /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
+    _opsTeamSearchActionCache: { nextAction: null, routerState: null },
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -178,6 +184,8 @@ const plugin = {
             reloadSecrets: (force) => this._loadOpsSecrets(force !== false)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
+        this._loadOpsTeamSearchActionFromStorage();
+        this._subscribeOpsTeamSearchActionCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
         }
@@ -804,24 +812,178 @@ const plugin = {
         return '';
     },
 
+    _opsReadHeader(headers, name) {
+        if (!headers) return null;
+        const lower = name.toLowerCase();
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow && pageWindow.Headers && headers instanceof pageWindow.Headers) return headers.get(name);
+            if (Array.isArray(headers)) {
+                const found = headers.find(([k]) => String(k).toLowerCase() === lower);
+                return found ? found[1] : null;
+            }
+            if (typeof headers === 'object') {
+                for (const k of Object.keys(headers)) {
+                    if (String(k).toLowerCase() === lower) return headers[k];
+                }
+            }
+        } catch (_e) {}
+        return null;
+    },
+
+    _loadOpsTeamSearchActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: team search action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsTeamSearchAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsTeamSearchActionCache.nextAction;
+        this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: team search action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsTeamSearchActionCache() {
+        this._opsTeamSearchActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team search action cache clear failed', e);
+        }
+        Logger.info('ops-tab: team search action cache cleared (will re-discover on next search)');
+    },
+
+    _subscribeOpsTeamSearchActionCapture() {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.debug('ops-tab: NetworkObserver unavailable; passive team action capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'ops-tab-team-search-action',
+            matches(meta) {
+                return meta.method === 'POST'
+                    && !!meta.urlObj
+                    && meta.urlObj.pathname === '/dashboard/team';
+            },
+            onRequest(meta) {
+                const nextAction = self._opsReadHeader(meta.headers, 'next-action');
+                const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
+                if (nextAction && nextAction !== self._opsTeamSearchActionCache.nextAction) {
+                    self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
+                    Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                }
+            }
+        });
+        Logger.debug('ops-tab: team search action passive watcher registered');
+    },
+
+    _opsTeamSearchActionStaleError() {
+        const err = new Error('Team search credentials are stale or missing.');
+        err.opsTeamSearchActionStale = true;
+        return err;
+    },
+
+    _isOpsTeamSearchActionStaleError(err) {
+        return !!(err && err.opsTeamSearchActionStale);
+    },
+
+    _renderOpsTeamSearchActionRefreshBannerHtml() {
+        const teamUrl = OPS_TEAM_SEARCH_URL;
+        return [
+            '<div id="wf-ops-team-search-action-refresh-banner" style="',
+            'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: #fee2e2;',
+            'border: 2px solid #dc2626;border-radius: 8px;">',
+            '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
+            '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
+            '<line x1="12" y1="9" x2="12" y2="13"></line>',
+            '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
+            '</svg>',
+            '<div style="flex: 1;">',
+            '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
+            '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
+            'Team search credentials are missing or out of date after a Fleet update. ',
+            'Open the Team page to refresh them, then return here and search again.',
+            '</p>',
+            '</div>',
+            '</div>',
+            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
+            '<a href="', this._opsEscapeAttr(teamUrl), '" target="_blank" rel="noopener noreferrer" id="wf-ops-team-search-go-now" style="',
+            'display: inline-block;padding: 8px 14px;font-size: 13px;font-weight: 600;',
+            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
+            'cursor: pointer;text-decoration: none;">Go now</a>',
+            '</div>',
+            '</div>'
+        ].join('');
+    },
+
+    _showOpsTeamSearchActionRefreshBanner(modal) {
+        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchStaleBanner');
+        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapStaleHide');
+        if (filterWrap) filterWrap.style.display = 'none';
+        if (outputWrap) {
+            outputWrap.style.display = 'block';
+            outputWrap.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
+            const goNow = outputWrap.querySelector('#wf-ops-team-search-go-now');
+            if (goNow) {
+                goNow.addEventListener('click', () => {
+                    Logger.log('ops-tab: team search refresh link opened (new tab)');
+                });
+            }
+        }
+        this._setOpsTeamSearchStatus(modal, '', false, false, false);
+        Logger.info('ops-tab: team search refresh banner shown — user must visit /dashboard/team');
+    },
+
     async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
         if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
+
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            throw this._opsTeamSearchActionStaleError();
+        }
 
         const pageWindow = this._getOpsPageWindow();
         const requestFetch = pageWindow.fetch || fetch;
         const deploymentId = this._getOpsNextDeploymentId(pageWindow);
         const pageOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
+        const { nextAction, routerState } = this._opsTeamSearchActionCache;
 
         const headers = {
             'accept': 'text/x-component',
             'content-type': 'text/plain;charset=UTF-8',
-            'next-action': OPS_TEAM_SEARCH_NEXT_ACTION,
-            'next-router-state-tree': OPS_TEAM_SEARCH_ROUTER_STATE
+            'next-action': nextAction
         };
-        if (deploymentId) {
-            headers['x-deployment-id'] = deploymentId;
-        }
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
 
         const body = JSON.stringify([teamId, userId, pageOffset, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
 
@@ -830,6 +992,7 @@ const plugin = {
             userId: userId.slice(0, 8) + '...',
             query: query || '(empty)',
             offset: pageOffset,
+            action: nextAction.slice(0, 12) + '…',
             hasDeploymentId: !!deploymentId
         });
 
@@ -841,6 +1004,13 @@ const plugin = {
         });
 
         const text = await res.text().catch(() => '');
+
+        if (res.status === 404) {
+            Logger.warn('ops-tab: team search got 404 — server action stale, clearing cache');
+            this._clearOpsTeamSearchActionCache();
+            throw this._opsTeamSearchActionStaleError();
+        }
+
         if (!res.ok) {
             throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
         }
@@ -909,7 +1079,23 @@ const plugin = {
             '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
             '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
             '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
-            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}'
+            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
+            '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
+            '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
+            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:var(--brand,#4f46e5);background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-edit-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
+            '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
+            '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
+            '.wf-ops-confirm-btn:disabled:hover{background:transparent!important;color:#9ca3af!important;}',
+            '.wf-ops-cancel-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#dc2626;background:transparent;border:1px solid #dc2626;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
+            '.wf-ops-cancel-btn:hover{background:#dc2626!important;color:#fff!important;}',
+            '.wf-ops-cancel-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
+            '.wf-ops-staged-add{background:rgba(34,197,94,0.14)!important;}',
+            '.wf-ops-staged-remove{background:rgba(239,68,68,0.14)!important;}',
+            '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
+            '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
+            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}'
         ].join('');
         document.head.appendChild(style);
     },
@@ -947,6 +1133,7 @@ const plugin = {
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
         this._opsFellowsSearchComplete = null;
+        this._clearOpsMemberEditState();
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
 
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
@@ -969,6 +1156,7 @@ const plugin = {
     _onOpsModalClosed() {
         this._detachOpsTeamFilterDropdownOutsideListener();
         this._opsTeamSearchSelectedTeams = new Set();
+        this._clearOpsMemberEditState();
     },
 
     _attachOpsTeamFilterDropdownOutsideListener() {
@@ -1088,42 +1276,373 @@ const plugin = {
         return false;
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams) {
+    _opsMemberEditStateMap() {
+        if (!(this._opsMemberEditState instanceof Map)) {
+            this._opsMemberEditState = new Map();
+        }
+        return this._opsMemberEditState;
+    },
+
+    _clearOpsMemberEditState() {
+        this._opsMemberEditState = new Map();
+    },
+
+    _opsCloneStringSet(setOrArray) {
+        if (setOrArray instanceof Set) return new Set(setOrArray);
+        if (Array.isArray(setOrArray)) return new Set(setOrArray);
+        return new Set();
+    },
+
+    _opsSetsEqual(a, b) {
+        if (!a || !b || a.size !== b.size) return false;
+        for (const value of a) {
+            if (!b.has(value)) return false;
+        }
+        return true;
+    },
+
+    _getOpsMemberEditSession(memberId) {
+        return this._opsMemberEditStateMap().get(memberId) || null;
+    },
+
+    _startOpsMemberEdit(member) {
+        const memberId = member.id;
+        const session = {
+            editing: true,
+            email: member.email || '',
+            baselineTeams: this._opsCloneStringSet(member.teamLabels),
+            baselinePerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
+            stagedTeams: this._opsCloneStringSet(member.teamLabels),
+            stagedPerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
+            applying: false
+        };
+        this._opsMemberEditStateMap().set(memberId, session);
+        Logger.log('ops-tab: member edit started for ' + (member.email || memberId));
+        return session;
+    },
+
+    _cancelOpsMemberEdit(memberId) {
+        if (this._opsMemberEditStateMap().has(memberId)) {
+            this._opsMemberEditStateMap().delete(memberId);
+            Logger.log('ops-tab: member edit cancelled for ' + memberId);
+        }
+    },
+
+    _opsMemberEditHasChanges(session) {
+        if (!session) return false;
+        return !this._opsSetsEqual(session.baselineTeams, session.stagedTeams) ||
+            !this._opsSetsEqual(session.baselinePerms, session.stagedPerms);
+    },
+
+    _toggleOpsMemberEditTeam(session, label) {
+        if (!session || !session.baselineTeams.has(label)) return;
+        if (session.stagedTeams.has(label)) {
+            session.stagedTeams.delete(label);
+        } else {
+            session.stagedTeams.add(label);
+        }
+    },
+
+    _toggleOpsMemberEditPermission(session, permKey) {
+        if (!session) return;
+        if (session.stagedPerms.has(permKey)) {
+            session.stagedPerms.delete(permKey);
+        } else {
+            session.stagedPerms.add(permKey);
+        }
+    },
+
+    _captureOpsOpenMemberDetails(modal) {
+        const openIds = new Set();
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOpenCapture');
+        if (!wrap) return openIds;
+        wrap.querySelectorAll('.wf-ops-member-details[open][data-member-id]').forEach((el) => {
+            const id = el.getAttribute('data-member-id');
+            if (id) openIds.add(id);
+        });
+        return openIds;
+    },
+
+    async _opsPostOrchestratorPrivate(url, body) {
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const teamId = this._getOpsCookieValue('current-team-id');
+        const headers = {
+            accept: 'application/json, text/plain, */*',
+            'content-type': 'application/json'
+        };
+        if (teamId) headers['x-fleet-team-id'] = teamId;
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            credentials: 'include'
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            Logger.debug('ops-tab: orchestrator-private ' + res.status + ' body: ' + text.slice(0, 400));
+            throw new Error('HTTP ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
+        }
+        return res.json().catch(() => null);
+    },
+
+    async _opsRemoveMemberFromTeam(teamId, email) {
+        if (!teamId || !email) throw new Error('Missing team or email for bulk remove');
+        await this._opsPostOrchestratorPrivate(OPS_TEAM_BULK_REMOVE_URL, {
+            team_id: teamId,
+            emails: [email]
+        });
+        Logger.debug('ops-tab: removed ' + email + ' from team ' + teamId.slice(0, 8) + '…');
+    },
+
+    async _opsModifyMemberPermission(profileId, permission, action) {
+        if (!profileId || !permission || !action) {
+            throw new Error('Missing profile, permission, or action');
+        }
+        await this._opsPostOrchestratorPrivate(OPS_TEAM_USER_PERMISSIONS_URL, {
+            profile_id: profileId,
+            permission,
+            action
+        });
+        Logger.debug('ops-tab: permission ' + action + ' ' + permission + ' for ' + profileId.slice(0, 8) + '…');
+    },
+
+    _getOpsMemberFromCache(memberId) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache || !cache.memberMap) return null;
+        return cache.memberMap.get(memberId) || null;
+    },
+
+    _updateOpsMemberTileDom(modal, memberId, forceOpen) {
+        const cache = this._opsTeamSearchMemberCache;
+        const member = this._getOpsMemberFromCache(memberId);
+        if (!cache || !member) return;
+
+        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchTileUpdate');
+        if (!wrap) return;
+
+        const attrId = this._opsEscapeAttr(memberId);
+        const tileEl = wrap.querySelector('[data-ops-member-tile="' + attrId + '"]');
+        const detailsEl = tileEl ? tileEl.querySelector('.wf-ops-member-details') : null;
+        const wasOpen = forceOpen === true || (detailsEl && detailsEl.open);
+        const html = this._renderOpsTeamMemberTileHtml(member, cache.allTeams, wasOpen);
+
+        if (tileEl) {
+            tileEl.outerHTML = html;
+        }
+    },
+
+    async _applyOpsMemberEditChanges(modal, memberId) {
+        const session = this._getOpsMemberEditSession(memberId);
+        const member = this._getOpsMemberFromCache(memberId);
+        const cache = this._opsTeamSearchMemberCache;
+        if (!session || !member || !cache || session.applying) return;
+        if (!this._opsMemberEditHasChanges(session)) return;
+
+        const teamRemovals = [...session.baselineTeams].filter((label) => !session.stagedTeams.has(label));
+        const permAdds = [...session.stagedPerms].filter((key) => !session.baselinePerms.has(key));
+        const permRemovals = [...session.baselinePerms].filter((key) => !session.stagedPerms.has(key));
+
+        session.applying = true;
+        this._updateOpsMemberTileDom(modal, memberId, true);
+
+        try {
+            for (const label of teamRemovals) {
+                const teamId = this._getOpsTeamUuidByLabel(label);
+                if (!teamId) throw new Error('No team UUID for "' + label + '"');
+                await this._opsRemoveMemberFromTeam(teamId, session.email);
+            }
+            for (const permKey of permAdds) {
+                await this._opsModifyMemberPermission(memberId, permKey, 'add');
+            }
+            for (const permKey of permRemovals) {
+                await this._opsModifyMemberPermission(memberId, permKey, 'remove');
+            }
+
+            member.teamLabels = this._opsCloneStringSet(session.stagedTeams);
+            member.permissions = [...session.stagedPerms];
+            this._cancelOpsMemberEdit(memberId);
+
+            Logger.log('ops-tab: member edit applied for ' + session.email +
+                ' (teams -' + teamRemovals.length + ', perms +' + permAdds.length + ' -' + permRemovals.length + ')');
+
+            const openIds = this._captureOpsOpenMemberDetails(modal);
+            openIds.add(memberId);
+            this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0, openIds);
+        } catch (e) {
+            session.applying = false;
+            Logger.error('ops-tab: member edit failed for ' + memberId, e);
+            this._setOpsTeamSearchStatus(modal,
+                'Failed to apply changes: ' + (e && e.message ? e.message : String(e)), true, false, true);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+        }
+    },
+
+    _handleOpsMemberEditClick(e, modal) {
+        const actionEl = e.target.closest('[data-ops-action][data-ops-member-id]');
+        if (!actionEl || !modal.contains(actionEl)) return;
+        if (!actionEl.closest('#wf-ops-team-search-output-wrap')) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const memberId = actionEl.getAttribute('data-ops-member-id');
+        const action = actionEl.getAttribute('data-ops-action');
+        if (!memberId || !action) return;
+
+        const member = this._getOpsMemberFromCache(memberId);
+        if (!member) {
+            Logger.warn('ops-tab: member edit action skipped — member not in cache');
+            return;
+        }
+
+        if (action === 'edit') {
+            this._startOpsMemberEdit(member);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        const session = this._getOpsMemberEditSession(memberId);
+        if (!session) return;
+
+        if (action === 'cancel') {
+            if (session.applying) return;
+            this._cancelOpsMemberEdit(memberId);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        if (action === 'confirm') {
+            if (session.applying || !this._opsMemberEditHasChanges(session)) return;
+            void this._applyOpsMemberEditChanges(modal, memberId);
+            return;
+        }
+
+        if (session.applying) return;
+
+        if (action === 'toggle-team') {
+            const label = actionEl.getAttribute('data-ops-team-label');
+            if (!label) return;
+            this._toggleOpsMemberEditTeam(session, label);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+            return;
+        }
+
+        if (action === 'toggle-perm') {
+            const permKey = actionEl.getAttribute('data-ops-perm-key');
+            if (!permKey) return;
+            this._toggleOpsMemberEditPermission(session, permKey);
+            this._updateOpsMemberTileDom(modal, memberId, true);
+        }
+    },
+
+    _renderOpsMemberEditActionsHtml(memberId, session) {
+        const attrId = this._opsEscapeAttr(memberId);
+        if (session && session.editing) {
+            const hasChanges = this._opsMemberEditHasChanges(session);
+            const confirmDisabled = !hasChanges || session.applying;
+            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
+                '<button type="button" class="wf-ops-confirm-btn" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
+                    (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
+                '<button type="button" class="wf-ops-cancel-btn" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
+                    (session.applying ? ' disabled' : '') + '>Cancel</button>' +
+                '</span>';
+        }
+        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
+            '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
+            '</span>';
+    },
+
+    _renderOpsMemberTeamRowHtml(label, member, session) {
+        const memberId = member.id || '';
+        const attrId = this._opsEscapeAttr(memberId);
+        const attrLabel = this._opsEscapeAttr(label);
+        const editing = session && session.editing;
+        const teamLabels = member.teamLabels || new Set();
+        const inBaseline = editing ? session.baselineTeams.has(label) : teamLabels.has(label);
+        const inStaged = editing ? session.stagedTeams.has(label) : inBaseline;
+
+        if (editing) {
+            if (!inBaseline) {
+                return '<div style="font-size:11px;padding:2px 4px;color:var(--muted-foreground,#999);">' +
+                    '<span style="opacity:0.35;">—</span> ' + this._opsEscapeHtml(label) + '</div>';
+            }
+            const changed = inStaged !== inBaseline;
+            const stagedClass = changed ? ' wf-ops-staged-remove' : '';
+            const icon = changed ? '❌ ' : '✅ ';
+            const color = 'var(--foreground,#333)';
+            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-team" data-ops-member-id="' +
+                attrId + '" data-ops-team-label="' + attrLabel + '" style="font-size:11px;color:' + color + ';">' +
+                icon + this._opsEscapeHtml(label) + '</button>';
+        }
+
+        return '<div style="font-size:11px;padding:2px 0;color:' +
+            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+            this._opsEscapeHtml(label) + '</div>';
+    },
+
+    _renderOpsMemberPermRowHtml(permKey, permLabel, member, session) {
+        const memberId = member.id || '';
+        const attrId = this._opsEscapeAttr(memberId);
+        const attrPerm = this._opsEscapeAttr(permKey);
+        const editing = session && session.editing;
+        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
+        const inBaseline = editing ? session.baselinePerms.has(permKey) : permissionKeys.has(permKey);
+        const inStaged = editing ? session.stagedPerms.has(permKey) : inBaseline;
+
+        if (editing) {
+            const changed = inStaged !== inBaseline;
+            const stagedClass = changed ? (inStaged ? ' wf-ops-staged-add' : ' wf-ops-staged-remove') : '';
+            let icon;
+            if (changed) {
+                icon = inStaged ? '✅ ' : '❌ ';
+            } else {
+                icon = inStaged ? '✅ ' : '<span style="opacity:0.35;">—</span> ';
+            }
+            const color = inStaged || changed ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)';
+            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-perm" data-ops-member-id="' +
+                attrId + '" data-ops-perm-key="' + attrPerm + '" style="font-size:11px;color:' + color + ';">' +
+                icon + this._opsEscapeHtml(permLabel) + '</button>';
+        }
+
+        return '<div style="font-size:11px;padding:2px 0;color:' +
+            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
+            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
+            this._opsEscapeHtml(permLabel) + '</div>';
+    },
+
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
+        const memberId = member.id || '';
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
         const teamLabels = member.teamLabels || new Set();
-        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
-        const knownPermCount = this._opsMemberKnownPermissionCount(member);
+        const session = this._getOpsMemberEditSession(memberId);
+        const displayTeamLabels = session ? session.stagedTeams : teamLabels;
+        const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
+        const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
         const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
         const uiBadgeHtml = showUiBadge
             ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
             : '';
 
-        const teamsColHtml = allTeams.map(([, label]) => {
-            const isIn = teamLabels.has(label);
-            return '<div style="font-size:11px;padding:2px 0;color:' +
-                (isIn ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-                (isIn ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-                this._opsEscapeHtml(label) + '</div>';
-        }).join('');
+        const teamsColHtml = allTeams.map(([, label]) =>
+            this._renderOpsMemberTeamRowHtml(label, member, session)).join('');
 
-        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) => {
-            const hasPerm = permissionKeys.has(permKey);
-            return '<div style="font-size:11px;padding:2px 0;color:' +
-                (hasPerm ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-                (hasPerm ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-                this._opsEscapeHtml(permLabel) + '</div>';
-        }).join('');
+        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) =>
+            this._renderOpsMemberPermRowHtml(permKey, permLabel, member, session)).join('');
 
-        const summaryLabel = 'Teams (' + teamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
+        const summaryLabel = 'Teams (' + displayTeamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
             knownPermCount + '/' + OPS_ALL_PERMISSIONS.length + ')';
 
         const colHeader = (text) =>
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
             text + '</div>';
 
-        return '<div style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
+        const openAttr = isOpen ? ' open' : '';
+
+        return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
                 '<div style="min-width:0;flex:1;">' +
                     '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
@@ -1137,9 +1656,10 @@ const plugin = {
                     'Visit Profile' +
                 '</a>' +
             '</div>' +
-            '<details style="margin-top:8px;">' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;">' +
-                    '▸ ' + this._opsEscapeHtml(summaryLabel) +
+            '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
+                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+                    '<span style="min-width:0;">▸ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
+                    this._renderOpsMemberEditActionsHtml(memberId, session) +
                 '</summary>' +
                 '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
                     'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
@@ -1169,12 +1689,15 @@ const plugin = {
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
     },
 
-    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount) {
+    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount, openMemberIds) {
         const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchCards');
         if (!wrap) return;
 
         const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
         const filterText = filterInput ? filterInput.value : '';
+        const openIds = openMemberIds instanceof Set
+            ? openMemberIds
+            : this._captureOpsOpenMemberDetails(modal);
 
         let members = [...memberMap.values()];
 
@@ -1206,7 +1729,8 @@ const plugin = {
         });
 
         wrap.style.display = 'block';
-        wrap.innerHTML = members.map(m => this._renderOpsTeamMemberTileHtml(m, allTeams)).join('');
+        wrap.innerHTML = members.map((m) =>
+            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
     },
 
     async _handleOpsTeamSearch(modal) {
@@ -1227,11 +1751,17 @@ const plugin = {
             return;
         }
 
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            this._showOpsTeamSearchActionRefreshBanner(modal);
+            return;
+        }
+
         this._injectOpsSpinnerStyle();
 
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
+        this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
@@ -1248,6 +1778,7 @@ const plugin = {
         const memberMap = new Map();
         let pendingCount = allTeams.length;
         let doneCount = 0;
+        let staleActionDetected = false;
 
         const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
         this._opsFellowsSearchComplete = fellowsEntry ? false : true;
@@ -1279,10 +1810,16 @@ const plugin = {
             try {
                 const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
                 if (this._opsTeamSearchActive !== sessionId) return;
+                if (staleActionDetected) return;
                 this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
                 Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
-                Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+                if (this._isOpsTeamSearchActionStaleError(e)) {
+                    staleActionDetected = true;
+                    Logger.warn('ops-tab: team search credentials stale for ' + teamLabel);
+                } else {
+                    Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+                }
             } finally {
                 finishTeamSearch(teamLabel);
             }
@@ -1291,7 +1828,12 @@ const plugin = {
         await Promise.allSettled(searches);
 
         if (this._opsTeamSearchActive === sessionId) {
-            this._opsTeamSearchMemberCache = { memberMap, allTeams };
+            if (staleActionDetected) {
+                this._showOpsTeamSearchActionRefreshBanner(modal);
+                this._opsTeamSearchMemberCache = null;
+            } else {
+                this._opsTeamSearchMemberCache = { memberMap, allTeams };
+            }
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
             this._captureOpsTabState(modal);
         }
@@ -2377,6 +2919,13 @@ const plugin = {
         if (teamSearchClearBtn) {
             teamSearchClearBtn.addEventListener('click', () => {
                 this._clearOpsTeamSearchResults(modal);
+            });
+        }
+
+        if (!modal.dataset.wfOpsMemberEditDelegation) {
+            modal.dataset.wfOpsMemberEditDelegation = '1';
+            modal.addEventListener('click', (e) => {
+                this._handleOpsMemberEditClick(e, modal);
             });
         }
 
