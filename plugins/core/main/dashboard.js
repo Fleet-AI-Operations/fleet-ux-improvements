@@ -321,7 +321,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1148,7 +1148,7 @@ const plugin = {
                 <div style="${box} padding: 14px; display: flex; flex-direction: column; gap: 14px;">
                     <div>
                         <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Filters</div>
-                        <div style="${label} margin-top: 4px;">Refine loaded results. Changes apply when you press Apply (or Enter in substring field).</div>
+                        <div style="${label} margin-top: 4px;">Refine loaded results. Filter changes apply instantly.</div>
                     </div>
 
                     <div>
@@ -1278,15 +1278,37 @@ const plugin = {
 
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) {
+            let promptFilterTimer = null;
+            const schedulePromptFilter = () => {
+                if (!this._state.cachedItems) return;
+                if (promptFilterTimer) clearTimeout(promptFilterTimer);
+                promptFilterTimer = setTimeout(() => this._applyFiltersAndRender(), 250);
+            };
+            prompt.addEventListener('input', schedulePromptFilter);
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    if (promptFilterTimer) clearTimeout(promptFilterTimer);
                     this._applyFiltersAndRender();
                 }
             });
         }
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) {
+            sortEl.addEventListener('change', () => {
+                if (this._state.cachedItems) this._applyFiltersAndRender();
+            });
+        }
+        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => {
+            const el = this._q(sel);
+            if (el) {
+                el.addEventListener('change', () => {
+                    if (this._state.cachedItems) this._applyFiltersAndRender();
+                });
+            }
+        });
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -1309,6 +1331,9 @@ const plugin = {
             if (!msKey) return;
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
+            if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                this._applyFiltersAndRender();
+            }
         });
 
         // Delegated copy + candidate selection handlers
@@ -1601,12 +1626,24 @@ const plugin = {
         };
     },
 
+    _resetFilterScopeLists() {
+        const wrap = this._q('#wf-dash-filter-scope-wrap');
+        if (wrap) wrap.style.display = 'none';
+        ['filter-teams', 'filter-projects', 'filter-envs'].forEach((scopeKey) => {
+            const list = this._q('#wf-dash-' + scopeKey + '-list');
+            if (!list) return;
+            const hint = list.getAttribute('data-wf-dash-empty') || 'Search first to filter';
+            list.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
+            this._updateMsCount(scopeKey);
+        });
+    },
+
     _renderFilterScopeLists() {
         const wrap = this._q('#wf-dash-filter-scope-wrap');
         const items = this._state.cachedItems;
         if (!wrap) return;
         if (!items || items.length === 0) {
-            wrap.style.display = 'none';
+            this._resetFilterScopeLists();
             return;
         }
         wrap.style.display = '';
@@ -1766,6 +1803,7 @@ const plugin = {
             this._setSearchButtonLoading(false);
             this._setSearchParamsLocked(true);
             this._updateStatusFromState();
+            this._renderResults();
         }
     },
 
@@ -1790,7 +1828,7 @@ const plugin = {
         });
         this._syncOutputToggleUi();
         this._renderSearchProjectsList();
-        this._renderFilterScopeLists();
+        this._resetFilterScopeLists();
         this._renderAuthorTokens();
         this._hideAuthorCandidates();
         this._setAuthorError('');
