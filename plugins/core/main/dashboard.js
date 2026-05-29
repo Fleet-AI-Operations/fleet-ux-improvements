@@ -294,7 +294,9 @@ function dashRelativeAgo(iso) {
 }
 
 function dashQaTextBlockLabel(label, isPositive) {
-    if (isPositive && label === 'Task Feedback') return 'Approval Feedback';
+    if (!isPositive) return label;
+    if (label === 'Task Feedback') return 'Approval Feedback';
+    if (label === 'Attempted Actions') return 'Accepted Feedback';
     return label;
 }
 
@@ -321,7 +323,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
