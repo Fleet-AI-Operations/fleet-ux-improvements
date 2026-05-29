@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.9',
+    _version: '3.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -189,7 +189,8 @@ const plugin = {
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
-            searchFetchActive: false
+            searchFetchActive: false,
+            msDropdownOpen: {}
         };
     },
 
@@ -802,9 +803,9 @@ const plugin = {
         this._renderFilterLists();
         for (const { scopeKey, optionsKey } of DASH_FILTER_SCOPES) {
             const ids = (options[optionsKey] || []).map((o) => o.id);
-            const list = this._q('#wf-dash-' + scopeKey + '-list');
-            if (!list) continue;
-            list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
+            const itemsEl = this._msItemsEl(scopeKey);
+            if (!itemsEl) continue;
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
             this._updateMsCount(scopeKey);
         }
         return this._listBoundsFromOptions(options);
@@ -917,6 +918,7 @@ const plugin = {
         this._updateSubstringErrorUi();
         this._validateRangeUi();
         this._syncFieldClearButtons();
+        this._syncAllMsDropdowns();
         Logger.log('dashboard: popup built');
     },
 
@@ -1011,7 +1013,7 @@ const plugin = {
                         </nav>
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                            <div style="flex: 1; min-height: 0; overflow-y: auto;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
                                 <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
                                     <p style="${label} line-height: 1.45; margin: 0;">Edit parameters anytime; press Search to fetch.</p>
                                     <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
@@ -1084,7 +1086,7 @@ const plugin = {
                         </div>
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                            <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <p style="${label} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
@@ -1161,17 +1163,24 @@ const plugin = {
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
                         <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>
                     </span>` : '';
+        const bulkRow = bulkActions ? `
+                <div data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
+                    ${bulk}
+                </div>` : '';
         return `
-            <div style="${this._panelBoxStyle()}">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}" style="${this._panelBoxStyle()} min-width: 100%;">
+                <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 10px; gap: 8px; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
                     <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
-                    <span style="display: inline-flex; align-items: center; gap: 6px;">
-                        ${bulk}
+                    <span style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
                         <span id="wf-dash-${scopeKey}-count" style="display: none; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                        <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" aria-hidden="true" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
                     </span>
-                </div>
-                <div id="wf-dash-${scopeKey}-list" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="max-height: 150px; overflow-y: auto; padding: 4px;">
-                    <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
+                </button>
+                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
+                    ${bulkRow}
+                    <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="padding: 4px;">
+                        <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
+                    </div>
                 </div>
             </div>
         `;
@@ -1312,6 +1321,11 @@ const plugin = {
 
         // Delegated copy, card UI, candidate selection handlers
         modal.addEventListener('click', (e) => {
+            const msToggle = e.target.closest('[data-wf-dash-ms-toggle]');
+            if (msToggle && modal.contains(msToggle)) {
+                this._toggleMsDropdown(msToggle.getAttribute('data-wf-dash-ms-toggle'));
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void this._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -1381,6 +1395,10 @@ const plugin = {
                 const ui = this._getCardUi(taskId);
                 ui.timelineNewestFirst = !ui.timelineNewestFirst;
                 this._patchTaskCard(itemId);
+                return;
+            }
+            if (!e.target.closest('[data-wf-dash-ms-wrap]') && Object.keys(this._state.msDropdownOpen).length > 0) {
+                this._closeAllMsDropdowns();
             }
         });
 
@@ -1431,10 +1449,60 @@ const plugin = {
         }
     },
 
+    _msPanelEl(scopeKey) {
+        return this._q('#wf-dash-' + scopeKey + '-list');
+    },
+
+    _msItemsEl(scopeKey) {
+        const panel = this._msPanelEl(scopeKey);
+        return panel ? panel.querySelector('[data-wf-dash-ms-items]') : null;
+    },
+
+    _msWrapEl(scopeKey) {
+        return this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+    },
+
+    _isMsDropdownOpen(scopeKey) {
+        return Boolean(this._state.msDropdownOpen[scopeKey]);
+    },
+
+    _msPanelOpenStyle() {
+        return 'display: block; width: max-content; min-width: 100%; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+    },
+
+    _syncMsDropdown(scopeKey) {
+        const open = this._isMsDropdownOpen(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        const wrap = this._msWrapEl(scopeKey);
+        const toggle = this._q('[data-wf-dash-ms-toggle="' + scopeKey + '"]');
+        const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
+        if (panel) panel.style.cssText = open ? this._msPanelOpenStyle() : 'display: none;';
+        if (wrap) wrap.style.width = open ? 'max-content' : '';
+        if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (chevron) chevron.textContent = open ? '▾' : '▸';
+    },
+
+    _syncAllMsDropdowns() {
+        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        for (const key of keys) this._syncMsDropdown(key);
+    },
+
+    _closeAllMsDropdowns() {
+        this._state.msDropdownOpen = {};
+        this._syncAllMsDropdowns();
+    },
+
+    _toggleMsDropdown(scopeKey) {
+        const wasOpen = this._isMsDropdownOpen(scopeKey);
+        this._state.msDropdownOpen = {};
+        if (!wasOpen) this._state.msDropdownOpen[scopeKey] = true;
+        this._syncAllMsDropdowns();
+    },
+
     _setMultiselectChecked(scopeKey, checked) {
-        const list = this._q('#wf-dash-' + scopeKey + '-list');
-        if (!list) return;
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = checked; });
+        const items = this._msItemsEl(scopeKey);
+        if (!items) return;
+        items.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = checked; });
         this._updateMsCount(scopeKey);
     },
 
@@ -1592,15 +1660,15 @@ const plugin = {
     },
 
     _selectedFromList(scopeKey) {
-        const list = this._q('#wf-dash-' + scopeKey + '-list');
-        if (!list) return [];
-        return [...list.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.value);
+        const items = this._msItemsEl(scopeKey);
+        if (!items) return [];
+        return [...items.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.value);
     },
 
     _allFromList(scopeKey) {
-        const list = this._q('#wf-dash-' + scopeKey + '-list');
-        if (!list) return [];
-        return [...list.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
+        const items = this._msItemsEl(scopeKey);
+        if (!items) return [];
+        return [...items.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
     _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds) {
@@ -1610,8 +1678,8 @@ const plugin = {
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const spanStyle = dim
-                ? 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
-                : 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                ? 'white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
+                : 'white-space: nowrap;';
             return `
             <label style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
                 <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
@@ -1635,38 +1703,41 @@ const plugin = {
     },
 
     _renderSearchTeamsList() {
-        const list = this._q('#wf-dash-search-teams-list');
-        if (!list) return;
+        const itemsEl = this._msItemsEl('search-teams');
+        if (!itemsEl) return;
         const prevSelected = new Set(this._selectedFromList('search-teams'));
         const items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
-        list.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
+        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-teams');
+        this._syncMsDropdown('search-teams');
     },
 
     _renderSearchProjectsList() {
-        const list = this._q('#wf-dash-search-projects-list');
-        if (!list) return;
+        const itemsEl = this._msItemsEl('search-projects');
+        if (!itemsEl) return;
         const prevSelected = new Set(this._selectedFromList('search-projects'));
         const loading = this._state.bootstrapStatus === 'loading';
         const items = this._availableSearchProjects().map((p) => ({ id: p.id, label: p.name }));
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
-        list.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        itemsEl.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
+        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-projects');
+        this._syncMsDropdown('search-projects');
     },
 
     _renderSearchEnvsList() {
-        const list = this._q('#wf-dash-search-envs-list');
-        if (!list) return;
+        const itemsEl = this._msItemsEl('search-envs');
+        if (!itemsEl) return;
         const prevSelected = new Set(this._selectedFromList('search-envs'));
         const loading = this._state.bootstrapStatus === 'loading';
         const envs = (this._state.catalog && this._state.catalog.environments) || [];
         const items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
-        list.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        itemsEl.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
+        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-envs');
+        this._syncMsDropdown('search-envs');
     },
 
     _getFilterDraft() {
@@ -1683,11 +1754,13 @@ const plugin = {
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: []
         };
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
-            const list = this._q('#wf-dash-' + scopeKey + '-list');
-            if (!list) continue;
-            const hint = list.getAttribute('data-wf-dash-empty') || 'Run a search to enable';
-            list.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
+            const panel = this._msPanelEl(scopeKey);
+            const itemsEl = this._msItemsEl(scopeKey);
+            if (!panel || !itemsEl) continue;
+            const hint = panel.getAttribute('data-wf-dash-empty') || 'Run a search to enable';
+            itemsEl.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
             this._updateMsCount(scopeKey);
+            this._syncMsDropdown(scopeKey);
         }
     },
 
@@ -1706,14 +1779,14 @@ const plugin = {
             : lib.emptyFilterIrrelevance();
 
         for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
-            const list = this._q('#wf-dash-' + scopeKey + '-list');
-            if (!list) continue;
+            const itemsEl = this._msItemsEl(scopeKey);
+            if (!itemsEl) continue;
             const prevSelected = new Set(this._selectedFromList(scopeKey));
             const optionItems = options[optionsKey] || [];
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const hadSelection = prevSelected.size > 0;
             const irrelevantSet = hadSelection ? (irrelevance[draftKey] || new Set()) : new Set();
-            list.innerHTML = this._multiSelectItemsHtml(
+            itemsEl.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
                 optionItems,
                 emptyHint,
@@ -1722,11 +1795,12 @@ const plugin = {
                 irrelevantSet
             );
             if (hadSelection) {
-                list.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = prevSelected.has(cb.value);
                 });
             }
             this._updateMsCount(scopeKey);
+            this._syncMsDropdown(scopeKey);
         }
         Logger.debug('dashboard: filter lists rendered');
     },
@@ -1775,6 +1849,7 @@ const plugin = {
 
     _setLeftTab(tab) {
         this._state.leftTab = tab;
+        this._closeAllMsDropdowns();
         this._syncLeftTabUi();
     },
 
@@ -2019,8 +2094,8 @@ const plugin = {
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
-            const list = this._q('#wf-dash-' + key + '-list');
-            if (list) list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
             this._updateMsCount(key);
         });
         this._syncOutputToggleUi();
