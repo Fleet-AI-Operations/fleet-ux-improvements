@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1024,7 +1024,7 @@ const plugin = {
                                     <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Teams, projects, environments</div>
-                                        <div style="${label} margin-bottom: 8px;">None selected = all. Sent to the API on Search.</div>
+                                        <div style="${label} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
                                             ${this._multiSelectHtml('search-teams', 'Teams', 'All teams', false)}
                                             ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
