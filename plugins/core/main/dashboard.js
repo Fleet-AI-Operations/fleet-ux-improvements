@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -937,6 +937,9 @@ const plugin = {
     _btnPrimaryStyle() {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
     },
+    _btnPrimaryDisabledStyle() {
+        return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    },
 
     _btnToggleStyle(active, colorKind) {
         const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
@@ -1235,6 +1238,7 @@ const plugin = {
             if (!msKey) return;
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
+            if (msKey.startsWith('search-')) this._validateRangeUi();
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
                 this._renderFilterLists();
             }
@@ -1414,12 +1418,14 @@ const plugin = {
         this._hideAuthorCandidates();
         this._setAuthorError('');
         this._renderAuthorTokens();
+        this._validateRangeUi();
         Logger.log('dashboard: author token added (' + (person.full_name || person.id) + ')');
     },
 
     _removeAuthorToken(id) {
         this._state.draftTokens = this._state.draftTokens.filter((t) => t.id !== id);
         this._renderAuthorTokens();
+        this._validateRangeUi();
     },
 
     _renderAuthorTokens() {
@@ -1714,9 +1720,13 @@ const plugin = {
         }
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
-            searchBtn.disabled = this._state.loading
+            const searchDisabled = this._state.loading
                 || blankBlocked
                 || ((after || before) && !check.valid);
+            searchBtn.disabled = searchDisabled;
+            searchBtn.style.cssText = searchDisabled
+                ? this._btnPrimaryDisabledStyle()
+                : this._btnPrimaryStyle();
         }
         return { check, isUniversal, blankBlocked };
     },
