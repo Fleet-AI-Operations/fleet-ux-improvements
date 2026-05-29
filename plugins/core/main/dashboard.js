@@ -146,7 +146,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.13',
+    _version: '3.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2461,7 +2461,7 @@ const plugin = {
         if (!value) {
             return `<span style="display: inline-block; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
         }
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; word-break: break-all; cursor: pointer;">${dashEscHtml(value)}</button>`;
+        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${dashEscHtml(value)}</button>`;
     },
 
     _copyIconHtml(text) {
@@ -2501,7 +2501,7 @@ const plugin = {
 
     /** Label + value group: tight label→data gap; use in rows with larger gap between groups. */
     _fieldGroupHtml(label, valueHtml) {
-        return `<div style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${this._labelSpan(label)}${valueHtml}</div>`;
+        return `<div style="display: inline-flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%;">${valueHtml}</span></div>`;
     },
 
     _plainTimestampHtml(iso) {
@@ -2533,7 +2533,10 @@ const plugin = {
 
     _personChipsHtml(name, email, id, linkTitle) {
         if (!name && !email) return this._dismissedBadgeHtml();
-        return this._copyChipHtml(name) + this._copyChipHtml(email) + this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
+        const nameChip = name ? this._copyChipHtml(name) : '';
+        const emailChip = email ? this._copyChipHtml(email) : '';
+        const link = this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
+        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${link}</span>`;
     },
 
     _statusBadgeHtml(status) {
