@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -916,6 +916,7 @@ const plugin = {
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
         this._validateRangeUi();
+        this._syncFieldClearButtons();
         Logger.log('dashboard: popup built');
     },
 
@@ -968,6 +969,12 @@ const plugin = {
     },
     _btnPrimaryStyle() {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
+    },
+    _inputClearBtnStyle() {
+        return 'flex-shrink: 0; width: 32px; height: 32px; padding: 0; font-size: 17px; line-height: 1; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
+    },
+    _inputClearBtnOverlayStyle() {
+        return this._inputClearBtnStyle() + ' position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; font-size: 15px;';
     },
     _btnPrimaryDisabledStyle() {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
@@ -1043,15 +1050,16 @@ const plugin = {
                                             <option value="last-year">Last Calendar Year</option>
                                         </select>
                                     </div>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0;">
-                                        <div style="min-width: 0;">
+                                    <div style="display: flex; align-items: flex-end; gap: 8px; min-width: 0;">
+                                        <div style="flex: 1; min-width: 0;">
                                             <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
                                             <input type="date" id="wf-dash-after" style="${input} min-width: 0;">
                                         </div>
-                                        <div style="min-width: 0;">
+                                        <div style="flex: 1; min-width: 0;">
                                             <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
                                             <input type="date" id="wf-dash-before" style="${input} min-width: 0;">
                                         </div>
+                                        <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
                                     </div>
                                     <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
@@ -1080,7 +1088,10 @@ const plugin = {
                                 <p style="${label} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
-                                    <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input}">
+                                    <div style="position: relative; min-width: 0;">
+                                        <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input} padding-right: 34px;">
+                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnOverlayStyle()} display: none;">&times;</button>
+                                    </div>
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
                                             <input type="checkbox" id="wf-dash-case"> Case sensitive
@@ -1223,6 +1234,9 @@ const plugin = {
             });
         });
 
+        const clearDates = this._q('#wf-dash-clear-dates');
+        if (clearDates) clearDates.addEventListener('click', () => this._clearDateRangeFields());
+
         const toggleTasks = this._q('#wf-dash-toggle-tasks');
         const toggleQa = this._q('#wf-dash-toggle-qa');
         const toggleDisputes = this._q('#wf-dash-toggle-disputes');
@@ -1241,12 +1255,23 @@ const plugin = {
 
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) {
-            prompt.addEventListener('input', () => this._updateSubstringErrorUi());
+            prompt.addEventListener('input', () => {
+                this._updateSubstringErrorUi();
+                this._syncFieldClearButtons();
+            });
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     this._applyFiltersAndRender();
                 }
+            });
+        }
+        const clearPrompt = this._q('#wf-dash-clear-prompt');
+        if (clearPrompt) {
+            clearPrompt.addEventListener('click', () => {
+                if (prompt) prompt.value = '';
+                this._updateSubstringErrorUi();
+                this._syncFieldClearButtons();
             });
         }
         const applyFilters = this._q('#wf-dash-apply-filters');
@@ -1786,6 +1811,28 @@ const plugin = {
         Logger.log('dashboard: quick date preset applied (' + range.label + ')');
     },
 
+    _clearDateRangeFields() {
+        ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = '';
+        this._validateRangeUi();
+        this._syncFieldClearButtons();
+    },
+
+    _syncFieldClearButtons() {
+        const prompt = this._q('#wf-dash-prompt');
+        const clearPrompt = this._q('#wf-dash-clear-prompt');
+        if (clearPrompt) {
+            clearPrompt.style.display = (prompt && prompt.value.trim()) ? '' : 'none';
+        }
+        const after = (this._q('#wf-dash-after') || {}).value || '';
+        const before = (this._q('#wf-dash-before') || {}).value || '';
+        const clearDates = this._q('#wf-dash-clear-dates');
+        if (clearDates) {
+            clearDates.style.display = (after || before) ? '' : 'none';
+        }
+    },
+
     _validateRangeUi() {
         const after = (this._q('#wf-dash-after') || {}).value || '';
         const before = (this._q('#wf-dash-before') || {}).value || '';
@@ -1829,6 +1876,7 @@ const plugin = {
                 ? this._btnPrimaryDisabledStyle()
                 : this._btnPrimaryStyle();
         }
+        this._syncFieldClearButtons();
         return { check, isUniversal, blankBlocked };
     },
 
@@ -1847,6 +1895,7 @@ const plugin = {
         }
         const applyBtn = this._q('#wf-dash-apply-filters');
         if (applyBtn) applyBtn.disabled = !this._state.cachedItems || tooShort;
+        this._syncFieldClearButtons();
     },
 
     // ── Search submit / clear ──
