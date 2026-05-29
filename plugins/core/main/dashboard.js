@@ -223,6 +223,14 @@ function dashQaTextBlockLabel(label, isPositive) {
     return label;
 }
 
+/** PostgREST may return an embed as one object or an array — normalize to a single row. */
+function dashFirstEmbed(embed) {
+    if (!embed) return null;
+    if (Array.isArray(embed)) return embed[0] || null;
+    if (typeof embed === 'object') return embed;
+    return null;
+}
+
 // ── HTML escaping ──
 
 function dashEscHtml(value) {
@@ -238,7 +246,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -407,10 +415,15 @@ const plugin = {
     },
 
     _rowToTask(row, profilesMap, versionOverride, targetToProjectId) {
-        const version = versionOverride
-            || (Array.isArray(row.eval_task_versions) ? row.eval_task_versions[0] : null);
+        const version = versionOverride || dashFirstEmbed(row.eval_task_versions);
         const profile = profilesMap.get(row.created_by) || null;
         const projectId = this._projectIdFromTargetId(row.task_project_target_id, targetToProjectId);
+        const prompt = (version && version.prompt) || '';
+        if (!prompt) {
+            Logger.debug('dashboard: empty prompt — task ' + (row.id || '?')
+                + ' · version ' + (version && version.id ? version.id.slice(0, 8) + '…' : 'none')
+                + ' · source ' + (versionOverride ? 'version-at-feedback' : 'current-version-embed'));
+        }
         return {
             id: row.id,
             key: row.key || '',
@@ -419,7 +432,7 @@ const plugin = {
                 name: (profile && profile.full_name) || '',
                 email: (profile && profile.email) || ''
             },
-            prompt: (version && version.prompt) || '',
+            prompt,
             environment: (version && version.env_key) || row.env_key || '',
             project: this._projectName(projectId),
             team: this._teamName(row.team_id),
@@ -1590,6 +1603,20 @@ const plugin = {
         return `<span style="${this._labelStyle()}">${dashEscHtml(text)}</span>`;
     },
 
+    /** Label + value group: tight label→data gap; use in rows with larger gap between groups. */
+    _fieldGroupHtml(label, valueHtml) {
+        return `<div style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${this._labelSpan(label)}${valueHtml}</div>`;
+    },
+
+    _timestampWithAgoHtml(iso) {
+        const formatted = dashFormatCreatedAt(iso);
+        const ago = dashRelativeAgo(iso);
+        const agoHtml = ago
+            ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
+            : '';
+        return this._copyChipHtml(formatted) + agoHtml;
+    },
+
     _dismissedBadgeHtml() {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
@@ -1627,12 +1654,17 @@ const plugin = {
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
             </div>`;
         }).join('');
+        const submittedHtml = qa.feedbackAt
+            ? this._fieldGroupHtml('QA Submitted', this._timestampWithAgoHtml(qa.feedbackAt))
+            : '';
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
-                    ${statusLabel}
-                    ${qa.feedbackAt ? `<span style="color: var(--muted-foreground, #64748b);">${dashEscHtml(dashFormatCreatedAt(qa.feedbackAt))}</span>` : ''}
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
+                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
+                        ${submittedHtml}
+                    </div>
+                    <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                     ${this._labelSpan('QA Reviewer')}${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open QA reviewer in Fleet')}
@@ -1655,37 +1687,36 @@ const plugin = {
         const qa = item.qaFeedback;
         const kindLabel = DASH_KIND_LABELS[item.kind] || '';
         const promptLabel = qa ? `Prompt Version ${qa.versionNo} of ${qa.totalVersions}` : 'Prompt';
-        const createdFormatted = dashFormatCreatedAt(task.createdAt);
-        const createdAgo = dashRelativeAgo(task.createdAt);
-        const createdAgoHtml = createdAgo
-            ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(createdAgo)})</span>`
-            : '';
         const kindBadge = kindLabel ? this._kindBadgeHtml(kindLabel) : '';
+        const projectValue = this._copyChipHtml(task.project)
+            + (task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '');
         return `
             <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._labelSpan('Task Created')}${this._copyChipHtml(createdFormatted)}${createdAgoHtml}
-                    ${this._labelSpan('ID')}${this._copyChipHtml(task.id)}
-                    ${this._labelSpan('Key')}${this._copyChipHtml(task.key)}
-                    ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._fieldGroupHtml('Task Created', this._timestampWithAgoHtml(task.createdAt))}
+                    ${this._fieldGroupHtml('ID', this._copyChipHtml(task.id))}
+                    ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                    <div style="margin-left: auto; flex-shrink: 0;">${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}</div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px 14px; font-size: 12px;">
-                    <div style="grid-column: span 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
+                    ${this._fieldGroupHtml('Project', projectValue)}
+                    ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px; font-size: 12px;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 3px;">
                         ${this._labelSpan('Author')}${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
                     </div>
-                    <div style="grid-column: span 2;">
+                    <div>
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
+                            <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
                                 ${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}
                             </div>
-                            <div style="flex-shrink: 0;">${this._statusBadgeHtml(task.status)}</div>
+                            <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
                         </div>
                         <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(task.prompt || '—')}</p>
                         ${qa ? this._qaBlockHtml(qa) : ''}
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Environment')}${this._copyChipHtml(task.environment)}</div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Project')}${this._copyChipHtml(task.project)}${task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : ''}</div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Team')}${this._copyChipHtml(task.team)}</div>
                 </div>
                 ${kindBadge ? `<div style="position: absolute; bottom: 12px; right: 14px;">${kindBadge}</div>` : ''}
             </article>`;
