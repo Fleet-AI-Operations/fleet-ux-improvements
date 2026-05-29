@@ -110,6 +110,60 @@ function dashDateLocalToIso(dateLocal, bound) {
     return date.toISOString();
 }
 
+function dashStartOfLocalDay(d) {
+    const date = new Date(d);
+    date.setHours(0, 0, 0, 0);
+    return date;
+}
+
+/** Local calendar preset → { after, before, label }. Week starts Sunday (US calendar week). */
+function dashQuickDatePresetRange(preset) {
+    const today = dashStartOfLocalDay(new Date());
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    switch (preset) {
+        case 'today':
+            return { after: today, before: today, label: 'Today' };
+        case 'yesterday': {
+            const day = new Date(today);
+            day.setDate(day.getDate() - 1);
+            return { after: day, before: day, label: 'Yesterday' };
+        }
+        case '3d': {
+            const after = new Date(today);
+            after.setDate(after.getDate() - 3);
+            return { after, before: today, label: 'Last 3 Days' };
+        }
+        case '7d': {
+            const after = new Date(today);
+            after.setDate(after.getDate() - 7);
+            return { after, before: today, label: 'Last 7 Days' };
+        }
+        case 'last-week': {
+            const thisWeekStart = new Date(today);
+            thisWeekStart.setDate(thisWeekStart.getDate() - today.getDay());
+            const lastWeekEnd = new Date(thisWeekStart);
+            lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+            const lastWeekStart = new Date(lastWeekEnd);
+            lastWeekStart.setDate(lastWeekStart.getDate() - 6);
+            return { after: lastWeekStart, before: lastWeekEnd, label: 'Last Calendar Week' };
+        }
+        case 'this-month':
+            return { after: new Date(y, m, 1), before: today, label: 'This Month' };
+        case 'last-month': {
+            const after = new Date(y, m - 1, 1);
+            const before = new Date(y, m, 0);
+            return { after, before, label: 'Last Calendar Month' };
+        }
+        case 'this-year':
+            return { after: new Date(y, 0, 1), before: today, label: 'This Year' };
+        case 'last-year':
+            return { after: new Date(y - 1, 0, 1), before: new Date(y - 1, 11, 31), label: 'Last Calendar Year' };
+        default:
+            return null;
+    }
+}
+
 function dashValidateCreatedAtRange(afterLocal, beforeLocal) {
     const afterIso = afterLocal ? dashDateLocalToIso(afterLocal, 'after') : '';
     const beforeIso = beforeLocal ? dashDateLocalToIso(beforeLocal, 'before') : '';
@@ -267,7 +321,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -920,11 +974,17 @@ const plugin = {
                         <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
                             <div style="flex-shrink: 0;">
                                 <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
-                                <select id="wf-dash-quick-range" style="${input} width: auto; min-width: 132px; cursor: pointer;">
+                                <select id="wf-dash-quick-range" style="${input} width: auto; min-width: 168px; cursor: pointer;">
                                     <option value="">Custom</option>
                                     <option value="today">Today</option>
+                                    <option value="yesterday">Yesterday</option>
                                     <option value="3d">Last 3 Days</option>
                                     <option value="7d">Last 7 Days</option>
+                                    <option value="last-week">Last Calendar Week</option>
+                                    <option value="this-month">This Month</option>
+                                    <option value="last-month">Last Calendar Month</option>
+                                    <option value="this-year">This Year</option>
+                                    <option value="last-year">Last Calendar Year</option>
                                 </select>
                             </div>
                             <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 220px;">
@@ -1355,29 +1415,23 @@ const plugin = {
     // ── Dirty / range validation ──
 
     _applyQuickDatePreset(preset) {
-        const labels = { today: 'Today', '3d': 'Last 3 Days', '7d': 'Last 7 Days' };
-        const label = labels[preset] || preset;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        let afterDate = today;
-        let beforeDate = today;
-        if (preset === '3d' || preset === '7d') {
-            const daysBack = preset === '3d' ? 3 : 7;
-            afterDate = new Date(today);
-            afterDate.setDate(afterDate.getDate() - daysBack);
+        const range = dashQuickDatePresetRange(preset);
+        if (!range) {
+            Logger.warn('dashboard: unknown quick date preset — ' + preset);
+            return;
         }
         this._applyingQuickDate = true;
         try {
             const afterEl = this._q('#wf-dash-after');
             const beforeEl = this._q('#wf-dash-before');
-            if (afterEl) afterEl.value = dashDateInputValue(afterDate);
-            if (beforeEl) beforeEl.value = dashDateInputValue(beforeDate);
+            if (afterEl) afterEl.value = dashDateInputValue(range.after);
+            if (beforeEl) beforeEl.value = dashDateInputValue(range.before);
         } finally {
             this._applyingQuickDate = false;
         }
         this._validateRangeUi();
         this._updateDirty();
-        Logger.log('dashboard: quick date preset applied (' + label + ')');
+        Logger.log('dashboard: quick date preset applied (' + range.label + ')');
     },
 
     _validateRangeUi() {
