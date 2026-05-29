@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2227,8 +2227,8 @@ const plugin = {
         return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>${agoHtml}`;
     },
 
-    _dashHighlightedHtml(text, query, caseSensitive) {
-        const segments = dashLib().buildHighlightSegments(text, query, { caseSensitive });
+    _dashHighlightedHtml(text, query, caseSensitive, fuzzy) {
+        const segments = dashLib().buildHighlightSegments(text, query, { caseSensitive, fuzzy: Boolean(fuzzy) });
         return segments.map((seg) => (
             seg.match
                 ? `<mark style="background: color-mix(in srgb, #facc15 45%, transparent); color: inherit; padding: 0 1px; border-radius: 2px;">${dashEscHtml(seg.text)}</mark>`
@@ -2259,10 +2259,11 @@ const plugin = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(status || '—')}</span>`;
     },
 
-    _qaBlockHtml(qa, highlightQuery, caseSensitive) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy) {
         const positive = qa.isPositive;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
+        const fz = Boolean(highlightFuzzy);
         const border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
         const bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
         const yellowBadge = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
@@ -2279,7 +2280,7 @@ const plugin = {
         const blocks = qa.textBlocks.map((b) => {
             const blockLabel = dashQaTextBlockLabel(b.label, positive);
             const body = b.text
-                ? this._dashHighlightedHtml(b.text, hq, cs)
+                ? this._dashHighlightedHtml(b.text, hq, cs, fz)
                 : '—';
             return `
             <div>
@@ -2324,17 +2325,18 @@ const plugin = {
         </button>`;
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, showVersionLabel, fallbackFeedback) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
+        const fz = Boolean(highlightFuzzy);
         const promptBody = version.prompt
-            ? this._dashHighlightedHtml(version.prompt, hq, cs)
+            ? this._dashHighlightedHtml(version.prompt, hq, cs, fz)
             : '—';
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
-        const feedbackHtml = feedbackEntries.map((entry) => this._qaBlockHtml(entry.display, hq, cs)).join('');
-        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs) : '';
+        const feedbackHtml = feedbackEntries.map((entry) => this._qaBlockHtml(entry.display, hq, cs, fz)).join('');
+        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz) : '';
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -2363,6 +2365,7 @@ const plugin = {
         const allFeedback = task.allFeedback || [];
         const highlightQuery = item.highlightQuery || '';
         const caseSensitive = Boolean(item.highlightCaseSensitive);
+        const highlightFuzzy = Boolean(item.highlightFuzzy);
         const extraVisibleVersionNos = item.extraVisibleVersionNos || [];
 
         let versions = task.promptVersions && task.promptVersions.length
@@ -2436,7 +2439,7 @@ const plugin = {
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
-                highlightQuery, caseSensitive, hasTimeline, fallback
+                highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback
             );
         }).join('');
 

@@ -147,7 +147,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -270,12 +270,14 @@ const plugin = {
 
     _buildHighlightSegments(text, query, options) {
         const caseSensitive = (options && options.caseSensitive) || false;
+        const fuzzy = Boolean(options && options.fuzzy);
         const source = String(text ?? '');
         const normalizedQuery = String(query ?? '').replace(/\s+/g, ' ').trim();
         if (!source || !normalizedQuery) return [{ text: source, match: false }];
-        const needles = [...new Set([normalizedQuery, ...normalizedQuery.split(' ')])]
-            .filter((n) => n.length >= 1)
-            .sort((a, b) => b.length - a.length);
+        const needles = fuzzy
+            ? [...new Set([normalizedQuery, ...normalizedQuery.split(' ')])].filter((n) => n.length >= 1)
+            : [normalizedQuery];
+        needles.sort((a, b) => b.length - a.length);
         const haystack = caseSensitive ? source : source.toLowerCase();
         const ranges = [];
         for (const needle of needles) {
@@ -451,11 +453,12 @@ const plugin = {
         return { matched, extraVersionNos };
     },
 
-    _annotateItem(item, extraVisibleVersionNos, highlightQuery, highlightCaseSensitive) {
+    _annotateItem(item, extraVisibleVersionNos, highlightQuery, highlightCaseSensitive, highlightFuzzy) {
         return Object.assign({}, item, {
             extraVisibleVersionNos,
             highlightQuery,
-            highlightCaseSensitive
+            highlightCaseSensitive,
+            highlightFuzzy: Boolean(highlightFuzzy)
         });
     },
 
@@ -471,7 +474,7 @@ const plugin = {
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
         const passed = items.filter((item) => allowedIds.has(item.task.id));
         if (!lib.isQueryActive(promptText, caseSensitive)) {
-            return passed.map((item) => this._annotateItem(item, [], '', caseSensitive));
+            return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false));
         }
         const out = [];
         for (const item of passed) {
@@ -479,7 +482,7 @@ const plugin = {
                 item, promptText, fuzzy, caseSensitive, searchHiddenVersions
             );
             if (matched) {
-                out.push(this._annotateItem(item, extraVersionNos, promptText, caseSensitive));
+                out.push(this._annotateItem(item, extraVersionNos, promptText, caseSensitive, fuzzy));
             }
         }
         return out;
