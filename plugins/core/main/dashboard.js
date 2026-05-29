@@ -195,7 +195,32 @@ function dashFormatCreatedAt(iso) {
     if (!iso) return '—';
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return iso;
-    return date.toLocaleString();
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function dashRelativeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    const parts = [];
+    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
+    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
+    return parts.join(', ') + ' ago';
+}
+
+function dashQaTextBlockLabel(label, isPositive) {
+    if (isPositive && label === 'Task Feedback') return 'Approval Feedback';
+    return label;
 }
 
 // ── HTML escaping ──
@@ -213,7 +238,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -388,6 +413,7 @@ const plugin = {
         const projectId = this._projectIdFromTargetId(row.task_project_target_id, targetToProjectId);
         return {
             id: row.id,
+            key: row.key || '',
             author: {
                 id: row.created_by || '',
                 name: (profile && profile.full_name) || '',
@@ -1593,11 +1619,14 @@ const plugin = {
         const badges = qa.rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${qa.rejectionBadges.map((l) => `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const blocks = qa.textBlocks.map((b) => `
+        const blocks = qa.textBlocks.map((b) => {
+            const blockLabel = dashQaTextBlockLabel(b.label, positive);
+            return `
             <div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(b.label)}${this._copyIconHtml(b.text)}</div>
+                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(blockLabel)}${this._copyIconHtml(b.text)}</div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
-            </div>`).join('');
+            </div>`;
+        }).join('');
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
@@ -1616,36 +1645,49 @@ const plugin = {
             </div>`;
     },
 
+    _kindBadgeHtml(kindLabel) {
+        if (!kindLabel) return '';
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(kindLabel)}</span>`;
+    },
+
     _taskCardHtml(item) {
         const task = item.task;
         const qa = item.qaFeedback;
         const kindLabel = DASH_KIND_LABELS[item.kind] || '';
         const promptLabel = qa ? `Prompt Version ${qa.versionNo} of ${qa.totalVersions}` : 'Prompt';
+        const createdFormatted = dashFormatCreatedAt(task.createdAt);
+        const createdAgo = dashRelativeAgo(task.createdAt);
+        const createdAgoHtml = createdAgo
+            ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(createdAgo)})</span>`
+            : '';
+        const kindBadge = kindLabel ? this._kindBadgeHtml(kindLabel) : '';
         return `
-            <article style="border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
-                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px 6px;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${this._labelSpan('Task')}${this._copyChipHtml(task.id)}${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
-                    </div>
-                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-                        ${kindLabel ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(kindLabel)}</span>` : ''}
-                        ${this._statusBadgeHtml(task.status)}
-                    </div>
+            <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._labelSpan('Task Created')}${this._copyChipHtml(createdFormatted)}${createdAgoHtml}
+                    ${this._labelSpan('ID')}${this._copyChipHtml(task.id)}
+                    ${this._labelSpan('Key')}${this._copyChipHtml(task.key)}
+                    ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 14px 14px; font-size: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px 14px; font-size: 12px;">
                     <div style="grid-column: span 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                         ${this._labelSpan('Author')}${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
                     </div>
                     <div style="grid-column: span 2;">
-                        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}</div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
+                                ${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}
+                            </div>
+                            <div style="flex-shrink: 0;">${this._statusBadgeHtml(task.status)}</div>
+                        </div>
                         <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(task.prompt || '—')}</p>
                         ${qa ? this._qaBlockHtml(qa) : ''}
                     </div>
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Environment')}${this._copyChipHtml(task.environment)}</div>
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Project')}${this._copyChipHtml(task.project)}${task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : ''}</div>
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Team')}${this._copyChipHtml(task.team)}</div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Created')}${this._copyChipHtml(dashFormatCreatedAt(task.createdAt))}</div>
                 </div>
+                ${kindBadge ? `<div style="position: absolute; bottom: 12px; right: 14px;">${kindBadge}</div>` : ''}
             </article>`;
     },
 
