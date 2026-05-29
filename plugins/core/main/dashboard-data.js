@@ -8,7 +8,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -50,12 +50,18 @@ const plugin = {
     _buildFeedbackEntry(feedback, rawVersions, reviewerProfiles) {
         const lib = Context.dashboardLib;
         const versionInfo = lib.resolveVersionAtFeedback(rawVersions, feedback.created_at);
-        const profile = reviewerProfiles.get(feedback.created_by) || null;
-        const reviewer = {
-            id: String(feedback.created_by || ''),
-            name: String((profile && profile.full_name) || ''),
-            email: String((profile && profile.email) || '')
-        };
+        const isSystemFeedback = Boolean(feedback.is_system_feedback);
+        let reviewer;
+        if (isSystemFeedback) {
+            reviewer = { id: '', name: 'System', email: '' };
+        } else {
+            const profile = reviewerProfiles.get(feedback.created_by) || null;
+            reviewer = {
+                id: String(feedback.created_by || ''),
+                name: String((profile && profile.full_name) || ''),
+                email: String((profile && profile.email) || '')
+            };
+        }
         const display = lib.buildQaFeedbackDisplay(feedback, versionInfo, reviewer);
         return {
             id: String(feedback.id || ''),
@@ -63,6 +69,7 @@ const plugin = {
             isPositive: display.isPositive,
             isEscalated: display.isEscalated,
             isFlaggedAsBugged: display.isFlaggedAsBugged,
+            isSystemFeedback: Boolean(display.isSystemFeedback),
             reviewer,
             linkedVersionNo: versionInfo.rawVersionNo,
             linkedDisplayVersionNo: versionInfo.displayVersionNo,
@@ -92,9 +99,8 @@ const plugin = {
             let offset = 0;
             while (true) {
                 const page = await this._pgGet('eval_task_qa_feedback', {
-                    select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data',
+                    select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
                     eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
-                    is_system_feedback: 'not.eq.true',
                     order: 'created_at.desc',
                     offset: String(offset),
                     limit: String(DASH_DATA_FEEDBACK_PAGE_SIZE)

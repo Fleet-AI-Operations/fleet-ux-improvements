@@ -146,7 +146,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.11',
+    _version: '3.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -193,7 +193,8 @@ const plugin = {
             includeQa: true,
             includeDisputes: false,
             searchFetchActive: false,
-            msDropdownOpen: {}
+            msDropdownOpen: {},
+            msDropdownFilter: {}
         };
     },
 
@@ -637,9 +638,8 @@ const plugin = {
         while (true) {
             const qs = {
                 select: useTaskEmbed
-                    ? 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,eval_tasks!inner(id,team_id,env_key,task_project_target_id)'
-                    : 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data',
-                is_system_feedback: 'not.eq.true',
+                    ? 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content,eval_tasks!inner(id,team_id,env_key,task_project_target_id)'
+                    : 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
                 order: 'created_at.desc',
                 offset: String(offset),
                 limit: String(DASH_QA_PAGE_SIZE)
@@ -1216,6 +1216,10 @@ const plugin = {
                 <div data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
                     ${bulk}
                 </div>` : '';
+        const filterRow = scopeKey.startsWith('filter-') ? `
+                <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                    <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
+                </div>` : '';
         return `
             <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}" style="${this._panelBoxStyle()} min-width: 100%;">
                 <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 10px; gap: 8px; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
@@ -1226,6 +1230,7 @@ const plugin = {
                     </span>
                 </button>
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
+                    ${filterRow}
                     ${bulkRow}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="padding: 4px;">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
@@ -1353,6 +1358,13 @@ const plugin = {
 
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             btn.addEventListener('click', () => this._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
+        });
+
+        modal.addEventListener('input', (e) => {
+            const filterEl = e.target;
+            if (filterEl && filterEl.matches('[data-wf-dash-ms-filter]') && modal.contains(filterEl)) {
+                this._applyMsDropdownFilter(filterEl.getAttribute('data-wf-dash-ms-filter'), filterEl.value);
+            }
         });
 
         modal.addEventListener('change', (e) => {
@@ -1538,6 +1550,12 @@ const plugin = {
 
     _closeAllMsDropdowns() {
         this._state.msDropdownOpen = {};
+        this._state.msDropdownFilter = {};
+        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
+            if (input) input.value = '';
+            this._applyMsDropdownFilter(scopeKey, '');
+        }
         this._syncAllMsDropdowns();
     },
 
@@ -1546,6 +1564,44 @@ const plugin = {
         this._state.msDropdownOpen = {};
         if (!wasOpen) this._state.msDropdownOpen[scopeKey] = true;
         this._syncAllMsDropdowns();
+    },
+
+    _applyMsDropdownFilter(scopeKey, query) {
+        if (!scopeKey) return;
+        this._state.msDropdownFilter[scopeKey] = query || '';
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return;
+        const q = String(query || '').trim();
+        const optionLabels = itemsEl.querySelectorAll('label[data-wf-dash-ms-option]');
+        if (optionLabels.length === 0) return;
+        const lib = dashLib();
+        let visible = 0;
+        optionLabels.forEach((label) => {
+            const text = label.getAttribute('data-wf-dash-ms-label') || '';
+            const show = !q || lib.textMatchesQuery(text, q, true, false);
+            label.style.display = show ? '' : 'none';
+            if (show) visible += 1;
+        });
+        let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
+        if (q && visible === 0) {
+            if (!noMatchEl) {
+                noMatchEl = document.createElement('p');
+                noMatchEl.setAttribute('data-wf-dash-ms-no-match', '1');
+                noMatchEl.style.cssText = 'padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);';
+                noMatchEl.textContent = 'No matches';
+                itemsEl.appendChild(noMatchEl);
+            }
+            noMatchEl.style.display = '';
+        } else if (noMatchEl) {
+            noMatchEl.style.display = 'none';
+        }
+    },
+
+    _syncMsDropdownFilterUi(scopeKey) {
+        const stored = this._state.msDropdownFilter[scopeKey] || '';
+        const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
+        if (input && input.value !== stored) input.value = stored;
+        this._applyMsDropdownFilter(scopeKey, stored);
     },
 
     _setMultiselectChecked(scopeKey, checked) {
@@ -1730,7 +1786,7 @@ const plugin = {
                 ? 'white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
                 : 'white-space: nowrap;';
             return `
-            <label style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
                 <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
                 <span style="${spanStyle}">${dashEscHtml(it.label)}</span>
             </label>`;
@@ -1850,6 +1906,7 @@ const plugin = {
             }
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
+            if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
         }
         Logger.debug('dashboard: filter lists rendered');
     },
@@ -2377,11 +2434,11 @@ const plugin = {
         const labelStyle = this._labelStyle();
         const suffixSpan = `<span style="${labelStyle}">${dashEscHtml(suffix)}</span>`;
         if (!id) {
-            return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap;">${this._labelSpan('Prompt Version')}${suffixSpan}</span>`;
+            return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px;">${this._labelSpan('Prompt Version')}${suffixSpan}</span>`;
         }
         const title = 'Copy task ID: ' + id;
         const btnStyle = labelStyle + ' border: none; background: transparent; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent); text-underline-offset: 2px;';
-        return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0;">
+        return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px;">
             <button type="button" data-wf-dash-copy="${dashEscHtml(id)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">Prompt Version</button>${suffixSpan}
         </span>`;
     },
@@ -2432,26 +2489,53 @@ const plugin = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(status || '—')}</span>`;
     },
 
+    _qaAlertBadgeStyle() {
+        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #422006; background: #fef3c7; border: 1px solid #a16207;';
+    },
+
+    _qaYellowBlockStyle() {
+        return {
+            border: 'color-mix(in srgb, #ca8a04 55%, transparent)',
+            background: 'color-mix(in srgb, #fef08a 50%, var(--card, #ffffff))'
+        };
+    },
+
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy) {
         const positive = qa.isPositive;
+        const isSystem = Boolean(qa.isSystemFeedback);
+        const isYellowBlock = isSystem || qa.isEscalated || qa.isFlaggedAsBugged;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
-        const border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
-        const bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
-        const yellowBadge = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
-        const statusLabel = positive
-            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
-            : (qa.isEscalated
-                ? `<span style="${yellowBadge}">Escalated for Fleet Review</span>`
-                : (qa.isFlaggedAsBugged
-                    ? `<span style="${yellowBadge}">Flagged as Bugged</span>`
-                    : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`));
-        const badges = qa.rejectionBadges.length > 0
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${qa.rejectionBadges.map((l) => `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);">${dashEscHtml(l)}</span>`).join('')}</div>`
+        let border;
+        let bg;
+        if (isYellowBlock) {
+            const yellow = this._qaYellowBlockStyle();
+            border = yellow.border;
+            bg = yellow.background;
+        } else {
+            border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
+            bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
+        }
+        const alertBadge = this._qaAlertBadgeStyle();
+        const statusLabel = isSystem
+            ? ''
+            : (positive
+                ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
+                : (qa.isEscalated
+                    ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
+                    : (qa.isFlaggedAsBugged
+                        ? `<span style="${alertBadge}">Flagged as Bugged</span>`
+                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`)));
+        const issueBadgeStyle = isYellowBlock
+            ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
+            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
+        const rejectionBadges = qa.rejectionBadges || [];
+        const badges = rejectionBadges.length > 0
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const blocks = qa.textBlocks.map((b) => {
-            const blockLabel = dashQaTextBlockLabel(b.label, positive);
+        const blocks = (qa.textBlocks || []).map((b) => {
+            const blockLabel = isSystem ? b.label : dashQaTextBlockLabel(b.label, positive);
             const body = b.text
                 ? this._dashHighlightedHtml(b.text, hq, cs, fz)
                 : '—';
@@ -2464,32 +2548,43 @@ const plugin = {
         const submittedHtml = qa.feedbackAt
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(qa.feedbackAt))
             : '';
-        const promptRatingHtml = `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`;
+        const promptRatingHtml = (!isSystem && qa.qualityRating)
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`
+            : '';
+        const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
+        const reviewerHtml = (!isSystem && qa.qaReviewerId)
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
+            : '';
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
+                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>
                         ${submittedHtml}
                         ${promptRatingHtml}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
+                    ${statusLabel ? `<div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>` : ''}
                 </div>
+                ${reviewerHtml}
                 ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
                 ${blocks}
             </div>`;
     },
 
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
-        const name = entry.reviewer.name || entry.reviewer.email || 'Reviewer';
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback));
+        const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
         let label = 'Returned';
         let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
-        if (entry.isPositive) {
+        if (isSystem) {
+            label = 'System';
+            cls = 'color: #422006; background: #fef3c7; border: 1px solid #a16207;';
+        } else if (entry.isPositive) {
             label = 'Accepted';
             cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
         } else if (entry.isEscalated || entry.isFlaggedAsBugged) {
             label = entry.isEscalated ? 'Escalated' : 'Bugged';
-            cls = 'color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
+            cls = 'color: #422006; background: #fef3c7; border: 1px solid #a16207;';
         }
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
         return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">

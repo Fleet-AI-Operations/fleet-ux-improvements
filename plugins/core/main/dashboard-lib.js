@@ -147,7 +147,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -310,6 +310,7 @@ const plugin = {
     },
 
     _returnTypeOf(entry) {
+        if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) return null;
         if (entry.isPositive) return 'accepted';
         if (entry.isEscalated) return 'escalated';
         if (entry.isFlaggedAsBugged) return 'bugged';
@@ -326,7 +327,10 @@ const plugin = {
     },
 
     _taskPromptRatings(task) {
-        return [...new Set((task.allFeedback || []).map((e) => e.display.qualityRating))];
+        return [...new Set((task.allFeedback || [])
+            .filter((e) => !(e.display && e.display.isSystemFeedback))
+            .map((e) => e.display.qualityRating)
+            .filter(Boolean))];
     },
 
     _taskIssueLabels(task) {
@@ -339,7 +343,7 @@ const plugin = {
     },
 
     _taskReturnTypes(task) {
-        return [...new Set((task.allFeedback || []).map((e) => this._returnTypeOf(e)))];
+        return [...new Set((task.allFeedback || []).map((e) => this._returnTypeOf(e)).filter(Boolean))];
     },
 
     _taskPassesFilterDimensions(task, draft, listBounds, excludeKey) {
@@ -424,6 +428,12 @@ const plugin = {
         const texts = [];
         for (const entry of item.task.allFeedback || []) {
             if (entry.linkedDisplayVersionNo !== displayNo) continue;
+            if (entry.display && entry.display.isSystemFeedback) {
+                for (const block of entry.display.textBlocks || []) {
+                    if (block.text) texts.push(block.text);
+                }
+                continue;
+            }
             for (const block of entry.display.textBlocks || []) texts.push(block.text);
         }
         return texts;
@@ -519,8 +529,12 @@ const plugin = {
                 if (entry.reviewer && entry.reviewer.id) {
                     contributors.set(entry.reviewer.id, dashLibPersonLabel(entry.reviewer.name, entry.reviewer.email));
                 }
-                promptRatings.add(entry.display.qualityRating);
-                returnTypes.add(this._returnTypeOf(entry));
+                if (entry.display && entry.display.isSystemFeedback) continue;
+                if (entry.display && entry.display.qualityRating) {
+                    promptRatings.add(entry.display.qualityRating);
+                }
+                const returnType = this._returnTypeOf(entry);
+                if (returnType) returnTypes.add(returnType);
                 if (!entry.isPositive) {
                     for (const label of entry.display.rejectionBadges || []) taskIssues.add(label);
                 }
@@ -598,6 +612,27 @@ const plugin = {
     },
 
     _buildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {
+        if (feedbackRow.is_system_feedback) {
+            const content = dashLibNormalizeNewlines(feedbackRow.feedback_content || '');
+            const textBlocks = content
+                ? [{ label: 'Feedback Content', text: content }]
+                : [];
+            return {
+                isSystemFeedback: true,
+                isPositive: false,
+                isEscalated: false,
+                isFlaggedAsBugged: false,
+                qualityRating: null,
+                versionNo: versionInfo.displayVersionNo || versionInfo.versionNo,
+                totalVersions: versionInfo.totalVersions,
+                textBlocks,
+                rejectionBadges: [],
+                feedbackAt: String(feedbackRow.created_at || ''),
+                qaReviewerId: '',
+                qaReviewerName: '',
+                qaReviewerEmail: ''
+            };
+        }
         const data = dashLibParseFeedbackData(feedbackRow.feedback_data);
         const textBlocks = [];
         if (data.attempted_actions) textBlocks.push({ label: 'Attempted Actions', text: dashLibNormalizeNewlines(data.attempted_actions) });
@@ -611,6 +646,7 @@ const plugin = {
         const isEscalated = !isPositive && dashLibIsQaEscalatedForFleetReview(data);
         const isFlaggedAsBugged = !isPositive && !isEscalated && dashLibIsQaFlaggedAsBugged(data);
         return {
+            isSystemFeedback: false,
             isPositive,
             isEscalated,
             isFlaggedAsBugged,
