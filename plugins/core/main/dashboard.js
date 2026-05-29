@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -188,7 +188,8 @@ const plugin = {
             cardUi: {},
             includeTasks: true,
             includeQa: true,
-            includeDisputes: false
+            includeDisputes: false,
+            searchFetchActive: false
         };
     },
 
@@ -261,12 +262,28 @@ const plugin = {
 
     // ── PostgREST data layer (reuses ops-tab session/token gathering) ──
 
-    async _pgGet(table, params) {
+    async _pgGet(table, params, channel) {
         if (!Context.opsTab || typeof Context.opsTab.postgrestGet !== 'function') {
             throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
         }
+        if (channel === 'search' && !this._state.searchFetchActive) {
+            Logger.warn('dashboard: blocked PostgREST call outside search — ' + table);
+            throw new Error('PostgREST call blocked: data is cached until a new search.');
+        }
         const rows = await Context.opsTab.postgrestGet(table, params || {});
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
+    },
+
+    _pgGetBootstrap(table, params) {
+        return this._pgGet(table, params, 'bootstrap');
+    },
+
+    _pgGetAuthorLookup(table, params) {
+        return this._pgGet(table, params, 'author');
+    },
+
+    _pgGetSearch(table, params) {
+        return this._pgGet(table, params, 'search');
     },
 
     _addCreatedAtRange(qs, afterIso, beforeIso) {
@@ -301,7 +318,7 @@ const plugin = {
         const map = new Map();
         for (let i = 0; i < targetIds.length; i += 50) {
             const chunk = targetIds.slice(i, i + 50);
-            const rows = await this._pgGet('task_project_targets', {
+            const rows = await this._pgGetSearch('task_project_targets', {
                 select: 'id,project_id',
                 id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: String(chunk.length)
@@ -354,12 +371,12 @@ const plugin = {
         const q = (query || '').trim();
         if (!q) return [];
         if (DASH_UUID_RE.test(q)) {
-            const rows = await this._pgGet('profiles', { select: 'id,full_name,email', id: 'eq.' + q, limit: 1 });
+            const rows = await this._pgGetAuthorLookup('profiles', { select: 'id,full_name,email', id: 'eq.' + q, limit: 1 });
             return rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
         }
         const safe = q.replace(/[(),*]/g, ' ').trim();
         if (!safe) return [];
-        const rows = await this._pgGet('profiles', {
+        const rows = await this._pgGetAuthorLookup('profiles', {
             select: 'id,full_name,email',
             or: `(full_name.ilike.*${safe}*,email.ilike.*${safe}*)`,
             order: 'full_name.asc',
@@ -413,7 +430,7 @@ const plugin = {
         const teamCatalog = this._getTeamCatalog();
         const projectsById = new Map();
         if (teamCatalog.length > 0) {
-            const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgGet('task_projects', {
+            const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgGetBootstrap('task_projects', {
                 select: 'id,name,description,status,project_key,created_at,team_id',
                 status: 'neq.archived',
                 order: 'created_at.desc',
@@ -427,7 +444,7 @@ const plugin = {
                 for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
             }
         } else {
-            const page = await this._pgGet('task_projects', {
+            const page = await this._pgGetBootstrap('task_projects', {
                 select: 'id,name,description,status,project_key,created_at,team_id',
                 status: 'neq.archived',
                 order: 'created_at.desc',
@@ -436,7 +453,7 @@ const plugin = {
             for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
         }
         const projects = Array.from(projectsById.values());
-        const environments = await this._pgGet('environments', {
+        const environments = await this._pgGetBootstrap('environments', {
             select: 'env_key,name',
             deleted_at: 'is.null',
             order: 'env_key.asc'
@@ -469,7 +486,7 @@ const plugin = {
         const ids = [];
         for (let i = 0; i < projectIds.length; i += 50) {
             const chunk = projectIds.slice(i, i + 50);
-            const rows = await this._pgGet('task_project_targets', {
+            const rows = await this._pgGetSearch('task_project_targets', {
                 select: 'id',
                 project_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: '500'
@@ -550,7 +567,7 @@ const plugin = {
         return true;
     },
 
-    async _fetchTasksForSearch(authorIds, afterIso, beforeIso, scope) {
+    async _fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope) {
         if (scope.hasProjectFilter && scope.targetIds.length === 0) {
             Logger.debug('dashboard: tasks skipped — project filter matched no targets');
             return [];
@@ -572,50 +589,36 @@ const plugin = {
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
             if (!this._applyTaskScopeToQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgGet('eval_tasks', qs);
+            const page = await this._pgGetSearch('eval_tasks', qs);
             pageNum++;
             Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allRows.push(...page);
             if (page.length < DASH_TASKS_PAGE_SIZE) break;
             offset += DASH_TASKS_PAGE_SIZE;
         }
-        Logger.debug('dashboard: tasks fetched (' + allRows.length + ' rows) — resolving profiles + project targets');
-        const uniqueCreatedBy = [...new Set(allRows.map((r) => r.created_by).filter(Boolean))];
-        const profileRows = uniqueCreatedBy.length > 0
-            ? await this._pgGet('profiles', { select: 'id,full_name,email', id: 'in.(' + uniqueCreatedBy.join(',') + ')' })
-            : [];
-        const profilesMap = this._buildProfilesMap(profileRows);
-        Logger.debug('dashboard: tasks profiles resolved (' + profileRows.length + ' / ' + uniqueCreatedBy.length + ')');
+        Logger.debug('dashboard: tasks fetched (' + allRows.length + ' rows)');
+        return allRows;
+    },
 
-        const uniqueTargetIds = [...new Set(allRows.map((r) => r.task_project_target_id).filter(Boolean))];
-        const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
-
-        const tasks = allRows.map((row) => this._rowToTask(row, profilesMap, null, targetToProjectId));
-        if (tasks.length === 0) return [];
-
-        const taskIds = tasks.map((t) => t.id);
-        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap);
-        for (const task of tasks) {
-            const hist = enrichment.get(task.id);
-            task.promptVersions = (hist && hist.promptVersions) || [];
-            task.allFeedback = (hist && hist.allFeedback) || [];
+    async _fetchTaskRowsByIds(taskIds, scope) {
+        if (!taskIds || taskIds.length === 0) return [];
+        const rows = [];
+        for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
+            const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
+            const qs = {
+                select: this._evalTasksSelect(),
+                id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                limit: String(chunk.length)
+            };
+            if (!this._applyTaskScopeToQs(qs, scope)) continue;
+            const page = await this._pgGetSearch('eval_tasks', qs);
+            rows.push(...page);
+            Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
         }
-        Logger.debug('dashboard: tasks enriched with version + feedback history (' + taskIds.length + ' task(s))');
-        return tasks;
+        return rows;
     },
 
-    _taskCreationItemsFromTasks(tasks) {
-        return tasks.map((task) => ({
-            id: 'task-' + task.id,
-            kind: 'task_creation',
-            sortAt: task.createdAt,
-            task,
-            selectedFeedbackId: null,
-            qaFeedback: null
-        }));
-    },
-
-    async _fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso, scope) {
+    async _fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope) {
         if (scope.hasProjectFilter && scope.targetIds.length === 0) {
             Logger.debug('dashboard: QA skipped — project filter matched no targets');
             return [];
@@ -641,52 +644,40 @@ const plugin = {
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
             if (useTaskEmbed && !this._applyTaskScopeToQaQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgGet('eval_task_qa_feedback', qs);
+            const page = await this._pgGetSearch('eval_task_qa_feedback', qs);
             pageNum++;
             Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allFeedback.push(...page);
             if (page.length < DASH_QA_PAGE_SIZE) break;
             offset += DASH_QA_PAGE_SIZE;
         }
-        if (allFeedback.length === 0) {
-            Logger.debug('dashboard: QA feedback — 0 rows, skipping task/version lookups');
-            return [];
-        }
-        Logger.debug('dashboard: QA feedback — ' + allFeedback.length + ' rows total, fetching parent tasks');
+        Logger.debug('dashboard: QA feedback rows fetched (' + allFeedback.length + ' total)');
+        return allFeedback;
+    },
 
-        const taskIds = [...new Set(allFeedback.map((f) => f.eval_task_id).filter(Boolean))];
-        Logger.debug('dashboard: QA — ' + taskIds.length + ' unique task(s) to fetch');
-        const taskRows = [];
-        for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
-            const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
-            const qs = {
-                select: this._evalTasksSelect(),
-                id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
-                limit: String(chunk.length)
-            };
-            if (!this._applyTaskScopeToQs(qs, scope)) continue;
-            const page = await this._pgGet('eval_tasks', qs);
-            taskRows.push(...page);
-            Logger.debug('dashboard: QA tasks chunk — ' + page.length + ' rows');
-        }
+    async _buildEnrichedTasksById(taskRows, feedbackRows) {
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
-
         const profileIds = new Set();
         for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
-        for (const fb of allFeedback) if (fb.created_by) profileIds.add(fb.created_by);
+        for (const fb of feedbackRows) if (fb.created_by) profileIds.add(fb.created_by);
+
         const profileRows = profileIds.size > 0
-            ? await this._pgGet('profiles', { select: 'id,full_name,email', id: 'in.(' + [...profileIds].join(',') + ')' })
+            ? await this._pgGetSearch('profiles', { select: 'id,full_name,email', id: 'in.(' + [...profileIds].join(',') + ')' })
             : [];
         const profilesMap = this._buildProfilesMap(profileRows);
-        Logger.debug('dashboard: QA profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
+        Logger.debug('dashboard: search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
 
         const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
 
-        Logger.debug('dashboard: QA — enriching ' + taskIds.length + ' task(s) with version + feedback history');
-        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap);
+        const allTaskIds = [...taskById.keys()];
+        const enrichment = allTaskIds.length > 0
+            ? await Context.dashboardData.enrichTasksWithHistory(allTaskIds, profilesMap)
+            : new Map();
+        Logger.debug('dashboard: search enrichment complete (' + allTaskIds.length + ' task(s))');
+
         const enrichedTasksById = new Map();
-        for (const taskId of taskIds) {
+        for (const taskId of allTaskIds) {
             const taskRow = taskById.get(taskId);
             if (!taskRow) continue;
             const task = this._rowToTask(taskRow, profilesMap, null, targetToProjectId);
@@ -695,9 +686,12 @@ const plugin = {
             task.allFeedback = (hist && hist.allFeedback) || [];
             enrichedTasksById.set(taskId, task);
         }
+        return { enrichedTasksById, profilesMap };
+    },
 
+    _qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap) {
         const items = [];
-        for (const feedback of allFeedback) {
+        for (const feedback of feedbackRows) {
             const task = enrichedTasksById.get(feedback.eval_task_id);
             if (!task) continue;
             const feedbackEntry = (task.allFeedback || []).find((f) => f.id === feedback.id);
@@ -729,24 +723,62 @@ const plugin = {
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
         const positiveCount = items.filter((it) => it.qaFeedback && it.qaFeedback.isPositive).length;
-        const negativeCount = items.length - positiveCount;
-        Logger.log('dashboard: QA items built — ' + items.length + ' total (' + positiveCount + ' accepted, ' + negativeCount + ' returned)');
+        Logger.log('dashboard: QA items built — ' + items.length + ' total (' + positiveCount + ' accepted, ' + (items.length - positiveCount) + ' returned)');
         return items;
     },
 
+    _taskCreationItemsFromTasks(tasks) {
+        return tasks.map((task) => ({
+            id: 'task-' + task.id,
+            kind: 'task_creation',
+            sortAt: task.createdAt,
+            task,
+            selectedFeedbackId: null,
+            qaFeedback: null
+        }));
+    },
+
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
-        const fetches = [];
-        if (includeTaskCreation) {
-            fetches.push(this._fetchTasksForSearch(authorIds, afterIso, beforeIso, scope).then((t) => this._taskCreationItemsFromTasks(t)));
-        }
-        if (includeQa) {
-            fetches.push(this._fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso, scope));
-        }
         if (includeDisputes) {
             Logger.debug('dashboard: disputes fetch not yet implemented (stub)');
         }
-        const parts = await Promise.all(fetches);
-        return parts.flat();
+
+        const creationRows = includeTaskCreation
+            ? await this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            : [];
+        const feedbackRows = includeQa
+            ? await this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            : [];
+
+        const creationIds = new Set(creationRows.map((r) => r.id));
+        const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
+        const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
+        const qaOnlyRows = missingQaTaskIds.length > 0
+            ? await this._fetchTaskRowsByIds(missingQaTaskIds, scope)
+            : [];
+        const allTaskRows = [...creationRows];
+        const seenIds = new Set(creationIds);
+        for (const row of qaOnlyRows) {
+            if (!seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
+
+        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, feedbackRows);
+
+        const items = [];
+        if (includeTaskCreation) {
+            const creationTasks = creationRows
+                .map((row) => enrichedTasksById.get(row.id))
+                .filter(Boolean);
+            items.push(...this._taskCreationItemsFromTasks(creationTasks));
+            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
+        }
+        if (includeQa && feedbackRows.length > 0) {
+            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
+        }
+        return items;
     },
 
     _listBoundsFromOptions(options) {
@@ -1289,47 +1321,54 @@ const plugin = {
             }
             const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
             if (reviewerBadge && modal.contains(reviewerBadge)) {
+                const itemId = reviewerBadge.getAttribute('data-item-id');
                 const taskId = reviewerBadge.getAttribute('data-task-id');
                 const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
                 const ui = this._getCardUi(taskId);
                 ui.expanded = false;
                 ui.selectedDisplayNo = displayNo;
-                this._renderResults();
+                this._patchTaskCard(itemId);
                 return;
             }
             const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
             if (showAllBtn && modal.contains(showAllBtn)) {
-                const ui = this._getCardUi(showAllBtn.getAttribute('data-task-id'));
+                const itemId = showAllBtn.getAttribute('data-item-id');
+                const taskId = showAllBtn.getAttribute('data-task-id');
+                const ui = this._getCardUi(taskId);
                 ui.expanded = true;
-                this._renderResults();
+                this._patchTaskCard(itemId);
                 return;
             }
             const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
             if (collapseBtn && modal.contains(collapseBtn)) {
+                const itemId = collapseBtn.getAttribute('data-item-id');
                 const taskId = collapseBtn.getAttribute('data-task-id');
                 const ui = this._getCardUi(taskId);
                 ui.expanded = false;
                 ui.selectedDisplayNo = null;
-                this._renderResults();
+                this._patchTaskCard(itemId);
                 return;
             }
             const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
             if (timelineToggle && modal.contains(timelineToggle)) {
-                const ui = this._getCardUi(timelineToggle.getAttribute('data-task-id'));
+                const itemId = timelineToggle.getAttribute('data-item-id');
+                const taskId = timelineToggle.getAttribute('data-task-id');
+                const ui = this._getCardUi(taskId);
                 ui.timelineNewestFirst = !ui.timelineNewestFirst;
-                this._renderResults();
+                this._patchTaskCard(itemId);
             }
         });
 
         modal.addEventListener('change', (e) => {
             const sel = e.target;
             if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
+            const itemId = sel.getAttribute('data-item-id');
             const taskId = sel.getAttribute('data-task-id');
             const displayNo = parseInt(sel.value, 10);
             const ui = this._getCardUi(taskId);
             ui.expanded = false;
             ui.selectedDisplayNo = displayNo;
-            this._renderResults();
+            this._patchTaskCard(itemId);
         });
     },
 
@@ -1647,8 +1686,8 @@ const plugin = {
             const prevSelected = new Set(this._selectedFromList(scopeKey));
             const optionItems = options[optionsKey] || [];
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
-            const irrelevantSet = irrelevance[draftKey] || new Set();
             const hadSelection = prevSelected.size > 0;
+            const irrelevantSet = hadSelection ? (irrelevance[draftKey] || new Set()) : new Set();
             list.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
                 optionItems,
@@ -1676,6 +1715,37 @@ const plugin = {
             };
         }
         return this._state.cardUi[taskId];
+    },
+
+    _findResultItem(itemId) {
+        const items = this._state.filteredItems || [];
+        return items.find((it) => it.id === itemId) || null;
+    },
+
+    _patchTaskCard(itemId) {
+        const wrap = this._q('#wf-dash-results');
+        if (!wrap || !itemId) return;
+        const item = this._findResultItem(itemId);
+        if (!item) return;
+        const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
+        let existing = null;
+        for (const el of cards) {
+            if (el.getAttribute('data-item-id') === itemId) {
+                existing = el;
+                break;
+            }
+        }
+        const html = this._taskCardHtml(item);
+        const doc = this._pageWindow().document;
+        const temp = doc.createElement('div');
+        temp.innerHTML = html;
+        const newCard = temp.firstElementChild;
+        if (!newCard) return;
+        if (existing) {
+            existing.replaceWith(newCard);
+        } else {
+            wrap.appendChild(newCard);
+        }
     },
 
     _setLeftTab(tab) {
@@ -1820,11 +1890,6 @@ const plugin = {
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
             const authorLabels = this._state.draftTokens.map((t) => t.full_name || t.email || t.id);
-            const scope = await this._buildSearchApiScope();
-            Logger.info('dashboard: search started — '
-                + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-                + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
-                + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
             this._state.committed = {
                 authorIds,
                 authorCount: authorIds.length,
@@ -1842,7 +1907,13 @@ const plugin = {
             this._updateResultsStatus();
             this._renderResults();
 
+            this._state.searchFetchActive = true;
             try {
+                const scope = await this._buildSearchApiScope();
+                Logger.info('dashboard: search started — '
+                    + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
+                    + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
                 const items = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
@@ -1877,6 +1948,7 @@ const plugin = {
                 this._state.appliedFilters = null;
                 Logger.warn('dashboard: search failed', err);
             } finally {
+                this._state.searchFetchActive = false;
                 this._state.loading = false;
                 this._setSearchButtonLoading(false);
                 this._updateResultsStatus();
@@ -2234,7 +2306,7 @@ const plugin = {
             </div>`;
     },
 
-    _reviewerBadgeHtml(entry, active, taskId) {
+    _reviewerBadgeHtml(entry, active, taskId, itemId) {
         const name = entry.reviewer.name || entry.reviewer.email || 'Reviewer';
         let label = 'Returned';
         let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
@@ -2246,7 +2318,7 @@ const plugin = {
             cls = 'color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
         }
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
-        return `<button type="button" data-wf-dash-reviewer-badge="1" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
+        return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
             <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
             <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; ${cls}">${dashEscHtml(label)}</span>
         </button>`;
@@ -2261,9 +2333,6 @@ const plugin = {
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
-        const submittedRow = showVersionLabel && version.createdAt
-            ? `<div style="flex-shrink: 0;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt))}</div>`
-            : '';
         const feedbackHtml = feedbackEntries.map((entry) => this._qaBlockHtml(entry.display, hq, cs)).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs) : '';
         return `
@@ -2272,18 +2341,17 @@ const plugin = {
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
                         ${promptLabel}${this._copyIconHtml(version.prompt)}
                     </div>
-                    ${submittedRow}
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
                 ${feedbackHtml}${fallbackHtml}
             </div>`;
     },
 
-    _outputKindTabWrap(kind, cardHtml) {
+    _outputKindTabWrap(kind, cardHtml, itemId) {
         const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
         if (!cfg) return cardHtml;
         return `
-            <div style="position: relative;">
+            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative;">
                 <div style="position: absolute; left: 16px; top: 0; z-index: 0; width: 7.75rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>
                 <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
             </div>`;
@@ -2291,6 +2359,7 @@ const plugin = {
 
     _taskCardHtml(item) {
         const task = item.task;
+        const itemId = item.id;
         const allFeedback = task.allFeedback || [];
         const highlightQuery = item.highlightQuery || '';
         const caseSensitive = Boolean(item.highlightCaseSensitive);
@@ -2339,12 +2408,12 @@ const plugin = {
         const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
 
         const reviewerBadges = allFeedback.length > 0
-            ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${allFeedback.map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id)).join('')}</div>`
+            ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${allFeedback.map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
         let row3Left;
         if (expanded) {
-            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
+            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
         } else {
             row3Left = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(selectedVersion && selectedVersion.createdAt));
         }
@@ -2357,8 +2426,8 @@ const plugin = {
                 .join('');
             versionControls = `
                 <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${expanded ? 'Collapse' : 'Show All'}</button>
-                    ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
+                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${expanded ? 'Collapse' : 'Show All'}</button>
+                    ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
                 </div>`;
         }
 
@@ -2372,7 +2441,7 @@ const plugin = {
         }).join('');
 
         const cardHtml = `
-            <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article style="position: relative; border: 2px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
@@ -2389,7 +2458,7 @@ const plugin = {
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     ${reviewerBadges}
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     ${row3Left}
                     ${versionControls}
                 </div>
@@ -2398,7 +2467,7 @@ const plugin = {
                 </div>
             </article>`;
 
-        return this._outputKindTabWrap(item.kind, cardHtml);
+        return this._outputKindTabWrap(item.kind, cardHtml, itemId);
     },
 
     // ── Copy feedback (color-only: 1s green / 0.5s red pulse) ──
