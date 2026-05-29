@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -181,7 +181,11 @@ const plugin = {
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
-            reloadSecrets: (force) => this._loadOpsSecrets(force !== false)
+            reloadSecrets: (force) => this._loadOpsSecrets(force !== false),
+            // Shared PostgREST GET for sibling modules (e.g. dashboard.js). Reuses the same
+            // runtime Supabase config + session token gathering as the team member search /
+            // verifier fetcher — see _opsPostgrestGet / _getOpsPostgrestHeaders.
+            postgrestGet: (table, params) => this._opsPostgrestGet(table, params)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -2533,6 +2537,21 @@ const plugin = {
                     <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; max-height: 360px; overflow-y: auto;">
                         <div id="wf-ops-team-search-cards"></div>
                     </div>
+                    <button type="button" id="wf-ops-open-dashboard" class="wf-ops-action-btn" style="
+                        display: block;
+                        width: 100%;
+                        margin-top: 10px;
+                        padding: 10px 16px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        text-align: center;
+                        color: var(--brand, #4f46e5);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e5e5e5);
+                        border-radius: 6px;
+                        box-sizing: border-box;
+                        cursor: pointer;
+                    ">Open Dashboard</button>
                 </div>
                 <div style="margin-bottom: 16px;">
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
@@ -2919,6 +2938,18 @@ const plugin = {
         if (teamSearchClearBtn) {
             teamSearchClearBtn.addEventListener('click', () => {
                 this._clearOpsTeamSearchResults(modal);
+            });
+        }
+
+        const openDashboardBtn = this._opsQuery(modal, '#wf-ops-open-dashboard', 'openDashboardBtnAttach');
+        if (openDashboardBtn) {
+            openDashboardBtn.addEventListener('click', () => {
+                if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+                    Context.dashboard.open();
+                    Logger.log('ops-tab: dashboard opened from ops pane');
+                } else {
+                    Logger.warn('ops-tab: dashboard module unavailable (Context.dashboard.open missing)');
+                }
             });
         }
 
