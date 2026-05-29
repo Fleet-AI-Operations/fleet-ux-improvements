@@ -18,235 +18,62 @@ const DASH_QA_PAGE_SIZE = 50;
 
 const DASH_KIND_LABELS = {
     task_creation: 'Task Creation',
-    qa: 'QA'
+    qa: 'QA',
+    dispute: 'Disputes'
 };
 
-// ── Pure text-search helpers (ported from local/dashboard/src/lib/promptSearch.js) ──
-
-function dashPrepareText(value, caseSensitive) {
-    const trimmed = (value || '').replace(/\s+/g, ' ').trim();
-    return caseSensitive ? trimmed : trimmed.toLowerCase();
-}
-
-function dashIsQueryEmpty(value, caseSensitive) {
-    return dashPrepareText(value, caseSensitive).length === 0;
-}
-
-function dashLevenshtein(a, b, maxDistance) {
-    if (a === b) return 0;
-    if (!a.length) return b.length;
-    if (!b.length) return a.length;
-    if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
-    const prev = new Array(b.length + 1);
-    const curr = new Array(b.length + 1);
-    for (let j = 0; j <= b.length; j += 1) prev[j] = j;
-    for (let i = 1; i <= a.length; i += 1) {
-        curr[0] = i;
-        let minRow = curr[0];
-        const aChar = a.charCodeAt(i - 1);
-        for (let j = 1; j <= b.length; j += 1) {
-            const cost = aChar === b.charCodeAt(j - 1) ? 0 : 1;
-            const val = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-            curr[j] = val;
-            if (val < minRow) minRow = val;
-        }
-        if (minRow > maxDistance) return maxDistance + 1;
-        for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+const DASH_OUTPUT_KIND_CONFIG = {
+    task_creation: {
+        label: 'Task Creation',
+        tabBg: '#16a34a',
+        toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #15803d;'
+    },
+    qa: {
+        label: 'QA',
+        tabBg: '#2563eb',
+        toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #1d4ed8;'
+    },
+    dispute: {
+        label: 'Disputes',
+        tabBg: '#ea580c',
+        toggleActive: 'border: 2px solid #ea580c; color: #c2410c; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #c2410c;'
     }
-    return prev[b.length];
-}
+};
 
-function dashIsFuzzyMatch(query, candidate) {
-    if (!query) return true;
-    if (candidate.includes(query)) return true;
-    const maxDistance = query.length <= 6 ? 1 : Math.max(2, Math.floor(query.length * 0.2));
-    if (dashLevenshtein(query, candidate, maxDistance) <= maxDistance) return true;
-    const queryWords = query.split(' ');
-    const candidateWords = candidate.split(' ');
-    return queryWords.every((queryWord) => {
-        const wordMax = queryWord.length <= 5 ? 1 : 2;
-        return candidateWords.some((candidateWord) => (
-            candidateWord.includes(queryWord)
-            || dashLevenshtein(queryWord, candidateWord, wordMax) <= wordMax
-        ));
-    });
-}
+const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
 
-function dashTextMatchesQuery(text, queryText, fuzzy, caseSensitive) {
-    const query = dashPrepareText(queryText, caseSensitive);
-    if (!query) return false;
-    const candidate = dashPrepareText(text, caseSensitive);
-    return fuzzy ? dashIsFuzzyMatch(query, candidate) : candidate.includes(query);
-}
+const DASH_FILTER_SCOPES = [
+    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
+    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
+    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
+    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
+    { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
+    { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
+    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
+];
 
-// ── Date range validation (ported from lib/dateRange.js) ──
+function dashLib() {
+    return Context.dashboardLib;
+}
 
 function dashDateInputValue(date) {
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    return dashLib().dateInputValue(date);
 }
 
-function dashParseDateInput(dateLocal) {
-    const raw = String(dateLocal || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-    const parts = raw.split('-');
-    const y = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1;
-    const d = parseInt(parts[2], 10);
-    const date = new Date(y, m, d);
-    if (date.getFullYear() !== y || date.getMonth() !== m || date.getDate() !== d) return null;
-    return date;
-}
-
-/** Convert YYYY-MM-DD to ISO UTC: After = start of local day, Before = end of local day. */
-function dashDateLocalToIso(dateLocal, bound) {
-    const date = dashParseDateInput(dateLocal);
-    if (!date) return '';
-    if (bound === 'before') {
-        date.setHours(23, 59, 59, 999);
-    } else {
-        date.setHours(0, 0, 0, 0);
-    }
-    return date.toISOString();
-}
-
-function dashStartOfLocalDay(d) {
-    const date = new Date(d);
-    date.setHours(0, 0, 0, 0);
-    return date;
-}
-
-/** Local calendar preset → { after, before, label }. Week starts Sunday (US calendar week). */
 function dashQuickDatePresetRange(preset) {
-    const today = dashStartOfLocalDay(new Date());
-    const y = today.getFullYear();
-    const m = today.getMonth();
-    switch (preset) {
-        case 'today':
-            return { after: today, before: today, label: 'Today' };
-        case 'yesterday': {
-            const day = new Date(today);
-            day.setDate(day.getDate() - 1);
-            return { after: day, before: day, label: 'Yesterday' };
-        }
-        case '3d': {
-            const after = new Date(today);
-            after.setDate(after.getDate() - 3);
-            return { after, before: today, label: 'Last 3 Days' };
-        }
-        case '7d': {
-            const after = new Date(today);
-            after.setDate(after.getDate() - 7);
-            return { after, before: today, label: 'Last 7 Days' };
-        }
-        case 'last-week': {
-            const thisWeekStart = new Date(today);
-            thisWeekStart.setDate(thisWeekStart.getDate() - today.getDay());
-            const lastWeekEnd = new Date(thisWeekStart);
-            lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
-            const lastWeekStart = new Date(lastWeekEnd);
-            lastWeekStart.setDate(lastWeekStart.getDate() - 6);
-            return { after: lastWeekStart, before: lastWeekEnd, label: 'Last Calendar Week' };
-        }
-        case 'this-month':
-            return { after: new Date(y, m, 1), before: today, label: 'This Month' };
-        case 'last-month': {
-            const after = new Date(y, m - 1, 1);
-            const before = new Date(y, m, 0);
-            return { after, before, label: 'Last Calendar Month' };
-        }
-        case 'this-year':
-            return { after: new Date(y, 0, 1), before: today, label: 'This Year' };
-        case 'last-year':
-            return { after: new Date(y - 1, 0, 1), before: new Date(y - 1, 11, 31), label: 'Last Calendar Year' };
-        default:
-            return null;
-    }
+    return dashLib().quickDatePresetRange(preset);
 }
 
 function dashValidateCreatedAtRange(afterLocal, beforeLocal) {
-    const afterIso = afterLocal ? dashDateLocalToIso(afterLocal, 'after') : '';
-    const beforeIso = beforeLocal ? dashDateLocalToIso(beforeLocal, 'before') : '';
-    if (afterLocal && !afterIso) {
-        return { valid: false, error: 'After is not a valid date.', afterIso: '', beforeIso };
-    }
-    if (beforeLocal && !beforeIso) {
-        return { valid: false, error: 'Before is not a valid date.', afterIso, beforeIso: '' };
-    }
-    if (afterIso && beforeIso && afterIso > beforeIso) {
-        return { valid: false, error: 'After must be on or before Before.', afterIso, beforeIso };
-    }
-    return { valid: true, error: '', afterIso, beforeIso };
+    return dashLib().validateCreatedAtRange(afterLocal, beforeLocal);
 }
 
-// ── Version-at-feedback resolution (ported from lib/versionAtFeedback.js) ──
-
-function dashResolveVersionAtFeedback(versions, feedbackCreatedAt) {
-    if (!versions || !versions.length) {
-        return { version: null, versionNo: 1, totalVersions: 0 };
-    }
-    const sorted = [...versions].sort((a, b) => a.version_no - b.version_no);
-    const feedbackTs = Date.parse(feedbackCreatedAt);
-    let matched = sorted[0];
-    for (const version of sorted) {
-        const versionTs = Date.parse(version.created_at);
-        if (Number.isNaN(versionTs) || versionTs <= feedbackTs) {
-            matched = version;
-        } else {
-            break;
-        }
-    }
-    return {
-        version: matched,
-        versionNo: (matched && matched.version_no) || 1,
-        totalVersions: sorted.length
-    };
-}
-
-// ── QA feedback display (ported from lib/qaFeedbackDisplay.js) ──
-
-function dashParseFeedbackData(raw) {
-    if (!raw) return {};
-    if (typeof raw === 'object') return raw;
-    if (typeof raw === 'string') {
-        try { return JSON.parse(raw); } catch (_e) { return {}; }
-    }
-    return {};
-}
-
-function dashMapPromptQualityRating(rating) {
-    if (rating == null || rating === '') return 'Average';
-    const key = String(rating).toLowerCase();
-    if (key.includes('top')) return 'Top 10%';
-    if (key.includes('bottom')) return 'Bottom 10%';
-    return 'Average';
-}
-
-function dashNormalizeNewlines(text) {
-    return String(text).replace(/\\n/g, '\n');
-}
-
-function dashBuildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {
-    const data = dashParseFeedbackData(feedbackRow.feedback_data);
-    const textBlocks = [];
-    if (data.attempted_actions) textBlocks.push({ label: 'Attempted Actions', text: dashNormalizeNewlines(data.attempted_actions) });
-    if (data.task_feedback) textBlocks.push({ label: 'Task Feedback', text: dashNormalizeNewlines(data.task_feedback) });
-    if (data.environment_feedback) textBlocks.push({ label: 'Environment Feedback', text: dashNormalizeNewlines(data.environment_feedback) });
-    const labels = Array.isArray(data.rejection_reason_labels)
-        ? data.rejection_reason_labels.map(String)
-        : (data.rejection_reason_label ? [String(data.rejection_reason_label)] : []);
-    return {
-        isPositive: Boolean(feedbackRow.is_positive_feedback),
-        qualityRating: dashMapPromptQualityRating(data.prompt_quality_rating),
-        versionNo: versionInfo.versionNo,
-        totalVersions: versionInfo.totalVersions,
-        textBlocks,
-        rejectionBadges: labels.filter(Boolean),
-        feedbackAt: String(feedbackRow.created_at || ''),
-        qaReviewerId: String((qaReviewer && qaReviewer.id) || feedbackRow.created_by || ''),
-        qaReviewerName: String((qaReviewer && qaReviewer.name) || ''),
-        qaReviewerEmail: String((qaReviewer && qaReviewer.email) || '')
-    };
+function dashQaTextBlockLabel(label, isPositive) {
+    return dashLib().qaTextBlockLabel(label, isPositive);
 }
 
 // ── Fleet URLs (ported from lib/fleetUrls.js) ──
@@ -293,13 +120,6 @@ function dashRelativeAgo(iso) {
     return parts.join(', ') + ' ago';
 }
 
-function dashQaTextBlockLabel(label, isPositive) {
-    if (!isPositive) return label;
-    if (label === 'Task Feedback') return 'Approval Feedback';
-    if (label === 'Attempted Actions') return 'Accepted Feedback';
-    return label;
-}
-
 /** PostgREST may return an embed as one object or an array — normalize to a single row. */
 function dashFirstEmbed(embed) {
     if (!embed) return null;
@@ -323,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.5',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -355,16 +175,20 @@ const plugin = {
             bootstrapError: null,
             autoBootstrapped: false,
             draftTokens: [],
-            activeTab: 'tasks',
+            activeTab: 'search-output',
+            leftTab: 'search',
             cachedItems: null,
             filteredItems: null,
             hasSearched: false,
             loading: false,
             searchError: null,
             committed: null,
-            searchParamsLocked: false,
+            appliedFilters: null,
+            filterListOptions: null,
+            cardUi: {},
             includeTasks: true,
-            includeQa: true
+            includeQa: true,
+            includeDisputes: false
         };
     },
 
@@ -539,9 +363,48 @@ const plugin = {
             select: 'id,full_name,email',
             or: `(full_name.ilike.*${safe}*,email.ilike.*${safe}*)`,
             order: 'full_name.asc',
-            limit: 20
+            limit: 50
         });
-        return rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
+        const mapped = rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
+        return this._filterAndRankPersons(mapped, q);
+    },
+
+    _personSearchHaystack(person) {
+        return `${person.full_name || ''} ${person.email || ''}`.toLowerCase();
+    },
+
+    _personMatchesQuery(person, query) {
+        const q = String(query || '').trim();
+        if (!q) return false;
+        if (DASH_UUID_RE.test(q)) return person.id.toLowerCase() === q.toLowerCase();
+        const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return false;
+        const haystack = this._personSearchHaystack(person);
+        return words.every((word) => haystack.includes(word));
+    },
+
+    _scorePersonMatch(person, query) {
+        const q = String(query || '').trim().toLowerCase();
+        const name = String(person.full_name || '').toLowerCase();
+        const email = String(person.email || '').toLowerCase();
+        if (!q) return 0;
+        if (name === q) return 100;
+        if (email === q) return 95;
+        if (name.startsWith(q)) return 90;
+        if (email.startsWith(q)) return 85;
+        if (name.includes(q)) return 80;
+        if (email.includes(q)) return 75;
+        const words = q.split(/\s+/).filter(Boolean);
+        if (words.length > 1 && words.every((w) => name.includes(w))) return 70;
+        if (words.every((w) => this._personSearchHaystack(person).includes(w))) return 60;
+        return 0;
+    },
+
+    _filterAndRankPersons(persons, query) {
+        return persons
+            .filter((p) => this._personMatchesQuery(p, query))
+            .sort((a, b) => this._scorePersonMatch(b, query) - this._scorePersonMatch(a, query))
+            .slice(0, 20);
     },
 
     // ── Bootstrap (projects + environments) ──
@@ -727,7 +590,18 @@ const plugin = {
         const uniqueTargetIds = [...new Set(allRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
 
-        return allRows.map((row) => this._rowToTask(row, profilesMap, null, targetToProjectId));
+        const tasks = allRows.map((row) => this._rowToTask(row, profilesMap, null, targetToProjectId));
+        if (tasks.length === 0) return [];
+
+        const taskIds = tasks.map((t) => t.id);
+        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap);
+        for (const task of tasks) {
+            const hist = enrichment.get(task.id);
+            task.promptVersions = (hist && hist.promptVersions) || [];
+            task.allFeedback = (hist && hist.allFeedback) || [];
+        }
+        Logger.debug('dashboard: tasks enriched with version + feedback history (' + taskIds.length + ' task(s))');
+        return tasks;
     },
 
     _taskCreationItemsFromTasks(tasks) {
@@ -736,6 +610,7 @@ const plugin = {
             kind: 'task_creation',
             sortAt: task.createdAt,
             task,
+            selectedFeedbackId: null,
             qaFeedback: null
         }));
     },
@@ -796,17 +671,6 @@ const plugin = {
         }
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
 
-        Logger.debug('dashboard: QA — fetching version history for ' + taskIds.length + ' task(s)');
-        const versionsByTaskId = new Map();
-        await Promise.all(taskIds.map(async (taskId) => {
-            const versions = await this._pgGet('eval_task_versions', {
-                select: 'id,version_no,created_at,prompt,env_key',
-                task_id: 'eq.' + taskId,
-                order: 'version_no.asc'
-            });
-            versionsByTaskId.set(taskId, versions);
-        }));
-
         const profileIds = new Set();
         for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
         for (const fb of allFeedback) if (fb.created_by) profileIds.add(fb.created_by);
@@ -819,20 +683,49 @@ const plugin = {
         const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
 
+        Logger.debug('dashboard: QA — enriching ' + taskIds.length + ' task(s) with version + feedback history');
+        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap);
+        const enrichedTasksById = new Map();
+        for (const taskId of taskIds) {
+            const taskRow = taskById.get(taskId);
+            if (!taskRow) continue;
+            const task = this._rowToTask(taskRow, profilesMap, null, targetToProjectId);
+            const hist = enrichment.get(taskId);
+            task.promptVersions = (hist && hist.promptVersions) || [];
+            task.allFeedback = (hist && hist.allFeedback) || [];
+            enrichedTasksById.set(taskId, task);
+        }
+
         const items = [];
         for (const feedback of allFeedback) {
-            const taskRow = taskById.get(feedback.eval_task_id);
-            if (!taskRow) continue;
-            const versions = versionsByTaskId.get(feedback.eval_task_id) || [];
-            const versionInfo = dashResolveVersionAtFeedback(versions, feedback.created_at);
-            const task = this._rowToTask(taskRow, profilesMap, versionInfo.version, targetToProjectId);
-            const qaReviewerProfile = profilesMap.get(feedback.created_by) || null;
-            const qaFeedback = dashBuildQaFeedbackDisplay(feedback, versionInfo, {
-                id: feedback.created_by,
-                name: (qaReviewerProfile && qaReviewerProfile.full_name) || '',
-                email: (qaReviewerProfile && qaReviewerProfile.email) || ''
+            const task = enrichedTasksById.get(feedback.eval_task_id);
+            if (!task) continue;
+            const feedbackEntry = (task.allFeedback || []).find((f) => f.id === feedback.id);
+            let qaFeedback = feedbackEntry ? feedbackEntry.display : null;
+            if (!qaFeedback) {
+                const qaReviewerProfile = profilesMap.get(feedback.created_by) || null;
+                const rawLike = (task.promptVersions || []).map((v) => ({
+                    id: v.id,
+                    version_no: v.versionNo,
+                    created_at: v.createdAt,
+                    prompt: v.prompt,
+                    env_key: v.envKey
+                }));
+                const versionInfo = dashLib().resolveVersionAtFeedback(rawLike, feedback.created_at);
+                qaFeedback = dashLib().buildQaFeedbackDisplay(feedback, versionInfo, {
+                    id: feedback.created_by,
+                    name: (qaReviewerProfile && qaReviewerProfile.full_name) || '',
+                    email: (qaReviewerProfile && qaReviewerProfile.email) || ''
+                });
+            }
+            items.push({
+                id: 'qa-' + feedback.id,
+                kind: 'qa',
+                sortAt: feedback.created_at,
+                task,
+                selectedFeedbackId: feedback.id,
+                qaFeedback
             });
-            items.push({ id: 'qa-' + feedback.id, kind: 'qa', sortAt: feedback.created_at, task, qaFeedback });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
         const positiveCount = items.filter((it) => it.qaFeedback && it.qaFeedback.isPositive).length;
@@ -841,7 +734,7 @@ const plugin = {
         return items;
     },
 
-    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, afterIso, beforeIso, scope }) {
+    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
         const fetches = [];
         if (includeTaskCreation) {
             fetches.push(this._fetchTasksForSearch(authorIds, afterIso, beforeIso, scope).then((t) => this._taskCreationItemsFromTasks(t)));
@@ -849,49 +742,40 @@ const plugin = {
         if (includeQa) {
             fetches.push(this._fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso, scope));
         }
+        if (includeDisputes) {
+            Logger.debug('dashboard: disputes fetch not yet implemented (stub)');
+        }
         const parts = await Promise.all(fetches);
-        const merged = parts.flat();
-        return merged;
+        return parts.flat();
     },
 
-    _sortItems(items, sortOrder) {
-        const sorted = [...items];
-        sorted.sort((a, b) => {
-            const cmp = a.sortAt < b.sortAt ? -1 : a.sortAt > b.sortAt ? 1 : 0;
-            return sortOrder === 'asc' ? cmp : -cmp;
-        });
-        return sorted;
+    _listBoundsFromOptions(options) {
+        const opts = options || {};
+        return {
+            teamIds: (opts.teams || []).map((t) => t.id),
+            projectIds: (opts.projects || []).map((p) => p.id),
+            envKeys: (opts.envs || []).map((e) => e.id),
+            statuses: (opts.statuses || []).map((s) => s.id),
+            contributorIds: (opts.contributors || []).map((c) => c.id),
+            promptRatings: (opts.promptRatings || []).map((r) => r.id),
+            taskIssues: (opts.taskIssues || []).map((i) => i.id),
+            returnTypes: (opts.returnTypes || []).map((r) => r.id)
+        };
     },
 
-    // ── Client-side filters (Filters panel — applied via Apply, not on Search) ──
-
-    _applyClientFilters(items, filters) {
-        let result = items;
-        const teamIds = filters.teamIds || [];
-        const projectIds = filters.projectIds || [];
-        const envKeys = filters.envKeys || [];
-        if (teamIds.length > 0) {
-            const set = new Set(teamIds);
-            result = result.filter((it) => it.task.teamId && set.has(it.task.teamId));
-        } else if (this._allFromList('filter-teams').length > 0) {
-            result = [];
+    _resetFilterDraftsFromResults(items) {
+        const lib = dashLib();
+        const options = lib.buildFilterListOptions(items, this._state.catalog, this._getTeamCatalog());
+        this._state.filterListOptions = options;
+        this._renderFilterLists();
+        for (const { scopeKey, optionsKey } of DASH_FILTER_SCOPES) {
+            const ids = (options[optionsKey] || []).map((o) => o.id);
+            const list = this._q('#wf-dash-' + scopeKey + '-list');
+            if (!list) continue;
+            list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
+            this._updateMsCount(scopeKey);
         }
-        if (projectIds.length > 0) {
-            const set = new Set(projectIds);
-            result = result.filter((it) => it.task.projectId && set.has(it.task.projectId));
-        } else if (this._allFromList('filter-projects').length > 0) {
-            result = [];
-        }
-        if (envKeys.length > 0) {
-            const set = new Set(envKeys);
-            result = result.filter((it) => it.task.envKey && set.has(it.task.envKey));
-        } else if (this._allFromList('filter-envs').length > 0) {
-            result = [];
-        }
-        if (!dashIsQueryEmpty(filters.promptText, filters.caseSensitive)) {
-            result = result.filter((it) => dashTextMatchesQuery(it.task.prompt, filters.promptText, filters.fuzzy, filters.caseSensitive));
-        }
-        return result;
+        return this._listBoundsFromOptions(options);
     },
 
     // ── Popup lifecycle ──
@@ -964,7 +848,7 @@ const plugin = {
         modal.id = 'wf-dash-modal';
         modal.style.cssText = [
             'position: relative', 'display: flex', 'flex-direction: column',
-            'width: min(1120px, 94vw)', 'height: min(880px, 90vh)',
+            'width: 95vw', 'height: 95vh', 'max-width: 95vw', 'max-height: 95vh',
             'background: var(--background, #ffffff)', 'color: var(--foreground, #0f172a)',
             'border: 1px solid var(--border, #e2e8f0)', 'border-radius: 12px',
             'box-shadow: 0 20px 60px rgba(0,0,0,0.35)', 'overflow: hidden',
@@ -995,17 +879,18 @@ const plugin = {
         this._attachListeners();
         this._setActiveTab(this._state.activeTab);
         this._syncOutputToggleUi();
+        this._syncLeftTabUi();
         this._refreshCatalogDependentUi();
-        this._updateStatusFromState();
+        this._updateResultsStatus();
+        this._updateSubstringErrorUi();
+        this._validateRangeUi();
         Logger.log('dashboard: popup built');
     },
 
     _modalHtml() {
         const tabs = [
             { id: 'overview', label: 'Overview' },
-            { id: 'tasks', label: 'Tasks' },
-            { id: 'qa', label: 'QA' },
-            { id: 'sessions', label: 'Sessions' }
+            { id: 'search-output', label: 'Search Output' }
         ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
@@ -1030,11 +915,9 @@ const plugin = {
             <nav style="display: flex; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                 ${tabBtns}
             </nav>
-            <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px;">
+            <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="overview" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">Overview content coming soon.</div>
-                <div data-wf-dash-panel="tasks">${this._searchPanelHtml()}</div>
-                <div data-wf-dash-panel="qa" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">QA content coming soon.</div>
-                <div data-wf-dash-panel="sessions" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">Sessions content coming soon.</div>
+                <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
             </div>
         `;
     },
@@ -1055,143 +938,175 @@ const plugin = {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
     },
 
-    _btnToggleStyle(active) {
-        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0);';
+    _btnToggleStyle(active, colorKind) {
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
         if (active) {
-            return base + ' background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff); border-color: var(--brand, var(--primary, #2563eb));';
+            const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+            return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
         }
-        return base + ' background: var(--background, #fff); color: var(--foreground, #0f172a); opacity: 0.75;';
+        return base + ' ' + DASH_TOGGLE_INACTIVE;
+    },
+
+    _leftTabStyle(active) {
+        const base = 'padding: 8px 12px; font-size: 12px; font-weight: 600; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: transparent;';
+        return active
+            ? base + ' color: var(--foreground, #0f172a); border-bottom-color: var(--brand, var(--primary, #2563eb));'
+            : base + ' color: var(--muted-foreground, #64748b);';
     },
 
     _searchPanelHtml() {
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const input = this._inputStyle();
+        const leftTab = this._state ? this._state.leftTab : 'search';
         return `
-            <section style="display: flex; flex-direction: column; gap: 12px;">
-                <div style="${box}">
-                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
+            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden;">
+                <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                        <nav style="display: flex; gap: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
+                            <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
+                            <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                        </nav>
+
+                        <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto;">
+                                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                                    <p style="${label} line-height: 1.45; margin: 0;">Edit parameters anytime; press Search to fetch.</p>
+                                    <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
+                                </div>
+                                <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                                    <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                                    <div>
+                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Output types</div>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                            <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
+                                            <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
+                                            <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Authors</label>
+                                        <div id="wf-dash-author-box" style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
+                                            <input type="text" id="wf-dash-author-input" autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 120px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
+                                        </div>
+                                        <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
+                                        <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
+                                        <div style="${label} margin-top: 4px;">Empty = all workers.</div>
+                                    </div>
+                                    <div>
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
+                                        <select id="wf-dash-quick-range" style="${input} width: 100%; cursor: pointer;">
+                                            <option value="">Custom</option>
+                                            <option value="today">Today</option>
+                                            <option value="yesterday">Yesterday</option>
+                                            <option value="3d">Last 3 Days</option>
+                                            <option value="7d">Last 7 Days</option>
+                                            <option value="last-week">Last Calendar Week</option>
+                                            <option value="this-month">This Month</option>
+                                            <option value="last-month">Last Calendar Month</option>
+                                            <option value="this-year">This Year</option>
+                                            <option value="last-year">Last Calendar Year</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0;">
+                                        <div style="min-width: 0;">
+                                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
+                                            <input type="date" id="wf-dash-after" style="${input} min-width: 0;">
+                                        </div>
+                                        <div style="min-width: 0;">
+                                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
+                                            <input type="date" id="wf-dash-before" style="${input} min-width: 0;">
+                                        </div>
+                                    </div>
+                                    <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
+                                    <div>
+                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Teams, projects, environments</div>
+                                        <div style="${label} margin-bottom: 8px;">None selected = all. Sent to the API on Search.</div>
+                                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                                            ${this._multiSelectHtml('search-teams', 'Teams', 'All teams', false)}
+                                            ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
+                                            ${this._multiSelectHtml('search-envs', 'Environments', 'All environments', false)}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff);">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                                    <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Clear Parameters</button>
+                                    <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
+                                </div>
+                                <div id="wf-dash-universal-hint" style="display: none; font-size: 11px; color: var(--muted-foreground, #64748b); margin-top: 8px;"></div>
+                                <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); margin-top: 8px;"></div>
+                            </div>
+                        </div>
+
+                        <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                                <p style="${label} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
+                                <div>
+                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
+                                    <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input}">
+                                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                                            <input type="checkbox" id="wf-dash-case"> Case sensitive
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                                            <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
+                                        </label>
+                                    </div>
+                                    <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
+                                        <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions
+                                    </label>
+                                    <div id="wf-dash-substring-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
+                                </div>
+                                <div>
+                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Sort</label>
+                                    <select id="wf-dash-sort" style="${input} cursor: pointer;">
+                                        <option value="desc">Created — newest first</option>
+                                        <option value="asc">Created — oldest first</option>
+                                    </select>
+                                </div>
+                                <div id="wf-dash-filter-lists-wrap">
+                                    <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
+                                    <div style="${label} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
+                                    <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
+                                        ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff); display: flex; justify-content: flex-end;">
+                                <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                         <div style="min-width: 0;">
-                            <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Worker Output Search</div>
-                            <div style="${label} margin-top: 4px; line-height: 1.45;">Configure search parameters and press Search. Parameters lock until you Clear. Use Filters below to refine loaded results.</div>
+                            <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Results</div>
+                            <div id="wf-dash-results-status" style="${label} margin-top: 4px;">Set search parameters on the left, then press Search.</div>
                         </div>
-                        <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
+                        <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} flex-shrink: 0; font-size: 11px;">Clear Results</button>
                     </div>
-                    <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                        <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-
-                        <div>
-                            <div style="${label} margin-bottom: 6px; font-weight: 600;">Output types</div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true)}">Task Creation</button>
-                                <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true)}">QA</button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Authors</label>
-                            <div id="wf-dash-author-box" style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
-                                <input type="text" id="wf-dash-author-input" autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 160px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
-                            </div>
-                            <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
-                            <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
-                            <div style="${label} margin-top: 4px;">Empty = all workers.</div>
-                        </div>
-
-                        <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
-                            <div style="flex-shrink: 0;">
-                                <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
-                                <select id="wf-dash-quick-range" style="${input} width: auto; min-width: 168px; cursor: pointer;">
-                                    <option value="">Custom</option>
-                                    <option value="today">Today</option>
-                                    <option value="yesterday">Yesterday</option>
-                                    <option value="3d">Last 3 Days</option>
-                                    <option value="7d">Last 7 Days</option>
-                                    <option value="last-week">Last Calendar Week</option>
-                                    <option value="this-month">This Month</option>
-                                    <option value="last-month">Last Calendar Month</option>
-                                    <option value="this-year">This Year</option>
-                                    <option value="last-year">Last Calendar Year</option>
-                                </select>
-                            </div>
-                            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 220px;">
-                                <div>
-                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
-                                    <input type="date" id="wf-dash-after" style="${input}">
-                                </div>
-                                <div>
-                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
-                                    <input type="date" id="wf-dash-before" style="${input}">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
-
-                        <div>
-                            <div style="${label} margin-bottom: 6px; font-weight: 600;">Teams, projects, environments</div>
-                            <div style="${label} margin-bottom: 8px;">None selected = all. Sent to the API on Search.</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
-                                ${this._multiSelectHtml('search-teams', 'Teams', 'All teams', false)}
-                                ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
-                                ${this._multiSelectHtml('search-envs', 'Environments', 'All environments', false)}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 14px 14px;">
-                        <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
-                        <button type="button" id="wf-dash-clear" style="${this._btnStyle()}">Clear</button>
-                    </div>
-
-                    <div id="wf-dash-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); padding: 0 14px 10px;"></div>
-                    <div id="wf-dash-status" style="font-size: 12px; color: var(--muted-foreground, #64748b); padding: 0 14px 14px;"></div>
+                    <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;"></div>
                 </div>
-
-                <div style="${box} padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                    <div>
-                        <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Filters</div>
-                        <div style="${label} margin-top: 4px;">Refine loaded results. Filter changes apply instantly.</div>
-                    </div>
-
-                    <div>
-                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
-                        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-                            <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input} flex: 1; min-width: 200px;">
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                                <input type="checkbox" id="wf-dash-case"> Case sensitive
-                            </label>
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                                <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
-                            </label>
-                        </div>
-                    </div>
-
-                    <div style="max-width: 280px;">
-                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Sort</label>
-                        <select id="wf-dash-sort" style="${input} cursor: pointer;">
-                            <option value="desc">Created — newest first</option>
-                            <option value="asc">Created — oldest first</option>
-                        </select>
-                    </div>
-
-                    <div id="wf-dash-filter-scope-wrap" style="display: none;">
-                        <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
-                        <div style="${label} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
-                            ${this._multiSelectHtml('filter-teams', 'Teams', 'Search first to filter', true)}
-                            ${this._multiSelectHtml('filter-projects', 'Projects', 'Search first to filter', true)}
-                            ${this._multiSelectHtml('filter-envs', 'Environments', 'Search first to filter', true)}
-                        </div>
-                    </div>
-
-                    <div>
-                        <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
-                    </div>
-                </div>
-
-                <div id="wf-dash-results" style="display: flex; flex-direction: column; gap: 8px;"></div>
             </section>
         `;
+    },
+
+    _filterScopeLabel(scopeKey) {
+        const labels = {
+            'filter-teams': 'Teams',
+            'filter-projects': 'Projects',
+            'filter-envs': 'Environments',
+            'filter-statuses': 'Task status',
+            'filter-contributors': 'Contributor',
+            'filter-prompt-ratings': 'Prompt rating',
+            'filter-task-issues': 'Task issues',
+            'filter-return-types': 'Return types'
+        };
+        return labels[scopeKey] || scopeKey;
     },
 
     _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
@@ -1244,8 +1159,8 @@ const plugin = {
             authorInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    const parts = authorInput.value.split(/[,\s]+/).filter(Boolean);
-                    if (parts.length > 0) void this._resolveAuthorToken(parts[0]);
+                    const query = authorInput.value.trim();
+                    if (query) void this._resolveAuthorToken(query);
                 } else if (e.key === 'Backspace' && authorInput.value === '' && this._state.draftTokens.length > 0) {
                     this._removeAuthorToken(this._state.draftTokens[this._state.draftTokens.length - 1].id);
                 }
@@ -1275,42 +1190,23 @@ const plugin = {
 
         const toggleTasks = this._q('#wf-dash-toggle-tasks');
         const toggleQa = this._q('#wf-dash-toggle-qa');
+        const toggleDisputes = this._q('#wf-dash-toggle-disputes');
         if (toggleTasks) toggleTasks.addEventListener('click', () => this._toggleOutputType('tasks'));
         if (toggleQa) toggleQa.addEventListener('click', () => this._toggleOutputType('qa'));
+        if (toggleDisputes) toggleDisputes.addEventListener('click', () => this._toggleOutputType('disputes'));
 
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) {
-            let promptFilterTimer = null;
-            const schedulePromptFilter = () => {
-                if (!this._state.cachedItems) return;
-                if (promptFilterTimer) clearTimeout(promptFilterTimer);
-                promptFilterTimer = setTimeout(() => this._applyFiltersAndRender(), 250);
-            };
-            prompt.addEventListener('input', schedulePromptFilter);
+            prompt.addEventListener('input', () => this._updateSubstringErrorUi());
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (promptFilterTimer) clearTimeout(promptFilterTimer);
                     this._applyFiltersAndRender();
                 }
             });
         }
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
-        const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) {
-            sortEl.addEventListener('change', () => {
-                if (this._state.cachedItems) this._applyFiltersAndRender();
-            });
-        }
-        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => {
-            const el = this._q(sel);
-            if (el) {
-                el.addEventListener('change', () => {
-                    if (this._state.cachedItems) this._applyFiltersAndRender();
-                });
-            }
-        });
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -1323,8 +1219,14 @@ const plugin = {
 
         const search = this._q('#wf-dash-search');
         if (search) search.addEventListener('click', () => { void this._submitSearch(); });
-        const clear = this._q('#wf-dash-clear');
-        if (clear) clear.addEventListener('click', () => this._clearSearch());
+        const clearParams = this._q('#wf-dash-clear-params');
+        if (clearParams) clearParams.addEventListener('click', () => this._clearParameters());
+        const clearResults = this._q('#wf-dash-clear-results');
+        if (clearResults) clearResults.addEventListener('click', () => this._clearResults());
+
+        modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => this._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
+        });
 
         modal.addEventListener('change', (e) => {
             const cb = e.target;
@@ -1334,11 +1236,11 @@ const plugin = {
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
-                this._applyFiltersAndRender();
+                this._renderFilterLists();
             }
         });
 
-        // Delegated copy + candidate selection handlers
+        // Delegated copy, card UI, candidate selection handlers
         modal.addEventListener('click', (e) => {
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
@@ -1355,25 +1257,70 @@ const plugin = {
             const removeTok = e.target.closest('[data-wf-dash-remove-token]');
             if (removeTok && modal.contains(removeTok)) {
                 e.stopPropagation();
-                if (!this._state.searchParamsLocked) {
-                    this._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
-                }
+                this._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
                 return;
             }
             const msAll = e.target.closest('[data-wf-dash-ms-all]');
             if (msAll && modal.contains(msAll)) {
-                this._setMultiselectChecked(msAll.getAttribute('data-wf-dash-ms-all'), true);
+                const key = msAll.getAttribute('data-wf-dash-ms-all');
+                this._setMultiselectChecked(key, true);
+                if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 return;
             }
             const msNone = e.target.closest('[data-wf-dash-ms-none]');
             if (msNone && modal.contains(msNone)) {
-                this._setMultiselectChecked(msNone.getAttribute('data-wf-dash-ms-none'), false);
+                const key = msNone.getAttribute('data-wf-dash-ms-none');
+                this._setMultiselectChecked(key, false);
+                if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
+                return;
             }
+            const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
+            if (reviewerBadge && modal.contains(reviewerBadge)) {
+                const taskId = reviewerBadge.getAttribute('data-task-id');
+                const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
+                const ui = this._getCardUi(taskId);
+                ui.expanded = false;
+                ui.selectedDisplayNo = displayNo;
+                this._renderResults();
+                return;
+            }
+            const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
+            if (showAllBtn && modal.contains(showAllBtn)) {
+                const ui = this._getCardUi(showAllBtn.getAttribute('data-task-id'));
+                ui.expanded = true;
+                this._renderResults();
+                return;
+            }
+            const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
+            if (collapseBtn && modal.contains(collapseBtn)) {
+                const taskId = collapseBtn.getAttribute('data-task-id');
+                const ui = this._getCardUi(taskId);
+                ui.expanded = false;
+                ui.selectedDisplayNo = null;
+                this._renderResults();
+                return;
+            }
+            const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
+            if (timelineToggle && modal.contains(timelineToggle)) {
+                const ui = this._getCardUi(timelineToggle.getAttribute('data-task-id'));
+                ui.timelineNewestFirst = !ui.timelineNewestFirst;
+                this._renderResults();
+            }
+        });
+
+        modal.addEventListener('change', (e) => {
+            const sel = e.target;
+            if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
+            const taskId = sel.getAttribute('data-task-id');
+            const displayNo = parseInt(sel.value, 10);
+            const ui = this._getCardUi(taskId);
+            ui.expanded = false;
+            ui.selectedDisplayNo = displayNo;
+            this._renderResults();
         });
     },
 
     _toggleOutputType(kind) {
-        if (this._state.searchParamsLocked) return;
         if (kind === 'tasks') {
             this._state.includeTasks = !this._state.includeTasks;
             this._syncOutputToggleUi();
@@ -1382,34 +1329,29 @@ const plugin = {
             this._state.includeQa = !this._state.includeQa;
             this._syncOutputToggleUi();
             Logger.log('dashboard: QA ' + (this._state.includeQa ? 'on' : 'off'));
+        } else if (kind === 'disputes') {
+            this._state.includeDisputes = !this._state.includeDisputes;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: Disputes ' + (this._state.includeDisputes ? 'on' : 'off'));
         }
     },
 
     _syncOutputToggleUi() {
         const tasksBtn = this._q('#wf-dash-toggle-tasks');
         const qaBtn = this._q('#wf-dash-toggle-qa');
+        const disputesBtn = this._q('#wf-dash-toggle-disputes');
         if (tasksBtn) {
             tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
-            tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks);
+            tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
         }
         if (qaBtn) {
             qaBtn.setAttribute('aria-pressed', this._state.includeQa ? 'true' : 'false');
-            qaBtn.style.cssText = this._btnToggleStyle(this._state.includeQa);
+            qaBtn.style.cssText = this._btnToggleStyle(this._state.includeQa, 'qa');
         }
-    },
-
-    _setSearchParamsLocked(locked) {
-        this._state.searchParamsLocked = locked;
-        const fields = this._q('#wf-dash-search-fields');
-        if (fields) {
-            fields.style.opacity = locked ? '0.55' : '';
-            fields.style.pointerEvents = locked ? 'none' : '';
+        if (disputesBtn) {
+            disputesBtn.setAttribute('aria-pressed', this._state.includeDisputes ? 'true' : 'false');
+            disputesBtn.style.cssText = this._btnToggleStyle(this._state.includeDisputes, 'dispute');
         }
-        const refreshBtn = this._q('#wf-dash-refresh');
-        if (refreshBtn) refreshBtn.disabled = locked || this._state.bootstrapStatus === 'loading';
-        const searchBtn = this._q('#wf-dash-search');
-        if (searchBtn) searchBtn.disabled = locked || this._state.loading;
-        Logger.debug('dashboard: search params ' + (locked ? 'locked' : 'unlocked'));
     },
 
     _setMultiselectChecked(scopeKey, checked) {
@@ -1427,7 +1369,12 @@ const plugin = {
             btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
         });
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
-            panel.style.display = panel.getAttribute('data-wf-dash-panel') === tabId ? '' : 'none';
+            const active = panel.getAttribute('data-wf-dash-panel') === tabId;
+            if (tabId === 'search-output') {
+                panel.style.display = active ? 'flex' : 'none';
+            } else {
+                panel.style.display = active ? '' : 'none';
+            }
         });
     },
 
@@ -1462,7 +1409,6 @@ const plugin = {
     },
 
     _addAuthorToken(person) {
-        if (this._state.searchParamsLocked) return;
         if (this._state.draftTokens.some((t) => t.id === person.id)) return;
         this._state.draftTokens.push(person);
         this._hideAuthorCandidates();
@@ -1472,7 +1418,6 @@ const plugin = {
     },
 
     _removeAuthorToken(id) {
-        if (this._state.searchParamsLocked) return;
         this._state.draftTokens = this._state.draftTokens.filter((t) => t.id !== id);
         this._renderAuthorTokens();
     },
@@ -1559,14 +1504,21 @@ const plugin = {
         return [...list.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
-    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked) {
+    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds) {
         if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
-        return items.map((it) => `
+        const irrelevant = irrelevantIds || null;
+        return items.map((it) => {
+            const dim = irrelevant && irrelevant.has(it.id);
+            const spanStyle = dim
+                ? 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
+                : 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+            return `
             <label style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
                 <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
-                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(it.label)}</span>
-            </label>`).join('');
+                <span style="${spanStyle}">${dashEscHtml(it.label)}</span>
+            </label>`;
+        }).join('');
     },
 
     _updateMsCount(scopeKey) {
@@ -1618,85 +1570,94 @@ const plugin = {
         this._updateMsCount('search-envs');
     },
 
-    _getResultFilterSets() {
-        const items = this._state.cachedItems;
-        if (!items) return null;
-        return {
-            teamIds: new Set(items.map((i) => i.task.teamId).filter(Boolean)),
-            projectIds: new Set(items.map((i) => i.task.projectId).filter(Boolean)),
-            envKeys: new Set(items.map((i) => i.task.envKey).filter(Boolean))
-        };
+    _getFilterDraft() {
+        const draft = {};
+        for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
+            draft[draftKey] = this._selectedFromList(scopeKey);
+        }
+        return draft;
     },
 
-    _resetFilterScopeLists() {
-        const wrap = this._q('#wf-dash-filter-scope-wrap');
-        if (wrap) wrap.style.display = 'none';
-        ['filter-teams', 'filter-projects', 'filter-envs'].forEach((scopeKey) => {
+    _resetFilterLists() {
+        this._state.filterListOptions = {
+            teams: [], projects: [], envs: [],
+            statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: []
+        };
+        for (const { scopeKey } of DASH_FILTER_SCOPES) {
             const list = this._q('#wf-dash-' + scopeKey + '-list');
-            if (!list) return;
-            const hint = list.getAttribute('data-wf-dash-empty') || 'Search first to filter';
+            if (!list) continue;
+            const hint = list.getAttribute('data-wf-dash-empty') || 'Run a search to enable';
             list.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
             this._updateMsCount(scopeKey);
-        });
+        }
     },
 
-    _renderFilterScopeLists() {
-        const wrap = this._q('#wf-dash-filter-scope-wrap');
+    _renderFilterLists() {
         const items = this._state.cachedItems;
-        if (!wrap) return;
-        if (!items || items.length === 0) {
-            this._resetFilterScopeLists();
+        const options = this._state.filterListOptions;
+        if (!items || !options) {
+            this._resetFilterLists();
             return;
         }
-        wrap.style.display = '';
-        const sets = this._getResultFilterSets();
-        const prevTeams = new Set(this._selectedFromList('filter-teams'));
-        const prevProjects = new Set(this._selectedFromList('filter-projects'));
-        const prevEnvs = new Set(this._selectedFromList('filter-envs'));
-        const hadFilterLists = prevTeams.size > 0 || prevProjects.size > 0 || prevEnvs.size > 0;
+        const listBounds = this._listBoundsFromOptions(options);
+        const draft = this._getFilterDraft();
+        const lib = dashLib();
+        const irrelevance = items.length > 0
+            ? lib.computeFilterIrrelevance(items, draft, listBounds, options)
+            : lib.emptyFilterIrrelevance();
 
-        const teamItems = this._getTeamCatalog()
-            .filter(([id]) => sets.teamIds.has(id))
-            .map(([id, label]) => ({ id, label }));
-        const projectItems = ((this._state.catalog && this._state.catalog.projects) || [])
-            .filter((p) => sets.projectIds.has(p.id))
-            .map((p) => ({ id: p.id, label: p.name }));
-        const envItems = ((this._state.catalog && this._state.catalog.environments) || [])
-            .filter((e) => sets.envKeys.has(e.env_key))
-            .map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
+        for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
+            const list = this._q('#wf-dash-' + scopeKey + '-list');
+            if (!list) continue;
+            const prevSelected = new Set(this._selectedFromList(scopeKey));
+            const optionItems = options[optionsKey] || [];
+            const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
+            const irrelevantSet = irrelevance[draftKey] || new Set();
+            const hadSelection = prevSelected.size > 0;
+            list.innerHTML = this._multiSelectItemsHtml(
+                scopeKey,
+                optionItems,
+                emptyHint,
+                false,
+                !hadSelection && optionItems.length > 0,
+                irrelevantSet
+            );
+            if (hadSelection) {
+                list.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = prevSelected.has(cb.value);
+                });
+            }
+            this._updateMsCount(scopeKey);
+        }
+        Logger.debug('dashboard: filter lists rendered');
+    },
 
-        const teamsList = this._q('#wf-dash-filter-teams-list');
-        if (teamsList) {
-            teamsList.innerHTML = this._multiSelectItemsHtml('filter-teams', teamItems, 'No teams in results', false, !hadFilterLists);
-            if (hadFilterLists) {
-                teamsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevTeams.has(cb.value);
-                });
-            }
-            this._updateMsCount('filter-teams');
+    _getCardUi(taskId) {
+        if (!this._state.cardUi[taskId]) {
+            this._state.cardUi[taskId] = {
+                expanded: false,
+                timelineNewestFirst: true,
+                selectedDisplayNo: null
+            };
         }
-        const projectsList = this._q('#wf-dash-filter-projects-list');
-        if (projectsList) {
-            projectsList.innerHTML = this._multiSelectItemsHtml('filter-projects', projectItems, 'No projects in results', false, !hadFilterLists);
-            if (hadFilterLists) {
-                projectsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevProjects.has(cb.value);
-                });
-            }
-            this._updateMsCount('filter-projects');
-        }
-        const envsList = this._q('#wf-dash-filter-envs-list');
-        if (envsList) {
-            envsList.innerHTML = this._multiSelectItemsHtml('filter-envs', envItems, 'No environments in results', false, !hadFilterLists);
-            if (hadFilterLists) {
-                envsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevEnvs.has(cb.value);
-                });
-            }
-            this._updateMsCount('filter-envs');
-        }
-        Logger.debug('dashboard: filter scope lists rendered — teams ' + teamItems.length
-            + ', projects ' + projectItems.length + ', envs ' + envItems.length);
+        return this._state.cardUi[taskId];
+    },
+
+    _setLeftTab(tab) {
+        this._state.leftTab = tab;
+        this._syncLeftTabUi();
+    },
+
+    _syncLeftTabUi() {
+        const tab = this._state.leftTab;
+        const searchPanel = this._q('#wf-dash-left-panel-search');
+        const filtersPanel = this._q('#wf-dash-left-panel-filters');
+        if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
+        if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
+        this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
+            const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
+            btn.style.cssText = this._leftTabStyle(active);
+        });
     },
 
     // ── Dirty / range validation ──
@@ -1733,19 +1694,58 @@ const plugin = {
                 el.style.display = 'none';
             }
         }
+        const lib = dashLib();
+        const isUniversal = lib.isUniversalSearchParams({
+            authorCount: this._state.draftTokens.length,
+            searchTeamIds: this._selectedFromList('search-teams'),
+            searchProjectIds: this._selectedFromList('search-projects'),
+            searchEnvKeys: this._selectedFromList('search-envs')
+        });
+        const universalCheck = lib.validateUniversalSearchRange(after, before);
+        const blankBlocked = isUniversal && !universalCheck.allowed;
+        const hintEl = this._q('#wf-dash-universal-hint');
+        if (hintEl) {
+            if (blankBlocked) {
+                hintEl.textContent = lib.UNIVERSAL_SEARCH_RANGE_MESSAGE;
+                hintEl.style.display = 'block';
+            } else {
+                hintEl.style.display = 'none';
+            }
+        }
         const searchBtn = this._q('#wf-dash-search');
-        if (searchBtn) searchBtn.disabled = (Boolean(after || before) && !check.valid) || this._state.loading || this._state.searchParamsLocked;
-        return check;
+        if (searchBtn) {
+            searchBtn.disabled = this._state.loading
+                || blankBlocked
+                || ((after || before) && !check.valid);
+        }
+        return { check, isUniversal, blankBlocked };
+    },
+
+    _updateSubstringErrorUi() {
+        const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
+        const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
+        const tooShort = dashLib().isSubstringTooShort(promptText, caseSensitive);
+        const el = this._q('#wf-dash-substring-error');
+        if (el) {
+            if (tooShort) {
+                el.textContent = 'Substring must be at least ' + dashLib().MIN_SUBSTRING_LENGTH + ' characters.';
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+        const applyBtn = this._q('#wf-dash-apply-filters');
+        if (applyBtn) applyBtn.disabled = !this._state.cachedItems || tooShort;
     },
 
     // ── Search submit / clear ──
 
     async _submitSearch() {
-        if (this._state.searchParamsLocked) return;
         const includeTasks = this._state.includeTasks;
         const includeQa = this._state.includeQa;
-        if (!includeTasks && !includeQa) {
-            this._setSearchError('Enable at least one output type: Task Creation or QA.');
+        const includeDisputes = this._state.includeDisputes;
+        if (!includeTasks && !includeQa && !includeDisputes) {
+            this._setSearchError('Enable at least one output type: Task Creation, QA, or Disputes.');
             return;
         }
         const after = (this._q('#wf-dash-after') || {}).value || '';
@@ -1755,31 +1755,37 @@ const plugin = {
             this._setSearchError(rangeCheck.error);
             return;
         }
+        const lib = dashLib();
+        if (lib.isUniversalSearchParams({
+            authorCount: this._state.draftTokens.length,
+            searchTeamIds: this._selectedFromList('search-teams'),
+            searchProjectIds: this._selectedFromList('search-projects'),
+            searchEnvKeys: this._selectedFromList('search-envs')
+        }) && !lib.validateUniversalSearchRange(after, before).allowed) {
+            this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
+            return;
+        }
 
         const authorIds = this._state.draftTokens.map((t) => t.id);
         const scope = await this._buildSearchApiScope();
         Logger.info('dashboard: search started — '
             + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-            + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null].filter(Boolean).join('+')
+            + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
             + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
         this._state.committed = {
             authorIds,
-            taskCreation: includeTasks,
-            qa: includeQa,
+            authorCount: authorIds.length,
+            includeTaskCreation: includeTasks,
+            includeQa,
+            includeDisputes,
             afterLocal: after,
-            beforeLocal: before,
-            scopeSummary: {
-                teams: scope.narrowedTeams ? scope.teamIds.length : 'all',
-                projects: scope.narrowedProjects ? scope.projectIds.length : 'all',
-                envs: scope.narrowedEnvs ? scope.envKeys.length : 'all'
-            }
+            beforeLocal: before
         };
         this._state.hasSearched = true;
         this._state.loading = true;
         this._setSearchError('');
-        this._setSearchParamsLocked(true);
-        this._setStatus('Loading…');
         this._setSearchButtonLoading(true);
+        this._updateResultsStatus();
         this._renderResults();
 
         try {
@@ -1787,42 +1793,52 @@ const plugin = {
                 authorIds,
                 includeTaskCreation: includeTasks,
                 includeQa,
+                includeDisputes,
                 afterIso: rangeCheck.afterIso,
                 beforeIso: rangeCheck.beforeIso,
                 scope
             });
             this._state.cachedItems = items;
             Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
-            this._renderFilterScopeLists();
-            this._applyFiltersAndRender();
+            const prompt = this._q('#wf-dash-prompt');
+            if (prompt) prompt.value = '';
+            const hidden = this._q('#wf-dash-hidden-versions');
+            if (hidden) hidden.checked = false;
+            const caseEl = this._q('#wf-dash-case');
+            if (caseEl) caseEl.checked = false;
+            const fuzzyEl = this._q('#wf-dash-fuzzy');
+            if (fuzzyEl) fuzzyEl.checked = false;
+            const sortEl = this._q('#wf-dash-sort');
+            if (sortEl) sortEl.value = 'desc';
+            const bounds = this._resetFilterDraftsFromResults(items);
+            const initialFilters = this._currentClientFilters();
+            const filtered = lib.applyFiltersAndSort(items, initialFilters, bounds, 'desc');
+            this._state.filteredItems = filtered;
+            this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
+            this._setLeftTab('filters');
         } catch (err) {
             this._setSearchError(err.message);
             this._state.cachedItems = null;
             this._state.filteredItems = null;
+            this._state.appliedFilters = null;
             Logger.warn('dashboard: search failed', err);
         } finally {
             this._state.loading = false;
             this._setSearchButtonLoading(false);
-            this._setSearchParamsLocked(true);
-            this._updateStatusFromState();
+            this._updateResultsStatus();
+            this._updateSubstringErrorUi();
             this._renderResults();
         }
     },
 
-    _clearSearch() {
+    _clearParameters() {
         this._state.draftTokens = [];
-        this._state.cachedItems = null;
-        this._state.filteredItems = null;
-        this._state.hasSearched = false;
-        this._state.committed = null;
         this._state.includeTasks = true;
         this._state.includeQa = true;
-        ['#wf-dash-after', '#wf-dash-before', '#wf-dash-prompt'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
+        this._state.includeDisputes = false;
+        ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
-        const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) sortEl.value = 'desc';
-        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const list = this._q('#wf-dash-' + key + '-list');
             if (list) list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
@@ -1830,97 +1846,142 @@ const plugin = {
         });
         this._syncOutputToggleUi();
         this._renderSearchProjectsList();
-        this._resetFilterScopeLists();
         this._renderAuthorTokens();
         this._hideAuthorCandidates();
         this._setAuthorError('');
         this._setSearchError('');
         this._validateRangeUi();
-        this._setSearchParamsLocked(false);
-        this._setStatus('Set search parameters, then press Search. Use Filters to refine loaded results.');
+        Logger.log('dashboard: search parameters cleared');
+    },
+
+    _clearResults() {
+        this._state.cachedItems = null;
+        this._state.filteredItems = null;
+        this._state.appliedFilters = null;
+        this._state.hasSearched = false;
+        this._state.committed = null;
+        this._state.cardUi = {};
+        this._resetFilterLists();
+        const prompt = this._q('#wf-dash-prompt');
+        if (prompt) prompt.value = '';
+        const hidden = this._q('#wf-dash-hidden-versions');
+        if (hidden) hidden.checked = false;
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = 'desc';
+        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
+        this._updateResultsStatus();
+        this._updateSubstringErrorUi();
         this._renderResults();
-        Logger.log('dashboard: search cleared — parameters unlocked');
+        Logger.log('dashboard: results cleared');
     },
 
     _currentClientFilters() {
-        return {
+        const draft = this._getFilterDraft();
+        return Object.assign({}, draft, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            teamIds: this._selectedFromList('filter-teams'),
-            projectIds: this._selectedFromList('filter-projects'),
-            envKeys: this._selectedFromList('filter-envs'),
+            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
-        };
+        });
+    },
+
+    _hasActiveFilters() {
+        const applied = this._state.appliedFilters;
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        if (!applied) return false;
+        const lib = dashLib();
+        return applied.teamIds.length < bounds.teamIds.length
+            || applied.projectIds.length < bounds.projectIds.length
+            || applied.envKeys.length < bounds.envKeys.length
+            || (applied.statuses || []).length < bounds.statuses.length
+            || (applied.contributorIds || []).length < bounds.contributorIds.length
+            || (applied.promptRatings || []).length < bounds.promptRatings.length
+            || (applied.taskIssues || []).length < bounds.taskIssues.length
+            || (applied.returnTypes || []).length < bounds.returnTypes.length
+            || !lib.isQueryEmpty(applied.promptText, applied.caseSensitive);
     },
 
     _applyFiltersAndRender() {
+        const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
-            this._updateStatusFromState();
+            this._updateResultsStatus();
             this._renderResults();
             return;
         }
         const filters = this._currentClientFilters();
+        if (lib.isSubstringTooShort(filters.promptText, filters.caseSensitive)) {
+            this._updateSubstringErrorUi();
+            return;
+        }
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        const sortOrder = filters.sortOrder;
         const before = this._state.cachedItems.length;
-        let result = this._applyClientFilters(this._state.cachedItems, filters);
-        result = this._sortItems(result, filters.sortOrder);
+        const result = lib.applyFiltersAndSort(this._state.cachedItems, filters, bounds, sortOrder);
         this._state.filteredItems = result;
-        const after = result.length;
-        Logger.log('dashboard: filters applied — ' + after + ' / ' + before + ' items'
-            + (filters.sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
-        this._updateStatusFromState();
+        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
+        Logger.log('dashboard: filters applied — ' + result.length + ' / ' + before + ' items'
+            + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+        this._renderFilterLists();
+        this._updateResultsStatus();
         this._renderResults();
     },
 
     // ── Status text ──
 
-    _setStatus(text) {
-        const el = this._q('#wf-dash-status');
-        if (el) el.textContent = text || '';
-    },
-
     _setSearchError(text) {
         this._state.searchError = text || null;
-        const el = this._q('#wf-dash-error');
+        const el = this._q('#wf-dash-search-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
-        if (text && text.startsWith('Enable at least')) this._setStatus('');
     },
 
     _setSearchButtonLoading(loading) {
         const btn = this._q('#wf-dash-search');
         if (!btn) return;
-        btn.disabled = loading;
         btn.textContent = loading ? 'Loading…' : 'Search';
-        const clear = this._q('#wf-dash-clear');
-        if (clear) clear.disabled = loading;
+        this._validateRangeUi();
+        const clearParams = this._q('#wf-dash-clear-params');
+        if (clearParams) clearParams.disabled = loading;
     },
 
-    _updateStatusFromState() {
+    _updateResultsStatus() {
+        const el = this._q('#wf-dash-results-status');
+        if (!el) return;
         const s = this._state;
+        const label = this._labelStyle();
         if (!s.hasSearched) {
-            this._setStatus('Set search parameters, then press Search. Use Filters to refine loaded results.');
+            el.textContent = 'Set search parameters on the left, then press Search.';
             return;
         }
-        if (s.loading) { this._setStatus('Loading…'); return; }
-        if (s.searchError && !s.cachedItems) { this._setStatus(''); return; }
-        if (s.filteredItems !== null && s.cachedItems !== null) {
-            const committed = s.committed || { authorIds: [], taskCreation: false, qa: false };
-            const authorLabel = committed.authorIds.length > 0 ? committed.authorIds.length + ' author(s)' : 'all authors';
-            const modeParts = [];
-            if (committed.taskCreation) modeParts.push('tasks');
-            if (committed.qa) modeParts.push('QA');
+        if (s.loading) {
+            el.textContent = 'Loading…';
+            return;
+        }
+        if (s.searchError && !s.cachedItems) {
+            el.textContent = '';
+            return;
+        }
+        if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
+            const committed = s.committed;
+            const authorLabel = committed.authorCount > 0 ? committed.authorCount + ' author(s)' : 'all authors';
             const countLabel = s.filteredItems.length === s.cachedItems.length
                 ? s.filteredItems.length + ' result(s)'
                 : s.filteredItems.length + ' of ' + s.cachedItems.length + ' result(s)';
-            const f = this._currentClientFilters();
-            const hasFilters = f.teamIds.length < this._allFromList('filter-teams').length
-                || f.projectIds.length < this._allFromList('filter-projects').length
-                || f.envKeys.length < this._allFromList('filter-envs').length
-                || !dashIsQueryEmpty(f.promptText, f.caseSensitive);
-            this._setStatus(countLabel + ' — ' + authorLabel + ' · ' + modeParts.join(' + ')
-                + (hasFilters ? ' · filters active' : '') + ' · search locked (Clear to edit)');
+            const modes = [];
+            if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
+            if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
+            if (committed.includeDisputes) modes.push({ kind: 'dispute', label: 'disputes' });
+            const modeHtml = modes.map((mode, index) => {
+                const cfg = DASH_OUTPUT_KIND_CONFIG[mode.kind];
+                const hl = cfg ? cfg.textHighlight : '';
+                return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
+            }).join('');
+            const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}</span>`;
+            return;
         }
+        el.textContent = 'Set search parameters on the left, then press Search.';
     },
 
     // ── Results rendering ──
@@ -1929,7 +1990,19 @@ const plugin = {
         const wrap = this._q('#wf-dash-results');
         if (!wrap) return;
         const s = this._state;
-        if (!s.hasSearched || s.loading || (s.searchError && s.searchError.startsWith('Enable at least')) || s.filteredItems === null) {
+        if (s.loading) {
+            wrap.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">Loading…</p>';
+            return;
+        }
+        if (!s.hasSearched) {
+            wrap.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">Results will appear here after you run a search.</p>';
+            return;
+        }
+        if (s.searchError && s.searchError.startsWith('Enable at least')) {
+            wrap.innerHTML = '';
+            return;
+        }
+        if (s.filteredItems === null) {
             wrap.innerHTML = '';
             return;
         }
@@ -1991,13 +2064,27 @@ const plugin = {
         return `<div style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${this._labelSpan(label)}${valueHtml}</div>`;
     },
 
-    _timestampWithAgoHtml(iso) {
+    _plainTimestampHtml(iso) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
         const agoHtml = ago
             ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
             : '';
-        return this._copyChipHtml(formatted) + agoHtml;
+        return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>${agoHtml}`;
+    },
+
+    _dashHighlightedHtml(text, query, caseSensitive) {
+        const segments = dashLib().buildHighlightSegments(text, query, { caseSensitive });
+        return segments.map((seg) => (
+            seg.match
+                ? `<mark style="background: color-mix(in srgb, #facc15 45%, transparent); color: inherit; padding: 0 1px; border-radius: 2px;">${dashEscHtml(seg.text)}</mark>`
+                : dashEscHtml(seg.text)
+        )).join('');
+    },
+
+    _dataValueHtml(text) {
+        const display = String(text == null ? '' : text).trim() || '—';
+        return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
     },
 
     _dismissedBadgeHtml() {
@@ -2018,27 +2105,36 @@ const plugin = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(status || '—')}</span>`;
     },
 
-    _qaBlockHtml(qa) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive) {
         const positive = qa.isPositive;
-        // Green for accepted, red for returned — prompt rating is separate and must not affect these colors
+        const hq = highlightQuery || '';
+        const cs = Boolean(caseSensitive);
         const border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
         const bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
+        const yellowBadge = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
         const statusLabel = positive
             ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
-            : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`;
+            : (qa.isEscalated
+                ? `<span style="${yellowBadge}">Escalated for Fleet Review</span>`
+                : (qa.isFlaggedAsBugged
+                    ? `<span style="${yellowBadge}">Flagged as Bugged</span>`
+                    : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`));
         const badges = qa.rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${qa.rejectionBadges.map((l) => `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
         const blocks = qa.textBlocks.map((b) => {
             const blockLabel = dashQaTextBlockLabel(b.label, positive);
+            const body = b.text
+                ? this._dashHighlightedHtml(b.text, hq, cs)
+                : '—';
             return `
             <div>
                 <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(blockLabel)}${this._copyIconHtml(b.text)}</div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>
             </div>`;
         }).join('');
         const submittedHtml = qa.feedbackAt
-            ? this._fieldGroupHtml('Submitted', this._timestampWithAgoHtml(qa.feedbackAt))
+            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(qa.feedbackAt))
             : '';
         const promptRatingHtml = `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`;
         return `
@@ -2051,60 +2147,176 @@ const plugin = {
                     </div>
                     <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
-                    ${this._labelSpan('QA Reviewer')}${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open QA reviewer in Fleet')}
-                </div>
                 ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
                 ${blocks}
             </div>`;
     },
 
-    _kindBadgeHtml(kindLabel) {
-        if (!kindLabel) return '';
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(kindLabel)}</span>`;
+    _reviewerBadgeHtml(entry, active, taskId) {
+        const name = entry.reviewer.name || entry.reviewer.email || 'Reviewer';
+        let label = 'Returned';
+        let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        if (entry.isPositive) {
+            label = 'Accepted';
+            cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
+        } else if (entry.isEscalated || entry.isFlaggedAsBugged) {
+            label = entry.isEscalated ? 'Escalated' : 'Bugged';
+            cls = 'color: #92400e; background: color-mix(in srgb, #facc15 35%, transparent);';
+        }
+        const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
+        return `<button type="button" data-wf-dash-reviewer-badge="1" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
+            <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
+            <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; ${cls}">${dashEscHtml(label)}</span>
+        </button>`;
+    },
+
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, showVersionLabel, fallbackFeedback) {
+        const hq = highlightQuery || '';
+        const cs = Boolean(caseSensitive);
+        const promptBody = version.prompt
+            ? this._dashHighlightedHtml(version.prompt, hq, cs)
+            : '—';
+        const promptLabel = showVersionLabel
+            ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
+            : this._labelSpan('Prompt');
+        const submittedRow = showVersionLabel && version.createdAt
+            ? `<div style="flex-shrink: 0;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt))}</div>`
+            : '';
+        const feedbackHtml = feedbackEntries.map((entry) => this._qaBlockHtml(entry.display, hq, cs)).join('');
+        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs) : '';
+        return `
+            <div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
+                        ${promptLabel}${this._copyIconHtml(version.prompt)}
+                    </div>
+                    ${submittedRow}
+                </div>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
+                ${feedbackHtml}${fallbackHtml}
+            </div>`;
+    },
+
+    _outputKindTabWrap(kind, cardHtml) {
+        const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
+        if (!cfg) return cardHtml;
+        return `
+            <div style="position: relative;">
+                <div style="position: absolute; left: 16px; top: 0; z-index: 0; width: 7.75rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>
+                <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
+            </div>`;
     },
 
     _taskCardHtml(item) {
         const task = item.task;
-        const qa = item.qaFeedback;
-        const kindLabel = DASH_KIND_LABELS[item.kind] || '';
-        const promptLabelHtml = qa
-            ? this._promptVersionLabelHtml(task.id, qa.versionNo, qa.totalVersions)
-            : this._labelSpan('Prompt');
-        const kindBadge = kindLabel ? this._kindBadgeHtml(kindLabel) : '';
-        const projectValue = this._copyChipHtml(task.project)
-            + (task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '');
-        return `
-            <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; width: 100%; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px; box-sizing: border-box;">
-                    ${this._fieldGroupHtml('Task Created', this._timestampWithAgoHtml(task.createdAt))}
-                    <div style="display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto;">
+        const allFeedback = task.allFeedback || [];
+        const highlightQuery = item.highlightQuery || '';
+        const caseSensitive = Boolean(item.highlightCaseSensitive);
+        const extraVisibleVersionNos = item.extraVisibleVersionNos || [];
+
+        let versions = task.promptVersions && task.promptVersions.length
+            ? task.promptVersions
+            : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
+        const totalVersions = versions.length;
+        const hasTimeline = totalVersions > 1;
+
+        let defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
+        if (item.selectedFeedbackId) {
+            const entry = allFeedback.find((f) => f.id === item.selectedFeedbackId);
+            if (entry) defaultDisplayNo = entry.linkedDisplayVersionNo;
+        }
+
+        const ui = this._getCardUi(task.id);
+        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
+        const expanded = ui.expanded;
+
+        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
+        const feedbackByDisplayNo = new Map();
+        for (const entry of allFeedback) {
+            const list = feedbackByDisplayNo.get(entry.linkedDisplayVersionNo) || [];
+            list.push(entry);
+            feedbackByDisplayNo.set(entry.linkedDisplayVersionNo, list);
+        }
+
+        let renderedVersions;
+        if (expanded) {
+            renderedVersions = [...versions].sort((a, b) => (
+                ui.timelineNewestFirst
+                    ? b.displayVersionNo - a.displayVersionNo
+                    : a.displayVersionNo - b.displayVersionNo
+            ));
+        } else {
+            const extras = [...new Set(extraVisibleVersionNos)]
+                .filter((n) => n !== selectedDisplayNo)
+                .sort((a, b) => b - a);
+            const nos = [selectedDisplayNo, ...extras];
+            renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
+        }
+
+        const selectedVersion = versionByDisplayNo.get(selectedDisplayNo) || versions[versions.length - 1];
+        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
+
+        const reviewerBadges = allFeedback.length > 0
+            ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${allFeedback.map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id)).join('')}</div>`
+            : '';
+
+        let row3Left;
+        if (expanded) {
+            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
+        } else {
+            row3Left = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(selectedVersion && selectedVersion.createdAt));
+        }
+
+        let versionControls = '';
+        if (hasTimeline) {
+            const versionOptions = [...versions]
+                .sort((a, b) => b.displayVersionNo - a.displayVersionNo)
+                .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
+                .join('');
+            versionControls = `
+                <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${expanded ? 'Collapse' : 'Show All'}</button>
+                    ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
+                </div>`;
+        }
+
+        const versionSections = renderedVersions.map((version) => {
+            const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
+            const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
+            return this._versionSectionHtml(
+                task.id, version, totalVersions, feedbackEntries,
+                highlightQuery, caseSensitive, hasTimeline, fallback
+            );
+        }).join('');
+
+        const cardHtml = `
+            <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._statusBadgeHtml(task.status)}
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                    </div>
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
                         ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
                         ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
                     </div>
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
-                    ${this._fieldGroupHtml('Project', projectValue)}
-                    ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
+                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                    ${reviewerBadges}
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px; font-size: 12px;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 3px;">
-                        ${this._labelSpan('Author')}${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
-                    </div>
-                    <div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                                ${promptLabelHtml}${this._copyIconHtml(task.prompt)}
-                            </div>
-                            <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
-                        </div>
-                        <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(task.prompt || '—')}</p>
-                        ${qa ? this._qaBlockHtml(qa) : ''}
-                    </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${row3Left}
+                    ${versionControls}
                 </div>
-                ${kindBadge ? `<div style="position: absolute; bottom: 12px; right: 14px;">${kindBadge}</div>` : ''}
+                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
+                    ${versionSections}
+                </div>
             </article>`;
+
+        return this._outputKindTabWrap(item.kind, cardHtml);
     },
 
     // ── Copy feedback (color-only: 1s green / 0.5s red pulse) ──
