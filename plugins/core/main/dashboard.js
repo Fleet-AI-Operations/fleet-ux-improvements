@@ -7,7 +7,7 @@
 // which reuses the exact same Supabase runtime config + session token gathering as the
 // people lookup tool (cookies / sb-*-auth-token JWT). No secrets are hardcoded here.
 //
-// Porting notes / oddities live in docs/dashboard-live-port-handoff.md.
+// Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_BOOTSTRAP_VERSION = 1;
