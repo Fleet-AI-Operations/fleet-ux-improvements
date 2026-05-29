@@ -323,7 +323,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1970,6 +1970,22 @@ const plugin = {
         return `<span style="${this._labelStyle()}">${dashEscHtml(text)}</span>`;
     },
 
+    /** "Prompt Version" copies task id; version suffix is display-only. */
+    _promptVersionLabelHtml(taskId, versionNo, totalVersions) {
+        const id = String(taskId || '').trim();
+        const suffix = ` ${versionNo} of ${totalVersions}`;
+        const labelStyle = this._labelStyle();
+        const suffixSpan = `<span style="${labelStyle}">${dashEscHtml(suffix)}</span>`;
+        if (!id) {
+            return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap;">${this._labelSpan('Prompt Version')}${suffixSpan}</span>`;
+        }
+        const title = 'Copy task ID: ' + id;
+        const btnStyle = labelStyle + ' border: none; background: transparent; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent); text-underline-offset: 2px;';
+        return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0;">
+            <button type="button" data-wf-dash-copy="${dashEscHtml(id)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">Prompt Version</button>${suffixSpan}
+        </span>`;
+    },
+
     /** Label + value group: tight label→data gap; use in rows with larger gap between groups. */
     _fieldGroupHtml(label, valueHtml) {
         return `<div style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${this._labelSpan(label)}${valueHtml}</div>`;
@@ -2052,7 +2068,9 @@ const plugin = {
         const task = item.task;
         const qa = item.qaFeedback;
         const kindLabel = DASH_KIND_LABELS[item.kind] || '';
-        const promptLabel = qa ? `Prompt Version ${qa.versionNo} of ${qa.totalVersions}` : 'Prompt';
+        const promptLabelHtml = qa
+            ? this._promptVersionLabelHtml(task.id, qa.versionNo, qa.totalVersions)
+            : this._labelSpan('Prompt');
         const kindBadge = kindLabel ? this._kindBadgeHtml(kindLabel) : '';
         const projectValue = this._copyChipHtml(task.project)
             + (task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '');
@@ -2060,7 +2078,6 @@ const plugin = {
             <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; width: 100%; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px; box-sizing: border-box;">
                     ${this._fieldGroupHtml('Task Created', this._timestampWithAgoHtml(task.createdAt))}
-                    ${this._fieldGroupHtml('ID', this._copyChipHtml(task.id))}
                     <div style="display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
                         ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
@@ -2078,7 +2095,7 @@ const plugin = {
                     <div>
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                             <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                                ${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}
+                                ${promptLabelHtml}${this._copyIconHtml(task.prompt)}
                             </div>
                             <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
                         </div>
