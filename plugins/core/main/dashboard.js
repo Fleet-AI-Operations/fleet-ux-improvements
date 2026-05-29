@@ -146,7 +146,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.12',
+    _version: '3.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -959,6 +959,7 @@ const plugin = {
         this._modal = modal;
         this._built = true;
         this._attachListeners();
+        this._ensureSpinnerKeyframes();
         this._setActiveTab(this._state.activeTab);
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
@@ -968,7 +969,31 @@ const plugin = {
         this._validateRangeUi();
         this._syncFieldClearButtons();
         this._syncAllMsDropdowns();
+        this._applyDefaultSearchDates();
         Logger.log('dashboard: popup built');
+    },
+
+    _applyDefaultSearchDates() {
+        const afterEl = this._q('#wf-dash-after');
+        const beforeEl = this._q('#wf-dash-before');
+        if (!afterEl || !beforeEl) return;
+        if (afterEl.value || beforeEl.value) return;
+        this._applyQuickDatePreset('today');
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'today';
+    },
+
+    _loadingSpinnerHtml(sizePx) {
+        const size = sizePx || 16;
+        return `<span aria-hidden="true" style="display: inline-block; width: ${size}px; height: ${size}px; border: 2px solid color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 22%, transparent); border-top-color: var(--brand, var(--primary, #2563eb)); border-radius: 50%; animation: wf-dash-spin 0.7s linear infinite; flex-shrink: 0;"></span>`;
+    },
+
+    _ensureSpinnerKeyframes() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-spinner-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-spinner-style';
+        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        this._modal.appendChild(style);
     },
 
     _modalHtml() {
@@ -1232,7 +1257,7 @@ const plugin = {
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
                     ${filterRow}
                     ${bulkRow}
-                    <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="padding: 4px;">
+                    <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                     </div>
                 </div>
@@ -1378,6 +1403,7 @@ const plugin = {
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
                 this._renderFilterLists();
             }
+            if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
         });
 
         // Delegated copy, card UI, candidate selection handlers
@@ -1410,6 +1436,7 @@ const plugin = {
                 const key = msAll.getAttribute('data-wf-dash-ms-all');
                 this._setMultiselectChecked(key, true);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
+                if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 return;
             }
             const msNone = e.target.closest('[data-wf-dash-ms-none]');
@@ -1417,6 +1444,7 @@ const plugin = {
                 const key = msNone.getAttribute('data-wf-dash-ms-none');
                 this._setMultiselectChecked(key, false);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
+                if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 return;
             }
             const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
@@ -1528,7 +1556,11 @@ const plugin = {
     },
 
     _msPanelOpenStyle() {
-        return 'display: block; width: max-content; min-width: 100%; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+        return 'display: block; width: 100%; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+    },
+
+    _msItemsContainerStyle() {
+        return 'padding: 4px; display: flex; flex-direction: column; align-items: stretch; width: 100%; box-sizing: border-box;';
     },
 
     _syncMsDropdown(scopeKey) {
@@ -1538,7 +1570,7 @@ const plugin = {
         const toggle = this._q('[data-wf-dash-ms-toggle="' + scopeKey + '"]');
         const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
         if (panel) panel.style.cssText = open ? this._msPanelOpenStyle() : 'display: none;';
-        if (wrap) wrap.style.width = open ? 'max-content' : '';
+        if (wrap) wrap.style.width = '';
         if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (chevron) chevron.textContent = open ? '▾' : '▸';
     },
@@ -1786,7 +1818,7 @@ const plugin = {
                 ? 'white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
                 : 'white-space: nowrap;';
             return `
-            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;">
                 <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
                 <span style="${spanStyle}">${dashEscHtml(it.label)}</span>
             </label>`;
@@ -1896,18 +1928,17 @@ const plugin = {
                 optionItems,
                 emptyHint,
                 false,
-                !hadSelection && optionItems.length > 0,
+                false,
                 irrelevantSet
             );
-            if (hadSelection) {
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevSelected.has(cb.value);
-                });
-            }
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                cb.checked = prevSelected.has(cb.value);
+            });
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
             if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
         }
+        this._updateApplyFiltersUi();
         Logger.debug('dashboard: filter lists rendered');
     },
 
@@ -2061,7 +2092,17 @@ const plugin = {
         return { check, isUniversal, blankBlocked };
     },
 
-    _updateSubstringErrorUi() {
+    _isFilterSelectionValid() {
+        if (!this._state.cachedItems) return false;
+        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            const all = this._allFromList(scopeKey);
+            if (all.length === 0) continue;
+            if (this._selectedFromList(scopeKey).length === 0) return false;
+        }
+        return true;
+    },
+
+    _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
         const tooShort = dashLib().isSubstringTooShort(promptText, caseSensitive);
@@ -2074,9 +2115,18 @@ const plugin = {
                 el.style.display = 'none';
             }
         }
+        const selectionValid = this._isFilterSelectionValid();
         const applyBtn = this._q('#wf-dash-apply-filters');
-        if (applyBtn) applyBtn.disabled = !this._state.cachedItems || tooShort;
+        if (applyBtn) {
+            const disabled = !this._state.cachedItems || tooShort || !selectionValid;
+            applyBtn.disabled = disabled;
+            applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
+        }
         this._syncFieldClearButtons();
+    },
+
+    _updateSubstringErrorUi() {
+        this._updateApplyFiltersUi();
     },
 
     // ── Search submit / clear ──
@@ -2183,6 +2233,7 @@ const plugin = {
                 this._setSearchButtonLoading(false);
                 this._updateResultsStatus();
                 this._updateSubstringErrorUi();
+                this._updateApplyFiltersUi();
                 this._renderResults();
             }
         } catch (err) {
@@ -2333,9 +2384,10 @@ const plugin = {
 
         if (s.loading) {
             const detail = this._searchStatusDetail(s.committed);
+            const spinner = this._loadingSpinnerHtml(16);
             el.innerHTML = detail
-                ? `<span style="${label}">Searching… ${dashEscHtml(detail)}</span>`
-                : '<span style="' + label + '">Searching…</span>';
+                ? `<span style="${label} display: inline-flex; align-items: center; gap: 8px;">${spinner}<span>Searching… ${dashEscHtml(detail)}</span></span>`
+                : `<span style="${label} display: inline-flex; align-items: center; gap: 8px;">${spinner}<span>Searching…</span></span>`;
             return;
         }
         if (s.searchError && !s.cachedItems) {
@@ -2378,7 +2430,11 @@ const plugin = {
         const s = this._state;
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
-        if (s.loading || (s.searchError && !s.cachedItems)) {
+        if (s.loading) {
+            wrap.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>`;
+            return;
+        }
+        if (s.searchError && !s.cachedItems) {
             wrap.innerHTML = '';
             return;
         }
@@ -2490,13 +2546,13 @@ const plugin = {
     },
 
     _qaAlertBadgeStyle() {
-        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #422006; background: #fef3c7; border: 1px solid #a16207;';
+        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
     _qaYellowBlockStyle() {
         return {
-            border: 'color-mix(in srgb, #ca8a04 55%, transparent)',
-            background: 'color-mix(in srgb, #fef08a 50%, var(--card, #ffffff))'
+            border: '1px solid #9a3412',
+            background: 'color-mix(in srgb, #c2410c 32%, var(--card, #ffffff))'
         };
     },
 
@@ -2578,15 +2634,20 @@ const plugin = {
         let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
         if (isSystem) {
             label = 'System';
-            cls = 'color: #422006; background: #fef3c7; border: 1px solid #a16207;';
+            cls = this._qaAlertBadgeStyle() + ' padding: 2px 8px; font-size: 10px;';
         } else if (entry.isPositive) {
             label = 'Accepted';
             cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
         } else if (entry.isEscalated || entry.isFlaggedAsBugged) {
             label = entry.isEscalated ? 'Escalated' : 'Bugged';
-            cls = 'color: #422006; background: #fef3c7; border: 1px solid #a16207;';
+            cls = this._qaAlertBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
         }
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
+        if (isSystem) {
+            return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
+                <span style="${cls}">System</span>
+            </button>`;
+        }
         return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
             <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
             <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; ${cls}">${dashEscHtml(label)}</span>
@@ -2720,7 +2781,7 @@ const plugin = {
         }).join('');
 
         const cardHtml = `
-            <article style="position: relative; border: 2px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
