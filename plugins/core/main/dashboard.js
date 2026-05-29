@@ -267,7 +267,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -917,8 +917,17 @@ const plugin = {
                             <div style="${label} margin-top: 4px;">Empty = all workers. Authors, date range, output types, and Search reload the cache.</div>
                         </div>
 
-                        <div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
+                            <div style="flex-shrink: 0;">
+                                <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
+                                <select id="wf-dash-quick-range" style="${input} width: auto; min-width: 132px; cursor: pointer;">
+                                    <option value="">Custom</option>
+                                    <option value="today">Today</option>
+                                    <option value="3d">Last 3 Days</option>
+                                    <option value="7d">Last 7 Days</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 220px;">
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
                                     <input type="date" id="wf-dash-after" style="${input}">
@@ -927,11 +936,6 @@ const plugin = {
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
                                     <input type="date" id="wf-dash-before" style="${input}">
                                 </div>
-                            </div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
-                                <button type="button" id="wf-dash-qt-today" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Today</button>
-                                <button type="button" id="wf-dash-qt-3d" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Last 3 Days</button>
-                                <button type="button" id="wf-dash-qt-7d" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Last 7 Days</button>
                             </div>
                         </div>
                         <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
@@ -1035,7 +1039,14 @@ const plugin = {
         // Inputs affecting "dirty" (reload-required) state
         ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => {
             const el = this._q(sel);
-            if (el) el.addEventListener('change', () => { this._validateRangeUi(); this._updateDirty(); });
+            if (el) el.addEventListener('change', () => {
+                this._validateRangeUi();
+                this._updateDirty();
+                if (!this._applyingQuickDate) {
+                    const quick = this._q('#wf-dash-quick-range');
+                    if (quick) quick.value = '';
+                }
+            });
         });
         ['#wf-dash-include-tasks', '#wf-dash-include-qa'].forEach((sel) => {
             const el = this._q(sel);
@@ -1066,36 +1077,14 @@ const plugin = {
             if (el) el.addEventListener('change', () => this._applyFiltersAndRender());
         });
 
-        // Quick date filter buttons (date-only; API range uses start/end of local day)
-        const setQuickRange = (daysBack, label) => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const start = new Date(today);
-            start.setDate(start.getDate() - daysBack);
-            const afterEl = this._q('#wf-dash-after');
-            const beforeEl = this._q('#wf-dash-before');
-            if (afterEl) afterEl.value = dashDateInputValue(start);
-            if (beforeEl) beforeEl.value = dashDateInputValue(today);
-            this._validateRangeUi();
-            this._updateDirty();
-            Logger.log('dashboard: quick date filter set (' + label + ')');
-        };
-        const qtToday = this._q('#wf-dash-qt-today');
-        const qt3d = this._q('#wf-dash-qt-3d');
-        const qt7d = this._q('#wf-dash-qt-7d');
-        if (qtToday) qtToday.addEventListener('click', () => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const afterEl = this._q('#wf-dash-after');
-            const beforeEl = this._q('#wf-dash-before');
-            if (afterEl) afterEl.value = dashDateInputValue(today);
-            if (beforeEl) beforeEl.value = dashDateInputValue(today);
-            this._validateRangeUi();
-            this._updateDirty();
-            Logger.log('dashboard: quick date filter set (Today)');
-        });
-        if (qt3d) qt3d.addEventListener('click', () => setQuickRange(3, 'Last 3 Days'));
-        if (qt7d) qt7d.addEventListener('click', () => setQuickRange(7, 'Last 7 Days'));
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) {
+            quickRange.addEventListener('change', () => {
+                const preset = quickRange.value;
+                if (!preset) return;
+                this._applyQuickDatePreset(preset);
+            });
+        }
 
         const search = this._q('#wf-dash-search');
         if (search) search.addEventListener('click', () => { void this._submitSearch(); });
@@ -1365,6 +1354,32 @@ const plugin = {
 
     // ── Dirty / range validation ──
 
+    _applyQuickDatePreset(preset) {
+        const labels = { today: 'Today', '3d': 'Last 3 Days', '7d': 'Last 7 Days' };
+        const label = labels[preset] || preset;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        let afterDate = today;
+        let beforeDate = today;
+        if (preset === '3d' || preset === '7d') {
+            const daysBack = preset === '3d' ? 3 : 7;
+            afterDate = new Date(today);
+            afterDate.setDate(afterDate.getDate() - daysBack);
+        }
+        this._applyingQuickDate = true;
+        try {
+            const afterEl = this._q('#wf-dash-after');
+            const beforeEl = this._q('#wf-dash-before');
+            if (afterEl) afterEl.value = dashDateInputValue(afterDate);
+            if (beforeEl) beforeEl.value = dashDateInputValue(beforeDate);
+        } finally {
+            this._applyingQuickDate = false;
+        }
+        this._validateRangeUi();
+        this._updateDirty();
+        Logger.log('dashboard: quick date preset applied (' + label + ')');
+    },
+
     _validateRangeUi() {
         const after = (this._q('#wf-dash-after') || {}).value || '';
         const before = (this._q('#wf-dash-before') || {}).value || '';
@@ -1471,6 +1486,8 @@ const plugin = {
         this._state.hasSearched = false;
         this._state.committed = null;
         ['#wf-dash-after', '#wf-dash-before', '#wf-dash-prompt'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = '';
         ['#wf-dash-include-tasks', '#wf-dash-include-qa'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = true; });
         ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
         ['teams', 'projects', 'envs'].forEach((key) => {
