@@ -246,7 +246,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1692,11 +1692,13 @@ const plugin = {
             + (task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '');
         return `
             <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; width: 100%; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px; box-sizing: border-box;">
                     ${this._fieldGroupHtml('Task Created', this._timestampWithAgoHtml(task.createdAt))}
                     ${this._fieldGroupHtml('ID', this._copyChipHtml(task.id))}
-                    ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
-                    <div style="margin-left: auto; flex-shrink: 0;">${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}</div>
+                    <div style="display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto;">
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
+                    </div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
