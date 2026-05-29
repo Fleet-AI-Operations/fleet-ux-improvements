@@ -294,7 +294,9 @@ function dashRelativeAgo(iso) {
 }
 
 function dashQaTextBlockLabel(label, isPositive) {
-    if (isPositive && label === 'Task Feedback') return 'Approval Feedback';
+    if (!isPositive) return label;
+    if (label === 'Task Feedback') return 'Approval Feedback';
+    if (label === 'Attempted Actions') return 'Accepted Feedback';
     return label;
 }
 
@@ -321,7 +323,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.0',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1148,7 +1150,7 @@ const plugin = {
                 <div style="${box} padding: 14px; display: flex; flex-direction: column; gap: 14px;">
                     <div>
                         <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Filters</div>
-                        <div style="${label} margin-top: 4px;">Refine loaded results. Changes apply when you press Apply (or Enter in substring field).</div>
+                        <div style="${label} margin-top: 4px;">Refine loaded results. Filter changes apply instantly.</div>
                     </div>
 
                     <div>
@@ -1278,15 +1280,37 @@ const plugin = {
 
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) {
+            let promptFilterTimer = null;
+            const schedulePromptFilter = () => {
+                if (!this._state.cachedItems) return;
+                if (promptFilterTimer) clearTimeout(promptFilterTimer);
+                promptFilterTimer = setTimeout(() => this._applyFiltersAndRender(), 250);
+            };
+            prompt.addEventListener('input', schedulePromptFilter);
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    if (promptFilterTimer) clearTimeout(promptFilterTimer);
                     this._applyFiltersAndRender();
                 }
             });
         }
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) {
+            sortEl.addEventListener('change', () => {
+                if (this._state.cachedItems) this._applyFiltersAndRender();
+            });
+        }
+        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => {
+            const el = this._q(sel);
+            if (el) {
+                el.addEventListener('change', () => {
+                    if (this._state.cachedItems) this._applyFiltersAndRender();
+                });
+            }
+        });
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -1309,6 +1333,9 @@ const plugin = {
             if (!msKey) return;
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
+            if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                this._applyFiltersAndRender();
+            }
         });
 
         // Delegated copy + candidate selection handlers
@@ -1601,12 +1628,24 @@ const plugin = {
         };
     },
 
+    _resetFilterScopeLists() {
+        const wrap = this._q('#wf-dash-filter-scope-wrap');
+        if (wrap) wrap.style.display = 'none';
+        ['filter-teams', 'filter-projects', 'filter-envs'].forEach((scopeKey) => {
+            const list = this._q('#wf-dash-' + scopeKey + '-list');
+            if (!list) return;
+            const hint = list.getAttribute('data-wf-dash-empty') || 'Search first to filter';
+            list.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
+            this._updateMsCount(scopeKey);
+        });
+    },
+
     _renderFilterScopeLists() {
         const wrap = this._q('#wf-dash-filter-scope-wrap');
         const items = this._state.cachedItems;
         if (!wrap) return;
         if (!items || items.length === 0) {
-            wrap.style.display = 'none';
+            this._resetFilterScopeLists();
             return;
         }
         wrap.style.display = '';
@@ -1766,6 +1805,7 @@ const plugin = {
             this._setSearchButtonLoading(false);
             this._setSearchParamsLocked(true);
             this._updateStatusFromState();
+            this._renderResults();
         }
     },
 
@@ -1790,7 +1830,7 @@ const plugin = {
         });
         this._syncOutputToggleUi();
         this._renderSearchProjectsList();
-        this._renderFilterScopeLists();
+        this._resetFilterScopeLists();
         this._renderAuthorTokens();
         this._hideAuthorCandidates();
         this._setAuthorError('');
@@ -1930,6 +1970,22 @@ const plugin = {
         return `<span style="${this._labelStyle()}">${dashEscHtml(text)}</span>`;
     },
 
+    /** "Prompt Version" copies task id; version suffix is display-only. */
+    _promptVersionLabelHtml(taskId, versionNo, totalVersions) {
+        const id = String(taskId || '').trim();
+        const suffix = ` ${versionNo} of ${totalVersions}`;
+        const labelStyle = this._labelStyle();
+        const suffixSpan = `<span style="${labelStyle}">${dashEscHtml(suffix)}</span>`;
+        if (!id) {
+            return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap;">${this._labelSpan('Prompt Version')}${suffixSpan}</span>`;
+        }
+        const title = 'Copy task ID: ' + id;
+        const btnStyle = labelStyle + ' border: none; background: transparent; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent); text-underline-offset: 2px;';
+        return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0;">
+            <button type="button" data-wf-dash-copy="${dashEscHtml(id)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">Prompt Version</button>${suffixSpan}
+        </span>`;
+    },
+
     /** Label + value group: tight label→data gap; use in rows with larger gap between groups. */
     _fieldGroupHtml(label, valueHtml) {
         return `<div style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${this._labelSpan(label)}${valueHtml}</div>`;
@@ -1982,24 +2038,23 @@ const plugin = {
             </div>`;
         }).join('');
         const submittedHtml = qa.feedbackAt
-            ? this._fieldGroupHtml('QA Submitted', this._timestampWithAgoHtml(qa.feedbackAt))
+            ? this._fieldGroupHtml('Submitted', this._timestampWithAgoHtml(qa.feedbackAt))
             : '';
+        const promptRatingHtml = `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`;
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
                         ${submittedHtml}
+                        ${promptRatingHtml}
                     </div>
                     <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                     ${this._labelSpan('QA Reviewer')}${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open QA reviewer in Fleet')}
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">
-                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>
-                    ${badges}
-                </div>
+                ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
                 ${blocks}
             </div>`;
     },
@@ -2013,7 +2068,9 @@ const plugin = {
         const task = item.task;
         const qa = item.qaFeedback;
         const kindLabel = DASH_KIND_LABELS[item.kind] || '';
-        const promptLabel = qa ? `Prompt Version ${qa.versionNo} of ${qa.totalVersions}` : 'Prompt';
+        const promptLabelHtml = qa
+            ? this._promptVersionLabelHtml(task.id, qa.versionNo, qa.totalVersions)
+            : this._labelSpan('Prompt');
         const kindBadge = kindLabel ? this._kindBadgeHtml(kindLabel) : '';
         const projectValue = this._copyChipHtml(task.project)
             + (task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '');
@@ -2021,7 +2078,6 @@ const plugin = {
             <article style="position: relative; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;${kindLabel ? ' padding-bottom: 36px;' : ''}">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; width: 100%; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px; box-sizing: border-box;">
                     ${this._fieldGroupHtml('Task Created', this._timestampWithAgoHtml(task.createdAt))}
-                    ${this._fieldGroupHtml('ID', this._copyChipHtml(task.id))}
                     <div style="display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
                         ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
@@ -2039,7 +2095,7 @@ const plugin = {
                     <div>
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                             <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                                ${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}
+                                ${promptLabelHtml}${this._copyIconHtml(task.prompt)}
                             </div>
                             <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
                         </div>
