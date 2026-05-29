@@ -81,22 +81,43 @@ function dashTextMatchesQuery(text, queryText, fuzzy, caseSensitive) {
 
 // ── Date range validation (ported from lib/dateRange.js) ──
 
-function dashDatetimeLocalToIso(datetimeLocal) {
-    const raw = String(datetimeLocal || '').trim();
-    if (!raw) return '';
-    const date = new Date(raw);
-    if (Number.isNaN(date.getTime())) return '';
+function dashDateInputValue(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function dashParseDateInput(dateLocal) {
+    const raw = String(dateLocal || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    const parts = raw.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const date = new Date(y, m, d);
+    if (date.getFullYear() !== y || date.getMonth() !== m || date.getDate() !== d) return null;
+    return date;
+}
+
+/** Convert YYYY-MM-DD to ISO UTC: After = start of local day, Before = end of local day. */
+function dashDateLocalToIso(dateLocal, bound) {
+    const date = dashParseDateInput(dateLocal);
+    if (!date) return '';
+    if (bound === 'before') {
+        date.setHours(23, 59, 59, 999);
+    } else {
+        date.setHours(0, 0, 0, 0);
+    }
     return date.toISOString();
 }
 
 function dashValidateCreatedAtRange(afterLocal, beforeLocal) {
-    const afterIso = dashDatetimeLocalToIso(afterLocal);
-    const beforeIso = dashDatetimeLocalToIso(beforeLocal);
+    const afterIso = afterLocal ? dashDateLocalToIso(afterLocal, 'after') : '';
+    const beforeIso = beforeLocal ? dashDateLocalToIso(beforeLocal, 'before') : '';
     if (afterLocal && !afterIso) {
-        return { valid: false, error: 'After is not a valid date and time.', afterIso: '', beforeIso };
+        return { valid: false, error: 'After is not a valid date.', afterIso: '', beforeIso };
     }
     if (beforeLocal && !beforeIso) {
-        return { valid: false, error: 'Before is not a valid date and time.', afterIso, beforeIso: '' };
+        return { valid: false, error: 'Before is not a valid date.', afterIso, beforeIso: '' };
     }
     if (afterIso && beforeIso && afterIso > beforeIso) {
         return { valid: false, error: 'After must be on or before Before.', afterIso, beforeIso };
@@ -246,7 +267,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -893,18 +914,18 @@ const plugin = {
                             </div>
                             <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                             <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
-                            <div style="${label} margin-top: 4px;">Empty = all workers. Authors, time range, output types, and Search reload the cache.</div>
+                            <div style="${label} margin-top: 4px;">Empty = all workers. Authors, date range, output types, and Search reload the cache.</div>
                         </div>
 
                         <div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
-                                    <input type="datetime-local" id="wf-dash-after" style="${input}">
+                                    <input type="date" id="wf-dash-after" style="${input}">
                                 </div>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
-                                    <input type="datetime-local" id="wf-dash-before" style="${input}">
+                                    <input type="date" id="wf-dash-before" style="${input}">
                                 </div>
                             </div>
                             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
@@ -1045,36 +1066,33 @@ const plugin = {
             if (el) el.addEventListener('change', () => this._applyFiltersAndRender());
         });
 
-        // Quick time filter buttons
-        const toDatetimeLocal = (d) => {
-            const pad = (n) => String(n).padStart(2, '0');
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        };
+        // Quick date filter buttons (date-only; API range uses start/end of local day)
         const setQuickRange = (daysBack, label) => {
-            const start = new Date();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const start = new Date(today);
             start.setDate(start.getDate() - daysBack);
-            start.setHours(0, 0, 0, 0);
             const afterEl = this._q('#wf-dash-after');
             const beforeEl = this._q('#wf-dash-before');
-            if (afterEl) afterEl.value = toDatetimeLocal(start);
-            if (beforeEl) beforeEl.value = '';
+            if (afterEl) afterEl.value = dashDateInputValue(start);
+            if (beforeEl) beforeEl.value = dashDateInputValue(today);
             this._validateRangeUi();
             this._updateDirty();
-            Logger.log('dashboard: quick time filter set (' + label + ')');
+            Logger.log('dashboard: quick date filter set (' + label + ')');
         };
         const qtToday = this._q('#wf-dash-qt-today');
         const qt3d = this._q('#wf-dash-qt-3d');
         const qt7d = this._q('#wf-dash-qt-7d');
         if (qtToday) qtToday.addEventListener('click', () => {
-            const start = new Date();
-            start.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
             const afterEl = this._q('#wf-dash-after');
             const beforeEl = this._q('#wf-dash-before');
-            if (afterEl) afterEl.value = toDatetimeLocal(start);
-            if (beforeEl) beforeEl.value = '';
+            if (afterEl) afterEl.value = dashDateInputValue(today);
+            if (beforeEl) beforeEl.value = dashDateInputValue(today);
             this._validateRangeUi();
             this._updateDirty();
-            Logger.log('dashboard: quick time filter set (Today)');
+            Logger.log('dashboard: quick date filter set (Today)');
         });
         if (qt3d) qt3d.addEventListener('click', () => setQuickRange(3, 'Last 3 Days'));
         if (qt7d) qt7d.addEventListener('click', () => setQuickRange(7, 'Last 7 Days'));
@@ -1467,7 +1485,7 @@ const plugin = {
         this._setSearchError('');
         this._validateRangeUi();
         this._updateDirty();
-        this._setStatus('Choose authors, optional time range, and output types, then press Search. Other filters apply instantly after load.');
+        this._setStatus('Choose authors, optional date range, and output types, then press Search. Other filters apply instantly after load.');
         this._renderResults();
         Logger.log('dashboard: search cleared — all filters and results reset');
     },
@@ -1533,7 +1551,7 @@ const plugin = {
     _updateStatusFromState() {
         const s = this._state;
         if (!s.hasSearched) {
-            this._setStatus('Choose authors, optional time range, and output types, then press Search. Other filters apply instantly after load.');
+            this._setStatus('Choose authors, optional date range, and output types, then press Search. Other filters apply instantly after load.');
             return;
         }
         if (s.loading) { this._setStatus('Loading…'); return; }
