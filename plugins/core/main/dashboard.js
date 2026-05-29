@@ -323,7 +323,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2021,21 +2021,24 @@ const plugin = {
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
             </div>`;
         }).join('');
+        const submittedHtml = qa.feedbackAt
+            ? this._fieldGroupHtml('Submitted', this._timestampWithAgoHtml(qa.feedbackAt))
+            : '';
+        const promptRatingHtml = `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`;
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
+                        ${submittedHtml}
+                        ${promptRatingHtml}
                     </div>
                     <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                     ${this._labelSpan('QA Reviewer')}${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open QA reviewer in Fleet')}
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">
-                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>
-                    ${badges}
-                </div>
+                ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
                 ${blocks}
             </div>`;
     },
