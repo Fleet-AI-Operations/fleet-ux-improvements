@@ -45,6 +45,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
 
+/** Tab strip order when one task matches multiple output kinds. */
+const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
+
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
@@ -143,7 +146,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.10',
+    _version: '3.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -779,7 +782,53 @@ const plugin = {
         if (includeQa && feedbackRows.length > 0) {
             items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
         }
-        return items;
+        return this._mergeWorkerOutputItemsByTask(items);
+    },
+
+    _mergeWorkerOutputItemsByTask(items) {
+        const byTask = new Map();
+        for (const item of items) {
+            const taskId = item.task.id;
+            let merged = byTask.get(taskId);
+            if (!merged) {
+                merged = {
+                    id: 'task-' + taskId,
+                    kinds: new Set(),
+                    sortAt: item.sortAt,
+                    task: item.task,
+                    selectedFeedbackId: null,
+                    qaFeedback: null,
+                    qaSortAt: ''
+                };
+                byTask.set(taskId, merged);
+            }
+            merged.kinds.add(item.kind);
+            if (item.sortAt > merged.sortAt) merged.sortAt = item.sortAt;
+            if (item.kind === 'qa') {
+                if (!merged.selectedFeedbackId || item.sortAt >= merged.qaSortAt) {
+                    merged.selectedFeedbackId = item.selectedFeedbackId || null;
+                    merged.qaFeedback = item.qaFeedback || null;
+                    merged.qaSortAt = item.sortAt;
+                }
+            }
+        }
+        const mergedItems = [...byTask.values()].map((merged) => {
+            const kinds = DASH_KIND_MERGE_ORDER.filter((k) => merged.kinds.has(k));
+            return {
+                id: merged.id,
+                kind: kinds[0] || 'task_creation',
+                kinds,
+                sortAt: merged.sortAt,
+                task: merged.task,
+                selectedFeedbackId: merged.selectedFeedbackId,
+                qaFeedback: merged.qaFeedback
+            };
+        });
+        const folded = items.length - mergedItems.length;
+        if (folded > 0) {
+            Logger.log('dashboard: merged duplicate task hits — ' + folded + ' row(s) folded into ' + mergedItems.length + ' card(s)');
+        }
+        return mergedItems;
     },
 
     _listBoundsFromOptions(options) {
@@ -2473,12 +2522,20 @@ const plugin = {
             </div>`;
     },
 
-    _outputKindTabWrap(kind, cardHtml, itemId) {
-        const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
-        if (!cfg) return cardHtml;
+    _outputKindTabsWrap(kinds, cardHtml, itemId) {
+        const ordered = DASH_KIND_MERGE_ORDER.filter((k) => (kinds || []).includes(k));
+        if (ordered.length === 0) return cardHtml;
+        const tabWidthRem = 7.75;
+        const tabGapRem = 0.25;
+        const tabsHtml = ordered.map((kind, index) => {
+            const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
+            if (!cfg) return '';
+            const left = 'calc(16px + ' + index + ' * (' + tabWidthRem + 'rem + ' + tabGapRem + 'rem))';
+            return `<div style="position: absolute; left: ${left}; top: 0; z-index: 0; width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`;
+        }).join('');
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative;">
-                <div style="position: absolute; left: 16px; top: 0; z-index: 0; width: 7.75rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>
+                ${tabsHtml}
                 <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
             </div>`;
     },
@@ -2594,7 +2651,8 @@ const plugin = {
                 </div>
             </article>`;
 
-        return this._outputKindTabWrap(item.kind, cardHtml, itemId);
+        const outputKinds = item.kinds && item.kinds.length ? item.kinds : [item.kind];
+        return this._outputKindTabsWrap(outputKinds, cardHtml, itemId);
     },
 
     // ── Copy feedback (color-only: 1s green / 0.5s red pulse) ──
