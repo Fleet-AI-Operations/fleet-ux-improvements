@@ -213,7 +213,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -346,18 +346,33 @@ const plugin = {
     },
 
     _evalTasksSelect() {
+        // eval_task_projects embed was removed: project association goes through
+        // task_project_target_id (column on eval_tasks, returned via *) → task_project_targets → project_id.
         return [
             '*',
-            'eval_task_versions!eval_tasks_current_version_fk(id,prompt,env_key,version_no,created_at)',
-            'eval_task_projects(project_id)'
+            'eval_task_versions!eval_tasks_current_version_fk(id,prompt,env_key,version_no,created_at)'
         ].join(',');
     },
 
-    _projectIdFromRow(row) {
-        const projects = row.eval_task_projects;
-        if (!Array.isArray(projects) || projects.length === 0) return '';
-        const first = projects[0];
-        return (first && typeof first === 'object') ? (first.project_id || '') : '';
+    _projectIdFromTargetId(targetId, targetToProjectId) {
+        if (!targetId) return '';
+        return (targetToProjectId && targetToProjectId.get(targetId)) || '';
+    },
+
+    async _fetchTargetProjectMap(targetIds) {
+        if (!targetIds || targetIds.length === 0) return new Map();
+        const map = new Map();
+        for (let i = 0; i < targetIds.length; i += 50) {
+            const chunk = targetIds.slice(i, i + 50);
+            const rows = await this._pgGet('task_project_targets', {
+                select: 'id,project_id',
+                id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                limit: String(chunk.length)
+            }).catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
+            for (const r of rows) if (r.id && r.project_id) map.set(r.id, r.project_id);
+        }
+        Logger.debug('dashboard: target→project map built (' + map.size + ' / ' + targetIds.length + ' targets resolved)');
+        return map;
     },
 
     _buildProfilesMap(profileRows) {
@@ -366,11 +381,11 @@ const plugin = {
         return map;
     },
 
-    _rowToTask(row, profilesMap, versionOverride) {
+    _rowToTask(row, profilesMap, versionOverride, targetToProjectId) {
         const version = versionOverride
             || (Array.isArray(row.eval_task_versions) ? row.eval_task_versions[0] : null);
         const profile = profilesMap.get(row.created_by) || null;
-        const projectId = this._projectIdFromRow(row);
+        const projectId = this._projectIdFromTargetId(row.task_project_target_id, targetToProjectId);
         return {
             id: row.id,
             author: {
@@ -470,8 +485,12 @@ const plugin = {
     async _fetchTasksForSearch(authorIds, afterIso, beforeIso) {
         const teamCatalog = this._getTeamCatalog();
         const teamIds = teamCatalog.map(([id]) => id);
+        Logger.debug('dashboard: fetching tasks — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+            + (teamIds.length > 0 ? ' · ' + teamIds.length + ' team(s)' : '')
+            + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : ''));
         const allRows = [];
         let offset = 0;
+        let pageNum = 0;
         while (true) {
             const qs = {
                 select: this._evalTasksSelect(),
@@ -484,16 +503,24 @@ const plugin = {
             if (teamIds.length > 0) qs.team_id = 'in.(' + teamIds.join(',') + ')';
             this._addCreatedAtRange(qs, afterIso, beforeIso);
             const page = await this._pgGet('eval_tasks', qs);
+            pageNum++;
+            Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allRows.push(...page);
             if (page.length < DASH_TASKS_PAGE_SIZE) break;
             offset += DASH_TASKS_PAGE_SIZE;
         }
+        Logger.debug('dashboard: tasks fetched (' + allRows.length + ' rows) — resolving profiles + project targets');
         const uniqueCreatedBy = [...new Set(allRows.map((r) => r.created_by).filter(Boolean))];
         const profileRows = uniqueCreatedBy.length > 0
             ? await this._pgGet('profiles', { select: 'id,full_name,email', id: 'in.(' + uniqueCreatedBy.join(',') + ')' })
             : [];
         const profilesMap = this._buildProfilesMap(profileRows);
-        return allRows.map((row) => this._rowToTask(row, profilesMap));
+        Logger.debug('dashboard: tasks profiles resolved (' + profileRows.length + ' / ' + uniqueCreatedBy.length + ')');
+
+        const uniqueTargetIds = [...new Set(allRows.map((r) => r.task_project_target_id).filter(Boolean))];
+        const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
+
+        return allRows.map((row) => this._rowToTask(row, profilesMap, null, targetToProjectId));
     },
 
     _taskCreationItemsFromTasks(tasks) {
@@ -507,8 +534,11 @@ const plugin = {
     },
 
     async _fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso) {
+        Logger.debug('dashboard: fetching QA feedback — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+            + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : ''));
         const allFeedback = [];
         let offset = 0;
+        let pageNum = 0;
         while (true) {
             const qs = {
                 select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data',
@@ -521,13 +551,20 @@ const plugin = {
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
             this._addCreatedAtRange(qs, afterIso, beforeIso);
             const page = await this._pgGet('eval_task_qa_feedback', qs);
+            pageNum++;
+            Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allFeedback.push(...page);
             if (page.length < DASH_QA_PAGE_SIZE) break;
             offset += DASH_QA_PAGE_SIZE;
         }
-        if (allFeedback.length === 0) return [];
+        if (allFeedback.length === 0) {
+            Logger.debug('dashboard: QA feedback — 0 rows, skipping task/version lookups');
+            return [];
+        }
+        Logger.debug('dashboard: QA feedback — ' + allFeedback.length + ' rows total, fetching parent tasks');
 
         const taskIds = [...new Set(allFeedback.map((f) => f.eval_task_id).filter(Boolean))];
+        Logger.debug('dashboard: QA — ' + taskIds.length + ' unique task(s) to fetch');
         const taskRows = [];
         for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
             const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
@@ -537,9 +574,11 @@ const plugin = {
                 limit: String(chunk.length)
             });
             taskRows.push(...page);
+            Logger.debug('dashboard: QA tasks chunk — ' + page.length + ' rows');
         }
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
 
+        Logger.debug('dashboard: QA — fetching version history for ' + taskIds.length + ' task(s)');
         const versionsByTaskId = new Map();
         await Promise.all(taskIds.map(async (taskId) => {
             const versions = await this._pgGet('eval_task_versions', {
@@ -557,6 +596,10 @@ const plugin = {
             ? await this._pgGet('profiles', { select: 'id,full_name,email', id: 'in.(' + [...profileIds].join(',') + ')' })
             : [];
         const profilesMap = this._buildProfilesMap(profileRows);
+        Logger.debug('dashboard: QA profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
+
+        const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
+        const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
 
         const items = [];
         for (const feedback of allFeedback) {
@@ -564,7 +607,7 @@ const plugin = {
             if (!taskRow) continue;
             const versions = versionsByTaskId.get(feedback.eval_task_id) || [];
             const versionInfo = dashResolveVersionAtFeedback(versions, feedback.created_at);
-            const task = this._rowToTask(taskRow, profilesMap, versionInfo.version);
+            const task = this._rowToTask(taskRow, profilesMap, versionInfo.version, targetToProjectId);
             const qaReviewerProfile = profilesMap.get(feedback.created_by) || null;
             const qaFeedback = dashBuildQaFeedbackDisplay(feedback, versionInfo, {
                 id: feedback.created_by,
@@ -574,6 +617,9 @@ const plugin = {
             items.push({ id: 'qa-' + feedback.id, kind: 'qa', sortAt: feedback.created_at, task, qaFeedback });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        const positiveCount = items.filter((it) => it.qaFeedback && it.qaFeedback.isPositive).length;
+        const negativeCount = items.length - positiveCount;
+        Logger.log('dashboard: QA items built — ' + items.length + ' total (' + positiveCount + ' accepted, ' + negativeCount + ' returned)');
         return items;
     },
 
@@ -625,6 +671,17 @@ const plugin = {
     open() {
         this._ensureBuilt();
         this._overlay.style.display = 'flex';
+        // Close the regular settings modal if it is open
+        try {
+            const doc = this._pageWindow().document;
+            const settingsModal = doc.getElementById('wf-settings-modal');
+            if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
+                settingsModal.close();
+                Logger.log('dashboard: closed settings modal on dashboard open');
+            }
+        } catch (e) {
+            Logger.debug('dashboard: could not close settings modal', e);
+        }
         if (!this._state.autoBootstrapped && !this._state.catalog) {
             this._state.autoBootstrapped = true;
             void this._doBootstrap();
@@ -800,28 +857,38 @@ const plugin = {
                             <div style="${label} margin-top: 4px;">Empty = all workers. Authors, time range, output types, and Search reload the cache.</div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                            <div>
-                                <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
-                                <input type="datetime-local" id="wf-dash-after" style="${input}">
+                        <div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div>
+                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
+                                    <input type="datetime-local" id="wf-dash-after" style="${input}">
+                                </div>
+                                <div>
+                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
+                                    <input type="datetime-local" id="wf-dash-before" style="${input}">
+                                </div>
                             </div>
-                            <div>
-                                <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
-                                <input type="datetime-local" id="wf-dash-before" style="${input}">
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                                <button type="button" id="wf-dash-qt-today" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Today</button>
+                                <button type="button" id="wf-dash-qt-3d" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Last 3 Days</button>
+                                <button type="button" id="wf-dash-qt-7d" style="${this._btnStyle()} padding: 4px 10px; font-size: 11px;">Last 7 Days</button>
                             </div>
                         </div>
                         <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                             ${this._multiSelectHtml('teams', 'Teams', 'All teams')}
                             ${this._multiSelectHtml('projects', 'Projects', 'All projects')}
-                            ${this._multiSelectHtml('envs', 'Environments', 'All environments')}
+                            <div style="grid-column: span 2;">
+                                ${this._multiSelectHtml('envs', 'Environments', 'All environments')}
+                            </div>
                         </div>
 
                         <div>
-                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Prompt text (optional)</label>
+                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring Filter</label>
                             <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-                                <input type="text" id="wf-dash-prompt" placeholder="Filter results by prompt substring" style="${input} flex: 1; min-width: 200px;">
+                                <input type="text" id="wf-dash-prompt" placeholder="Filter loaded results by prompt substring" style="${input} flex: 1; min-width: 200px;">
+                                <button type="button" id="wf-dash-prompt-filter" style="${this._btnStyle()} flex-shrink: 0;">Filter</button>
                                 <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
                                     <input type="checkbox" id="wf-dash-case"> Case sensitive
                                 </label>
@@ -829,7 +896,7 @@ const plugin = {
                                     <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
                                 </label>
                             </div>
-                            <div style="${label} margin-top: 4px;">Applied instantly to loaded results; clearing shows the full cache.</div>
+                            <div style="${label} margin-top: 4px;">Press Filter (or Enter) to apply. Case-sensitive and Fuzzy apply immediately when toggled.</div>
                         </div>
 
                         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
@@ -917,16 +984,63 @@ const plugin = {
             if (el) el.addEventListener('change', () => this._updateDirty());
         });
 
-        // Client-side filter inputs (apply instantly after a search has loaded)
+        // Substring filter — button or Enter applies; not live (avoids lag on large result sets)
         const prompt = this._q('#wf-dash-prompt');
-        if (prompt) prompt.addEventListener('input', () => this._applyFiltersAndRender());
+        const promptFilterBtn = this._q('#wf-dash-prompt-filter');
+        if (prompt) {
+            prompt.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this._applyFiltersAndRender();
+                    Logger.debug('dashboard: substring filter applied (Enter)');
+                }
+            });
+        }
+        if (promptFilterBtn) {
+            promptFilterBtn.addEventListener('click', () => {
+                this._applyFiltersAndRender();
+                Logger.debug('dashboard: substring filter applied (button)');
+            });
+        }
+        // Case/Fuzzy toggles apply immediately
         ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => {
             const el = this._q(sel);
             if (el) el.addEventListener('change', () => this._applyFiltersAndRender());
         });
-        if (prompt) {
-            prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void this._submitSearch(); } });
-        }
+
+        // Quick time filter buttons
+        const toDatetimeLocal = (d) => {
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        };
+        const setQuickRange = (daysBack, label) => {
+            const start = new Date();
+            start.setDate(start.getDate() - daysBack);
+            start.setHours(0, 0, 0, 0);
+            const afterEl = this._q('#wf-dash-after');
+            const beforeEl = this._q('#wf-dash-before');
+            if (afterEl) afterEl.value = toDatetimeLocal(start);
+            if (beforeEl) beforeEl.value = '';
+            this._validateRangeUi();
+            this._updateDirty();
+            Logger.log('dashboard: quick time filter set (' + label + ')');
+        };
+        const qtToday = this._q('#wf-dash-qt-today');
+        const qt3d = this._q('#wf-dash-qt-3d');
+        const qt7d = this._q('#wf-dash-qt-7d');
+        if (qtToday) qtToday.addEventListener('click', () => {
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const afterEl = this._q('#wf-dash-after');
+            const beforeEl = this._q('#wf-dash-before');
+            if (afterEl) afterEl.value = toDatetimeLocal(start);
+            if (beforeEl) beforeEl.value = '';
+            this._validateRangeUi();
+            this._updateDirty();
+            Logger.log('dashboard: quick time filter set (Today)');
+        });
+        if (qt3d) qt3d.addEventListener('click', () => setQuickRange(3, 'Last 3 Days'));
+        if (qt7d) qt7d.addEventListener('click', () => setQuickRange(7, 'Last 7 Days'));
 
         const search = this._q('#wf-dash-search');
         if (search) search.addEventListener('click', () => { void this._submitSearch(); });
@@ -1115,11 +1229,27 @@ const plugin = {
         countEl.style.display = n > 0 ? 'inline' : 'none';
     },
 
+    _getResultFilterSets() {
+        const items = this._state.cachedItems;
+        if (!items) return null;
+        return {
+            teamIds: new Set(items.map((i) => i.task.teamId).filter(Boolean)),
+            projectIds: new Set(items.map((i) => i.task.projectId).filter(Boolean)),
+            envKeys: new Set(items.map((i) => i.task.envKey).filter(Boolean))
+        };
+    },
+
     _renderTeamsList() {
         const list = this._q('#wf-dash-teams-list');
         if (!list) return;
         const prevSelected = new Set(this._selectedFromList('teams'));
-        const items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
+        const resultSets = this._getResultFilterSets();
+        let items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
+        if (resultSets) {
+            const before = items.length;
+            items = items.filter((it) => resultSets.teamIds.has(it.id) || prevSelected.has(it.id));
+            Logger.debug('dashboard: teams list filtered to ' + items.length + ' / ' + before + ' (from results)');
+        }
         list.innerHTML = this._multiSelectItemsHtml('teams', items, 'All teams', false);
         list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._wireMsCheckboxes('teams', () => {
@@ -1144,7 +1274,13 @@ const plugin = {
         if (!list) return;
         const prevSelected = new Set(this._selectedFromList('projects'));
         const loading = this._state.bootstrapStatus === 'loading';
-        const items = this._availableProjects().map((p) => ({ id: p.id, label: p.name }));
+        const resultSets = this._getResultFilterSets();
+        let items = this._availableProjects().map((p) => ({ id: p.id, label: p.name }));
+        if (resultSets) {
+            const before = items.length;
+            items = items.filter((it) => resultSets.projectIds.has(it.id) || prevSelected.has(it.id));
+            Logger.debug('dashboard: projects list filtered to ' + items.length + ' / ' + before + ' (from results)');
+        }
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
         list.innerHTML = this._multiSelectItemsHtml('projects', items, hint, loading);
         list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
@@ -1157,8 +1293,14 @@ const plugin = {
         if (!list) return;
         const prevSelected = new Set(this._selectedFromList('envs'));
         const loading = this._state.bootstrapStatus === 'loading';
+        const resultSets = this._getResultFilterSets();
         const envs = (this._state.catalog && this._state.catalog.environments) || [];
-        const items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
+        let items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
+        if (resultSets) {
+            const before = items.length;
+            items = items.filter((it) => resultSets.envKeys.has(it.id) || prevSelected.has(it.id));
+            Logger.debug('dashboard: envs list filtered to ' + items.length + ' / ' + before + ' (from results)');
+        }
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
         list.innerHTML = this._multiSelectItemsHtml('envs', items, hint, loading);
         list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
@@ -1220,6 +1362,10 @@ const plugin = {
         }
 
         const authorIds = this._state.draftTokens.map((t) => t.id);
+        Logger.info('dashboard: search started — '
+            + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+            + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null].filter(Boolean).join('+')
+            + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
         this._state.committed = {
             authorIds,
             taskCreation: includeTasks,
@@ -1247,6 +1393,11 @@ const plugin = {
             Logger.log('dashboard: search loaded ' + items.length + ' item(s) — '
                 + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
                 + ' · ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null].filter(Boolean).join(' + '));
+            // Refresh filter lists to only show options present in the loaded results
+            this._renderTeamsList();
+            this._renderProjectsList();
+            this._renderEnvsList();
+            Logger.debug('dashboard: filter lists refreshed from results');
         } catch (err) {
             this._setSearchError(err.message);
             this._state.cachedItems = null;
@@ -1281,7 +1432,7 @@ const plugin = {
         this._updateDirty();
         this._setStatus('Choose authors, optional time range, and output types, then press Search. Other filters apply instantly after load.');
         this._renderResults();
-        Logger.log('dashboard: search cleared');
+        Logger.log('dashboard: search cleared — all filters and results reset');
     },
 
     _currentClientFilters() {
@@ -1299,7 +1450,21 @@ const plugin = {
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
         } else {
-            this._state.filteredItems = this._applyClientFilters(this._state.cachedItems, this._currentClientFilters());
+            const filters = this._currentClientFilters();
+            const before = this._state.cachedItems.length;
+            this._state.filteredItems = this._applyClientFilters(this._state.cachedItems, filters);
+            const after = this._state.filteredItems.length;
+            const activeFilters = [
+                filters.teamIds.length > 0 ? filters.teamIds.length + ' team(s)' : null,
+                filters.projectIds.length > 0 ? filters.projectIds.length + ' project(s)' : null,
+                filters.envKeys.length > 0 ? filters.envKeys.length + ' env(s)' : null,
+                filters.promptText ? 'substring "' + filters.promptText.slice(0, 20) + (filters.promptText.length > 20 ? '…' : '') + '"' : null
+            ].filter(Boolean);
+            if (activeFilters.length > 0) {
+                Logger.debug('dashboard: filters applied [' + activeFilters.join(', ') + '] → ' + after + ' / ' + before + ' items');
+            } else {
+                Logger.debug('dashboard: no client filters active — showing all ' + before + ' cached items');
+            }
         }
         this._updateStatusFromState();
         this._renderResults();
@@ -1399,6 +1564,15 @@ const plugin = {
         return `<span style="${this._labelStyle()}">${dashEscHtml(text)}</span>`;
     },
 
+    _dismissedBadgeHtml() {
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
+    },
+
+    _personChipsHtml(name, email, id, linkTitle) {
+        if (!name && !email) return this._dismissedBadgeHtml();
+        return this._copyChipHtml(name) + this._copyChipHtml(email) + this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
+    },
+
     _statusBadgeHtml(status) {
         const key = (status || 'unknown').toLowerCase();
         let color = 'var(--muted-foreground, #64748b)';
@@ -1410,24 +1584,29 @@ const plugin = {
 
     _qaBlockHtml(qa) {
         const positive = qa.isPositive;
-        const border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #d97706 40%, transparent)';
-        const bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #d97706 8%, transparent)';
+        // Green for accepted, red for returned — prompt rating is separate and must not affect these colors
+        const border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
+        const bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
+        const statusLabel = positive
+            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
+            : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`;
         const badges = qa.rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${qa.rejectionBadges.map((l) => `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
         const blocks = qa.textBlocks.map((b) => `
             <div>
                 <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(b.label)}${this._copyIconHtml(b.text)}</div>
-                <p style="margin: 4px 0 0 0; white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(b.text)}</p>
             </div>`).join('');
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
                     <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Feedback</span>
+                    ${statusLabel}
                     ${qa.feedbackAt ? `<span style="color: var(--muted-foreground, #64748b);">${dashEscHtml(dashFormatCreatedAt(qa.feedbackAt))}</span>` : ''}
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
-                    ${this._labelSpan('Author')}${this._copyChipHtml(qa.qaReviewerName)}${this._copyChipHtml(qa.qaReviewerEmail)}${this._extLinkHtml(dashFleetExpertUrl(qa.qaReviewerId), 'Open author in Fleet')}
+                    ${this._labelSpan('QA Reviewer')}${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open QA reviewer in Fleet')}
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>
@@ -1455,11 +1634,11 @@ const plugin = {
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 14px 14px; font-size: 12px;">
                     <div style="grid-column: span 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
-                        ${this._labelSpan('Author')}${this._copyChipHtml(task.author.name)}${this._copyChipHtml(task.author.email)}${this._extLinkHtml(dashFleetExpertUrl(task.author.id), 'Open author in Fleet')}
+                        ${this._labelSpan('Author')}${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
                     </div>
                     <div style="grid-column: span 2;">
                         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan(promptLabel)}${this._copyIconHtml(task.prompt)}</div>
-                        <p style="margin: 4px 0 0 0; white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(task.prompt || '—')}</p>
+                        <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(task.prompt || '—')}</p>
                         ${qa ? this._qaBlockHtml(qa) : ''}
                     </div>
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Environment')}${this._copyChipHtml(task.environment)}</div>
