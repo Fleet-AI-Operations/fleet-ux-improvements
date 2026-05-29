@@ -147,13 +147,14 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init() {
         const self = this;
+        const bind = (fn) => fn.bind(self);
         Context.dashboardLib = {
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             UNIVERSAL_SEARCH_MAX_DAYS: DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS,
@@ -175,35 +176,35 @@ const plugin = {
                 return fuzzy ? dashLibIsFuzzyMatch(query, candidate) : candidate.includes(query);
             },
 
-            computeDisplayVersions: self._computeDisplayVersions,
-            resolveVersionAtFeedback: self._resolveVersionAtFeedback,
-            buildHighlightSegments: self._buildHighlightSegments,
+            computeDisplayVersions: bind(self._computeDisplayVersions),
+            resolveVersionAtFeedback: bind(self._resolveVersionAtFeedback),
+            buildHighlightSegments: bind(self._buildHighlightSegments),
 
-            returnTypeOf: self._returnTypeOf,
-            taskContributorIds: self._taskContributorIds,
-            taskPromptRatings: self._taskPromptRatings,
-            taskIssueLabels: self._taskIssueLabels,
-            taskReturnTypes: self._taskReturnTypes,
-            taskPassesFilterDimensions: self._taskPassesFilterDimensions,
-            applyClientTaskFilters: self._applyClientTaskFilters,
+            returnTypeOf: bind(self._returnTypeOf),
+            taskContributorIds: bind(self._taskContributorIds),
+            taskPromptRatings: bind(self._taskPromptRatings),
+            taskIssueLabels: bind(self._taskIssueLabels),
+            taskReturnTypes: bind(self._taskReturnTypes),
+            taskPassesFilterDimensions: bind(self._taskPassesFilterDimensions),
+            applyClientTaskFilters: bind(self._applyClientTaskFilters),
 
-            applyClientWorkerOutputFilters: self._applyClientWorkerOutputFilters,
-            sortWorkerOutputItems: self._sortWorkerOutputItems,
-            buildFilterListOptions: self._buildFilterListOptions,
-            applyFiltersAndSort: self._applyFiltersAndSort,
-            emptyFilterIrrelevance: self._emptyFilterIrrelevance,
-            computeFilterIrrelevance: self._computeFilterIrrelevance,
+            applyClientWorkerOutputFilters: bind(self._applyClientWorkerOutputFilters),
+            sortWorkerOutputItems: bind(self._sortWorkerOutputItems),
+            buildFilterListOptions: bind(self._buildFilterListOptions),
+            applyFiltersAndSort: bind(self._applyFiltersAndSort),
+            emptyFilterIrrelevance: bind(self._emptyFilterIrrelevance),
+            computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
 
-            buildQaFeedbackDisplay: self._buildQaFeedbackDisplay,
+            buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
 
-            dateLocalToIso: self._dateLocalToIso,
-            validateCreatedAtRange: self._validateCreatedAtRange,
-            quickDatePresetRange: self._quickDatePresetRange,
-            dateInputValue: self._dateInputValue,
-            isUniversalSearchParams: self._isUniversalSearchParams,
-            validateUniversalSearchRange: self._validateUniversalSearchRange,
+            dateLocalToIso: bind(self._dateLocalToIso),
+            validateCreatedAtRange: bind(self._validateCreatedAtRange),
+            quickDatePresetRange: bind(self._quickDatePresetRange),
+            dateInputValue: bind(self._dateInputValue),
+            isUniversalSearchParams: bind(self._isUniversalSearchParams),
+            validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
-            qaTextBlockLabel: self._qaTextBlockLabel
+            qaTextBlockLabel: bind(self._qaTextBlockLabel)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },

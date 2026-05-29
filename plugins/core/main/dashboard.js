@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1194,9 +1194,18 @@ const plugin = {
         const toggleTasks = this._q('#wf-dash-toggle-tasks');
         const toggleQa = this._q('#wf-dash-toggle-qa');
         const toggleDisputes = this._q('#wf-dash-toggle-disputes');
-        if (toggleTasks) toggleTasks.addEventListener('click', () => this._toggleOutputType('tasks'));
-        if (toggleQa) toggleQa.addEventListener('click', () => this._toggleOutputType('qa'));
-        if (toggleDisputes) toggleDisputes.addEventListener('click', () => this._toggleOutputType('disputes'));
+        if (toggleTasks) toggleTasks.addEventListener('click', () => {
+            this._toggleOutputType('tasks');
+            this._validateRangeUi();
+        });
+        if (toggleQa) toggleQa.addEventListener('click', () => {
+            this._toggleOutputType('qa');
+            this._validateRangeUi();
+        });
+        if (toggleDisputes) toggleDisputes.addEventListener('click', () => {
+            this._toggleOutputType('disputes');
+            this._validateRangeUi();
+        });
 
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) {
@@ -1740,7 +1749,10 @@ const plugin = {
         }
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
+            const noOutputTypes = !this._state.includeTasks && !this._state.includeQa && !this._state.includeDisputes;
             const searchDisabled = this._state.loading
+                || blankBlocked
+                || noOutputTypes
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
             searchBtn.style.cssText = searchDisabled
@@ -2016,7 +2028,6 @@ const plugin = {
         if (!el) return;
         const s = this._state;
         const label = this._labelStyle();
-        const errStyle = 'font-size: 12px; color: var(--destructive, #dc2626);';
 
         if (s.loading) {
             const detail = this._searchStatusDetail(s.committed);
@@ -2025,8 +2036,8 @@ const plugin = {
                 : '<span style="' + label + '">Searching…</span>';
             return;
         }
-        if (s.searchError) {
-            el.innerHTML = `<span style="${errStyle}">${dashEscHtml(s.searchError)}</span>`;
+        if (s.searchError && !s.cachedItems) {
+            el.textContent = '';
             return;
         }
         if (!s.hasSearched) {
@@ -2054,7 +2065,7 @@ const plugin = {
             el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}</span>`;
             return;
         }
-        el.textContent = 'Set search parameters on the left, then press Search.';
+        el.textContent = '';
     },
 
     // ── Results rendering ──
@@ -2064,17 +2075,9 @@ const plugin = {
         if (!wrap) return;
         const s = this._state;
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
-        const errStyle = 'font-size: 12px; color: var(--destructive, #dc2626);';
 
-        if (s.loading) {
-            const detail = this._searchStatusDetail(s.committed);
-            wrap.innerHTML = detail
-                ? `<p style="${muted}">Fetching results… ${dashEscHtml(detail)}</p>`
-                : `<p style="${muted}">Fetching results…</p>`;
-            return;
-        }
-        if (s.searchError) {
-            wrap.innerHTML = `<p style="${errStyle}">${dashEscHtml(s.searchError)}</p>`;
+        if (s.loading || (s.searchError && !s.cachedItems)) {
+            wrap.innerHTML = '';
             return;
         }
         if (!s.hasSearched) {
@@ -2082,7 +2085,7 @@ const plugin = {
             return;
         }
         if (s.filteredItems === null) {
-            wrap.innerHTML = `<p style="${muted}">No results loaded.</p>`;
+            wrap.innerHTML = '';
             return;
         }
         if (s.filteredItems.length === 0) {
