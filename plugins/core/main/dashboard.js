@@ -321,7 +321,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '1.9',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -359,7 +359,10 @@ const plugin = {
             hasSearched: false,
             loading: false,
             searchError: null,
-            committed: null
+            committed: null,
+            searchParamsLocked: false,
+            includeTasks: true,
+            includeQa: true
         };
     },
 
@@ -596,11 +599,99 @@ const plugin = {
 
     // ── Worker output search ──
 
-    async _fetchTasksForSearch(authorIds, afterIso, beforeIso) {
+    async _fetchTargetIdsForProjects(projectIds) {
+        if (!projectIds || projectIds.length === 0) return [];
+        const ids = [];
+        for (let i = 0; i < projectIds.length; i += 50) {
+            const chunk = projectIds.slice(i, i + 50);
+            const rows = await this._pgGet('task_project_targets', {
+                select: 'id',
+                project_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                limit: '500'
+            }).catch((e) => { Logger.warn('dashboard: project→target lookup failed', e); return []; });
+            for (const r of rows) if (r.id) ids.push(r.id);
+        }
+        Logger.debug('dashboard: project→target ids (' + ids.length + ' for ' + projectIds.length + ' project(s))');
+        return ids;
+    },
+
+    _availableSearchProjects() {
+        const catalog = this._state.catalog;
+        if (!catalog || !catalog.projects) return [];
+        const selectedTeams = this._selectedFromList('search-teams');
+        if (selectedTeams.length === 0) return catalog.projects;
+        const filtered = catalog.projects.filter((p) => selectedTeams.includes(p.team_id));
+        return filtered.length > 0 ? filtered : catalog.projects;
+    },
+
+    async _buildSearchApiScope() {
         const teamCatalog = this._getTeamCatalog();
-        const teamIds = teamCatalog.map(([id]) => id);
+        const allTeamIds = teamCatalog.map(([id]) => id);
+        const selectedTeams = this._selectedFromList('search-teams');
+        const teamIds = selectedTeams.length > 0 ? selectedTeams : allTeamIds;
+
+        const envCatalog = (this._state.catalog && this._state.catalog.environments) || [];
+        const allEnvKeys = envCatalog.map((e) => e.env_key);
+        const selectedEnvs = this._selectedFromList('search-envs');
+        const envKeys = selectedEnvs.length > 0 ? selectedEnvs : allEnvKeys;
+
+        const availableProjects = this._availableSearchProjects();
+        const allProjectIds = availableProjects.map((p) => p.id);
+        const selectedProjects = this._selectedFromList('search-projects');
+        const projectIds = selectedProjects.length > 0 ? selectedProjects : allProjectIds;
+        const hasProjectFilter = selectedProjects.length > 0;
+        const targetIds = hasProjectFilter ? await this._fetchTargetIdsForProjects(projectIds) : [];
+
+        const scope = { teamIds, envKeys, projectIds, targetIds, hasProjectFilter,
+            narrowedTeams: selectedTeams.length > 0,
+            narrowedEnvs: selectedEnvs.length > 0,
+            narrowedProjects: hasProjectFilter
+        };
+        Logger.debug('dashboard: search API scope — teams ' + teamIds.length
+            + ', envs ' + envKeys.length + ', projects ' + projectIds.length
+            + (hasProjectFilter ? ', targets ' + targetIds.length : ''));
+        return scope;
+    },
+
+    _applyTaskScopeToQs(qs, scope) {
+        if (scope.teamIds.length > 0) {
+            qs.team_id = scope.teamIds.length === 1 ? 'eq.' + scope.teamIds[0] : 'in.(' + scope.teamIds.join(',') + ')';
+        }
+        if (scope.narrowedEnvs && scope.envKeys.length > 0) {
+            qs.env_key = scope.envKeys.length === 1 ? 'eq.' + scope.envKeys[0] : 'in.(' + scope.envKeys.join(',') + ')';
+        }
+        if (scope.hasProjectFilter) {
+            if (scope.targetIds.length === 0) return false;
+            qs.task_project_target_id = scope.targetIds.length === 1
+                ? 'eq.' + scope.targetIds[0]
+                : 'in.(' + scope.targetIds.join(',') + ')';
+        }
+        return true;
+    },
+
+    _applyTaskScopeToQaQs(qs, scope) {
+        if (scope.teamIds.length > 0) {
+            qs['eval_tasks.team_id'] = scope.teamIds.length === 1 ? 'eq.' + scope.teamIds[0] : 'in.(' + scope.teamIds.join(',') + ')';
+        }
+        if (scope.narrowedEnvs && scope.envKeys.length > 0) {
+            qs['eval_tasks.env_key'] = scope.envKeys.length === 1 ? 'eq.' + scope.envKeys[0] : 'in.(' + scope.envKeys.join(',') + ')';
+        }
+        if (scope.hasProjectFilter) {
+            if (scope.targetIds.length === 0) return false;
+            qs['eval_tasks.task_project_target_id'] = scope.targetIds.length === 1
+                ? 'eq.' + scope.targetIds[0]
+                : 'in.(' + scope.targetIds.join(',') + ')';
+        }
+        return true;
+    },
+
+    async _fetchTasksForSearch(authorIds, afterIso, beforeIso, scope) {
+        if (scope.hasProjectFilter && scope.targetIds.length === 0) {
+            Logger.debug('dashboard: tasks skipped — project filter matched no targets');
+            return [];
+        }
         Logger.debug('dashboard: fetching tasks — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-            + (teamIds.length > 0 ? ' · ' + teamIds.length + ' team(s)' : '')
+            + (scope.teamIds.length > 0 ? ' · ' + scope.teamIds.length + ' team(s)' : '')
             + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : ''));
         const allRows = [];
         let offset = 0;
@@ -614,7 +705,7 @@ const plugin = {
             };
             if (authorIds.length === 1) qs.created_by = 'eq.' + authorIds[0];
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
-            if (teamIds.length > 0) qs.team_id = 'in.(' + teamIds.join(',') + ')';
+            if (!this._applyTaskScopeToQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
             const page = await this._pgGet('eval_tasks', qs);
             pageNum++;
@@ -647,15 +738,23 @@ const plugin = {
         }));
     },
 
-    async _fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso) {
+    async _fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso, scope) {
+        if (scope.hasProjectFilter && scope.targetIds.length === 0) {
+            Logger.debug('dashboard: QA skipped — project filter matched no targets');
+            return [];
+        }
+        const useTaskEmbed = scope.narrowedTeams || scope.narrowedEnvs || scope.hasProjectFilter;
         Logger.debug('dashboard: fetching QA feedback — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-            + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : ''));
+            + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : '')
+            + (useTaskEmbed ? ' · task scope embed' : ''));
         const allFeedback = [];
         let offset = 0;
         let pageNum = 0;
         while (true) {
             const qs = {
-                select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data',
+                select: useTaskEmbed
+                    ? 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,eval_tasks!inner(id,team_id,env_key,task_project_target_id)'
+                    : 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data',
                 is_system_feedback: 'not.eq.true',
                 order: 'created_at.desc',
                 offset: String(offset),
@@ -663,6 +762,7 @@ const plugin = {
             };
             if (authorIds.length === 1) qs.created_by = 'eq.' + authorIds[0];
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
+            if (useTaskEmbed && !this._applyTaskScopeToQaQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
             const page = await this._pgGet('eval_task_qa_feedback', qs);
             pageNum++;
@@ -682,11 +782,13 @@ const plugin = {
         const taskRows = [];
         for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
             const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
-            const page = await this._pgGet('eval_tasks', {
+            const qs = {
                 select: this._evalTasksSelect(),
                 id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: String(chunk.length)
-            });
+            };
+            if (!this._applyTaskScopeToQs(qs, scope)) continue;
+            const page = await this._pgGet('eval_tasks', qs);
             taskRows.push(...page);
             Logger.debug('dashboard: QA tasks chunk — ' + page.length + ' rows');
         }
@@ -737,21 +839,29 @@ const plugin = {
         return items;
     },
 
-    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, afterIso, beforeIso }) {
+    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, afterIso, beforeIso, scope }) {
         const fetches = [];
         if (includeTaskCreation) {
-            fetches.push(this._fetchTasksForSearch(authorIds, afterIso, beforeIso).then((t) => this._taskCreationItemsFromTasks(t)));
+            fetches.push(this._fetchTasksForSearch(authorIds, afterIso, beforeIso, scope).then((t) => this._taskCreationItemsFromTasks(t)));
         }
         if (includeQa) {
-            fetches.push(this._fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso));
+            fetches.push(this._fetchQaFeedbackForSearch(authorIds, afterIso, beforeIso, scope));
         }
         const parts = await Promise.all(fetches);
         const merged = parts.flat();
-        merged.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
         return merged;
     },
 
-    // ── Client-side filters ──
+    _sortItems(items, sortOrder) {
+        const sorted = [...items];
+        sorted.sort((a, b) => {
+            const cmp = a.sortAt < b.sortAt ? -1 : a.sortAt > b.sortAt ? 1 : 0;
+            return sortOrder === 'asc' ? cmp : -cmp;
+        });
+        return sorted;
+    },
+
+    // ── Client-side filters (Filters panel — applied via Apply, not on Search) ──
 
     _applyClientFilters(items, filters) {
         let result = items;
@@ -761,14 +871,20 @@ const plugin = {
         if (teamIds.length > 0) {
             const set = new Set(teamIds);
             result = result.filter((it) => it.task.teamId && set.has(it.task.teamId));
+        } else if (this._allFromList('filter-teams').length > 0) {
+            result = [];
         }
         if (projectIds.length > 0) {
             const set = new Set(projectIds);
             result = result.filter((it) => it.task.projectId && set.has(it.task.projectId));
+        } else if (this._allFromList('filter-projects').length > 0) {
+            result = [];
         }
         if (envKeys.length > 0) {
             const set = new Set(envKeys);
             result = result.filter((it) => it.task.envKey && set.has(it.task.envKey));
+        } else if (this._allFromList('filter-envs').length > 0) {
+            result = [];
         }
         if (!dashIsQueryEmpty(filters.promptText, filters.caseSensitive)) {
             result = result.filter((it) => dashTextMatchesQuery(it.task.prompt, filters.promptText, filters.fuzzy, filters.caseSensitive));
@@ -876,6 +992,7 @@ const plugin = {
         this._built = true;
         this._attachListeners();
         this._setActiveTab(this._state.activeTab);
+        this._syncOutputToggleUi();
         this._refreshCatalogDependentUi();
         this._updateStatusFromState();
         Logger.log('dashboard: popup built');
@@ -936,6 +1053,14 @@ const plugin = {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
     },
 
+    _btnToggleStyle(active) {
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0);';
+        if (active) {
+            return base + ' background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff); border-color: var(--brand, var(--primary, #2563eb));';
+        }
+        return base + ' background: var(--background, #fff); color: var(--foreground, #0f172a); opacity: 0.75;';
+    },
+
     _searchPanelHtml() {
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
@@ -946,20 +1071,20 @@ const plugin = {
                     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
                         <div style="min-width: 0;">
                             <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Worker Output Search</div>
-                            <div style="${label} margin-top: 4px; line-height: 1.45;">Task Creation lists tasks authored by the worker. QA lists reviews they performed. After/Before filter the API query; prompt, team, project, and environment apply instantly after load.</div>
+                            <div style="${label} margin-top: 4px; line-height: 1.45;">Configure search parameters and press Search. Parameters lock until you Clear. Use Filters below to refine loaded results.</div>
                         </div>
                         <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
-                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                            <input type="checkbox" id="wf-dash-include-tasks" checked> Task Creation
-                        </label>
-                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                            <input type="checkbox" id="wf-dash-include-qa" checked> QA
-                        </label>
-                    </div>
-                    <div style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                    <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
                         <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+
+                        <div>
+                            <div style="${label} margin-bottom: 6px; font-weight: 600;">Output types</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true)}">Task Creation</button>
+                                <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true)}">QA</button>
+                            </div>
+                        </div>
 
                         <div>
                             <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Authors</label>
@@ -968,7 +1093,7 @@ const plugin = {
                             </div>
                             <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                             <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
-                            <div style="${label} margin-top: 4px;">Empty = all workers. Authors, date range, output types, and Search reload the cache.</div>
+                            <div style="${label} margin-top: 4px;">Empty = all workers.</div>
                         </div>
 
                         <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
@@ -1000,50 +1125,89 @@ const plugin = {
                         </div>
                         <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
-                            ${this._multiSelectHtml('teams', 'Teams', 'All teams')}
-                            ${this._multiSelectHtml('projects', 'Projects', 'All projects')}
-                            ${this._multiSelectHtml('envs', 'Environments', 'All environments')}
-                        </div>
-
                         <div>
-                            <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring Filter</label>
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-                                <input type="text" id="wf-dash-prompt" placeholder="Filter loaded results by prompt substring" style="${input} flex: 1; min-width: 200px;">
-                                <button type="button" id="wf-dash-prompt-filter" style="${this._btnStyle()} flex-shrink: 0;">Filter</button>
-                                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                                    <input type="checkbox" id="wf-dash-case"> Case sensitive
-                                </label>
-                                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
-                                    <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
-                                </label>
+                            <div style="${label} margin-bottom: 6px; font-weight: 600;">Teams, projects, environments</div>
+                            <div style="${label} margin-bottom: 8px;">None selected = all. Sent to the API on Search.</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                                ${this._multiSelectHtml('search-teams', 'Teams', 'All teams', false)}
+                                ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
+                                ${this._multiSelectHtml('search-envs', 'Environments', 'All environments', false)}
                             </div>
-                            <div style="${label} margin-top: 4px;">Press Filter (or Enter) to apply. Case-sensitive and Fuzzy apply immediately when toggled.</div>
                         </div>
+                    </div>
 
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 14px 14px;">
+                        <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
+                        <button type="button" id="wf-dash-clear" style="${this._btnStyle()}">Clear</button>
+                    </div>
+
+                    <div id="wf-dash-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); padding: 0 14px 10px;"></div>
+                    <div id="wf-dash-status" style="font-size: 12px; color: var(--muted-foreground, #64748b); padding: 0 14px 14px;"></div>
+                </div>
+
+                <div style="${box} padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Filters</div>
+                        <div style="${label} margin-top: 4px;">Refine loaded results. Changes apply when you press Apply (or Enter in substring field).</div>
+                    </div>
+
+                    <div>
+                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-                            <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
-                            <button type="button" id="wf-dash-clear" style="${this._btnStyle()}">Clear</button>
+                            <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input} flex: 1; min-width: 200px;">
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
+                                <input type="checkbox" id="wf-dash-case"> Case sensitive
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground, #0f172a); cursor: pointer;">
+                                <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
+                            </label>
                         </div>
+                    </div>
 
-                        <div id="wf-dash-dirty" style="display: none; font-size: 12px; color: var(--destructive, #b45309);">Search parameters changed since last load — press Search to reload.</div>
-                        <div id="wf-dash-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                        <div id="wf-dash-status" style="font-size: 12px; color: var(--muted-foreground, #64748b);"></div>
+                    <div style="max-width: 280px;">
+                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Sort</label>
+                        <select id="wf-dash-sort" style="${input} cursor: pointer;">
+                            <option value="desc">Created — newest first</option>
+                            <option value="asc">Created — oldest first</option>
+                        </select>
+                    </div>
+
+                    <div id="wf-dash-filter-scope-wrap" style="display: none;">
+                        <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
+                        <div style="${label} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                            ${this._multiSelectHtml('filter-teams', 'Teams', 'Search first to filter', true)}
+                            ${this._multiSelectHtml('filter-projects', 'Projects', 'Search first to filter', true)}
+                            ${this._multiSelectHtml('filter-envs', 'Environments', 'Search first to filter', true)}
+                        </div>
+                    </div>
+
+                    <div>
+                        <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
                     </div>
                 </div>
+
                 <div id="wf-dash-results" style="display: flex; flex-direction: column; gap: 8px;"></div>
             </section>
         `;
     },
 
-    _multiSelectHtml(key, label, emptyHint) {
+    _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
+        const bulk = bulkActions ? `
+                    <span style="display: inline-flex; gap: 6px;">
+                        <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
+                        <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>
+                    </span>` : '';
         return `
             <div style="${this._panelBoxStyle()}">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
                     <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
-                    <span id="wf-dash-${key}-count" style="display: none; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                    <span style="display: inline-flex; align-items: center; gap: 6px;">
+                        ${bulk}
+                        <span id="wf-dash-${scopeKey}-count" style="display: none; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                    </span>
                 </div>
-                <div id="wf-dash-${key}-list" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="max-height: 150px; overflow-y: auto; padding: 4px;">
+                <div id="wf-dash-${scopeKey}-list" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="max-height: 150px; overflow-y: auto; padding: 4px;">
                     <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                 </div>
             </div>
@@ -1092,50 +1256,37 @@ const plugin = {
                 }
                 this._setAuthorError('');
                 this._hideAuthorCandidates();
-                this._updateDirty();
             });
         }
 
-        // Inputs affecting "dirty" (reload-required) state
+        // Inputs affecting search (only when unlocked)
         ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => {
             const el = this._q(sel);
             if (el) el.addEventListener('change', () => {
                 this._validateRangeUi();
-                this._updateDirty();
                 if (!this._applyingQuickDate) {
                     const quick = this._q('#wf-dash-quick-range');
                     if (quick) quick.value = '';
                 }
             });
         });
-        ['#wf-dash-include-tasks', '#wf-dash-include-qa'].forEach((sel) => {
-            const el = this._q(sel);
-            if (el) el.addEventListener('change', () => this._updateDirty());
-        });
 
-        // Substring filter — button or Enter applies; not live (avoids lag on large result sets)
+        const toggleTasks = this._q('#wf-dash-toggle-tasks');
+        const toggleQa = this._q('#wf-dash-toggle-qa');
+        if (toggleTasks) toggleTasks.addEventListener('click', () => this._toggleOutputType('tasks'));
+        if (toggleQa) toggleQa.addEventListener('click', () => this._toggleOutputType('qa'));
+
         const prompt = this._q('#wf-dash-prompt');
-        const promptFilterBtn = this._q('#wf-dash-prompt-filter');
         if (prompt) {
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     this._applyFiltersAndRender();
-                    Logger.debug('dashboard: substring filter applied (Enter)');
                 }
             });
         }
-        if (promptFilterBtn) {
-            promptFilterBtn.addEventListener('click', () => {
-                this._applyFiltersAndRender();
-                Logger.debug('dashboard: substring filter applied (button)');
-            });
-        }
-        // Case/Fuzzy toggles apply immediately
-        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => {
-            const el = this._q(sel);
-            if (el) el.addEventListener('change', () => this._applyFiltersAndRender());
-        });
+        const applyFilters = this._q('#wf-dash-apply-filters');
+        if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -1150,6 +1301,15 @@ const plugin = {
         if (search) search.addEventListener('click', () => { void this._submitSearch(); });
         const clear = this._q('#wf-dash-clear');
         if (clear) clear.addEventListener('click', () => this._clearSearch());
+
+        modal.addEventListener('change', (e) => {
+            const cb = e.target;
+            if (!cb || cb.type !== 'checkbox') return;
+            const msKey = cb.getAttribute('data-wf-dash-ms');
+            if (!msKey) return;
+            this._updateMsCount(msKey);
+            if (msKey === 'search-teams') this._renderSearchProjectsList();
+        });
 
         // Delegated copy + candidate selection handlers
         modal.addEventListener('click', (e) => {
@@ -1168,9 +1328,68 @@ const plugin = {
             const removeTok = e.target.closest('[data-wf-dash-remove-token]');
             if (removeTok && modal.contains(removeTok)) {
                 e.stopPropagation();
-                this._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
+                if (!this._state.searchParamsLocked) {
+                    this._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
+                }
+                return;
+            }
+            const msAll = e.target.closest('[data-wf-dash-ms-all]');
+            if (msAll && modal.contains(msAll)) {
+                this._setMultiselectChecked(msAll.getAttribute('data-wf-dash-ms-all'), true);
+                return;
+            }
+            const msNone = e.target.closest('[data-wf-dash-ms-none]');
+            if (msNone && modal.contains(msNone)) {
+                this._setMultiselectChecked(msNone.getAttribute('data-wf-dash-ms-none'), false);
             }
         });
+    },
+
+    _toggleOutputType(kind) {
+        if (this._state.searchParamsLocked) return;
+        if (kind === 'tasks') {
+            this._state.includeTasks = !this._state.includeTasks;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: Task Creation ' + (this._state.includeTasks ? 'on' : 'off'));
+        } else if (kind === 'qa') {
+            this._state.includeQa = !this._state.includeQa;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: QA ' + (this._state.includeQa ? 'on' : 'off'));
+        }
+    },
+
+    _syncOutputToggleUi() {
+        const tasksBtn = this._q('#wf-dash-toggle-tasks');
+        const qaBtn = this._q('#wf-dash-toggle-qa');
+        if (tasksBtn) {
+            tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
+            tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks);
+        }
+        if (qaBtn) {
+            qaBtn.setAttribute('aria-pressed', this._state.includeQa ? 'true' : 'false');
+            qaBtn.style.cssText = this._btnToggleStyle(this._state.includeQa);
+        }
+    },
+
+    _setSearchParamsLocked(locked) {
+        this._state.searchParamsLocked = locked;
+        const fields = this._q('#wf-dash-search-fields');
+        if (fields) {
+            fields.style.opacity = locked ? '0.55' : '';
+            fields.style.pointerEvents = locked ? 'none' : '';
+        }
+        const refreshBtn = this._q('#wf-dash-refresh');
+        if (refreshBtn) refreshBtn.disabled = locked || this._state.bootstrapStatus === 'loading';
+        const searchBtn = this._q('#wf-dash-search');
+        if (searchBtn) searchBtn.disabled = locked || this._state.loading;
+        Logger.debug('dashboard: search params ' + (locked ? 'locked' : 'unlocked'));
+    },
+
+    _setMultiselectChecked(scopeKey, checked) {
+        const list = this._q('#wf-dash-' + scopeKey + '-list');
+        if (!list) return;
+        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = checked; });
+        this._updateMsCount(scopeKey);
     },
 
     _setActiveTab(tabId) {
@@ -1216,19 +1435,19 @@ const plugin = {
     },
 
     _addAuthorToken(person) {
+        if (this._state.searchParamsLocked) return;
         if (this._state.draftTokens.some((t) => t.id === person.id)) return;
         this._state.draftTokens.push(person);
         this._hideAuthorCandidates();
         this._setAuthorError('');
         this._renderAuthorTokens();
-        this._updateDirty();
         Logger.log('dashboard: author token added (' + (person.full_name || person.id) + ')');
     },
 
     _removeAuthorToken(id) {
+        if (this._state.searchParamsLocked) return;
         this._state.draftTokens = this._state.draftTokens.filter((t) => t.id !== id);
         this._renderAuthorTokens();
-        this._updateDirty();
     },
 
     _renderAuthorTokens() {
@@ -1296,41 +1515,80 @@ const plugin = {
             refreshBtn.disabled = status === 'loading';
             refreshBtn.textContent = status === 'loading' ? 'Refreshing…' : 'Refresh catalogs';
         }
-        this._renderTeamsList();
-        this._renderProjectsList();
-        this._renderEnvsList();
+        this._renderSearchTeamsList();
+        this._renderSearchProjectsList();
+        this._renderSearchEnvsList();
     },
 
-    _selectedFromList(key) {
-        const list = this._q('#wf-dash-' + key + '-list');
+    _selectedFromList(scopeKey) {
+        const list = this._q('#wf-dash-' + scopeKey + '-list');
         if (!list) return [];
         return [...list.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.value);
     },
 
-    _multiSelectItemsHtml(key, items, emptyHint, loading) {
+    _allFromList(scopeKey) {
+        const list = this._q('#wf-dash-' + scopeKey + '-list');
+        if (!list) return [];
+        return [...list.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
+    },
+
+    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked) {
         if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         return items.map((it) => `
             <label style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
-                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${key}">
+                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(it.label)}</span>
             </label>`).join('');
     },
 
-    _wireMsCheckboxes(key, onChange) {
-        const list = this._q('#wf-dash-' + key + '-list');
-        if (!list) return;
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-            cb.addEventListener('change', onChange);
-        });
+    _updateMsCount(scopeKey) {
+        const countEl = this._q('#wf-dash-' + scopeKey + '-count');
+        if (!countEl) return;
+        const all = this._allFromList(scopeKey);
+        const n = this._selectedFromList(scopeKey).length;
+        if (scopeKey.startsWith('search-')) {
+            countEl.textContent = String(n);
+            countEl.style.display = n > 0 ? 'inline' : 'none';
+        } else {
+            countEl.textContent = n + '/' + all.length;
+            countEl.style.display = all.length > 0 ? 'inline' : 'none';
+        }
     },
 
-    _updateMsCount(key) {
-        const countEl = this._q('#wf-dash-' + key + '-count');
-        if (!countEl) return;
-        const n = this._selectedFromList(key).length;
-        countEl.textContent = String(n);
-        countEl.style.display = n > 0 ? 'inline' : 'none';
+    _renderSearchTeamsList() {
+        const list = this._q('#wf-dash-search-teams-list');
+        if (!list) return;
+        const prevSelected = new Set(this._selectedFromList('search-teams'));
+        const items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
+        list.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
+        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._updateMsCount('search-teams');
+    },
+
+    _renderSearchProjectsList() {
+        const list = this._q('#wf-dash-search-projects-list');
+        if (!list) return;
+        const prevSelected = new Set(this._selectedFromList('search-projects'));
+        const loading = this._state.bootstrapStatus === 'loading';
+        const items = this._availableSearchProjects().map((p) => ({ id: p.id, label: p.name }));
+        const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
+        list.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
+        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._updateMsCount('search-projects');
+    },
+
+    _renderSearchEnvsList() {
+        const list = this._q('#wf-dash-search-envs-list');
+        if (!list) return;
+        const prevSelected = new Set(this._selectedFromList('search-envs'));
+        const loading = this._state.bootstrapStatus === 'loading';
+        const envs = (this._state.catalog && this._state.catalog.environments) || [];
+        const items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
+        const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
+        list.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
+        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._updateMsCount('search-envs');
     },
 
     _getResultFilterSets() {
@@ -1343,73 +1601,63 @@ const plugin = {
         };
     },
 
-    _renderTeamsList() {
-        const list = this._q('#wf-dash-teams-list');
-        if (!list) return;
-        const prevSelected = new Set(this._selectedFromList('teams'));
-        const resultSets = this._getResultFilterSets();
-        let items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
-        if (resultSets) {
-            const before = items.length;
-            items = items.filter((it) => resultSets.teamIds.has(it.id) || prevSelected.has(it.id));
-            Logger.debug('dashboard: teams list filtered to ' + items.length + ' / ' + before + ' (from results)');
+    _renderFilterScopeLists() {
+        const wrap = this._q('#wf-dash-filter-scope-wrap');
+        const items = this._state.cachedItems;
+        if (!wrap) return;
+        if (!items || items.length === 0) {
+            wrap.style.display = 'none';
+            return;
         }
-        list.innerHTML = this._multiSelectItemsHtml('teams', items, 'All teams', false);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._wireMsCheckboxes('teams', () => {
-            this._updateMsCount('teams');
-            this._renderProjectsList();
-            this._applyFiltersAndRender();
-        });
-        this._updateMsCount('teams');
-    },
+        wrap.style.display = '';
+        const sets = this._getResultFilterSets();
+        const prevTeams = new Set(this._selectedFromList('filter-teams'));
+        const prevProjects = new Set(this._selectedFromList('filter-projects'));
+        const prevEnvs = new Set(this._selectedFromList('filter-envs'));
+        const hadFilterLists = prevTeams.size > 0 || prevProjects.size > 0 || prevEnvs.size > 0;
 
-    _availableProjects() {
-        const catalog = this._state.catalog;
-        if (!catalog || !catalog.projects) return [];
-        const selectedTeams = this._selectedFromList('teams');
-        if (selectedTeams.length === 0) return catalog.projects;
-        const filtered = catalog.projects.filter((p) => selectedTeams.includes(p.team_id));
-        return filtered.length > 0 ? filtered : catalog.projects;
-    },
+        const teamItems = this._getTeamCatalog()
+            .filter(([id]) => sets.teamIds.has(id))
+            .map(([id, label]) => ({ id, label }));
+        const projectItems = ((this._state.catalog && this._state.catalog.projects) || [])
+            .filter((p) => sets.projectIds.has(p.id))
+            .map((p) => ({ id: p.id, label: p.name }));
+        const envItems = ((this._state.catalog && this._state.catalog.environments) || [])
+            .filter((e) => sets.envKeys.has(e.env_key))
+            .map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
 
-    _renderProjectsList() {
-        const list = this._q('#wf-dash-projects-list');
-        if (!list) return;
-        const prevSelected = new Set(this._selectedFromList('projects'));
-        const loading = this._state.bootstrapStatus === 'loading';
-        const resultSets = this._getResultFilterSets();
-        let items = this._availableProjects().map((p) => ({ id: p.id, label: p.name }));
-        if (resultSets) {
-            const before = items.length;
-            items = items.filter((it) => resultSets.projectIds.has(it.id) || prevSelected.has(it.id));
-            Logger.debug('dashboard: projects list filtered to ' + items.length + ' / ' + before + ' (from results)');
+        const teamsList = this._q('#wf-dash-filter-teams-list');
+        if (teamsList) {
+            teamsList.innerHTML = this._multiSelectItemsHtml('filter-teams', teamItems, 'No teams in results', false, !hadFilterLists);
+            if (hadFilterLists) {
+                teamsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = prevTeams.has(cb.value);
+                });
+            }
+            this._updateMsCount('filter-teams');
         }
-        const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
-        list.innerHTML = this._multiSelectItemsHtml('projects', items, hint, loading);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._wireMsCheckboxes('projects', () => { this._updateMsCount('projects'); this._applyFiltersAndRender(); });
-        this._updateMsCount('projects');
-    },
-
-    _renderEnvsList() {
-        const list = this._q('#wf-dash-envs-list');
-        if (!list) return;
-        const prevSelected = new Set(this._selectedFromList('envs'));
-        const loading = this._state.bootstrapStatus === 'loading';
-        const resultSets = this._getResultFilterSets();
-        const envs = (this._state.catalog && this._state.catalog.environments) || [];
-        let items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
-        if (resultSets) {
-            const before = items.length;
-            items = items.filter((it) => resultSets.envKeys.has(it.id) || prevSelected.has(it.id));
-            Logger.debug('dashboard: envs list filtered to ' + items.length + ' / ' + before + ' (from results)');
+        const projectsList = this._q('#wf-dash-filter-projects-list');
+        if (projectsList) {
+            projectsList.innerHTML = this._multiSelectItemsHtml('filter-projects', projectItems, 'No projects in results', false, !hadFilterLists);
+            if (hadFilterLists) {
+                projectsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = prevProjects.has(cb.value);
+                });
+            }
+            this._updateMsCount('filter-projects');
         }
-        const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
-        list.innerHTML = this._multiSelectItemsHtml('envs', items, hint, loading);
-        list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._wireMsCheckboxes('envs', () => { this._updateMsCount('envs'); this._applyFiltersAndRender(); });
-        this._updateMsCount('envs');
+        const envsList = this._q('#wf-dash-filter-envs-list');
+        if (envsList) {
+            envsList.innerHTML = this._multiSelectItemsHtml('filter-envs', envItems, 'No environments in results', false, !hadFilterLists);
+            if (hadFilterLists) {
+                envsList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = prevEnvs.has(cb.value);
+                });
+            }
+            this._updateMsCount('filter-envs');
+        }
+        Logger.debug('dashboard: filter scope lists rendered — teams ' + teamItems.length
+            + ', projects ' + projectItems.length + ', envs ' + envItems.length);
     },
 
     // ── Dirty / range validation ──
@@ -1430,7 +1678,6 @@ const plugin = {
             this._applyingQuickDate = false;
         }
         this._validateRangeUi();
-        this._updateDirty();
         Logger.log('dashboard: quick date preset applied (' + range.label + ')');
     },
 
@@ -1448,33 +1695,18 @@ const plugin = {
             }
         }
         const searchBtn = this._q('#wf-dash-search');
-        if (searchBtn) searchBtn.disabled = (Boolean(after || before) && !check.valid) || this._state.loading;
+        if (searchBtn) searchBtn.disabled = (Boolean(after || before) && !check.valid) || this._state.loading || this._state.searchParamsLocked;
         return check;
-    },
-
-    _updateDirty() {
-        const el = this._q('#wf-dash-dirty');
-        if (!el) return;
-        const committed = this._state.committed;
-        if (!this._state.hasSearched || !committed) { el.style.display = 'none'; return; }
-        const includeTasks = (this._q('#wf-dash-include-tasks') || {}).checked;
-        const includeQa = (this._q('#wf-dash-include-qa') || {}).checked;
-        const after = (this._q('#wf-dash-after') || {}).value || '';
-        const before = (this._q('#wf-dash-before') || {}).value || '';
-        const authorIds = this._state.draftTokens.map((t) => t.id).sort();
-        const authorsDirty = JSON.stringify(authorIds) !== JSON.stringify([...committed.authorIds].sort());
-        const modesDirty = includeTasks !== committed.taskCreation || includeQa !== committed.qa;
-        const rangeDirty = after !== committed.afterLocal || before !== committed.beforeLocal;
-        el.style.display = (authorsDirty || modesDirty || rangeDirty) ? 'block' : 'none';
     },
 
     // ── Search submit / clear ──
 
     async _submitSearch() {
-        const includeTasks = (this._q('#wf-dash-include-tasks') || {}).checked;
-        const includeQa = (this._q('#wf-dash-include-qa') || {}).checked;
+        if (this._state.searchParamsLocked) return;
+        const includeTasks = this._state.includeTasks;
+        const includeQa = this._state.includeQa;
         if (!includeTasks && !includeQa) {
-            this._setSearchError('Select at least one output type: Task Creation or QA.');
+            this._setSearchError('Enable at least one output type: Task Creation or QA.');
             return;
         }
         const after = (this._q('#wf-dash-after') || {}).value || '';
@@ -1486,6 +1718,7 @@ const plugin = {
         }
 
         const authorIds = this._state.draftTokens.map((t) => t.id);
+        const scope = await this._buildSearchApiScope();
         Logger.info('dashboard: search started — '
             + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
             + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null].filter(Boolean).join('+')
@@ -1495,12 +1728,17 @@ const plugin = {
             taskCreation: includeTasks,
             qa: includeQa,
             afterLocal: after,
-            beforeLocal: before
+            beforeLocal: before,
+            scopeSummary: {
+                teams: scope.narrowedTeams ? scope.teamIds.length : 'all',
+                projects: scope.narrowedProjects ? scope.projectIds.length : 'all',
+                envs: scope.narrowedEnvs ? scope.envKeys.length : 'all'
+            }
         };
         this._state.hasSearched = true;
         this._state.loading = true;
         this._setSearchError('');
-        this._updateDirty();
+        this._setSearchParamsLocked(true);
         this._setStatus('Loading…');
         this._setSearchButtonLoading(true);
         this._renderResults();
@@ -1511,25 +1749,23 @@ const plugin = {
                 includeTaskCreation: includeTasks,
                 includeQa,
                 afterIso: rangeCheck.afterIso,
-                beforeIso: rangeCheck.beforeIso
+                beforeIso: rangeCheck.beforeIso,
+                scope
             });
             this._state.cachedItems = items;
-            Logger.log('dashboard: search loaded ' + items.length + ' item(s) — '
-                + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-                + ' · ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null].filter(Boolean).join(' + '));
-            // Refresh filter lists to only show options present in the loaded results
-            this._renderTeamsList();
-            this._renderProjectsList();
-            this._renderEnvsList();
-            Logger.debug('dashboard: filter lists refreshed from results');
+            Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
+            this._renderFilterScopeLists();
+            this._applyFiltersAndRender();
         } catch (err) {
             this._setSearchError(err.message);
             this._state.cachedItems = null;
+            this._state.filteredItems = null;
             Logger.warn('dashboard: search failed', err);
         } finally {
             this._state.loading = false;
             this._setSearchButtonLoading(false);
-            this._applyFiltersAndRender();
+            this._setSearchParamsLocked(true);
+            this._updateStatusFromState();
         }
     },
 
@@ -1539,26 +1775,31 @@ const plugin = {
         this._state.filteredItems = null;
         this._state.hasSearched = false;
         this._state.committed = null;
+        this._state.includeTasks = true;
+        this._state.includeQa = true;
         ['#wf-dash-after', '#wf-dash-before', '#wf-dash-prompt'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
-        ['#wf-dash-include-tasks', '#wf-dash-include-qa'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = true; });
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = 'desc';
         ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
-        ['teams', 'projects', 'envs'].forEach((key) => {
+        ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const list = this._q('#wf-dash-' + key + '-list');
             if (list) list.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
             this._updateMsCount(key);
         });
-        this._renderProjectsList();
+        this._syncOutputToggleUi();
+        this._renderSearchProjectsList();
+        this._renderFilterScopeLists();
         this._renderAuthorTokens();
         this._hideAuthorCandidates();
         this._setAuthorError('');
         this._setSearchError('');
         this._validateRangeUi();
-        this._updateDirty();
-        this._setStatus('Choose authors, optional date range, and output types, then press Search. Other filters apply instantly after load.');
+        this._setSearchParamsLocked(false);
+        this._setStatus('Set search parameters, then press Search. Use Filters to refine loaded results.');
         this._renderResults();
-        Logger.log('dashboard: search cleared — all filters and results reset');
+        Logger.log('dashboard: search cleared — parameters unlocked');
     },
 
     _currentClientFilters() {
@@ -1566,32 +1807,28 @@ const plugin = {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            teamIds: this._selectedFromList('teams'),
-            projectIds: this._selectedFromList('projects'),
-            envKeys: this._selectedFromList('envs')
+            teamIds: this._selectedFromList('filter-teams'),
+            projectIds: this._selectedFromList('filter-projects'),
+            envKeys: this._selectedFromList('filter-envs'),
+            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
         };
     },
 
     _applyFiltersAndRender() {
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
-        } else {
-            const filters = this._currentClientFilters();
-            const before = this._state.cachedItems.length;
-            this._state.filteredItems = this._applyClientFilters(this._state.cachedItems, filters);
-            const after = this._state.filteredItems.length;
-            const activeFilters = [
-                filters.teamIds.length > 0 ? filters.teamIds.length + ' team(s)' : null,
-                filters.projectIds.length > 0 ? filters.projectIds.length + ' project(s)' : null,
-                filters.envKeys.length > 0 ? filters.envKeys.length + ' env(s)' : null,
-                filters.promptText ? 'substring "' + filters.promptText.slice(0, 20) + (filters.promptText.length > 20 ? '…' : '') + '"' : null
-            ].filter(Boolean);
-            if (activeFilters.length > 0) {
-                Logger.debug('dashboard: filters applied [' + activeFilters.join(', ') + '] → ' + after + ' / ' + before + ' items');
-            } else {
-                Logger.debug('dashboard: no client filters active — showing all ' + before + ' cached items');
-            }
+            this._updateStatusFromState();
+            this._renderResults();
+            return;
         }
+        const filters = this._currentClientFilters();
+        const before = this._state.cachedItems.length;
+        let result = this._applyClientFilters(this._state.cachedItems, filters);
+        result = this._sortItems(result, filters.sortOrder);
+        this._state.filteredItems = result;
+        const after = result.length;
+        Logger.log('dashboard: filters applied — ' + after + ' / ' + before + ' items'
+            + (filters.sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
         this._updateStatusFromState();
         this._renderResults();
     },
@@ -1607,7 +1844,7 @@ const plugin = {
         this._state.searchError = text || null;
         const el = this._q('#wf-dash-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
-        if (text && text.startsWith('Select at least')) this._setStatus('');
+        if (text && text.startsWith('Enable at least')) this._setStatus('');
     },
 
     _setSearchButtonLoading(loading) {
@@ -1622,11 +1859,11 @@ const plugin = {
     _updateStatusFromState() {
         const s = this._state;
         if (!s.hasSearched) {
-            this._setStatus('Choose authors, optional date range, and output types, then press Search. Other filters apply instantly after load.');
+            this._setStatus('Set search parameters, then press Search. Use Filters to refine loaded results.');
             return;
         }
         if (s.loading) { this._setStatus('Loading…'); return; }
-        if (s.searchError) { this._setStatus(''); return; }
+        if (s.searchError && !s.cachedItems) { this._setStatus(''); return; }
         if (s.filteredItems !== null && s.cachedItems !== null) {
             const committed = s.committed || { authorIds: [], taskCreation: false, qa: false };
             const authorLabel = committed.authorIds.length > 0 ? committed.authorIds.length + ' author(s)' : 'all authors';
@@ -1637,9 +1874,12 @@ const plugin = {
                 ? s.filteredItems.length + ' result(s)'
                 : s.filteredItems.length + ' of ' + s.cachedItems.length + ' result(s)';
             const f = this._currentClientFilters();
-            const hasFilters = f.teamIds.length > 0 || f.projectIds.length > 0 || f.envKeys.length > 0
+            const hasFilters = f.teamIds.length < this._allFromList('filter-teams').length
+                || f.projectIds.length < this._allFromList('filter-projects').length
+                || f.envKeys.length < this._allFromList('filter-envs').length
                 || !dashIsQueryEmpty(f.promptText, f.caseSensitive);
-            this._setStatus(countLabel + ' — ' + authorLabel + ' · ' + modeParts.join(' + ') + (hasFilters ? ' · client filters active' : ''));
+            this._setStatus(countLabel + ' — ' + authorLabel + ' · ' + modeParts.join(' + ')
+                + (hasFilters ? ' · filters active' : '') + ' · search locked (Clear to edit)');
         }
     },
 
@@ -1649,7 +1889,7 @@ const plugin = {
         const wrap = this._q('#wf-dash-results');
         if (!wrap) return;
         const s = this._state;
-        if (!s.hasSearched || s.loading || (s.searchError && s.searchError.startsWith('Select at least')) || s.filteredItems === null) {
+        if (!s.hasSearched || s.loading || (s.searchError && s.searchError.startsWith('Enable at least')) || s.filteredItems === null) {
             wrap.innerHTML = '';
             return;
         }
