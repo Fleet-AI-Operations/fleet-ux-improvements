@@ -143,7 +143,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1386,30 +1386,50 @@ const plugin = {
 
     async _resolveAuthorToken(raw) {
         const query = (raw || '').trim();
-        if (!query) return;
+        if (!query) return 'empty';
         const tokens = this._state.draftTokens;
         if (tokens.some((t) => t.full_name === query || t.email === query || t.id === query)) {
             const input = this._q('#wf-dash-author-input');
             if (input) input.value = '';
-            return;
+            return 'resolved';
         }
         this._setAuthorError('');
         this._hideAuthorCandidates();
         try {
             const results = await this._searchPersons(query);
+            const input = this._q('#wf-dash-author-input');
             if (results.length === 0) {
                 this._setAuthorError(`No match for "${query}"`);
-            } else if (results.length === 1) {
-                this._addAuthorToken(results[0]);
-                const input = this._q('#wf-dash-author-input');
-                if (input) input.value = '';
-            } else {
-                this._showAuthorCandidates(results);
+                return 'none';
             }
+            if (results.length === 1) {
+                this._addAuthorToken(results[0]);
+                if (input) input.value = '';
+                return 'resolved';
+            }
+            if (input) input.value = '';
+            this._showAuthorCandidates(results);
+            return 'multiple';
         } catch (err) {
             this._setAuthorError('Lookup failed: ' + err.message);
             Logger.warn('dashboard: author lookup failed', err);
+            return 'error';
         }
+    },
+
+    async _flushPendingAuthorInput() {
+        const input = this._q('#wf-dash-author-input');
+        const query = (input && input.value || '').trim();
+        if (!query) return null;
+        const outcome = await this._resolveAuthorToken(query);
+        if (outcome === 'resolved' || outcome === 'empty') return null;
+        if (outcome === 'multiple') {
+            return 'Multiple author matches — pick one from the list below.';
+        }
+        if (outcome === 'none') {
+            return `No author match for "${query}".`;
+        }
+        return 'Author lookup failed — try again.';
     },
 
     _addAuthorToken(person) {
@@ -1721,7 +1741,6 @@ const plugin = {
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
             const searchDisabled = this._state.loading
-                || blankBlocked
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
             searchBtn.style.cssText = searchDisabled
@@ -1751,93 +1770,110 @@ const plugin = {
     // ── Search submit / clear ──
 
     async _submitSearch() {
-        const includeTasks = this._state.includeTasks;
-        const includeQa = this._state.includeQa;
-        const includeDisputes = this._state.includeDisputes;
-        if (!includeTasks && !includeQa && !includeDisputes) {
-            this._setSearchError('Enable at least one output type: Task Creation, QA, or Disputes.');
-            return;
-        }
-        const after = (this._q('#wf-dash-after') || {}).value || '';
-        const before = (this._q('#wf-dash-before') || {}).value || '';
-        const rangeCheck = dashValidateCreatedAtRange(after, before);
-        if (!rangeCheck.valid) {
-            this._setSearchError(rangeCheck.error);
-            return;
-        }
-        const lib = dashLib();
-        if (lib.isUniversalSearchParams({
-            authorCount: this._state.draftTokens.length,
-            searchTeamIds: this._selectedFromList('search-teams'),
-            searchProjectIds: this._selectedFromList('search-projects'),
-            searchEnvKeys: this._selectedFromList('search-envs')
-        }) && !lib.validateUniversalSearchRange(after, before).allowed) {
-            this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
-            return;
-        }
-
-        const authorIds = this._state.draftTokens.map((t) => t.id);
-        const scope = await this._buildSearchApiScope();
-        Logger.info('dashboard: search started — '
-            + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-            + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
-            + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
-        this._state.committed = {
-            authorIds,
-            authorCount: authorIds.length,
-            includeTaskCreation: includeTasks,
-            includeQa,
-            includeDisputes,
-            afterLocal: after,
-            beforeLocal: before
-        };
-        this._state.hasSearched = true;
-        this._state.loading = true;
-        this._setSearchError('');
-        this._setSearchButtonLoading(true);
-        this._updateResultsStatus();
-        this._renderResults();
-
         try {
-            const items = await this._fetchWorkerOutputSearch({
+            const authorFlushError = await this._flushPendingAuthorInput();
+            if (authorFlushError) {
+                this._setSearchError(authorFlushError);
+                return;
+            }
+
+            const includeTasks = this._state.includeTasks;
+            const includeQa = this._state.includeQa;
+            const includeDisputes = this._state.includeDisputes;
+            if (!includeTasks && !includeQa && !includeDisputes) {
+                this._setSearchError('Enable at least one output type: Task Creation, QA, or Disputes.');
+                return;
+            }
+            const after = (this._q('#wf-dash-after') || {}).value || '';
+            const before = (this._q('#wf-dash-before') || {}).value || '';
+            const rangeCheck = dashValidateCreatedAtRange(after, before);
+            if (!rangeCheck.valid) {
+                this._setSearchError(rangeCheck.error);
+                return;
+            }
+            const lib = dashLib();
+            if (!lib) {
+                this._setSearchError('Dashboard helpers not loaded. Reload the page and try again.');
+                return;
+            }
+            if (lib.isUniversalSearchParams({
+                authorCount: this._state.draftTokens.length,
+                searchTeamIds: this._selectedFromList('search-teams'),
+                searchProjectIds: this._selectedFromList('search-projects'),
+                searchEnvKeys: this._selectedFromList('search-envs')
+            }) && !lib.validateUniversalSearchRange(after, before).allowed) {
+                this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
+                return;
+            }
+
+            const authorIds = this._state.draftTokens.map((t) => t.id);
+            const authorLabels = this._state.draftTokens.map((t) => t.full_name || t.email || t.id);
+            const scope = await this._buildSearchApiScope();
+            Logger.info('dashboard: search started — '
+                + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+                + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
+                + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
+            this._state.committed = {
                 authorIds,
+                authorCount: authorIds.length,
+                authorLabels,
                 includeTaskCreation: includeTasks,
                 includeQa,
                 includeDisputes,
-                afterIso: rangeCheck.afterIso,
-                beforeIso: rangeCheck.beforeIso,
-                scope
-            });
-            this._state.cachedItems = items;
-            Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
-            const prompt = this._q('#wf-dash-prompt');
-            if (prompt) prompt.value = '';
-            const hidden = this._q('#wf-dash-hidden-versions');
-            if (hidden) hidden.checked = false;
-            const caseEl = this._q('#wf-dash-case');
-            if (caseEl) caseEl.checked = false;
-            const fuzzyEl = this._q('#wf-dash-fuzzy');
-            if (fuzzyEl) fuzzyEl.checked = false;
-            const sortEl = this._q('#wf-dash-sort');
-            if (sortEl) sortEl.value = 'desc';
-            const bounds = this._resetFilterDraftsFromResults(items);
-            const initialFilters = this._currentClientFilters();
-            const filtered = lib.applyFiltersAndSort(items, initialFilters, bounds, 'desc');
-            this._state.filteredItems = filtered;
-            this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
-            this._setLeftTab('filters');
-        } catch (err) {
-            this._setSearchError(err.message);
-            this._state.cachedItems = null;
-            this._state.filteredItems = null;
-            this._state.appliedFilters = null;
-            Logger.warn('dashboard: search failed', err);
-        } finally {
-            this._state.loading = false;
-            this._setSearchButtonLoading(false);
+                afterLocal: after,
+                beforeLocal: before
+            };
+            this._state.hasSearched = true;
+            this._state.loading = true;
+            this._setSearchError('');
+            this._setSearchButtonLoading(true);
             this._updateResultsStatus();
-            this._updateSubstringErrorUi();
             this._renderResults();
+
+            try {
+                const items = await this._fetchWorkerOutputSearch({
+                    authorIds,
+                    includeTaskCreation: includeTasks,
+                    includeQa,
+                    includeDisputes,
+                    afterIso: rangeCheck.afterIso,
+                    beforeIso: rangeCheck.beforeIso,
+                    scope
+                });
+                this._state.cachedItems = items;
+                Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
+                const prompt = this._q('#wf-dash-prompt');
+                if (prompt) prompt.value = '';
+                const hidden = this._q('#wf-dash-hidden-versions');
+                if (hidden) hidden.checked = false;
+                const caseEl = this._q('#wf-dash-case');
+                if (caseEl) caseEl.checked = false;
+                const fuzzyEl = this._q('#wf-dash-fuzzy');
+                if (fuzzyEl) fuzzyEl.checked = false;
+                const sortEl = this._q('#wf-dash-sort');
+                if (sortEl) sortEl.value = 'desc';
+                const bounds = this._resetFilterDraftsFromResults(items);
+                const initialFilters = this._currentClientFilters();
+                const filtered = lib.applyFiltersAndSort(items, initialFilters, bounds, 'desc');
+                this._state.filteredItems = filtered;
+                this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
+                this._setLeftTab('filters');
+            } catch (err) {
+                this._setSearchError(err.message || String(err));
+                this._state.cachedItems = null;
+                this._state.filteredItems = null;
+                this._state.appliedFilters = null;
+                Logger.warn('dashboard: search failed', err);
+            } finally {
+                this._state.loading = false;
+                this._setSearchButtonLoading(false);
+                this._updateResultsStatus();
+                this._updateSubstringErrorUi();
+                this._renderResults();
+            }
+        } catch (err) {
+            this._setSearchError(err.message || String(err));
+            Logger.error('dashboard: search submit failed', err);
         }
     },
 
@@ -1944,6 +1980,26 @@ const plugin = {
         this._state.searchError = text || null;
         const el = this._q('#wf-dash-search-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
+        this._updateResultsStatus();
+        this._renderResults();
+    },
+
+    _searchStatusDetail(committed) {
+        if (!committed) return '';
+        const parts = [];
+        if (committed.authorLabels && committed.authorLabels.length > 0) {
+            parts.push('authors: ' + committed.authorLabels.join(', '));
+        } else {
+            parts.push('all authors');
+        }
+        const types = [];
+        if (committed.includeTaskCreation) types.push('tasks');
+        if (committed.includeQa) types.push('QA');
+        if (committed.includeDisputes) types.push('disputes');
+        if (types.length > 0) parts.push('types: ' + types.join('+'));
+        if (committed.afterLocal) parts.push('after ' + committed.afterLocal);
+        if (committed.beforeLocal) parts.push('before ' + committed.beforeLocal);
+        return parts.join(' · ');
     },
 
     _setSearchButtonLoading(loading) {
@@ -1960,21 +2016,28 @@ const plugin = {
         if (!el) return;
         const s = this._state;
         const label = this._labelStyle();
+        const errStyle = 'font-size: 12px; color: var(--destructive, #dc2626);';
+
+        if (s.loading) {
+            const detail = this._searchStatusDetail(s.committed);
+            el.innerHTML = detail
+                ? `<span style="${label}">Searching… ${dashEscHtml(detail)}</span>`
+                : '<span style="' + label + '">Searching…</span>';
+            return;
+        }
+        if (s.searchError) {
+            el.innerHTML = `<span style="${errStyle}">${dashEscHtml(s.searchError)}</span>`;
+            return;
+        }
         if (!s.hasSearched) {
             el.textContent = 'Set search parameters on the left, then press Search.';
             return;
         }
-        if (s.loading) {
-            el.textContent = 'Loading…';
-            return;
-        }
-        if (s.searchError && !s.cachedItems) {
-            el.textContent = '';
-            return;
-        }
         if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
             const committed = s.committed;
-            const authorLabel = committed.authorCount > 0 ? committed.authorCount + ' author(s)' : 'all authors';
+            const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
+                ? committed.authorLabels.join(', ')
+                : (committed.authorCount > 0 ? committed.authorCount + ' author(s)' : 'all authors');
             const countLabel = s.filteredItems.length === s.cachedItems.length
                 ? s.filteredItems.length + ' result(s)'
                 : s.filteredItems.length + ' of ' + s.cachedItems.length + ' result(s)';
@@ -2000,20 +2063,26 @@ const plugin = {
         const wrap = this._q('#wf-dash-results');
         if (!wrap) return;
         const s = this._state;
+        const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
+        const errStyle = 'font-size: 12px; color: var(--destructive, #dc2626);';
+
         if (s.loading) {
-            wrap.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">Loading…</p>';
+            const detail = this._searchStatusDetail(s.committed);
+            wrap.innerHTML = detail
+                ? `<p style="${muted}">Fetching results… ${dashEscHtml(detail)}</p>`
+                : `<p style="${muted}">Fetching results…</p>`;
+            return;
+        }
+        if (s.searchError) {
+            wrap.innerHTML = `<p style="${errStyle}">${dashEscHtml(s.searchError)}</p>`;
             return;
         }
         if (!s.hasSearched) {
-            wrap.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">Results will appear here after you run a search.</p>';
-            return;
-        }
-        if (s.searchError && s.searchError.startsWith('Enable at least')) {
-            wrap.innerHTML = '';
+            wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
             return;
         }
         if (s.filteredItems === null) {
-            wrap.innerHTML = '';
+            wrap.innerHTML = `<p style="${muted}">No results loaded.</p>`;
             return;
         }
         if (s.filteredItems.length === 0) {
