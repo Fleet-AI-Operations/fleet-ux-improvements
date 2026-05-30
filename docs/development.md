@@ -238,18 +238,24 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
 - Computes SHA-256 hashes for all plugin files referenced in `archetypes.json` and writes the `hash` field for each. Must be run after `update-versions.sh` when any plugin file changes. CI enforces that hashes are up to date.
 
-**encrypt-ops-secrets.sh** — `./dev/utils/encrypt-ops-secrets.sh encrypt`
+**encrypt-ops-bundle.sh** — `./dev/utils/encrypt-ops-bundle.sh encrypt` (preferred)
 
-Operator-only JSON (team UUID mappings, etc.) for the Ops tab:
+Operator-only bundle (team UUIDs, PostgREST table/query catalog, Fleet web paths) for the Ops tab:
 
-1. Copy `ops-secrets.example.json` to `local/ops-secrets.json` (`local/` is gitignored).
-2. Edit `local/ops-secrets.json`.
-3. Run `./dev/utils/encrypt-ops-secrets.sh encrypt` using the **same password** as the Ops tab (`OPS_PASSWORD` env, `--password`, or prompt).
-4. Commit the generated `ops-secrets.enc.json` at the repo root. Never commit `local/ops-secrets.json`.
+1. Copy `dev/ops-bundle.example.json` structure into `local/ops-bundle.json` (`local/` is gitignored).
+2. Put the Ops password in `local/PostgREST/password` (gitignored). Same password unlocks the Ops tab in Settings.
+3. Edit `local/ops-bundle.json` when schema or team lists change.
+4. Run `./dev/utils/encrypt-ops-bundle.sh encrypt` (reads the password file automatically).
+5. Run `./dev/utils/hash-ops-password.sh` when the password changes; update `archetypes.json` → `opsAccess.passwordHash`.
+6. Commit `ops-secrets.enc.json` at the repo root only. Never commit `local/ops-bundle.json` or `local/PostgREST/password`.
 
-At runtime, when the Ops tab is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` from the current GitHub branch (see `opsSecrets.encryptedFile` in `archetypes.json`) and decrypts it in memory with the device-stored Ops password. Use `Context.opsTab.getSecrets()` to read the parsed JSON; call `Context.opsTab.reloadSecrets(true)` to force a refresh.
+Instructions: `local/PostgREST/OPS-ENCRYPT-INSTRUCTIONS.md` (gitignored).
 
-`./dev/utils/encrypt-ops-secrets.sh decrypt` prints decrypted JSON to stdout for local verification.
+At runtime, when the Ops tab is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` and decrypts it with the device-stored Ops password. Use `Context.opsTab.getSecrets()` / `getOpsBundle()`, `postgrestQuery(queryKey, overrides)`, `getFleetWebPath(key)`, and `resolveTable(tableKey)` — not literal Supabase table names in plugin source.
+
+`./dev/utils/encrypt-ops-bundle.sh decrypt` prints decrypted JSON for local verification.
+
+**encrypt-ops-secrets.sh** — legacy alias; also reads `local/ops-bundle.json` and `local/PostgREST/password` when present.
 
 Run all scripts from repo root.
 

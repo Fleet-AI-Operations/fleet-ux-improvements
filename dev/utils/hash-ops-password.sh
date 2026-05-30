@@ -15,7 +15,14 @@ if ! command -v shasum &>/dev/null; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/../.." && pwd)"
+password_file="$root/local/PostgREST/password"
+
 password="$1"
+if [[ -z "$password" && -f "$password_file" ]]; then
+  password="$(tr -d '\n\r' < "$password_file")"
+fi
 if [[ -z "$password" ]]; then
   read -r -s -p "Password: " password
   echo "" >&2

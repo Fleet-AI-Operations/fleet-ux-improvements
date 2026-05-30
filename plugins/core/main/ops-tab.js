@@ -130,7 +130,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -181,11 +181,16 @@ const plugin = {
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
+            getOpsBundle: () => this._getOpsBundle(),
             reloadSecrets: (force) => this._loadOpsSecrets(force !== false),
-            // Shared PostgREST GET for sibling modules (e.g. dashboard.js). Reuses the same
-            // runtime Supabase config + session token gathering as the team member search /
-            // verifier fetcher — see _opsPostgrestGet / _getOpsPostgrestHeaders.
-            postgrestGet: (table, params) => this._opsPostgrestGet(table, params)
+            resolveTable: (tableKey) => this._resolveOpsTable(tableKey),
+            buildPostgrestParams: (queryKey, overrides) => this._buildOpsPostgrestParams(queryKey, overrides),
+            getPostgrestSelect: (queryKey) => this._getOpsPostgrestSelect(queryKey),
+            getScopedField: (key) => this._getOpsScopedField(key),
+            getFleetWebPath: (key) => this._getOpsFleetWebPath(key),
+            postgrestQuery: (queryKey, overrides) => this._opsPostgrestQuery(queryKey, overrides),
+            // tableKey → resolved table name from decrypted ops bundle
+            postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -288,6 +293,87 @@ const plugin = {
 
     _getOpsSecretsJson() {
         return this._opsSecretsCache.json;
+    },
+
+    _getOpsBundle() {
+        const json = this._getOpsSecretsJson();
+        if (!json || typeof json !== 'object' || !json.postgrest) {
+            throw new Error('Ops bundle not loaded. Unlock the Ops tab and ensure ops-secrets.enc.json is available on this branch.');
+        }
+        return json;
+    },
+
+    _resolveOpsTable(tableKey) {
+        const tables = this._getOpsBundle().postgrest.tables || {};
+        const name = tables[tableKey];
+        if (!name) {
+            throw new Error('Ops bundle missing table key: ' + tableKey);
+        }
+        return name;
+    },
+
+    _resolveOpsSelectToken(selectToken) {
+        const token = String(selectToken || '');
+        if (!token.startsWith('USE_EMBED_')) {
+            return token;
+        }
+        const embedKey = token.slice('USE_EMBED_'.length);
+        const embeds = this._getOpsBundle().postgrest.embeds || {};
+        const embed = embeds[embedKey];
+        if (!embed) {
+            throw new Error('Ops bundle missing embed key: ' + embedKey);
+        }
+        return '*' + ',' + embed;
+    },
+
+    _buildOpsPostgrestParams(queryKey, overrides) {
+        const queries = this._getOpsBundle().postgrest.queries || {};
+        const spec = queries[queryKey];
+        if (!spec) {
+            throw new Error('Ops bundle missing query key: ' + queryKey);
+        }
+        const params = {};
+        if (spec.select) {
+            params.select = this._resolveOpsSelectToken(spec.select);
+        }
+        return Object.assign(params, overrides || {});
+    },
+
+    _getOpsPostgrestSelect(queryKey) {
+        return this._buildOpsPostgrestParams(queryKey, {}).select || '';
+    },
+
+    _getOpsScopedField(key) {
+        const fields = this._getOpsBundle().postgrest.scoped_fields || {};
+        const value = fields[key];
+        if (!value) {
+            throw new Error('Ops bundle missing scoped field key: ' + key);
+        }
+        return value;
+    },
+
+    _getOpsFleetWebPath(key) {
+        const paths = this._getOpsBundle().fleetWeb || {};
+        const path = paths[key];
+        if (!path) {
+            throw new Error('Ops bundle missing fleet web path key: ' + key);
+        }
+        return path;
+    },
+
+    async _opsPostgrestQuery(queryKey, overrides) {
+        const queries = this._getOpsBundle().postgrest.queries || {};
+        const spec = queries[queryKey];
+        if (!spec || !spec.table) {
+            throw new Error('Ops bundle missing query key: ' + queryKey);
+        }
+        const params = this._buildOpsPostgrestParams(queryKey, overrides);
+        return this._opsPostgrestGetByKey(spec.table, params);
+    },
+
+    async _opsPostgrestGetByKey(tableKey, params) {
+        const table = this._resolveOpsTable(tableKey);
+        return this._opsPostgrestGet(table, params);
     },
 
     async _loadOpsSecrets(force) {
@@ -647,19 +733,19 @@ const plugin = {
             const params = { select: 'id,key,current_version_id,team_id', limit: 1 };
             if (parsed.taskKey) params.key = 'eq.' + parsed.taskKey;
             else params.id = 'eq.' + parsed.taskId;
-            const rows = await this._opsPostgrestGet('eval_tasks', params);
+            const rows = await this._opsPostgrestQuery('tasks.select_verifier_lookup', params);
             taskRow = Array.isArray(rows) ? rows[0] : rows;
             Logger.debug(
-                'ops-tab: eval_tasks row id=' + (taskRow && taskRow.id || '(none)') +
+                'ops-tab: tasks row id=' + (taskRow && taskRow.id || '(none)') +
                 ' current_version_id=' + (taskRow && taskRow.current_version_id || '(none)') +
                 ' team_id=' + (taskRow && taskRow.team_id || '(none)')
             );
         } catch (e) {
-            Logger.debug('ops-tab: eval_tasks lookup failed', e);
+            Logger.debug('ops-tab: tasks lookup failed', e);
         }
 
         if (!taskRow) {
-            Logger.debug('ops-tab: eval_tasks no row for ' + (parsed.taskKey || parsed.taskId) + ' — treating input as verifier ID');
+            Logger.debug('ops-tab: tasks no row for ' + (parsed.taskKey || parsed.taskId) + ' — treating input as verifier ID');
             return parsed;
         }
 
@@ -672,8 +758,7 @@ const plugin = {
         let verifierVersion = null;
         if (taskRow.current_version_id) {
             try {
-                const vRows = await this._opsPostgrestGet('eval_task_versions', {
-                    select: 'verifier_id,metadata',
+                const vRows = await this._opsPostgrestQuery('task_versions.select_verifier_meta', {
                     id: 'eq.' + taskRow.current_version_id,
                     limit: 1
                 });
@@ -685,16 +770,16 @@ const plugin = {
                         ? vRow.metadata.verifier_version
                         : null;
                     Logger.debug(
-                        'ops-tab: eval_task_versions verifier_id=' + (verifierId || '(none)') +
+                        'ops-tab: task_versions verifier_id=' + (verifierId || '(none)') +
                         ' key=' + (verifierKey || '(none)') +
                         ' version=' + (verifierVersion == null ? '(none)' : verifierVersion)
                     );
                 }
             } catch (e) {
-                Logger.debug('ops-tab: eval_task_versions lookup failed', e);
+                Logger.debug('ops-tab: task_versions lookup failed', e);
             }
         } else {
-            Logger.debug('ops-tab: eval_tasks had no current_version_id');
+            Logger.debug('ops-tab: tasks had no current_version_id');
         }
 
         return {
@@ -719,7 +804,7 @@ const plugin = {
         };
         if (teamId) params.team_id = 'eq.' + teamId;
         try {
-            const rows = await this._opsPostgrestGet('verifiers', params);
+            const rows = await this._opsPostgrestQuery('verifiers.select_id_key', params);
             const row = Array.isArray(rows) ? rows[0] : rows;
             if (row && row.id) return { verifierId: row.id, verifierKey: row.key || '' };
         } catch (e) {
@@ -739,7 +824,7 @@ const plugin = {
                 limit: 1
             };
             if (resolved.teamId) params.team_id = 'eq.' + resolved.teamId;
-            const rows = await this._opsPostgrestGet('verifiers', params);
+            const rows = await this._opsPostgrestQuery('verifiers.select_id', params);
             const row = Array.isArray(rows) ? rows[0] : rows;
             if (!row || !row.id) {
                 throw new Error('No verifier found for key: ' + resolved.verifierKey + '.');
@@ -764,7 +849,7 @@ const plugin = {
     async _resolveOpsTeamId(pageWindow) {
         try {
             const params = { select: 'team_id', limit: 1 };
-            const rows = await this._opsPostgrestGet('team_members', params);
+            const rows = await this._opsPostgrestQuery('team_members.select_team', params);
             const row = Array.isArray(rows) ? rows[0] : rows;
             if (row && row.team_id) {
                 Logger.debug('ops-tab: resolved team_id from team_members: ' + row.team_id);
@@ -1943,8 +2028,7 @@ const plugin = {
     async _listOpsVerifierVersions(resolved) {
         if (!resolved || !resolved.verifierId) return [];
         try {
-            const rows = await this._opsPostgrestGet('verifier_versions', {
-                select: 'id,version,created_at',
+            const rows = await this._opsPostgrestQuery('verifier_versions.select_list', {
                 verifier_id: 'eq.' + resolved.verifierId,
                 order: 'version.desc'
             });
@@ -1971,7 +2055,6 @@ const plugin = {
         if (orchestratorResult) return orchestratorResult;
 
         const params = {
-            select: 'id,version,created_at,display_src',
             verifier_id: 'eq.' + resolved.verifierId,
             order: 'version.desc'
         };
@@ -1980,12 +2063,12 @@ const plugin = {
             delete params.order;
         }
         Logger.debug('ops-tab: verifier_versions fetch params', JSON.stringify(params));
-        const rows = await this._opsPostgrestGet('verifier_versions', params);
+        const rows = await this._opsPostgrestQuery('verifier_versions.select_source', params);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
             const hint = resolved.teamId
-                ? 'The verifier_versions table returned no rows for team ' + resolved.teamId.slice(0, 8) + '…'
-                : 'The verifier_versions table may require a team context that could not be resolved automatically.';
+                ? 'No verifier version rows for team ' + resolved.teamId.slice(0, 8) + '…'
+                : 'Verifier versions may require a team context that could not be resolved automatically.';
             throw new Error('No verifier version found for ' + resolved.verifierId + '. ' + hint);
         }
         if (!row.display_src) {

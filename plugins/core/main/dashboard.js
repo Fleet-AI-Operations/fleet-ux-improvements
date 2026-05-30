@@ -3,7 +3,7 @@
 // ("Open Dashboard" button under Team Member Search).
 //
 // This is the live port of the local prototype in local/dashboard. All data is
-// gathered from documented Fleet PostgREST endpoints via Context.opsTab.postgrestGet,
+// PostgREST table/query shapes come from the encrypted ops bundle (Context.opsTab).
 // which reuses the exact same Supabase runtime config + session token gathering as the
 // people lookup tool (cookies / sb-*-auth-token JWT). No secrets are hardcoded here.
 //
@@ -153,7 +153,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.20',
+    _version: '3.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -283,16 +283,41 @@ const plugin = {
 
     // ── PostgREST data layer (reuses ops-tab session/token gathering) ──
 
-    async _pgGet(table, params, channel) {
-        if (!Context.opsTab || typeof Context.opsTab.postgrestGet !== 'function') {
+    _dashOpsTab() {
+        if (!Context.opsTab) {
+            throw new Error('Ops tab unavailable. Enable the Ops tab in Settings and unlock it.');
+        }
+        return Context.opsTab;
+    },
+
+    async _pgQuery(queryKey, overrides, channel) {
+        const ops = this._dashOpsTab();
+        if (typeof ops.postgrestQuery !== 'function') {
             throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
         }
         if (channel === 'search' && !this._state.searchFetchActive) {
-            Logger.warn('dashboard: blocked PostgREST call outside search — ' + table);
+            Logger.warn('dashboard: blocked PostgREST call outside search — ' + queryKey);
             throw new Error('PostgREST call blocked: data is cached until a new search.');
         }
-        const rows = await Context.opsTab.postgrestGet(table, params || {});
+        const rows = await ops.postgrestQuery(queryKey, overrides || {});
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
+    },
+
+    async _pgGet(tableKey, params, channel) {
+        const ops = this._dashOpsTab();
+        if (typeof ops.postgrestGet !== 'function') {
+            throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
+        }
+        if (channel === 'search' && !this._state.searchFetchActive) {
+            Logger.warn('dashboard: blocked PostgREST call outside search — ' + tableKey);
+            throw new Error('PostgREST call blocked: data is cached until a new search.');
+        }
+        const rows = await ops.postgrestGet(tableKey, params || {});
+        return Array.isArray(rows) ? rows : (rows ? [rows] : []);
+    },
+
+    _dashFleetWebPath(key) {
+        return this._dashOpsTab().getFleetWebPath(key);
     },
 
     _pgGetBootstrap(table, params) {
@@ -380,7 +405,7 @@ const plugin = {
             if (statusParam) qs.set('status', statusParam);
             let page;
             try {
-                page = await this._fleetWebGetSearch('/disputes?' + qs.toString());
+                page = await this._fleetWebGetSearch(this._dashFleetWebPath('disputes_list') + '?' + qs.toString());
             } catch (e) {
                 Logger.warn('dashboard: disputes bulk fetch failed' + (statusParam ? ' (' + statusParam + ')' : ''), e);
                 break;
@@ -446,7 +471,7 @@ const plugin = {
         if (!taskId) return [];
         try {
             const qs = new URLSearchParams({ taskId: String(taskId) });
-            const data = await this._fleetWebGetSearch('/disputes/task-disputes?' + qs.toString());
+            const data = await this._fleetWebGetSearch(this._dashFleetWebPath('disputes_task') + '?' + qs.toString());
             return (data && Array.isArray(data.disputes)) ? data.disputes : [];
         } catch (e) {
             Logger.warn('dashboard: task-disputes fetch failed for ' + taskId.slice(0, 8) + '…', e);
@@ -493,12 +518,7 @@ const plugin = {
     },
 
     _evalTasksSelect() {
-        // eval_task_projects embed was removed: project association goes through
-        // task_project_target_id (column on eval_tasks, returned via *) → task_project_targets → project_id.
-        return [
-            '*',
-            'eval_task_versions!eval_tasks_current_version_fk(id,prompt,env_key,version_no,created_at)'
-        ].join(',');
+        return this._dashOpsTab().getPostgrestSelect('tasks.select_with_current_version');
     },
 
     _projectIdFromTargetId(targetId, targetToProjectId) {
@@ -511,11 +531,10 @@ const plugin = {
         const map = new Map();
         for (let i = 0; i < targetIds.length; i += 50) {
             const chunk = targetIds.slice(i, i + 50);
-            const rows = await this._pgGetSearch('task_project_targets', {
-                select: 'id,project_id',
+            const rows = await this._pgQuery('task_project_targets.select_project_map', {
                 id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: String(chunk.length)
-            }).catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
+            }, 'search').catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
             for (const r of rows) if (r.id && r.project_id) map.set(r.id, r.project_id);
         }
         Logger.debug('dashboard: target→project map built (' + map.size + ' / ' + targetIds.length + ' targets resolved)');
@@ -564,17 +583,16 @@ const plugin = {
         const q = (query || '').trim();
         if (!q) return [];
         if (DASH_UUID_RE.test(q)) {
-            const rows = await this._pgGetAuthorLookup('profiles', { select: 'id,full_name,email', id: 'eq.' + q, limit: 1 });
+            const rows = await this._pgQuery('profiles.select_person', { id: 'eq.' + q, limit: 1 }, 'author');
             return rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
         }
         const safe = q.replace(/[(),*]/g, ' ').trim();
         if (!safe) return [];
-        const rows = await this._pgGetAuthorLookup('profiles', {
-            select: 'id,full_name,email',
+        const rows = await this._pgQuery('profiles.select_person', {
             or: `(full_name.ilike.*${safe}*,email.ilike.*${safe}*)`,
             order: 'full_name.asc',
             limit: 50
-        });
+        }, 'author');
         const mapped = rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
         return this._filterAndRankPersons(mapped, q);
     },
@@ -623,13 +641,12 @@ const plugin = {
         const teamCatalog = this._getSearchableTeamCatalog();
         const projectsById = new Map();
         if (teamCatalog.length > 0) {
-            const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgGetBootstrap('task_projects', {
-                select: 'id,name,description,status,project_key,created_at,team_id',
+            const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgQuery('task_projects.select_bootstrap', {
                 status: 'neq.archived',
                 order: 'created_at.desc',
                 team_id: 'eq.' + teamId,
                 limit: 200
-            }).catch((e) => {
+            }, 'bootstrap').catch((e) => {
                 Logger.debug('dashboard: bootstrap projects failed for team ' + teamId.slice(0, 8), e);
                 return [];
             })));
@@ -637,20 +654,18 @@ const plugin = {
                 for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
             }
         } else {
-            const page = await this._pgGetBootstrap('task_projects', {
-                select: 'id,name,description,status,project_key,created_at,team_id',
+            const page = await this._pgQuery('task_projects.select_bootstrap', {
                 status: 'neq.archived',
                 order: 'created_at.desc',
                 limit: 400
-            });
+            }, 'bootstrap');
             for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
         }
         const projects = Array.from(projectsById.values());
-        const environments = await this._pgGetBootstrap('environments', {
-            select: 'env_key,name',
+        const environments = await this._pgQuery('environments.select_bootstrap', {
             deleted_at: 'is.null',
             order: 'env_key.asc'
-        });
+        }, 'bootstrap');
         return this._writeBootstrapCache({ projects, environments });
     },
 
@@ -679,11 +694,10 @@ const plugin = {
         const ids = [];
         for (let i = 0; i < projectIds.length; i += 50) {
             const chunk = projectIds.slice(i, i + 50);
-            const rows = await this._pgGetSearch('task_project_targets', {
-                select: 'id',
+            const rows = await this._pgQuery('task_project_targets.select_ids', {
                 project_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: '500'
-            }).catch((e) => { Logger.warn('dashboard: project→target lookup failed', e); return []; });
+            }, 'search').catch((e) => { Logger.warn('dashboard: project→target lookup failed', e); return []; });
             for (const r of rows) if (r.id) ids.push(r.id);
         }
         Logger.debug('dashboard: project→target ids (' + ids.length + ' for ' + projectIds.length + ' project(s))');
@@ -745,15 +759,20 @@ const plugin = {
     },
 
     _applyTaskScopeToQaQs(qs, scope) {
+        const ops = this._dashOpsTab();
         if (scope.teamIds.length > 0) {
-            qs['eval_tasks.team_id'] = scope.teamIds.length === 1 ? 'eq.' + scope.teamIds[0] : 'in.(' + scope.teamIds.join(',') + ')';
+            qs[ops.getScopedField('qa_embed_team')] = scope.teamIds.length === 1
+                ? 'eq.' + scope.teamIds[0]
+                : 'in.(' + scope.teamIds.join(',') + ')';
         }
         if (scope.narrowedEnvs && scope.envKeys.length > 0) {
-            qs['eval_tasks.env_key'] = scope.envKeys.length === 1 ? 'eq.' + scope.envKeys[0] : 'in.(' + scope.envKeys.join(',') + ')';
+            qs[ops.getScopedField('qa_embed_env')] = scope.envKeys.length === 1
+                ? 'eq.' + scope.envKeys[0]
+                : 'in.(' + scope.envKeys.join(',') + ')';
         }
         if (scope.hasProjectFilter) {
             if (scope.targetIds.length === 0) return false;
-            qs['eval_tasks.task_project_target_id'] = scope.targetIds.length === 1
+            qs[ops.getScopedField('qa_embed_target')] = scope.targetIds.length === 1
                 ? 'eq.' + scope.targetIds[0]
                 : 'in.(' + scope.targetIds.join(',') + ')';
         }
@@ -773,7 +792,6 @@ const plugin = {
         let pageNum = 0;
         while (true) {
             const qs = {
-                select: this._evalTasksSelect(),
                 order: 'created_at.desc.nullslast',
                 offset: String(offset),
                 limit: String(DASH_TASKS_PAGE_SIZE)
@@ -782,7 +800,7 @@ const plugin = {
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
             if (!this._applyTaskScopeToQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgGetSearch('eval_tasks', qs);
+            const page = await this._pgQuery('tasks.select_with_current_version', qs, 'search');
             pageNum++;
             Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allRows.push(...page);
@@ -799,12 +817,11 @@ const plugin = {
         for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
             const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
             const qs = {
-                select: this._evalTasksSelect(),
                 id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 limit: String(chunk.length)
             };
             if (!this._applyTaskScopeToQs(qs, scope)) continue;
-            const page = await this._pgGetSearch('eval_tasks', qs);
+            const page = await this._pgQuery('tasks.select_by_id', qs, 'search');
             rows.push(...page);
             Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
         }
@@ -823,11 +840,9 @@ const plugin = {
         const allFeedback = [];
         let offset = 0;
         let pageNum = 0;
+        const qaQueryKey = useTaskEmbed ? 'qa_feedback.select_row_scoped' : 'qa_feedback.select_row';
         while (true) {
             const qs = {
-                select: useTaskEmbed
-                    ? 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content,eval_tasks!inner(id,team_id,env_key,task_project_target_id)'
-                    : 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
                 order: 'created_at.desc',
                 offset: String(offset),
                 limit: String(DASH_QA_PAGE_SIZE)
@@ -836,7 +851,7 @@ const plugin = {
             else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
             if (useTaskEmbed && !this._applyTaskScopeToQaQs(qs, scope)) return [];
             this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgGetSearch('eval_task_qa_feedback', qs);
+            const page = await this._pgQuery(qaQueryKey, qs, 'search');
             pageNum++;
             Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
             allFeedback.push(...page);
@@ -854,12 +869,11 @@ const plugin = {
         for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
             const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
             const qs = {
-                select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
                 eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 order: 'created_at.desc',
                 limit: '500'
             };
-            const page = await this._pgGetSearch('eval_task_qa_feedback', qs);
+            const page = await this._pgQuery('qa_feedback.select_row', qs, 'search');
             Logger.debug('dashboard: QA feedback by task id chunk — ' + page.length + ' rows');
             allFeedback.push(...page);
         }
@@ -873,7 +887,7 @@ const plugin = {
         for (const fb of feedbackRows) if (fb.created_by) profileIds.add(fb.created_by);
 
         const profileRows = profileIds.size > 0
-            ? await this._pgGetSearch('profiles', { select: 'id,full_name,email', id: 'in.(' + [...profileIds].join(',') + ')' })
+            ? await this._pgQuery('profiles.select_person', { id: 'in.(' + [...profileIds].join(',') + ')' }, 'search')
             : [];
         const profilesMap = this._buildProfilesMap(profileRows);
         Logger.debug('dashboard: search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');

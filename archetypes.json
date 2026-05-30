@@ -1,14 +1,14 @@
 {
   "version": "9.1.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.69",
+  "archetypesVersion": "9.70",
   "logs": {
     "debug": false,
     "verbose": false,
     "submodule": false
   },
   "opsAccess": {
-    "passwordHash": "sha256-ea3ce89b146e2c740dd16a64af38849998d703e4b5ecc66cde39f97a756272cb"
+    "passwordHash": "sha256-64489c34eb9498024cc65628ce2afe1d0d26a5ea34bf042b7e1d54e1db85b544"
   },
   "opsSecrets": {
     "encryptedFile": "ops-secrets.enc.json"
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "3.2",
-      "hash": "sha256-ad14f0f8733e69e553b3c0679af5b961924c4679e1b68fb0ed0aac3cdcd98bb9",
+      "version": "3.3",
+      "hash": "sha256-a7c4fb0a829ff8a1c335e3437eeec879a257f1fecef6d67e3eedcad0e7bcc9f4",
       "log": false
     },
     {
@@ -40,14 +40,14 @@
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.1",
-      "hash": "sha256-232ce246e4a499fa0f710222fdb25bf073554d3def5084e8667e2f112228b4b7",
+      "version": "1.2",
+      "hash": "sha256-e7a826526cc98ae74b4c7a35abd0f83845c340e9f65ab704c0d6c58a1b5afc05",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "3.20",
-      "hash": "sha256-bf0603528698d0491317d585b76f193fdc050b69465fefa374203dd1d71b3ec3",
+      "version": "3.21",
+      "hash": "sha256-8dbbb9c28ed861435327a6dc8807d8315e18d941974d4affb7b252744fc1ad7a",
       "log": false
     }
   ],
