@@ -51,7 +51,10 @@ const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: v
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 
+const DASH_EXCLUDED_TEAM_NAMES = ['Fleet Fellows', 'Trace QA'];
+
 const DASH_FILTER_SCOPES = [
+    { scopeKey: 'filter-output-kinds', optionsKey: 'outputKinds', draftKey: 'outputKinds' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
@@ -149,7 +152,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.15',
+    _version: '3.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -255,6 +258,15 @@ const plugin = {
         return [];
     },
 
+    _isExcludedTeamName(label) {
+        const norm = String(label || '').trim().toLowerCase();
+        return DASH_EXCLUDED_TEAM_NAMES.some((name) => name.toLowerCase() === norm);
+    },
+
+    _getSearchableTeamCatalog() {
+        return this._getTeamCatalog().filter(([, label]) => !this._isExcludedTeamName(label));
+    },
+
     _teamName(teamId) {
         if (!teamId) return '';
         const found = this._getTeamCatalog().find(([id]) => id === teamId);
@@ -333,13 +345,7 @@ const plugin = {
         return true;
     },
 
-    async _fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope) {
-        const teamIds = (scope && scope.teamIds) || [];
-        if (teamIds.length === 0) {
-            Logger.debug('dashboard: disputes bulk skipped — no team scope');
-            return { byTaskId: new Map(), rows: [] };
-        }
-        const authorSet = authorIds.length > 0 ? new Set(authorIds) : null;
+    async _fetchDisputesBulkPages(teamIds, statusParam) {
         const allRows = [];
         let offset = 0;
         let pageNum = 0;
@@ -349,19 +355,41 @@ const plugin = {
                 limit: String(DASH_DISPUTES_PAGE_SIZE),
                 offset: String(offset)
             });
+            if (statusParam) qs.set('status', statusParam);
             let page;
             try {
                 page = await this._fleetWebGetSearch('/disputes?' + qs.toString());
             } catch (e) {
-                Logger.warn('dashboard: disputes bulk fetch failed', e);
+                Logger.warn('dashboard: disputes bulk fetch failed' + (statusParam ? ' (' + statusParam + ')' : ''), e);
                 break;
             }
             const rows = (page && Array.isArray(page.disputes)) ? page.disputes : [];
             pageNum++;
-            Logger.debug('dashboard: disputes bulk page ' + pageNum + ' — ' + rows.length + ' rows (offset ' + offset + ')');
+            Logger.debug('dashboard: disputes bulk page ' + pageNum
+                + (statusParam ? ' [' + statusParam + ']' : ' [open]')
+                + ' — ' + rows.length + ' rows (offset ' + offset + ')');
             allRows.push(...rows);
             if (rows.length < DASH_DISPUTES_PAGE_SIZE) break;
             offset += DASH_DISPUTES_PAGE_SIZE;
+        }
+        return allRows;
+    },
+
+    async _fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope) {
+        const teamIds = (scope && scope.teamIds) || [];
+        if (teamIds.length === 0) {
+            Logger.debug('dashboard: disputes bulk skipped — no team scope');
+            return { byTaskId: new Map(), rows: [] };
+        }
+        const authorSet = authorIds.length > 0 ? new Set(authorIds) : null;
+        const openRows = await this._fetchDisputesBulkPages(teamIds, null);
+        const resolvedRows = await this._fetchDisputesBulkPages(teamIds, 'resolved');
+        const seenIds = new Set();
+        const allRows = [];
+        for (const row of [...openRows, ...resolvedRows]) {
+            if (!row || row.id == null || seenIds.has(row.id)) continue;
+            seenIds.add(row.id);
+            allRows.push(row);
         }
         const filtered = allRows.filter((row) => {
             if (!row || !row.eval_task_id) return false;
@@ -376,7 +404,8 @@ const plugin = {
             if (bucket) bucket.push(row);
             else byTaskId.set(taskId, [row]);
         }
-        Logger.log('dashboard: disputes bulk — ' + filtered.length + ' row(s) across ' + byTaskId.size + ' task(s)');
+        Logger.log('dashboard: disputes bulk — ' + openRows.length + ' open, ' + resolvedRows.length
+            + ' resolved, ' + filtered.length + ' after filter across ' + byTaskId.size + ' task(s)');
         return { byTaskId, rows: filtered };
     },
 
@@ -558,7 +587,7 @@ const plugin = {
     // ── Bootstrap (projects + environments) ──
 
     async _runBootstrap() {
-        const teamCatalog = this._getTeamCatalog();
+        const teamCatalog = this._getSearchableTeamCatalog();
         const projectsById = new Map();
         if (teamCatalog.length > 0) {
             const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgGetBootstrap('task_projects', {
@@ -638,7 +667,7 @@ const plugin = {
     },
 
     async _buildSearchApiScope() {
-        const teamCatalog = this._getTeamCatalog();
+        const teamCatalog = this._getSearchableTeamCatalog();
         const allTeamIds = teamCatalog.map(([id]) => id);
         const selectedTeams = this._selectedFromList('search-teams');
         const teamIds = selectedTeams.length > 0 ? selectedTeams : allTeamIds;
@@ -1099,7 +1128,8 @@ const plugin = {
             contributorIds: (opts.contributors || []).map((c) => c.id),
             promptRatings: (opts.promptRatings || []).map((r) => r.id),
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
-            returnTypes: (opts.returnTypes || []).map((r) => r.id)
+            returnTypes: (opts.returnTypes || []).map((r) => r.id),
+            outputKinds: (opts.outputKinds || []).map((k) => k.id)
         };
     },
 
@@ -1373,6 +1403,7 @@ const plugin = {
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
                                         <select id="wf-dash-quick-range" style="${input} width: 100%; cursor: pointer;">
                                             <option value="">Custom</option>
+                                            <option value="all-time">All Time</option>
                                             <option value="today">Today</option>
                                             <option value="yesterday">Yesterday</option>
                                             <option value="3d">Last 3 Days</option>
@@ -1397,10 +1428,10 @@ const plugin = {
                                     </div>
                                     <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
-                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Teams, projects, environments</div>
+                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${label} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
-                                            ${this._multiSelectHtml('search-teams', 'Teams', 'All teams', false)}
+                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', false)}
                                             ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
                                             ${this._multiSelectHtml('search-envs', 'Environments', 'All environments', false)}
                                         </div>
@@ -1477,7 +1508,8 @@ const plugin = {
 
     _filterScopeLabel(scopeKey) {
         const labels = {
-            'filter-teams': 'Teams',
+            'filter-output-kinds': 'Output type',
+            'filter-teams': 'Team',
             'filter-projects': 'Projects',
             'filter-envs': 'Environments',
             'filter-statuses': 'Task status',
@@ -2101,7 +2133,7 @@ const plugin = {
         const itemsEl = this._msItemsEl('search-teams');
         if (!itemsEl) return;
         const prevSelected = new Set(this._selectedFromList('search-teams'));
-        const items = this._getTeamCatalog().map(([id, label]) => ({ id, label }));
+        const items = this._getSearchableTeamCatalog().map(([id, label]) => ({ id, label }));
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-teams');
@@ -2146,7 +2178,8 @@ const plugin = {
     _resetFilterLists() {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
-            statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: []
+            statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
+            outputKinds: []
         };
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
             const panel = this._msPanelEl(scopeKey);
@@ -2268,6 +2301,20 @@ const plugin = {
             Logger.warn('dashboard: unknown quick date preset — ' + preset);
             return;
         }
+        if (range.clear) {
+            this._applyingQuickDate = true;
+            try {
+                const afterEl = this._q('#wf-dash-after');
+                const beforeEl = this._q('#wf-dash-before');
+                if (afterEl) afterEl.value = '';
+                if (beforeEl) beforeEl.value = '';
+            } finally {
+                this._applyingQuickDate = false;
+            }
+            this._validateRangeUi();
+            Logger.log('dashboard: quick date preset applied (' + range.label + ')');
+            return;
+        }
         this._applyingQuickDate = true;
         try {
             const afterEl = this._q('#wf-dash-after');
@@ -2317,17 +2364,24 @@ const plugin = {
             }
         }
         const lib = dashLib();
+        const quickPreset = ((this._q('#wf-dash-quick-range') || {}).value || '');
+        const isAllTime = quickPreset === 'all-time';
         const isUniversal = lib.isUniversalSearchParams({
             authorCount: this._state.draftTokens.length,
             searchTeamIds: this._selectedFromList('search-teams'),
             searchProjectIds: this._selectedFromList('search-projects'),
             searchEnvKeys: this._selectedFromList('search-envs')
         });
-        const universalCheck = lib.validateUniversalSearchRange(after, before);
+        const universalCheck = isAllTime
+            ? { allowed: true, message: '' }
+            : lib.validateUniversalSearchRange(after, before);
         const blankBlocked = isUniversal && !universalCheck.allowed;
         const hintEl = this._q('#wf-dash-universal-hint');
         if (hintEl) {
-            if (blankBlocked) {
+            if (isAllTime && isUniversal) {
+                hintEl.textContent = 'All Time — no date bound on this search.';
+                hintEl.style.display = 'block';
+            } else if (blankBlocked) {
                 hintEl.textContent = lib.UNIVERSAL_SEARCH_RANGE_MESSAGE;
                 hintEl.style.display = 'block';
             } else {
@@ -2568,6 +2622,7 @@ const plugin = {
             || (applied.promptRatings || []).length < bounds.promptRatings.length
             || (applied.taskIssues || []).length < bounds.taskIssues.length
             || (applied.returnTypes || []).length < bounds.returnTypes.length
+            || (applied.outputKinds || []).length < bounds.outputKinds.length
             || !lib.isQueryEmpty(applied.promptText, applied.caseSensitive);
     },
 
@@ -2919,8 +2974,9 @@ const plugin = {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
-        const border = 'color-mix(in srgb, #ea580c 40%, transparent)';
-        const bg = 'color-mix(in srgb, #ea580c 8%, transparent)';
+        const yellow = this._qaYellowBlockStyle();
+        const border = yellow.border;
+        const bg = yellow.background;
         const reasonBody = display.reason
             ? this._dashHighlightedHtml(display.reason, hq, cs, fz)
             : '—';

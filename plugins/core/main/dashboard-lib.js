@@ -15,6 +15,12 @@ const DASH_LIB_RETURN_TYPE_LABELS = {
 };
 const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
+const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute'];
+const DASH_LIB_OUTPUT_KIND_LABELS = {
+    task_creation: 'Task Creation',
+    qa: 'QA',
+    dispute: 'Disputes'
+};
 
 function dashLibPrepareText(value, caseSensitive) {
     const trimmed = (value || '').replace(/\s+/g, ' ').trim();
@@ -147,7 +153,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -484,17 +490,37 @@ const plugin = {
         });
     },
 
+    _itemOutputKinds(item) {
+        return (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
+    },
+
+    _itemPassesOutputKindFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.outputKinds || [];
+        const count = (listBounds.outputKinds || []).length;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemOutputKinds(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds) {
         const lib = Context.dashboardLib;
         const f = filters || {};
+        const bounds = listBounds || {};
         const promptText = f.promptText || '';
         const fuzzy = f.fuzzy || false;
         const caseSensitive = f.caseSensitive || false;
         const searchHiddenVersions = f.searchHiddenVersions || false;
         const tasks = items.map((item) => item.task);
-        const filteredTasks = this._applyClientTaskFilters(tasks, f, listBounds || {});
+        const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
-        const passed = items.filter((item) => allowedIds.has(item.task.id));
+        let passed = items.filter((item) => allowedIds.has(item.task.id));
+        const outputKinds = f.outputKinds || [];
+        const outputKindCount = (bounds.outputKinds || []).length;
+        passed = passed.filter((item) => dashLibPassesDimension(
+            this._itemOutputKinds(item), outputKinds, outputKindCount
+        ));
         if (!lib.isQueryActive(promptText, caseSensitive)) {
             return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false));
         }
@@ -528,8 +554,10 @@ const plugin = {
         const promptRatings = new Set();
         const taskIssues = new Set();
         const returnTypes = new Set();
+        const outputKindsPresent = new Set();
         for (const item of items) {
             const task = item.task;
+            for (const kind of this._itemOutputKinds(item)) outputKindsPresent.add(kind);
             if (task.teamId) teamIds.add(task.teamId);
             if (task.projectId) projectIds.add(task.projectId);
             if (task.envKey) envKeys.add(task.envKey);
@@ -578,7 +606,10 @@ const plugin = {
                 .sort((a, b) => a.label.localeCompare(b.label)),
             returnTypes: DASH_LIB_RETURN_TYPE_ORDER
                 .filter((type) => returnTypes.has(type))
-                .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] }))
+                .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] })),
+            outputKinds: DASH_LIB_OUTPUT_KIND_ORDER
+                .filter((kind) => outputKindsPresent.has(kind))
+                .map((kind) => ({ id: kind, label: DASH_LIB_OUTPUT_KIND_LABELS[kind] }))
         };
     },
 
@@ -602,9 +633,11 @@ const plugin = {
     },
 
     _emptyFilterIrrelevance() {
-        return Object.fromEntries(
+        const result = Object.fromEntries(
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
+        result.outputKinds = new Set();
+        return result;
     },
 
     _computeFilterIrrelevance(items, draft, listBounds, options) {
@@ -619,6 +652,16 @@ const plugin = {
                 ));
                 if (!hasMatch) irrelevant.add(id);
             }
+        }
+        const kindOptions = (options && options.outputKinds) || [];
+        const irrelevantKinds = result.outputKinds;
+        for (const { id } of kindOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemOutputKinds(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesOutputKindFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantKinds.add(id);
         }
         return result;
     },
@@ -768,6 +811,8 @@ const plugin = {
                 return { after: new Date(y, 0, 1), before: today, label: 'This Year' };
             case 'last-year':
                 return { after: new Date(y - 1, 0, 1), before: new Date(y - 1, 11, 31), label: 'Last Calendar Year' };
+            case 'all-time':
+                return { after: null, before: null, label: 'All Time', clear: true };
             default:
                 return null;
         }
