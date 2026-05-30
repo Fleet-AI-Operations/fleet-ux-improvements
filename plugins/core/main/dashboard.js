@@ -153,7 +153,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.18',
+    _version: '3.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1397,7 +1397,7 @@ const plugin = {
                                         </div>
                                     </div>
                                     <div>
-                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Authors</label>
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Contributors</label>
                                         <div id="wf-dash-author-box" style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
                                             <input type="text" id="wf-dash-author-input" autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 120px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
                                         </div>
@@ -2685,9 +2685,9 @@ const plugin = {
         if (!committed) return '';
         const parts = [];
         if (committed.authorLabels && committed.authorLabels.length > 0) {
-            parts.push('authors: ' + committed.authorLabels.join(', '));
+            parts.push('contributors: ' + committed.authorLabels.join(', '));
         } else {
-            parts.push('all authors');
+            parts.push('all contributors');
         }
         const types = [];
         if (committed.includeTaskCreation) types.push('tasks');
@@ -2734,7 +2734,7 @@ const plugin = {
             const committed = s.committed;
             const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
                 ? committed.authorLabels.join(', ')
-                : (committed.authorCount > 0 ? committed.authorCount + ' author(s)' : 'all authors');
+                : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
             const countLabel = s.filteredItems.length === s.cachedItems.length
                 ? s.filteredItems.length + ' result(s)'
                 : s.filteredItems.length + ' of ' + s.cachedItems.length + ' result(s)';
@@ -2833,7 +2833,7 @@ const plugin = {
 
     /** Label + value group: tight label→data gap; use in rows with larger gap between groups. */
     _fieldGroupHtml(label, valueHtml) {
-        return `<div style="display: inline-flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%;">${valueHtml}</span></div>`;
+        return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
     _plainTimestampHtml(iso) {
@@ -2842,16 +2842,50 @@ const plugin = {
         const agoHtml = ago
             ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
             : '';
-        return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>${agoHtml}`;
+        const formattedSpan = `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`;
+        return ago ? `${formattedSpan} ${agoHtml}` : formattedSpan;
     },
 
-    _dashHighlightedHtml(text, query, caseSensitive, fuzzy) {
+    _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy) {
         const segments = dashLib().buildHighlightSegments(text, query, { caseSensitive, fuzzy: Boolean(fuzzy) });
         return segments.map((seg) => (
             seg.match
                 ? `<mark style="background: color-mix(in srgb, #facc15 45%, transparent); color: inherit; padding: 0 1px; border-radius: 2px;">${dashEscHtml(seg.text)}</mark>`
                 : dashEscHtml(seg.text)
         )).join('');
+    },
+
+    _dashSplitMarkdownLinkParts(text) {
+        const source = String(text ?? '');
+        const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+        while ((match = re.exec(source)) !== null) {
+            if (match.index > lastIndex) {
+                parts.push({ type: 'text', value: source.slice(lastIndex, match.index) });
+            }
+            parts.push({ type: 'link', label: match[1], url: match[2] });
+            lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < source.length) {
+            parts.push({ type: 'text', value: source.slice(lastIndex) });
+        }
+        if (parts.length === 0) {
+            parts.push({ type: 'text', value: source });
+        }
+        return parts;
+    },
+
+    _dashHighlightedHtml(text, query, caseSensitive, fuzzy) {
+        const linkStyle = 'color: var(--brand, var(--primary, #2563eb)); text-decoration: underline;';
+        return this._dashSplitMarkdownLinkParts(text).map((part) => {
+            if (part.type === 'link') {
+                const labelHtml = this._dashHighlightSegmentsHtml(part.label, query, caseSensitive, fuzzy);
+                return `<a href="${dashEscHtml(part.url)}" target="_blank" rel="noopener noreferrer" style="${linkStyle}">${labelHtml}</a>`;
+            }
+            return this._dashHighlightSegmentsHtml(part.value, query, caseSensitive, fuzzy);
+        }).join('');
     },
 
     _dataValueHtml(text) {
