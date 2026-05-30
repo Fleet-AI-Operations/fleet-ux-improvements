@@ -1,17 +1,11 @@
 #!/usr/bin/env node
 //
-// encrypt-ops-secrets.mjs — Encrypt local/ops-secrets.json → ops-secrets.enc.json
+// encrypt-ops-bundle.mjs — Encrypt local/ops-bundle.json → ops-secrets.enc.json
 //
-// Usage:
-//   node dev/utils/encrypt-ops-secrets.mjs encrypt [--password 'secret']
-//   node dev/utils/encrypt-ops-secrets.mjs decrypt [--password 'secret']   # verify locally
+// Password (first match): --password, OPS_PASSWORD env, local/PostgREST/password, prompt
 //
-// Prefer encrypt-ops-bundle.mjs (local/ops-bundle.json + local/PostgREST/password).
-// This script remains for legacy local/ops-secrets.json-only workflows.
-// Plaintext (gitignored):  local/ops-secrets.json or local/ops-bundle.json
+// Plaintext (gitignored):  local/ops-bundle.json  (fallback: local/ops-secrets.json)
 // Committed ciphertext:    ops-secrets.enc.json
-//
-// Password: --password, OPS_PASSWORD env, or hidden prompt.
 
 import fs from 'fs';
 import path from 'path';
@@ -22,16 +16,17 @@ import { decryptWithPassword, encryptWithPassword, FORMAT_PREFIX } from './ops-p
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../..');
 const BUNDLE_PATH = path.join(root, 'local', 'ops-bundle.json');
-const PLAINTEXT_PATH = path.join(root, 'local', 'ops-secrets.json');
+const LEGACY_PATH = path.join(root, 'local', 'ops-secrets.json');
 const PASSWORD_PATH = path.join(root, 'local', 'PostgREST', 'password');
 const ENCRYPTED_PATH = path.join(root, 'ops-secrets.enc.json');
 
 function usage() {
     console.error(`Usage:
-  node dev/utils/encrypt-ops-secrets.mjs encrypt [--password '...']
-  node dev/utils/encrypt-ops-secrets.mjs decrypt [--password '...']
+  node dev/utils/encrypt-ops-bundle.mjs encrypt [--password '...']
+  node dev/utils/encrypt-ops-bundle.mjs decrypt [--password '...']
 
-  Plaintext:  ${PLAINTEXT_PATH}
+  Plaintext:  ${BUNDLE_PATH} (or ${LEGACY_PATH})
+  Password:   ${PASSWORD_PATH}
   Encrypted:  ${ENCRYPTED_PATH}`);
 }
 
@@ -88,7 +83,9 @@ function promptPassword(promptLabel) {
 }
 
 function readPasswordFile() {
-    if (!fs.existsSync(PASSWORD_PATH)) return '';
+    if (!fs.existsSync(PASSWORD_PATH)) {
+        return '';
+    }
     return fs.readFileSync(PASSWORD_PATH, 'utf8').trim();
 }
 
@@ -103,8 +100,8 @@ async function resolvePassword(flagPassword) {
 function readPlaintextJson() {
     let pathUsed = BUNDLE_PATH;
     if (!fs.existsSync(BUNDLE_PATH)) {
-        if (fs.existsSync(PLAINTEXT_PATH)) {
-            pathUsed = PLAINTEXT_PATH;
+        if (fs.existsSync(LEGACY_PATH)) {
+            pathUsed = LEGACY_PATH;
         } else {
             throw new Error(
                 'Plaintext not found. Create ' + BUNDLE_PATH
@@ -114,19 +111,20 @@ function readPlaintextJson() {
     }
     const text = fs.readFileSync(pathUsed, 'utf8');
     JSON.parse(text);
-    return text;
+    return { text, pathUsed };
 }
 
 async function cmdEncrypt(password) {
-    const plaintext = readPlaintextJson();
-    const blob = await encryptWithPassword(plaintext, password);
+    const { text, pathUsed } = readPlaintextJson();
+    const blob = await encryptWithPassword(text, password);
     const out = {
         format: FORMAT_PREFIX,
         encrypted: blob
     };
     fs.writeFileSync(ENCRYPTED_PATH, JSON.stringify(out, null, 2) + '\n', 'utf8');
+    console.log('[info] Encrypted ' + pathUsed);
     console.log('[info] Wrote ' + ENCRYPTED_PATH);
-    console.log('[info] Commit ops-secrets.enc.json; keep local/ops-secrets.json out of git.');
+    console.log('[info] Commit ops-secrets.enc.json; keep local/ out of git.');
 }
 
 async function cmdDecrypt(password) {

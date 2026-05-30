@@ -8,7 +8,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -21,11 +21,11 @@ const plugin = {
         Logger.log('dashboard-data: module registered (Context.dashboardData)');
     },
 
-    async _pgGet(table, params) {
-        if (!Context.opsTab || typeof Context.opsTab.postgrestGet !== 'function') {
+    async _pgQuery(queryKey, overrides) {
+        if (!Context.opsTab || typeof Context.opsTab.postgrestQuery !== 'function') {
             throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
         }
-        const rows = await Context.opsTab.postgrestGet(table, params || {});
+        const rows = await Context.opsTab.postgrestQuery(queryKey, overrides || {});
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 
@@ -81,8 +81,7 @@ const plugin = {
         const versionRows = [];
         for (let i = 0; i < taskIds.length; i += DASH_DATA_ID_CHUNK) {
             const chunk = taskIds.slice(i, i + DASH_DATA_ID_CHUNK);
-            const rows = await this._pgGet('eval_task_versions', {
-                select: 'id,task_id,version_no,created_at,prompt,env_key',
+            const rows = await this._pgQuery('task_versions.select_history', {
                 task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                 order: 'version_no.asc',
                 limit: String(Math.max(chunk.length * 20, 100))
@@ -98,8 +97,7 @@ const plugin = {
             const chunk = taskIds.slice(i, i + DASH_DATA_ID_CHUNK);
             let offset = 0;
             while (true) {
-                const page = await this._pgGet('eval_task_qa_feedback', {
-                    select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
+                const page = await this._pgQuery('qa_feedback.select_row', {
                     eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                     order: 'created_at.desc',
                     offset: String(offset),
@@ -137,8 +135,7 @@ const plugin = {
                 .filter((id) => id && !reviewerProfiles.has(id))
         )];
         if (missingReviewerIds.length > 0) {
-            const rows = await this._pgGet('profiles', {
-                select: 'id,full_name,email',
+            const rows = await this._pgQuery('profiles.select_person', {
                 id: 'in.(' + missingReviewerIds.join(',') + ')'
             });
             for (const [id, profile] of this._buildProfilesMap(rows)) {
