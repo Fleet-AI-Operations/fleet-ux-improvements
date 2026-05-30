@@ -15,6 +15,19 @@ const DASH_LIB_RETURN_TYPE_LABELS = {
 };
 const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
+const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute'];
+const DASH_LIB_OUTPUT_KIND_LABELS = {
+    task_creation: 'Task Creation',
+    qa: 'QA',
+    dispute: 'Disputes'
+};
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['returned', 'disputed', 'flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_LABELS = {
+    returned: 'Returned',
+    disputed: 'Disputed',
+    flagged: 'Flagged',
+    escalated: 'Escalated'
+};
 
 function dashLibPrepareText(value, caseSensitive) {
     const trimmed = (value || '').replace(/\s+/g, ' ').trim();
@@ -147,7 +160,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.3',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -196,6 +209,7 @@ const plugin = {
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
+            buildDisputeDisplay: bind(self._buildDisputeDisplay),
 
             dateLocalToIso: bind(self._dateLocalToIso),
             validateCreatedAtRange: bind(self._validateCreatedAtRange),
@@ -439,13 +453,24 @@ const plugin = {
         return texts;
     },
 
+    _disputeTextForItem(item) {
+        const texts = [];
+        for (const dispute of item.disputes || []) {
+            if (dispute.reason) texts.push(dispute.reason);
+            if (dispute.resolutionText) texts.push(dispute.resolutionText);
+        }
+        return texts;
+    },
+
     _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden) {
         const lib = Context.dashboardLib;
         const versions = this._versionsForItem(item);
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
             if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive)) return true;
-            return this._feedbackTextForVersion(item, version.displayVersionNo)
+            if (this._feedbackTextForVersion(item, version.displayVersionNo)
+                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive))) return true;
+            return this._disputeTextForItem(item)
                 .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive));
         };
         if (!hidden) {
@@ -472,17 +497,67 @@ const plugin = {
         });
     },
 
+    _itemOutputKinds(item) {
+        return (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
+    },
+
+    _itemPassesOutputKindFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.outputKinds || [];
+        const count = (listBounds.outputKinds || []).length;
+        if (count <= 1) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemOutputKinds(item), effective, count);
+    },
+
+    _itemPromptHistory(item) {
+        const flags = new Set();
+        for (const entry of item.task.allFeedback || []) {
+            const rt = this._returnTypeOf(entry);
+            if (rt === 'returned') flags.add('returned');
+            else if (rt === 'escalated') flags.add('escalated');
+            else if (rt === 'bugged') flags.add('flagged');
+        }
+        if (item.disputes && item.disputes.length > 0) flags.add('disputed');
+        return [...flags];
+    },
+
+    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.promptHistory || [];
+        const count = (listBounds.promptHistory || []).length;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds) {
         const lib = Context.dashboardLib;
         const f = filters || {};
+        const bounds = listBounds || {};
         const promptText = f.promptText || '';
         const fuzzy = f.fuzzy || false;
         const caseSensitive = f.caseSensitive || false;
         const searchHiddenVersions = f.searchHiddenVersions || false;
         const tasks = items.map((item) => item.task);
-        const filteredTasks = this._applyClientTaskFilters(tasks, f, listBounds || {});
+        const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
-        const passed = items.filter((item) => allowedIds.has(item.task.id));
+        let passed = items.filter((item) => allowedIds.has(item.task.id));
+        const outputKindCount = (bounds.outputKinds || []).length;
+        if (outputKindCount > 1) {
+            passed = passed.filter((item) => dashLibPassesDimension(
+                this._itemOutputKinds(item), f.outputKinds || [], outputKindCount
+            ));
+        }
+        const promptHistoryCount = (bounds.promptHistory || []).length;
+        if (promptHistoryCount > 0) {
+            passed = passed.filter((item) => dashLibPassesDimension(
+                this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
+            ));
+        }
         if (!lib.isQueryActive(promptText, caseSensitive)) {
             return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false));
         }
@@ -516,8 +591,12 @@ const plugin = {
         const promptRatings = new Set();
         const taskIssues = new Set();
         const returnTypes = new Set();
+        const outputKindsPresent = new Set();
+        const promptHistoryPresent = new Set();
         for (const item of items) {
             const task = item.task;
+            for (const kind of this._itemOutputKinds(item)) outputKindsPresent.add(kind);
+            for (const flag of this._itemPromptHistory(item)) promptHistoryPresent.add(flag);
             if (task.teamId) teamIds.add(task.teamId);
             if (task.projectId) projectIds.add(task.projectId);
             if (task.envKey) envKeys.add(task.envKey);
@@ -566,7 +645,13 @@ const plugin = {
                 .sort((a, b) => a.label.localeCompare(b.label)),
             returnTypes: DASH_LIB_RETURN_TYPE_ORDER
                 .filter((type) => returnTypes.has(type))
-                .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] }))
+                .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] })),
+            outputKinds: DASH_LIB_OUTPUT_KIND_ORDER
+                .filter((kind) => outputKindsPresent.has(kind))
+                .map((kind) => ({ id: kind, label: DASH_LIB_OUTPUT_KIND_LABELS[kind] })),
+            promptHistory: DASH_LIB_PROMPT_HISTORY_ORDER
+                .filter((flag) => promptHistoryPresent.has(flag))
+                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] }))
         };
     },
 
@@ -590,9 +675,12 @@ const plugin = {
     },
 
     _emptyFilterIrrelevance() {
-        return Object.fromEntries(
+        const result = Object.fromEntries(
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
+        result.outputKinds = new Set();
+        result.promptHistory = new Set();
+        return result;
     },
 
     _computeFilterIrrelevance(items, draft, listBounds, options) {
@@ -608,7 +696,53 @@ const plugin = {
                 if (!hasMatch) irrelevant.add(id);
             }
         }
+        const kindOptions = (options && options.outputKinds) || [];
+        if (kindOptions.length > 1) {
+            const irrelevantKinds = result.outputKinds;
+            for (const { id } of kindOptions) {
+                const hasMatch = items.some((item) => (
+                    this._itemOutputKinds(item).includes(id)
+                    && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                    && this._itemPassesOutputKindFilter(item, draft, listBounds, id)
+                ));
+                if (!hasMatch) irrelevantKinds.add(id);
+            }
+        }
+        const historyOptions = (options && options.promptHistory) || [];
+        const irrelevantHistory = result.promptHistory;
+        for (const { id } of historyOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemPromptHistory(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantHistory.add(id);
+        }
         return result;
+    },
+
+    _buildDisputeDisplay(disputeRow, _profilesMap) {
+        const data = dashLibParseFeedbackData(disputeRow && disputeRow.dispute_data);
+        const status = String((disputeRow && disputeRow.dispute_status) || 'pending').toLowerCase();
+        const category = data && data.category ? String(data.category) : '';
+        const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
+        return {
+            id: String((disputeRow && disputeRow.id) || ''),
+            submittedAt: String((disputeRow && disputeRow.created_at) || ''),
+            reason: dashLibNormalizeNewlines((disputeRow && disputeRow.dispute_reason) || ''),
+            category: category || null,
+            status,
+            feedbackId: disputeRow && disputeRow.feedback_id != null ? String(disputeRow.feedback_id) : '',
+            resolutionAt: resolvedAt,
+            resolutionText: resolvedAt
+                ? dashLibNormalizeNewlines((disputeRow && disputeRow.resolution_reason) || '')
+                : '',
+            isApproved: status === 'approved',
+            isRejected: status === 'rejected',
+            originalFeedbackCreatedAt: disputeRow && disputeRow.original_feedback_created_at
+                ? String(disputeRow.original_feedback_created_at)
+                : null
+        };
     },
 
     _buildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {
@@ -732,6 +866,8 @@ const plugin = {
                 return { after: new Date(y, 0, 1), before: today, label: 'This Year' };
             case 'last-year':
                 return { after: new Date(y - 1, 0, 1), before: new Date(y - 1, 11, 31), label: 'Last Calendar Year' };
+            case 'all-time':
+                return { after: null, before: null, label: 'All Time', clear: true };
             default:
                 return null;
         }
