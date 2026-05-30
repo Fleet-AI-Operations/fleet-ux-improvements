@@ -147,7 +147,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -196,6 +196,7 @@ const plugin = {
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
+            buildDisputeDisplay: bind(self._buildDisputeDisplay),
 
             dateLocalToIso: bind(self._dateLocalToIso),
             validateCreatedAtRange: bind(self._validateCreatedAtRange),
@@ -439,13 +440,24 @@ const plugin = {
         return texts;
     },
 
+    _disputeTextForItem(item) {
+        const texts = [];
+        for (const dispute of item.disputes || []) {
+            if (dispute.reason) texts.push(dispute.reason);
+            if (dispute.resolutionText) texts.push(dispute.resolutionText);
+        }
+        return texts;
+    },
+
     _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden) {
         const lib = Context.dashboardLib;
         const versions = this._versionsForItem(item);
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
             if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive)) return true;
-            return this._feedbackTextForVersion(item, version.displayVersionNo)
+            if (this._feedbackTextForVersion(item, version.displayVersionNo)
+                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive))) return true;
+            return this._disputeTextForItem(item)
                 .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive));
         };
         if (!hidden) {
@@ -609,6 +621,30 @@ const plugin = {
             }
         }
         return result;
+    },
+
+    _buildDisputeDisplay(disputeRow, _profilesMap) {
+        const data = dashLibParseFeedbackData(disputeRow && disputeRow.dispute_data);
+        const status = String((disputeRow && disputeRow.dispute_status) || 'pending').toLowerCase();
+        const category = data && data.category ? String(data.category) : '';
+        const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
+        return {
+            id: String((disputeRow && disputeRow.id) || ''),
+            submittedAt: String((disputeRow && disputeRow.created_at) || ''),
+            reason: dashLibNormalizeNewlines((disputeRow && disputeRow.dispute_reason) || ''),
+            category: category || null,
+            status,
+            feedbackId: disputeRow && disputeRow.feedback_id != null ? String(disputeRow.feedback_id) : '',
+            resolutionAt: resolvedAt,
+            resolutionText: resolvedAt
+                ? dashLibNormalizeNewlines((disputeRow && disputeRow.resolution_reason) || '')
+                : '',
+            isApproved: status === 'approved',
+            isRejected: status === 'rejected',
+            originalFeedbackCreatedAt: disputeRow && disputeRow.original_feedback_created_at
+                ? String(disputeRow.original_feedback_created_at)
+                : null
+        };
     },
 
     _buildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {

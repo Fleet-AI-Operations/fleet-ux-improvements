@@ -15,6 +15,9 @@ const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
+const DASH_DISPUTES_PAGE_SIZE = 50;
+const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
+const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 
 const DASH_KIND_LABELS = {
     task_creation: 'Task Creation',
@@ -146,7 +149,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.14',
+    _version: '3.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -289,6 +292,129 @@ const plugin = {
 
     _pgGetSearch(table, params) {
         return this._pgGet(table, params, 'search');
+    },
+
+    // ── Fleet web API (session cookies; same-origin) ──
+
+    async _fleetWebGet(path, channel) {
+        if (channel === 'search' && !this._state.searchFetchActive) {
+            Logger.warn('dashboard: blocked Fleet web API call outside search — ' + path);
+            throw new Error('Fleet web API call blocked: data is cached until a new search.');
+        }
+        const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
+        const pageWindow = this._pageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                accept: 'application/json',
+                referer: DASH_FLEET_ORIGIN + '/'
+            }
+        });
+        if (res.status === 404) return null;
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Fleet web API ' + res.status + ': ' + (text || res.statusText));
+        }
+        return res.json();
+    },
+
+    _fleetWebGetSearch(path) {
+        return this._fleetWebGet(path, 'search');
+    },
+
+    _disputeInCreatedAtRange(createdAt, afterIso, beforeIso) {
+        if (!createdAt) return false;
+        const ts = Date.parse(createdAt);
+        if (Number.isNaN(ts)) return false;
+        if (afterIso && ts < Date.parse(afterIso)) return false;
+        if (beforeIso && ts > Date.parse(beforeIso)) return false;
+        return true;
+    },
+
+    async _fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope) {
+        const teamIds = (scope && scope.teamIds) || [];
+        if (teamIds.length === 0) {
+            Logger.debug('dashboard: disputes bulk skipped — no team scope');
+            return { byTaskId: new Map(), rows: [] };
+        }
+        const authorSet = authorIds.length > 0 ? new Set(authorIds) : null;
+        const allRows = [];
+        let offset = 0;
+        let pageNum = 0;
+        while (true) {
+            const qs = new URLSearchParams({
+                teamIds: teamIds.join(','),
+                limit: String(DASH_DISPUTES_PAGE_SIZE),
+                offset: String(offset)
+            });
+            let page;
+            try {
+                page = await this._fleetWebGetSearch('/disputes?' + qs.toString());
+            } catch (e) {
+                Logger.warn('dashboard: disputes bulk fetch failed', e);
+                break;
+            }
+            const rows = (page && Array.isArray(page.disputes)) ? page.disputes : [];
+            pageNum++;
+            Logger.debug('dashboard: disputes bulk page ' + pageNum + ' — ' + rows.length + ' rows (offset ' + offset + ')');
+            allRows.push(...rows);
+            if (rows.length < DASH_DISPUTES_PAGE_SIZE) break;
+            offset += DASH_DISPUTES_PAGE_SIZE;
+        }
+        const filtered = allRows.filter((row) => {
+            if (!row || !row.eval_task_id) return false;
+            if (authorSet && !authorSet.has(row.user_id)) return false;
+            if (!this._disputeInCreatedAtRange(row.created_at, afterIso, beforeIso)) return false;
+            return true;
+        });
+        const byTaskId = new Map();
+        for (const row of filtered) {
+            const taskId = row.eval_task_id;
+            const bucket = byTaskId.get(taskId);
+            if (bucket) bucket.push(row);
+            else byTaskId.set(taskId, [row]);
+        }
+        Logger.log('dashboard: disputes bulk — ' + filtered.length + ' row(s) across ' + byTaskId.size + ' task(s)');
+        return { byTaskId, rows: filtered };
+    },
+
+    async _fetchTaskDisputes(taskId) {
+        if (!taskId) return [];
+        try {
+            const qs = new URLSearchParams({ taskId: String(taskId) });
+            const data = await this._fleetWebGetSearch('/disputes/task-disputes?' + qs.toString());
+            return (data && Array.isArray(data.disputes)) ? data.disputes : [];
+        } catch (e) {
+            Logger.warn('dashboard: task-disputes fetch failed for ' + taskId.slice(0, 8) + '…', e);
+            return [];
+        }
+    },
+
+    async _fetchTaskDisputesBatch(taskIds) {
+        const unique = [...new Set((taskIds || []).filter(Boolean))];
+        const out = new Map();
+        if (unique.length === 0) return out;
+        let idx = 0;
+        const workers = [];
+        const concurrency = DASH_DISPUTES_TASK_FETCH_CONCURRENCY;
+        const runNext = async () => {
+            while (idx < unique.length) {
+                const taskId = unique[idx++];
+                const rows = await this._fetchTaskDisputes(taskId);
+                if (rows.length > 0) out.set(taskId, rows);
+            }
+        };
+        for (let i = 0; i < Math.min(concurrency, unique.length); i++) workers.push(runNext());
+        await Promise.all(workers);
+        Logger.debug('dashboard: task-disputes batch — ' + out.size + ' / ' + unique.length + ' task(s) had disputes');
+        return out;
+    },
+
+    _disputeRowsToDisplays(rows, profilesMap) {
+        const lib = dashLib();
+        return (rows || []).map((row) => lib.buildDisputeDisplay(row, profilesMap));
     },
 
     _addCreatedAtRange(qs, afterIso, beforeIso) {
@@ -659,6 +785,25 @@ const plugin = {
         return allFeedback;
     },
 
+    async _fetchQaFeedbackRowsForTaskIds(taskIds, scope) {
+        if (!taskIds || taskIds.length === 0) return [];
+        if (scope.hasProjectFilter && scope.targetIds.length === 0) return [];
+        const allFeedback = [];
+        for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
+            const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
+            const qs = {
+                select: 'id,created_at,eval_task_id,is_positive_feedback,is_system_feedback,created_by,feedback_data,feedback_content',
+                eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                order: 'created_at.desc',
+                limit: '500'
+            };
+            const page = await this._pgGetSearch('eval_task_qa_feedback', qs);
+            Logger.debug('dashboard: QA feedback by task id chunk — ' + page.length + ' rows');
+            allFeedback.push(...page);
+        }
+        return allFeedback;
+    },
+
     async _buildEnrichedTasksById(taskRows, feedbackRows) {
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
         const profileIds = new Set();
@@ -722,7 +867,8 @@ const plugin = {
                 sortAt: feedback.created_at,
                 task,
                 selectedFeedbackId: feedback.id,
-                qaFeedback
+                qaFeedback,
+                disputes: []
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
@@ -738,13 +884,69 @@ const plugin = {
             sortAt: task.createdAt,
             task,
             selectedFeedbackId: null,
-            qaFeedback: null
+            qaFeedback: null,
+            disputes: []
         }));
     },
 
+    _disputeItemsFromRows(disputeByTaskId, enrichedTasksById, profilesMap) {
+        const items = [];
+        for (const [taskId, rows] of disputeByTaskId) {
+            const task = enrichedTasksById.get(taskId);
+            if (!task || !rows || rows.length === 0) continue;
+            let sortAt = rows[0].created_at || '';
+            for (const row of rows) {
+                if (row.created_at && row.created_at > sortAt) sortAt = row.created_at;
+            }
+            const linkedFeedbackId = rows.find((r) => r.feedback_id != null);
+            items.push({
+                id: 'dispute-' + taskId,
+                kind: 'dispute',
+                sortAt,
+                task,
+                selectedFeedbackId: linkedFeedbackId ? String(linkedFeedbackId.feedback_id) : null,
+                qaFeedback: null,
+                disputes: this._disputeRowsToDisplays(rows, profilesMap)
+            });
+        }
+        items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        Logger.log('dashboard: dispute items built — ' + items.length);
+        return items;
+    },
+
+    async _attachDisputesToMergedItems(mergedItems, bulkByTaskId, profilesMap, fetchPerTask) {
+        if (!mergedItems || mergedItems.length === 0) return mergedItems;
+        const perTaskMap = fetchPerTask
+            ? await this._fetchTaskDisputesBatch(mergedItems.map((it) => it.task.id))
+            : new Map();
+        let attached = 0;
+        for (const item of mergedItems) {
+            const taskId = item.task.id;
+            const perTaskRows = perTaskMap.get(taskId) || [];
+            const bulkRows = bulkByTaskId && bulkByTaskId.get(taskId);
+            const rawRows = (fetchPerTask && perTaskRows.length > 0)
+                ? perTaskRows
+                : (bulkRows || perTaskRows);
+            if (rawRows.length === 0) continue;
+            item.disputes = this._disputeRowsToDisplays(rawRows, profilesMap);
+            if (!item.kinds.includes('dispute')) item.kinds.push('dispute');
+            item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
+            if (item.kind !== 'dispute') {
+                /* keep primary kind from merge order */
+            }
+            attached++;
+        }
+        if (attached > 0) {
+            Logger.log('dashboard: disputes attached to ' + attached + ' card(s)');
+        }
+        return mergedItems;
+    },
+
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
+        let bulkByTaskId = new Map();
         if (includeDisputes) {
-            Logger.debug('dashboard: disputes fetch not yet implemented (stub)');
+            const bulk = await this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope);
+            bulkByTaskId = bulk.byTaskId;
         }
 
         const creationRows = includeTaskCreation
@@ -754,12 +956,20 @@ const plugin = {
             ? await this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : [];
 
+        const disputesOnly = includeDisputes && !includeTaskCreation && !includeQa;
+        const disputeTaskIds = disputesOnly ? [...bulkByTaskId.keys()] : [];
+
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
         const qaOnlyRows = missingQaTaskIds.length > 0
             ? await this._fetchTaskRowsByIds(missingQaTaskIds, scope)
             : [];
+        const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIds.includes(id));
+        const disputeOnlyRows = missingDisputeTaskIds.length > 0
+            ? await this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
+            : [];
+
         const allTaskRows = [...creationRows];
         const seenIds = new Set(creationIds);
         for (const row of qaOnlyRows) {
@@ -768,8 +978,26 @@ const plugin = {
                 allTaskRows.push(row);
             }
         }
+        for (const row of disputeOnlyRows) {
+            if (!seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
 
-        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, feedbackRows);
+        let allFeedbackRows = [...feedbackRows];
+        if (includeDisputes && disputeTaskIds.length > 0 && !includeQa) {
+            const disputeQaRows = await this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope);
+            const seenFb = new Set(allFeedbackRows.map((f) => f.id));
+            for (const fb of disputeQaRows) {
+                if (!seenFb.has(fb.id)) {
+                    seenFb.add(fb.id);
+                    allFeedbackRows.push(fb);
+                }
+            }
+        }
+
+        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows);
 
         const items = [];
         if (includeTaskCreation) {
@@ -782,7 +1010,26 @@ const plugin = {
         if (includeQa && feedbackRows.length > 0) {
             items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
         }
-        return this._mergeWorkerOutputItemsByTask(items);
+        if (disputesOnly && bulkByTaskId.size > 0) {
+            const scopedBulk = new Map();
+            for (const [taskId, rows] of bulkByTaskId) {
+                if (enrichedTasksById.has(taskId)) scopedBulk.set(taskId, rows);
+            }
+            items.push(...this._disputeItemsFromRows(scopedBulk, enrichedTasksById, profilesMap));
+        }
+
+        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
+
+        if (includeDisputes && mergedItems.length > 0) {
+            mergedItems = await this._attachDisputesToMergedItems(
+                mergedItems,
+                disputesOnly ? null : bulkByTaskId,
+                profilesMap,
+                true
+            );
+        }
+
+        return mergedItems;
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -798,7 +1045,8 @@ const plugin = {
                     task: item.task,
                     selectedFeedbackId: null,
                     qaFeedback: null,
-                    qaSortAt: ''
+                    qaSortAt: '',
+                    disputes: []
                 };
                 byTask.set(taskId, merged);
             }
@@ -811,6 +1059,15 @@ const plugin = {
                     merged.qaSortAt = item.sortAt;
                 }
             }
+            if (item.disputes && item.disputes.length > 0) {
+                const seen = new Set(merged.disputes.map((d) => d.id));
+                for (const d of item.disputes) {
+                    if (!seen.has(d.id)) {
+                        seen.add(d.id);
+                        merged.disputes.push(d);
+                    }
+                }
+            }
         }
         const mergedItems = [...byTask.values()].map((merged) => {
             const kinds = DASH_KIND_MERGE_ORDER.filter((k) => merged.kinds.has(k));
@@ -821,7 +1078,8 @@ const plugin = {
                 sortAt: merged.sortAt,
                 task: merged.task,
                 selectedFeedbackId: merged.selectedFeedbackId,
-                qaFeedback: merged.qaFeedback
+                qaFeedback: merged.qaFeedback,
+                disputes: merged.disputes
             };
         });
         const folded = items.length - mergedItems.length;
@@ -2657,7 +2915,102 @@ const plugin = {
         </button>`;
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback) {
+    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy) {
+        const hq = highlightQuery || '';
+        const cs = Boolean(caseSensitive);
+        const fz = Boolean(highlightFuzzy);
+        const border = 'color-mix(in srgb, #ea580c 40%, transparent)';
+        const bg = 'color-mix(in srgb, #ea580c 8%, transparent)';
+        const reasonBody = display.reason
+            ? this._dashHighlightedHtml(display.reason, hq, cs, fz)
+            : '—';
+        const submittedHtml = display.submittedAt
+            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
+            : '';
+        const categoryHtml = display.category
+            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #9a3412; background: color-mix(in srgb, #ea580c 14%, transparent);">${dashEscHtml(display.category)}</span>`
+            : '';
+        let resolutionHtml = '';
+        if (display.resolutionAt) {
+            let resBorder;
+            let resBg;
+            let statusLabel;
+            if (display.isApproved) {
+                resBorder = 'color-mix(in srgb, #16a34a 35%, transparent)';
+                resBg = 'color-mix(in srgb, #16a34a 8%, transparent)';
+                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Approved</span>';
+            } else if (display.isRejected) {
+                resBorder = 'color-mix(in srgb, #dc2626 40%, transparent)';
+                resBg = 'color-mix(in srgb, #dc2626 8%, transparent)';
+                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Rejected</span>';
+            } else {
+                resBorder = 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)';
+                resBg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)';
+                statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
+            }
+            const resolutionBody = display.resolutionText
+                ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz)
+                : '—';
+            const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
+            resolutionHtml = `
+                <div style="margin-top: 8px; padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
+                        ${resolvedHtml}
+                        ${statusLabel}
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
+                        <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
+                    </div>
+                </div>`;
+        }
+        return `
+            <div style="margin-top: 8px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
+                    ${submittedHtml}
+                    ${categoryHtml}
+                </div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
+                    <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
+                </div>
+                ${resolutionHtml}
+            </div>`;
+    },
+
+    _orphanDisputesByDisplayNo(disputes, allFeedback, promptVersions) {
+        const lib = dashLib();
+        const feedbackIds = new Set(allFeedback.map((f) => String(f.id)));
+        const orphans = (disputes || []).filter((d) => !d.feedbackId || !feedbackIds.has(d.feedbackId));
+        const byDisplayNo = new Map();
+        if (orphans.length === 0) return byDisplayNo;
+        const rawLike = (promptVersions || []).map((v) => ({
+            id: v.id,
+            version_no: v.versionNo,
+            created_at: v.createdAt,
+            prompt: v.prompt,
+            env_key: v.envKey
+        }));
+        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback);
+        const fallbackNo = firstNegative
+            ? firstNegative.linkedDisplayVersionNo
+            : (promptVersions.length ? promptVersions[promptVersions.length - 1].displayVersionNo : 1);
+        for (const dispute of orphans) {
+            let displayNo = fallbackNo;
+            if (dispute.originalFeedbackCreatedAt && rawLike.length) {
+                const versionInfo = lib.resolveVersionAtFeedback(rawLike, dispute.originalFeedbackCreatedAt);
+                if (versionInfo && versionInfo.displayVersionNo) displayNo = versionInfo.displayVersionNo;
+            }
+            const list = byDisplayNo.get(displayNo) || [];
+            list.push(dispute);
+            byDisplayNo.set(displayNo, list);
+        }
+        return byDisplayNo;
+    },
+
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -2667,8 +3020,13 @@ const plugin = {
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
-        const feedbackHtml = feedbackEntries.map((entry) => this._qaBlockHtml(entry.display, hq, cs, fz)).join('');
+        const feedbackHtml = feedbackEntries.map((entry) => {
+            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz);
+            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
+            return qaHtml + linkedDisputes;
+        }).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz) : '';
+        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -2677,7 +3035,7 @@ const plugin = {
                     </div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                ${feedbackHtml}${fallbackHtml}
+                ${feedbackHtml}${fallbackHtml}${orphanHtml}
             </div>`;
     },
 
@@ -2726,11 +3084,20 @@ const plugin = {
 
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
+        const disputes = item.disputes || [];
+        const attachedDisputeIds = new Set();
         for (const entry of allFeedback) {
+            const linked = disputes.filter((d) => d.feedbackId && d.feedbackId === String(entry.id));
+            for (const d of linked) attachedDisputeIds.add(d.id);
             const list = feedbackByDisplayNo.get(entry.linkedDisplayVersionNo) || [];
-            list.push(entry);
+            list.push(Object.assign({}, entry, { disputes: linked }));
             feedbackByDisplayNo.set(entry.linkedDisplayVersionNo, list);
         }
+        const orphanDisputesByDisplayNo = this._orphanDisputesByDisplayNo(
+            disputes.filter((d) => !attachedDisputeIds.has(d.id)),
+            allFeedback,
+            task.promptVersions || versions
+        );
 
         let renderedVersions;
         if (expanded) {
@@ -2777,9 +3144,11 @@ const plugin = {
         const versionSections = renderedVersions.map((version) => {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
+            const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
-                highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback
+                highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
+                orphanDisputes
             );
         }).join('');
 
