@@ -40,9 +40,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
     },
     dispute: {
         label: 'Disputes',
-        tabBg: '#ea580c',
-        toggleActive: 'border: 2px solid #ea580c; color: #c2410c; background: transparent;',
-        textHighlight: 'font-weight: 600; color: #c2410c;'
+        tabBg: '#7c3aed',
+        toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #6d28d9;'
     }
 };
 
@@ -152,7 +152,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.16',
+    _version: '3.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2865,6 +2865,13 @@ const plugin = {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
+    _disputeBlockStyle() {
+        return {
+            border: '1px solid #5b21b6',
+            background: 'color-mix(in srgb, #7c3aed 24%, var(--card, #ffffff))'
+        };
+    },
+
     _qaYellowBlockStyle() {
         return {
             border: '1px solid #9a3412',
@@ -2974,9 +2981,9 @@ const plugin = {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
-        const yellow = this._qaYellowBlockStyle();
-        const border = yellow.border;
-        const bg = yellow.background;
+        const purple = this._disputeBlockStyle();
+        const border = purple.border;
+        const bg = purple.background;
         const reasonBody = display.reason
             ? this._dashHighlightedHtml(display.reason, hq, cs, fz)
             : '—';
@@ -2984,7 +2991,7 @@ const plugin = {
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
             : '';
         const categoryHtml = display.category
-            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #9a3412; background: color-mix(in srgb, #ea580c 14%, transparent);">${dashEscHtml(display.category)}</span>`
+            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #5b21b6; background: color-mix(in srgb, #7c3aed 14%, transparent);">${dashEscHtml(display.category)}</span>`
             : '';
         let resolutionHtml = '';
         if (display.resolutionAt) {
