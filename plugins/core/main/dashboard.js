@@ -153,7 +153,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.19',
+    _version: '3.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -337,6 +337,10 @@ const plugin = {
         return this._fleetWebGet(path, 'search');
     },
 
+    _dashNormProfileId(id) {
+        return String(id == null ? '' : id).trim().toLowerCase();
+    },
+
     _disputeInCreatedAtRange(createdAt, afterIso, beforeIso) {
         if (!createdAt) return false;
         const ts = Date.parse(createdAt);
@@ -344,6 +348,23 @@ const plugin = {
         if (afterIso && ts < Date.parse(afterIso)) return false;
         if (beforeIso && ts > Date.parse(beforeIso)) return false;
         return true;
+    },
+
+    /** Contributor search on disputes matches who resolved them (resolved_by), not who filed (user_id). */
+    _disputeMatchesContributorFilter(row, contributorSet) {
+        if (!contributorSet || contributorSet.size === 0) return true;
+        const resolverId = row && row.resolved_by ? String(row.resolved_by).trim() : '';
+        if (!resolverId) return false;
+        return contributorSet.has(resolverId) || contributorSet.has(this._dashNormProfileId(resolverId));
+    },
+
+    _disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet) {
+        const filterByResolver = contributorSet && contributorSet.size > 0;
+        const timestamp = filterByResolver
+            ? (row && row.resolved_at ? String(row.resolved_at) : '')
+            : (row && row.created_at ? String(row.created_at) : '');
+        if (filterByResolver && !timestamp) return false;
+        return this._disputeInCreatedAtRange(timestamp, afterIso, beforeIso);
     },
 
     async _fetchDisputesBulkPages(teamIds, statusParam) {
@@ -382,8 +403,17 @@ const plugin = {
             Logger.debug('dashboard: disputes bulk skipped — no team scope');
             return { byTaskId: new Map(), rows: [] };
         }
-        const authorSet = authorIds.length > 0 ? new Set(authorIds) : null;
-        const openRows = await this._fetchDisputesBulkPages(teamIds, null);
+        const contributorSet = authorIds.length > 0
+            ? new Set(authorIds.flatMap((id) => {
+                const raw = String(id).trim();
+                if (!raw) return [];
+                const norm = this._dashNormProfileId(raw);
+                return norm === raw ? [raw] : [raw, norm];
+            }))
+            : null;
+        const openRows = contributorSet
+            ? []
+            : await this._fetchDisputesBulkPages(teamIds, null);
         const resolvedRows = await this._fetchDisputesBulkPages(teamIds, 'resolved');
         const seenIds = new Set();
         const allRows = [];
@@ -394,8 +424,8 @@ const plugin = {
         }
         const filtered = allRows.filter((row) => {
             if (!row || !row.eval_task_id) return false;
-            if (authorSet && !authorSet.has(row.user_id)) return false;
-            if (!this._disputeInCreatedAtRange(row.created_at, afterIso, beforeIso)) return false;
+            if (!this._disputeMatchesContributorFilter(row, contributorSet)) return false;
+            if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) return false;
             return true;
         });
         const byTaskId = new Map();
@@ -406,7 +436,9 @@ const plugin = {
             else byTaskId.set(taskId, [row]);
         }
         Logger.log('dashboard: disputes bulk — ' + openRows.length + ' open, ' + resolvedRows.length
-            + ' resolved, ' + filtered.length + ' after filter across ' + byTaskId.size + ' task(s)');
+            + ' resolved, ' + filtered.length + ' after filter'
+            + (contributorSet ? ' (resolver resolved_by + resolved_at)' : ' (created_at)')
+            + ' across ' + byTaskId.size + ' task(s)');
         return { byTaskId, rows: filtered };
     },
 
@@ -924,9 +956,10 @@ const plugin = {
         for (const [taskId, rows] of disputeByTaskId) {
             const task = enrichedTasksById.get(taskId);
             if (!task || !rows || rows.length === 0) continue;
-            let sortAt = rows[0].created_at || '';
+            let sortAt = rows[0].resolved_at || rows[0].created_at || '';
             for (const row of rows) {
-                if (row.created_at && row.created_at > sortAt) sortAt = row.created_at;
+                const candidate = row.resolved_at || row.created_at;
+                if (candidate && candidate > sortAt) sortAt = candidate;
             }
             const linkedFeedbackId = rows.find((r) => r.feedback_id != null);
             items.push({
@@ -954,9 +987,9 @@ const plugin = {
             const taskId = item.task.id;
             const perTaskRows = perTaskMap.get(taskId) || [];
             const bulkRows = bulkByTaskId && bulkByTaskId.get(taskId);
-            const rawRows = (fetchPerTask && perTaskRows.length > 0)
-                ? perTaskRows
-                : (bulkRows || perTaskRows);
+            let rawRows = (bulkRows && bulkRows.length > 0)
+                ? bulkRows
+                : ((fetchPerTask && perTaskRows.length > 0) ? perTaskRows : []);
             if (rawRows.length === 0) continue;
             item.disputes = this._disputeRowsToDisplays(rawRows, profilesMap);
             if (!item.kinds.includes('dispute')) item.kinds.push('dispute');
@@ -986,8 +1019,7 @@ const plugin = {
             ? await this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : [];
 
-        const disputesOnly = includeDisputes && !includeTaskCreation && !includeQa;
-        const disputeTaskIds = disputesOnly ? [...bulkByTaskId.keys()] : [];
+        const disputeTaskIds = includeDisputes ? [...bulkByTaskId.keys()] : [];
 
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
@@ -1040,12 +1072,19 @@ const plugin = {
         if (includeQa && feedbackRows.length > 0) {
             items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
         }
-        if (disputesOnly && bulkByTaskId.size > 0) {
+        if (includeDisputes && bulkByTaskId.size > 0) {
             const scopedBulk = new Map();
             for (const [taskId, rows] of bulkByTaskId) {
                 if (enrichedTasksById.has(taskId)) scopedBulk.set(taskId, rows);
             }
-            items.push(...this._disputeItemsFromRows(scopedBulk, enrichedTasksById, profilesMap));
+            const disputeItems = this._disputeItemsFromRows(scopedBulk, enrichedTasksById, profilesMap);
+            const existingTaskIds = new Set(items.map((it) => it.task.id));
+            for (const disputeItem of disputeItems) {
+                if (!existingTaskIds.has(disputeItem.task.id)) {
+                    existingTaskIds.add(disputeItem.task.id);
+                    items.push(disputeItem);
+                }
+            }
         }
 
         let mergedItems = this._mergeWorkerOutputItemsByTask(items);
@@ -1053,9 +1092,9 @@ const plugin = {
         if (includeDisputes && mergedItems.length > 0) {
             mergedItems = await this._attachDisputesToMergedItems(
                 mergedItems,
-                disputesOnly ? null : bulkByTaskId,
+                bulkByTaskId,
                 profilesMap,
-                true
+                bulkByTaskId.size === 0
             );
         }
 
