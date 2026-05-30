@@ -21,6 +21,13 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     qa: 'QA',
     dispute: 'Disputes'
 };
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['returned', 'disputed', 'flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_LABELS = {
+    returned: 'Returned',
+    disputed: 'Disputed',
+    flagged: 'Flagged',
+    escalated: 'Escalated'
+};
 
 function dashLibPrepareText(value, caseSensitive) {
     const trimmed = (value || '').replace(/\s+/g, ' ').trim();
@@ -153,7 +160,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -497,11 +504,34 @@ const plugin = {
     _itemPassesOutputKindFilter(item, draft, listBounds, forceIncludeId) {
         const selected = draft.outputKinds || [];
         const count = (listBounds.outputKinds || []).length;
+        if (count <= 1) return true;
         let effective = selected;
         if (forceIncludeId !== undefined) {
             effective = [...new Set([...selected, forceIncludeId])];
         }
         return dashLibPassesDimension(this._itemOutputKinds(item), effective, count);
+    },
+
+    _itemPromptHistory(item) {
+        const flags = new Set();
+        for (const entry of item.task.allFeedback || []) {
+            const rt = this._returnTypeOf(entry);
+            if (rt === 'returned') flags.add('returned');
+            else if (rt === 'escalated') flags.add('escalated');
+            else if (rt === 'bugged') flags.add('flagged');
+        }
+        if (item.disputes && item.disputes.length > 0) flags.add('disputed');
+        return [...flags];
+    },
+
+    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.promptHistory || [];
+        const count = (listBounds.promptHistory || []).length;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
     },
 
     _applyClientWorkerOutputFilters(items, filters, listBounds) {
@@ -516,11 +546,18 @@ const plugin = {
         const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
         let passed = items.filter((item) => allowedIds.has(item.task.id));
-        const outputKinds = f.outputKinds || [];
         const outputKindCount = (bounds.outputKinds || []).length;
-        passed = passed.filter((item) => dashLibPassesDimension(
-            this._itemOutputKinds(item), outputKinds, outputKindCount
-        ));
+        if (outputKindCount > 1) {
+            passed = passed.filter((item) => dashLibPassesDimension(
+                this._itemOutputKinds(item), f.outputKinds || [], outputKindCount
+            ));
+        }
+        const promptHistoryCount = (bounds.promptHistory || []).length;
+        if (promptHistoryCount > 0) {
+            passed = passed.filter((item) => dashLibPassesDimension(
+                this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
+            ));
+        }
         if (!lib.isQueryActive(promptText, caseSensitive)) {
             return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false));
         }
@@ -555,9 +592,11 @@ const plugin = {
         const taskIssues = new Set();
         const returnTypes = new Set();
         const outputKindsPresent = new Set();
+        const promptHistoryPresent = new Set();
         for (const item of items) {
             const task = item.task;
             for (const kind of this._itemOutputKinds(item)) outputKindsPresent.add(kind);
+            for (const flag of this._itemPromptHistory(item)) promptHistoryPresent.add(flag);
             if (task.teamId) teamIds.add(task.teamId);
             if (task.projectId) projectIds.add(task.projectId);
             if (task.envKey) envKeys.add(task.envKey);
@@ -609,7 +648,10 @@ const plugin = {
                 .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] })),
             outputKinds: DASH_LIB_OUTPUT_KIND_ORDER
                 .filter((kind) => outputKindsPresent.has(kind))
-                .map((kind) => ({ id: kind, label: DASH_LIB_OUTPUT_KIND_LABELS[kind] }))
+                .map((kind) => ({ id: kind, label: DASH_LIB_OUTPUT_KIND_LABELS[kind] })),
+            promptHistory: DASH_LIB_PROMPT_HISTORY_ORDER
+                .filter((flag) => promptHistoryPresent.has(flag))
+                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] }))
         };
     },
 
@@ -637,6 +679,7 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
         result.outputKinds = new Set();
+        result.promptHistory = new Set();
         return result;
     },
 
@@ -654,14 +697,26 @@ const plugin = {
             }
         }
         const kindOptions = (options && options.outputKinds) || [];
-        const irrelevantKinds = result.outputKinds;
-        for (const { id } of kindOptions) {
+        if (kindOptions.length > 1) {
+            const irrelevantKinds = result.outputKinds;
+            for (const { id } of kindOptions) {
+                const hasMatch = items.some((item) => (
+                    this._itemOutputKinds(item).includes(id)
+                    && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                    && this._itemPassesOutputKindFilter(item, draft, listBounds, id)
+                ));
+                if (!hasMatch) irrelevantKinds.add(id);
+            }
+        }
+        const historyOptions = (options && options.promptHistory) || [];
+        const irrelevantHistory = result.promptHistory;
+        for (const { id } of historyOptions) {
             const hasMatch = items.some((item) => (
-                this._itemOutputKinds(item).includes(id)
+                this._itemPromptHistory(item).includes(id)
                 && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesOutputKindFilter(item, draft, listBounds, id)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, id)
             ));
-            if (!hasMatch) irrelevantKinds.add(id);
+            if (!hasMatch) irrelevantHistory.add(id);
         }
         return result;
     },

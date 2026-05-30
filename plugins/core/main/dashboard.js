@@ -55,6 +55,7 @@ const DASH_EXCLUDED_TEAM_NAMES = ['Fleet Fellows', 'Trace QA'];
 
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-output-kinds', optionsKey: 'outputKinds', draftKey: 'outputKinds' },
+    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
@@ -152,7 +153,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.17',
+    _version: '3.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1129,8 +1130,13 @@ const plugin = {
             promptRatings: (opts.promptRatings || []).map((r) => r.id),
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
-            outputKinds: (opts.outputKinds || []).map((k) => k.id)
+            outputKinds: (opts.outputKinds || []).map((k) => k.id),
+            promptHistory: (opts.promptHistory || []).map((h) => h.id)
         };
+    },
+
+    _isOutputKindFilterVisible(options) {
+        return ((options && options.outputKinds) || []).length > 1;
     },
 
     _resetFilterDraftsFromResults(items) {
@@ -1509,10 +1515,11 @@ const plugin = {
     _filterScopeLabel(scopeKey) {
         const labels = {
             'filter-output-kinds': 'Output type',
+            'filter-prompt-history': 'Prompt History',
             'filter-teams': 'Team',
             'filter-projects': 'Projects',
             'filter-envs': 'Environments',
-            'filter-statuses': 'Task status',
+            'filter-statuses': 'Current task status',
             'filter-contributors': 'Contributor',
             'filter-prompt-ratings': 'Prompt rating',
             'filter-task-issues': 'Task issues',
@@ -2179,7 +2186,7 @@ const plugin = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            outputKinds: []
+            outputKinds: [], promptHistory: []
         };
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
             const panel = this._msPanelEl(scopeKey);
@@ -2209,8 +2216,14 @@ const plugin = {
         for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
             const itemsEl = this._msItemsEl(scopeKey);
             if (!itemsEl) continue;
-            const prevSelected = new Set(this._selectedFromList(scopeKey));
             const optionItems = options[optionsKey] || [];
+            const wrap = this._modal && this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+            if (scopeKey === 'filter-output-kinds') {
+                if (wrap) wrap.style.display = this._isOutputKindFilterVisible(options) ? '' : 'none';
+            } else if (wrap) {
+                wrap.style.display = '';
+            }
+            const prevSelected = new Set(this._selectedFromList(scopeKey));
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const hadSelection = prevSelected.size > 0;
             const irrelevantSet = hadSelection ? (irrelevance[draftKey] || new Set()) : new Set();
@@ -2406,7 +2419,9 @@ const plugin = {
 
     _isFilterSelectionValid() {
         if (!this._state.cachedItems) return false;
+        const options = this._state.filterListOptions || {};
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            if (scopeKey === 'filter-output-kinds' && !this._isOutputKindFilterVisible(options)) continue;
             const all = this._allFromList(scopeKey);
             if (all.length === 0) continue;
             if (this._selectedFromList(scopeKey).length === 0) return false;
@@ -2614,6 +2629,9 @@ const plugin = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
+        const options = this._state.filterListOptions || {};
+        const outputKindActive = this._isOutputKindFilterVisible(options)
+            && (applied.outputKinds || []).length < bounds.outputKinds.length;
         return applied.teamIds.length < bounds.teamIds.length
             || applied.projectIds.length < bounds.projectIds.length
             || applied.envKeys.length < bounds.envKeys.length
@@ -2622,7 +2640,8 @@ const plugin = {
             || (applied.promptRatings || []).length < bounds.promptRatings.length
             || (applied.taskIssues || []).length < bounds.taskIssues.length
             || (applied.returnTypes || []).length < bounds.returnTypes.length
-            || (applied.outputKinds || []).length < bounds.outputKinds.length
+            || outputKindActive
+            || (applied.promptHistory || []).length < bounds.promptHistory.length
             || !lib.isQueryEmpty(applied.promptText, applied.caseSensitive);
     },
 
@@ -3016,15 +3035,17 @@ const plugin = {
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             resolutionHtml = `
-                <div style="margin-top: 8px; padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                        ${resolvedHtml}
-                        ${statusLabel}
-                    </div>
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
-                        <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
+                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                    <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                            <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
+                            ${resolvedHtml}
+                            ${statusLabel}
+                        </div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
+                            <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
+                        </div>
                     </div>
                 </div>`;
         }
