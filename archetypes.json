@@ -1,7 +1,7 @@
 {
   "version": "9.1.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.71",
+  "archetypesVersion": "9.73",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -40,14 +40,14 @@
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.2",
-      "hash": "sha256-e7a826526cc98ae74b4c7a35abd0f83845c340e9f65ab704c0d6c58a1b5afc05",
+      "version": "1.3",
+      "hash": "sha256-740977eda3f0f9f9b3b0fd88c03a0384b0f9f45353a5c6853fdbebfd76f7d4e4",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "3.21",
-      "hash": "sha256-8dbbb9c28ed861435327a6dc8807d8315e18d941974d4affb7b252744fc1ad7a",
+      "version": "3.22",
+      "hash": "sha256-257fe63a91ffe512a8f201eff1e7b6e567bdd66b1c5401dea5cbf108ddfb5184",
       "log": false
     }
   ],
@@ -77,6 +77,12 @@
       "urlPattern": "work/create",
       "disambiguationSelectors": [],
       "plugins": [
+        {
+          "name": "dashboard-page-api-intercept.js",
+          "version": "1.0",
+          "hash": "",
+          "log": false
+        },
         {
           "name": "feedback-given-stats.js",
           "version": "3.1",

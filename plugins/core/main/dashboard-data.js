@@ -8,7 +8,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -16,7 +16,7 @@ const plugin = {
     init() {
         const self = this;
         Context.dashboardData = {
-            enrichTasksWithHistory: (taskIds, profilesMap) => self._enrichTasksWithHistory(taskIds, profilesMap)
+            enrichTasksWithHistory: (taskIds, profilesMap, options) => self._enrichTasksWithHistory(taskIds, profilesMap, options)
         };
         Logger.log('dashboard-data: module registered (Context.dashboardData)');
     },
@@ -91,22 +91,39 @@ const plugin = {
         return versionRows;
     },
 
-    async _fetchFeedbackBatch(taskIds) {
-        const feedbackRows = [];
+    async _fetchFeedbackBatch(taskIds, prefetchedRows) {
+        const prefetched = Array.isArray(prefetchedRows) ? prefetchedRows : [];
+        const knownIds = [...new Set(prefetched.map((f) => f && f.id).filter(Boolean))];
+        const feedbackRows = [...prefetched];
+        const seenIds = new Set(knownIds);
         for (let i = 0; i < taskIds.length; i += DASH_DATA_ID_CHUNK) {
             const chunk = taskIds.slice(i, i + DASH_DATA_ID_CHUNK);
             let offset = 0;
             while (true) {
-                const page = await this._pgQuery('qa_feedback.select_row', {
+                const qs = {
                     eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
                     order: 'created_at.desc',
                     offset: String(offset),
                     limit: String(DASH_DATA_FEEDBACK_PAGE_SIZE)
-                });
-                feedbackRows.push(...page);
+                };
+                if (knownIds.length > 0 && knownIds.length <= 200) {
+                    qs.id = 'not.in.(' + knownIds.join(',') + ')';
+                }
+                const page = await this._pgQuery('qa_feedback.select_row', qs);
+                let added = 0;
+                for (const row of page) {
+                    if (!row || !row.id || seenIds.has(row.id)) continue;
+                    seenIds.add(row.id);
+                    feedbackRows.push(row);
+                    added++;
+                }
                 if (page.length < DASH_DATA_FEEDBACK_PAGE_SIZE) break;
                 offset += DASH_DATA_FEEDBACK_PAGE_SIZE;
             }
+        }
+        if (prefetched.length > 0) {
+            Logger.debug('dashboard-data: feedback batch — ' + prefetched.length + ' prefetched, '
+                + (feedbackRows.length - prefetched.length) + ' supplemental');
         }
         return feedbackRows;
     },
@@ -114,18 +131,26 @@ const plugin = {
     /**
      * @param {string[]} taskIds
      * @param {Map<string, {full_name: string, email: string}>} [profilesMap]
+     * @param {{ prefetchedFeedbackRows?: object[], skipFeedbackFetch?: boolean }} [options]
      * @returns {Promise<Map<string, { promptVersions: object[], allFeedback: object[] }>>}
      */
-    async _enrichTasksWithHistory(taskIds, profilesMap) {
+    async _enrichTasksWithHistory(taskIds, profilesMap, options) {
         const lib = Context.dashboardLib;
+        const opts = options || {};
         const ids = [...new Set((taskIds || []).filter(Boolean))];
         if (ids.length === 0) return new Map();
 
         Logger.debug('dashboard-data: enriching ' + ids.length + ' task(s) with version + feedback history');
 
+        const prefetched = Array.isArray(opts.prefetchedFeedbackRows) ? opts.prefetchedFeedbackRows : [];
+        const skipFeedbackFetch = Boolean(opts.skipFeedbackFetch);
+        const feedbackPromise = skipFeedbackFetch
+            ? Promise.resolve(prefetched)
+            : this._fetchFeedbackBatch(ids, prefetched);
+
         const [versionRows, feedbackRows] = await Promise.all([
             this._fetchVersionsBatch(ids),
-            this._fetchFeedbackBatch(ids)
+            feedbackPromise
         ]);
 
         const reviewerProfiles = new Map(profilesMap || []);
