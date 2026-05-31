@@ -102,6 +102,10 @@ function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
     return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
 }
+function dashFleetDisputeUrl(disputeId) {
+    const id = String(disputeId || '').trim();
+    return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
+}
 
 // ── Formatting ──
 
@@ -155,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.23',
+    _version: '3.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -198,6 +202,7 @@ const plugin = {
             appliedFilters: null,
             filterListOptions: null,
             cardUi: {},
+            disputeClaimUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
@@ -344,6 +349,33 @@ const plugin = {
 
     _fleetWebGetSearch(path) {
         return this._fleetWebGet(path, 'search');
+    },
+
+    async _fleetWebPost(path) {
+        const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
+        const pageWindow = this._pageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                accept: '*/*',
+                referer: DASH_FLEET_ORIGIN + '/work/problems/disputes'
+            }
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Fleet web API ' + res.status + ': ' + (text || res.statusText));
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return res.json().catch(() => null);
+        }
+        return null;
+    },
+
+    _disputeClaimApiPath(disputeId) {
+        return '/disputes/' + encodeURIComponent(String(disputeId)) + '/claim';
     },
 
     _dashNormProfileId(id) {
@@ -1856,6 +1888,13 @@ const plugin = {
                 this._patchTaskCard(itemId);
                 return;
             }
+            const disputeClaimBtn = e.target.closest('[data-wf-dash-dispute-claim]');
+            if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
+                const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
+                const itemId = disputeClaimBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) void this._claimDispute(disputeId, itemId);
+                return;
+            }
             if (!e.target.closest('[data-wf-dash-ms-wrap]') && Object.keys(this._state.msDropdownOpen).length > 0) {
                 this._closeAllMsDropdowns();
             }
@@ -2335,6 +2374,34 @@ const plugin = {
         return items.find((it) => it.id === itemId) || null;
     },
 
+    _getDisputeClaimUi(disputeId) {
+        const id = String(disputeId || '').trim();
+        if (!id) return { status: 'idle' };
+        if (!this._state.disputeClaimUi[id]) {
+            this._state.disputeClaimUi[id] = { status: 'idle' };
+        }
+        return this._state.disputeClaimUi[id];
+    },
+
+    async _claimDispute(disputeId, itemId) {
+        const id = String(disputeId || '').trim();
+        if (!id || !itemId) return;
+        const ui = this._getDisputeClaimUi(id);
+        if (ui.status === 'claiming' || ui.status === 'claimed') return;
+        ui.status = 'claiming';
+        this._patchTaskCard(itemId);
+        try {
+            await this._fleetWebPost(this._disputeClaimApiPath(id));
+            ui.status = 'claimed';
+            Logger.log('dashboard: dispute ' + id + ' claimed');
+        } catch (e) {
+            ui.status = 'idle';
+            Logger.warn('dashboard: dispute claim failed — ' + id, e);
+        } finally {
+            this._patchTaskCard(itemId);
+        }
+    },
+
     _patchTaskCard(itemId) {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
@@ -2706,6 +2773,7 @@ const plugin = {
         this._state.hasSearched = false;
         this._state.committed = null;
         this._state.cardUi = {};
+        this._state.disputeClaimUi = {};
         this._resetFilterLists();
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
@@ -2910,11 +2978,17 @@ const plugin = {
         </button>`;
     },
 
+    _extLinkIconSvg(active) {
+        const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
+        const opacity = active ? '1' : '0.45';
+        return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${opacity}; flex-shrink: 0;"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>`;
+    },
+
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
         return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); text-decoration: none;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+            ${this._extLinkIconSvg(true)}
         </a>`;
     },
 
@@ -3141,7 +3215,27 @@ const plugin = {
         </button>`;
     },
 
-    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy) {
+    _disputeClaimControlHtml(display, itemId) {
+        if (display.resolutionAt) return '';
+        const disputeId = String(display.id || '').trim();
+        if (!disputeId) return '';
+        const ui = this._getDisputeClaimUi(disputeId);
+        const url = dashFleetDisputeUrl(disputeId);
+        const baseStyle = this._btnStyle()
+            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;'
+            + ' border-color: #7c3aed; color: #5b21b6;';
+        if (ui.status === 'claimed' && url) {
+            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" style="${baseStyle} text-decoration: none;">`
+                + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
+        }
+        if (ui.status === 'claiming') {
+            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">${this._loadingSpinnerHtml(14)}</button>`;
+        }
+        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" style="${baseStyle}">`
+            + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
+    },
+
+    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, itemId) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -3198,12 +3292,16 @@ const plugin = {
                     </div>
                 </div>`;
         }
+        const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         return `
             <div style="margin-top: 8px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
-                    ${submittedHtml}
-                    ${categoryHtml}
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
+                        ${submittedHtml}
+                        ${categoryHtml}
+                    </div>
+                    ${claimControlHtml}
                 </div>
                 <div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
@@ -3243,7 +3341,7 @@ const plugin = {
         return byDisplayNo;
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -3255,11 +3353,11 @@ const plugin = {
             : this._labelSpan('Prompt');
         const feedbackHtml = feedbackEntries.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz);
-            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
+            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
             return qaHtml + linkedDisputes;
         }).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz) : '';
-        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
+        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -3381,7 +3479,7 @@ const plugin = {
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes
+                orphanDisputes, itemId
             );
         }).join('');
 
