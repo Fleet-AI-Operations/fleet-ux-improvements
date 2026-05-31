@@ -32,6 +32,10 @@ const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
 /** localStorage key for the dynamically captured Next.js router state tree for team member search */
 const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
+/** localStorage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
+const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
+/** Matches `"user":{"id":"<uuid>"` in Next.js RSC flight payloads */
+const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
 const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
 /** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
@@ -130,7 +134,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -145,6 +149,9 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
+    /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
+    _opsCurrentUserIdCache: '',
+    _opsCurrentUserIdCaptureInstalled: false,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -194,7 +201,9 @@ const plugin = {
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
+        this._loadOpsCurrentUserIdFromStorage();
         this._subscribeOpsTeamSearchActionCapture();
+        this._subscribeOpsCurrentUserIdCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
         }
@@ -879,8 +888,157 @@ const plugin = {
         return '';
     },
 
+    _loadOpsCurrentUserIdFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const userId = storage.getItem(OPS_CURRENT_USER_ID_STORAGE_KEY);
+            if (userId && OPS_UUID_RE.test(userId)) {
+                this._opsCurrentUserIdCache = userId;
+                Logger.debug('ops-tab: current user id hydrated from localStorage (' + userId.slice(0, 8) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: current user id localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsCurrentUserId(userId, source) {
+        if (!userId || !OPS_UUID_RE.test(userId)) return;
+        const changed = userId !== this._opsCurrentUserIdCache;
+        this._opsCurrentUserIdCache = userId;
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) storage.setItem(OPS_CURRENT_USER_ID_STORAGE_KEY, userId);
+        } catch (e) {
+            Logger.debug('ops-tab: current user id persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: current user id captured (' + userId.slice(0, 8) + '…, source=' + (source || 'unknown') + ')');
+        }
+    },
+
+    _extractOpsUserIdFromNextFPayload(text) {
+        if (!text || typeof text !== 'string') return '';
+        const match = text.match(OPS_NEXT_F_USER_ID_RE);
+        return match ? match[1] : '';
+    },
+
+    _captureOpsCurrentUserIdFromText(text, source) {
+        const userId = this._extractOpsUserIdFromNextFPayload(text);
+        if (!userId) return '';
+        this._persistOpsCurrentUserId(userId, source);
+        return userId;
+    },
+
+    _extractOpsUserIdFromJwt(pageWindow) {
+        const jwt = this._extractOpsJwtToken(pageWindow);
+        if (!jwt) return '';
+        const payload = this._decodeOpsJwtPayload(jwt);
+        const sub = payload && payload.sub;
+        return typeof sub === 'string' && OPS_UUID_RE.test(sub) ? sub : '';
+    },
+
+    _scanOpsCurrentUserIdFromNextFScripts(pageWindow) {
+        try {
+            const doc = pageWindow && pageWindow.document;
+            if (!doc) return '';
+            const scripts = doc.querySelectorAll('script');
+            for (let i = 0; i < scripts.length; i++) {
+                const text = scripts[i].textContent || '';
+                if (!text.includes('"user"') || !text.includes('"id"')) continue;
+                const userId = this._captureOpsCurrentUserIdFromText(text, 'script-scan');
+                if (userId) return userId;
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: __next_f script scan failed', e);
+        }
+        return '';
+    },
+
+    _hookOpsNextFUserIdCapture(pageWindow) {
+        if (!pageWindow || !pageWindow.__next_f || !Array.isArray(pageWindow.__next_f)) return false;
+        if (pageWindow.__next_f.__wfOpsUserIdHooked) return true;
+
+        const self = this;
+        const processEntry = (entry) => {
+            if (!Array.isArray(entry) || entry.length < 2 || typeof entry[1] !== 'string') return;
+            self._captureOpsCurrentUserIdFromText(entry[1], 'next_f');
+        };
+
+        pageWindow.__next_f.forEach(processEntry);
+
+        const origPush = pageWindow.__next_f.push.bind(pageWindow.__next_f);
+        pageWindow.__next_f.push = function patchedOpsNextFPush(...args) {
+            args.forEach(processEntry);
+            return origPush.apply(this, args);
+        };
+        pageWindow.__next_f.__wfOpsUserIdHooked = true;
+        Logger.debug('ops-tab: __next_f user id capture hook installed');
+        return true;
+    },
+
+    _subscribeOpsCurrentUserIdCapture() {
+        if (this._opsCurrentUserIdCaptureInstalled) return;
+        this._opsCurrentUserIdCaptureInstalled = true;
+
+        const self = this;
+        const pageWindow = this._getOpsPageWindow();
+
+        try {
+            self._hookOpsNextFUserIdCapture(pageWindow);
+            self._scanOpsCurrentUserIdFromNextFScripts(pageWindow);
+        } catch (e) {
+            Logger.debug('ops-tab: initial current user id capture failed', e);
+        }
+
+        try {
+            const doc = pageWindow.document;
+            if (!doc || !doc.documentElement) return;
+
+            const observer = new MutationObserver((mutations) => {
+                for (let m = 0; m < mutations.length; m++) {
+                    const added = mutations[m].addedNodes;
+                    for (let n = 0; n < added.length; n++) {
+                        const node = added[n];
+                        if (node.nodeName !== 'SCRIPT') continue;
+                        const text = node.textContent || '';
+                        if (!text.includes('"user"') || !text.includes('"id"')) continue;
+                        self._captureOpsCurrentUserIdFromText(text, 'script');
+                        if (text.includes('__next_f')) {
+                            self._hookOpsNextFUserIdCapture(pageWindow);
+                        }
+                    }
+                }
+            });
+            observer.observe(doc.documentElement, { childList: true, subtree: true });
+            Logger.debug('ops-tab: current user id script watcher registered');
+        } catch (e) {
+            Logger.debug('ops-tab: current user id script watcher failed', e);
+        }
+    },
+
     _getOpsCurrentUserId() {
-        return this._getOpsCookieValue('current-user-id');
+        const fromCookie = this._getOpsCookieValue('current-user-id');
+        if (fromCookie && OPS_UUID_RE.test(fromCookie)) {
+            this._persistOpsCurrentUserId(fromCookie, 'cookie');
+            return fromCookie;
+        }
+
+        const pageWindow = this._getOpsPageWindow();
+        const fromScan = this._scanOpsCurrentUserIdFromNextFScripts(pageWindow);
+        if (fromScan) return fromScan;
+
+        if (this._opsCurrentUserIdCache && OPS_UUID_RE.test(this._opsCurrentUserIdCache)) {
+            return this._opsCurrentUserIdCache;
+        }
+
+        const fromJwt = this._extractOpsUserIdFromJwt(pageWindow);
+        if (fromJwt) {
+            this._persistOpsCurrentUserId(fromJwt, 'jwt');
+            return fromJwt;
+        }
+
+        return this._opsCurrentUserIdCache || '';
     },
 
     _getOpsTeamUuidByLabel(label) {

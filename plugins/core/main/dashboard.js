@@ -11,11 +11,13 @@
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_BOOTSTRAP_VERSION = 1;
+const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
 const DASH_DISPUTES_PAGE_SIZE = 50;
+const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 
@@ -100,6 +102,10 @@ function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
     return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
 }
+function dashFleetDisputeUrl(disputeId) {
+    const id = String(disputeId || '').trim();
+    return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
+}
 
 // ── Formatting ──
 
@@ -153,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.21',
+    _version: '3.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -196,6 +202,7 @@ const plugin = {
             appliedFilters: null,
             filterListOptions: null,
             cardUi: {},
+            disputeClaimUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
@@ -222,6 +229,13 @@ const plugin = {
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             if (!parsed || parsed.version !== DASH_BOOTSTRAP_VERSION) return null;
+            if (parsed.updatedAt) {
+                const ageMs = Date.now() - Date.parse(parsed.updatedAt);
+                if (!Number.isNaN(ageMs) && ageMs > DASH_BOOTSTRAP_TTL_MS) {
+                    Logger.debug('dashboard: bootstrap cache expired (age ' + Math.round(ageMs / 3600000) + 'h)');
+                    return null;
+                }
+            }
             return parsed;
         } catch (_e) {
             return null;
@@ -303,33 +317,8 @@ const plugin = {
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 
-    async _pgGet(tableKey, params, channel) {
-        const ops = this._dashOpsTab();
-        if (typeof ops.postgrestGet !== 'function') {
-            throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
-        }
-        if (channel === 'search' && !this._state.searchFetchActive) {
-            Logger.warn('dashboard: blocked PostgREST call outside search — ' + tableKey);
-            throw new Error('PostgREST call blocked: data is cached until a new search.');
-        }
-        const rows = await ops.postgrestGet(tableKey, params || {});
-        return Array.isArray(rows) ? rows : (rows ? [rows] : []);
-    },
-
     _dashFleetWebPath(key) {
         return this._dashOpsTab().getFleetWebPath(key);
-    },
-
-    _pgGetBootstrap(table, params) {
-        return this._pgGet(table, params, 'bootstrap');
-    },
-
-    _pgGetAuthorLookup(table, params) {
-        return this._pgGet(table, params, 'author');
-    },
-
-    _pgGetSearch(table, params) {
-        return this._pgGet(table, params, 'search');
     },
 
     // ── Fleet web API (session cookies; same-origin) ──
@@ -362,6 +351,33 @@ const plugin = {
         return this._fleetWebGet(path, 'search');
     },
 
+    async _fleetWebPost(path) {
+        const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
+        const pageWindow = this._pageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                accept: '*/*',
+                referer: DASH_FLEET_ORIGIN + '/work/problems/disputes'
+            }
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Fleet web API ' + res.status + ': ' + (text || res.statusText));
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return res.json().catch(() => null);
+        }
+        return null;
+    },
+
+    _disputeClaimApiPath(disputeId) {
+        return '/disputes/' + encodeURIComponent(String(disputeId)) + '/claim';
+    },
+
     _dashNormProfileId(id) {
         return String(id == null ? '' : id).trim().toLowerCase();
     },
@@ -392,17 +408,21 @@ const plugin = {
         return this._disputeInCreatedAtRange(timestamp, afterIso, beforeIso);
     },
 
-    async _fetchDisputesBulkPages(teamIds, statusParam) {
+    async _fetchDisputesBulkPages(teamIds, statusParam, afterIso, beforeIso) {
         const allRows = [];
         let offset = 0;
         let pageNum = 0;
-        while (true) {
+        while (pageNum < DASH_DISPUTES_MAX_PAGES) {
             const qs = new URLSearchParams({
                 teamIds: teamIds.join(','),
                 limit: String(DASH_DISPUTES_PAGE_SIZE),
                 offset: String(offset)
             });
             if (statusParam) qs.set('status', statusParam);
+            // Fleet /api/disputes does not document server-side date filters; send optional
+            // params so they apply if the API supports them without breaking if ignored.
+            if (afterIso) qs.set('createdAfter', afterIso);
+            if (beforeIso) qs.set('createdBefore', beforeIso);
             let page;
             try {
                 page = await this._fleetWebGetSearch(this._dashFleetWebPath('disputes_list') + '?' + qs.toString());
@@ -418,6 +438,10 @@ const plugin = {
             allRows.push(...rows);
             if (rows.length < DASH_DISPUTES_PAGE_SIZE) break;
             offset += DASH_DISPUTES_PAGE_SIZE;
+        }
+        if (pageNum >= DASH_DISPUTES_MAX_PAGES) {
+            Logger.warn('dashboard: disputes bulk pagination capped at ' + DASH_DISPUTES_MAX_PAGES
+                + ' pages — results may be incomplete; narrow the date range');
         }
         return allRows;
     },
@@ -436,10 +460,12 @@ const plugin = {
                 return norm === raw ? [raw] : [raw, norm];
             }))
             : null;
-        const openRows = contributorSet
-            ? []
-            : await this._fetchDisputesBulkPages(teamIds, null);
-        const resolvedRows = await this._fetchDisputesBulkPages(teamIds, 'resolved');
+        const [openRows, resolvedRows] = contributorSet
+            ? [[], await this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso)]
+            : await Promise.all([
+                this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso),
+                this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso)
+            ]);
         const seenIds = new Set();
         const allRows = [];
         for (const row of [...openRows, ...resolvedRows]) {
@@ -517,10 +543,6 @@ const plugin = {
         return qs;
     },
 
-    _evalTasksSelect() {
-        return this._dashOpsTab().getPostgrestSelect('tasks.select_with_current_version');
-    },
-
     _projectIdFromTargetId(targetId, targetToProjectId) {
         if (!targetId) return '';
         return (targetToProjectId && targetToProjectId.get(targetId)) || '';
@@ -545,6 +567,22 @@ const plugin = {
         const map = new Map();
         for (const p of profileRows) map.set(p.id, { full_name: p.full_name, email: p.email });
         return map;
+    },
+
+    async _supplementProfilesMap(profilesMap, extraIds) {
+        const missing = [...new Set((extraIds || []).filter(Boolean))]
+            .filter((id) => !profilesMap.has(id));
+        if (missing.length === 0) return;
+        const rows = await this._pgQuery('profiles.select_person', {
+            id: 'in.(' + missing.join(',') + ')'
+        }, 'search').catch((e) => {
+            Logger.warn('dashboard: supplemental profile lookup failed', e);
+            return [];
+        });
+        for (const [id, profile] of this._buildProfilesMap(rows)) {
+            profilesMap.set(id, profile);
+        }
+        Logger.debug('dashboard: supplemental profiles resolved (' + rows.length + ' / ' + missing.length + ')');
     },
 
     _rowToTask(row, profilesMap, versionOverride, targetToProjectId) {
@@ -639,33 +677,33 @@ const plugin = {
 
     async _runBootstrap() {
         const teamCatalog = this._getSearchableTeamCatalog();
-        const projectsById = new Map();
-        if (teamCatalog.length > 0) {
-            const pages = await Promise.all(teamCatalog.map(([teamId]) => this._pgQuery('task_projects.select_bootstrap', {
-                status: 'neq.archived',
-                order: 'created_at.desc',
-                team_id: 'eq.' + teamId,
-                limit: 200
-            }, 'bootstrap').catch((e) => {
-                Logger.debug('dashboard: bootstrap projects failed for team ' + teamId.slice(0, 8), e);
-                return [];
-            })));
-            for (const page of pages) {
-                for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
-            }
-        } else {
-            const page = await this._pgQuery('task_projects.select_bootstrap', {
-                status: 'neq.archived',
-                order: 'created_at.desc',
-                limit: 400
-            }, 'bootstrap');
-            for (const row of page) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
+        const teamIds = teamCatalog.map(([id]) => id);
+        const projectsParams = {
+            status: 'neq.archived',
+            order: 'created_at.desc',
+            limit: '400'
+        };
+        if (teamIds.length === 1) {
+            projectsParams.team_id = 'eq.' + teamIds[0];
+        } else if (teamIds.length > 1) {
+            projectsParams.team_id = 'in.(' + teamIds.join(',') + ')';
         }
+        const [projectPages, environments] = await Promise.all([
+            teamIds.length > 0
+                ? this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap').catch((e) => {
+                    Logger.warn('dashboard: bootstrap projects fetch failed', e);
+                    return [];
+                })
+                : this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap'),
+            this._pgQuery('environments.select_bootstrap', {
+                deleted_at: 'is.null',
+                order: 'env_key.asc'
+            }, 'bootstrap')
+        ]);
+        const projectsById = new Map();
+        const projectRows = Array.isArray(projectPages) ? projectPages : [];
+        for (const row of projectRows) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
         const projects = Array.from(projectsById.values());
-        const environments = await this._pgQuery('environments.select_bootstrap', {
-            deleted_at: 'is.null',
-            order: 'env_key.asc'
-        }, 'bootstrap');
         return this._writeBootstrapCache({ projects, environments });
     },
 
@@ -880,7 +918,7 @@ const plugin = {
         return allFeedback;
     },
 
-    async _buildEnrichedTasksById(taskRows, feedbackRows) {
+    async _buildEnrichedTasksById(taskRows, feedbackRows, enrichOptions) {
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
         const profileIds = new Set();
         for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
@@ -896,8 +934,12 @@ const plugin = {
         const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
 
         const allTaskIds = [...taskById.keys()];
+        const opts = enrichOptions || {};
         const enrichment = allTaskIds.length > 0
-            ? await Context.dashboardData.enrichTasksWithHistory(allTaskIds, profilesMap)
+            ? await Context.dashboardData.enrichTasksWithHistory(allTaskIds, profilesMap, {
+                prefetchedFeedbackRows: opts.prefetchedFeedbackRows || feedbackRows,
+                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+            })
             : new Map();
         Logger.debug('dashboard: search enrichment complete (' + allTaskIds.length + ' task(s))');
 
@@ -1020,18 +1062,22 @@ const plugin = {
     },
 
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
-        let bulkByTaskId = new Map();
-        if (includeDisputes) {
-            const bulk = await this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope);
-            bulkByTaskId = bulk.byTaskId;
-        }
+        const disputesPromise = includeDisputes
+            ? this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope)
+            : Promise.resolve({ byTaskId: new Map(), rows: [] });
+        const tasksPromise = includeTaskCreation
+            ? this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            : Promise.resolve([]);
+        const qaPromise = includeQa
+            ? this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            : Promise.resolve([]);
 
-        const creationRows = includeTaskCreation
-            ? await this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
-            : [];
-        const feedbackRows = includeQa
-            ? await this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
-            : [];
+        const [disputesBulk, creationRows, feedbackRows] = await Promise.all([
+            disputesPromise,
+            tasksPromise,
+            qaPromise
+        ]);
+        const bulkByTaskId = disputesBulk.byTaskId;
 
         const disputeTaskIds = includeDisputes ? [...bulkByTaskId.keys()] : [];
 
@@ -1073,7 +1119,13 @@ const plugin = {
             }
         }
 
-        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows);
+        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
+            prefetchedFeedbackRows: allFeedbackRows,
+            skipFeedbackFetch: !includeQa && !includeDisputes
+        });
+        if (includeDisputes && disputesBulk.rows.length > 0) {
+            await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
+        }
 
         const items = [];
         if (includeTaskCreation) {
@@ -1836,6 +1888,13 @@ const plugin = {
                 this._patchTaskCard(itemId);
                 return;
             }
+            const disputeClaimBtn = e.target.closest('[data-wf-dash-dispute-claim]');
+            if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
+                const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
+                const itemId = disputeClaimBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) void this._claimDispute(disputeId, itemId);
+                return;
+            }
             if (!e.target.closest('[data-wf-dash-ms-wrap]') && Object.keys(this._state.msDropdownOpen).length > 0) {
                 this._closeAllMsDropdowns();
             }
@@ -2303,7 +2362,7 @@ const plugin = {
         if (!this._state.cardUi[taskId]) {
             this._state.cardUi[taskId] = {
                 expanded: false,
-                timelineNewestFirst: true,
+                timelineNewestFirst: false,
                 selectedDisplayNo: null
             };
         }
@@ -2313,6 +2372,38 @@ const plugin = {
     _findResultItem(itemId) {
         const items = this._state.filteredItems || [];
         return items.find((it) => it.id === itemId) || null;
+    },
+
+    _getDisputeClaimUi(disputeId) {
+        const id = String(disputeId || '').trim();
+        if (!id) return { status: 'idle' };
+        if (!this._state.disputeClaimUi[id]) {
+            this._state.disputeClaimUi[id] = { status: 'idle' };
+        }
+        return this._state.disputeClaimUi[id];
+    },
+
+    async _claimDispute(disputeId, itemId) {
+        const id = String(disputeId || '').trim();
+        if (!id || !itemId) return;
+        const ui = this._getDisputeClaimUi(id);
+        if (ui.status === 'claiming' || ui.status === 'claimed') return;
+        ui.status = 'claiming';
+        this._patchTaskCard(itemId);
+        try {
+            await this._fleetWebPost(this._disputeClaimApiPath(id));
+            ui.status = 'claimed';
+            const url = dashFleetDisputeUrl(id);
+            Logger.log('dashboard: dispute ' + id + ' claimed — opening ' + url);
+            if (url) {
+                this._pageWindow().open(url, '_blank', 'noopener,noreferrer');
+            }
+        } catch (e) {
+            ui.status = 'idle';
+            Logger.warn('dashboard: dispute claim failed — ' + id, e);
+        } finally {
+            this._patchTaskCard(itemId);
+        }
     },
 
     _patchTaskCard(itemId) {
@@ -2482,6 +2573,35 @@ const plugin = {
         return true;
     },
 
+    _filterArraysEqual(a, b) {
+        const left = [...(a || [])].sort();
+        const right = [...(b || [])].sort();
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i++) {
+            if (left[i] !== right[i]) return false;
+        }
+        return true;
+    },
+
+    _filtersDraftDiffersFromApplied() {
+        const applied = this._state.appliedFilters;
+        if (!applied) return false;
+        const draft = this._currentClientFilters();
+        if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
+        if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
+        if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
+        if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
+        if (draft.sortOrder !== applied.sortOrder) return true;
+        const keys = [
+            'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
+            'promptRatings', 'taskIssues', 'returnTypes', 'outputKinds', 'promptHistory'
+        ];
+        for (const key of keys) {
+            if (!this._filterArraysEqual(draft[key], applied[key])) return true;
+        }
+        return false;
+    },
+
     _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
@@ -2496,9 +2616,10 @@ const plugin = {
             }
         }
         const selectionValid = this._isFilterSelectionValid();
+        const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
         if (applyBtn) {
-            const disabled = !this._state.cachedItems || tooShort || !selectionValid;
+            const disabled = !this._state.cachedItems || tooShort || !selectionValid || !hasPendingChanges;
             applyBtn.disabled = disabled;
             applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
         }
@@ -2543,9 +2664,13 @@ const plugin = {
                 searchTeamIds: this._selectedFromList('search-teams'),
                 searchProjectIds: this._selectedFromList('search-projects'),
                 searchEnvKeys: this._selectedFromList('search-envs')
-            }) && !lib.validateUniversalSearchRange(after, before).allowed) {
-                this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
-                return;
+            })) {
+                const quickPreset = ((this._q('#wf-dash-quick-range') || {}).value || '');
+                const isAllTime = quickPreset === 'all-time';
+                if (!isAllTime && !lib.validateUniversalSearchRange(after, before).allowed) {
+                    this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
+                    return;
+                }
             }
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
@@ -2652,6 +2777,7 @@ const plugin = {
         this._state.hasSearched = false;
         this._state.committed = null;
         this._state.cardUi = {};
+        this._state.disputeClaimUi = {};
         this._resetFilterLists();
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
@@ -2856,11 +2982,17 @@ const plugin = {
         </button>`;
     },
 
+    _extLinkIconSvg(active) {
+        const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
+        const opacity = active ? '1' : '0.45';
+        return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${opacity}; flex-shrink: 0;"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>`;
+    },
+
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
         return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); text-decoration: none;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+            ${this._extLinkIconSvg(true)}
         </a>`;
     },
 
@@ -2978,6 +3110,12 @@ const plugin = {
         };
     },
 
+    _disputeCategoryBadgeHtml(category) {
+        const label = String(category || '').trim();
+        if (!label) return '';
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
+    },
+
     _qaYellowBlockStyle() {
         return {
             border: '1px solid #9a3412',
@@ -3083,7 +3221,27 @@ const plugin = {
         </button>`;
     },
 
-    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy) {
+    _disputeClaimControlHtml(display, itemId) {
+        if (display.resolutionAt) return '';
+        const disputeId = String(display.id || '').trim();
+        if (!disputeId) return '';
+        const ui = this._getDisputeClaimUi(disputeId);
+        const url = dashFleetDisputeUrl(disputeId);
+        const baseStyle = this._btnStyle()
+            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;'
+            + ' border-color: #7c3aed; color: #5b21b6;';
+        if (ui.status === 'claimed' && url) {
+            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" style="${baseStyle} text-decoration: none;">`
+                + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
+        }
+        if (ui.status === 'claiming') {
+            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">${this._loadingSpinnerHtml(14)}</button>`;
+        }
+        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" style="${baseStyle}">`
+            + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
+    },
+
+    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, itemId) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -3096,9 +3254,7 @@ const plugin = {
         const submittedHtml = display.submittedAt
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
             : '';
-        const categoryHtml = display.category
-            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #5b21b6; background: color-mix(in srgb, #7c3aed 14%, transparent);">${dashEscHtml(display.category)}</span>`
-            : '';
+        const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
         let resolutionHtml = '';
         if (display.resolutionAt) {
             let resBorder;
@@ -3121,6 +3277,9 @@ const plugin = {
                 ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz)
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
+            const resolverHtml = display.resolverId
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                : '';
             resolutionHtml = `
                 <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
                     <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
@@ -3129,6 +3288,7 @@ const plugin = {
                             ${resolvedHtml}
                             ${statusLabel}
                         </div>
+                        ${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
@@ -3136,12 +3296,16 @@ const plugin = {
                     </div>
                 </div>`;
         }
+        const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         return `
             <div style="margin-top: 8px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
-                    ${submittedHtml}
-                    ${categoryHtml}
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
+                        ${submittedHtml}
+                        ${categoryHtml}
+                    </div>
+                    ${claimControlHtml}
                 </div>
                 <div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
@@ -3181,7 +3345,7 @@ const plugin = {
         return byDisplayNo;
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -3193,11 +3357,11 @@ const plugin = {
             : this._labelSpan('Prompt');
         const feedbackHtml = feedbackEntries.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz);
-            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
+            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
             return qaHtml + linkedDisputes;
         }).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz) : '';
-        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz)).join('');
+        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -3319,7 +3483,7 @@ const plugin = {
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes
+                orphanDisputes, itemId
             );
         }).join('');
 

@@ -160,7 +160,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -721,11 +721,13 @@ const plugin = {
         return result;
     },
 
-    _buildDisputeDisplay(disputeRow, _profilesMap) {
+    _buildDisputeDisplay(disputeRow, profilesMap) {
         const data = dashLibParseFeedbackData(disputeRow && disputeRow.dispute_data);
         const status = String((disputeRow && disputeRow.dispute_status) || 'pending').toLowerCase();
         const category = data && data.category ? String(data.category) : '';
         const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
+        const resolverId = disputeRow && disputeRow.resolved_by ? String(disputeRow.resolved_by) : '';
+        const resolverProfile = resolverId && profilesMap ? profilesMap.get(resolverId) : null;
         return {
             id: String((disputeRow && disputeRow.id) || ''),
             submittedAt: String((disputeRow && disputeRow.created_at) || ''),
@@ -737,6 +739,9 @@ const plugin = {
             resolutionText: resolvedAt
                 ? dashLibNormalizeNewlines((disputeRow && disputeRow.resolution_reason) || '')
                 : '',
+            resolverId,
+            resolverName: String((resolverProfile && resolverProfile.full_name) || ''),
+            resolverEmail: String((resolverProfile && resolverProfile.email) || ''),
             isApproved: status === 'approved',
             isRejected: status === 'rejected',
             originalFeedbackCreatedAt: disputeRow && disputeRow.original_feedback_created_at
