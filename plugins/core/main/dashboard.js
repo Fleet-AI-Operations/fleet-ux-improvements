@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.24',
+    _version: '3.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3106,8 +3106,10 @@ const plugin = {
         };
     },
 
-    _disputeReasonTextStyle() {
-        return 'margin: 4px 0 0 0; padding: 8px 10px 8px 12px; border-left: 3px solid #5b21b6; white-space: pre-wrap; line-height: 1.55; color: #0f172a; background: color-mix(in srgb, var(--card, #ffffff) 82%, #ffffff); border-radius: 0 4px 4px 0;';
+    _disputeCategoryBadgeHtml(category) {
+        const label = String(category || '').trim();
+        if (!label) return '';
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
     _qaYellowBlockStyle() {
@@ -3248,9 +3250,7 @@ const plugin = {
         const submittedHtml = display.submittedAt
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
             : '';
-        const categoryHtml = display.category
-            ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #5b21b6; background: color-mix(in srgb, #7c3aed 14%, transparent);">${dashEscHtml(display.category)}</span>`
-            : '';
+        const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
         let resolutionHtml = '';
         if (display.resolutionAt) {
             let resBorder;
@@ -3287,7 +3287,7 @@ const plugin = {
                         ${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
-                            <p style="${this._disputeReasonTextStyle()}">${resolutionBody}</p>
+                            <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
                         </div>
                     </div>
                 </div>`;
@@ -3305,7 +3305,7 @@ const plugin = {
                 </div>
                 <div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
-                    <p style="${this._disputeReasonTextStyle()}">${reasonBody}</p>
+                    <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
                 </div>
                 ${resolutionHtml}
             </div>`;
