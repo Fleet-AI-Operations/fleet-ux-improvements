@@ -155,7 +155,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.22',
+    _version: '3.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -535,6 +535,22 @@ const plugin = {
         const map = new Map();
         for (const p of profileRows) map.set(p.id, { full_name: p.full_name, email: p.email });
         return map;
+    },
+
+    async _supplementProfilesMap(profilesMap, extraIds) {
+        const missing = [...new Set((extraIds || []).filter(Boolean))]
+            .filter((id) => !profilesMap.has(id));
+        if (missing.length === 0) return;
+        const rows = await this._pgQuery('profiles.select_person', {
+            id: 'in.(' + missing.join(',') + ')'
+        }, 'search').catch((e) => {
+            Logger.warn('dashboard: supplemental profile lookup failed', e);
+            return [];
+        });
+        for (const [id, profile] of this._buildProfilesMap(rows)) {
+            profilesMap.set(id, profile);
+        }
+        Logger.debug('dashboard: supplemental profiles resolved (' + rows.length + ' / ' + missing.length + ')');
     },
 
     _rowToTask(row, profilesMap, versionOverride, targetToProjectId) {
@@ -1075,6 +1091,9 @@ const plugin = {
             prefetchedFeedbackRows: allFeedbackRows,
             skipFeedbackFetch: !includeQa && !includeDisputes
         });
+        if (includeDisputes && disputesBulk.rows.length > 0) {
+            await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
+        }
 
         const items = [];
         if (includeTaskCreation) {
@@ -2304,7 +2323,7 @@ const plugin = {
         if (!this._state.cardUi[taskId]) {
             this._state.cardUi[taskId] = {
                 expanded: false,
-                timelineNewestFirst: true,
+                timelineNewestFirst: false,
                 selectedDisplayNo: null
             };
         }
@@ -2483,6 +2502,35 @@ const plugin = {
         return true;
     },
 
+    _filterArraysEqual(a, b) {
+        const left = [...(a || [])].sort();
+        const right = [...(b || [])].sort();
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i++) {
+            if (left[i] !== right[i]) return false;
+        }
+        return true;
+    },
+
+    _filtersDraftDiffersFromApplied() {
+        const applied = this._state.appliedFilters;
+        if (!applied) return false;
+        const draft = this._currentClientFilters();
+        if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
+        if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
+        if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
+        if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
+        if (draft.sortOrder !== applied.sortOrder) return true;
+        const keys = [
+            'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
+            'promptRatings', 'taskIssues', 'returnTypes', 'outputKinds', 'promptHistory'
+        ];
+        for (const key of keys) {
+            if (!this._filterArraysEqual(draft[key], applied[key])) return true;
+        }
+        return false;
+    },
+
     _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
@@ -2497,9 +2545,10 @@ const plugin = {
             }
         }
         const selectionValid = this._isFilterSelectionValid();
+        const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
         if (applyBtn) {
-            const disabled = !this._state.cachedItems || tooShort || !selectionValid;
+            const disabled = !this._state.cachedItems || tooShort || !selectionValid || !hasPendingChanges;
             applyBtn.disabled = disabled;
             applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
         }
@@ -2983,6 +3032,10 @@ const plugin = {
         };
     },
 
+    _disputeReasonTextStyle() {
+        return 'margin: 4px 0 0 0; padding: 8px 10px 8px 12px; border-left: 3px solid #5b21b6; white-space: pre-wrap; line-height: 1.55; color: #0f172a; background: color-mix(in srgb, var(--card, #ffffff) 82%, #ffffff); border-radius: 0 4px 4px 0;';
+    },
+
     _qaYellowBlockStyle() {
         return {
             border: '1px solid #9a3412',
@@ -3126,6 +3179,9 @@ const plugin = {
                 ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz)
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
+            const resolverHtml = display.resolverId
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                : '';
             resolutionHtml = `
                 <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
                     <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
@@ -3134,9 +3190,10 @@ const plugin = {
                             ${resolvedHtml}
                             ${statusLabel}
                         </div>
+                        ${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
-                            <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
+                            <p style="${this._disputeReasonTextStyle()}">${resolutionBody}</p>
                         </div>
                     </div>
                 </div>`;
@@ -3150,7 +3207,7 @@ const plugin = {
                 </div>
                 <div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
-                    <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
+                    <p style="${this._disputeReasonTextStyle()}">${reasonBody}</p>
                 </div>
                 ${resolutionHtml}
             </div>`;
