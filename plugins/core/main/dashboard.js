@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.25',
+    _version: '3.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2393,7 +2393,11 @@ const plugin = {
         try {
             await this._fleetWebPost(this._disputeClaimApiPath(id));
             ui.status = 'claimed';
-            Logger.log('dashboard: dispute ' + id + ' claimed');
+            const url = dashFleetDisputeUrl(id);
+            Logger.log('dashboard: dispute ' + id + ' claimed — opening ' + url);
+            if (url) {
+                this._pageWindow().open(url, '_blank', 'noopener,noreferrer');
+            }
         } catch (e) {
             ui.status = 'idle';
             Logger.warn('dashboard: dispute claim failed — ' + id, e);
