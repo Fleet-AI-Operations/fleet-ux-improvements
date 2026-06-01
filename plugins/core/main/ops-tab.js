@@ -137,7 +137,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -201,7 +201,8 @@ const plugin = {
             postgrestQuery: (queryKey, overrides) => this._opsPostgrestQuery(queryKey, overrides),
             // tableKey → resolved table name from decrypted ops bundle
             postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params),
-            isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err)
+            isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
+            getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -526,50 +527,12 @@ const plugin = {
         return window;
     },
 
-    _decodeOpsJwtPayload(jwt) {
-        if (!jwt || typeof jwt !== 'string') return null;
-        const parts = jwt.split('.');
-        if (parts.length !== 3) return null;
-        try {
-            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-            const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-            return JSON.parse(atob(padded));
-        } catch (_e) {
-            return null;
+    _getOpsFleetUserJwt(pageWindow) {
+        const no = Context.networkObserver;
+        if (no && typeof no.getFleetUserJwt === 'function') {
+            return no.getFleetUserJwt(pageWindow);
         }
-    },
-
-    _isOpsSupabaseAnonKey(key) {
-        const payload = this._decodeOpsJwtPayload(key);
-        return payload && payload.role === 'anon';
-    },
-
-    _extractOpsAccessTokenFromValue(value) {
-        if (!value || typeof value !== 'string') return '';
-        try {
-            let candidate = value;
-            if (candidate.startsWith('base64-')) {
-                candidate = atob(candidate.slice('base64-'.length));
-            }
-            const parsed = JSON.parse(candidate);
-            const direct =
-                (parsed && parsed.access_token) ||
-                (parsed && parsed.currentSession && parsed.currentSession.access_token) ||
-                (parsed && parsed.session && parsed.session.access_token) ||
-                (Array.isArray(parsed) && (
-                    (parsed[0] && parsed[0].access_token) ||
-                    (parsed[1] && parsed[1].access_token) ||
-                    (parsed[0] && parsed[0].currentSession && parsed[0].currentSession.access_token) ||
-                    (parsed[1] && parsed[1].currentSession && parsed[1].currentSession.access_token) ||
-                    (parsed[0] && parsed[0].session && parsed[0].session.access_token) ||
-                    (parsed[1] && parsed[1].session && parsed[1].session.access_token)
-                ));
-            if (typeof direct === 'string' && direct.length > 0) return direct;
-        } catch (_e) {
-            /* fall through to regex extraction */
-        }
-        const match = value.match(/"access_token"\s*:\s*"([^"]+)"/);
-        return match ? match[1] : '';
+        return '';
     },
 
     _opsSessionRefreshRequiredError(message) {
@@ -586,80 +549,6 @@ const plugin = {
         if (!err || typeof err.message !== 'string') return false;
         if (!/\b401\b/.test(err.message)) return false;
         return /JWT expired|PGRST301/i.test(err.message);
-    },
-
-    _getOpsSupabaseAccessTokenFromStorage(storage) {
-        if (!storage) return '';
-        for (let i = 0; i < storage.length; i++) {
-            const key = storage.key(i);
-            if (!key) continue;
-            const raw = storage.getItem(key);
-            if (!raw) continue;
-            const shouldInspect =
-                key.startsWith('sb-') ||
-                key.toLowerCase().includes('supabase') ||
-                raw.includes('"access_token"');
-            if (!shouldInspect) continue;
-            const token = this._extractOpsAccessTokenFromValue(raw);
-            if (token) return token;
-        }
-        return '';
-    },
-
-    _getOpsSupabaseAccessTokenFromCookies(pageWindow) {
-        try {
-            const cookie = (pageWindow.document && pageWindow.document.cookie) || document.cookie || '';
-            if (!cookie) return '';
-            const parts = cookie.split(/;\s*/);
-            const authParts = parts
-                .map(part => {
-                    const eq = part.indexOf('=');
-                    return eq >= 0 ? [part.slice(0, eq), part.slice(eq + 1)] : [part, ''];
-                })
-                .filter(([key]) => key.startsWith('sb-') && key.includes('auth-token'));
-            const grouped = new Map();
-            authParts.forEach(([key, value]) => {
-                const base = key.replace(/\.\d+$/, '');
-                const indexMatch = key.match(/\.(\d+)$/);
-                const index = indexMatch ? Number(indexMatch[1]) : 0;
-                if (!grouped.has(base)) grouped.set(base, []);
-                grouped.get(base).push({ index, value });
-            });
-            for (const group of grouped.values()) {
-                const decoded = group
-                    .sort((a, b) => a.index - b.index)
-                    .map(({ value }) => decodeURIComponent(value || ''))
-                    .join('');
-                const token = this._extractOpsAccessTokenFromValue(decoded);
-                if (token) return token;
-            }
-            for (const [, value] of authParts) {
-                const decoded = decodeURIComponent(value || '');
-                const token = this._extractOpsAccessTokenFromValue(decoded);
-                if (token) return token;
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: cookie token read failed', e);
-        }
-        return '';
-    },
-
-    _getOpsSupabaseAccessToken(pageWindow) {
-        const win = pageWindow || this._getOpsPageWindow();
-        try {
-            return (
-                this._getOpsSupabaseAccessTokenFromStorage(win.localStorage) ||
-                this._getOpsSupabaseAccessTokenFromStorage(win.sessionStorage) ||
-                this._getOpsSupabaseAccessTokenFromCookies(win)
-            );
-        } catch (e) {
-            Logger.debug('ops-tab: token read failed', e);
-        }
-        return '';
-    },
-
-    _extractOpsJwtToken(pageWindow) {
-        return this._getOpsSupabaseAccessToken(pageWindow);
     },
 
     _getOpsRuntimeAccess() {
@@ -682,18 +571,6 @@ const plugin = {
         return { baseUrl, anonKey, projectRef: access.supabaseProjectRef || null };
     },
 
-    _getOpsPostgrestAccessToken(pageWindow) {
-        const intercepted = this._getOpsRuntimeAccess().supabaseAccessToken;
-        if (intercepted && !this._isOpsSupabaseAnonKey(intercepted)) {
-            return intercepted;
-        }
-        const fallback = this._getOpsSupabaseAccessToken(pageWindow);
-        if (fallback && !this._isOpsSupabaseAnonKey(fallback)) {
-            return fallback;
-        }
-        return '';
-    },
-
     _getOpsPostgrestHeaders() {
         const pageWindow = this._getOpsPageWindow();
         const { anonKey } = this._ensureOpsRuntimeAccess();
@@ -703,7 +580,7 @@ const plugin = {
             apikey: anonKey,
             'x-client-info': 'fleet-ux-ops-tab/' + this._version
         };
-        const token = this._getOpsPostgrestAccessToken(pageWindow);
+        const token = this._getOpsFleetUserJwt(pageWindow);
         if (token) {
             headers.authorization = 'Bearer ' + token;
         }
@@ -968,9 +845,10 @@ const plugin = {
     },
 
     _extractOpsUserIdFromJwt(pageWindow) {
-        const jwt = this._extractOpsJwtToken(pageWindow);
+        const jwt = this._getOpsFleetUserJwt(pageWindow);
         if (!jwt) return '';
-        const payload = this._decodeOpsJwtPayload(jwt);
+        const decode = Context.networkObserver && Context.networkObserver.decodeJwtPayload;
+        const payload = decode ? decode(jwt) : null;
         const sub = payload && payload.sub;
         return typeof sub === 'string' && OPS_UUID_RE.test(sub) ? sub : '';
     },
@@ -2155,9 +2033,9 @@ const plugin = {
 
     async _fetchOpsVerifierCodeFromOrchestrator(resolved) {
         const pageWindow = this._getOpsPageWindow();
-        const jwt = this._extractOpsJwtToken(pageWindow);
+        const jwt = this._getOpsFleetUserJwt(pageWindow);
         if (!jwt) {
-            Logger.debug('ops-tab: orchestrator skipped — no JWT');
+            Logger.warn('ops-tab: orchestrator skipped — no Fleet user JWT (open Fleet on a data page)');
             return null;
         }
         if (!resolved.verifierId) {
@@ -2188,7 +2066,11 @@ const plugin = {
             });
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                Logger.debug('ops-tab: orchestrator HTTP ' + res.status + ' for ' + resolved.verifierId, text.slice(0, 200));
+                Logger.warn('ops-tab: orchestrator HTTP ' + res.status, {
+                    verifierId: resolved.verifierId,
+                    teamId: teamId || '(none)',
+                    body: text.slice(0, 200)
+                });
                 return null;
             }
             const body = await res.json().catch(() => null);
@@ -2261,9 +2143,13 @@ const plugin = {
         const rows = await this._opsPostgrestQuery('verifier_versions.select_source', params);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
+            const pageWindow = this._getOpsPageWindow();
+            if (!this._getOpsFleetUserJwt(pageWindow)) {
+                throw this._opsSessionRefreshRequiredError();
+            }
             const hint = resolved.teamId
-                ? 'No verifier version rows for team ' + resolved.teamId.slice(0, 8) + '…'
-                : 'Verifier versions may require a team context that could not be resolved automatically.';
+                ? 'PostgREST returned no rows (RLS or team scope). Team ' + resolved.teamId.slice(0, 8) + '…'
+                : 'PostgREST returned no rows — likely RLS or missing team context.';
             throw new Error('No verifier version found for ' + resolved.verifierId + '. ' + hint);
         }
         if (!row.display_src) {

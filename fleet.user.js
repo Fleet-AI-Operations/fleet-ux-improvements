@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.2.0
+// @version      9.3.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.2.0';
+    const VERSION = '9.3.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1087,6 +1087,225 @@
         supabaseAccessToken: 'fleet-ux:supabase-access-token'
     };
 
+    /** Reject user JWTs this many seconds before exp (clock skew). */
+    const FLEET_SESSION_JWT_EXPIRY_SKEW_SEC = 60;
+
+    /**
+     * Monolithic Fleet user JWT: parse sb-* storage, merge by exp, passive capture.
+     * All consumers use NetworkObserver.getFleetUserJwt() / refreshFromPage().
+     */
+    const FleetSessionAuth = {
+        _decodeJwtPayload(jwt) {
+            if (!jwt || typeof jwt !== 'string') return null;
+            const parts = jwt.split('.');
+            if (parts.length !== 3) return null;
+            try {
+                const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+                return JSON.parse(atob(padded));
+            } catch (_e) {
+                return null;
+            }
+        },
+
+        _jwtExpSeconds(jwt) {
+            const payload = this._decodeJwtPayload(jwt);
+            return payload && Number.isFinite(payload.exp) ? payload.exp : null;
+        },
+
+        _isAnonJwt(jwt, projectRef) {
+            const payload = this._decodeJwtPayload(jwt);
+            if (!payload || payload.role !== 'anon') return false;
+            if (!projectRef) return true;
+            return payload.ref === projectRef;
+        },
+
+        _isJwtExpired(jwt, projectRef, skewSec) {
+            if (!jwt) return true;
+            if (this._isAnonJwt(jwt, projectRef)) return true;
+            const exp = this._jwtExpSeconds(jwt);
+            if (exp == null) return false;
+            const skew = Number.isFinite(skewSec) ? skewSec : FLEET_SESSION_JWT_EXPIRY_SKEW_SEC;
+            return Date.now() >= (exp * 1000) - skew * 1000;
+        },
+
+        _isValidUserJwt(jwt, projectRef) {
+            return !!(jwt && !this._isAnonJwt(jwt, projectRef) && !this._isJwtExpired(jwt, projectRef));
+        },
+
+        _extractAccessTokenFromValue(value) {
+            if (!value || typeof value !== 'string') return '';
+            try {
+                let candidate = value;
+                if (candidate.startsWith('base64-')) {
+                    candidate = atob(candidate.slice('base64-'.length));
+                }
+                const parsed = JSON.parse(candidate);
+                const direct =
+                    (parsed && parsed.access_token) ||
+                    (parsed && parsed.currentSession && parsed.currentSession.access_token) ||
+                    (parsed && parsed.session && parsed.session.access_token) ||
+                    (Array.isArray(parsed) && (
+                        (parsed[0] && parsed[0].access_token) ||
+                        (parsed[1] && parsed[1].access_token) ||
+                        (parsed[0] && parsed[0].currentSession && parsed[0].currentSession.access_token) ||
+                        (parsed[1] && parsed[1].currentSession && parsed[1].currentSession.access_token) ||
+                        (parsed[0] && parsed[0].session && parsed[0].session.access_token) ||
+                        (parsed[1] && parsed[1].session && parsed[1].session.access_token)
+                    ));
+                if (typeof direct === 'string' && direct.length > 0) return direct;
+            } catch (_e) {
+                /* fall through */
+            }
+            const match = value.match(/"access_token"\s*:\s*"([^"]+)"/);
+            return match ? match[1] : '';
+        },
+
+        _shouldInspectAuthStorageKey(key, raw) {
+            return (
+                (key && key.startsWith('sb-')) ||
+                (key && key.toLowerCase().includes('supabase')) ||
+                (raw && raw.includes('"access_token"'))
+            );
+        },
+
+        _collectFromStorage(storage) {
+            const tokens = [];
+            if (!storage) return tokens;
+            for (let i = 0; i < storage.length; i++) {
+                const key = storage.key(i);
+                if (!key) continue;
+                const raw = storage.getItem(key);
+                if (!raw || !this._shouldInspectAuthStorageKey(key, raw)) continue;
+                const token = this._extractAccessTokenFromValue(raw);
+                if (token) tokens.push(token);
+            }
+            return tokens;
+        },
+
+        _collectFromAuthCookies(pageWindow) {
+            const tokens = [];
+            try {
+                const cookie = (pageWindow && pageWindow.document && pageWindow.document.cookie) || '';
+                if (!cookie) return tokens;
+                const parts = cookie.split(/;\s*/);
+                const authParts = parts
+                    .map((part) => {
+                        const eq = part.indexOf('=');
+                        return eq >= 0 ? [part.slice(0, eq), part.slice(eq + 1)] : [part, ''];
+                    })
+                    .filter(([key]) => key.startsWith('sb-') && key.includes('auth-token'));
+                const grouped = new Map();
+                authParts.forEach(([key, value]) => {
+                    const base = key.replace(/\.\d+$/, '');
+                    const indexMatch = key.match(/\.(\d+)$/);
+                    const index = indexMatch ? Number(indexMatch[1]) : 0;
+                    if (!grouped.has(base)) grouped.set(base, []);
+                    grouped.get(base).push({ index, value });
+                });
+                for (const group of grouped.values()) {
+                    const decoded = group
+                        .sort((a, b) => a.index - b.index)
+                        .map(({ value }) => decodeURIComponent(value || ''))
+                        .join('');
+                    const token = this._extractAccessTokenFromValue(decoded);
+                    if (token) tokens.push(token);
+                }
+                for (const [, value] of authParts) {
+                    const decoded = decodeURIComponent(value || '');
+                    const token = this._extractAccessTokenFromValue(decoded);
+                    if (token) tokens.push(token);
+                }
+            } catch (e) {
+                Logger.debug('FleetSessionAuth: cookie token read failed', e);
+            }
+            return tokens;
+        },
+
+        _collectJwtCandidates(pageWindow, runtimeAccess) {
+            const candidates = [];
+            const push = (token) => {
+                if (token && !candidates.includes(token)) candidates.push(token);
+            };
+            if (runtimeAccess && runtimeAccess.supabaseAccessToken) {
+                push(runtimeAccess.supabaseAccessToken);
+            }
+            try {
+                const storage = pageWindow && pageWindow.localStorage;
+                if (storage) {
+                    const cached = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+                    push(cached);
+                }
+            } catch (_e) { /* ignore */ }
+            if (pageWindow) {
+                this._collectFromStorage(pageWindow.localStorage).forEach(push);
+                this._collectFromStorage(pageWindow.sessionStorage).forEach(push);
+                this._collectFromAuthCookies(pageWindow).forEach(push);
+            }
+            return candidates;
+        },
+
+        _pickBestUserJwt(candidates, projectRef) {
+            let best = '';
+            let bestExp = -1;
+            for (const token of candidates) {
+                if (!this._isValidUserJwt(token, projectRef)) continue;
+                const exp = this._jwtExpSeconds(token);
+                const expScore = exp != null ? exp : Number.MAX_SAFE_INTEGER;
+                if (expScore > bestExp) {
+                    bestExp = expScore;
+                    best = token;
+                }
+            }
+            return best;
+        },
+
+        _shouldReplaceToken(newToken, currentToken, projectRef) {
+            if (!newToken || !this._isValidUserJwt(newToken, projectRef)) return false;
+            if (!currentToken || !this._isValidUserJwt(currentToken, projectRef)) return true;
+            const newExp = this._jwtExpSeconds(newToken);
+            const curExp = this._jwtExpSeconds(currentToken);
+            if (newExp == null) return false;
+            if (curExp == null) return true;
+            return newExp >= curExp;
+        },
+
+        mergeAccessToken(observer, pageWindow, token) {
+            if (!token || !observer) return;
+            const ref = observer._runtimeAccess.supabaseProjectRef;
+            if (this._isAnonJwt(token, ref)) return;
+            const current = observer._runtimeAccess.supabaseAccessToken;
+            if (!this._shouldReplaceToken(token, current, ref)) return;
+            observer._setRuntimeAccessToken(pageWindow, token);
+        },
+
+        refreshFromPage(observer, pageWindow) {
+            if (!observer || !pageWindow) return;
+            observer._loadRuntimeAccessFromStorage(pageWindow);
+            const ref = observer._runtimeAccess.supabaseProjectRef;
+            const candidates = this._collectJwtCandidates(pageWindow, observer._runtimeAccess);
+            const best = this._pickBestUserJwt(candidates, ref);
+            if (best) {
+                observer._setRuntimeAccessToken(pageWindow, best);
+            } else if (observer._runtimeAccess.supabaseAccessToken) {
+                observer._clearRuntimeAccessToken(pageWindow);
+            }
+            const exp = best ? this._jwtExpSeconds(best) : null;
+            Logger.debug('FleetSessionAuth: refreshFromPage', {
+                hasAccessToken: !!best,
+                exp: exp != null ? exp : '(none)'
+            });
+        },
+
+        getFleetUserJwt(observer, pageWindow) {
+            const win = pageWindow || (observer && Context.getPageWindow()) || window;
+            if (observer) this.refreshFromPage(observer, win);
+            const token = observer && observer._runtimeAccess.supabaseAccessToken;
+            const ref = observer && observer._runtimeAccess.supabaseProjectRef;
+            return token && this._isValidUserJwt(token, ref) ? token : '';
+        }
+    };
+
     /**
      * Central page-fetch interception. Owned by the main userscript so dynamic API endpoint
      * discovery happens exactly once and is shared across modules through `Context.networkObserver`.
@@ -1130,12 +1349,7 @@
                 onResponse(meta, response) {
                     response.json().then((body) => {
                         if (!body || !body.access_token) return;
-                        if (observer._jwtIsAnonForRef(body.access_token, observer._runtimeAccess.supabaseProjectRef)) {
-                            return;
-                        }
-                        observer._persistRuntimeAccess(meta.pageWindow, {
-                            supabaseAccessToken: body.access_token
-                        });
+                        FleetSessionAuth.mergeAccessToken(observer, meta.pageWindow, body.access_token);
                         Logger.debug('NetworkObserver: captured access_token from auth/v1/token response');
                     }).catch(() => { /* ignore non-JSON */ });
                 }
@@ -1154,7 +1368,7 @@
                 const anonKeyValid = anonKey ? this._jwtIsAnonForRef(anonKey, projectRef) : false;
                 const baseUrlValid = baseUrl ? this._validRestBaseUrlForRef(baseUrl, projectRef) : false;
                 const accessTokenValid = accessToken
-                    ? !this._jwtIsAnonForRef(accessToken, projectRef)
+                    ? FleetSessionAuth._isValidUserJwt(accessToken, projectRef)
                     : false;
 
                 if (anonKey && !anonKeyValid) {
@@ -1265,10 +1479,38 @@
             const bearer = authHeader && authHeader.startsWith('Bearer ')
                 ? authHeader.slice(7).trim()
                 : null;
-            if (bearer && !this._jwtIsAnonForRef(bearer, ref)) {
-                update.supabaseAccessToken = bearer;
-            }
             this._persistRuntimeAccess(meta.pageWindow, update);
+            if (bearer) {
+                FleetSessionAuth.mergeAccessToken(this, meta.pageWindow, bearer);
+            }
+        },
+
+        _setRuntimeAccessToken(pageWindow, token) {
+            this._runtimeAccess.supabaseAccessToken = token;
+            try {
+                const storage = pageWindow && pageWindow.localStorage;
+                if (storage && token) {
+                    storage.setItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken, token);
+                }
+            } catch (_e) { /* ignore */ }
+        },
+
+        _clearRuntimeAccessToken(pageWindow) {
+            this._runtimeAccess.supabaseAccessToken = null;
+            try {
+                const storage = pageWindow && pageWindow.localStorage;
+                if (storage) storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+            } catch (_e) { /* ignore */ }
+        },
+
+        refreshFromPage(pageWindow) {
+            const win = pageWindow || Context.getPageWindow();
+            if (!win) return;
+            FleetSessionAuth.refreshFromPage(this, win);
+        },
+
+        getFleetUserJwt(pageWindow) {
+            return FleetSessionAuth.getFleetUserJwt(this, pageWindow);
         },
 
         _readHeader(headers, name) {
@@ -1296,23 +1538,11 @@
         },
 
         _decodeJwtPayload(jwt) {
-            if (!jwt || typeof jwt !== 'string') return null;
-            const parts = jwt.split('.');
-            if (parts.length !== 3) return null;
-            try {
-                const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-                const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-                return JSON.parse(atob(padded));
-            } catch (_e) {
-                return null;
-            }
+            return FleetSessionAuth._decodeJwtPayload(jwt);
         },
 
         _jwtIsAnonForRef(jwt, expectedRef) {
-            const payload = this._decodeJwtPayload(jwt);
-            if (!payload || payload.role !== 'anon') return false;
-            if (!expectedRef) return true;
-            return payload.ref === expectedRef;
+            return FleetSessionAuth._isAnonJwt(jwt, expectedRef);
         },
 
         _validRestBaseUrlForRef(baseUrl, ref) {
@@ -1339,12 +1569,6 @@
                 }
                 changed = true;
             };
-            if (partial.supabaseAccessToken) {
-                const ref = partial.supabaseProjectRef || this._runtimeAccess.supabaseProjectRef;
-                if (!this._jwtIsAnonForRef(partial.supabaseAccessToken, ref)) {
-                    setKey('supabaseAccessToken', partial.supabaseAccessToken);
-                }
-            }
             setKey('supabaseProjectRef', partial.supabaseProjectRef);
             setKey('supabaseRestBaseUrl', partial.supabaseRestBaseUrl);
             setKey('supabaseAnonKey', partial.supabaseAnonKey);
@@ -1385,7 +1609,10 @@
     Context.networkObserver = {
         subscribe: (opts) => NetworkObserver.subscribe(opts),
         unsubscribe: (id) => NetworkObserver.unsubscribe(id),
-        getRuntimeAccess: () => NetworkObserver.getRuntimeAccess()
+        getRuntimeAccess: () => NetworkObserver.getRuntimeAccess(),
+        getFleetUserJwt: (pageWindow) => NetworkObserver.getFleetUserJwt(pageWindow),
+        refreshFromPage: (pageWindow) => NetworkObserver.refreshFromPage(pageWindow),
+        decodeJwtPayload: (jwt) => FleetSessionAuth._decodeJwtPayload(jwt)
     };
 
     // ============= ARCHETYPE MANAGER =============
@@ -2718,7 +2945,13 @@
     
     async function initializeForPage() {
         Logger.log('Initializing for current page...');
-        
+
+        try {
+            NetworkObserver.refreshFromPage(Context.getPageWindow());
+        } catch (e) {
+            Logger.debug('FleetSessionAuth: refreshFromPage on init failed', e);
+        }
+
         try {
             // Load archetype definitions (cached after first load)
             await ArchetypeManager.loadArchetypes();
