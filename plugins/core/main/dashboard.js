@@ -11,8 +11,10 @@
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
+const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_HYDRATE_TASK_CHUNK = 25;
+const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 1;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
@@ -161,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.32',
+    _version: '3.33',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -197,7 +199,8 @@ const plugin = {
             resultsKindTab: 'all',
             hydrateUi: {},
             hydrateBulkActive: false,
-            hydrateLoadPhase: '',
+            resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
+            resultsPage: 0,
             activeTab: 'search-output',
             leftTab: 'search',
             cachedItems: null,
@@ -1524,6 +1527,119 @@ const plugin = {
         return this._filterItemsByResultsKindTab(this._state.filteredItems);
     },
 
+    _readResultsPageSizePref() {
+        try {
+            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_PAGE_SIZE_KEY);
+            if (v === '10' || v === '25' || v === '50' || v === '100' || v === 'all') return v;
+        } catch (_e) { /* ignore */ }
+        return null;
+    },
+
+    _persistResultsPageSizePref(value) {
+        try {
+            const v = String(value || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+            this._pageWindow().localStorage.setItem(DASH_RESULTS_PAGE_SIZE_KEY, v);
+        } catch (e) {
+            Logger.debug('dashboard: could not persist results page size', e);
+        }
+    },
+
+    _getEffectiveResultsPageSize() {
+        const ps = this._state.resultsPageSize;
+        if (ps === 'all') return Infinity;
+        const n = Number(ps);
+        return Number.isFinite(n) && n > 0 ? n : DASH_RESULTS_PAGE_SIZE_DEFAULT;
+    },
+
+    _applyResultsPageSizeForNewSearch() {
+        const pref = this._readResultsPageSizePref();
+        if (pref === 'all') {
+            this._state.resultsPageSize = DASH_RESULTS_PAGE_SIZE_DEFAULT;
+        } else if (pref) {
+            this._state.resultsPageSize = Number(pref) || DASH_RESULTS_PAGE_SIZE_DEFAULT;
+        } else {
+            this._state.resultsPageSize = DASH_RESULTS_PAGE_SIZE_DEFAULT;
+        }
+        this._state.resultsPage = 0;
+        this._syncResultsPageSizeUi();
+    },
+
+    _syncResultsPageSizeUi() {
+        const sel = this._q('#wf-dash-results-page-size');
+        if (!sel) return;
+        const ps = this._state.resultsPageSize;
+        if (ps === 'all') {
+            sel.value = 'all';
+        } else {
+            sel.value = String(ps);
+        }
+    },
+
+    _getPaginatedViewItems() {
+        const viewItems = this._getViewItems();
+        if (!viewItems || viewItems.length === 0) return [];
+        const size = this._getEffectiveResultsPageSize();
+        if (size === Infinity) return viewItems;
+        const totalPages = Math.max(1, Math.ceil(viewItems.length / size));
+        let page = this._state.resultsPage || 0;
+        if (page >= totalPages) page = totalPages - 1;
+        this._state.resultsPage = page;
+        const start = page * size;
+        return viewItems.slice(start, start + size);
+    },
+
+    _getResultsRangeLabel() {
+        const viewItems = this._getViewItems() || [];
+        const total = viewItems.length;
+        if (total === 0) return '0 results';
+        const paginated = this._getPaginatedViewItems();
+        const size = this._getEffectiveResultsPageSize();
+        const suffix = total === 1 ? ' result' : ' results';
+        if (size === Infinity || paginated.length >= total) {
+            return '1–' + total + ' of ' + total + suffix;
+        }
+        const page = this._state.resultsPage || 0;
+        const start = page * size + 1;
+        const end = page * size + paginated.length;
+        return start + '–' + end + ' of ' + total + suffix;
+    },
+
+    _syncResultsRangeCountUi() {
+        const label = this._getResultsRangeLabel();
+        const kindCount = this._q('#wf-dash-results-kind-count');
+        const headerCount = this._q('#wf-dash-results-header-count');
+        const committed = this._state.committed;
+        const tabs = committed ? this._resultsKindTabsMeta(committed) : [];
+        const showInKindRow = this._state.hasSearched && committed && tabs.length > 1;
+        if (kindCount) {
+            kindCount.textContent = label;
+            kindCount.style.display = showInKindRow ? '' : 'none';
+        }
+        if (headerCount) {
+            headerCount.textContent = label;
+            headerCount.style.display = (this._state.hasSearched && committed && !showInKindRow) ? '' : 'none';
+        }
+    },
+
+    _recomputeFilteredItems() {
+        const lib = dashLib();
+        if (this._state.cachedItems === null) return false;
+        const filters = this._currentClientFilters();
+        if (lib.isSubstringTooShort(filters.promptText, filters.caseSensitive)) {
+            this._updateSubstringErrorUi();
+            return false;
+        }
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        const sortOrder = filters.sortOrder;
+        const result = lib.applyFiltersAndSort(this._state.cachedItems, filters, bounds, sortOrder);
+        this._state.filteredItems = result;
+        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
+        this._updateResultsStatus();
+        this._syncBulkHydrateUi();
+        this._syncResultsRangeCountUi();
+        return true;
+    },
+
     _findCachedItem(itemId) {
         return (this._state.cachedItems || []).find((it) => it.id === itemId) || null;
     },
@@ -1588,13 +1704,19 @@ const plugin = {
     async _hydrateCard(itemId) {
         const item = this._findCachedItem(itemId);
         if (!item || item.hydrated) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('dashboard: card hydrate skipped — dashboardData not loaded');
+            return;
+        }
         const ui = this._getHydrateUi(itemId);
         if (ui.status === 'loading') return;
         ui.status = 'loading';
         this._patchTaskCard(itemId);
         try {
             await this._hydrateItems([item]);
-            this._applyFiltersAndRender();
+            this._recomputeFilteredItems();
+            this._patchTaskCard(itemId);
+            Logger.log('dashboard: card hydrated in place — ' + itemId);
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
                 Logger.warn('dashboard: card hydrate failed — ' + itemId, err);
@@ -1620,8 +1742,7 @@ const plugin = {
     _bulkHydrateLabel() {
         const committed = this._state.committed;
         if (!committed || committed.searchDepth !== 'quick') return null;
-        const viewItems = this._getViewItems() || [];
-        const unhydrated = viewItems.filter((it) => !it.hydrated);
+        const unhydrated = (this._getPaginatedViewItems() || []).filter((it) => !it.hydrated);
         if (unhydrated.length === 0) return null;
         const kinds = this._committedSearchKinds(committed);
         const tab = this._state.resultsKindTab || 'all';
@@ -1634,13 +1755,24 @@ const plugin = {
         const btn = this._q('#wf-dash-bulk-hydrate');
         if (!btn) return;
         const label = this._bulkHydrateLabel();
-        if (!label || this._state.hydrateBulkActive) {
+        if (!label) {
             btn.style.display = 'none';
             return;
         }
         btn.style.display = '';
+        if (this._state.hydrateBulkActive) {
+            btn.disabled = true;
+            return;
+        }
         btn.textContent = label;
         btn.disabled = false;
+    },
+
+    _setBulkHydrateProgress(done, total) {
+        const btn = this._q('#wf-dash-bulk-hydrate');
+        if (!btn || !this._state.hydrateBulkActive) return;
+        const base = this._bulkHydrateLabel() || 'Hydrate results';
+        btn.textContent = total > 0 ? base + ' (' + done + '/' + total + ')' : base;
     },
 
     _updateResultsKindTabsUi() {
@@ -1650,67 +1782,90 @@ const plugin = {
         if (!this._state.hasSearched || !committed) {
             wrap.style.display = 'none';
             wrap.innerHTML = '';
+            this._syncResultsRangeCountUi();
             return;
         }
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
             wrap.style.display = 'none';
             wrap.innerHTML = '';
+            this._syncResultsRangeCountUi();
             return;
         }
         const activeTab = this._state.resultsKindTab || 'all';
-        wrap.style.display = 'flex';
-        wrap.innerHTML = tabs.map((tab) => {
+        const label = this._labelStyle();
+        const tabButtons = tabs.map((tab) => {
             const active = tab.id === activeTab;
             const style = active
                 ? 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));'
                 : 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
             return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
         }).join('');
+        wrap.style.display = 'flex';
+        wrap.style.alignItems = 'center';
+        wrap.style.justifyContent = 'space-between';
+        wrap.style.width = '100%';
+        wrap.style.gap = '12px';
+        wrap.innerHTML = `
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0;">${tabButtons}</div>
+            <span id="wf-dash-results-kind-count" style="${label} flex-shrink: 0; white-space: nowrap;"></span>`;
         wrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
-            if (btn.dataset.wfDashResultsKindWired) return;
-            btn.dataset.wfDashResultsKindWired = '1';
             btn.addEventListener('click', () => {
                 this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
+                this._state.resultsPage = 0;
                 Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
                 this._updateResultsKindTabsUi();
                 this._syncBulkHydrateUi();
                 this._renderResults();
             });
         });
+        this._syncResultsRangeCountUi();
     },
 
     async _bulkHydrateVisible() {
         const label = this._bulkHydrateLabel();
         if (!label || this._state.hydrateBulkActive) return;
-        const viewItems = this._getViewItems() || [];
-        const toHydrate = viewItems.filter((it) => !it.hydrated);
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('dashboard: bulk hydrate skipped — dashboardData not loaded');
+            return;
+        }
+        const toHydrate = (this._getPaginatedViewItems() || []).filter((it) => !it.hydrated);
         if (toHydrate.length === 0) return;
 
         this._state.hydrateBulkActive = true;
         this._syncBulkHydrateUi();
-        const btn = this._q('#wf-dash-bulk-hydrate');
-        if (btn) btn.disabled = true;
+        this._setBulkHydrateProgress(0, toHydrate.length);
         let hydratedTotal = 0;
         try {
             for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
                 const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
-                const done = Math.min(i + chunk.length, toHydrate.length);
-                this._state.hydrateLoadPhase = 'Hydrating ' + done + ' / ' + toHydrate.length + '…';
-                this._renderResults();
+                for (const item of chunk) {
+                    this._getHydrateUi(item.id).status = 'loading';
+                    this._patchTaskCard(item.id);
+                }
+                const doneBefore = i;
+                this._setBulkHydrateProgress(doneBefore, toHydrate.length);
                 hydratedTotal += await this._hydrateItems(chunk);
+                for (const item of chunk) {
+                    this._getHydrateUi(item.id).status = 'idle';
+                    this._patchTaskCard(item.id);
+                }
+                this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
             }
-            this._applyFiltersAndRender();
-            Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s)');
+            this._recomputeFilteredItems();
+            Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) on current page');
         } catch (err) {
+            for (const item of toHydrate) {
+                this._getHydrateUi(item.id).status = 'idle';
+                this._patchTaskCard(item.id);
+            }
             if (!this._handleDashSessionRefreshError(err)) {
                 Logger.warn('dashboard: bulk hydrate failed', err);
             }
         } finally {
             this._state.hydrateBulkActive = false;
-            this._state.hydrateLoadPhase = '';
             this._syncBulkHydrateUi();
-            this._renderResults();
+            this._syncResultsRangeCountUi();
         }
     },
 
@@ -1844,6 +1999,10 @@ const plugin = {
         this._applyDefaultSearchDates();
         this._state.searchDepth = this._readSearchDepthPref();
         this._syncSearchDepthUi();
+        const pagePref = this._readResultsPageSizePref();
+        this._state.resultsPageSize = pagePref === 'all' ? 'all' : (Number(pagePref) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+        this._state.resultsPage = 0;
+        this._syncResultsPageSizeUi();
         Logger.log('dashboard: popup built');
     },
 
@@ -2101,14 +2260,25 @@ const plugin = {
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
-                            <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                            <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                    <span>Show</span>
+                                    <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <option value="10">10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                        <option value="all">All</option>
+                                    </select>
+                                </label>
+                                <span id="wf-dash-results-header-count" style="${label} display: none; white-space: nowrap;"></span>
                                 <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
                                 <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
                             </div>
                         </div>
-                        <div id="wf-dash-results-kind-tabs" style="display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px;"></div>
+                        <div id="wf-dash-results-kind-tabs" style="display: none; margin-top: 10px;"></div>
                     </div>
-                    <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;"></div>
+                    <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>
             </section>
         `;
@@ -2191,6 +2361,20 @@ const plugin = {
 
         const bulkHydrate = this._q('#wf-dash-bulk-hydrate');
         if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void this._bulkHydrateVisible(); });
+
+        const pageSizeSel = this._q('#wf-dash-results-page-size');
+        if (pageSizeSel) {
+            pageSizeSel.addEventListener('change', () => {
+                const val = pageSizeSel.value;
+                this._state.resultsPageSize = val === 'all' ? 'all' : (Number(val) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+                this._persistResultsPageSizePref(val);
+                this._state.resultsPage = 0;
+                Logger.log('dashboard: results page size — ' + val);
+                this._renderResults();
+                this._syncBulkHydrateUi();
+                this._syncResultsRangeCountUi();
+            });
+        }
 
         // Author token input
         const authorBox = this._q('#wf-dash-author-box');
@@ -2410,6 +2594,8 @@ const plugin = {
             }
             const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
             if (hydrateBtn && modal.contains(hydrateBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
                 const itemId = hydrateBtn.getAttribute('data-item-id');
                 if (itemId) void this._hydrateCard(itemId);
                 return;
@@ -2985,7 +3171,7 @@ const plugin = {
     _patchTaskCard(itemId) {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
-        const item = this._findResultItem(itemId);
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item) return;
         const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
         let existing = null;
@@ -3313,6 +3499,7 @@ const plugin = {
                 const filtered = lib.applyFiltersAndSort(items, initialFilters, bounds, 'desc');
                 this._state.filteredItems = filtered;
                 this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
+                this._applyResultsPageSizeForNewSearch();
                 this._setLeftTab('filters');
                 this._updateResultsKindTabsUi();
                 this._syncBulkHydrateUi();
@@ -3379,8 +3566,8 @@ const plugin = {
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
         this._state.resultsKindTab = 'all';
+        this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
-        this._state.hydrateLoadPhase = '';
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -3438,6 +3625,7 @@ const plugin = {
             this._updateSubstringErrorUi();
             return;
         }
+        this._state.resultsPage = 0;
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const sortOrder = filters.sortOrder;
         const before = this._state.cachedItems.length;
@@ -3449,6 +3637,7 @@ const plugin = {
         this._renderFilterLists();
         this._updateResultsStatus();
         this._syncBulkHydrateUi();
+        this._updateResultsKindTabsUi();
         this._renderResults();
     },
 
@@ -3552,10 +3741,12 @@ const plugin = {
             const depthNote = committed.searchDepth === 'quick' ? ' · quick search' : '';
             el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}</span>`;
             this._syncBulkHydrateUi();
+            this._syncResultsRangeCountUi();
             return;
         }
         el.textContent = '';
         this._syncBulkHydrateUi();
+        this._syncResultsRangeCountUi();
     },
 
     // ── Results rendering ──
@@ -3566,15 +3757,14 @@ const plugin = {
         const s = this._state;
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
-        if (s.loading || s.hydrateBulkActive) {
-            const phase = String(s.hydrateBulkActive ? s.hydrateLoadPhase : s.searchLoadPhase || '').trim();
+        if (s.loading) {
+            const phase = String(s.searchLoadPhase || '').trim();
             const phaseHtml = phase
                 ? `<p style="margin: 0; font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); text-align: center; max-width: 420px; line-height: 1.45;">${dashEscHtml(phase)}</p>`
                 : '';
-            const loadLabel = s.hydrateBulkActive ? 'Hydrating results…' : 'Loading results…';
             wrap.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 16px; min-height: 120px;">
                 ${phaseHtml}
-                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>${loadLabel}</span></div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>
             </div>`;
             return;
         }
@@ -3598,9 +3788,12 @@ const plugin = {
                     ? 'No results in this tab.'
                     : 'No results match the current filters.';
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
+            this._syncResultsRangeCountUi();
             return;
         }
-        wrap.innerHTML = viewItems.map((item) => this._resultCardHtml(item)).join('');
+        const pageItems = this._getPaginatedViewItems();
+        wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
+        this._syncResultsRangeCountUi();
     },
 
     _copyChipHtml(text) {
@@ -4104,20 +4297,23 @@ const plugin = {
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
+        let hydrateTabHtml = '';
         if (showHydrateTab) {
-            const hydrateIndex = tabs.length;
-            const left = 'calc(16px + ' + hydrateIndex + ' * (' + tabWidthRem + 'rem + ' + tabGapRem + 'rem))';
             const ui = this._getHydrateUi(itemId);
             const loading = ui.status === 'loading';
-            const label = loading ? 'Hydrating…' : 'Hydrate';
-            tabs.push(`<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" ${loading ? 'disabled' : ''} style="position: absolute; left: ${left}; top: 0; z-index: 2; width: ${tabWidthRem}rem; height: 22px; margin-top: -16px; padding: 0 4px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${dashEscHtml(label)}">${dashEscHtml(label)}</button>`);
+            const tabInner = loading
+                ? `<span style="display: inline-flex; align-items: center; gap: 5px; pointer-events: none;">${this._loadingSpinnerHtml(12)}<span>Hydrating…</span></span>`
+                : 'Hydrate';
+            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="position: absolute; right: 16px; top: 0; z-index: 3; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        if (tabs.length === 0) {
+        const topPad = showHydrateTab ? 'padding-top: 10px;' : '';
+        if (tabs.length === 0 && !hydrateTabHtml) {
             return `<div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}">${cardHtml}</div>`;
         }
         return `
-            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative;">
+            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative; ${topPad}">
                 ${tabs.join('')}
+                ${hydrateTabHtml}
                 <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
             </div>`;
     },
