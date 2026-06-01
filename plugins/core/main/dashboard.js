@@ -13,6 +13,9 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
+const DASH_CARD_KIND_TAB_HEIGHT = '24px';
+const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
+const DASH_CARD_KIND_TAB_GAP = '0.25rem';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 1;
@@ -169,7 +172,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.42',
+    _version: '3.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1795,7 +1798,8 @@ const plugin = {
         const lib = dashLib();
         if (this._state.cachedItems === null) return false;
         const filters = this._currentClientFilters();
-        if (lib.isSubstringTooShort(filters.promptText, filters.caseSensitive)) {
+        const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
+        if (filterInvalid.invalid) {
             this._updateSubstringErrorUi();
             return false;
         }
@@ -1957,11 +1961,15 @@ const plugin = {
             btn.style.display = 'none';
             return;
         }
-        btn.style.display = '';
         const unhydratedCount = this._getUnhydratedInTabScope().length;
+        if (unhydratedCount === 0) {
+            btn.style.display = 'none';
+            return;
+        }
+        btn.style.display = '';
         const label = this._bulkHydrateLabel() || 'Hydrate results';
         btn.textContent = label;
-        btn.disabled = this._state.hydrateBulkActive || unhydratedCount === 0;
+        btn.disabled = this._state.hydrateBulkActive;
     },
 
     _setBulkHydrateProgress(done, total) {
@@ -1994,9 +2002,7 @@ const plugin = {
             const activeTab = this._state.resultsKindTab || 'all';
             const tabButtons = tabs.map((tab) => {
                 const active = tab.id === activeTab;
-                const style = active
-                    ? 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));'
-                    : 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
+                const style = this._btnResultsKindTabStyle(active, tab.id);
                 return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
             }).join('');
             buttonsWrap.style.display = 'flex';
@@ -2288,6 +2294,29 @@ const plugin = {
         return base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
+    _btnResultsKindTabStyle(active, tabId) {
+        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+        if (active) {
+            if (tabId === 'all') {
+                return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
+            }
+            const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
+            return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
+        }
+        return base + ' ' + DASH_TOGGLE_INACTIVE;
+    },
+
+    _cardKindTabSlotHtml(kind, present) {
+        const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
+        const shell = 'width: ' + DASH_CARD_KIND_TAB_SLOT_WIDTH + '; height: ' + DASH_CARD_KIND_TAB_HEIGHT
+            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+        if (!present || !cfg) {
+            return '<div style="' + shell + ' visibility: hidden;" aria-hidden="true"></div>';
+        }
+        return '<div style="' + shell + ' background: ' + cfg.tabBg + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
+    },
+
     _leftTabStyle(active) {
         const base = 'padding: 8px 12px; font-size: 12px; font-weight: 600; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: transparent;';
         return active
@@ -2395,7 +2424,7 @@ const plugin = {
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <div style="position: relative; min-width: 0;">
-                                        <input type="text" id="wf-dash-prompt" placeholder="Filter by prompt substring" style="${input} padding-right: 34px;">
+                                        <input type="text" id="wf-dash-prompt" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px;">
                                         <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnOverlayStyle()} display: none;">&times;</button>
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
@@ -2404,6 +2433,9 @@ const plugin = {
                                         </label>
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
                                             <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                                            <input type="checkbox" id="wf-dash-regex"> RegEx (ECMAScript)
                                         </label>
                                     </div>
                                     <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
@@ -2642,6 +2674,22 @@ const plugin = {
                 this._syncFieldClearButtons();
             });
         }
+        const fuzzyEl = this._q('#wf-dash-fuzzy');
+        const regexEl = this._q('#wf-dash-regex');
+        if (fuzzyEl) {
+            fuzzyEl.addEventListener('change', () => {
+                if (fuzzyEl.checked && regexEl) regexEl.checked = false;
+                this._updateSubstringErrorUi();
+            });
+        }
+        if (regexEl) {
+            regexEl.addEventListener('change', () => {
+                if (regexEl.checked && fuzzyEl) fuzzyEl.checked = false;
+                this._updateSubstringErrorUi();
+            });
+        }
+        const caseEl = this._q('#wf-dash-case');
+        if (caseEl) caseEl.addEventListener('change', () => this._updateSubstringErrorUi());
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
 
@@ -3547,6 +3595,7 @@ const plugin = {
         const draft = this._currentClientFilters();
         if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
+        if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
         if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
         if (draft.sortOrder !== applied.sortOrder) return true;
@@ -3563,11 +3612,13 @@ const plugin = {
     _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
-        const tooShort = dashLib().isSubstringTooShort(promptText, caseSensitive);
+        const regex = Boolean((this._q('#wf-dash-regex') || {}).checked);
+        const lib = dashLib();
+        const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, regex);
         const el = this._q('#wf-dash-substring-error');
         if (el) {
-            if (tooShort) {
-                el.textContent = 'Substring must be at least ' + dashLib().MIN_SUBSTRING_LENGTH + ' characters.';
+            if (filterInvalid.invalid) {
+                el.textContent = filterInvalid.message;
                 el.style.display = 'block';
             } else {
                 el.style.display = 'none';
@@ -3577,7 +3628,7 @@ const plugin = {
         const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
         if (applyBtn) {
-            const disabled = !this._state.cachedItems || tooShort || !selectionValid || !hasPendingChanges;
+            const disabled = !this._state.cachedItems || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
             applyBtn.disabled = disabled;
             applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
         }
@@ -3696,6 +3747,8 @@ const plugin = {
                 if (caseEl) caseEl.checked = false;
                 const fuzzyEl = this._q('#wf-dash-fuzzy');
                 if (fuzzyEl) fuzzyEl.checked = false;
+                const regexEl = this._q('#wf-dash-regex');
+                if (regexEl) regexEl.checked = false;
                 const sortEl = this._q('#wf-dash-sort');
                 if (sortEl) sortEl.value = 'desc';
                 const bounds = this._resetFilterDraftsFromResults(items);
@@ -3784,7 +3837,7 @@ const plugin = {
         if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
         if (sortEl) sortEl.value = 'desc';
-        ['#wf-dash-case', '#wf-dash-fuzzy'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
+        ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
         this._renderResults();
@@ -3796,6 +3849,7 @@ const plugin = {
         return Object.assign({}, draft, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
+            regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
@@ -3816,7 +3870,8 @@ const plugin = {
             || (applied.taskIssues || []).length < bounds.taskIssues.length
             || (applied.returnTypes || []).length < bounds.returnTypes.length
             || (applied.promptHistory || []).length < bounds.promptHistory.length
-            || !lib.isQueryEmpty(applied.promptText, applied.caseSensitive);
+            || (applied.regex && lib.isRegexQueryActive(applied.promptText))
+            || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive));
     },
 
     _applyFiltersAndRender() {
@@ -3828,7 +3883,8 @@ const plugin = {
             return;
         }
         const filters = this._currentClientFilters();
-        if (lib.isSubstringTooShort(filters.promptText, filters.caseSensitive)) {
+        const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
+        if (filterInvalid.invalid) {
             this._updateSubstringErrorUi();
             return;
         }
@@ -4092,8 +4148,12 @@ const plugin = {
         return ago ? `${formattedSpan} ${agoHtml}` : formattedSpan;
     },
 
-    _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy) {
-        const segments = dashLib().buildHighlightSegments(text, query, { caseSensitive, fuzzy: Boolean(fuzzy) });
+    _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy, regex) {
+        const segments = dashLib().buildHighlightSegments(text, query, {
+            caseSensitive,
+            fuzzy: Boolean(fuzzy),
+            regex: Boolean(regex)
+        });
         return segments.map((seg) => (
             seg.match
                 ? `<mark style="background: color-mix(in srgb, #facc15 45%, transparent); color: inherit; padding: 0 1px; border-radius: 2px;">${dashEscHtml(seg.text)}</mark>`
@@ -4123,14 +4183,14 @@ const plugin = {
         return parts;
     },
 
-    _dashHighlightedHtml(text, query, caseSensitive, fuzzy) {
+    _dashHighlightedHtml(text, query, caseSensitive, fuzzy, regex) {
         const linkStyle = 'color: var(--brand, var(--primary, #2563eb)); text-decoration: underline;';
         return this._dashSplitMarkdownLinkParts(text).map((part) => {
             if (part.type === 'link') {
-                const labelHtml = this._dashHighlightSegmentsHtml(part.label, query, caseSensitive, fuzzy);
+                const labelHtml = this._dashHighlightSegmentsHtml(part.label, query, caseSensitive, fuzzy, regex);
                 return `<a href="${dashEscHtml(part.url)}" target="_blank" rel="noopener noreferrer" style="${linkStyle}">${labelHtml}</a>`;
             }
-            return this._dashHighlightSegmentsHtml(part.value, query, caseSensitive, fuzzy);
+            return this._dashHighlightSegmentsHtml(part.value, query, caseSensitive, fuzzy, regex);
         }).join('');
     },
 
@@ -4166,7 +4226,7 @@ const plugin = {
 
     _disputeBlockStyle() {
         return {
-            border: '1px solid #5b21b6',
+            border: '2px solid #7c3aed',
             background: 'color-mix(in srgb, #7c3aed 24%, var(--card, #ffffff))'
         };
     },
@@ -4184,13 +4244,14 @@ const plugin = {
         };
     },
 
-    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
         const isSystem = Boolean(qa.isSystemFeedback);
         const isYellowBlock = isSystem || qa.isEscalated || qa.isFlaggedAsBugged;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
+        const rx = Boolean(highlightRegex);
         let border;
         let bg;
         if (isYellowBlock) {
@@ -4221,7 +4282,7 @@ const plugin = {
         const blocks = (qa.textBlocks || []).map((b) => {
             const blockLabel = isSystem ? b.label : dashQaTextBlockLabel(b.label, positive);
             const body = b.text
-                ? this._dashHighlightedHtml(b.text, hq, cs, fz)
+                ? this._dashHighlightedHtml(b.text, hq, cs, fz, rx)
                 : '—';
             return `
             <div>
@@ -4289,8 +4350,7 @@ const plugin = {
         const ui = this._getDisputeClaimUi(disputeId);
         const url = dashFleetDisputeUrl(disputeId);
         const baseStyle = this._btnStyle()
-            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;'
-            + ' border-color: #7c3aed; color: #5b21b6;';
+            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;';
         if (ui.status === 'claimed' && url) {
             return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" style="${baseStyle} text-decoration: none;">`
                 + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
@@ -4305,15 +4365,16 @@ const plugin = {
             + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
     },
 
-    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, itemId) {
+    _disputeBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, itemId, highlightRegex) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
+        const rx = Boolean(highlightRegex);
         const purple = this._disputeBlockStyle();
         const border = purple.border;
         const bg = purple.background;
         const reasonBody = display.reason
-            ? this._dashHighlightedHtml(display.reason, hq, cs, fz)
+            ? this._dashHighlightedHtml(display.reason, hq, cs, fz, rx)
             : '—';
         const submittedHtml = display.submittedAt
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
@@ -4338,7 +4399,7 @@ const plugin = {
                 statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
             }
             const resolutionBody = display.resolutionText
-                ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz)
+                ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
@@ -4409,23 +4470,24 @@ const plugin = {
         return byDisplayNo;
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId, highlightRegex) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
+        const rx = Boolean(highlightRegex);
         const promptBody = version.prompt
-            ? this._dashHighlightedHtml(version.prompt, hq, cs, fz)
+            ? this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx)
             : '—';
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
         const feedbackHtml = feedbackEntries.map((entry) => {
-            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz);
-            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
+            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx);
+            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
             return qaHtml + linkedDisputes;
         }).join('');
-        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz) : '';
-        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
+        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx) : '';
+        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -4450,10 +4512,11 @@ const plugin = {
         const hq = item.highlightQuery || '';
         const cs = Boolean(item.highlightCaseSensitive);
         const fz = Boolean(item.highlightFuzzy);
+        const rx = Boolean(item.highlightRegex);
         const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
         const promptText = task.prompt || '';
         const promptBody = promptText
-            ? this._dashHighlightedHtml(promptText, hq, cs, fz)
+            ? this._dashHighlightedHtml(promptText, hq, cs, fz, rx)
             : '—';
         let bodyHtml = `
             <div>
@@ -4463,11 +4526,11 @@ const plugin = {
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
             </div>`;
         if (item.qaFeedback) {
-            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz);
+            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx);
         }
         const disputes = item.disputes || [];
         if (disputes.length > 0) {
-            bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
+            bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         }
         const cardHtml = `
             <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
@@ -4494,14 +4557,8 @@ const plugin = {
     _resultCardOuterWrap(item, cardHtml) {
         const itemId = item.id;
         const kinds = (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
-        const ordered = DASH_KIND_MERGE_ORDER.filter((k) => kinds.includes(k));
-        const tabWidthRem = 7.75;
-        const tabGapRem = 0.25;
-        const kindTabsHtml = ordered.map((kind) => {
-            const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
-            if (!cfg) return '';
-            return `<div style="width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg}; flex-shrink: 0;" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`;
-        }).join('');
+        const kindSet = new Set(kinds);
+        const kindTabsHtml = DASH_KIND_MERGE_ORDER.map((kind) => this._cardKindTabSlotHtml(kind, kindSet.has(kind))).join('');
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -4514,15 +4571,10 @@ const plugin = {
                 : 'Hydrate';
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const tabsRow = (kindTabsHtml || hydrateTabHtml)
-            ? `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: ${tabGapRem}rem; min-width: 0;">${kindTabsHtml}</div>
+        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
+                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}</div>
                 ${hydrateTabHtml}
-            </div>`
-            : '';
-        if (!tabsRow) {
-            return `<div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}">${cardHtml}</div>`;
-        }
+            </div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 ${tabsRow}
@@ -4537,6 +4589,7 @@ const plugin = {
         const highlightQuery = item.highlightQuery || '';
         const caseSensitive = Boolean(item.highlightCaseSensitive);
         const highlightFuzzy = Boolean(item.highlightFuzzy);
+        const highlightRegex = Boolean(item.highlightRegex);
         const extraVisibleVersionNos = item.extraVisibleVersionNos || [];
 
         let versions = task.promptVersions && task.promptVersions.length
@@ -4621,7 +4674,7 @@ const plugin = {
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes, itemId
+                orphanDisputes, itemId, highlightRegex
             );
         }).join('');
 
