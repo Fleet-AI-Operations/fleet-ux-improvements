@@ -8,7 +8,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -106,9 +106,6 @@ const plugin = {
                     offset: String(offset),
                     limit: String(DASH_DATA_FEEDBACK_PAGE_SIZE)
                 };
-                if (knownIds.length > 0 && knownIds.length <= 200) {
-                    qs.id = 'not.in.(' + knownIds.join(',') + ')';
-                }
                 const page = await this._pgQuery('qa_feedback.select_row', qs);
                 let added = 0;
                 for (const row of page) {
