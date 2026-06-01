@@ -78,12 +78,6 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "dashboard-page-api-intercept.js",
-          "version": "1.0",
-          "hash": "",
-          "log": false
-        },
-        {
           "name": "feedback-given-stats.js",
           "version": "3.1",
           "hash": "sha256-38a6f372a8078b54fd10af618732b21033d0b486622189ad81a8043a2b270e72",
