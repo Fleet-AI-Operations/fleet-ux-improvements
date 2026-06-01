@@ -1,7 +1,7 @@
 {
   "version": "9.1.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.77",
+  "archetypesVersion": "9.78",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "3.4",
-      "hash": "sha256-c4e8254d152f77285a7d9786b4d6bf6b69d94992604e9609882befcec7820825",
+      "version": "3.5",
+      "hash": "sha256-5f5885595de6f3760f8be1005208fb23110049f60dfcb90a977b2354438b00f2",
       "log": false
     },
     {
@@ -46,8 +46,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "3.26",
-      "hash": "sha256-a2e7c950665b93be4dcc358e2ff5cb51d60312b8a016a48ec28f458df981975f",
+      "version": "3.27",
+      "hash": "sha256-29f6e91d306279dbf794ceda43e6c87047a518db50a102f98d5b55cb6462b835",
       "log": false
     }
   ],

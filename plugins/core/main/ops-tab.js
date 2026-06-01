@@ -26,7 +26,13 @@ const OPS_CRYPTO_IV_BYTES = 12;
 /** Must match dev/utils/ops-password-crypto.mjs AES_GCM_TAG_LENGTH */
 const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
-const OPS_TEAM_SEARCH_URL = 'https://www.fleetai.com/dashboard/team';
+const OPS_FLEET_ORIGIN = 'https://www.fleetai.com';
+const OPS_TEAM_SEARCH_URL = OPS_FLEET_ORIGIN + '/dashboard/team';
+/** Supabase auth cookie chunk size (matches @supabase/auth-js CookieStorage). */
+const OPS_SUPABASE_AUTH_COOKIE_CHUNK_SIZE = 3180;
+/** Refresh access token this many seconds before JWT exp. */
+const OPS_SUPABASE_JWT_REFRESH_SKEW_SEC = 120;
+const OPS_SESSION_REFRESH_USER_MESSAGE = 'Fleet session expired. Reload Fleet or sign in again.';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 /** localStorage key for the dynamically captured Next.js server action hash for team member search */
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
@@ -134,7 +140,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -197,7 +203,8 @@ const plugin = {
             getFleetWebPath: (key) => this._getOpsFleetWebPath(key),
             postgrestQuery: (queryKey, overrides) => this._opsPostgrestQuery(queryKey, overrides),
             // tableKey → resolved table name from decrypted ops bundle
-            postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params)
+            postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params),
+            isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err)
         };
         Logger.log('Ops tab module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -540,32 +547,341 @@ const plugin = {
         return payload && payload.role === 'anon';
     },
 
-    _extractOpsAccessTokenFromValue(value) {
-        if (!value || typeof value !== 'string') return '';
-        try {
-            let candidate = value;
-            if (candidate.startsWith('base64-')) {
+    _opsParseAuthStorageRaw(raw) {
+        if (!raw || typeof raw !== 'string') return { parsed: null, wireFormat: 'json' };
+        let candidate = raw;
+        let wireFormat = 'json';
+        if (candidate.startsWith('base64-')) {
+            try {
                 candidate = atob(candidate.slice('base64-'.length));
+                wireFormat = 'base64-json';
+            } catch (_e) {
+                return { parsed: null, wireFormat: 'json' };
             }
-            const parsed = JSON.parse(candidate);
-            const direct =
-                (parsed && parsed.access_token) ||
-                (parsed && parsed.currentSession && parsed.currentSession.access_token) ||
-                (parsed && parsed.session && parsed.session.access_token) ||
-                (Array.isArray(parsed) && (
-                    (parsed[0] && parsed[0].access_token) ||
-                    (parsed[1] && parsed[1].access_token) ||
-                    (parsed[0] && parsed[0].currentSession && parsed[0].currentSession.access_token) ||
-                    (parsed[1] && parsed[1].currentSession && parsed[1].currentSession.access_token) ||
-                    (parsed[0] && parsed[0].session && parsed[0].session.access_token) ||
-                    (parsed[1] && parsed[1].session && parsed[1].session.access_token)
-                ));
-            if (typeof direct === 'string' && direct.length > 0) return direct;
-        } catch (_e) {
-            /* fall through to regex extraction */
         }
+        try {
+            return { parsed: JSON.parse(candidate), wireFormat };
+        } catch (_e) {
+            return { parsed: null, wireFormat };
+        }
+    },
+
+    _opsSerializeAuthStorageRaw(parsed, wireFormat) {
+        const json = JSON.stringify(parsed);
+        if (wireFormat === 'base64-json') {
+            return 'base64-' + btoa(json);
+        }
+        return json;
+    },
+
+    _opsPickSessionField(parsed, fieldName) {
+        if (!parsed || typeof parsed !== 'object') return '';
+        if (typeof parsed[fieldName] === 'string' && parsed[fieldName].length > 0) {
+            return parsed[fieldName];
+        }
+        if (parsed.currentSession && typeof parsed.currentSession[fieldName] === 'string' && parsed.currentSession[fieldName].length > 0) {
+            return parsed.currentSession[fieldName];
+        }
+        if (parsed.session && typeof parsed.session[fieldName] === 'string' && parsed.session[fieldName].length > 0) {
+            return parsed.session[fieldName];
+        }
+        if (Array.isArray(parsed)) {
+            for (const entry of parsed) {
+                const nested = this._opsPickSessionField(entry, fieldName);
+                if (nested) return nested;
+            }
+        }
+        return '';
+    },
+
+    _extractOpsAccessTokenFromValue(value) {
+        const { parsed } = this._opsParseAuthStorageRaw(value);
+        const direct = this._opsPickSessionField(parsed, 'access_token');
+        if (direct) return direct;
         const match = value.match(/"access_token"\s*:\s*"([^"]+)"/);
         return match ? match[1] : '';
+    },
+
+    _opsShouldInspectAuthStorageKey(key, raw) {
+        return (
+            (key && key.startsWith('sb-')) ||
+            (key && key.toLowerCase().includes('supabase')) ||
+            (raw && raw.includes('"access_token"'))
+        );
+    },
+
+    _opsCollectSupabaseAuthStorageSlots(storage, storageKind) {
+        const slots = [];
+        if (!storage) return slots;
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (!key) continue;
+            const raw = storage.getItem(key);
+            if (!raw || !this._opsShouldInspectAuthStorageKey(key, raw)) continue;
+            const { parsed, wireFormat } = this._opsParseAuthStorageRaw(raw);
+            if (!parsed) continue;
+            const refreshToken = this._opsPickSessionField(parsed, 'refresh_token');
+            const accessToken = this._opsPickSessionField(parsed, 'access_token');
+            if (!refreshToken && !accessToken) continue;
+            slots.push({
+                storageKind,
+                key,
+                raw,
+                parsed,
+                wireFormat,
+                storage,
+                hasRefreshToken: !!refreshToken
+            });
+        }
+        return slots;
+    },
+
+    _opsCollectSupabaseAuthCookieSlots(pageWindow) {
+        const slots = [];
+        try {
+            const cookie = (pageWindow.document && pageWindow.document.cookie) || '';
+            if (!cookie) return slots;
+            const parts = cookie.split(/;\s*/);
+            const authParts = parts
+                .map((part) => {
+                    const eq = part.indexOf('=');
+                    return eq >= 0 ? [part.slice(0, eq), part.slice(eq + 1)] : [part, ''];
+                })
+                .filter(([key]) => key.startsWith('sb-') && key.includes('auth-token'));
+            const grouped = new Map();
+            authParts.forEach(([key, value]) => {
+                const base = key.replace(/\.\d+$/, '');
+                const indexMatch = key.match(/\.(\d+)$/);
+                const index = indexMatch ? Number(indexMatch[1]) : 0;
+                if (!grouped.has(base)) grouped.set(base, []);
+                grouped.get(base).push({ index, value });
+            });
+            for (const [cookieBaseKey, group] of grouped.entries()) {
+                const decoded = group
+                    .sort((a, b) => a.index - b.index)
+                    .map(({ value }) => decodeURIComponent(value || ''))
+                    .join('');
+                const { parsed, wireFormat } = this._opsParseAuthStorageRaw(decoded);
+                if (!parsed) continue;
+                const refreshToken = this._opsPickSessionField(parsed, 'refresh_token');
+                const accessToken = this._opsPickSessionField(parsed, 'access_token');
+                if (!refreshToken && !accessToken) continue;
+                slots.push({
+                    storageKind: 'cookie',
+                    cookieBaseKey,
+                    raw: decoded,
+                    parsed,
+                    wireFormat,
+                    pageWindow,
+                    hasRefreshToken: !!refreshToken
+                });
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: auth cookie slot scan failed', e);
+        }
+        return slots;
+    },
+
+    _opsFindSupabaseAuthStorageSlot(pageWindow) {
+        const win = pageWindow || this._getOpsPageWindow();
+        const slots = [
+            ...this._opsCollectSupabaseAuthStorageSlots(win.localStorage, 'localStorage'),
+            ...this._opsCollectSupabaseAuthStorageSlots(win.sessionStorage, 'sessionStorage'),
+            ...this._opsCollectSupabaseAuthCookieSlots(win)
+        ];
+        if (!slots.length) return null;
+        const kindRank = { localStorage: 0, sessionStorage: 1, cookie: 2 };
+        slots.sort((a, b) => {
+            if (a.hasRefreshToken !== b.hasRefreshToken) return a.hasRefreshToken ? -1 : 1;
+            return (kindRank[a.storageKind] || 9) - (kindRank[b.storageKind] || 9);
+        });
+        return slots[0];
+    },
+
+    _opsApplySupabaseRefreshToParsed(parsed, body) {
+        if (!parsed || typeof parsed !== 'object' || !body) return parsed;
+        const expiresAt = body.expires_at != null
+            ? body.expires_at
+            : (Number.isFinite(body.expires_in)
+                ? Math.round(Date.now() / 1000) + body.expires_in
+                : undefined);
+        const patch = (target) => {
+            if (!target || typeof target !== 'object') return;
+            if (body.access_token) target.access_token = body.access_token;
+            if (body.refresh_token) target.refresh_token = body.refresh_token;
+            if (body.expires_in != null) target.expires_in = body.expires_in;
+            if (expiresAt != null) target.expires_at = expiresAt;
+            if (body.token_type) target.token_type = body.token_type;
+            if (body.user) target.user = body.user;
+        };
+        if (
+            Object.prototype.hasOwnProperty.call(parsed, 'access_token') ||
+            Object.prototype.hasOwnProperty.call(parsed, 'refresh_token')
+        ) {
+            patch(parsed);
+            return parsed;
+        }
+        if (parsed.currentSession && typeof parsed.currentSession === 'object') {
+            patch(parsed.currentSession);
+            return parsed;
+        }
+        if (parsed.session && typeof parsed.session === 'object') {
+            patch(parsed.session);
+            return parsed;
+        }
+        if (Array.isArray(parsed)) {
+            for (const entry of parsed) {
+                if (entry && typeof entry === 'object') {
+                    patch(entry);
+                    return parsed;
+                }
+            }
+        }
+        patch(parsed);
+        return parsed;
+    },
+
+    _opsPersistSupabaseAuthSlot(slot, parsed) {
+        const serialized = this._opsSerializeAuthStorageRaw(parsed, slot.wireFormat);
+        if (slot.storageKind === 'localStorage' || slot.storageKind === 'sessionStorage') {
+            slot.storage.setItem(slot.key, serialized);
+            return;
+        }
+        if (slot.storageKind === 'cookie') {
+            this._opsWriteSupabaseAuthCookies(slot.pageWindow, slot.cookieBaseKey, serialized);
+        }
+    },
+
+    _opsClearSupabaseAuthCookie(pageWindow, name) {
+        const doc = pageWindow.document;
+        if (!doc) return;
+        const secure = pageWindow.location && pageWindow.location.protocol === 'https:' ? '; Secure' : '';
+        doc.cookie = name + '=; Max-Age=0; path=/; SameSite=Lax' + secure;
+    },
+
+    _opsWriteSupabaseAuthCookies(pageWindow, baseKey, value) {
+        const doc = pageWindow.document;
+        if (!doc) return;
+        try {
+            const existing = (doc.cookie || '').split(/;\s*/).map((part) => {
+                const eq = part.indexOf('=');
+                return eq >= 0 ? part.slice(0, eq) : part;
+            });
+            existing
+                .filter((name) => name === baseKey || name.startsWith(baseKey + '.'))
+                .forEach((name) => this._opsClearSupabaseAuthCookie(pageWindow, name));
+        } catch (e) {
+            Logger.debug('ops-tab: clearing auth cookies failed', e);
+        }
+        const chunks = [];
+        for (let i = 0; i < value.length; i += OPS_SUPABASE_AUTH_COOKIE_CHUNK_SIZE) {
+            chunks.push(value.slice(i, i + OPS_SUPABASE_AUTH_COOKIE_CHUNK_SIZE));
+        }
+        const secure = pageWindow.location && pageWindow.location.protocol === 'https:' ? '; Secure' : '';
+        chunks.forEach((chunk, index) => {
+            const name = chunks.length > 1 ? baseKey + '.' + index : baseKey;
+            doc.cookie = name + '=' + encodeURIComponent(chunk) + '; path=/; SameSite=Lax' + secure;
+        });
+    },
+
+    _opsResolveSupabaseProjectRef() {
+        const access = this._getOpsRuntimeAccess();
+        if (access.supabaseProjectRef) return access.supabaseProjectRef;
+        try {
+            const { anonKey } = this._ensureOpsRuntimeAccess();
+            const payload = this._decodeOpsJwtPayload(anonKey);
+            if (payload && payload.ref) return payload.ref;
+        } catch (_e) { /* fall through */ }
+        const slot = this._opsFindSupabaseAuthStorageSlot(this._getOpsPageWindow());
+        if (slot && slot.key) {
+            const match = slot.key.match(/^sb-([^-]+)-auth-token/);
+            if (match) return match[1];
+        }
+        if (slot && slot.cookieBaseKey) {
+            const match = slot.cookieBaseKey.match(/^sb-([^-]+)-auth-token/);
+            if (match) return match[1];
+        }
+        throw new Error(OPS_NO_RUNTIME_CONFIG_MESSAGE + ' (missing Supabase project ref)');
+    },
+
+    _opsSessionRefreshRequiredError(message) {
+        const err = new Error(message || OPS_SESSION_REFRESH_USER_MESSAGE);
+        err.opsSessionRefreshRequired = true;
+        return err;
+    },
+
+    _isOpsSessionRefreshRequiredError(err) {
+        return !!(err && err.opsSessionRefreshRequired);
+    },
+
+    _isOpsPostgrestJwtExpiredError(err) {
+        if (!err || typeof err.message !== 'string') return false;
+        if (!/\b401\b/.test(err.message)) return false;
+        return /JWT expired|PGRST301/i.test(err.message);
+    },
+
+    _opsAccessTokenNeedsRefresh(accessToken) {
+        const payload = this._decodeOpsJwtPayload(accessToken);
+        if (!payload || !Number.isFinite(payload.exp)) return false;
+        const skewMs = OPS_SUPABASE_JWT_REFRESH_SKEW_SEC * 1000;
+        return Date.now() >= (payload.exp * 1000) - skewMs;
+    },
+
+    async _opsRefreshSupabaseSession(pageWindow) {
+        const win = pageWindow || this._getOpsPageWindow();
+        const slot = this._opsFindSupabaseAuthStorageSlot(win);
+        if (!slot) {
+            throw this._opsSessionRefreshRequiredError();
+        }
+        const refreshToken = this._opsPickSessionField(slot.parsed, 'refresh_token');
+        if (!refreshToken) {
+            Logger.warn('ops-tab: Supabase session refresh skipped — no refresh_token in storage');
+            throw this._opsSessionRefreshRequiredError();
+        }
+        const { anonKey } = this._ensureOpsRuntimeAccess();
+        const projectRef = this._opsResolveSupabaseProjectRef();
+        const authUrl = 'https://' + projectRef + '.supabase.co/auth/v1/token?grant_type=refresh_token';
+        const requestFetch = win.fetch || fetch;
+        const res = await requestFetch.call(win, authUrl, {
+            method: 'POST',
+            headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                apikey: anonKey
+            },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+            credentials: 'omit'
+        });
+        const text = await res.text().catch(() => '');
+        if (!res.ok) {
+            Logger.warn('ops-tab: Supabase session refresh HTTP ' + res.status, text.slice(0, 300));
+            throw this._opsSessionRefreshRequiredError();
+        }
+        let body;
+        try {
+            body = text ? JSON.parse(text) : null;
+        } catch (_e) {
+            Logger.warn('ops-tab: Supabase session refresh returned non-JSON');
+            throw this._opsSessionRefreshRequiredError();
+        }
+        if (!body || !body.access_token) {
+            Logger.warn('ops-tab: Supabase session refresh missing access_token');
+            throw this._opsSessionRefreshRequiredError();
+        }
+        const updated = this._opsApplySupabaseRefreshToParsed(
+            JSON.parse(JSON.stringify(slot.parsed)),
+            body
+        );
+        this._opsPersistSupabaseAuthSlot(slot, updated);
+        Logger.log('ops-tab: Supabase session refreshed (PostgREST JWT)');
+        return body.access_token;
+    },
+
+    async _opsEnsureSupabaseSessionFresh(pageWindow) {
+        const token = this._getOpsSupabaseAccessToken(pageWindow);
+        if (!token || !this._opsAccessTokenNeedsRefresh(token)) return;
+        Logger.debug('ops-tab: access token near expiry — refreshing before PostgREST');
+        await this._opsRefreshSupabaseSession(pageWindow);
     },
 
     _getOpsSupabaseAccessTokenFromStorage(storage) {
@@ -678,7 +994,7 @@ const plugin = {
         return headers;
     },
 
-    async _opsPostgrestGet(table, params) {
+    async _opsPostgrestGetOnce(table, params, pageWindow) {
         const { baseUrl } = this._ensureOpsRuntimeAccess();
         const url = new URL(baseUrl + '/' + table);
         Object.entries(params || {}).forEach(([key, value]) => {
@@ -688,9 +1004,9 @@ const plugin = {
         if (!headers.authorization) {
             throw new Error('No Fleet session token found. Open Fleet while logged in, then try again.');
         }
-        const pageWindow = this._getOpsPageWindow();
-        const requestFetch = pageWindow.fetch || fetch;
-        const res = await requestFetch.call(pageWindow, url.toString(), {
+        const win = pageWindow || this._getOpsPageWindow();
+        const requestFetch = win.fetch || fetch;
+        const res = await requestFetch.call(win, url.toString(), {
             method: 'GET',
             headers,
             credentials: 'omit'
@@ -700,6 +1016,30 @@ const plugin = {
             throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
         }
         return res.json();
+    },
+
+    async _opsPostgrestGet(table, params) {
+        const pageWindow = this._getOpsPageWindow();
+        try {
+            await this._opsEnsureSupabaseSessionFresh(pageWindow);
+        } catch (e) {
+            if (this._isOpsSessionRefreshRequiredError(e)) throw e;
+            Logger.debug('ops-tab: proactive Supabase refresh skipped', e);
+        }
+        try {
+            return await this._opsPostgrestGetOnce(table, params, pageWindow);
+        } catch (e) {
+            if (!this._isOpsPostgrestJwtExpiredError(e)) throw e;
+            Logger.log('ops-tab: PostgREST JWT expired — refreshing session and retrying once');
+            try {
+                await this._opsRefreshSupabaseSession(pageWindow);
+            } catch (refreshErr) {
+                throw this._isOpsSessionRefreshRequiredError(refreshErr)
+                    ? refreshErr
+                    : this._opsSessionRefreshRequiredError();
+            }
+            return await this._opsPostgrestGetOnce(table, params, pageWindow);
+        }
     },
 
     _extractOpsVerifierHints(source) {

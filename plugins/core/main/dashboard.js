@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.26',
+    _version: '3.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -189,6 +189,7 @@ const plugin = {
             catalog: this._readBootstrapCache(),
             bootstrapStatus: 'idle',
             bootstrapError: null,
+            sessionRefreshRequired: false,
             autoBootstrapped: false,
             draftTokens: [],
             activeTab: 'search-output',
@@ -715,9 +716,15 @@ const plugin = {
             const result = await this._runBootstrap();
             this._state.catalog = result;
             this._state.bootstrapStatus = 'done';
+            this._state.sessionRefreshRequired = false;
             Logger.log('dashboard: bootstrap complete (' + result.projects.length + ' projects, ' + result.environments.length + ' environments)');
         } catch (err) {
-            this._state.bootstrapError = err.message;
+            if (this._handleDashSessionRefreshError(err)) {
+                this._state.bootstrapError = null;
+            } else {
+                this._state.bootstrapError = err.message;
+                this._state.sessionRefreshRequired = false;
+            }
             this._state.bootstrapStatus = 'error';
             Logger.warn('dashboard: bootstrap failed', err);
         } finally {
@@ -1492,6 +1499,7 @@ const plugin = {
                                     <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
                                 </div>
                                 <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                                    <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
                                     <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Output types</div>
@@ -2098,7 +2106,11 @@ const plugin = {
             this._showAuthorCandidates(results);
             return 'multiple';
         } catch (err) {
-            this._setAuthorError('Lookup failed: ' + err.message);
+            if (!this._handleDashSessionRefreshError(err)) {
+                this._setAuthorError('Lookup failed: ' + err.message);
+            } else {
+                this._setAuthorError('');
+            }
             Logger.warn('dashboard: author lookup failed', err);
             return 'error';
         }
@@ -2183,15 +2195,77 @@ const plugin = {
 
     // ── Multiselect rendering / reading ──
 
+    _isDashSessionRefreshError(err) {
+        const ops = Context.opsTab;
+        return !!(ops && typeof ops.isSessionRefreshRequiredError === 'function' && ops.isSessionRefreshRequiredError(err));
+    },
+
+    _handleDashSessionRefreshError(err) {
+        if (!this._isDashSessionRefreshError(err)) return false;
+        this._state.sessionRefreshRequired = true;
+        this._syncDashSessionRefreshBanner();
+        return true;
+    },
+
+    _renderDashSessionRefreshBannerHtml() {
+        return [
+            '<div style="',
+            'padding: 12px;background: #fee2e2;border: 2px solid #dc2626;border-radius: 8px;">',
+            '<div style="display: flex; align-items: flex-start; gap: 10px;">',
+            '<span style="color: #dc2626; font-size: 16px; line-height: 1.2;" aria-hidden="true">⚠</span>',
+            '<div style="flex: 1; min-width: 0;">',
+            '<div style="font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;">Fleet session expired</div>',
+            '<p style="font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;">',
+            'Reload Fleet or sign in again, then press <strong>Refresh catalogs</strong> or retry your search.',
+            '</p>',
+            '</div>',
+            '</div>',
+            '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
+            '<a href="', dashEscHtml(DASH_FLEET_ORIGIN), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" style="',
+            'display: inline-block;padding: 8px 14px;font-size: 12px;font-weight: 600;',
+            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
+            'cursor: pointer;text-decoration: none;">Reload Fleet</a>',
+            '</div>',
+            '</div>'
+        ].join('');
+    },
+
+    _syncDashSessionRefreshBanner() {
+        const banner = this._q('#wf-dash-session-refresh-banner');
+        const errEl = this._q('#wf-dash-bootstrap-error');
+        const show = !!this._state.sessionRefreshRequired;
+        if (banner) {
+            if (show) {
+                banner.innerHTML = this._renderDashSessionRefreshBannerHtml();
+                banner.style.display = 'block';
+                const reload = banner.querySelector('#wf-dash-session-reload');
+                if (reload && !reload.dataset.wfDashWired) {
+                    reload.dataset.wfDashWired = '1';
+                    reload.addEventListener('click', () => {
+                        Logger.log('dashboard: session refresh banner — Reload Fleet link opened');
+                    });
+                }
+            } else {
+                banner.innerHTML = '';
+                banner.style.display = 'none';
+            }
+        }
+        if (errEl && show) {
+            errEl.style.display = 'none';
+            errEl.textContent = '';
+        }
+    },
+
     _refreshCatalogDependentUi() {
         if (!this._built) return;
+        this._syncDashSessionRefreshBanner();
         const status = this._state.bootstrapStatus;
         const errEl = this._q('#wf-dash-bootstrap-error');
         if (errEl) {
-            if (status === 'error') {
+            if (status === 'error' && !this._state.sessionRefreshRequired) {
                 errEl.textContent = 'Bootstrap failed: ' + (this._state.bootstrapError || 'unknown') + '. Filters may be empty.';
                 errEl.style.display = 'block';
-            } else {
+            } else if (!this._state.sessionRefreshRequired) {
                 errEl.style.display = 'none';
             }
         }
@@ -2727,7 +2801,11 @@ const plugin = {
                 this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
                 this._setLeftTab('filters');
             } catch (err) {
-                this._setSearchError(err.message || String(err));
+                if (this._handleDashSessionRefreshError(err)) {
+                    this._setSearchError('');
+                } else {
+                    this._setSearchError(err.message || String(err));
+                }
                 this._state.cachedItems = null;
                 this._state.filteredItems = null;
                 this._state.appliedFilters = null;
@@ -2742,7 +2820,9 @@ const plugin = {
                 this._renderResults();
             }
         } catch (err) {
-            this._setSearchError(err.message || String(err));
+            if (!this._handleDashSessionRefreshError(err)) {
+                this._setSearchError(err.message || String(err));
+            }
             Logger.error('dashboard: search submit failed', err);
         }
     },
@@ -2766,6 +2846,8 @@ const plugin = {
         this._hideAuthorCandidates();
         this._setAuthorError('');
         this._setSearchError('');
+        this._state.sessionRefreshRequired = false;
+        this._syncDashSessionRefreshBanner();
         this._validateRangeUi();
         Logger.log('dashboard: search parameters cleared');
     },
@@ -2854,6 +2936,10 @@ const plugin = {
 
     _setSearchError(text) {
         this._state.searchError = text || null;
+        if (text) {
+            this._state.sessionRefreshRequired = false;
+            this._syncDashSessionRefreshBanner();
+        }
         const el = this._q('#wf-dash-search-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
         this._updateResultsStatus();
