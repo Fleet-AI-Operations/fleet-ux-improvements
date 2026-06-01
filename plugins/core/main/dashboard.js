@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.29',
+    _version: '3.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -203,6 +203,7 @@ const plugin = {
             appliedFilters: null,
             filterListOptions: null,
             cardUi: {},
+            taskOpenUi: {},
             disputeClaimUi: {},
             includeTasks: true,
             includeQa: true,
@@ -377,6 +378,147 @@ const plugin = {
 
     _disputeClaimApiPath(disputeId) {
         return '/disputes/' + encodeURIComponent(String(disputeId)) + '/claim';
+    },
+
+    _dashGetCookie(name) {
+        try {
+            const win = this._pageWindow();
+            const cookie = (win.document && win.document.cookie) || '';
+            if (!cookie) return '';
+            for (const part of cookie.split(/;\s*/)) {
+                const eq = part.indexOf('=');
+                if (eq < 0) continue;
+                if (part.slice(0, eq).trim() === name) {
+                    return decodeURIComponent(part.slice(eq + 1));
+                }
+            }
+        } catch (e) {
+            Logger.debug('dashboard: cookie read failed for ' + name, e);
+        }
+        return '';
+    },
+
+    _dashSetCookie(name, value) {
+        try {
+            const win = this._pageWindow();
+            const doc = win.document;
+            if (!doc) return;
+            const secure = win.location && win.location.protocol === 'https:' ? '; Secure' : '';
+            doc.cookie = name + '=' + encodeURIComponent(value) + '; path=/' + secure + '; SameSite=Lax';
+        } catch (e) {
+            Logger.warn('dashboard: cookie write failed for ' + name, e);
+        }
+    },
+
+    _dashGetCurrentUserId() {
+        const fromCookie = this._dashGetCookie('current-user-id');
+        if (fromCookie && DASH_UUID_RE.test(fromCookie)) return fromCookie;
+        try {
+            const stored = this._pageWindow().localStorage.getItem('fleet-ux:ops-current-user-id');
+            if (stored && DASH_UUID_RE.test(stored)) return stored;
+        } catch (_e) { /* ignore */ }
+        return '';
+    },
+
+    _dashEnsureRuntimeAccess() {
+        const access = Context.networkObserver && typeof Context.networkObserver.getRuntimeAccess === 'function'
+            ? Context.networkObserver.getRuntimeAccess() || {}
+            : {};
+        const baseUrl = access.supabaseRestBaseUrl;
+        const anonKey = access.supabaseAnonKey;
+        if (!baseUrl || !anonKey) {
+            throw new Error('Supabase API config not yet discovered. Open a Fleet data page, then retry.');
+        }
+        return { baseUrl, anonKey };
+    },
+
+    async _dashPostgrestObjectGet(table, params) {
+        const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
+        const ops = this._dashOpsTab();
+        const pageWindow = this._pageWindow();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const url = new URL(baseUrl + '/' + table);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value != null && value !== '') url.searchParams.set(key, String(value));
+        });
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'GET',
+            headers: {
+                accept: 'application/vnd.pgrst.object+json',
+                'accept-profile': 'public',
+                apikey: anonKey,
+                authorization: 'Bearer ' + jwt,
+                'x-client-info': 'fleet-ux-dashboard/' + this._version
+            },
+            credentials: 'omit'
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
+        }
+        return res.json();
+    },
+
+    async _switchFleetTeam(teamId) {
+        const id = String(teamId || '').trim();
+        if (!id) throw new Error('Missing team id');
+        const userId = this._dashGetCurrentUserId();
+        if (!userId) throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        const teamLabel = this._teamName(id) || id.slice(0, 8) + '…';
+        Logger.log('dashboard: switching active team to ' + teamLabel);
+        this._dashSetCookie('current-team-id', id);
+        const membership = await this._dashPostgrestObjectGet('team_member', {
+            select: 'role',
+            profile_id: 'eq.' + userId,
+            team_id: 'eq.' + id
+        });
+        if (membership && membership.role) {
+            this._dashSetCookie('current-team-role', String(membership.role));
+        }
+        Logger.log('dashboard: active team set to ' + teamLabel);
+        return membership;
+    },
+
+    _getTaskOpenUi(taskId) {
+        const id = String(taskId || '').trim();
+        if (!id) return { status: 'idle' };
+        if (!this._state.taskOpenUi[id]) {
+            this._state.taskOpenUi[id] = { status: 'idle' };
+        }
+        return this._state.taskOpenUi[id];
+    },
+
+    async _openTaskInFleet(taskId, teamId, itemId) {
+        const id = String(taskId || '').trim();
+        const url = dashFleetTaskUrl(id);
+        if (!url) return;
+        const ui = this._getTaskOpenUi(id);
+        if (ui.status === 'switching') return;
+
+        const targetTeamId = String(teamId || '').trim();
+        const currentTeamId = this._dashGetCookie('current-team-id');
+        if (!targetTeamId || targetTeamId === currentTeamId) {
+            this._pageWindow().open(url, '_blank', 'noopener,noreferrer');
+            Logger.log('dashboard: opened task ' + id.slice(0, 8) + '… in Fleet');
+            return;
+        }
+
+        ui.status = 'switching';
+        this._patchTaskCard(itemId);
+        try {
+            await this._switchFleetTeam(targetTeamId);
+            this._pageWindow().open(url, '_blank', 'noopener,noreferrer');
+            Logger.log('dashboard: switched team and opened task ' + id.slice(0, 8) + '…');
+        } catch (e) {
+            Logger.warn('dashboard: team switch failed before opening task ' + id.slice(0, 8) + '…', e);
+        } finally {
+            ui.status = 'idle';
+            this._patchTaskCard(itemId);
+        }
     },
 
     _dashNormProfileId(id) {
@@ -1903,6 +2045,14 @@ const plugin = {
                 this._patchTaskCard(itemId);
                 return;
             }
+            const openTaskBtn = e.target.closest('[data-wf-dash-open-task]');
+            if (openTaskBtn && modal.contains(openTaskBtn)) {
+                const taskId = openTaskBtn.getAttribute('data-task-id');
+                const teamId = openTaskBtn.getAttribute('data-team-id');
+                const itemId = openTaskBtn.getAttribute('data-item-id');
+                if (taskId && itemId) void this._openTaskInFleet(taskId, teamId, itemId);
+                return;
+            }
             const disputeClaimBtn = e.target.closest('[data-wf-dash-dispute-claim]');
             if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
                 const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
@@ -3089,6 +3239,28 @@ const plugin = {
         </a>`;
     },
 
+    _extLinkButtonStyle() {
+        return 'display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer;';
+    },
+
+    _taskOpenLinkHtml(task, itemId) {
+        const taskId = String(task && task.id || '').trim();
+        if (!taskId) return '';
+        const teamId = String(task.teamId || '').trim();
+        const ui = this._getTaskOpenUi(taskId);
+        const title = 'Open task in Fleet';
+        if (ui.status === 'switching') {
+            const teamLabel = this._teamName(teamId) || 'team';
+            return `<button type="button" disabled aria-busy="true" title="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} gap: 6px; width: auto; max-width: 100%; padding: 2px 8px; cursor: wait; opacity: 0.9;">`
+                + `${this._loadingSpinnerHtml(14)}`
+                + `<span style="font-size: 11px; font-weight: 500; white-space: nowrap;">Switching to ${dashEscHtml(teamLabel)}</span>`
+                + `</button>`;
+        }
+        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} width: 26px; height: 26px; flex-shrink: 0;">`
+            + `${this._extLinkIconSvg(true)}`
+            + `</button>`;
+    },
+
     _labelSpan(text) {
         return `<span style="${this._labelStyle()}">${dashEscHtml(text)}</span>`;
     },
@@ -3328,7 +3500,10 @@ const plugin = {
                 + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
         }
         if (ui.status === 'claiming') {
-            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">${this._loadingSpinnerHtml(14)}</button>`;
+            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">`
+                + `${this._loadingSpinnerHtml(14)}`
+                + `<span>Leasing dispute...</span>`
+                + `</button>`;
         }
         return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" style="${baseStyle}">`
             + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
@@ -3591,7 +3766,7 @@ const plugin = {
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
                         ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
-                        ${this._extLinkHtml(dashFleetTaskUrl(task.id), 'Open task in Fleet')}
+                        ${this._taskOpenLinkHtml(task, itemId)}
                     </div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
