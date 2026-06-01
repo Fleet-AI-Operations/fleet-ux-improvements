@@ -172,7 +172,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.43',
+    _version: '3.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2521,30 +2521,28 @@ const plugin = {
 
     _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
         const bulk = bulkActions ? `
-                    <span style="display: inline-flex; gap: 6px;">
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
-                        <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>
-                    </span>` : '';
-        const bulkRow = bulkActions ? `
-                <div data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
-                    ${bulk}
-                </div>` : '';
+                        <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
         const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-')) ? `
-                <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
                     <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                 </div>` : '';
         return `
-            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}" style="${this._panelBoxStyle()} min-width: 100%;">
-                <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 10px; gap: 8px; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
-                    <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
-                    <span style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
-                        <span id="wf-dash-${scopeKey}-count" style="display: none; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
-                        <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" aria-hidden="true" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 100%;">
+                <div style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
+                    <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
+                        <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
+                    </button>
+                    <span data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: none; align-items: center; gap: 6px; flex-shrink: 0;">
+                        ${bulk}
                     </span>
-                </button>
+                    <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                    <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
+                        <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
+                    </button>
+                </div>
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
                     ${filterRow}
-                    ${bulkRow}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                     </div>
@@ -2914,16 +2912,65 @@ const plugin = {
         return 'padding: 4px; display: flex; flex-direction: column; align-items: stretch; width: 100%; box-sizing: border-box;';
     },
 
+    _msOptionCount(scopeKey) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return 0;
+        return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
+    },
+
+    _syncMsDropdownChrome(scopeKey) {
+        const optionCount = this._msOptionCount(scopeKey);
+        const open = this._isMsDropdownOpen(scopeKey);
+        const wrap = this._msWrapEl(scopeKey);
+        const hasBulkActions = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-bulk-actions') === '1');
+        const filterWrap = this._q('[data-wf-dash-ms-filter-wrap="' + scopeKey + '"]');
+        if (filterWrap) {
+            const showFilter = optionCount >= 5;
+            if (!showFilter) {
+                const input = filterWrap.querySelector('[data-wf-dash-ms-filter]');
+                if (input && input.value) {
+                    input.value = '';
+                    this._applyMsDropdownFilter(scopeKey, '');
+                }
+            }
+            filterWrap.style.display = showFilter ? '' : 'none';
+        }
+        const bulkEl = this._q('[data-wf-dash-ms-bulk="' + scopeKey + '"]');
+        if (bulkEl) {
+            const showBulk = open && hasBulkActions && optionCount > 1;
+            bulkEl.style.display = showBulk ? 'inline-flex' : 'none';
+        }
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (itemsEl) {
+            const singleOption = optionCount === 1;
+            itemsEl.querySelectorAll('label[data-wf-dash-ms-option]').forEach((label) => {
+                const cb = label.querySelector('input[type="checkbox"]');
+                if (!cb) return;
+                if (singleOption) {
+                    cb.checked = true;
+                    cb.disabled = true;
+                    label.style.cursor = 'default';
+                    label.style.opacity = '0.85';
+                } else {
+                    cb.disabled = false;
+                    label.style.cursor = 'pointer';
+                    label.style.opacity = '';
+                }
+            });
+        }
+    },
+
     _syncMsDropdown(scopeKey) {
         const open = this._isMsDropdownOpen(scopeKey);
         const panel = this._msPanelEl(scopeKey);
         const wrap = this._msWrapEl(scopeKey);
-        const toggle = this._q('[data-wf-dash-ms-toggle="' + scopeKey + '"]');
+        const toggles = wrap ? wrap.querySelectorAll('[data-wf-dash-ms-toggle="' + scopeKey + '"]') : [];
         const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
         if (panel) panel.style.cssText = open ? this._msPanelOpenStyle() : 'display: none;';
         if (wrap) wrap.style.width = '';
-        if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggles.forEach((toggle) => toggle.setAttribute('aria-expanded', open ? 'true' : 'false'));
         if (chevron) chevron.textContent = open ? '▾' : '▸';
+        this._syncMsDropdownChrome(scopeKey);
     },
 
     _syncAllMsDropdowns() {
@@ -3225,14 +3272,19 @@ const plugin = {
         if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
+        const singleOption = items.length === 1;
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const spanStyle = dim
                 ? 'white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
                 : 'white-space: nowrap;';
+            const labelCursor = singleOption ? 'default' : 'pointer';
+            const labelOpacity = singleOption ? '0.85' : '';
+            const checked = singleOption || defaultChecked;
+            const disabledAttr = singleOption ? ' disabled' : '';
             return `
-            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;">
-                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
+                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${checked ? ' checked' : ''}${disabledAttr}>
                 <span style="${spanStyle}">${dashEscHtml(it.label)}</span>
             </label>`;
         }).join('');
@@ -3250,6 +3302,7 @@ const plugin = {
             countEl.textContent = n + '/' + all.length;
             countEl.style.display = all.length > 0 ? 'inline' : 'none';
         }
+        this._syncMsDropdownChrome(scopeKey);
     },
 
     _renderSearchTeamsList() {
