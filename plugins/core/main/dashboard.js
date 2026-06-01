@@ -163,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.38',
+    _version: '3.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2336,13 +2336,6 @@ const plugin = {
                                     </label>
                                     <div id="wf-dash-substring-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                 </div>
-                                <div>
-                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Sort</label>
-                                    <select id="wf-dash-sort" style="${input} cursor: pointer;">
-                                        <option value="desc">Created — newest first</option>
-                                        <option value="asc">Created — oldest first</option>
-                                    </select>
-                                </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
                                     <div style="${label} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
@@ -2368,6 +2361,13 @@ const plugin = {
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                 <div id="wf-dash-results-pager-slot-header" style="display: inline-flex; align-items: center;">
                                     <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                        <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                            <span>Sort</span>
+                                            <select id="wf-dash-sort" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                                <option value="desc">Newest first</option>
+                                                <option value="asc">Oldest first</option>
+                                            </select>
+                                        </label>
                                         <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                             <span>Show</span>
                                             <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
