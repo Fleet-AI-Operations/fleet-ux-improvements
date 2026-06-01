@@ -172,7 +172,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.44',
+    _version: '3.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1815,6 +1815,26 @@ const plugin = {
         return true;
     },
 
+    _applySortAndRender() {
+        const lib = dashLib();
+        const applied = this._state.appliedFilters;
+        if (this._state.cachedItems === null || !applied) return;
+        const sortOrder = ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc';
+        if (applied.sortOrder === sortOrder) return;
+        const filters = Object.assign({}, applied, { sortOrder });
+        this._state.resultsPage = 0;
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        const scopeItems = this._getFilterScopeItems();
+        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        this._state.filteredItems = result;
+        this._state.appliedFilters = filters;
+        Logger.log('dashboard: sort applied — ' + (sortOrder === 'asc' ? 'oldest first' : 'newest first'));
+        this._updateResultsStatus();
+        this._syncBulkHydrateUi();
+        this._renderResults();
+        this._updateApplyFiltersUi();
+    },
+
     _findCachedItem(itemId) {
         return (this._state.cachedItems || []).find((it) => it.id === itemId) || null;
     },
@@ -2588,6 +2608,11 @@ const plugin = {
                 this._syncBulkHydrateUi();
                 this._syncResultsPagerUi();
             });
+        }
+
+        const sortSel = this._q('#wf-dash-sort');
+        if (sortSel) {
+            sortSel.addEventListener('change', () => this._applySortAndRender());
         }
 
         const resultsPrev = this._q('#wf-dash-results-prev');
@@ -3651,7 +3676,6 @@ const plugin = {
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
         if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
-        if (draft.sortOrder !== applied.sortOrder) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory'
