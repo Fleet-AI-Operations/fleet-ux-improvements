@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.1.1
+// @version      9.2.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.1.1';
+    const VERSION = '9.2.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1083,7 +1083,8 @@
     const RUNTIME_ACCESS_STORAGE_KEYS = {
         supabaseRestBaseUrl: 'fleet-ux:supabase-rest-base-url',
         supabaseAnonKey: 'fleet-ux:supabase-anon-key',
-        supabaseProjectRef: 'fleet-ux:supabase-project-ref'
+        supabaseProjectRef: 'fleet-ux:supabase-project-ref',
+        supabaseAccessToken: 'fleet-ux:supabase-access-token'
     };
 
     /**
@@ -1098,7 +1099,8 @@
         _runtimeAccess: {
             supabaseRestBaseUrl: null,
             supabaseAnonKey: null,
-            supabaseProjectRef: null
+            supabaseProjectRef: null,
+            supabaseAccessToken: null
         },
 
         init() {
@@ -1109,9 +1111,35 @@
                 return;
             }
             this._loadRuntimeAccessFromStorage(pageWindow);
+            this._subscribeAuthTokenCapture();
             this._installFetchHook(pageWindow);
             this._installed = true;
             Logger.log('✓ NetworkObserver installed');
+        },
+
+        _subscribeAuthTokenCapture() {
+            const observer = this;
+            this.subscribe({
+                id: 'fleet-ux-auth-token-capture',
+                matches(meta) {
+                    return meta.method === 'POST'
+                        && !!meta.urlObj
+                        && meta.urlObj.hostname.endsWith('.supabase.co')
+                        && meta.urlObj.pathname.startsWith('/auth/v1/token');
+                },
+                onResponse(meta, response) {
+                    response.json().then((body) => {
+                        if (!body || !body.access_token) return;
+                        if (observer._jwtIsAnonForRef(body.access_token, observer._runtimeAccess.supabaseProjectRef)) {
+                            return;
+                        }
+                        observer._persistRuntimeAccess(meta.pageWindow, {
+                            supabaseAccessToken: body.access_token
+                        });
+                        Logger.debug('NetworkObserver: captured access_token from auth/v1/token response');
+                    }).catch(() => { /* ignore non-JSON */ });
+                }
+            });
         },
 
         _loadRuntimeAccessFromStorage(pageWindow) {
@@ -1121,9 +1149,13 @@
                 const baseUrl = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
                 const anonKey = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
                 const projectRef = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseProjectRef);
+                const accessToken = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
 
                 const anonKeyValid = anonKey ? this._jwtIsAnonForRef(anonKey, projectRef) : false;
                 const baseUrlValid = baseUrl ? this._validRestBaseUrlForRef(baseUrl, projectRef) : false;
+                const accessTokenValid = accessToken
+                    ? !this._jwtIsAnonForRef(accessToken, projectRef)
+                    : false;
 
                 if (anonKey && !anonKeyValid) {
                     storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
@@ -1133,11 +1165,16 @@
                     storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
                     Logger.warn('NetworkObserver: discarded stale Supabase REST base URL from localStorage');
                 }
+                if (accessToken && !accessTokenValid) {
+                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+                    Logger.warn('NetworkObserver: discarded invalid access token from localStorage');
+                }
 
                 this._runtimeAccess = {
                     supabaseRestBaseUrl: baseUrlValid ? baseUrl : null,
                     supabaseAnonKey: anonKeyValid ? anonKey : null,
-                    supabaseProjectRef: projectRef || null
+                    supabaseProjectRef: projectRef || null,
+                    supabaseAccessToken: accessTokenValid ? accessToken : null
                 };
             } catch (e) {
                 Logger.debug('NetworkObserver: hydrating runtime access from localStorage failed', e);
@@ -1224,6 +1261,13 @@
             if (apikey && this._jwtIsAnonForRef(apikey, ref)) {
                 update.supabaseAnonKey = apikey;
             }
+            const authHeader = this._readHeader(meta.headers, 'authorization');
+            const bearer = authHeader && authHeader.startsWith('Bearer ')
+                ? authHeader.slice(7).trim()
+                : null;
+            if (bearer && !this._jwtIsAnonForRef(bearer, ref)) {
+                update.supabaseAccessToken = bearer;
+            }
             this._persistRuntimeAccess(meta.pageWindow, update);
         },
 
@@ -1295,6 +1339,12 @@
                 }
                 changed = true;
             };
+            if (partial.supabaseAccessToken) {
+                const ref = partial.supabaseProjectRef || this._runtimeAccess.supabaseProjectRef;
+                if (!this._jwtIsAnonForRef(partial.supabaseAccessToken, ref)) {
+                    setKey('supabaseAccessToken', partial.supabaseAccessToken);
+                }
+            }
             setKey('supabaseProjectRef', partial.supabaseProjectRef);
             setKey('supabaseRestBaseUrl', partial.supabaseRestBaseUrl);
             setKey('supabaseAnonKey', partial.supabaseAnonKey);
@@ -1302,7 +1352,8 @@
                 Logger.debug('NetworkObserver: runtime access updated', {
                     supabaseProjectRef: this._runtimeAccess.supabaseProjectRef,
                     supabaseRestBaseUrl: this._runtimeAccess.supabaseRestBaseUrl,
-                    hasAnonKey: !!this._runtimeAccess.supabaseAnonKey
+                    hasAnonKey: !!this._runtimeAccess.supabaseAnonKey,
+                    hasAccessToken: !!this._runtimeAccess.supabaseAccessToken
                 });
             }
         },
