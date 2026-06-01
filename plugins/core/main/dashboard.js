@@ -169,7 +169,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.41',
+    _version: '3.42',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1986,6 +1986,7 @@ const plugin = {
         row2.style.justifyContent = 'space-between';
         row2.style.width = '100%';
         row2.style.gap = '12px';
+        const committed = this._state.committed;
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
             buttonsWrap.innerHTML = '';
@@ -3844,8 +3845,8 @@ const plugin = {
         this._renderFilterLists();
         this._updateResultsStatus();
         this._syncBulkHydrateUi();
-        this._updateResultsKindTabsUi();
         this._renderResults();
+        this._updateResultsKindTabsUi();
     },
 
     // ── Status text ──
