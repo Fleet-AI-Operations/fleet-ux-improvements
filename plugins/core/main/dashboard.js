@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.30',
+    _version: '3.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -198,6 +198,7 @@ const plugin = {
             filteredItems: null,
             hasSearched: false,
             loading: false,
+            searchLoadPhase: '',
             searchError: null,
             committed: null,
             appliedFilters: null,
@@ -916,6 +917,7 @@ const plugin = {
         const selectedProjects = this._selectedFromList('search-projects');
         const projectIds = selectedProjects.length > 0 ? selectedProjects : allProjectIds;
         const hasProjectFilter = selectedProjects.length > 0;
+        if (hasProjectFilter) this._setSearchLoadPhase('Resolving project targets…');
         const targetIds = hasProjectFilter ? await this._fetchTargetIdsForProjects(projectIds) : [];
 
         const scope = { teamIds, envKeys, projectIds, targetIds, hasProjectFilter,
@@ -1211,6 +1213,11 @@ const plugin = {
     },
 
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
+        this._setSearchLoadPhase(this._searchFetchSourcesLabel({
+            includeTaskCreation,
+            includeQa,
+            includeDisputes
+        }));
         const disputesPromise = includeDisputes
             ? this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope)
             : Promise.resolve({ byTaskId: new Map(), rows: [] });
@@ -1233,10 +1240,13 @@ const plugin = {
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
+        const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIds.includes(id));
+        if (missingQaTaskIds.length > 0 || missingDisputeTaskIds.length > 0) {
+            this._setSearchLoadPhase('Loading tasks linked from QA and disputes…');
+        }
         const qaOnlyRows = missingQaTaskIds.length > 0
             ? await this._fetchTaskRowsByIds(missingQaTaskIds, scope)
             : [];
-        const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIds.includes(id));
         const disputeOnlyRows = missingDisputeTaskIds.length > 0
             ? await this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
             : [];
@@ -1258,6 +1268,7 @@ const plugin = {
 
         let allFeedbackRows = [...feedbackRows];
         if (includeDisputes && disputeTaskIds.length > 0 && !includeQa) {
+            this._setSearchLoadPhase('Loading QA feedback for dispute tasks…');
             const disputeQaRows = await this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope);
             const seenFb = new Set(allFeedbackRows.map((f) => f.id));
             for (const fb of disputeQaRows) {
@@ -1268,11 +1279,13 @@ const plugin = {
             }
         }
 
+        this._setSearchLoadPhase('Enriching prompt versions and feedback history…');
         const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
             prefetchedFeedbackRows: allFeedbackRows,
             skipFeedbackFetch: !includeQa && !includeDisputes
         });
         if (includeDisputes && disputesBulk.rows.length > 0) {
+            this._setSearchLoadPhase('Loading dispute resolver profiles…');
             await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
         }
 
@@ -1302,9 +1315,11 @@ const plugin = {
             }
         }
 
+        this._setSearchLoadPhase('Assembling result cards…');
         let mergedItems = this._mergeWorkerOutputItemsByTask(items);
 
         if (includeDisputes && mergedItems.length > 0) {
+            this._setSearchLoadPhase('Loading dispute details for cards…');
             mergedItems = await this._attachDisputesToMergedItems(
                 mergedItems,
                 bulkByTaskId,
@@ -2918,6 +2933,7 @@ const plugin = {
             };
             this._state.hasSearched = true;
             this._state.loading = true;
+            this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
             this._updateResultsStatus();
@@ -2939,6 +2955,7 @@ const plugin = {
                     beforeIso: rangeCheck.beforeIso,
                     scope
                 });
+                this._setSearchLoadPhase('Applying filters…');
                 this._state.cachedItems = items;
                 Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
                 const prompt = this._q('#wf-dash-prompt');
@@ -2970,6 +2987,7 @@ const plugin = {
             } finally {
                 this._state.searchFetchActive = false;
                 this._state.loading = false;
+                this._state.searchLoadPhase = '';
                 this._setSearchButtonLoading(false);
                 this._updateResultsStatus();
                 this._updateSubstringErrorUi();
@@ -3130,6 +3148,23 @@ const plugin = {
         if (clearParams) clearParams.disabled = loading;
     },
 
+    _setSearchLoadPhase(message) {
+        if (!this._state || !this._state.loading) return;
+        this._state.searchLoadPhase = String(message || '').trim();
+        this._renderResults();
+    },
+
+    _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes }) {
+        const parts = [];
+        if (includeTaskCreation) parts.push('task creations');
+        if (includeQa) parts.push('QA feedback');
+        if (includeDisputes) parts.push('disputes');
+        if (parts.length === 0) return 'Fetching data…';
+        if (parts.length === 1) return 'Fetching ' + parts[0] + '…';
+        if (parts.length === 2) return 'Fetching ' + parts[0] + ' and ' + parts[1] + '…';
+        return 'Fetching ' + parts[0] + ', ' + parts[1] + ', and ' + parts[2] + '…';
+    },
+
     _updateResultsStatus() {
         const el = this._q('#wf-dash-results-status');
         if (!el) return;
@@ -3138,10 +3173,9 @@ const plugin = {
 
         if (s.loading) {
             const detail = this._searchStatusDetail(s.committed);
-            const spinner = this._loadingSpinnerHtml(16);
             el.innerHTML = detail
-                ? `<span style="${label} display: inline-flex; align-items: center; gap: 8px;">${spinner}<span>Searching… ${dashEscHtml(detail)}</span></span>`
-                : `<span style="${label} display: inline-flex; align-items: center; gap: 8px;">${spinner}<span>Searching…</span></span>`;
+                ? `<span style="${label}">Searching — ${dashEscHtml(detail)}</span>`
+                : `<span style="${label}">Searching…</span>`;
             return;
         }
         if (s.searchError && !s.cachedItems) {
@@ -3185,7 +3219,14 @@ const plugin = {
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
         if (s.loading) {
-            wrap.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>`;
+            const phase = String(s.searchLoadPhase || '').trim();
+            const phaseHtml = phase
+                ? `<p style="margin: 0; font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); text-align: center; max-width: 420px; line-height: 1.45;">${dashEscHtml(phase)}</p>`
+                : '';
+            wrap.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 16px; min-height: 120px;">
+                ${phaseHtml}
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>
+            </div>`;
             return;
         }
         if (s.searchError && !s.cachedItems) {
