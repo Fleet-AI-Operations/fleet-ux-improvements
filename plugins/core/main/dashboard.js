@@ -172,7 +172,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.46',
+    _version: '3.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4514,7 +4514,7 @@ const plugin = {
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         return `
-            <div style="margin-top: 8px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
+            <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
