@@ -55,6 +55,11 @@ const DASH_OUTPUT_KIND_CONFIG = {
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
 
+const DASH_SEARCH_DEPTH_HINTS = {
+    quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
+    deep: 'Loads all prompt versions and QA feedback per task (slower, full timelines on cards).'
+};
+
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 
@@ -163,7 +168,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.39',
+    _version: '3.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1468,16 +1473,52 @@ const plugin = {
     },
 
     _getSearchDepthFromUi() {
-        const el = this._q('input[name="wf-dash-search-depth"]:checked');
-        return el && el.value === 'deep' ? 'deep' : 'quick';
+        const deepBtn = this._q('#wf-dash-depth-deep');
+        return deepBtn && deepBtn.getAttribute('aria-pressed') === 'true' ? 'deep' : 'quick';
+    },
+
+    _btnDepthSegmentStyle(active, isLeft) {
+        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border: none;';
+        const radius = isLeft ? 'border-radius: 4px 0 0 4px;' : 'border-radius: 0 4px 4px 0;';
+        if (active) {
+            return base + radius + ' background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));';
+        }
+        return base + radius + ' background: transparent; color: var(--muted-foreground, #64748b); opacity: 0.85;';
+    },
+
+    _syncSearchDepthHint() {
+        const hintEl = this._q('#wf-dash-search-depth-hint');
+        if (!hintEl) return;
+        const depth = this._state.searchDepth || 'quick';
+        const label = this._labelStyle();
+        hintEl.innerHTML = `<span style="${label} line-height: 1.4;">${dashEscHtml(DASH_SEARCH_DEPTH_HINTS[depth] || '')}</span>`;
     },
 
     _syncSearchDepthUi() {
         const depth = this._state.searchDepth || this._readSearchDepthPref();
         this._state.searchDepth = depth;
-        this._modal.querySelectorAll('input[name="wf-dash-search-depth"]').forEach((input) => {
-            input.checked = input.value === depth;
-        });
+        const quickBtn = this._q('#wf-dash-depth-quick');
+        const deepBtn = this._q('#wf-dash-depth-deep');
+        if (quickBtn) {
+            const active = depth === 'quick';
+            quickBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            quickBtn.style.cssText = this._btnDepthSegmentStyle(active, true);
+        }
+        if (deepBtn) {
+            const active = depth === 'deep';
+            deepBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            deepBtn.style.cssText = this._btnDepthSegmentStyle(active, false)
+                + ' border-left: 1px solid var(--border, #e2e8f0);';
+        }
+        this._syncSearchDepthHint();
+    },
+
+    _setSearchDepth(depth) {
+        const next = depth === 'deep' ? 'deep' : 'quick';
+        this._state.searchDepth = next;
+        this._persistSearchDepthPref(next);
+        this._syncSearchDepthUi();
+        Logger.log('dashboard: search depth — ' + next);
     },
 
     _committedSearchKinds(committed) {
@@ -1697,19 +1738,15 @@ const plugin = {
 
     _syncResultsPagerUi() {
         const pager = this._q('#wf-dash-results-pager');
-        const headerSlot = this._q('#wf-dash-results-pager-slot-header');
         const kindSlot = this._q('#wf-dash-results-pager-slot-kind');
         const committed = this._state.committed;
-        const tabs = committed ? this._resultsKindTabsMeta(committed) : [];
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         const showPager = this._state.hasSearched && committed && !this._state.loading && resultsReady;
-        const showInKindRow = showPager && tabs.length > 1;
 
         if (pager) {
             pager.style.display = showPager ? 'inline-flex' : 'none';
-            if (showPager) {
-                const slot = showInKindRow ? kindSlot : headerSlot;
-                if (slot && pager.parentElement !== slot) slot.appendChild(pager);
+            if (showPager && kindSlot && pager.parentElement !== kindSlot) {
+                kindSlot.appendChild(pager);
             }
         }
 
@@ -1840,7 +1877,24 @@ const plugin = {
         } finally {
             ui.status = 'idle';
             this._patchTaskCard(itemId);
+            this._syncBulkHydrateUi();
         }
+    },
+
+    _getUnhydratedInTabScope() {
+        return (this._getViewItems() || []).filter((it) => !it.hydrated);
+    },
+
+    _bulkHydrateShowable() {
+        const committed = this._state.committed;
+        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
+        return Boolean(
+            committed
+            && committed.searchDepth === 'quick'
+            && this._state.hasSearched
+            && !this._state.loading
+            && resultsReady
+        );
     },
 
     _kindLabelForHydrate(tab, kinds) {
@@ -1855,11 +1909,9 @@ const plugin = {
         return 'disputes';
     },
 
-    _bulkHydrateLabel() {
+    _bulkHydrateBaseLabel() {
+        if (!this._bulkHydrateShowable()) return null;
         const committed = this._state.committed;
-        if (!committed || committed.searchDepth !== 'quick') return null;
-        const unhydrated = (this._getPaginatedViewItems() || []).filter((it) => !it.hydrated);
-        if (unhydrated.length === 0) return null;
         const kinds = this._committedSearchKinds(committed);
         const tab = this._state.resultsKindTab || 'all';
         const kindPart = this._kindLabelForHydrate(tab, kinds);
@@ -1867,84 +1919,90 @@ const plugin = {
         return 'Hydrate ' + prefix + kindPart + ' results';
     },
 
+    _bulkHydrateLabel() {
+        const base = this._bulkHydrateBaseLabel();
+        if (!base) return null;
+        const unhydrated = this._getUnhydratedInTabScope();
+        if (unhydrated.length > 0) {
+            return base + ' (' + unhydrated.length + ' remaining)';
+        }
+        return base;
+    },
+
     _syncBulkHydrateUi() {
         const btn = this._q('#wf-dash-bulk-hydrate');
         if (!btn) return;
-        const label = this._bulkHydrateLabel();
-        if (!label) {
+        if (!this._bulkHydrateShowable()) {
             btn.style.display = 'none';
             return;
         }
         btn.style.display = '';
-        if (this._state.hydrateBulkActive) {
-            btn.disabled = true;
-            return;
-        }
+        const unhydratedCount = this._getUnhydratedInTabScope().length;
+        const label = this._bulkHydrateLabel() || 'Hydrate results';
         btn.textContent = label;
-        btn.disabled = false;
+        btn.disabled = this._state.hydrateBulkActive || unhydratedCount === 0;
     },
 
     _setBulkHydrateProgress(done, total) {
         const btn = this._q('#wf-dash-bulk-hydrate');
         if (!btn || !this._state.hydrateBulkActive) return;
-        const base = this._bulkHydrateLabel() || 'Hydrate results';
+        const base = this._bulkHydrateBaseLabel() || 'Hydrate results';
         btn.textContent = total > 0 ? base + ' (' + done + '/' + total + ')' : base;
     },
 
     _updateResultsKindTabsUi() {
-        const wrap = this._q('#wf-dash-results-kind-tabs');
-        if (!wrap) return;
+        const row2 = this._q('#wf-dash-results-toolbar-row2');
+        const buttonsWrap = this._q('#wf-dash-results-kind-tab-buttons');
+        if (!row2 || !buttonsWrap) return;
         const committed = this._state.committed;
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         if (!this._state.hasSearched || !committed || this._state.loading || !resultsReady) {
-            wrap.style.display = 'none';
-            wrap.innerHTML = '';
+            row2.style.display = 'none';
+            buttonsWrap.innerHTML = '';
             this._syncResultsRangeCountUi();
             return;
         }
+        row2.style.display = 'flex';
+        row2.style.alignItems = 'center';
+        row2.style.justifyContent = 'space-between';
+        row2.style.width = '100%';
+        row2.style.gap = '12px';
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
-            wrap.style.display = 'none';
-            wrap.innerHTML = '';
-            this._syncResultsRangeCountUi();
-            return;
-        }
-        const activeTab = this._state.resultsKindTab || 'all';
-        const label = this._labelStyle();
-        const tabButtons = tabs.map((tab) => {
-            const active = tab.id === activeTab;
-            const style = active
-                ? 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));'
-                : 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
-            return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
-        }).join('');
-        wrap.style.display = 'flex';
-        wrap.style.alignItems = 'center';
-        wrap.style.justifyContent = 'space-between';
-        wrap.style.width = '100%';
-        wrap.style.gap = '12px';
-        wrap.innerHTML = `
-            <div style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0;">${tabButtons}</div>
-            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;"></div>`;
-        wrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
-                Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
-                this._updateResultsKindTabsUi();
-                this._onResultsKindTabChanged();
+            buttonsWrap.innerHTML = '';
+        } else {
+            const activeTab = this._state.resultsKindTab || 'all';
+            const tabButtons = tabs.map((tab) => {
+                const active = tab.id === activeTab;
+                const style = active
+                    ? 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));'
+                    : 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
+                return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
+            }).join('');
+            buttonsWrap.style.display = 'flex';
+            buttonsWrap.style.flexWrap = 'wrap';
+            buttonsWrap.style.gap = '6px';
+            buttonsWrap.style.minWidth = '0';
+            buttonsWrap.innerHTML = tabButtons;
+            buttonsWrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
+                    Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
+                    this._updateResultsKindTabsUi();
+                    this._onResultsKindTabChanged();
+                });
             });
-        });
+        }
         this._syncResultsRangeCountUi();
     },
 
     async _bulkHydrateVisible() {
-        const label = this._bulkHydrateLabel();
-        if (!label || this._state.hydrateBulkActive) return;
+        if (!this._bulkHydrateShowable() || this._state.hydrateBulkActive) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             Logger.warn('dashboard: bulk hydrate skipped — dashboardData not loaded');
             return;
         }
-        const toHydrate = (this._getPaginatedViewItems() || []).filter((it) => !it.hydrated);
+        const toHydrate = this._getUnhydratedInTabScope();
         if (toHydrate.length === 0) return;
 
         this._state.hydrateBulkActive = true;
@@ -1968,7 +2026,7 @@ const plugin = {
                 this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
             }
             this._recomputeFilteredItems();
-            Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) on current page');
+            Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) in tab');
         } catch (err) {
             for (const item of toHydrate) {
                 this._getHydrateUi(item.id).status = 'idle';
@@ -2229,8 +2287,7 @@ const plugin = {
                                     <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
                                     <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
                                     <div>
-                                        <div style="${label} margin-bottom: 4px; font-weight: 600;">Contributor search</div>
-                                        <div style="${label} margin-bottom: 8px;">Search contributors in these areas.</div>
+                                        <div style="${label} margin-bottom: 8px; font-weight: 600;">Contributor search</div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                             <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
@@ -2239,22 +2296,11 @@ const plugin = {
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Search depth</div>
-                                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer;">
-                                                <input type="radio" name="wf-dash-search-depth" value="quick" style="margin-top: 2px;">
-                                                <span>
-                                                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Quick search</span>
-                                                    <span style="${label} display: block; margin-top: 2px; line-height: 1.4;">Fast results from the initial API response. Hydrate cards for full prompt history and feedback.</span>
-                                                </span>
-                                            </label>
-                                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer;">
-                                                <input type="radio" name="wf-dash-search-depth" value="deep" style="margin-top: 2px;">
-                                                <span>
-                                                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Deep search</span>
-                                                    <span style="${label} display: block; margin-top: 2px; line-height: 1.4;">Loads all prompt versions and QA feedback per task (slower, full timelines on cards).</span>
-                                                </span>
-                                            </label>
+                                        <div style="display: flex; width: 100%; border: 2px solid var(--border, #e2e8f0); border-radius: 6px; overflow: hidden;">
+                                            <button type="button" id="wf-dash-depth-quick" aria-pressed="true" style="${this._btnDepthSegmentStyle(true, true)}">Quick</button>
+                                            <button type="button" id="wf-dash-depth-deep" aria-pressed="false" style="${this._btnDepthSegmentStyle(false, false)} border-left: 1px solid var(--border, #e2e8f0);">Deep</button>
                                         </div>
+                                        <div id="wf-dash-search-depth-hint" style="margin-top: 8px;"></div>
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Contributors</label>
@@ -2359,35 +2405,37 @@ const plugin = {
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                <div id="wf-dash-results-pager-slot-header" style="display: inline-flex; align-items: center;">
-                                    <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                        <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
-                                            <span>Sort</span>
-                                            <select id="wf-dash-sort" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
-                                                <option value="desc">Newest first</option>
-                                                <option value="asc">Oldest first</option>
-                                            </select>
-                                        </label>
-                                        <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
-                                            <span>Show</span>
-                                            <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
-                                                <option value="10">10</option>
-                                                <option value="25">25</option>
-                                                <option value="50">50</option>
-                                                <option value="100">100</option>
-                                                <option value="all">All</option>
-                                            </select>
-                                        </label>
-                                        <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
-                                        <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" style="${this._pagerNavBtnStyle(true)}">&lt;</button>
-                                        <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" style="${this._pagerNavBtnStyle(true)}">&gt;</button>
-                                    </div>
-                                </div>
                                 <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
                                 <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
                             </div>
                         </div>
-                        <div id="wf-dash-results-kind-tabs" style="display: none; margin-top: 10px;"></div>
+                        <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%;">
+                            <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0;"></div>
+                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;">
+                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                        <span>Sort</span>
+                                        <select id="wf-dash-sort" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            <option value="desc">Newest first</option>
+                                            <option value="asc">Oldest first</option>
+                                        </select>
+                                    </label>
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                        <span>Show</span>
+                                        <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            <option value="10">10</option>
+                                            <option value="25">25</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                            <option value="all">All</option>
+                                        </select>
+                                    </label>
+                                    <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
+                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" style="${this._pagerNavBtnStyle(true)}">&lt;</button>
+                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" style="${this._pagerNavBtnStyle(true)}">&gt;</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>
@@ -2461,14 +2509,10 @@ const plugin = {
             btn.addEventListener('click', () => this._setActiveTab(btn.getAttribute('data-wf-dash-tab')));
         });
 
-        this._modal.querySelectorAll('input[name="wf-dash-search-depth"]').forEach((input) => {
-            input.addEventListener('change', () => {
-                const depth = this._getSearchDepthFromUi();
-                this._state.searchDepth = depth;
-                this._persistSearchDepthPref(depth);
-                Logger.log('dashboard: search depth — ' + depth);
-            });
-        });
+        const depthQuick = this._q('#wf-dash-depth-quick');
+        const depthDeep = this._q('#wf-dash-depth-deep');
+        if (depthQuick) depthQuick.addEventListener('click', () => this._setSearchDepth('quick'));
+        if (depthDeep) depthDeep.addEventListener('click', () => this._setSearchDepth('deep'));
 
         const bulkHydrate = this._q('#wf-dash-bulk-hydrate');
         if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void this._bulkHydrateVisible(); });
@@ -4437,7 +4481,7 @@ const plugin = {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
         const tabsRow = (kindTabsHtml || hydrateTabHtml)
-            ? `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 2px; margin-bottom: 0;">
+            ? `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
                 <div style="display: flex; align-items: flex-end; gap: ${tabGapRem}rem; min-width: 0;">${kindTabsHtml}</div>
                 ${hydrateTabHtml}
             </div>`
