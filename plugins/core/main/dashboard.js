@@ -159,7 +159,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.28',
+    _version: '3.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1273,6 +1273,13 @@ const plugin = {
     },
 
     open() {
+        try {
+            if (Context.networkObserver && typeof Context.networkObserver.refreshFromPage === 'function') {
+                Context.networkObserver.refreshFromPage(this._pageWindow());
+            }
+        } catch (e) {
+            Logger.debug('dashboard: refreshFromPage on open failed', e);
+        }
         this._ensureBuilt();
         this._overlay.style.display = 'flex';
         // Close the regular settings modal if it is open
