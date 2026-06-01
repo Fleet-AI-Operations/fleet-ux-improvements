@@ -171,7 +171,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -668,11 +668,17 @@ const plugin = {
             if (task.envKey) envKeys.add(task.envKey);
             if (task.status) statuses.add(task.status);
             if (task.author && task.author.id) {
-                contributors.set(task.author.id, dashLibPersonLabel(task.author.name, task.author.email));
+                contributors.set(task.author.id, {
+                    name: String(task.author.name ?? '').trim(),
+                    email: String(task.author.email ?? '').trim()
+                });
             }
             for (const entry of task.allFeedback || []) {
                 if (entry.reviewer && entry.reviewer.id) {
-                    contributors.set(entry.reviewer.id, dashLibPersonLabel(entry.reviewer.name, entry.reviewer.email));
+                    contributors.set(entry.reviewer.id, {
+                        name: String(entry.reviewer.name ?? '').trim(),
+                        email: String(entry.reviewer.email ?? '').trim()
+                    });
                 }
                 if (entry.display && entry.display.isSystemFeedback) continue;
                 if (entry.display && entry.display.qualityRating) {
@@ -702,8 +708,12 @@ const plugin = {
             }).sort((a, b) => a.label.localeCompare(b.label)),
             statuses: [...statuses].map((id) => ({ id, label: id }))
                 .sort((a, b) => a.label.localeCompare(b.label)),
-            contributors: [...contributors.entries()].map(([id, label]) => ({ id, label }))
-                .sort((a, b) => a.label.localeCompare(b.label)),
+            contributors: [...contributors.entries()].map(([id, person]) => ({
+                id,
+                label: dashLibPersonLabel(person.name, person.email),
+                name: person.name || person.email || 'Unknown',
+                email: (person.name && person.email) ? person.email : ''
+            })).sort((a, b) => a.label.localeCompare(b.label)),
             promptRatings: DASH_LIB_PROMPT_RATING_ORDER
                 .filter((rating) => promptRatings.has(rating))
                 .map((rating) => ({ id: rating, label: rating })),

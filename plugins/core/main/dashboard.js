@@ -172,7 +172,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.45',
+    _version: '3.46',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1625,7 +1625,16 @@ const plugin = {
         const tab = this._state.resultsKindTab || 'all';
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
+        this._syncBulkHydrateUi();
         return this._listBoundsFromOptions(options);
+    },
+
+    _syncResultsListDerivedUi({ reindexFilters } = {}) {
+        if (reindexFilters && this._state.cachedItems) {
+            this._reindexFilterListsFromScope(false);
+        } else {
+            this._syncBulkHydrateUi();
+        }
     },
 
     _resultsToolbarReady() {
@@ -1810,7 +1819,7 @@ const plugin = {
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
         this._updateResultsStatus();
-        this._syncBulkHydrateUi();
+        this._syncResultsListDerivedUi();
         this._syncResultsRangeCountUi();
         return true;
     },
@@ -1830,7 +1839,7 @@ const plugin = {
         this._state.appliedFilters = filters;
         Logger.log('dashboard: sort applied — ' + (sortOrder === 'asc' ? 'oldest first' : 'newest first'));
         this._updateResultsStatus();
-        this._syncBulkHydrateUi();
+        this._syncResultsListDerivedUi();
         this._renderResults();
         this._updateApplyFiltersUi();
     },
@@ -1926,12 +1935,11 @@ const plugin = {
         }
     },
 
-    _getUnhydratedInTabScope() {
-        return (this._getFilterScopeItems() || []).filter((it) => !it.hydrated);
+    _getUnhydratedInView() {
+        return (this._getViewItems() || []).filter((it) => !it.hydrated);
     },
 
     _bulkHydrateShowable() {
-        if (this._hasActiveFilters()) return false;
         const committed = this._state.committed;
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
@@ -1967,7 +1975,7 @@ const plugin = {
     _bulkHydrateLabel() {
         const base = this._bulkHydrateBaseLabel();
         if (!base) return null;
-        const unhydrated = this._getUnhydratedInTabScope();
+        const unhydrated = this._getUnhydratedInView();
         if (unhydrated.length > 0) {
             return base + ' (' + unhydrated.length + ' remaining)';
         }
@@ -1981,7 +1989,7 @@ const plugin = {
             btn.style.display = 'none';
             return;
         }
-        const unhydratedCount = this._getUnhydratedInTabScope().length;
+        const unhydratedCount = this._getUnhydratedInView().length;
         if (unhydratedCount === 0) {
             btn.style.display = 'none';
             return;
@@ -2048,7 +2056,7 @@ const plugin = {
             Logger.warn('dashboard: bulk hydrate skipped — dashboardData not loaded');
             return;
         }
-        const toHydrate = this._getUnhydratedInTabScope();
+        const toHydrate = this._getUnhydratedInView();
         if (toHydrate.length === 0) return;
 
         this._state.hydrateBulkActive = true;
@@ -3300,17 +3308,24 @@ const plugin = {
         const singleOption = items.length === 1;
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
-            const spanStyle = dim
-                ? 'white-space: nowrap; color: var(--muted-foreground, #64748b); opacity: 0.5;'
-                : 'white-space: nowrap;';
+            const textColStyle = dim
+                ? 'min-width: 0; flex: 1; color: var(--muted-foreground, #64748b); opacity: 0.5;'
+                : 'min-width: 0; flex: 1;';
+            const email = String(it.email || '').trim();
+            const textHtml = email
+                ? `<div style="${textColStyle}">
+                    <div>${dashEscHtml(it.name || it.label)}</div>
+                    <div style="color: var(--muted-foreground, #64748b); font-size: 10px; word-break: break-all;">${dashEscHtml(email)}</div>
+                </div>`
+                : `<div style="${textColStyle} word-break: break-word;">${dashEscHtml(it.label)}</div>`;
             const labelCursor = singleOption ? 'default' : 'pointer';
             const labelOpacity = singleOption ? '0.85' : '';
             const checked = singleOption || defaultChecked;
             const disabledAttr = singleOption ? ' disabled' : '';
             return `
-            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
-                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${checked ? ' checked' : ''}${disabledAttr}>
-                <span style="${spanStyle}">${dashEscHtml(it.label)}</span>
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: flex-start; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
+                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}" style="flex-shrink: 0; margin-top: 1px;"${checked ? ' checked' : ''}${disabledAttr}>
+                ${textHtml}
             </label>`;
         }).join('');
     },
@@ -3977,7 +3992,7 @@ const plugin = {
             + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
         this._renderFilterLists();
         this._updateResultsStatus();
-        this._syncBulkHydrateUi();
+        this._syncResultsListDerivedUi();
         this._renderResults();
         this._updateResultsKindTabsUi();
     },
@@ -4101,12 +4116,9 @@ const plugin = {
 
         if (s.loading) {
             const phase = String(s.searchLoadPhase || '').trim();
-            const phaseHtml = phase
-                ? `<p style="margin: 0; font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); text-align: center; max-width: 420px; line-height: 1.45;">${dashEscHtml(phase)}</p>`
-                : '';
-            wrap.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 16px; min-height: 120px;">
-                ${phaseHtml}
-                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>
+            wrap.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
+                ${this._loadingSpinnerHtml(20)}
+                ${phase ? `<span style="font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;">${dashEscHtml(phase)}</span>` : ''}
             </div>`;
             return;
         }
@@ -4132,11 +4144,13 @@ const plugin = {
                     : 'No results match the current filters.';
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
             this._syncResultsRangeCountUi();
+            this._syncBulkHydrateUi();
             return;
         }
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsRangeCountUi();
+        this._syncBulkHydrateUi();
     },
 
     _copyChipHtml(text) {
