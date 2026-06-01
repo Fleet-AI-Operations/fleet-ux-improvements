@@ -54,6 +54,7 @@ const DASH_OUTPUT_KIND_CONFIG = {
 };
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
+const DASH_SEARCH_DEPTH_TOGGLE_ACTIVE = 'border: 2px solid #ca8a04; color: #a16207; background: transparent;';
 
 const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
@@ -168,7 +169,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.40',
+    _version: '3.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1477,21 +1478,20 @@ const plugin = {
         return deepBtn && deepBtn.getAttribute('aria-pressed') === 'true' ? 'deep' : 'quick';
     },
 
-    _btnDepthSegmentStyle(active, isLeft) {
-        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border: none;';
-        const radius = isLeft ? 'border-radius: 4px 0 0 4px;' : 'border-radius: 0 4px 4px 0;';
+    _btnDepthSegmentStyle(active) {
+        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
         if (active) {
-            return base + radius + ' background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));';
+            return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
         }
-        return base + radius + ' background: transparent; color: var(--muted-foreground, #64748b); opacity: 0.85;';
+        return base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
     _syncSearchDepthHint() {
         const hintEl = this._q('#wf-dash-search-depth-hint');
         if (!hintEl) return;
         const depth = this._state.searchDepth || 'quick';
-        const label = this._labelStyle();
-        hintEl.innerHTML = `<span style="${label} line-height: 1.4;">${dashEscHtml(DASH_SEARCH_DEPTH_HINTS[depth] || '')}</span>`;
+        const hint = this._hintStyle();
+        hintEl.innerHTML = `<span style="${hint} line-height: 1.4;">${dashEscHtml(DASH_SEARCH_DEPTH_HINTS[depth] || '')}</span>`;
     },
 
     _syncSearchDepthUi() {
@@ -1502,13 +1502,12 @@ const plugin = {
         if (quickBtn) {
             const active = depth === 'quick';
             quickBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            quickBtn.style.cssText = this._btnDepthSegmentStyle(active, true);
+            quickBtn.style.cssText = this._btnDepthSegmentStyle(active);
         }
         if (deepBtn) {
             const active = depth === 'deep';
             deepBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            deepBtn.style.cssText = this._btnDepthSegmentStyle(active, false)
-                + ' border-left: 1px solid var(--border, #e2e8f0);';
+            deepBtn.style.cssText = this._btnDepthSegmentStyle(active);
         }
         this._syncSearchDepthHint();
     },
@@ -1591,6 +1590,7 @@ const plugin = {
             this._resetFilterLists();
             return null;
         }
+        const prevBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const options = lib.buildFilterListOptions(
             scopeItems,
             this._state.catalog,
@@ -1606,11 +1606,29 @@ const plugin = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
                 this._updateMsCount(scopeKey);
             }
+        } else {
+            const newBounds = this._listBoundsFromOptions(options);
+            for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
+                const prevLen = (prevBounds[draftKey] || []).length;
+                const newLen = (newBounds[draftKey] || []).length;
+                if (prevLen === 0 && newLen > 0 && this._isFilterScopeVisible(scopeKey)) {
+                    const itemsEl = this._msItemsEl(scopeKey);
+                    if (!itemsEl) continue;
+                    itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
+                    this._updateMsCount(scopeKey);
+                }
+            }
         }
         const tab = this._state.resultsKindTab || 'all';
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
         return this._listBoundsFromOptions(options);
+    },
+
+    _resultsToolbarReady() {
+        const committed = this._state.committed;
+        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
+        return Boolean(this._state.hasSearched && committed && !this._state.loading && resultsReady);
     },
 
     _onResultsKindTabChanged() {
@@ -1739,9 +1757,12 @@ const plugin = {
     _syncResultsPagerUi() {
         const pager = this._q('#wf-dash-results-pager');
         const kindSlot = this._q('#wf-dash-results-pager-slot-kind');
-        const committed = this._state.committed;
-        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
-        const showPager = this._state.hasSearched && committed && !this._state.loading && resultsReady;
+        const showPager = this._resultsToolbarReady();
+
+        if (showPager) {
+            const row2 = this._q('#wf-dash-results-toolbar-row2');
+            if (row2) row2.style.display = 'flex';
+        }
 
         if (pager) {
             pager.style.display = showPager ? 'inline-flex' : 'none';
@@ -1882,10 +1903,11 @@ const plugin = {
     },
 
     _getUnhydratedInTabScope() {
-        return (this._getViewItems() || []).filter((it) => !it.hydrated);
+        return (this._getFilterScopeItems() || []).filter((it) => !it.hydrated);
     },
 
     _bulkHydrateShowable() {
+        if (this._hasActiveFilters()) return false;
         const committed = this._state.committed;
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
@@ -1915,8 +1937,7 @@ const plugin = {
         const kinds = this._committedSearchKinds(committed);
         const tab = this._state.resultsKindTab || 'all';
         const kindPart = this._kindLabelForHydrate(tab, kinds);
-        const prefix = this._hasActiveFilters() ? 'filtered ' : '';
-        return 'Hydrate ' + prefix + kindPart + ' results';
+        return 'Hydrate ' + kindPart + ' results';
     },
 
     _bulkHydrateLabel() {
@@ -1954,9 +1975,7 @@ const plugin = {
         const row2 = this._q('#wf-dash-results-toolbar-row2');
         const buttonsWrap = this._q('#wf-dash-results-kind-tab-buttons');
         if (!row2 || !buttonsWrap) return;
-        const committed = this._state.committed;
-        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
-        if (!this._state.hasSearched || !committed || this._state.loading || !resultsReady) {
+        if (!this._resultsToolbarReady()) {
             row2.style.display = 'none';
             buttonsWrap.innerHTML = '';
             this._syncResultsRangeCountUi();
@@ -2026,6 +2045,11 @@ const plugin = {
                 this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
             }
             this._recomputeFilteredItems();
+            const meta = this._getResultsPaginationMeta();
+            if (meta && meta.page >= meta.totalPages) {
+                this._state.resultsPage = 0;
+            }
+            this._renderResults();
             Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) in tab');
         } catch (err) {
             for (const item of toHydrate) {
@@ -2232,6 +2256,9 @@ const plugin = {
     _labelStyle() {
         return 'font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b); letter-spacing: -0.01em;';
     },
+    _hintStyle() {
+        return 'font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); letter-spacing: -0.01em;';
+    },
     _inputStyle() {
         return 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1); border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a); box-sizing: border-box;';
     },
@@ -2270,6 +2297,7 @@ const plugin = {
     _searchPanelHtml() {
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
+        const hint = this._hintStyle();
         const input = this._inputStyle();
         const leftTab = this._state ? this._state.leftTab : 'search';
         return `
@@ -2296,9 +2324,9 @@ const plugin = {
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Search depth</div>
-                                        <div style="display: flex; width: 100%; border: 2px solid var(--border, #e2e8f0); border-radius: 6px; overflow: hidden;">
-                                            <button type="button" id="wf-dash-depth-quick" aria-pressed="true" style="${this._btnDepthSegmentStyle(true, true)}">Quick</button>
-                                            <button type="button" id="wf-dash-depth-deep" aria-pressed="false" style="${this._btnDepthSegmentStyle(false, false)} border-left: 1px solid var(--border, #e2e8f0);">Deep</button>
+                                        <div style="display: flex; width: 100%; gap: 8px;">
+                                            <button type="button" id="wf-dash-depth-quick" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Quick</button>
+                                            <button type="button" id="wf-dash-depth-deep" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Deep</button>
                                         </div>
                                         <div id="wf-dash-search-depth-hint" style="margin-top: 8px;"></div>
                                     </div>
@@ -2309,7 +2337,7 @@ const plugin = {
                                         </div>
                                         <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                         <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
-                                        <div style="${label} margin-top: 4px;">Empty = all workers.</div>
+                                        <div style="${hint} margin-top: 4px;">Empty = all workers.</div>
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
@@ -2341,7 +2369,7 @@ const plugin = {
                                     <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
-                                        <div style="${label} margin-bottom: 8px;">None selected = all.</div>
+                                        <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
                                             ${this._multiSelectHtml('search-teams', 'Team', 'All teams', false)}
                                             ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
@@ -2355,14 +2383,14 @@ const plugin = {
                                     <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Clear Parameters</button>
                                     <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
                                 </div>
-                                <div id="wf-dash-universal-hint" style="display: none; font-size: 11px; color: var(--muted-foreground, #64748b); margin-top: 8px;"></div>
+                                <div id="wf-dash-universal-hint" style="display: none; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 8px;"></div>
                                 <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); margin-top: 8px;"></div>
                             </div>
                         </div>
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${label} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
+                                <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <div style="position: relative; min-width: 0;">
@@ -2384,7 +2412,7 @@ const plugin = {
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
-                                    <div style="${label} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
+                                    <div style="${hint} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
@@ -2409,9 +2437,9 @@ const plugin = {
                                 <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
                             </div>
                         </div>
-                        <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%;">
-                            <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0;"></div>
-                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;">
+                        <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
+                            <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
+                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                         <span>Sort</span>
@@ -2468,7 +2496,7 @@ const plugin = {
                 <div data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0); gap: 6px;">
                     ${bulk}
                 </div>` : '';
-        const filterRow = scopeKey.startsWith('filter-') ? `
+        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-')) ? `
                 <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
                     <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                 </div>` : '';
@@ -2857,7 +2885,8 @@ const plugin = {
     _closeAllMsDropdowns() {
         this._state.msDropdownOpen = {};
         this._state.msDropdownFilter = {};
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        for (const scopeKey of scopeKeys) {
             const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
             if (input) input.value = '';
             this._applyMsDropdownFilter(scopeKey, '');
@@ -3183,6 +3212,7 @@ const plugin = {
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-teams');
         this._syncMsDropdown('search-teams');
+        this._syncMsDropdownFilterUi('search-teams');
     },
 
     _renderSearchProjectsList() {
@@ -3196,6 +3226,7 @@ const plugin = {
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-projects');
         this._syncMsDropdown('search-projects');
+        this._syncMsDropdownFilterUi('search-projects');
     },
 
     _renderSearchEnvsList() {
@@ -3210,6 +3241,7 @@ const plugin = {
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
         this._updateMsCount('search-envs');
         this._syncMsDropdown('search-envs');
+        this._syncMsDropdownFilterUi('search-envs');
     },
 
     _getFilterDraft() {
@@ -3673,7 +3705,6 @@ const plugin = {
                 this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
                 this._applyResultsPageSizeForNewSearch();
                 this._setLeftTab('filters');
-                this._updateResultsKindTabsUi();
                 this._syncBulkHydrateUi();
             } catch (err) {
                 if (this._handleDashSessionRefreshError(err)) {
@@ -3694,6 +3725,8 @@ const plugin = {
                 this._updateSubstringErrorUi();
                 this._updateApplyFiltersUi();
                 this._renderResults();
+                this._updateResultsKindTabsUi();
+                this._syncBulkHydrateUi();
             }
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
