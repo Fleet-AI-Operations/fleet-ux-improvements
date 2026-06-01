@@ -10,6 +10,9 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
+const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
+const DASH_HYDRATE_TAB_BG = '#64748b';
+const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_BOOTSTRAP_VERSION = 1;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
@@ -56,7 +59,6 @@ const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 const DASH_EXCLUDED_TEAM_NAMES = ['Fleet Fellows', 'Trace QA'];
 
 const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-output-kinds', optionsKey: 'outputKinds', draftKey: 'outputKinds' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
@@ -159,7 +161,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.31',
+    _version: '3.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -190,8 +192,12 @@ const plugin = {
             bootstrapStatus: 'idle',
             bootstrapError: null,
             sessionRefreshRequired: false,
-            autoBootstrapped: false,
             draftTokens: [],
+            searchDepth: 'quick',
+            resultsKindTab: 'all',
+            hydrateUi: {},
+            hydrateBulkActive: false,
+            hydrateLoadPhase: '',
             activeTab: 'search-output',
             leftTab: 'search',
             cachedItems: null,
@@ -1107,6 +1113,33 @@ const plugin = {
         return { enrichedTasksById, profilesMap };
     },
 
+    async _buildQuickTasksById(taskRows, feedbackRows) {
+        const taskById = new Map(taskRows.map((row) => [row.id, row]));
+        const profileIds = new Set();
+        for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
+        for (const fb of feedbackRows) if (fb.created_by) profileIds.add(fb.created_by);
+
+        const profileRows = profileIds.size > 0
+            ? await this._pgQuery('profiles.select_person', { id: 'in.(' + [...profileIds].join(',') + ')' }, 'search')
+            : [];
+        const profilesMap = this._buildProfilesMap(profileRows);
+        Logger.debug('dashboard: quick search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
+
+        const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
+        const targetToProjectId = await this._fetchTargetProjectMap(uniqueTargetIds);
+
+        const quickTasksById = new Map();
+        for (const taskId of taskById.keys()) {
+            const taskRow = taskById.get(taskId);
+            if (!taskRow) continue;
+            const task = this._rowToTask(taskRow, profilesMap, null, targetToProjectId);
+            task.promptVersions = [];
+            task.allFeedback = [];
+            quickTasksById.set(taskId, task);
+        }
+        return { enrichedTasksById: quickTasksById, profilesMap };
+    },
+
     _qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap) {
         const items = [];
         for (const feedback of feedbackRows) {
@@ -1212,7 +1245,7 @@ const plugin = {
         return mergedItems;
     },
 
-    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope }) {
+    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
             includeTaskCreation,
             includeQa,
@@ -1279,11 +1312,18 @@ const plugin = {
             }
         }
 
-        this._setSearchLoadPhase('Enriching prompt versions and feedback history…');
-        const { enrichedTasksById, profilesMap } = await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
-            prefetchedFeedbackRows: allFeedbackRows,
-            skipFeedbackFetch: !includeQa && !includeDisputes
-        });
+        const isQuickSearch = searchDepth === 'quick';
+        if (isQuickSearch) {
+            this._setSearchLoadPhase('Assembling results…');
+        } else {
+            this._setSearchLoadPhase('Enriching prompt versions and feedback history…');
+        }
+        const { enrichedTasksById, profilesMap } = isQuickSearch
+            ? await this._buildQuickTasksById(allTaskRows, allFeedbackRows)
+            : await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
+                prefetchedFeedbackRows: allFeedbackRows,
+                skipFeedbackFetch: !includeQa && !includeDisputes
+            });
         if (includeDisputes && disputesBulk.rows.length > 0) {
             this._setSearchLoadPhase('Loading dispute resolver profiles…');
             await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
@@ -1328,7 +1368,7 @@ const plugin = {
             );
         }
 
-        return mergedItems;
+        return mergedItems.map((item) => Object.assign({}, item, { hydrated: !isQuickSearch }));
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -1367,6 +1407,8 @@ const plugin = {
                     }
                 }
             }
+            if (item.hydrated === false) merged.hydrated = false;
+            else if (merged.hydrated === undefined) merged.hydrated = item.hydrated !== false;
         }
         const mergedItems = [...byTask.values()].map((merged) => {
             const kinds = DASH_KIND_MERGE_ORDER.filter((k) => merged.kinds.has(k));
@@ -1378,7 +1420,8 @@ const plugin = {
                 task: merged.task,
                 selectedFeedbackId: merged.selectedFeedbackId,
                 qaFeedback: merged.qaFeedback,
-                disputes: merged.disputes
+                disputes: merged.disputes,
+                hydrated: merged.hydrated !== false
             };
         });
         const folded = items.length - mergedItems.length;
@@ -1399,13 +1442,276 @@ const plugin = {
             promptRatings: (opts.promptRatings || []).map((r) => r.id),
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
-            outputKinds: (opts.outputKinds || []).map((k) => k.id),
             promptHistory: (opts.promptHistory || []).map((h) => h.id)
         };
     },
 
-    _isOutputKindFilterVisible(options) {
-        return ((options && options.outputKinds) || []).length > 1;
+    _readSearchDepthPref() {
+        try {
+            const v = this._pageWindow().localStorage.getItem(DASH_SEARCH_DEPTH_STORAGE_KEY);
+            if (v === 'deep' || v === 'quick') return v;
+        } catch (_e) { /* ignore */ }
+        return 'quick';
+    },
+
+    _persistSearchDepthPref(depth) {
+        try {
+            this._pageWindow().localStorage.setItem(DASH_SEARCH_DEPTH_STORAGE_KEY, depth === 'deep' ? 'deep' : 'quick');
+        } catch (e) {
+            Logger.debug('dashboard: could not persist search depth', e);
+        }
+    },
+
+    _getSearchDepthFromUi() {
+        const el = this._q('input[name="wf-dash-search-depth"]:checked');
+        return el && el.value === 'deep' ? 'deep' : 'quick';
+    },
+
+    _syncSearchDepthUi() {
+        const depth = this._state.searchDepth || this._readSearchDepthPref();
+        this._state.searchDepth = depth;
+        this._modal.querySelectorAll('input[name="wf-dash-search-depth"]').forEach((input) => {
+            input.checked = input.value === depth;
+        });
+    },
+
+    _committedSearchKinds(committed) {
+        if (!committed) return [];
+        const kinds = [];
+        if (committed.includeTaskCreation) kinds.push('task_creation');
+        if (committed.includeQa) kinds.push('qa');
+        if (committed.includeDisputes) kinds.push('dispute');
+        return kinds;
+    },
+
+    _resultsKindTabsMeta(committed) {
+        const kinds = this._committedSearchKinds(committed);
+        if (kinds.length === 0) return [];
+        if (kinds.length === 1) {
+            const kind = kinds[0];
+            const singleLabels = {
+                task_creation: 'All/Task Creation',
+                qa: 'All/QA',
+                dispute: 'All/Disputes'
+            };
+            return [{ id: 'all', label: singleLabels[kind] || 'All' }];
+        }
+        const tabs = [{ id: 'all', label: 'All' }];
+        for (const kind of DASH_KIND_MERGE_ORDER) {
+            if (kinds.includes(kind)) {
+                const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
+                tabs.push({ id: kind, label: (cfg && cfg.label) || kind });
+            }
+        }
+        return tabs;
+    },
+
+    _itemHasOutputKind(item, kind) {
+        return ((item.kinds && item.kinds.length) ? item.kinds : [item.kind]).includes(kind);
+    },
+
+    _filterItemsByResultsKindTab(items) {
+        const committed = this._state.committed;
+        const kinds = this._committedSearchKinds(committed);
+        if (!items || kinds.length <= 1) return items || [];
+        const tab = this._state.resultsKindTab || 'all';
+        if (tab === 'all') return items;
+        return items.filter((item) => this._itemHasOutputKind(item, tab));
+    },
+
+    _getViewItems() {
+        if (this._state.filteredItems === null) return null;
+        return this._filterItemsByResultsKindTab(this._state.filteredItems);
+    },
+
+    _findCachedItem(itemId) {
+        return (this._state.cachedItems || []).find((it) => it.id === itemId) || null;
+    },
+
+    _getHydrateUi(itemId) {
+        const id = String(itemId || '');
+        if (!id) return { status: 'idle' };
+        if (!this._state.hydrateUi[id]) {
+            this._state.hydrateUi[id] = { status: 'idle' };
+        }
+        return this._state.hydrateUi[id];
+    },
+
+    async _hydrateItems(items) {
+        const lib = dashLib();
+        const toHydrate = (items || []).filter((it) => it && !it.hydrated);
+        if (toHydrate.length === 0) return 0;
+
+        const taskIds = [...new Set(toHydrate.map((it) => it.task.id).filter(Boolean))];
+        const profileIds = new Set();
+        for (const item of toHydrate) {
+            const task = item.task;
+            if (task.author && task.author.id) profileIds.add(task.author.id);
+            for (const entry of task.allFeedback || []) {
+                if (entry.reviewer && entry.reviewer.id) profileIds.add(entry.reviewer.id);
+            }
+        }
+        const profileRows = profileIds.size > 0
+            ? await this._pgQuery('profiles.select_person', { id: 'in.(' + [...profileIds].join(',') + ')' }, 'search')
+            : [];
+        const profilesMap = this._buildProfilesMap(profileRows);
+
+        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {});
+        let updated = 0;
+        for (const item of this._state.cachedItems || []) {
+            if (!taskIds.includes(item.task.id) || item.hydrated) continue;
+            const hist = enrichment.get(item.task.id);
+            if (hist) {
+                item.task.promptVersions = hist.promptVersions || [];
+                item.task.allFeedback = hist.allFeedback || [];
+                if (item.selectedFeedbackId) {
+                    const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
+                    if (entry && entry.display) item.qaFeedback = entry.display;
+                }
+            }
+            item.hydrated = true;
+            updated++;
+        }
+        if (updated > 0 && this._state.cachedItems) {
+            const options = lib.buildFilterListOptions(
+                this._state.cachedItems,
+                this._state.catalog,
+                this._getTeamCatalog()
+            );
+            this._state.filterListOptions = options;
+            this._renderFilterLists();
+        }
+        Logger.log('dashboard: hydrated ' + updated + ' card(s)');
+        return updated;
+    },
+
+    async _hydrateCard(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || item.hydrated) return;
+        const ui = this._getHydrateUi(itemId);
+        if (ui.status === 'loading') return;
+        ui.status = 'loading';
+        this._patchTaskCard(itemId);
+        try {
+            await this._hydrateItems([item]);
+            this._applyFiltersAndRender();
+        } catch (err) {
+            if (!this._handleDashSessionRefreshError(err)) {
+                Logger.warn('dashboard: card hydrate failed — ' + itemId, err);
+            }
+        } finally {
+            ui.status = 'idle';
+            this._patchTaskCard(itemId);
+        }
+    },
+
+    _kindLabelForHydrate(tab, kinds) {
+        if (kinds.length === 1) {
+            if (kinds[0] === 'task_creation') return 'task creation';
+            if (kinds[0] === 'qa') return 'QA';
+            return 'disputes';
+        }
+        if (tab === 'all') return 'all';
+        if (tab === 'task_creation') return 'task creation';
+        if (tab === 'qa') return 'QA';
+        return 'disputes';
+    },
+
+    _bulkHydrateLabel() {
+        const committed = this._state.committed;
+        if (!committed || committed.searchDepth !== 'quick') return null;
+        const viewItems = this._getViewItems() || [];
+        const unhydrated = viewItems.filter((it) => !it.hydrated);
+        if (unhydrated.length === 0) return null;
+        const kinds = this._committedSearchKinds(committed);
+        const tab = this._state.resultsKindTab || 'all';
+        const kindPart = this._kindLabelForHydrate(tab, kinds);
+        const prefix = this._hasActiveFilters() ? 'filtered ' : '';
+        return 'Hydrate ' + prefix + kindPart + ' results';
+    },
+
+    _syncBulkHydrateUi() {
+        const btn = this._q('#wf-dash-bulk-hydrate');
+        if (!btn) return;
+        const label = this._bulkHydrateLabel();
+        if (!label || this._state.hydrateBulkActive) {
+            btn.style.display = 'none';
+            return;
+        }
+        btn.style.display = '';
+        btn.textContent = label;
+        btn.disabled = false;
+    },
+
+    _updateResultsKindTabsUi() {
+        const wrap = this._q('#wf-dash-results-kind-tabs');
+        if (!wrap) return;
+        const committed = this._state.committed;
+        if (!this._state.hasSearched || !committed) {
+            wrap.style.display = 'none';
+            wrap.innerHTML = '';
+            return;
+        }
+        const tabs = this._resultsKindTabsMeta(committed);
+        if (tabs.length <= 1) {
+            wrap.style.display = 'none';
+            wrap.innerHTML = '';
+            return;
+        }
+        const activeTab = this._state.resultsKindTab || 'all';
+        wrap.style.display = 'flex';
+        wrap.innerHTML = tabs.map((tab) => {
+            const active = tab.id === activeTab;
+            const style = active
+                ? 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));'
+                : 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
+            return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
+        }).join('');
+        wrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
+            if (btn.dataset.wfDashResultsKindWired) return;
+            btn.dataset.wfDashResultsKindWired = '1';
+            btn.addEventListener('click', () => {
+                this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
+                Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
+                this._updateResultsKindTabsUi();
+                this._syncBulkHydrateUi();
+                this._renderResults();
+            });
+        });
+    },
+
+    async _bulkHydrateVisible() {
+        const label = this._bulkHydrateLabel();
+        if (!label || this._state.hydrateBulkActive) return;
+        const viewItems = this._getViewItems() || [];
+        const toHydrate = viewItems.filter((it) => !it.hydrated);
+        if (toHydrate.length === 0) return;
+
+        this._state.hydrateBulkActive = true;
+        this._syncBulkHydrateUi();
+        const btn = this._q('#wf-dash-bulk-hydrate');
+        if (btn) btn.disabled = true;
+        let hydratedTotal = 0;
+        try {
+            for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+                const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+                const done = Math.min(i + chunk.length, toHydrate.length);
+                this._state.hydrateLoadPhase = 'Hydrating ' + done + ' / ' + toHydrate.length + '…';
+                this._renderResults();
+                hydratedTotal += await this._hydrateItems(chunk);
+            }
+            this._applyFiltersAndRender();
+            Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s)');
+        } catch (err) {
+            if (!this._handleDashSessionRefreshError(err)) {
+                Logger.warn('dashboard: bulk hydrate failed', err);
+            }
+        } finally {
+            this._state.hydrateBulkActive = false;
+            this._state.hydrateLoadPhase = '';
+            this._syncBulkHydrateUi();
+            this._renderResults();
+        }
     },
 
     _resetFilterDraftsFromResults(items) {
@@ -1450,12 +1756,8 @@ const plugin = {
         } catch (e) {
             Logger.debug('dashboard: could not close settings modal', e);
         }
-        if (!this._state.autoBootstrapped && !this._state.catalog) {
-            this._state.autoBootstrapped = true;
-            void this._doBootstrap();
-        } else {
-            this._refreshCatalogDependentUi();
-        }
+        void this._doBootstrap();
+        this._refreshCatalogDependentUi();
         Logger.log('dashboard: opened');
     },
 
@@ -1493,14 +1795,14 @@ const plugin = {
         overlay.style.cssText = [
             'position: fixed', 'inset: 0', 'z-index: 2147483600',
             'display: none', 'align-items: center', 'justify-content: center',
-            'background: rgba(0,0,0,0.5)', 'padding: 24px', 'box-sizing: border-box'
+            'background: rgba(0,0,0,0.5)', 'padding: 12px', 'box-sizing: border-box'
         ].join(';');
 
         const modal = doc.createElement('div');
         modal.id = 'wf-dash-modal';
         modal.style.cssText = [
             'position: relative', 'display: flex', 'flex-direction: column',
-            'width: 95vw', 'height: 95vh', 'max-width: 95vw', 'max-height: 95vh',
+            'width: 100vw', 'height: 100vh', 'max-width: 100vw', 'max-height: 100vh',
             'background: var(--background, #ffffff)', 'color: var(--foreground, #0f172a)',
             'border: 1px solid var(--border, #e2e8f0)', 'border-radius: 12px',
             'box-shadow: 0 20px 60px rgba(0,0,0,0.35)', 'overflow: hidden',
@@ -1540,6 +1842,8 @@ const plugin = {
         this._syncFieldClearButtons();
         this._syncAllMsDropdowns();
         this._applyDefaultSearchDates();
+        this._state.searchDepth = this._readSearchDepthPref();
+        this._syncSearchDepthUi();
         Logger.log('dashboard: popup built');
     },
 
@@ -1579,10 +1883,12 @@ const plugin = {
             ">${t.label}</button>`).join('');
 
         return `
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                <div style="min-width: 0;">
-                    <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a);">Dashboard</div>
-                    <div style="font-size: 11px; color: var(--muted-foreground, #64748b); margin-top: 2px;">Worker output search — task creations and QA reviews via Fleet APIs.</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 0; min-width: 0; flex: 1;">
+                    <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
+                    <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
+                        ${tabBtns}
+                    </nav>
                 </div>
                 <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
                     flex-shrink: 0; width: 32px; height: 32px; display: inline-flex; align-items: center;
@@ -1591,9 +1897,6 @@ const plugin = {
                     border: 1px solid var(--border, #e2e8f0); cursor: pointer;
                 ">&times;</button>
             </div>
-            <nav style="display: flex; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                ${tabBtns}
-            </nav>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="overview" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">Overview content coming soon.</div>
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
@@ -1658,19 +1961,35 @@ const plugin = {
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
-                                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e2e8f0);">
-                                    <p style="${label} line-height: 1.45; margin: 0;">Edit parameters anytime; press Search to fetch.</p>
-                                    <button type="button" id="wf-dash-refresh" style="${this._btnStyle()} flex-shrink: 0;" title="Refresh teams, projects, and environment lists">Refresh catalogs</button>
-                                </div>
                                 <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
                                     <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
                                     <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
                                     <div>
-                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Output types</div>
+                                        <div style="${label} margin-bottom: 4px; font-weight: 600;">Contributor search</div>
+                                        <div style="${label} margin-bottom: 8px;">Search contributors in these areas.</div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                             <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
                                             <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Search depth</div>
+                                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer;">
+                                                <input type="radio" name="wf-dash-search-depth" value="quick" style="margin-top: 2px;">
+                                                <span>
+                                                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Quick search</span>
+                                                    <span style="${label} display: block; margin-top: 2px; line-height: 1.4;">Fast results from the initial API response. Hydrate cards for full prompt history and feedback.</span>
+                                                </span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer;">
+                                                <input type="radio" name="wf-dash-search-depth" value="deep" style="margin-top: 2px;">
+                                                <span>
+                                                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Deep search</span>
+                                                    <span style="${label} display: block; margin-top: 2px; line-height: 1.4;">Loads all prompt versions and QA feedback per task (slower, full timelines on cards).</span>
+                                                </span>
+                                            </label>
                                         </div>
                                     </div>
                                     <div>
@@ -1776,12 +2095,18 @@ const plugin = {
                 </aside>
 
                 <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
-                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                        <div style="min-width: 0;">
-                            <div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Results</div>
-                            <div id="wf-dash-results-status" style="${label} margin-top: 4px;">Set search parameters on the left, then press Search.</div>
+                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; flex-wrap: wrap;">
+                                <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
+                                <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
+                            </div>
+                            <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
+                                <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
+                            </div>
                         </div>
-                        <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} flex-shrink: 0; font-size: 11px;">Clear Results</button>
+                        <div id="wf-dash-results-kind-tabs" style="display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px;"></div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;"></div>
                 </div>
@@ -1791,7 +2116,6 @@ const plugin = {
 
     _filterScopeLabel(scopeKey) {
         const labels = {
-            'filter-output-kinds': 'Output type',
             'filter-prompt-history': 'Prompt History',
             'filter-teams': 'Team',
             'filter-projects': 'Projects',
@@ -1856,8 +2180,17 @@ const plugin = {
             btn.addEventListener('click', () => this._setActiveTab(btn.getAttribute('data-wf-dash-tab')));
         });
 
-        const refresh = this._q('#wf-dash-refresh');
-        if (refresh) refresh.addEventListener('click', () => { void this._doBootstrap(); });
+        this._modal.querySelectorAll('input[name="wf-dash-search-depth"]').forEach((input) => {
+            input.addEventListener('change', () => {
+                const depth = this._getSearchDepthFromUi();
+                this._state.searchDepth = depth;
+                this._persistSearchDepthPref(depth);
+                Logger.log('dashboard: search depth — ' + depth);
+            });
+        });
+
+        const bulkHydrate = this._q('#wf-dash-bulk-hydrate');
+        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void this._bulkHydrateVisible(); });
 
         // Author token input
         const authorBox = this._q('#wf-dash-author-box');
@@ -2073,6 +2406,12 @@ const plugin = {
                 const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
                 const itemId = disputeClaimBtn.getAttribute('data-item-id');
                 if (disputeId && itemId) void this._claimDispute(disputeId, itemId);
+                return;
+            }
+            const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
+            if (hydrateBtn && modal.contains(hydrateBtn)) {
+                const itemId = hydrateBtn.getAttribute('data-item-id');
+                if (itemId) void this._hydrateCard(itemId);
                 return;
             }
             if (!e.target.closest('[data-wf-dash-ms-wrap]') && Object.keys(this._state.msDropdownOpen).length > 0) {
@@ -2388,7 +2727,7 @@ const plugin = {
             '<div style="flex: 1; min-width: 0;">',
             '<div style="font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;">Fleet session token not yet captured</div>',
             '<p style="font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;">',
-            'Navigate to a Fleet data page (e.g. Tasks or QA), then press <strong>Refresh catalogs</strong> or retry your search.',
+            'Navigate to a Fleet data page (e.g. Tasks or QA), then close and reopen the dashboard or retry your search.',
             '</p>',
             '</div>',
             '</div>',
@@ -2440,11 +2779,6 @@ const plugin = {
             } else if (!this._state.sessionRefreshRequired) {
                 errEl.style.display = 'none';
             }
-        }
-        const refreshBtn = this._q('#wf-dash-refresh');
-        if (refreshBtn) {
-            refreshBtn.disabled = status === 'loading';
-            refreshBtn.textContent = status === 'loading' ? 'Refreshing…' : 'Refresh catalogs';
         }
         this._renderSearchTeamsList();
         this._renderSearchProjectsList();
@@ -2544,7 +2878,7 @@ const plugin = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            outputKinds: [], promptHistory: []
+            promptHistory: []
         };
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
             const panel = this._msPanelEl(scopeKey);
@@ -2576,11 +2910,7 @@ const plugin = {
             if (!itemsEl) continue;
             const optionItems = options[optionsKey] || [];
             const wrap = this._modal && this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
-            if (scopeKey === 'filter-output-kinds') {
-                if (wrap) wrap.style.display = this._isOutputKindFilterVisible(options) ? '' : 'none';
-            } else if (wrap) {
-                wrap.style.display = '';
-            }
+            if (wrap) wrap.style.display = '';
             const prevSelected = new Set(this._selectedFromList(scopeKey));
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const hadSelection = prevSelected.size > 0;
@@ -2665,7 +2995,7 @@ const plugin = {
                 break;
             }
         }
-        const html = this._taskCardHtml(item);
+        const html = this._resultCardHtml(item);
         const doc = this._pageWindow().document;
         const temp = doc.createElement('div');
         temp.innerHTML = html;
@@ -2811,7 +3141,6 @@ const plugin = {
         if (!this._state.cachedItems) return false;
         const options = this._state.filterListOptions || {};
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
-            if (scopeKey === 'filter-output-kinds' && !this._isOutputKindFilterVisible(options)) continue;
             const all = this._allFromList(scopeKey);
             if (all.length === 0) continue;
             if (this._selectedFromList(scopeKey).length === 0) return false;
@@ -2840,7 +3169,7 @@ const plugin = {
         if (draft.sortOrder !== applied.sortOrder) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'outputKinds', 'promptHistory'
+            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory'
         ];
         for (const key of keys) {
             if (!this._filterArraysEqual(draft[key], applied[key])) return true;
@@ -2890,9 +3219,12 @@ const plugin = {
             const includeQa = this._state.includeQa;
             const includeDisputes = this._state.includeDisputes;
             if (!includeTasks && !includeQa && !includeDisputes) {
-                this._setSearchError('Enable at least one output type: Task Creation, QA, or Disputes.');
+                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, or Disputes.');
                 return;
             }
+            const searchDepth = this._getSearchDepthFromUi();
+            this._persistSearchDepthPref(searchDepth);
+            this._state.searchDepth = searchDepth;
             const after = (this._q('#wf-dash-after') || {}).value || '';
             const before = (this._q('#wf-dash-before') || {}).value || '';
             const rangeCheck = dashValidateCreatedAtRange(after, before);
@@ -2929,8 +3261,15 @@ const plugin = {
                 includeQa,
                 includeDisputes,
                 afterLocal: after,
-                beforeLocal: before
+                beforeLocal: before,
+                searchDepth,
+                searchKinds: [
+                    includeTasks ? 'task_creation' : null,
+                    includeQa ? 'qa' : null,
+                    includeDisputes ? 'dispute' : null
+                ].filter(Boolean)
             };
+            this._state.resultsKindTab = 'all';
             this._state.hasSearched = true;
             this._state.loading = true;
             this._state.searchLoadPhase = 'Building search scope…';
@@ -2953,7 +3292,8 @@ const plugin = {
                     includeDisputes,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
-                    scope
+                    scope,
+                    searchDepth
                 });
                 this._setSearchLoadPhase('Applying filters…');
                 this._state.cachedItems = items;
@@ -2974,6 +3314,8 @@ const plugin = {
                 this._state.filteredItems = filtered;
                 this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
                 this._setLeftTab('filters');
+                this._updateResultsKindTabsUi();
+                this._syncBulkHydrateUi();
             } catch (err) {
                 if (this._handleDashSessionRefreshError(err)) {
                     this._setSearchError('');
@@ -3035,7 +3377,13 @@ const plugin = {
         this._state.committed = null;
         this._state.cardUi = {};
         this._state.disputeClaimUi = {};
+        this._state.hydrateUi = {};
+        this._state.resultsKindTab = 'all';
+        this._state.hydrateBulkActive = false;
+        this._state.hydrateLoadPhase = '';
         this._resetFilterLists();
+        this._updateResultsKindTabsUi();
+        this._syncBulkHydrateUi();
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
         const hidden = this._q('#wf-dash-hidden-versions');
@@ -3065,9 +3413,6 @@ const plugin = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
-        const options = this._state.filterListOptions || {};
-        const outputKindActive = this._isOutputKindFilterVisible(options)
-            && (applied.outputKinds || []).length < bounds.outputKinds.length;
         return applied.teamIds.length < bounds.teamIds.length
             || applied.projectIds.length < bounds.projectIds.length
             || applied.envKeys.length < bounds.envKeys.length
@@ -3076,7 +3421,6 @@ const plugin = {
             || (applied.promptRatings || []).length < bounds.promptRatings.length
             || (applied.taskIssues || []).length < bounds.taskIssues.length
             || (applied.returnTypes || []).length < bounds.returnTypes.length
-            || outputKindActive
             || (applied.promptHistory || []).length < bounds.promptHistory.length
             || !lib.isQueryEmpty(applied.promptText, applied.caseSensitive);
     },
@@ -3104,6 +3448,7 @@ const plugin = {
             + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
         this._renderFilterLists();
         this._updateResultsStatus();
+        this._syncBulkHydrateUi();
         this._renderResults();
     },
 
@@ -3204,10 +3549,13 @@ const plugin = {
                 return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}</span>`;
+            const depthNote = committed.searchDepth === 'quick' ? ' · quick search' : '';
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}</span>`;
+            this._syncBulkHydrateUi();
             return;
         }
         el.textContent = '';
+        this._syncBulkHydrateUi();
     },
 
     // ── Results rendering ──
@@ -3218,14 +3566,15 @@ const plugin = {
         const s = this._state;
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
-        if (s.loading) {
-            const phase = String(s.searchLoadPhase || '').trim();
+        if (s.loading || s.hydrateBulkActive) {
+            const phase = String(s.hydrateBulkActive ? s.hydrateLoadPhase : s.searchLoadPhase || '').trim();
             const phaseHtml = phase
                 ? `<p style="margin: 0; font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); text-align: center; max-width: 420px; line-height: 1.45;">${dashEscHtml(phase)}</p>`
                 : '';
+            const loadLabel = s.hydrateBulkActive ? 'Hydrating results…' : 'Loading results…';
             wrap.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 16px; min-height: 120px;">
                 ${phaseHtml}
-                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>Loading results…</span></div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px; ${muted}">${this._loadingSpinnerHtml(20)}<span>${loadLabel}</span></div>
             </div>`;
             return;
         }
@@ -3241,14 +3590,17 @@ const plugin = {
             wrap.innerHTML = '';
             return;
         }
-        if (s.filteredItems.length === 0) {
+        const viewItems = this._getViewItems();
+        if (!viewItems || viewItems.length === 0) {
             const msg = (s.cachedItems && s.cachedItems.length === 0)
                 ? 'No results matched this search.'
-                : 'No results match the current filters.';
+                : (s.filteredItems && s.filteredItems.length > 0)
+                    ? 'No results in this tab.'
+                    : 'No results match the current filters.';
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
             return;
         }
-        wrap.innerHTML = s.filteredItems.map((item) => this._taskCardHtml(item)).join('');
+        wrap.innerHTML = viewItems.map((item) => this._resultCardHtml(item)).join('');
     },
 
     _copyChipHtml(text) {
@@ -3683,20 +4035,89 @@ const plugin = {
             </div>`;
     },
 
-    _outputKindTabsWrap(kinds, cardHtml, itemId) {
-        const ordered = DASH_KIND_MERGE_ORDER.filter((k) => (kinds || []).includes(k));
-        if (ordered.length === 0) return cardHtml;
+    _resultCardHtml(item) {
+        if (!item) return '';
+        if (item.hydrated === false) return this._quickResultCardHtml(item);
+        return this._taskCardHtml(item);
+    },
+
+    _quickResultCardHtml(item) {
+        const task = item.task;
+        const itemId = item.id;
+        const hq = item.highlightQuery || '';
+        const cs = Boolean(item.highlightCaseSensitive);
+        const fz = Boolean(item.highlightFuzzy);
+        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
+        const promptText = task.prompt || '';
+        const promptBody = promptText
+            ? this._dashHighlightedHtml(promptText, hq, cs, fz)
+            : '—';
+        let bodyHtml = `
+            <div>
+                <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
+                    ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
+                </div>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
+            </div>`;
+        if (item.qaFeedback) {
+            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz);
+        }
+        const disputes = item.disputes || [];
+        if (disputes.length > 0) {
+            bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId)).join('');
+        }
+        const cardHtml = `
+            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._statusBadgeHtml(task.status)}
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                    </div>
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._taskOpenLinkHtml(task, itemId)}
+                    </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                </div>
+                <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
+            </article>`;
+        return this._resultCardOuterWrap(item, cardHtml);
+    },
+
+    _resultCardOuterWrap(item, cardHtml) {
+        const itemId = item.id;
+        const kinds = (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
+        const ordered = DASH_KIND_MERGE_ORDER.filter((k) => kinds.includes(k));
         const tabWidthRem = 7.75;
         const tabGapRem = 0.25;
-        const tabsHtml = ordered.map((kind, index) => {
+        const tabs = [];
+        ordered.forEach((kind, index) => {
             const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
-            if (!cfg) return '';
+            if (!cfg) return;
             const left = 'calc(16px + ' + index + ' * (' + tabWidthRem + 'rem + ' + tabGapRem + 'rem))';
-            return `<div style="position: absolute; left: ${left}; top: 0; z-index: 0; width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`;
-        }).join('');
+            tabs.push(`<div style="position: absolute; left: ${left}; top: 0; z-index: 0; width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`);
+        });
+        const showHydrateTab = item.hydrated === false
+            && this._state.committed
+            && this._state.committed.searchDepth === 'quick';
+        if (showHydrateTab) {
+            const hydrateIndex = tabs.length;
+            const left = 'calc(16px + ' + hydrateIndex + ' * (' + tabWidthRem + 'rem + ' + tabGapRem + 'rem))';
+            const ui = this._getHydrateUi(itemId);
+            const loading = ui.status === 'loading';
+            const label = loading ? 'Hydrating…' : 'Hydrate';
+            tabs.push(`<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" ${loading ? 'disabled' : ''} style="position: absolute; left: ${left}; top: 0; z-index: 2; width: ${tabWidthRem}rem; height: 22px; margin-top: -16px; padding: 0 4px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${dashEscHtml(label)}">${dashEscHtml(label)}</button>`);
+        }
+        if (tabs.length === 0) {
+            return `<div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}">${cardHtml}</div>`;
+        }
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative;">
-                ${tabsHtml}
+                ${tabs.join('')}
                 <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
             </div>`;
     },
@@ -3823,8 +4244,7 @@ const plugin = {
                 </div>
             </article>`;
 
-        const outputKinds = item.kinds && item.kinds.length ? item.kinds : [item.kind];
-        return this._outputKindTabsWrap(outputKinds, cardHtml, itemId);
+        return this._resultCardOuterWrap(item, cardHtml);
     },
 
     // ── Copy feedback (color-only: 1s green / 0.5s red pulse) ──
