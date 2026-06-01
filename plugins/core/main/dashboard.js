@@ -163,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.35',
+    _version: '3.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2299,7 +2299,7 @@ const plugin = {
                                         </label>
                                     </div>
                                     <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
-                                        <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions
+                                        <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions (requires hydrated results)
                                     </label>
                                     <div id="wf-dash-substring-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                 </div>
