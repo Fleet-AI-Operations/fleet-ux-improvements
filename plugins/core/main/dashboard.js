@@ -163,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.34',
+    _version: '3.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1590,37 +1590,97 @@ const plugin = {
         return viewItems.slice(start, start + size);
     },
 
+    _getResultsPaginationMeta() {
+        const viewItems = this._getViewItems() || [];
+        const total = viewItems.length;
+        const size = this._getEffectiveResultsPageSize();
+        if (total === 0 || size === Infinity) {
+            return { total, totalPages: 1, page: 0, canPrev: false, canNext: false, showNav: false };
+        }
+        const totalPages = Math.max(1, Math.ceil(total / size));
+        let page = this._state.resultsPage || 0;
+        if (page >= totalPages) page = totalPages - 1;
+        this._state.resultsPage = page;
+        return {
+            total,
+            totalPages,
+            page,
+            canPrev: page > 0,
+            canNext: page < totalPages - 1,
+            showNav: totalPages > 1
+        };
+    },
+
     _getResultsRangeLabel() {
         const viewItems = this._getViewItems() || [];
         const total = viewItems.length;
         if (total === 0) return '0 results';
-        const paginated = this._getPaginatedViewItems();
-        const size = this._getEffectiveResultsPageSize();
+        const meta = this._getResultsPaginationMeta();
         const suffix = total === 1 ? ' result' : ' results';
-        if (size === Infinity || paginated.length >= total) {
+        if (!meta.showNav) {
             return '1–' + total + ' of ' + total + suffix;
         }
-        const page = this._state.resultsPage || 0;
-        const start = page * size + 1;
-        const end = page * size + paginated.length;
+        const size = this._getEffectiveResultsPageSize();
+        const start = meta.page * size + 1;
+        const end = Math.min((meta.page + 1) * size, total);
         return start + '–' + end + ' of ' + total + suffix;
     },
 
-    _syncResultsRangeCountUi() {
-        const label = this._getResultsRangeLabel();
-        const kindCount = this._q('#wf-dash-results-kind-count');
-        const headerCount = this._q('#wf-dash-results-header-count');
+    _pagerNavBtnStyle(disabled) {
+        const base = 'width: 28px; height: 28px; padding: 0; font-size: 15px; font-weight: 600; line-height: 1; border-radius: 6px; flex-shrink: 0;';
+        if (disabled) {
+            return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); cursor: not-allowed; opacity: 0.75;';
+        }
+        return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a); cursor: pointer;';
+    },
+
+    _goResultsPage(delta) {
+        const meta = this._getResultsPaginationMeta();
+        if (!meta.showNav) return;
+        const next = meta.page + delta;
+        if (next < 0 || next >= meta.totalPages) return;
+        this._state.resultsPage = next;
+        Logger.log('dashboard: results page — ' + (next + 1) + ' / ' + meta.totalPages);
+        this._renderResults();
+        this._syncBulkHydrateUi();
+        this._syncResultsPagerUi();
+    },
+
+    _syncResultsPagerUi() {
+        const pager = this._q('#wf-dash-results-pager');
+        const headerSlot = this._q('#wf-dash-results-pager-slot-header');
+        const kindSlot = this._q('#wf-dash-results-pager-slot-kind');
         const committed = this._state.committed;
         const tabs = committed ? this._resultsKindTabsMeta(committed) : [];
-        const showInKindRow = this._state.hasSearched && committed && tabs.length > 1;
-        if (kindCount) {
-            kindCount.textContent = label;
-            kindCount.style.display = showInKindRow ? '' : 'none';
+        const showPager = this._state.hasSearched && committed;
+        const showInKindRow = showPager && tabs.length > 1;
+
+        if (pager) {
+            pager.style.display = showPager ? 'inline-flex' : 'none';
+            if (showPager) {
+                const slot = showInKindRow ? kindSlot : headerSlot;
+                if (slot && pager.parentElement !== slot) slot.appendChild(pager);
+            }
         }
-        if (headerCount) {
-            headerCount.textContent = label;
-            headerCount.style.display = (this._state.hasSearched && committed && !showInKindRow) ? '' : 'none';
+
+        const countEl = this._q('#wf-dash-results-range-count');
+        if (countEl) countEl.textContent = showPager ? this._getResultsRangeLabel() : '';
+
+        const meta = showPager ? this._getResultsPaginationMeta() : null;
+        const prevBtn = this._q('#wf-dash-results-prev');
+        const nextBtn = this._q('#wf-dash-results-next');
+        if (prevBtn) {
+            prevBtn.disabled = !meta || !meta.canPrev;
+            prevBtn.style.cssText = this._pagerNavBtnStyle(prevBtn.disabled);
         }
+        if (nextBtn) {
+            nextBtn.disabled = !meta || !meta.canNext;
+            nextBtn.style.cssText = this._pagerNavBtnStyle(nextBtn.disabled);
+        }
+    },
+
+    _syncResultsRangeCountUi() {
+        this._syncResultsPagerUi();
     },
 
     _recomputeFilteredItems() {
@@ -1819,7 +1879,7 @@ const plugin = {
         wrap.style.gap = '12px';
         wrap.innerHTML = `
             <div style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0;">${tabButtons}</div>
-            <span id="wf-dash-results-kind-count" style="${label} flex-shrink: 0; white-space: nowrap;"></span>`;
+            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;"></div>`;
         wrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
@@ -2014,6 +2074,7 @@ const plugin = {
         this._state.resultsPageSize = pagePref === 'all' ? 'all' : (Number(pagePref) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
         this._state.resultsPage = 0;
         this._syncResultsPageSizeUi();
+        this._syncResultsPagerUi();
         Logger.log('dashboard: popup built');
     },
 
@@ -2272,17 +2333,23 @@ const plugin = {
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
-                                    <span>Show</span>
-                                    <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
-                                        <option value="10">10</option>
-                                        <option value="25">25</option>
-                                        <option value="50">50</option>
-                                        <option value="100">100</option>
-                                        <option value="all">All</option>
-                                    </select>
-                                </label>
-                                <span id="wf-dash-results-header-count" style="${label} display: none; white-space: nowrap;"></span>
+                                <div id="wf-dash-results-pager-slot-header" style="display: inline-flex; align-items: center;">
+                                    <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                        <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                            <span>Show</span>
+                                            <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                                <option value="10">10</option>
+                                                <option value="25">25</option>
+                                                <option value="50">50</option>
+                                                <option value="100">100</option>
+                                                <option value="all">All</option>
+                                            </select>
+                                        </label>
+                                        <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
+                                        <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" style="${this._pagerNavBtnStyle(true)}">&lt;</button>
+                                        <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" style="${this._pagerNavBtnStyle(true)}">&gt;</button>
+                                    </div>
+                                </div>
                                 <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
                                 <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
                             </div>
@@ -2383,9 +2450,14 @@ const plugin = {
                 Logger.log('dashboard: results page size — ' + val);
                 this._renderResults();
                 this._syncBulkHydrateUi();
-                this._syncResultsRangeCountUi();
+                this._syncResultsPagerUi();
             });
         }
+
+        const resultsPrev = this._q('#wf-dash-results-prev');
+        const resultsNext = this._q('#wf-dash-results-next');
+        if (resultsPrev) resultsPrev.addEventListener('click', () => this._goResultsPage(-1));
+        if (resultsNext) resultsNext.addEventListener('click', () => this._goResultsPage(1));
 
         // Author token input
         const authorBox = this._q('#wf-dash-author-box');
