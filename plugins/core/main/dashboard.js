@@ -163,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.33',
+    _version: '3.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -199,6 +199,7 @@ const plugin = {
             resultsKindTab: 'all',
             hydrateUi: {},
             hydrateBulkActive: false,
+            hydrateFetchActive: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
             activeTab: 'search-output',
@@ -321,8 +322,9 @@ const plugin = {
         if (typeof ops.postgrestQuery !== 'function') {
             throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
         }
-        if (channel === 'search' && !this._state.searchFetchActive) {
-            Logger.warn('dashboard: blocked PostgREST call outside search — ' + queryKey);
+        const needsActiveSearch = channel === 'search' || channel === 'hydrate';
+        if (needsActiveSearch && !this._state.searchFetchActive && !this._state.hydrateFetchActive) {
+            Logger.warn('dashboard: blocked PostgREST call outside search/hydrate — ' + queryKey);
             throw new Error('PostgREST call blocked: data is cached until a new search.');
         }
         const rows = await ops.postgrestQuery(queryKey, overrides || {});
@@ -1653,52 +1655,61 @@ const plugin = {
         return this._state.hydrateUi[id];
     },
 
+    _profilesMapFromHydrateItems(items) {
+        const profilesMap = new Map();
+        for (const item of items || []) {
+            const task = item && item.task;
+            if (!task) continue;
+            if (task.author && task.author.id) {
+                profilesMap.set(task.author.id, {
+                    full_name: task.author.name || '',
+                    email: task.author.email || ''
+                });
+            }
+        }
+        return profilesMap;
+    },
+
     async _hydrateItems(items) {
         const lib = dashLib();
         const toHydrate = (items || []).filter((it) => it && !it.hydrated);
         if (toHydrate.length === 0) return 0;
 
         const taskIds = [...new Set(toHydrate.map((it) => it.task.id).filter(Boolean))];
-        const profileIds = new Set();
-        for (const item of toHydrate) {
-            const task = item.task;
-            if (task.author && task.author.id) profileIds.add(task.author.id);
-            for (const entry of task.allFeedback || []) {
-                if (entry.reviewer && entry.reviewer.id) profileIds.add(entry.reviewer.id);
-            }
-        }
-        const profileRows = profileIds.size > 0
-            ? await this._pgQuery('profiles.select_person', { id: 'in.(' + [...profileIds].join(',') + ')' }, 'search')
-            : [];
-        const profilesMap = this._buildProfilesMap(profileRows);
+        const profilesMap = this._profilesMapFromHydrateItems(toHydrate);
 
-        const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {});
+        this._state.hydrateFetchActive = true;
         let updated = 0;
-        for (const item of this._state.cachedItems || []) {
-            if (!taskIds.includes(item.task.id) || item.hydrated) continue;
-            const hist = enrichment.get(item.task.id);
-            if (hist) {
-                item.task.promptVersions = hist.promptVersions || [];
-                item.task.allFeedback = hist.allFeedback || [];
-                if (item.selectedFeedbackId) {
-                    const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
-                    if (entry && entry.display) item.qaFeedback = entry.display;
+        try {
+            const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {});
+            for (const item of this._state.cachedItems || []) {
+                if (!taskIds.includes(item.task.id) || item.hydrated) continue;
+                const hist = enrichment.get(item.task.id);
+                if (hist) {
+                    item.task.promptVersions = hist.promptVersions || [];
+                    item.task.allFeedback = hist.allFeedback || [];
+                    if (item.selectedFeedbackId) {
+                        const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
+                        if (entry && entry.display) item.qaFeedback = entry.display;
+                    }
                 }
+                item.hydrated = true;
+                updated++;
             }
-            item.hydrated = true;
-            updated++;
+            if (updated > 0 && this._state.cachedItems) {
+                const options = lib.buildFilterListOptions(
+                    this._state.cachedItems,
+                    this._state.catalog,
+                    this._getTeamCatalog()
+                );
+                this._state.filterListOptions = options;
+                this._renderFilterLists();
+            }
+            Logger.log('dashboard: hydrated ' + updated + ' card(s)');
+            return updated;
+        } finally {
+            this._state.hydrateFetchActive = false;
         }
-        if (updated > 0 && this._state.cachedItems) {
-            const options = lib.buildFilterListOptions(
-                this._state.cachedItems,
-                this._state.catalog,
-                this._getTeamCatalog()
-            );
-            this._state.filterListOptions = options;
-            this._renderFilterLists();
-        }
-        Logger.log('dashboard: hydrated ' + updated + ' card(s)');
-        return updated;
     },
 
     async _hydrateCard(itemId) {
@@ -3568,6 +3579,7 @@ const plugin = {
         this._state.resultsKindTab = 'all';
         this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
+        this._state.hydrateFetchActive = false;
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -4287,13 +4299,11 @@ const plugin = {
         const ordered = DASH_KIND_MERGE_ORDER.filter((k) => kinds.includes(k));
         const tabWidthRem = 7.75;
         const tabGapRem = 0.25;
-        const tabs = [];
-        ordered.forEach((kind, index) => {
+        const kindTabsHtml = ordered.map((kind) => {
             const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
-            if (!cfg) return;
-            const left = 'calc(16px + ' + index + ' * (' + tabWidthRem + 'rem + ' + tabGapRem + 'rem))';
-            tabs.push(`<div style="position: absolute; left: ${left}; top: 0; z-index: 0; width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg};" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`);
-        });
+            if (!cfg) return '';
+            return `<div style="width: ${tabWidthRem}rem; height: 6px; border-radius: 6px 6px 0 0; background: ${cfg.tabBg}; flex-shrink: 0;" title="${dashEscHtml(cfg.label)}" aria-label="${dashEscHtml(cfg.label)}"></div>`;
+        }).join('');
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -4304,17 +4314,21 @@ const plugin = {
             const tabInner = loading
                 ? `<span style="display: inline-flex; align-items: center; gap: 5px; pointer-events: none;">${this._loadingSpinnerHtml(12)}<span>Hydrating…</span></span>`
                 : 'Hydrate';
-            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="position: absolute; right: 16px; top: 0; z-index: 3; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
+            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const topPad = showHydrateTab ? 'padding-top: 10px;' : '';
-        if (tabs.length === 0 && !hydrateTabHtml) {
+        const tabsRow = (kindTabsHtml || hydrateTabHtml)
+            ? `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 2px; margin-bottom: 0;">
+                <div style="display: flex; align-items: flex-end; gap: ${tabGapRem}rem; min-width: 0;">${kindTabsHtml}</div>
+                ${hydrateTabHtml}
+            </div>`
+            : '';
+        if (!tabsRow) {
             return `<div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}">${cardHtml}</div>`;
         }
         return `
-            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="position: relative; ${topPad}">
-                ${tabs.join('')}
-                ${hydrateTabHtml}
-                <div style="position: relative; z-index: 1; margin-top: 8px;">${cardHtml}</div>
+            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
+                ${tabsRow}
+                ${cardHtml}
             </div>`;
     },
 
