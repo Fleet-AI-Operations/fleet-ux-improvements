@@ -163,7 +163,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.36',
+    _version: '3.38',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1525,8 +1525,57 @@ const plugin = {
     },
 
     _getViewItems() {
-        if (this._state.filteredItems === null) return null;
-        return this._filterItemsByResultsKindTab(this._state.filteredItems);
+        return this._state.filteredItems;
+    },
+
+    /** Items in the active results kind tab (search cache, before sidebar filters). */
+    _getFilterScopeItems() {
+        if (!this._state.cachedItems) return [];
+        return this._filterItemsByResultsKindTab(this._state.cachedItems);
+    },
+
+    _filterScopeWrapEl(scopeKey) {
+        return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
+    },
+
+    _isFilterScopeVisible(scopeKey) {
+        const wrap = this._filterScopeWrapEl(scopeKey);
+        return Boolean(wrap && wrap.style.display !== 'none');
+    },
+
+    _reindexFilterListsFromScope(resetDrafts) {
+        const lib = dashLib();
+        const scopeItems = this._getFilterScopeItems();
+        if (!this._state.cachedItems) {
+            this._resetFilterLists();
+            return null;
+        }
+        const options = lib.buildFilterListOptions(
+            scopeItems,
+            this._state.catalog,
+            this._getTeamCatalog()
+        );
+        this._state.filterListOptions = options;
+        this._renderFilterLists();
+        if (resetDrafts) {
+            for (const { scopeKey, optionsKey } of DASH_FILTER_SCOPES) {
+                if (!this._isFilterScopeVisible(scopeKey)) continue;
+                const itemsEl = this._msItemsEl(scopeKey);
+                if (!itemsEl) continue;
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
+                this._updateMsCount(scopeKey);
+            }
+        }
+        const tab = this._state.resultsKindTab || 'all';
+        Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
+            + (tab !== 'all' ? ' · tab ' + tab : ''));
+        return this._listBoundsFromOptions(options);
+    },
+
+    _onResultsKindTabChanged() {
+        this._state.resultsPage = 0;
+        this._reindexFilterListsFromScope(true);
+        this._applyFiltersAndRender();
     },
 
     _readResultsPageSizePref() {
@@ -1652,7 +1701,8 @@ const plugin = {
         const kindSlot = this._q('#wf-dash-results-pager-slot-kind');
         const committed = this._state.committed;
         const tabs = committed ? this._resultsKindTabsMeta(committed) : [];
-        const showPager = this._state.hasSearched && committed;
+        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
+        const showPager = this._state.hasSearched && committed && !this._state.loading && resultsReady;
         const showInKindRow = showPager && tabs.length > 1;
 
         if (pager) {
@@ -1693,7 +1743,8 @@ const plugin = {
         }
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const sortOrder = filters.sortOrder;
-        const result = lib.applyFiltersAndSort(this._state.cachedItems, filters, bounds, sortOrder);
+        const scopeItems = this._getFilterScopeItems();
+        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
         this._updateResultsStatus();
@@ -1757,13 +1808,7 @@ const plugin = {
                 updated++;
             }
             if (updated > 0 && this._state.cachedItems) {
-                const options = lib.buildFilterListOptions(
-                    this._state.cachedItems,
-                    this._state.catalog,
-                    this._getTeamCatalog()
-                );
-                this._state.filterListOptions = options;
-                this._renderFilterLists();
+                this._reindexFilterListsFromScope(false);
             }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
@@ -1850,7 +1895,8 @@ const plugin = {
         const wrap = this._q('#wf-dash-results-kind-tabs');
         if (!wrap) return;
         const committed = this._state.committed;
-        if (!this._state.hasSearched || !committed) {
+        const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
+        if (!this._state.hasSearched || !committed || this._state.loading || !resultsReady) {
             wrap.style.display = 'none';
             wrap.innerHTML = '';
             this._syncResultsRangeCountUi();
@@ -1883,11 +1929,9 @@ const plugin = {
         wrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
-                this._state.resultsPage = 0;
                 Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
                 this._updateResultsKindTabsUi();
-                this._syncBulkHydrateUi();
-                this._renderResults();
+                this._onResultsKindTabChanged();
             });
         });
         this._syncResultsRangeCountUi();
@@ -1940,19 +1984,8 @@ const plugin = {
         }
     },
 
-    _resetFilterDraftsFromResults(items) {
-        const lib = dashLib();
-        const options = lib.buildFilterListOptions(items, this._state.catalog, this._getTeamCatalog());
-        this._state.filterListOptions = options;
-        this._renderFilterLists();
-        for (const { scopeKey, optionsKey } of DASH_FILTER_SCOPES) {
-            const ids = (options[optionsKey] || []).map((o) => o.id);
-            const itemsEl = this._msItemsEl(scopeKey);
-            if (!itemsEl) continue;
-            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
-            this._updateMsCount(scopeKey);
-        }
-        return this._listBoundsFromOptions(options);
+    _resetFilterDraftsFromResults(_items) {
+        return this._reindexFilterListsFromScope(true);
     },
 
     // ── Popup lifecycle ──
@@ -3161,24 +3194,28 @@ const plugin = {
     },
 
     _renderFilterLists() {
-        const items = this._state.cachedItems;
+        const scopeItems = this._getFilterScopeItems();
         const options = this._state.filterListOptions;
-        if (!items || !options) {
+        if (!this._state.cachedItems || !options) {
             this._resetFilterLists();
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
         const draft = this._getFilterDraft();
         const lib = dashLib();
-        const irrelevance = items.length > 0
-            ? lib.computeFilterIrrelevance(items, draft, listBounds, options)
+        const irrelevance = scopeItems.length > 0
+            ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
             : lib.emptyFilterIrrelevance();
 
         for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
             const itemsEl = this._msItemsEl(scopeKey);
+            const wrap = this._filterScopeWrapEl(scopeKey);
             if (!itemsEl) continue;
             const optionItems = options[optionsKey] || [];
-            const wrap = this._modal && this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+            if (optionItems.length === 0) {
+                if (wrap) wrap.style.display = 'none';
+                continue;
+            }
             if (wrap) wrap.style.display = '';
             const prevSelected = new Set(this._selectedFromList(scopeKey));
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
@@ -3408,8 +3445,8 @@ const plugin = {
 
     _isFilterSelectionValid() {
         if (!this._state.cachedItems) return false;
-        const options = this._state.filterListOptions || {};
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            if (!this._isFilterScopeVisible(scopeKey)) continue;
             const all = this._allFromList(scopeKey);
             if (all.length === 0) continue;
             if (this._selectedFromList(scopeKey).length === 0) return false;
@@ -3539,11 +3576,18 @@ const plugin = {
                 ].filter(Boolean)
             };
             this._state.resultsKindTab = 'all';
+            this._state.resultsPage = 0;
             this._state.hasSearched = true;
             this._state.loading = true;
+            this._state.cachedItems = null;
+            this._state.filteredItems = null;
+            this._state.appliedFilters = null;
+            this._state.hydrateBulkActive = false;
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
+            this._updateResultsKindTabsUi();
+            this._syncBulkHydrateUi();
             this._updateResultsStatus();
             this._renderResults();
 
@@ -3579,7 +3623,8 @@ const plugin = {
                 if (sortEl) sortEl.value = 'desc';
                 const bounds = this._resetFilterDraftsFromResults(items);
                 const initialFilters = this._currentClientFilters();
-                const filtered = lib.applyFiltersAndSort(items, initialFilters, bounds, 'desc');
+                const scopeItems = this._getFilterScopeItems();
+                const filtered = lib.applyFiltersAndSort(scopeItems, initialFilters, bounds, 'desc');
                 this._state.filteredItems = filtered;
                 this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
                 this._applyResultsPageSizeForNewSearch();
@@ -3712,11 +3757,12 @@ const plugin = {
         this._state.resultsPage = 0;
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const sortOrder = filters.sortOrder;
-        const before = this._state.cachedItems.length;
-        const result = lib.applyFiltersAndSort(this._state.cachedItems, filters, bounds, sortOrder);
+        const scopeItems = this._getFilterScopeItems();
+        const before = scopeItems.length;
+        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
-        Logger.log('dashboard: filters applied — ' + result.length + ' / ' + before + ' items'
+        Logger.log('dashboard: filters applied — ' + result.length + ' / ' + before + ' item(s) in tab scope'
             + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
         this._renderFilterLists();
         this._updateResultsStatus();
@@ -3809,9 +3855,10 @@ const plugin = {
             const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
                 ? committed.authorLabels.join(', ')
                 : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
-            const countLabel = s.filteredItems.length === s.cachedItems.length
+            const scopeTotal = this._getFilterScopeItems().length;
+            const countLabel = s.filteredItems.length === scopeTotal
                 ? s.filteredItems.length + ' result(s)'
-                : s.filteredItems.length + ' of ' + s.cachedItems.length + ' result(s)';
+                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
             const modes = [];
             if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
             if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
@@ -3866,9 +3913,10 @@ const plugin = {
         }
         const viewItems = this._getViewItems();
         if (!viewItems || viewItems.length === 0) {
+            const scopeTotal = this._getFilterScopeItems().length;
             const msg = (s.cachedItems && s.cachedItems.length === 0)
                 ? 'No results matched this search.'
-                : (s.filteredItems && s.filteredItems.length > 0)
+                : scopeTotal === 0
                     ? 'No results in this tab.'
                     : 'No results match the current filters.';
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
