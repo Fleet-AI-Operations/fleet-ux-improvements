@@ -1,7 +1,7 @@
 {
-  "version": "9.3.1",
+  "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.22",
+  "archetypesVersion": "10.24",
   "logs": {
     "debug": false,
     "verbose": false,

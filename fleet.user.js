@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.3.1
+// @version      9.4.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.3.1';
+    const VERSION = '9.4.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -252,6 +252,45 @@
     // If this build is not main and the user does not have the branch dev-ID userscript, show a modal and stop.
     const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
     const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
+    /** Dev builds stamp this at document-start; main-like builds yield when it is present. */
+    const DEV_ACTIVE_STORAGE_KEY = 'fleet-dev-active-branch';
+    /** Main-like builds stamp this at document-start (same pattern as dev-ID). */
+    const MAIN_ACTIVE_STORAGE_KEY = 'fleet-main-active-branch';
+    const SCRIPT_HANDSHAKE_DELAY_MS = 100;
+
+    function getPageLocalStorage() {
+        try {
+            const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            return pageWindow && pageWindow.localStorage ? pageWindow.localStorage : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeDevActiveBranchMarker() {
+        if (!DEV_SCRIPTS_ENABLED) return;
+        const storage = getPageLocalStorage();
+        if (!storage) return;
+        try {
+            storage.setItem(DEV_ACTIVE_STORAGE_KEY, GITHUB_CONFIG.branch);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function writeMainActiveBranchMarker() {
+        const storage = getPageLocalStorage();
+        if (!storage) return;
+        try {
+            storage.setItem(MAIN_ACTIVE_STORAGE_KEY, GITHUB_CONFIG.branch);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    if (DEV_SCRIPTS_ENABLED) {
+        writeDevActiveBranchMarker();
+    }
 
     function showNonDevRedirectModal() {
         const root = document.body || document.documentElement;
@@ -3203,7 +3242,27 @@
     }
 
     if (MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch)) {
-        runFleet();
+        writeMainActiveBranchMarker();
+        setTimeout(function() {
+            try {
+                const pageWindow = Context.getPageWindow();
+                if (pageWindow && pageWindow.localStorage) {
+                    const devActiveBranch = pageWindow.localStorage.getItem(DEV_ACTIVE_STORAGE_KEY);
+                    const devIdBranch = pageWindow.localStorage.getItem(DEV_ID_STORAGE_KEY);
+                    if (devActiveBranch) {
+                        pageWindow.localStorage.removeItem(DEV_ACTIVE_STORAGE_KEY);
+                        return;
+                    }
+                    if (devIdBranch && !MAIN_LIKE_BRANCHES.includes(devIdBranch)) {
+                        return;
+                    }
+                    pageWindow.localStorage.removeItem('fleet-godmode');
+                }
+            } catch (e) {
+                // treat as no dev build
+            }
+            runFleet();
+        }, SCRIPT_HANDSHAKE_DELAY_MS);
     } else {
         setTimeout(function() {
             let isDev = false;
@@ -3234,6 +3293,6 @@
                 return;
             }
             runFleet();
-        }, 100);
+        }, SCRIPT_HANDSHAKE_DELAY_MS);
     }
 })();
