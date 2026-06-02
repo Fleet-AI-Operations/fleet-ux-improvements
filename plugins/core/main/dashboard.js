@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.4',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2733,7 +2733,9 @@ const plugin = {
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
-                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${teamPanel}</div>
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden;">
+                    <div id="wf-dash-team-members-inner" style="width: 50%; max-width: 50%; min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
+                </div>
                 <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
                 <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
                     <div style="width: 100%; max-width: 720px; box-sizing: border-box;">${updatePanelHtml}</div>
