@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2829,7 +2829,8 @@ const plugin = {
 
     _renderTaskLinkBar() {
         return `
-            <div id="wf-ops-task-link-bar" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-shrink: 0; max-width: min(100%, 520px);">
+            <div id="wf-ops-task-link-bar" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-shrink: 0; max-width: min(100%, 560px);">
+                <label for="wf-ops-task-input" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Go to Task:</label>
                 <input type="text" id="wf-ops-task-input" placeholder="Task key or UUID" autocomplete="off" title="Task View Link Generator" style="
                     flex: 1;
                     min-width: 120px;

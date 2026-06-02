@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2656,6 +2656,7 @@ const plugin = {
         const updateActive = this._shouldShowDashboardUpdateTab();
         const updateTab = this._modal.querySelector('[data-wf-dash-tab="update"]');
         const updatePanel = this._modal.querySelector('[data-wf-dash-panel="update"]');
+        const headerTask = this._modal.querySelector('#wf-dash-header-task-link');
         const headerOps = this._modal.querySelector('#wf-dash-header-ops');
         const normalTabs = this._modal.querySelectorAll('[data-wf-dash-tab]:not([data-wf-dash-tab="update"])');
         const normalPanels = this._modal.querySelectorAll('[data-wf-dash-panel]:not([data-wf-dash-panel="update"])');
@@ -2665,6 +2666,7 @@ const plugin = {
             normalPanels.forEach((panel) => { panel.style.display = 'none'; });
             if (updateTab) updateTab.style.display = '';
             if (updatePanel) updatePanel.style.display = 'flex';
+            if (headerTask) headerTask.style.display = 'none';
             if (headerOps) headerOps.style.display = 'none';
             this._setActiveTab('update');
             Logger.info('dashboard: update tab active — other sections hidden');
@@ -2674,6 +2676,7 @@ const plugin = {
         if (updateTab) updateTab.style.display = 'none';
         if (updatePanel) updatePanel.style.display = 'none';
         normalTabs.forEach((btn) => { btn.style.display = ''; });
+        if (headerTask) headerTask.style.display = '';
         if (headerOps) headerOps.style.display = '';
         const restoreTab = this._state.activeTab === 'update' ? 'search-output' : this._state.activeTab;
         this._setActiveTab(restoreTab || 'search-output');
@@ -2703,7 +2706,7 @@ const plugin = {
         const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
 
         return `
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                 <div style="display: flex; align-items: center; gap: 0; min-width: 0; flex: 1;">
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
@@ -2711,8 +2714,10 @@ const plugin = {
                         ${updateTabBtn}
                     </nav>
                 </div>
-                <div id="wf-dash-header-ops" style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0;">
+                <div id="wf-dash-header-task-link" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 0;">
                     ${taskLinkBar}
+                </div>
+                <div id="wf-dash-header-ops" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1; min-width: 0;">
                     <button type="button" id="wf-dash-open-settings" style="
                         flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px;
                         color: var(--foreground, #0f172a); background: var(--background, #fff);
