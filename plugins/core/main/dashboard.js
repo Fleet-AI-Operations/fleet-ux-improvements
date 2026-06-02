@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.10',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2548,6 +2548,7 @@ const plugin = {
         this._attachListeners();
         this._ensureSpinnerKeyframes();
         this._ensureMsOptionStyles();
+        this._ensureHeaderActionStyles();
         this._syncDashboardUpdateMode();
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
@@ -2588,6 +2589,62 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-spinner-style';
         style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        this._modal.appendChild(style);
+    },
+
+    _dashCloseIconSvg() {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    },
+
+    _ensureHeaderActionStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-header-btn-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-header-btn-style';
+        style.textContent = [
+            '#wf-dash-modal #wf-dash-header-ops {',
+            '  display: flex !important;',
+            '  align-items: center !important;',
+            '  flex-shrink: 0;',
+            '  gap: 8px;',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn {',
+            '  appearance: none !important;',
+            '  -webkit-appearance: none !important;',
+            '  box-sizing: border-box !important;',
+            '  margin: 0 !important;',
+            '  height: 32px !important;',
+            '  min-height: 32px !important;',
+            '  max-height: 32px !important;',
+            '  display: inline-flex !important;',
+            '  align-items: center !important;',
+            '  justify-content: center !important;',
+            '  line-height: 1 !important;',
+            '  vertical-align: middle !important;',
+            '  flex-shrink: 0;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  font-family: inherit;',
+            '}',
+            '#wf-dash-modal #wf-dash-open-settings.wf-dash-header-btn {',
+            '  padding: 0 12px !important;',
+            '  font-size: 11px !important;',
+            '  font-weight: 600 !important;',
+            '  color: var(--foreground, #0f172a);',
+            '  background: var(--background, #fff);',
+            '}',
+            '#wf-dash-modal #wf-dash-close.wf-dash-header-btn {',
+            '  width: 32px !important;',
+            '  min-width: 32px !important;',
+            '  padding: 0 !important;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  background: transparent;',
+            '}',
+            '#wf-dash-modal #wf-dash-close.wf-dash-header-btn svg {',
+            '  display: block;',
+            '  flex-shrink: 0;',
+            '}'
+        ].join('\n');
         this._modal.appendChild(style);
     },
 
@@ -2718,21 +2775,9 @@ const plugin = {
                 <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box; overflow: hidden;">
                     <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
                 </div>
-                <div id="wf-dash-header-ops" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-left: auto;">
-                    <button type="button" id="wf-dash-open-settings" style="
-                        flex-shrink: 0; box-sizing: border-box; height: 32px; padding: 0 12px; margin: 0;
-                        display: inline-flex; align-items: center; justify-content: center;
-                        font-size: 11px; font-weight: 600; line-height: 1; border-radius: 6px;
-                        color: var(--foreground, #0f172a); background: var(--background, #fff);
-                        border: 1px solid var(--border, #e2e8f0); cursor: pointer;
-                    ">Open Settings</button>
-                    <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
-                        flex-shrink: 0; box-sizing: border-box; width: 32px; height: 32px; padding: 0; margin: 0;
-                        display: inline-flex; align-items: center; justify-content: center;
-                        font-size: 20px; line-height: 1; border-radius: 6px;
-                        color: var(--muted-foreground, #64748b); background: transparent;
-                        border: 1px solid var(--border, #e2e8f0); cursor: pointer;
-                    ">&times;</button>
+                <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
+                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn">Open Settings</button>
+                    <button type="button" id="wf-dash-close" class="wf-dash-header-btn" aria-label="Close dashboard" title="Close">${this._dashCloseIconSvg()}</button>
                 </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
