@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.11',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2782,7 +2782,7 @@ const plugin = {
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
-                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden;">
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; align-items: center; overflow: hidden;">
                     <div id="wf-dash-team-members-inner" style="width: 50%; max-width: 50%; min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
                 </div>
                 <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
@@ -4445,7 +4445,9 @@ const plugin = {
                 if (sortEl) sortEl.value = 'desc';
                 this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
-                this._setLeftTab('filters');
+                if (items.length > 0) {
+                    this._setLeftTab('filters');
+                }
             } catch (err) {
                 if (this._handleDashSessionRefreshError(err)) {
                     this._setSearchError('');

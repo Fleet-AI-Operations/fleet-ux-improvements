@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1778,14 +1778,14 @@ const plugin = {
         if (session && session.editing) {
             const hasChanges = this._opsMemberEditHasChanges(session);
             const confirmDisabled = !hasChanges || session.applying;
-            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-right:8px;align-items:center;">' +
+            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
                 '<button type="button" class="wf-ops-confirm-btn" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
                     (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
                 '<button type="button" class="wf-ops-cancel-btn" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
                     (session.applying ? ' disabled' : '') + '>Cancel</button>' +
                 '</span>';
         }
-        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-right:8px;align-items:center;">' +
+        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
             '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
             '</span>';
     },
@@ -1923,21 +1923,19 @@ const plugin = {
         const openAttr = isOpen !== false ? ' open' : '';
 
         return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
-            '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:2px;align-items:start;">' +
-                '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
+                '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">' +
                     uiBadgeHtml +
                     '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
-                '</div>' +
-                '<div style="grid-row:span 2;align-self:center;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">' +
-                    this._opsSearchWorkerOutputBtnHtml(memberId) +
                     this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
                 '</div>' +
-                '<div style="font-size:11px;color:var(--muted-foreground,#666);min-width:0;">' + email + '</div>' +
+                this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
+            '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;min-width:0;">' + email + '</div>' +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
-                    this._renderOpsMemberEditActionsHtml(memberId, session) +
                     '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
+                    this._renderOpsMemberEditActionsHtml(memberId, session) +
                 '</summary>' +
                 '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
                     'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
