@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -22,7 +22,10 @@ const plugin = {
     init(state, context) {
         const self = this;
         Context.settingsUi = {
-            openModal: (opts) => self.openModal(opts)
+            openModal: (opts) => self.openModal(opts),
+            shouldShowUpdateBanner: () => self._shouldShowUpdateNotification(),
+            createUpdateNotificationHTML: () => self._createUpdateNotificationHTML(),
+            attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root)
         };
         this._ensureDialogBackdropStyles();
         this._ensureSettingsButton();
@@ -451,9 +454,7 @@ const plugin = {
         
         // Build script update notification HTML
         // Show if outdated OR if simulate update banner is enabled (for testing on dev branch)
-        const shouldShowUpdateNotification = (Context.isOutdated && Context.latestVersion) || 
-            (Context.isDevBranch && this._getPulseOverrideEnabled());
-        const updateNotificationHTML = shouldShowUpdateNotification
+        const updateNotificationHTML = this._shouldShowUpdateNotification()
             ? this._createUpdateNotificationHTML()
             : '';
         
@@ -928,24 +929,7 @@ const plugin = {
             self._closeModal();
         });
 
-        // Update banner: show "Refresh Page with New Version" after newest-version link is clicked
-        const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
-        const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
-        const refreshBtn = Context.dom.query('#wf-update-refresh-btn', { root: modal, context: `${this.id}.updateRefreshBtn` });
-        if (newestLink && refreshRow) {
-            newestLink.addEventListener('click', () => {
-                refreshRow.style.display = 'block';
-            });
-        }
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                if (typeof Context.requestExtensionReload === 'function') {
-                    Context.requestExtensionReload('settings-ui update banner refresh');
-                } else {
-                    window.location.reload();
-                }
-            });
-        }
+        this._attachUpdateBannerListeners(modal, 'settings-ui');
 
         // Tab buttons
         this._attachTabListeners(modal);
@@ -2454,6 +2438,34 @@ const plugin = {
         `;
     },
     
+    _shouldShowUpdateNotification() {
+        return (Context.isOutdated && Context.latestVersion) ||
+            (Context.isDevBranch && this._getPulseOverrideEnabled());
+    },
+
+    _attachUpdateBannerListeners(root, reloadSource) {
+        const modal = root;
+        if (!modal) return;
+        const source = reloadSource || 'settings-ui';
+        const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
+        const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
+        const refreshBtn = Context.dom.query('#wf-update-refresh-btn', { root: modal, context: `${this.id}.updateRefreshBtn` });
+        if (newestLink && refreshRow) {
+            newestLink.addEventListener('click', () => {
+                refreshRow.style.display = 'block';
+            });
+        }
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                if (typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload(source + ' update banner refresh');
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+    },
+
     _createUpdateNotificationHTML() {
         const currentVersion = Context.version || 'unknown';
         // If simulate update banner is enabled, simulate update by using current version + 0.1 as latest

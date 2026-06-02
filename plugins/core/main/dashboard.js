@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2468,6 +2468,7 @@ const plugin = {
         }
         void this._doBootstrap();
         this._refreshCatalogDependentUi();
+        this._syncDashboardUpdateMode();
         Logger.log('dashboard: opened');
     },
 
@@ -2546,7 +2547,7 @@ const plugin = {
         this._attachListeners();
         this._ensureSpinnerKeyframes();
         this._ensureMsOptionStyles();
-        this._setActiveTab(this._state.activeTab);
+        this._syncDashboardUpdateMode();
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
         this._refreshCatalogDependentUi();
@@ -2635,6 +2636,49 @@ const plugin = {
         this._modal.appendChild(style);
     },
 
+    _shouldShowDashboardUpdateTab() {
+        if (Context.settingsUi && typeof Context.settingsUi.shouldShowUpdateBanner === 'function') {
+            return Context.settingsUi.shouldShowUpdateBanner();
+        }
+        return Boolean(Context.isOutdated && Context.latestVersion);
+    },
+
+    _dashboardUpdateBannerHtml() {
+        if (!this._shouldShowDashboardUpdateTab()) return '';
+        if (Context.settingsUi && typeof Context.settingsUi.createUpdateNotificationHTML === 'function') {
+            return Context.settingsUi.createUpdateNotificationHTML();
+        }
+        return '';
+    },
+
+    _syncDashboardUpdateMode() {
+        if (!this._modal) return;
+        const updateActive = this._shouldShowDashboardUpdateTab();
+        const updateTab = this._modal.querySelector('[data-wf-dash-tab="update"]');
+        const updatePanel = this._modal.querySelector('[data-wf-dash-panel="update"]');
+        const headerOps = this._modal.querySelector('#wf-dash-header-ops');
+        const normalTabs = this._modal.querySelectorAll('[data-wf-dash-tab]:not([data-wf-dash-tab="update"])');
+        const normalPanels = this._modal.querySelectorAll('[data-wf-dash-panel]:not([data-wf-dash-panel="update"])');
+
+        if (updateActive) {
+            normalTabs.forEach((btn) => { btn.style.display = 'none'; });
+            normalPanels.forEach((panel) => { panel.style.display = 'none'; });
+            if (updateTab) updateTab.style.display = '';
+            if (updatePanel) updatePanel.style.display = 'flex';
+            if (headerOps) headerOps.style.display = 'none';
+            this._setActiveTab('update');
+            Logger.info('dashboard: update tab active — other sections hidden');
+            return;
+        }
+
+        if (updateTab) updateTab.style.display = 'none';
+        if (updatePanel) updatePanel.style.display = 'none';
+        normalTabs.forEach((btn) => { btn.style.display = ''; });
+        if (headerOps) headerOps.style.display = '';
+        const restoreTab = this._state.activeTab === 'update' ? 'search-output' : this._state.activeTab;
+        this._setActiveTab(restoreTab || 'search-output');
+    },
+
     _modalHtml() {
         const ops = Context.opsTab;
         const tabs = [
@@ -2648,6 +2692,12 @@ const plugin = {
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
             ">${t.label}</button>`).join('');
+        const updateTabBtn = `<button type="button" class="wf-dash-tab" data-wf-dash-tab="update" style="
+                display: none; position: relative; padding: 10px 14px; font-size: 13px; font-weight: 600;
+                background: transparent; border: none; border-bottom: 2px solid transparent;
+                margin-bottom: -1px; cursor: pointer; color: #991b1b;
+            ">Update</button>`;
+        const updatePanelHtml = this._dashboardUpdateBannerHtml();
         const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
         const teamPanel = ops && typeof ops.renderTeamMembersPanel === 'function' ? ops.renderTeamMembersPanel() : '';
         const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
@@ -2658,9 +2708,10 @@ const plugin = {
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
                         ${tabBtns}
+                        ${updateTabBtn}
                     </nav>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0;">
+                <div id="wf-dash-header-ops" style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0;">
                     ${taskLinkBar}
                     <button type="button" id="wf-dash-open-settings" style="
                         flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px;
@@ -2679,6 +2730,9 @@ const plugin = {
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
                 <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${teamPanel}</div>
                 <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
+                <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
+                    <div style="width: 100%; max-width: 720px; box-sizing: border-box;">${updatePanelHtml}</div>
+                </div>
             </div>
         `;
     },
@@ -3006,8 +3060,15 @@ const plugin = {
             Context.opsTab.attachDashboardListeners(modal, this);
         }
 
+        if (Context.settingsUi && typeof Context.settingsUi.attachUpdateBannerListeners === 'function') {
+            Context.settingsUi.attachUpdateBannerListeners(modal, 'dashboard');
+        }
+
         modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => this._setActiveTab(btn.getAttribute('data-wf-dash-tab')));
+            btn.addEventListener('click', () => {
+                if (this._shouldShowDashboardUpdateTab() && btn.getAttribute('data-wf-dash-tab') !== 'update') return;
+                this._setActiveTab(btn.getAttribute('data-wf-dash-tab'));
+            });
         });
 
         const depthQuick = this._q('#wf-dash-depth-quick');
@@ -3489,13 +3550,22 @@ const plugin = {
     },
 
     _setActiveTab(tabId) {
+        if (this._shouldShowDashboardUpdateTab() && tabId !== 'update') {
+            tabId = 'update';
+        }
         this._state.activeTab = tabId;
         this._modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
-            const active = btn.getAttribute('data-wf-dash-tab') === tabId;
-            btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
-            btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
+            const id = btn.getAttribute('data-wf-dash-tab');
+            const active = id === tabId;
+            if (id === 'update') {
+                btn.style.color = active ? '#991b1b' : '#b91c1c';
+                btn.style.borderBottomColor = active ? '#dc2626' : 'transparent';
+            } else {
+                btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
+                btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
+            }
         });
-        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher']);
+        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'update']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
             if (flexPanels.has(tabId)) {
