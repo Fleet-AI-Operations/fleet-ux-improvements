@@ -181,7 +181,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.54',
+    _version: '3.55',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1739,13 +1739,12 @@ const plugin = {
             this._getTeamCatalog()
         );
         this._state.filterListOptions = options;
-        this._renderFilterLists({ preserveSelection: !resetDrafts });
         if (!resetDrafts) {
             const newBounds = this._listBoundsFromOptions(options);
             for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
                 const prevLen = (prevBounds[draftKey] || []).length;
                 const newLen = (newBounds[draftKey] || []).length;
-                if (prevLen === 0 && newLen > 0 && this._isFilterScopeVisible(scopeKey)) {
+                if (prevLen === 0 && newLen > 0) {
                     const itemsEl = this._msItemsEl(scopeKey);
                     if (!itemsEl) continue;
                     itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
@@ -1757,6 +1756,17 @@ const plugin = {
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
         return this._listBoundsFromOptions(options);
+    },
+
+    _isFilterDraftValid(draft, listBounds) {
+        if (!draft) return false;
+        const bounds = listBounds || {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const all = (bounds[draftKey] || []).length;
+            if (all === 0) continue;
+            if ((draft[draftKey] || []).length === 0) return false;
+        }
+        return true;
     },
 
     _syncResultsToolbarDerivedUi() {
@@ -1849,7 +1859,6 @@ const plugin = {
         }
 
         if (filterSource === 'client') {
-            this._renderFilterLists();
             this._syncResultsListDerivedUi();
         }
         this._updateResultsStatus();
@@ -1857,6 +1866,9 @@ const plugin = {
         this._updateApplyFiltersUi();
         this._renderResults();
         this._updateResultsKindTabsUi();
+        this._renderFilterLists({
+            syncDraftFromApplied: filterSource !== 'client' || Boolean(this._state.appliedFilters)
+        });
         this._syncResultsToolbarDerivedUi();
         return true;
     },
@@ -2029,7 +2041,9 @@ const plugin = {
         const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
+        this._reindexFilterListsFromScope(false);
         this._updateResultsStatus();
+        this._renderFilterLists({ syncDraftFromApplied: Boolean(this._state.appliedFilters) });
         this._syncResultsToolbarDerivedUi();
         return true;
     },
@@ -3772,7 +3786,7 @@ const plugin = {
         }
     },
 
-    _renderFilterLists({ preserveSelection = true } = {}) {
+    _renderFilterLists({ syncDraftFromApplied = false } = {}) {
         const scopeItems = this._getFilterScopeItems();
         const options = this._state.filterListOptions;
         if (!this._state.cachedItems || !options) {
@@ -3780,9 +3794,12 @@ const plugin = {
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
-        const draft = preserveSelection ? this._getFilterDraft() : null;
+        const applied = this._state.appliedFilters;
+        const draft = (syncDraftFromApplied && applied)
+            ? applied
+            : this._getFilterDraft();
         const lib = dashLib();
-        const irrelevance = scopeItems.length > 0 && preserveSelection && draft
+        const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
             : lib.emptyFilterIrrelevance();
 
@@ -3796,10 +3813,11 @@ const plugin = {
                 continue;
             }
             if (wrap) wrap.style.display = '';
-            const prevSelected = preserveSelection ? new Set(this._selectedFromList(scopeKey)) : null;
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
-            const hadSelection = prevSelected && prevSelected.size > 0;
-            const irrelevantSet = hadSelection ? (irrelevance[draftKey] || new Set()) : new Set();
+            const irrelevantSet = irrelevance[draftKey] || new Set();
+            const prevSelected = (!syncDraftFromApplied || !applied)
+                ? new Set(this._selectedFromList(scopeKey))
+                : null;
             itemsEl.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
                 optionItems,
@@ -3808,9 +3826,16 @@ const plugin = {
                 false,
                 irrelevantSet
             );
-            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                cb.checked = preserveSelection ? prevSelected.has(cb.value) : true;
-            });
+            if (syncDraftFromApplied && applied) {
+                const selected = new Set(applied[draftKey] || []);
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = selected.has(cb.value);
+                });
+            } else if (prevSelected) {
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = prevSelected.has(cb.value);
+                });
+            }
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
             if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
