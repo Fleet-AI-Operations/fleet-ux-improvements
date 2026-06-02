@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2706,18 +2706,18 @@ const plugin = {
         const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
 
         return `
-            <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                <div style="display: flex; align-items: center; gap: 0; min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+                <div id="wf-dash-header-tabs" style="display: flex; align-items: center; gap: 0; flex-shrink: 0; min-width: 0;">
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
                         ${tabBtns}
                         ${updateTabBtn}
                     </nav>
                 </div>
-                <div id="wf-dash-header-task-link" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 0;">
+                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box;">
                     ${taskLinkBar}
                 </div>
-                <div id="wf-dash-header-ops" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1; min-width: 0;">
+                <div id="wf-dash-header-ops" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-left: auto;">
                     <button type="button" id="wf-dash-open-settings" style="
                         flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px;
                         color: var(--foreground, #0f172a); background: var(--background, #fff);
