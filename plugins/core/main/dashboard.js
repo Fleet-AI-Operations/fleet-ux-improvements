@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.14',
+    _version: '4.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2033,23 +2033,26 @@ const plugin = {
     _recomputeFilteredItems() {
         const lib = dashLib();
         if (this._state.cachedItems === null) return false;
-        const filters = this._currentClientFilters();
-        const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
-        if (filterInvalid.invalid) {
-            this._updateSubstringErrorUi();
-            return false;
-        }
-        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
-        const sortOrder = filters.sortOrder;
-        const scopeItems = this._getFilterScopeItems();
-        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
-        this._state.filteredItems = result;
-        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
         this._reindexFilterListsFromScope(false);
+        const applied = this._state.appliedFilters;
+        const filters = applied
+            ? Object.assign({}, applied)
+            : this._currentClientFilters();
+        const filterInvalid = lib.isPromptFilterInvalid(
+            filters.promptText, filters.caseSensitive, filters.regex
+        );
+        if (!filterInvalid.invalid) {
+            const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+            const sortOrder = filters.sortOrder;
+            const scopeItems = this._getFilterScopeItems();
+            const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+            this._state.filteredItems = result;
+        }
         this._updateResultsStatus();
-        this._renderFilterLists({ syncDraftFromApplied: Boolean(this._state.appliedFilters) });
+        this._renderFilterLists({ syncDraftFromApplied: false });
         this._syncResultsToolbarDerivedUi();
-        return true;
+        this._updateApplyFiltersUi();
+        return !filterInvalid.invalid;
     },
 
     _applySortAndRender() {
@@ -2995,7 +2998,8 @@ const plugin = {
                                     </div>
                                 </div>
                             </div>
-                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff); display: flex; justify-content: flex-end;">
+                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff); display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
+                                <div id="wf-dash-apply-hint" style="display: none; flex: 1; font-size: 11px; color: var(--muted-foreground, #64748b); text-align: right;"></div>
                                 <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
                             </div>
                         </div>
@@ -3260,6 +3264,8 @@ const plugin = {
         }
         const caseEl = this._q('#wf-dash-case');
         if (caseEl) caseEl.addEventListener('change', () => this._updateSubstringErrorUi());
+        const hiddenVersions = this._q('#wf-dash-hidden-versions');
+        if (hiddenVersions) hiddenVersions.addEventListener('change', () => this._updateApplyFiltersUi());
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
 
@@ -4008,6 +4014,7 @@ const plugin = {
         const options = this._state.filterListOptions;
         if (!this._state.cachedItems || !options) {
             this._resetFilterLists();
+            this._updateApplyFiltersUi();
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
@@ -4287,7 +4294,7 @@ const plugin = {
 
     _filtersDraftDiffersFromApplied() {
         const applied = this._state.appliedFilters;
-        if (!applied) return false;
+        if (!applied) return this._state.cachedItems !== null;
         const draft = this._currentClientFilters();
         if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
@@ -4322,10 +4329,19 @@ const plugin = {
         const selectionValid = this._isFilterSelectionValid();
         const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
+        const disabled = !this._state.cachedItems || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
-            const disabled = !this._state.cachedItems || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
             applyBtn.disabled = disabled;
             applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
+        }
+        const applyHint = this._q('#wf-dash-apply-hint');
+        if (applyHint) {
+            if (disabled && this._state.cachedItems && !selectionValid) {
+                applyHint.textContent = 'Select at least one option in each filter group.';
+                applyHint.style.display = 'block';
+            } else {
+                applyHint.style.display = 'none';
+            }
         }
         this._syncFieldClearButtons();
     },
