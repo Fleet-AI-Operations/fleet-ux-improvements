@@ -1,7 +1,7 @@
 {
   "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.1",
+  "archetypesVersion": "10.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -539,6 +539,12 @@
           "name": "clipboard-event-relative-times.js",
           "version": "1.0",
           "hash": "sha256-f4d6bbfe39687c076fb8103a604dfb08c3cc9cb0b09b40caf790f347a55ccf88",
+          "log": false
+        },
+        {
+          "name": "grade-question-pasted-text.js",
+          "version": "1.0",
+          "hash": "sha256-380f5e80959d8465b1eb550861e67b8b6ab6d9fc6ccfd2f0883eb5fbccc55fab",
           "log": false
         }
       ]
