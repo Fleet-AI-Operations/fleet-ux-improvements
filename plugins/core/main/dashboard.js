@@ -181,7 +181,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.51',
+    _version: '3.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -220,6 +220,8 @@ const plugin = {
             hydrateFetchActive: false,
             autoHydrateActive: false,
             autoHydrateScheduled: false,
+            autoHydratePending: false,
+            autoHydratePendingLogged: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
             activeTab: 'search-output',
@@ -962,6 +964,9 @@ const plugin = {
             Logger.warn('dashboard: bootstrap failed', err);
         } finally {
             this._refreshCatalogDependentUi();
+            if (this._state.autoHydratePending && this._isOpen()) {
+                this._scheduleAutoHydrateVisiblePage();
+            }
         }
     },
 
@@ -1701,6 +1706,7 @@ const plugin = {
     },
 
     _getViewItems() {
+        // filteredItems is always tab-scoped + sidebar-filtered (see _refreshResultsView).
         return this._state.filteredItems;
     },
 
@@ -1733,16 +1739,8 @@ const plugin = {
             this._getTeamCatalog()
         );
         this._state.filterListOptions = options;
-        this._renderFilterLists();
-        if (resetDrafts) {
-            for (const { scopeKey, optionsKey } of DASH_FILTER_SCOPES) {
-                if (!this._isFilterScopeVisible(scopeKey)) continue;
-                const itemsEl = this._msItemsEl(scopeKey);
-                if (!itemsEl) continue;
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
-                this._updateMsCount(scopeKey);
-            }
-        } else {
+        this._renderFilterLists({ preserveSelection: !resetDrafts });
+        if (!resetDrafts) {
             const newBounds = this._listBoundsFromOptions(options);
             for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
                 const prevLen = (prevBounds[draftKey] || []).length;
@@ -1777,9 +1775,88 @@ const plugin = {
     },
 
     _onResultsKindTabChanged() {
-        this._state.resultsPage = 0;
-        this._reindexFilterListsFromScope(true);
-        this._applyFiltersAndRender();
+        this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'tab-reset' });
+    },
+
+    _filtersAllSelectedFromBounds(bounds) {
+        const b = bounds || {};
+        return {
+            teamIds: [...(b.teamIds || [])],
+            projectIds: [...(b.projectIds || [])],
+            envKeys: [...(b.envKeys || [])],
+            statuses: [...(b.statuses || [])],
+            contributorIds: [...(b.contributorIds || [])],
+            promptRatings: [...(b.promptRatings || [])],
+            taskIssues: [...(b.taskIssues || [])],
+            returnTypes: [...(b.returnTypes || [])],
+            promptHistory: [...(b.promptHistory || [])],
+            promptText: (this._q('#wf-dash-prompt') || {}).value || '',
+            fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
+            regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
+            caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
+            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
+            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
+        };
+    },
+
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client' } = {}) {
+        const lib = dashLib();
+        if (this._state.cachedItems === null) {
+            this._state.filteredItems = null;
+            this._updateResultsStatus();
+            this._renderResults();
+            this._updateResultsKindTabsUi();
+            return false;
+        }
+
+        let bounds;
+        const resetDrafts = reindexFilters && (filterSource === 'tab-reset' || filterSource === 'search-defaults');
+        if (reindexFilters) {
+            bounds = this._reindexFilterListsFromScope(resetDrafts);
+        } else {
+            bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        }
+
+        let filters;
+        if (filterSource === 'search-defaults' || filterSource === 'tab-reset') {
+            filters = this._filtersAllSelectedFromBounds(bounds);
+        } else {
+            filters = this._currentClientFilters();
+            const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
+            if (filterInvalid.invalid) {
+                this._updateSubstringErrorUi();
+                return false;
+            }
+        }
+
+        if (resetPage) this._state.resultsPage = 0;
+
+        const scopeItems = this._getFilterScopeItems();
+        const sortOrder = filters.sortOrder;
+        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        this._state.filteredItems = result;
+        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
+
+        const tab = this._state.resultsKindTab || 'all';
+        if (filterSource === 'client') {
+            Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
+                + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+        } else {
+            Logger.log('dashboard: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
+        }
+
+        if (filterSource === 'client') {
+            this._renderFilterLists();
+            this._syncResultsListDerivedUi();
+        } else {
+            this._syncBulkHydrateUi();
+        }
+        this._updateResultsStatus();
+        this._updateSubstringErrorUi();
+        this._updateApplyFiltersUi();
+        this._renderResults();
+        this._updateResultsKindTabsUi();
+        return true;
     },
 
     _readResultsPageSizePref() {
@@ -2085,8 +2162,24 @@ const plugin = {
 
     _scheduleAutoHydrateVisiblePage() {
         if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
-        if (!this._bulkHydrateShowable()) return;
-        if (this._getUnhydratedOnPage().length === 0) return;
+        if (!this._bulkHydrateShowable()) {
+            this._state.autoHydratePending = false;
+            return;
+        }
+        if (this._getUnhydratedOnPage().length === 0) {
+            this._state.autoHydratePending = false;
+            return;
+        }
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            if (!this._state.autoHydratePendingLogged) {
+                Logger.debug('dashboard: auto-hydrate deferred — dashboardData not ready');
+                this._state.autoHydratePendingLogged = true;
+            }
+            this._state.autoHydratePending = true;
+            return;
+        }
+        this._state.autoHydratePending = false;
+        this._state.autoHydratePendingLogged = false;
         this._state.autoHydrateScheduled = true;
         queueMicrotask(() => {
             this._state.autoHydrateScheduled = false;
@@ -2206,7 +2299,7 @@ const plugin = {
         btn.style.display = '';
         const label = this._bulkHydrateLabel() || 'Hydrate results';
         btn.textContent = label;
-        btn.disabled = this._state.hydrateBulkActive;
+        btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
     },
 
     _setBulkHydrateProgress(done, total) {
@@ -3666,7 +3759,7 @@ const plugin = {
         }
     },
 
-    _renderFilterLists() {
+    _renderFilterLists({ preserveSelection = true } = {}) {
         const scopeItems = this._getFilterScopeItems();
         const options = this._state.filterListOptions;
         if (!this._state.cachedItems || !options) {
@@ -3674,9 +3767,9 @@ const plugin = {
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
-        const draft = this._getFilterDraft();
+        const draft = preserveSelection ? this._getFilterDraft() : null;
         const lib = dashLib();
-        const irrelevance = scopeItems.length > 0
+        const irrelevance = scopeItems.length > 0 && preserveSelection && draft
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
             : lib.emptyFilterIrrelevance();
 
@@ -3690,9 +3783,9 @@ const plugin = {
                 continue;
             }
             if (wrap) wrap.style.display = '';
-            const prevSelected = new Set(this._selectedFromList(scopeKey));
+            const prevSelected = preserveSelection ? new Set(this._selectedFromList(scopeKey)) : null;
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
-            const hadSelection = prevSelected.size > 0;
+            const hadSelection = prevSelected && prevSelected.size > 0;
             const irrelevantSet = hadSelection ? (irrelevance[draftKey] || new Set()) : new Set();
             itemsEl.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
@@ -3703,7 +3796,7 @@ const plugin = {
                 irrelevantSet
             );
             itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                cb.checked = prevSelected.has(cb.value);
+                cb.checked = preserveSelection ? prevSelected.has(cb.value) : true;
             });
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
@@ -4060,6 +4153,8 @@ const plugin = {
             this._state.hydrateBulkActive = false;
             this._state.autoHydrateActive = false;
             this._state.autoHydrateScheduled = false;
+            this._state.autoHydratePending = false;
+            this._state.autoHydratePendingLogged = false;
             this._state.disputesBulkIncomplete = false;
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
@@ -4101,15 +4196,9 @@ const plugin = {
                 if (regexEl) regexEl.checked = false;
                 const sortEl = this._q('#wf-dash-sort');
                 if (sortEl) sortEl.value = 'desc';
-                const bounds = this._resetFilterDraftsFromResults(items);
-                const initialFilters = this._currentClientFilters();
-                const scopeItems = this._getFilterScopeItems();
-                const filtered = lib.applyFiltersAndSort(scopeItems, initialFilters, bounds, 'desc');
-                this._state.filteredItems = filtered;
-                this._state.appliedFilters = Object.assign({}, initialFilters, { sortOrder: 'desc' });
+                this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
                 this._setLeftTab('filters');
-                this._syncBulkHydrateUi();
             } catch (err) {
                 if (this._handleDashSessionRefreshError(err)) {
                     this._setSearchError('');
@@ -4125,12 +4214,16 @@ const plugin = {
                 this._state.loading = false;
                 this._state.searchLoadPhase = '';
                 this._setSearchButtonLoading(false);
-                this._updateResultsStatus();
                 this._updateSubstringErrorUi();
                 this._updateApplyFiltersUi();
-                this._renderResults();
-                this._updateResultsKindTabsUi();
-                this._syncBulkHydrateUi();
+                if (this._state.cachedItems !== null) {
+                    this._refreshResultsView({ filterSource: 'search-defaults' });
+                } else {
+                    this._updateResultsStatus();
+                    this._renderResults();
+                    this._updateResultsKindTabsUi();
+                    this._syncBulkHydrateUi();
+                }
             }
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
@@ -4180,6 +4273,8 @@ const plugin = {
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
         this._state.autoHydrateScheduled = false;
+        this._state.autoHydratePending = false;
+        this._state.autoHydratePendingLogged = false;
         this._state.disputesBulkIncomplete = false;
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
@@ -4228,34 +4323,7 @@ const plugin = {
     },
 
     _applyFiltersAndRender() {
-        const lib = dashLib();
-        if (this._state.cachedItems === null) {
-            this._state.filteredItems = null;
-            this._updateResultsStatus();
-            this._renderResults();
-            return;
-        }
-        const filters = this._currentClientFilters();
-        const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
-        if (filterInvalid.invalid) {
-            this._updateSubstringErrorUi();
-            return;
-        }
-        this._state.resultsPage = 0;
-        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
-        const sortOrder = filters.sortOrder;
-        const scopeItems = this._getFilterScopeItems();
-        const before = scopeItems.length;
-        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
-        this._state.filteredItems = result;
-        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
-        Logger.log('dashboard: filters applied — ' + result.length + ' / ' + before + ' item(s) in tab scope'
-            + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
-        this._renderFilterLists();
-        this._updateResultsStatus();
-        this._syncResultsListDerivedUi();
-        this._renderResults();
-        this._updateResultsKindTabsUi();
+        this._refreshResultsView({ resetPage: true, filterSource: 'client' });
     },
 
     // ── Status text ──
@@ -4343,9 +4411,16 @@ const plugin = {
                 ? committed.authorLabels.join(', ')
                 : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
             const scopeTotal = this._getFilterScopeItems().length;
+            const tabs = this._resultsKindTabsMeta(committed);
+            const activeTab = s.resultsKindTab || 'all';
+            let tabNote = '';
+            if (tabs.length > 1 && activeTab !== 'all') {
+                const activeMeta = tabs.find((t) => t.id === activeTab);
+                if (activeMeta) tabNote = ' in ' + activeMeta.label;
+            }
             const countLabel = s.filteredItems.length === scopeTotal
-                ? s.filteredItems.length + ' result(s)'
-                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
+                ? s.filteredItems.length + ' result(s)' + tabNote
+                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
             const modes = [];
             if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
             if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
