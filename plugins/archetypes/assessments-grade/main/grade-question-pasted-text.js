@@ -10,13 +10,16 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         stylesInjected: false,
         activationLogged: false,
-        sectionsInjected: 0
+        clipboardHostMissingLogged: false,
+        clipboardHost: null,
+        lastRunSig: null,
+        syncInProgress: false
     },
     storageKeys: {
         granularity: 'assessments-grade-paste-diff-granularity'
@@ -28,38 +31,241 @@ const plugin = {
     },
 
     onMutation(state) {
-        this.ensureDiffStyles(state);
-        const pastesByQuestion = this.scrapePastesByQuestion();
-        if (pastesByQuestion.size === 0) {
-            this.removeOrphanRoots(pastesByQuestion);
+        if (state.syncInProgress) {
             return;
         }
 
-        let injectedThisPass = 0;
-        for (const section of document.querySelectorAll('section[id^="grading-q-"]')) {
+        this.ensureDiffStyles(state);
+
+        const pastesByQuestion = this.scrapePastesByQuestion(state);
+        const gradingSections = this.findGradingSections();
+        const runSig = this.buildRunSignature(pastesByQuestion, gradingSections);
+
+        if (runSig === state.lastRunSig) {
+            return;
+        }
+
+        if (!this.runNeedsDomWork(pastesByQuestion, gradingSections)) {
+            state.lastRunSig = runSig;
+            return;
+        }
+
+        state.syncInProgress = true;
+        let injectedCount = 0;
+        try {
+            if (pastesByQuestion.size === 0) {
+                this.removeOrphanRoots(pastesByQuestion);
+                state.lastRunSig = runSig;
+                return;
+            }
+
+            for (const section of gradingSections) {
+                const questionNum = this.getQuestionNumber(section);
+                if (questionNum == null) {
+                    continue;
+                }
+                const pastes = pastesByQuestion.get(questionNum);
+                if (!pastes || pastes.length === 0) {
+                    this.removeRoot(section);
+                    continue;
+                }
+                const applicantAnswer = this.getApplicantAnswerText(section);
+                if (
+                    this.syncSection(section, questionNum, pastes, applicantAnswer, state)
+                ) {
+                    injectedCount += 1;
+                }
+            }
+
+            this.removeOrphanRoots(pastesByQuestion);
+
+            if (injectedCount > 0 && !state.activationLogged) {
+                Logger.info(
+                    `${this.id}: pasted-text blocks active for ${injectedCount} question section(s)`
+                );
+                state.activationLogged = true;
+            }
+        } finally {
+            state.syncInProgress = false;
+            state.lastRunSig = runSig;
+        }
+    },
+
+    isFleetUi(el) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE) {
+            return false;
+        }
+        if (el.closest(`[${ROOT_ATTR}]`)) {
+            return true;
+        }
+        const pluginRoot = el.closest('[data-fleet-plugin]');
+        return pluginRoot && pluginRoot.getAttribute('data-fleet-plugin') === this.id;
+    },
+
+    labelText(el) {
+        return (el && el.textContent ? el.textContent : '').trim();
+    },
+
+    isPasteSummaryLine(el) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE || el.tagName !== 'DIV') {
+            return false;
+        }
+        if (el.children.length > 0) {
+            return false;
+        }
+        if (this.isFleetUi(el)) {
+            return false;
+        }
+        return PASTE_SUMMARY_RE.test(this.labelText(el));
+    },
+
+    findClipboardEventsListHost(state) {
+        if (state.clipboardHost && document.contains(state.clipboardHost)) {
+            return state.clipboardHost;
+        }
+        state.clipboardHost = null;
+
+        const sections = document.getElementsByTagName('section');
+        for (let i = 0; i < sections.length; i += 1) {
+            const section = sections[i];
+            if (this.isFleetUi(section)) {
+                continue;
+            }
+            const headings = section.getElementsByTagName('div');
+            for (let j = 0; j < headings.length; j += 1) {
+                const heading = headings[j];
+                if (this.isFleetUi(heading)) {
+                    continue;
+                }
+                if (this.labelText(heading) !== 'Clipboard events') {
+                    continue;
+                }
+                const listHost = heading.nextElementSibling;
+                if (listHost && !this.isFleetUi(listHost)) {
+                    state.clipboardHost = listHost;
+                    return listHost;
+                }
+            }
+        }
+
+        if (!state.clipboardHostMissingLogged) {
+            Logger.debug(`${this.id}: clipboard events list not found yet`);
+            state.clipboardHostMissingLogged = true;
+        }
+        return null;
+    },
+
+    extractPasteFromCard(card) {
+        if (!card || this.isFleetUi(card)) {
+            return null;
+        }
+        let summary = null;
+        const divs = card.getElementsByTagName('div');
+        for (let i = 0; i < divs.length; i += 1) {
+            const div = divs[i];
+            if (this.isPasteSummaryLine(div)) {
+                summary = div;
+                break;
+            }
+        }
+        if (!summary) {
+            return null;
+        }
+        const pres = card.getElementsByTagName('pre');
+        let pre = null;
+        for (let i = 0; i < pres.length; i += 1) {
+            if (!this.isFleetUi(pres[i])) {
+                pre = pres[i];
+                break;
+            }
+        }
+        if (!pre) {
+            return null;
+        }
+        const parsed = this.parsePasteSummary(summary.textContent);
+        if (!parsed) {
+            return null;
+        }
+        return {
+            questionNum: parsed.questionNum,
+            seconds: parsed.seconds,
+            text: (pre.textContent || '').trimEnd()
+        };
+    },
+
+    findGradingSections() {
+        const sections = [];
+        const all = document.getElementsByTagName('section');
+        for (let i = 0; i < all.length; i += 1) {
+            const section = all[i];
+            const id = section.id || '';
+            if (id.startsWith('grading-q-') && !this.isFleetUi(section)) {
+                sections.push(section);
+            }
+        }
+        return sections;
+    },
+
+    findRootInSection(section) {
+        const nodes = section.getElementsByTagName('div');
+        for (let i = 0; i < nodes.length; i += 1) {
+            const node = nodes[i];
+            if (node.getAttribute(ROOT_ATTR) === 'true') {
+                return node;
+            }
+        }
+        return null;
+    },
+
+    serializePastesMap(pastesByQuestion) {
+        const parts = [];
+        const keys = [...pastesByQuestion.keys()].sort((a, b) => a - b);
+        for (const q of keys) {
+            const list = pastesByQuestion.get(q) || [];
+            const items = list
+                .map((p) => `${p.seconds}:${p.text.length}:${p.text.slice(0, 24)}`)
+                .join(',');
+            parts.push(`${q}=[${items}]`);
+        }
+        return parts.join(';');
+    },
+
+    buildRunSignature(pastesByQuestion, gradingSections) {
+        const pastePart = this.serializePastesMap(pastesByQuestion);
+        const sectionParts = [];
+        for (const section of gradingSections) {
+            const q = this.getQuestionNumber(section);
+            if (q == null) {
+                continue;
+            }
+            const answer = this.getApplicantAnswerText(section);
+            const root = this.findRootInSection(section);
+            const rootSig = root ? root.dataset.fleetPasteSig || '' : '';
+            sectionParts.push(`${q}:${answer.length}:${answer.slice(0, 48)}:${rootSig}`);
+        }
+        sectionParts.sort();
+        return `${pastePart}||${sectionParts.join('|')}`;
+    },
+
+    runNeedsDomWork(pastesByQuestion, gradingSections) {
+        for (const section of gradingSections) {
             const questionNum = this.getQuestionNumber(section);
             if (questionNum == null) {
                 continue;
             }
             const pastes = pastesByQuestion.get(questionNum);
-            if (!pastes || pastes.length === 0) {
-                this.removeRoot(section);
-                continue;
-            }
-            const applicantAnswer = this.getApplicantAnswerText(section);
-            if (this.syncSection(section, questionNum, pastes, applicantAnswer, state)) {
-                injectedThisPass += 1;
+            const root = this.findRootInSection(section);
+            if (pastes && pastes.length > 0) {
+                const applicantAnswer = this.getApplicantAnswerText(section);
+                const sig = this.buildSignature(questionNum, pastes, applicantAnswer);
+                if (!root || root.dataset.fleetPasteSig !== sig) {
+                    return true;
+                }
+            } else if (root) {
+                return true;
             }
         }
-
-        this.removeOrphanRoots(pastesByQuestion);
-
-        if (injectedThisPass > 0 && !state.activationLogged) {
-            Logger.info(
-                `${this.id}: pasted-text blocks active for ${injectedThisPass} question section(s)`
-            );
-            state.activationLogged = true;
-        }
+        return false;
     },
 
     ensureDiffStyles(state) {
@@ -195,29 +401,31 @@ const plugin = {
         return null;
     },
 
-    scrapePastesByQuestion() {
+    scrapePastesByQuestion(state) {
         const byQuestion = new Map();
-        const cards = document.querySelectorAll('.rounded-md.border.bg-background.px-2.py-1.5');
-        for (const card of cards) {
-            const summary = card.querySelector(':scope > div:first-child');
-            const pre = card.querySelector('pre');
-            if (!summary || !pre) {
+        const listHost = this.findClipboardEventsListHost(state);
+        if (!listHost) {
+            return byQuestion;
+        }
+
+        state.clipboardHostMissingLogged = false;
+
+        for (const card of listHost.children) {
+            if (card.nodeType !== Node.ELEMENT_NODE || this.isFleetUi(card)) {
                 continue;
             }
-            const parsed = this.parsePasteSummary(summary.textContent);
-            if (!parsed) {
+            const extracted = this.extractPasteFromCard(card);
+            if (!extracted) {
                 continue;
             }
-            const pastedText = (pre.textContent || '').trimEnd();
-            const list = byQuestion.get(parsed.questionNum) || [];
+            const list = byQuestion.get(extracted.questionNum) || [];
             const prevOnQuestion = list.length > 0 ? list[list.length - 1].seconds : null;
-            const timeLabel = this.buildTimeLabel(parsed.seconds, prevOnQuestion);
             list.push({
-                seconds: parsed.seconds,
-                text: pastedText,
-                timeLabel
+                seconds: extracted.seconds,
+                text: extracted.text,
+                timeLabel: this.buildTimeLabel(extracted.seconds, prevOnQuestion)
             });
-            byQuestion.set(parsed.questionNum, list);
+            byQuestion.set(extracted.questionNum, list);
         }
         return byQuestion;
     },
@@ -232,20 +440,32 @@ const plugin = {
     },
 
     getQuestionNumber(section) {
-        const header = section.querySelector('.text-sm.font-medium');
-        if (!header) {
-            return null;
+        const nodes = section.getElementsByTagName('div');
+        for (let i = 0; i < nodes.length; i += 1) {
+            const node = nodes[i];
+            if (this.isFleetUi(node)) {
+                continue;
+            }
+            const text = this.labelText(node);
+            if (text.length > 160) {
+                continue;
+            }
+            const match = text.match(/^Question\s+(\d+)\b/);
+            if (match) {
+                return parseInt(match[1], 10);
+            }
         }
-        const match = header.textContent.match(/Question\s+(\d+)/);
-        return match ? parseInt(match[1], 10) : null;
+        return null;
     },
 
     findApplicantAnswerBlock(section) {
-        const labels = section.querySelectorAll(
-            '.mb-1.text-xs.font-medium.uppercase.tracking-wide'
-        );
-        for (const label of labels) {
-            if (label.textContent.trim() === "Applicant's answer") {
+        const labels = section.getElementsByTagName('div');
+        for (let i = 0; i < labels.length; i += 1) {
+            const label = labels[i];
+            if (this.isFleetUi(label)) {
+                continue;
+            }
+            if (this.labelText(label) === "Applicant's answer") {
                 return label.parentElement;
             }
         }
@@ -257,10 +477,16 @@ const plugin = {
         if (!block) {
             return '';
         }
-        const answerEl = block.querySelector(
-            '.whitespace-pre-wrap.rounded-md.border.px-3.py-2.text-sm'
-        );
-        return answerEl ? (answerEl.textContent || '').trimEnd() : '';
+        for (const child of block.children) {
+            if (child.nodeType !== Node.ELEMENT_NODE || this.isFleetUi(child)) {
+                continue;
+            }
+            if (this.labelText(child) === "Applicant's answer") {
+                continue;
+            }
+            return (child.textContent || '').trimEnd();
+        }
+        return '';
     },
 
     buildSignature(questionNum, pastes, applicantAnswer) {
@@ -287,9 +513,9 @@ const plugin = {
         }
 
         const signature = this.buildSignature(questionNum, pastes, applicantAnswer);
-        let root = section.querySelector(`[${ROOT_ATTR}]`);
+        let root = this.findRootInSection(section);
         if (root && root.dataset.fleetPasteSig === signature) {
-            return true;
+            return false;
         }
 
         if (!root) {
@@ -308,10 +534,6 @@ const plugin = {
         root.replaceChildren();
         root.appendChild(this.buildHeader(root, ui, noDifference));
         root.appendChild(this.buildPasteBlocks(root, pastes, applicantAnswer, ui, noDifference));
-
-        Logger.debug(
-            `${this.id}: synced Q${questionNum} — ${pastes.length} paste(s)${noDifference ? ', no difference' : ''}`
-        );
         return true;
     },
 
@@ -375,9 +597,6 @@ const plugin = {
 
         checkbox.addEventListener('change', () => {
             ui.highlightsEnabled = checkbox.checked;
-            Logger.log(
-                `${this.id}: highlight differences ${ui.highlightsEnabled ? 'on' : 'off'}`
-            );
             refreshDiff();
         });
 
@@ -389,7 +608,6 @@ const plugin = {
             Storage.set(this.storageKeys.granularity, granularity);
             wordBtn.setAttribute('aria-pressed', granularity === 'word' ? 'true' : 'false');
             charBtn.setAttribute('aria-pressed', granularity === 'char' ? 'true' : 'false');
-            Logger.log(`${this.id}: diff granularity ${granularity}`);
             refreshDiff();
         };
 
@@ -508,14 +726,14 @@ const plugin = {
     },
 
     removeRoot(section) {
-        const root = section.querySelector(`[${ROOT_ATTR}]`);
+        const root = this.findRootInSection(section);
         if (root) {
             root.remove();
         }
     },
 
     removeOrphanRoots(pastesByQuestion) {
-        for (const section of document.querySelectorAll('section[id^="grading-q-"]')) {
+        for (const section of this.findGradingSections()) {
             const questionNum = this.getQuestionNumber(section);
             if (questionNum == null) {
                 continue;
