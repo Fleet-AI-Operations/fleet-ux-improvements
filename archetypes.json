@@ -1,7 +1,7 @@
 {
   "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.0",
+  "archetypesVersion": "10.1",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -526,13 +526,19 @@
       "id": "assessments-grade",
       "name": "Grade Assessments",
       "description": "Page for grading assessments at work/assessments/grade",
-      "urlPattern": "work/assessments/grade",
+      "urlPattern": "work/assessments/grade/*",
       "disambiguationSelectors": [],
       "plugins": [
         {
           "name": "grade-content-full-width.js",
           "version": "1.0",
           "hash": "sha256-995b0329dd3bc2b91ab6a0b5615132d9b20d718c1c3c6f77f93b835e3673a25f",
+          "log": false
+        },
+        {
+          "name": "clipboard-event-relative-times.js",
+          "version": "1.0",
+          "hash": "sha256-f4d6bbfe39687c076fb8103a604dfb08c3cc9cb0b09b40caf790f347a55ccf88",
           "log": false
         }
       ]
