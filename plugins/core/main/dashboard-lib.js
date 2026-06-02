@@ -146,7 +146,8 @@ function dashLibIsQaFlaggedAsBugged(data, feedbackContent) {
     if (data && typeof data === 'object') {
         if (data.bug_reason || data.bug_description) return true;
         if (data.attempted_actions
-            && !data.task_feedback && !data.environment_feedback && !data.grading_feedback) {
+            && !data.task_feedback && !data.general_feedback
+            && !data.environment_feedback && !data.grading_feedback) {
             return true;
         }
     }
@@ -202,7 +203,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.11',
+    _version: '1.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -873,6 +874,7 @@ const plugin = {
         if (data.bug_description) textBlocks.push({ label: 'Bug Description', text: dashLibNormalizeNewlines(data.bug_description) });
         if (data.attempted_actions) textBlocks.push({ label: 'Attempted Actions', text: dashLibNormalizeNewlines(data.attempted_actions) });
         if (data.task_feedback) textBlocks.push({ label: 'Task Feedback', text: dashLibNormalizeNewlines(data.task_feedback) });
+        if (data.general_feedback) textBlocks.push({ label: 'General Feedback', text: dashLibNormalizeNewlines(data.general_feedback) });
         if (data.environment_feedback) textBlocks.push({ label: 'Environment Feedback', text: dashLibNormalizeNewlines(data.environment_feedback) });
         if (data.grading_feedback) textBlocks.push({ label: 'Grading Feedback', text: dashLibNormalizeNewlines(data.grading_feedback) });
         const labels = Array.isArray(data.rejection_reason_labels)

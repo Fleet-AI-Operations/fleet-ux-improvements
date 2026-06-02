@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.21',
+    _version: '4.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3067,7 +3067,6 @@ const plugin = {
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
-                                    <div style="${hint} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
