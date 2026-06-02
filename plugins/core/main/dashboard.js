@@ -87,6 +87,14 @@ function dashLib() {
     return Context.dashboardLib;
 }
 
+function dashPgInFilter(values) {
+    return dashLib().pgInFilter(values);
+}
+
+function dashPgInChunks(values) {
+    return dashLib().pgInChunks(values);
+}
+
 function dashDateInputValue(date) {
     return dashLib().dateInputValue(date);
 }
@@ -174,7 +182,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.48',
+    _version: '3.49',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -742,13 +750,55 @@ const plugin = {
         return (targetToProjectId && targetToProjectId.get(targetId)) || '';
     },
 
+    /** When any scope `in.(…)` list exceeds PG_IN_MAX, return override objects to fan out requests. */
+    _scopeQueryVariants(scope) {
+        const max = dashLib().PG_IN_MAX;
+        let variants = [{}];
+        const multiply = (field, values, active) => {
+            if (!active || !values || values.length <= max) return;
+            const chunks = dashPgInChunks(values);
+            const next = [];
+            for (const base of variants) {
+                for (const chunk of chunks) {
+                    next.push(Object.assign({}, base, { [field]: chunk }));
+                }
+            }
+            variants = next;
+        };
+        multiply('teamIds', scope.teamIds, scope.teamIds.length > 0);
+        multiply('envKeys', scope.envKeys, scope.narrowedEnvs && scope.envKeys.length > 0);
+        multiply('targetIds', scope.targetIds, scope.hasProjectFilter && scope.targetIds.length > 0);
+        return variants;
+    },
+
+    _authorQueryVariants(authorIds) {
+        const ids = [...new Set((authorIds || []).filter(Boolean))];
+        if (ids.length === 0) return [null];
+        return dashPgInChunks(ids);
+    },
+
+    async _fetchProfilesByIds(profileIds, logContext) {
+        const chunks = dashPgInChunks(profileIds);
+        if (chunks.length === 0) return [];
+        const all = [];
+        for (const chunk of chunks) {
+            const rows = await this._pgQuery('profiles.select_person', {
+                id: dashPgInFilter(chunk)
+            }, logContext || 'search').catch((e) => {
+                Logger.warn('dashboard: profile lookup chunk failed', e);
+                return [];
+            });
+            all.push(...rows);
+        }
+        return all;
+    },
+
     async _fetchTargetProjectMap(targetIds) {
         if (!targetIds || targetIds.length === 0) return new Map();
         const map = new Map();
-        for (let i = 0; i < targetIds.length; i += 50) {
-            const chunk = targetIds.slice(i, i + 50);
+        for (const chunk of dashPgInChunks(targetIds)) {
             const rows = await this._pgQuery('task_project_targets.select_project_map', {
-                id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                id: dashPgInFilter(chunk),
                 limit: String(chunk.length)
             }, 'search').catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
             for (const r of rows) if (r.id && r.project_id) map.set(r.id, r.project_id);
@@ -767,12 +817,7 @@ const plugin = {
         const missing = [...new Set((extraIds || []).filter(Boolean))]
             .filter((id) => !profilesMap.has(id));
         if (missing.length === 0) return;
-        const rows = await this._pgQuery('profiles.select_person', {
-            id: 'in.(' + missing.join(',') + ')'
-        }, 'search').catch((e) => {
-            Logger.warn('dashboard: supplemental profile lookup failed', e);
-            return [];
-        });
+        const rows = await this._fetchProfilesByIds(missing, 'search');
         for (const [id, profile] of this._buildProfilesMap(rows)) {
             profilesMap.set(id, profile);
         }
@@ -877,18 +922,24 @@ const plugin = {
             order: 'created_at.desc',
             limit: '400'
         };
-        if (teamIds.length === 1) {
-            projectsParams.team_id = 'eq.' + teamIds[0];
-        } else if (teamIds.length > 1) {
-            projectsParams.team_id = 'in.(' + teamIds.join(',') + ')';
-        }
-        const [projectPages, environments] = await Promise.all([
-            teamIds.length > 0
-                ? this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap').catch((e) => {
+        const fetchBootstrapProjects = async () => {
+            if (teamIds.length === 0) {
+                return this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap');
+            }
+            const teamChunks = dashPgInChunks(teamIds);
+            const merged = [];
+            for (const chunk of teamChunks) {
+                const params = Object.assign({}, projectsParams, { team_id: dashPgInFilter(chunk) });
+                const page = await this._pgQuery('task_projects.select_bootstrap', params, 'bootstrap').catch((e) => {
                     Logger.warn('dashboard: bootstrap projects fetch failed', e);
                     return [];
-                })
-                : this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap'),
+                });
+                merged.push(...page);
+            }
+            return merged;
+        };
+        const [projectPages, environments] = await Promise.all([
+            fetchBootstrapProjects(),
             this._pgQuery('environments.select_bootstrap', {
                 deleted_at: 'is.null',
                 order: 'env_key.asc'
@@ -930,10 +981,9 @@ const plugin = {
     async _fetchTargetIdsForProjects(projectIds) {
         if (!projectIds || projectIds.length === 0) return [];
         const ids = [];
-        for (let i = 0; i < projectIds.length; i += 50) {
-            const chunk = projectIds.slice(i, i + 50);
+        for (const chunk of dashPgInChunks(projectIds)) {
             const rows = await this._pgQuery('task_project_targets.select_ids', {
-                project_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                project_id: dashPgInFilter(chunk),
                 limit: '500'
             }, 'search').catch((e) => { Logger.warn('dashboard: project→target lookup failed', e); return []; });
             for (const r of rows) if (r.id) ids.push(r.id);
@@ -992,39 +1042,51 @@ const plugin = {
         return scope;
     },
 
-    _applyTaskScopeToQs(qs, scope) {
-        if (scope.teamIds.length > 0) {
-            qs.team_id = scope.teamIds.length === 1 ? 'eq.' + scope.teamIds[0] : 'in.(' + scope.teamIds.join(',') + ')';
+    _applyTaskScopeToQs(qs, scope, scopeOverrides) {
+        const o = scopeOverrides || {};
+        const teamIds = o.teamIds !== undefined ? o.teamIds : scope.teamIds;
+        const envKeys = o.envKeys !== undefined ? o.envKeys : scope.envKeys;
+        const targetIds = o.targetIds !== undefined ? o.targetIds : scope.targetIds;
+        if (teamIds.length > 0) {
+            const f = dashPgInFilter(teamIds);
+            if (!f) return false;
+            qs.team_id = f;
         }
-        if (scope.narrowedEnvs && scope.envKeys.length > 0) {
-            qs.env_key = scope.envKeys.length === 1 ? 'eq.' + scope.envKeys[0] : 'in.(' + scope.envKeys.join(',') + ')';
+        if (scope.narrowedEnvs && envKeys.length > 0) {
+            const f = dashPgInFilter(envKeys);
+            if (!f) return false;
+            qs.env_key = f;
         }
         if (scope.hasProjectFilter) {
-            if (scope.targetIds.length === 0) return false;
-            qs.task_project_target_id = scope.targetIds.length === 1
-                ? 'eq.' + scope.targetIds[0]
-                : 'in.(' + scope.targetIds.join(',') + ')';
+            if (targetIds.length === 0) return false;
+            const f = dashPgInFilter(targetIds);
+            if (!f) return false;
+            qs.task_project_target_id = f;
         }
         return true;
     },
 
-    _applyTaskScopeToQaQs(qs, scope) {
+    _applyTaskScopeToQaQs(qs, scope, scopeOverrides) {
         const ops = this._dashOpsTab();
-        if (scope.teamIds.length > 0) {
-            qs[ops.getScopedField('qa_embed_team')] = scope.teamIds.length === 1
-                ? 'eq.' + scope.teamIds[0]
-                : 'in.(' + scope.teamIds.join(',') + ')';
+        const o = scopeOverrides || {};
+        const teamIds = o.teamIds !== undefined ? o.teamIds : scope.teamIds;
+        const envKeys = o.envKeys !== undefined ? o.envKeys : scope.envKeys;
+        const targetIds = o.targetIds !== undefined ? o.targetIds : scope.targetIds;
+        if (teamIds.length > 0) {
+            const f = dashPgInFilter(teamIds);
+            if (!f) return false;
+            qs[ops.getScopedField('qa_embed_team')] = f;
         }
-        if (scope.narrowedEnvs && scope.envKeys.length > 0) {
-            qs[ops.getScopedField('qa_embed_env')] = scope.envKeys.length === 1
-                ? 'eq.' + scope.envKeys[0]
-                : 'in.(' + scope.envKeys.join(',') + ')';
+        if (scope.narrowedEnvs && envKeys.length > 0) {
+            const f = dashPgInFilter(envKeys);
+            if (!f) return false;
+            qs[ops.getScopedField('qa_embed_env')] = f;
         }
         if (scope.hasProjectFilter) {
-            if (scope.targetIds.length === 0) return false;
-            qs[ops.getScopedField('qa_embed_target')] = scope.targetIds.length === 1
-                ? 'eq.' + scope.targetIds[0]
-                : 'in.(' + scope.targetIds.join(',') + ')';
+            if (targetIds.length === 0) return false;
+            const f = dashPgInFilter(targetIds);
+            if (!f) return false;
+            qs[ops.getScopedField('qa_embed_target')] = f;
         }
         return true;
     },
@@ -1037,45 +1099,57 @@ const plugin = {
         Logger.debug('dashboard: fetching tasks — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
             + (scope.teamIds.length > 0 ? ' · ' + scope.teamIds.length + ' team(s)' : '')
             + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : ''));
-        const allRows = [];
-        let offset = 0;
+        const byId = new Map();
+        const authorVariants = this._authorQueryVariants(authorIds);
+        const scopeVariants = this._scopeQueryVariants(scope);
         let pageNum = 0;
-        while (true) {
-            const qs = {
-                order: 'created_at.desc',
-                offset: String(offset),
-                limit: String(DASH_TASKS_PAGE_SIZE)
-            };
-            if (authorIds.length === 1) qs.created_by = 'eq.' + authorIds[0];
-            else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
-            if (!this._applyTaskScopeToQs(qs, scope)) return [];
-            this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgQuery('tasks.select_search', qs, 'search');
-            pageNum++;
-            Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
-            allRows.push(...page);
-            if (page.length < DASH_TASKS_PAGE_SIZE) break;
-            offset += DASH_TASKS_PAGE_SIZE;
+        for (const authorChunk of authorVariants) {
+            for (const scopeOverride of scopeVariants) {
+                let offset = 0;
+                while (true) {
+                    const qs = {
+                        order: 'created_at.desc',
+                        offset: String(offset),
+                        limit: String(DASH_TASKS_PAGE_SIZE)
+                    };
+                    if (authorChunk) {
+                        const f = dashPgInFilter(authorChunk);
+                        if (!f) continue;
+                        qs.created_by = f;
+                    }
+                    if (!this._applyTaskScopeToQs(qs, scope, scopeOverride)) continue;
+                    this._addCreatedAtRange(qs, afterIso, beforeIso);
+                    const page = await this._pgQuery('tasks.select_search', qs, 'search');
+                    pageNum++;
+                    Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
+                    for (const row of page) if (row && row.id) byId.set(row.id, row);
+                    if (page.length < DASH_TASKS_PAGE_SIZE) break;
+                    offset += DASH_TASKS_PAGE_SIZE;
+                }
+            }
         }
+        const allRows = [...byId.values()];
         Logger.debug('dashboard: tasks fetched (' + allRows.length + ' rows)');
         return allRows;
     },
 
     async _fetchTaskRowsByIds(taskIds, scope) {
         if (!taskIds || taskIds.length === 0) return [];
-        const rows = [];
-        for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
-            const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
-            const qs = {
-                id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
-                limit: String(chunk.length)
-            };
-            if (!this._applyTaskScopeToQs(qs, scope)) continue;
-            const page = await this._pgQuery('tasks.select_search', qs, 'search');
-            rows.push(...page);
-            Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
+        const scopeVariants = this._scopeQueryVariants(scope);
+        const byId = new Map();
+        for (const chunk of dashPgInChunks(taskIds)) {
+            for (const scopeOverride of scopeVariants) {
+                const qs = {
+                    id: dashPgInFilter(chunk),
+                    limit: String(chunk.length)
+                };
+                if (!this._applyTaskScopeToQs(qs, scope, scopeOverride)) continue;
+                const page = await this._pgQuery('tasks.select_search', qs, 'search');
+                Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
+                for (const row of page) if (row && row.id) byId.set(row.id, row);
+            }
         }
-        return rows;
+        return [...byId.values()];
     },
 
     async _fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope) {
@@ -1087,26 +1161,40 @@ const plugin = {
         Logger.debug('dashboard: fetching QA feedback — ' + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
             + (afterIso ? ' · after ' + afterIso : '') + (beforeIso ? ' · before ' + beforeIso : '')
             + (useTaskScopeEmbed ? ' · task scope embed (teams)' : ''));
+        const seenFeedbackIds = new Set();
         const allFeedback = [];
-        let offset = 0;
         let pageNum = 0;
         const qaQueryKey = useTaskScopeEmbed ? 'qa_feedback.select_row_scoped' : 'qa_feedback.select_row';
-        while (true) {
-            const qs = {
-                order: 'created_at.desc',
-                offset: String(offset),
-                limit: String(DASH_QA_PAGE_SIZE)
-            };
-            if (authorIds.length === 1) qs.created_by = 'eq.' + authorIds[0];
-            else if (authorIds.length > 1) qs.created_by = 'in.(' + authorIds.join(',') + ')';
-            if (useTaskScopeEmbed && !this._applyTaskScopeToQaQs(qs, scope)) return [];
-            this._addCreatedAtRange(qs, afterIso, beforeIso);
-            const page = await this._pgQuery(qaQueryKey, qs, 'search');
-            pageNum++;
-            Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
-            allFeedback.push(...page);
-            if (page.length < DASH_QA_PAGE_SIZE) break;
-            offset += DASH_QA_PAGE_SIZE;
+        const authorVariants = this._authorQueryVariants(authorIds);
+        const scopeVariants = useTaskScopeEmbed ? this._scopeQueryVariants(scope) : [{}];
+        for (const authorChunk of authorVariants) {
+            for (const scopeOverride of scopeVariants) {
+                let offset = 0;
+                while (true) {
+                    const qs = {
+                        order: 'created_at.desc',
+                        offset: String(offset),
+                        limit: String(DASH_QA_PAGE_SIZE)
+                    };
+                    if (authorChunk) {
+                        const f = dashPgInFilter(authorChunk);
+                        if (!f) continue;
+                        qs.created_by = f;
+                    }
+                    if (useTaskScopeEmbed && !this._applyTaskScopeToQaQs(qs, scope, scopeOverride)) continue;
+                    this._addCreatedAtRange(qs, afterIso, beforeIso);
+                    const page = await this._pgQuery(qaQueryKey, qs, 'search');
+                    pageNum++;
+                    Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
+                    for (const row of page) {
+                        if (!row || !row.id || seenFeedbackIds.has(row.id)) continue;
+                        seenFeedbackIds.add(row.id);
+                        allFeedback.push(row);
+                    }
+                    if (page.length < DASH_QA_PAGE_SIZE) break;
+                    offset += DASH_QA_PAGE_SIZE;
+                }
+            }
         }
         Logger.debug('dashboard: QA feedback rows fetched (' + allFeedback.length + ' total)');
         return allFeedback;
@@ -1116,16 +1204,20 @@ const plugin = {
         if (!taskIds || taskIds.length === 0) return [];
         if (scope.hasProjectFilter && scope.targetIds.length === 0) return [];
         const allFeedback = [];
-        for (let i = 0; i < taskIds.length; i += DASH_QA_PAGE_SIZE) {
-            const chunk = taskIds.slice(i, i + DASH_QA_PAGE_SIZE);
+        const seenFeedbackIds = new Set();
+        for (const chunk of dashPgInChunks(taskIds)) {
             const qs = {
-                eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                eval_task_id: dashPgInFilter(chunk),
                 order: 'created_at.desc',
                 limit: '500'
             };
             const page = await this._pgQuery('qa_feedback.select_row', qs, 'search');
             Logger.debug('dashboard: QA feedback by task id chunk — ' + page.length + ' rows');
-            allFeedback.push(...page);
+            for (const row of page) {
+                if (!row || !row.id || seenFeedbackIds.has(row.id)) continue;
+                seenFeedbackIds.add(row.id);
+                allFeedback.push(row);
+            }
         }
         return allFeedback;
     },
@@ -1139,9 +1231,7 @@ const plugin = {
         const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const profileIdsArr = [...profileIds];
         const [profileRows, targetToProjectId] = await Promise.all([
-            profileIdsArr.length > 0
-                ? this._pgQuery('profiles.select_person', { id: 'in.(' + profileIdsArr.join(',') + ')' }, 'search')
-                : [],
+            profileIdsArr.length > 0 ? this._fetchProfilesByIds(profileIdsArr, 'search') : [],
             this._fetchTargetProjectMap(uniqueTargetIds)
         ]);
         const profilesMap = this._buildProfilesMap(profileRows);
@@ -1179,9 +1269,7 @@ const plugin = {
         const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const profileIdsArr = [...profileIds];
         const [profileRows, targetToProjectId] = await Promise.all([
-            profileIdsArr.length > 0
-                ? this._pgQuery('profiles.select_person', { id: 'in.(' + profileIdsArr.join(',') + ')' }, 'search')
-                : [],
+            profileIdsArr.length > 0 ? this._fetchProfilesByIds(profileIdsArr, 'search') : [],
             this._fetchTargetProjectMap(uniqueTargetIds)
         ]);
         const profilesMap = this._buildProfilesMap(profileRows);

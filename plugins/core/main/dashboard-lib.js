@@ -1,6 +1,9 @@
 // dashboard-lib.js — pure dashboard helpers (no PostgREST).
 // Loaded before dashboard.js; registers Context.dashboardLib.
 
+/** Max UUIDs/keys per PostgREST `in.(…)` (and per chunked request param). */
+const DASH_PG_IN_MAX = 25;
+
 const DASH_LIB_MIN_SUBSTRING_LENGTH = 3;
 const DASH_LIB_MS_PER_DAY = 86400000;
 const DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS = 7;
@@ -28,6 +31,27 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     flagged: 'Flagged',
     escalated: 'Escalated'
 };
+
+function dashLibPgInFilter(values) {
+    const list = (Array.isArray(values) ? values : []).filter((v) => v != null && v !== '');
+    if (list.length === 0) return null;
+    if (list.length > DASH_PG_IN_MAX) {
+        throw new Error('dashboard-lib: pgInFilter length ' + list.length + ' exceeds max ' + DASH_PG_IN_MAX);
+    }
+    if (list.length === 1) return 'eq.' + list[0];
+    return 'in.(' + list.join(',') + ')';
+}
+
+function dashLibPgInChunks(values, maxSize) {
+    const max = maxSize || DASH_PG_IN_MAX;
+    const deduped = [...new Set((Array.isArray(values) ? values : []).filter((v) => v != null && v !== ''))];
+    if (deduped.length === 0) return [];
+    const chunks = [];
+    for (let i = 0; i < deduped.length; i += max) {
+        chunks.push(deduped.slice(i, i + max));
+    }
+    return chunks;
+}
 
 function dashLibPrepareText(value, caseSensitive) {
     const trimmed = (value || '').replace(/\s+/g, ' ').trim();
@@ -171,7 +195,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.9',
+    _version: '1.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -180,6 +204,10 @@ const plugin = {
         const self = this;
         const bind = (fn) => fn.bind(self);
         Context.dashboardLib = {
+            PG_IN_MAX: DASH_PG_IN_MAX,
+            pgInFilter: dashLibPgInFilter,
+            pgInChunks: dashLibPgInChunks,
+
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             UNIVERSAL_SEARCH_MAX_DAYS: DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS,
             UNIVERSAL_SEARCH_RANGE_MESSAGE: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE,
