@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -308,11 +308,14 @@ const plugin = {
             [${ROOT_ATTR}] pre .fleet-paste-diff-equal-muted {
                 color: var(--muted-foreground, #737373);
             }
-            [${ROOT_ATTR}] pre .fleet-paste-diff-equal-foreground {
-                color: var(--foreground, #171717);
+            [${ROOT_ATTR}] pre.fleet-paste-final-answer-pre.fleet-paste-diff-highlighting {
+                color: var(--muted-foreground, #737373);
+                background: var(--muted, rgba(0, 0, 0, 0.04));
+                border: 1px solid var(--border, #e5e5e5);
             }
-            .dark [${ROOT_ATTR}] pre .fleet-paste-diff-equal-foreground {
-                color: var(--foreground, #fafafa);
+            .dark [${ROOT_ATTR}] pre.fleet-paste-final-answer-pre.fleet-paste-diff-highlighting {
+                background: rgba(255, 255, 255, 0.03);
+                border-color: rgba(255, 255, 255, 0.1);
             }
             [${ROOT_ATTR}] .fleet-paste-no-diff-badge {
                 display: inline-flex;
@@ -804,12 +807,16 @@ const plugin = {
         afterPre.dataset.originalText = afterText;
 
         if (!ui.highlightsEnabled) {
+            beforePre.classList.remove('fleet-paste-diff-highlighting');
+            afterPre.classList.remove('fleet-paste-diff-highlighting');
             beforePre.textContent = beforeText;
             afterPre.textContent = afterText;
             delete beforePre.dataset.diffHighlighted;
             delete afterPre.dataset.diffHighlighted;
             return;
         }
+
+        afterPre.classList.add('fleet-paste-diff-highlighting');
 
         const granularity = ui.diffGranularity || 'word';
         const diff =
@@ -1019,7 +1026,7 @@ const plugin = {
                     html += `<span style="${addStyle}">${this.escapeHtml(text)}</span>`;
                 }
             } else {
-                html += `<span class="fleet-paste-diff-equal-foreground">${this.escapeHtml(text)}</span>`;
+                html += `<span class="fleet-paste-diff-equal-muted">${this.escapeHtml(text)}</span>`;
             }
         });
 
