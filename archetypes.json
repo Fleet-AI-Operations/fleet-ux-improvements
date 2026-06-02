@@ -1,7 +1,7 @@
 {
   "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.5",
+  "archetypesVersion": "10.6",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -556,8 +556,8 @@
         },
         {
           "name": "grade-question-pasted-text.js",
-          "version": "1.2",
-          "hash": "sha256-e2ee1afc171ed15f51d05236351477d3883532e0ccfc4ea8887a51c7042dbca9",
+          "version": "1.3",
+          "hash": "sha256-bb0d2af8048eb5f1b0c5cb790bea6b1ae8f91d03b2edd9e1d922ceb51c21d4ed",
           "log": false
         }
       ]

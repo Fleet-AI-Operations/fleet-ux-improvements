@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -368,6 +368,18 @@ const plugin = {
                 background-color: var(--primary, #4f46e5);
                 color: var(--primary-foreground, #fff);
             }
+            [${ROOT_ATTR}] .fleet-paste-diff-stack {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+            [${ROOT_ATTR}] .fleet-paste-diff-block-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
         `;
         document.head.appendChild(style);
         state.stylesInjected = true;
@@ -515,6 +527,7 @@ const plugin = {
         const signature = this.buildSignature(questionNum, pastes, applicantAnswer);
         let root = this.findRootInSection(section);
         if (root && root.dataset.fleetPasteSig === signature) {
+            this.hideNativeApplicantAnswer(anchor);
             return false;
         }
 
@@ -532,14 +545,32 @@ const plugin = {
         const noDifference = lastPaste.text.trim() === applicantAnswer.trim();
 
         root.replaceChildren();
-        root.appendChild(this.buildHeader(root, ui, noDifference));
+        root.appendChild(this.buildHeader());
         root.appendChild(this.buildPasteBlocks(root, pastes, applicantAnswer, ui, noDifference));
+        this.hideNativeApplicantAnswer(anchor);
         return true;
     },
 
-    buildHeader(root, ui, noDifference) {
+    hideNativeApplicantAnswer(block) {
+        if (!block) {
+            return;
+        }
+        block.setAttribute('data-fleet-native-applicant-hidden', 'true');
+        block.style.display = 'none';
+    },
+
+    showNativeApplicantAnswer(section) {
+        const block = this.findApplicantAnswerBlock(section);
+        if (!block || block.getAttribute('data-fleet-native-applicant-hidden') !== 'true') {
+            return;
+        }
+        block.style.display = '';
+        block.removeAttribute('data-fleet-native-applicant-hidden');
+    },
+
+    buildHeader() {
         const header = document.createElement('div');
-        header.className = 'flex items-center justify-between gap-2';
+        header.className = 'mb-1';
 
         const title = document.createElement('div');
         title.className =
@@ -547,6 +578,10 @@ const plugin = {
         title.textContent = 'Pasted Text';
         header.appendChild(title);
 
+        return header;
+    },
+
+    buildDiffControls(root, ui, noDifference) {
         const controls = document.createElement('div');
         controls.className = 'fleet-paste-diff-controls';
 
@@ -559,10 +594,8 @@ const plugin = {
 
         const toggleLabel = document.createElement('label');
         toggleLabel.className = 'fleet-paste-diff-toggle-label';
-        const toggleId = `${this.id}-toggle-${Math.random().toString(36).slice(2, 9)}`;
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.id = toggleId;
         checkbox.checked = ui.highlightsEnabled;
         const toggleText = document.createElement('span');
         toggleText.textContent = 'Highlight Differences';
@@ -577,8 +610,6 @@ const plugin = {
         granGroup.appendChild(wordBtn);
         granGroup.appendChild(charBtn);
         controls.appendChild(granGroup);
-
-        header.appendChild(controls);
 
         const refreshDiff = () => {
             const diffHost = root.querySelector('[data-fleet-paste-diff-host="true"]');
@@ -614,7 +645,7 @@ const plugin = {
         wordBtn.addEventListener('click', () => setGranularity('word'));
         charBtn.addEventListener('click', () => setGranularity('char'));
 
-        return header;
+        return controls;
     },
 
     createGranularityButton(label, pressed) {
@@ -635,16 +666,16 @@ const plugin = {
             const block = document.createElement('div');
             block.className = 'rounded-md border bg-muted/20 px-3 py-2 text-sm';
 
-            const label = document.createElement('div');
-            label.className = 'mb-1 font-mono text-xs tabular-nums text-muted-foreground';
-            label.textContent = paste.timeLabel;
-            block.appendChild(label);
-
             if (isLast) {
+                block.replaceChildren();
                 block.appendChild(
-                    this.buildDiffGrid(paste.text, applicantAnswer, ui, noDifference)
+                    this.buildDiffStack(root, paste, applicantAnswer, ui, noDifference)
                 );
             } else {
+                const label = document.createElement('div');
+                label.className = 'mb-1 font-mono text-xs tabular-nums text-muted-foreground';
+                label.textContent = paste.timeLabel;
+                block.appendChild(label);
                 block.appendChild(this.buildPlainPre(paste.text));
             }
 
@@ -662,41 +693,56 @@ const plugin = {
         return pre;
     },
 
-    buildDiffGrid(pasteText, applicantAnswer, ui, noDifference) {
-        const grid = document.createElement('div');
-        grid.className = 'grid grid-cols-1 gap-2 sm:grid-cols-2';
-        grid.setAttribute('data-fleet-paste-diff-host', 'true');
+    buildDiffStack(root, paste, applicantAnswer, ui, noDifference) {
+        const wrapper = document.createElement('div');
 
-        const beforeCol = document.createElement('div');
+        const blockHeader = document.createElement('div');
+        blockHeader.className = 'fleet-paste-diff-block-header';
+
+        const timeLabel = document.createElement('div');
+        timeLabel.className = 'font-mono text-xs tabular-nums text-muted-foreground';
+        timeLabel.textContent = paste.timeLabel;
+        blockHeader.appendChild(timeLabel);
+        blockHeader.appendChild(this.buildDiffControls(root, ui, noDifference));
+        wrapper.appendChild(blockHeader);
+
+        const stack = document.createElement('div');
+        stack.className = 'fleet-paste-diff-stack';
+        stack.setAttribute('data-fleet-paste-diff-host', 'true');
+
+        const beforeSection = document.createElement('div');
         const beforeLabel = document.createElement('div');
-        beforeLabel.className = 'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
+        beforeLabel.className =
+            'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
         beforeLabel.textContent = 'Last paste';
-        const beforePre = this.buildPlainPre(pasteText);
+        const beforePre = this.buildPlainPre(paste.text);
         beforePre.setAttribute('data-fleet-paste-diff-before', 'true');
-        beforeCol.appendChild(beforeLabel);
-        beforeCol.appendChild(beforePre);
+        beforeSection.appendChild(beforeLabel);
+        beforeSection.appendChild(beforePre);
 
-        const afterCol = document.createElement('div');
+        const afterSection = document.createElement('div');
         const afterLabel = document.createElement('div');
-        afterLabel.className = 'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
-        afterLabel.textContent = "Applicant's answer";
+        afterLabel.className =
+            'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
+        afterLabel.textContent = "Applicant's Final Answer";
         const afterPre = this.buildPlainPre(applicantAnswer);
         afterPre.setAttribute('data-fleet-paste-diff-after', 'true');
-        afterCol.appendChild(afterLabel);
-        afterCol.appendChild(afterPre);
+        afterSection.appendChild(afterLabel);
+        afterSection.appendChild(afterPre);
 
-        grid.appendChild(beforeCol);
-        grid.appendChild(afterCol);
+        stack.appendChild(beforeSection);
+        stack.appendChild(afterSection);
+        wrapper.appendChild(stack);
 
-        beforePre.dataset.originalText = pasteText;
+        beforePre.dataset.originalText = paste.text;
         afterPre.dataset.originalText = applicantAnswer;
-        this.renderDiffPair(beforePre, afterPre, pasteText, applicantAnswer, ui);
+        this.renderDiffPair(beforePre, afterPre, paste.text, applicantAnswer, ui);
 
         if (noDifference) {
-            grid.setAttribute('data-fleet-paste-no-diff', 'true');
+            stack.setAttribute('data-fleet-paste-no-diff', 'true');
         }
 
-        return grid;
+        return wrapper;
     },
 
     renderDiffPair(beforePre, afterPre, beforeText, afterText, ui) {
@@ -730,6 +776,7 @@ const plugin = {
         if (root) {
             root.remove();
         }
+        this.showNativeApplicantAnswer(section);
     },
 
     removeOrphanRoots(pastesByQuestion) {
