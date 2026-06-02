@@ -26,7 +26,6 @@ const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
 const DASH_DISPUTES_PAGE_SIZE = 50;
 const DASH_DISPUTES_MAX_PAGES = 100;
-const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
@@ -182,7 +181,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.50',
+    _version: '3.51',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -231,6 +230,7 @@ const plugin = {
             loading: false,
             searchLoadPhase: '',
             searchError: null,
+            disputesBulkIncomplete: false,
             committed: null,
             appliedFilters: null,
             filterListOptions: null,
@@ -597,6 +597,7 @@ const plugin = {
         const allRows = [];
         let offset = 0;
         let pageNum = 0;
+        let lastPageLen = 0;
         const useDateEarlyExit = Boolean(afterIso || beforeIso);
         let consecutiveEmptyFilteredPages = 0;
         while (pageNum < DASH_DISPUTES_MAX_PAGES) {
@@ -623,6 +624,7 @@ const plugin = {
                 + (statusParam ? ' [' + statusParam + ']' : ' [open]')
                 + ' — ' + rows.length + ' rows (offset ' + offset + ')');
             allRows.push(...rows);
+            lastPageLen = rows.length;
             if (useDateEarlyExit && rows.length > 0) {
                 const passing = rows.filter((row) => (
                     row && row.eval_task_id
@@ -643,18 +645,19 @@ const plugin = {
             if (rows.length < DASH_DISPUTES_PAGE_SIZE) break;
             offset += DASH_DISPUTES_PAGE_SIZE;
         }
-        if (pageNum >= DASH_DISPUTES_MAX_PAGES) {
+        const capped = pageNum >= DASH_DISPUTES_MAX_PAGES && lastPageLen >= DASH_DISPUTES_PAGE_SIZE;
+        if (capped) {
             Logger.warn('dashboard: disputes bulk pagination capped at ' + DASH_DISPUTES_MAX_PAGES
                 + ' pages — results may be incomplete; narrow the date range');
         }
-        return allRows;
+        return { rows: allRows, capped };
     },
 
     async _fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope) {
         const teamIds = (scope && scope.teamIds) || [];
         if (teamIds.length === 0) {
             Logger.debug('dashboard: disputes bulk skipped — no team scope');
-            return { byTaskId: new Map(), rows: [] };
+            return { byTaskId: new Map(), rows: [], bulkIncomplete: false };
         }
         const contributorSet = authorIds.length > 0
             ? new Set(authorIds.flatMap((id) => {
@@ -664,12 +667,24 @@ const plugin = {
                 return norm === raw ? [raw] : [raw, norm];
             }))
             : null;
-        const [openRows, resolvedRows] = contributorSet
-            ? [[], await this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, contributorSet)]
-            : await Promise.all([
+        let openRows = [];
+        let resolvedRows = [];
+        let bulkIncomplete = false;
+        if (contributorSet) {
+            const resolvedResult = await this._fetchDisputesBulkPages(
+                teamIds, 'resolved', afterIso, beforeIso, contributorSet
+            );
+            resolvedRows = resolvedResult.rows;
+            bulkIncomplete = resolvedResult.capped;
+        } else {
+            const [openResult, resolvedResult] = await Promise.all([
                 this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, contributorSet),
                 this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, contributorSet)
             ]);
+            openRows = openResult.rows;
+            resolvedRows = resolvedResult.rows;
+            bulkIncomplete = openResult.capped || resolvedResult.capped;
+        }
         const seenIds = new Set();
         const allRows = [];
         for (const row of [...openRows, ...resolvedRows]) {
@@ -693,40 +708,12 @@ const plugin = {
         Logger.log('dashboard: disputes bulk — ' + openRows.length + ' open, ' + resolvedRows.length
             + ' resolved, ' + filtered.length + ' after filter'
             + (contributorSet ? ' (resolver resolved_by + resolved_at)' : ' (created_at)')
-            + ' across ' + byTaskId.size + ' task(s)');
-        return { byTaskId, rows: filtered };
-    },
-
-    async _fetchTaskDisputes(taskId) {
-        if (!taskId) return [];
-        try {
-            const qs = new URLSearchParams({ taskId: String(taskId) });
-            const data = await this._fleetWebGetSearch(this._dashFleetWebPath('disputes_task') + '?' + qs.toString());
-            return (data && Array.isArray(data.disputes)) ? data.disputes : [];
-        } catch (e) {
-            Logger.warn('dashboard: task-disputes fetch failed for ' + taskId.slice(0, 8) + '…', e);
-            return [];
+            + ' across ' + byTaskId.size + ' task(s)'
+            + (bulkIncomplete ? ' · bulk pagination capped' : ''));
+        if (bulkIncomplete) {
+            Logger.warn('dashboard: disputes bulk incomplete — narrow the date range or team scope');
         }
-    },
-
-    async _fetchTaskDisputesBatch(taskIds) {
-        const unique = [...new Set((taskIds || []).filter(Boolean))];
-        const out = new Map();
-        if (unique.length === 0) return out;
-        let idx = 0;
-        const workers = [];
-        const concurrency = DASH_DISPUTES_TASK_FETCH_CONCURRENCY;
-        const runNext = async () => {
-            while (idx < unique.length) {
-                const taskId = unique[idx++];
-                const rows = await this._fetchTaskDisputes(taskId);
-                if (rows.length > 0) out.set(taskId, rows);
-            }
-        };
-        for (let i = 0; i < Math.min(concurrency, unique.length); i++) workers.push(runNext());
-        await Promise.all(workers);
-        Logger.debug('dashboard: task-disputes batch — ' + out.size + ' / ' + unique.length + ' task(s) had disputes');
-        return out;
+        return { byTaskId, rows: filtered, bulkIncomplete };
     },
 
     _disputeRowsToDisplays(rows, profilesMap) {
@@ -1366,44 +1353,44 @@ const plugin = {
         return items;
     },
 
-    async _attachDisputesToMergedItems(mergedItems, bulkByTaskId, profilesMap) {
-        if (!mergedItems || mergedItems.length === 0) return mergedItems;
-        const needPerTaskIds = [];
-        for (const item of mergedItems) {
-            const taskId = item.task.id;
-            const bulkRows = bulkByTaskId && bulkByTaskId.get(taskId);
-            if (!bulkRows || bulkRows.length === 0) needPerTaskIds.push(taskId);
+    _mergeBulkDisputesOntoItem(item, bulkRows, profilesMap) {
+        const displays = this._disputeRowsToDisplays(bulkRows, profilesMap);
+        const existing = item.disputes || [];
+        const seen = new Set(existing.map((d) => d.id).filter(Boolean));
+        const merged = [...existing];
+        for (const d of displays) {
+            if (!d.id || seen.has(d.id)) continue;
+            seen.add(d.id);
+            merged.push(d);
         }
-        const perTaskMap = needPerTaskIds.length > 0
-            ? await this._fetchTaskDisputesBatch(needPerTaskIds)
-            : new Map();
-        if (needPerTaskIds.length > 0) {
-            Logger.debug('dashboard: per-task disputes supplement — ' + needPerTaskIds.length + ' task(s)');
+        item.disputes = merged;
+    },
+
+    _attachDisputesToMergedItems(mergedItems, bulkByTaskId, profilesMap) {
+        if (!mergedItems || mergedItems.length === 0 || !bulkByTaskId || bulkByTaskId.size === 0) {
+            return mergedItems;
         }
         let attached = 0;
+        let skipped = 0;
         for (const item of mergedItems) {
             const taskId = item.task.id;
-            const perTaskRows = perTaskMap.get(taskId) || [];
-            const bulkRows = bulkByTaskId && bulkByTaskId.get(taskId);
-            let rawRows = (bulkRows && bulkRows.length > 0)
-                ? bulkRows
-                : (perTaskRows.length > 0 ? perTaskRows : []);
-            if (rawRows.length === 0) continue;
-            item.disputes = this._disputeRowsToDisplays(rawRows, profilesMap);
+            const bulkRows = bulkByTaskId.get(taskId);
+            if (!bulkRows || bulkRows.length === 0) {
+                skipped++;
+                continue;
+            }
+            this._mergeBulkDisputesOntoItem(item, bulkRows, profilesMap);
             if (!item.kinds.includes('dispute')) item.kinds.push('dispute');
             item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
-            if (item.kind !== 'dispute') {
-                /* keep primary kind from merge order */
-            }
             attached++;
         }
-        if (attached > 0) {
-            Logger.log('dashboard: disputes attached to ' + attached + ' card(s)');
-        }
+        Logger.log('dashboard: disputes attached from bulk — ' + attached + ' card(s)');
+        Logger.debug('dashboard: disputes bulk attach skipped — ' + skipped + ' card(s) with no in-scope dispute');
         return mergedItems;
     },
 
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
+        this._state.disputesBulkIncomplete = false;
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
             includeTaskCreation,
             includeQa,
@@ -1411,7 +1398,7 @@ const plugin = {
         }));
         const disputesPromise = includeDisputes
             ? this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope)
-            : Promise.resolve({ byTaskId: new Map(), rows: [] });
+            : Promise.resolve({ byTaskId: new Map(), rows: [], bulkIncomplete: false });
         const tasksPromise = includeTaskCreation
             ? this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : Promise.resolve([]);
@@ -1425,6 +1412,7 @@ const plugin = {
             qaPromise
         ]);
         const bulkByTaskId = disputesBulk.byTaskId;
+        this._state.disputesBulkIncomplete = Boolean(includeDisputes && disputesBulk.bulkIncomplete);
 
         const disputeTaskIds = includeDisputes ? [...bulkByTaskId.keys()] : [];
 
@@ -1518,9 +1506,9 @@ const plugin = {
         this._setSearchLoadPhase('Assembling result cards…');
         let mergedItems = this._mergeWorkerOutputItemsByTask(items);
 
-        if (includeDisputes && mergedItems.length > 0) {
-            this._setSearchLoadPhase('Loading dispute details for cards…');
-            mergedItems = await this._attachDisputesToMergedItems(
+        if (includeDisputes && mergedItems.length > 0 && bulkByTaskId.size > 0) {
+            this._setSearchLoadPhase('Attaching disputes from bulk results…');
+            mergedItems = this._attachDisputesToMergedItems(
                 mergedItems,
                 bulkByTaskId,
                 profilesMap
@@ -4072,6 +4060,7 @@ const plugin = {
             this._state.hydrateBulkActive = false;
             this._state.autoHydrateActive = false;
             this._state.autoHydrateScheduled = false;
+            this._state.disputesBulkIncomplete = false;
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
@@ -4191,6 +4180,7 @@ const plugin = {
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
         this._state.autoHydrateScheduled = false;
+        this._state.disputesBulkIncomplete = false;
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -4367,7 +4357,10 @@ const plugin = {
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
             const depthNote = committed.searchDepth === 'quick' ? ' · quick search' : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}</span>`;
+            const disputesNote = s.disputesBulkIncomplete
+                ? ' · disputes list may be incomplete (narrow date range)'
+                : '';
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}</span>`;
             this._syncBulkHydrateUi();
             this._syncResultsRangeCountUi();
             return;
