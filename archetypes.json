@@ -1,7 +1,7 @@
 {
   "version": "9.3.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.95",
+  "archetypesVersion": "9.108",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -34,20 +34,20 @@
     },
     {
       "name": "dashboard-lib.js",
-      "version": "1.7",
-      "hash": "sha256-232901ac4901423bdc65466ec040e1b9fabb42432f57ef96b18c43fd860cc6a7",
+      "version": "1.10",
+      "hash": "sha256-113ea6c3f8c6de47f0ceca4f7022c8cee8b88f8f5520f7ac0047aea533a8a616",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.3",
-      "hash": "sha256-740977eda3f0f9f9b3b0fd88c03a0384b0f9f45353a5c6853fdbebfd76f7d4e4",
+      "version": "1.5",
+      "hash": "sha256-3e1f232c90fe214f68232e7015b6e353c82680a7e7026a80ee36fd7f65b15cbb",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "3.42",
-      "hash": "sha256-7879ab7326cc93dfe524b3ad69e5a507d02332da0aaa31651d0fb851399f7e70",
+      "version": "3.55",
+      "hash": "sha256-50e50c54fe282fb4d5337f4b0661ad62cc2c41b38fa7c4100792af409a8d0a95",
       "log": false
     }
   ],
@@ -77,12 +77,6 @@
       "urlPattern": "work/create",
       "disambiguationSelectors": [],
       "plugins": [
-        {
-          "name": "dashboard-page-api-intercept.js",
-          "version": "1.0",
-          "hash": "",
-          "log": false
-        },
         {
           "name": "feedback-given-stats.js",
           "version": "3.1",

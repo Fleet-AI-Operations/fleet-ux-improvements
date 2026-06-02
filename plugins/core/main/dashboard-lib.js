@@ -1,6 +1,9 @@
 // dashboard-lib.js — pure dashboard helpers (no PostgREST).
 // Loaded before dashboard.js; registers Context.dashboardLib.
 
+/** Max UUIDs/keys per PostgREST `in.(…)` (and per chunked request param). */
+const DASH_PG_IN_MAX = 25;
+
 const DASH_LIB_MIN_SUBSTRING_LENGTH = 3;
 const DASH_LIB_MS_PER_DAY = 86400000;
 const DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS = 7;
@@ -29,9 +32,41 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     escalated: 'Escalated'
 };
 
+function dashLibPgInFilter(values) {
+    const list = (Array.isArray(values) ? values : []).filter((v) => v != null && v !== '');
+    if (list.length === 0) return null;
+    if (list.length > DASH_PG_IN_MAX) {
+        throw new Error('dashboard-lib: pgInFilter length ' + list.length + ' exceeds max ' + DASH_PG_IN_MAX);
+    }
+    if (list.length === 1) return 'eq.' + list[0];
+    return 'in.(' + list.join(',') + ')';
+}
+
+function dashLibPgInChunks(values, maxSize) {
+    const max = maxSize || DASH_PG_IN_MAX;
+    const deduped = [...new Set((Array.isArray(values) ? values : []).filter((v) => v != null && v !== ''))];
+    if (deduped.length === 0) return [];
+    const chunks = [];
+    for (let i = 0; i < deduped.length; i += max) {
+        chunks.push(deduped.slice(i, i + max));
+    }
+    return chunks;
+}
+
 function dashLibPrepareText(value, caseSensitive) {
     const trimmed = (value || '').replace(/\s+/g, ' ').trim();
     return caseSensitive ? trimmed : trimmed.toLowerCase();
+}
+
+function dashLibCompileFilterRegex(pattern, caseSensitive) {
+    const trimmed = String(pattern ?? '').trim();
+    if (!trimmed) return { re: null };
+    const flags = caseSensitive ? 'g' : 'gi';
+    try {
+        return { re: new RegExp(trimmed, flags) };
+    } catch (err) {
+        return { error: err };
+    }
 }
 
 function dashLibLevenshtein(a, b, maxDistance) {
@@ -160,7 +195,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.7',
+    _version: '1.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -169,6 +204,10 @@ const plugin = {
         const self = this;
         const bind = (fn) => fn.bind(self);
         Context.dashboardLib = {
+            PG_IN_MAX: DASH_PG_IN_MAX,
+            pgInFilter: dashLibPgInFilter,
+            pgInChunks: dashLibPgInChunks,
+
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             UNIVERSAL_SEARCH_MAX_DAYS: DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS,
             UNIVERSAL_SEARCH_RANGE_MESSAGE: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE,
@@ -182,7 +221,37 @@ const plugin = {
             isQueryActive: (value, caseSensitive) => (
                 dashLibPrepareText(value, caseSensitive).length >= DASH_LIB_MIN_SUBSTRING_LENGTH
             ),
-            textMatchesQuery: (text, queryText, fuzzy, caseSensitive) => {
+            isRegexQueryActive: (value) => String(value ?? '').trim().length > 0,
+            compileFilterRegex: (pattern, caseSensitive) => dashLibCompileFilterRegex(pattern, caseSensitive),
+            isPromptFilterInvalid: (promptText, caseSensitive, regex) => {
+                if (regex) {
+                    const trimmed = String(promptText ?? '').trim();
+                    if (!trimmed) return { invalid: false, message: '' };
+                    const { error } = dashLibCompileFilterRegex(trimmed, caseSensitive);
+                    if (error) {
+                        return {
+                            invalid: true,
+                            message: 'Invalid RegEx: ' + (error.message || String(error))
+                        };
+                    }
+                    return { invalid: false, message: '' };
+                }
+                const length = dashLibPrepareText(promptText, caseSensitive).length;
+                if (length > 0 && length < DASH_LIB_MIN_SUBSTRING_LENGTH) {
+                    return {
+                        invalid: true,
+                        message: 'Substring must be at least ' + DASH_LIB_MIN_SUBSTRING_LENGTH + ' characters.'
+                    };
+                }
+                return { invalid: false, message: '' };
+            },
+            textMatchesQuery: (text, queryText, fuzzy, caseSensitive, regex) => {
+                if (regex) {
+                    const { re, error } = dashLibCompileFilterRegex(queryText, caseSensitive);
+                    if (error || !re) return false;
+                    re.lastIndex = 0;
+                    return re.test(String(text ?? ''));
+                }
                 const query = dashLibPrepareText(queryText, caseSensitive);
                 if (!query) return false;
                 const candidate = dashLibPrepareText(text, caseSensitive);
@@ -282,9 +351,52 @@ const plugin = {
         };
     },
 
+    _mergeHighlightRanges(source, ranges) {
+        if (ranges.length === 0) return [{ text: source, match: false }];
+        ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const merged = [];
+        for (const [start, end] of ranges) {
+            const last = merged[merged.length - 1];
+            if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+            else merged.push([start, end]);
+        }
+        const segments = [];
+        let pos = 0;
+        for (const [start, end] of merged) {
+            if (start > pos) segments.push({ text: source.slice(pos, start), match: false });
+            segments.push({ text: source.slice(start, end), match: true });
+            pos = end;
+        }
+        if (pos < source.length) segments.push({ text: source.slice(pos), match: false });
+        return segments;
+    },
+
+    _buildRegexHighlightSegments(text, query, options) {
+        const caseSensitive = (options && options.caseSensitive) || false;
+        const source = String(text ?? '');
+        const trimmed = String(query ?? '').trim();
+        if (!source || !trimmed) return [{ text: source, match: false }];
+        const { re, error } = dashLibCompileFilterRegex(trimmed, caseSensitive);
+        if (error || !re) return [{ text: source, match: false }];
+        const ranges = [];
+        let match;
+        re.lastIndex = 0;
+        while ((match = re.exec(source)) !== null) {
+            if (match[0].length === 0) {
+                re.lastIndex += 1;
+                continue;
+            }
+            ranges.push([match.index, match.index + match[0].length]);
+            if (!re.global) break;
+        }
+        return this._mergeHighlightRanges(source, ranges);
+    },
+
     _buildHighlightSegments(text, query, options) {
         const caseSensitive = (options && options.caseSensitive) || false;
         const fuzzy = Boolean(options && options.fuzzy);
+        const regex = Boolean(options && options.regex);
+        if (regex) return this._buildRegexHighlightSegments(text, query, options);
         const source = String(text ?? '');
         const normalizedQuery = String(query ?? '').replace(/\s+/g, ' ').trim();
         if (!source || !normalizedQuery) return [{ text: source, match: false }];
@@ -305,22 +417,7 @@ const plugin = {
             }
         }
         if (ranges.length === 0) return [{ text: source, match: false }];
-        ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-        const merged = [];
-        for (const [start, end] of ranges) {
-            const last = merged[merged.length - 1];
-            if (last && start <= last[1]) last[1] = Math.max(last[1], end);
-            else merged.push([start, end]);
-        }
-        const segments = [];
-        let pos = 0;
-        for (const [start, end] of merged) {
-            if (start > pos) segments.push({ text: source.slice(pos, start), match: false });
-            segments.push({ text: source.slice(start, end), match: true });
-            pos = end;
-        }
-        if (pos < source.length) segments.push({ text: source.slice(pos), match: false });
-        return segments;
+        return this._mergeHighlightRanges(source, ranges);
     },
 
     _returnTypeOf(entry) {
@@ -462,16 +559,16 @@ const plugin = {
         return texts;
     },
 
-    _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden) {
+    _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden, regex) {
         const lib = Context.dashboardLib;
         const versions = this._versionsForItem(item);
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
-            if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive)) return true;
+            if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive, regex)) return true;
             if (this._feedbackTextForVersion(item, version.displayVersionNo)
-                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive))) return true;
+                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive, regex))) return true;
             return this._disputeTextForItem(item)
-                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive));
+                .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive, regex));
         };
         if (!hidden) {
             const def = versions.find((v) => v.displayVersionNo === defaultNo) || versions[versions.length - 1];
@@ -488,12 +585,13 @@ const plugin = {
         return { matched, extraVersionNos };
     },
 
-    _annotateItem(item, extraVisibleVersionNos, highlightQuery, highlightCaseSensitive, highlightFuzzy) {
+    _annotateItem(item, extraVisibleVersionNos, highlightQuery, highlightCaseSensitive, highlightFuzzy, highlightRegex) {
         return Object.assign({}, item, {
             extraVisibleVersionNos,
             highlightQuery,
             highlightCaseSensitive,
-            highlightFuzzy: Boolean(highlightFuzzy)
+            highlightFuzzy: Boolean(highlightFuzzy),
+            highlightRegex: Boolean(highlightRegex)
         });
     },
 
@@ -541,6 +639,7 @@ const plugin = {
         const promptText = f.promptText || '';
         const fuzzy = f.fuzzy || false;
         const caseSensitive = f.caseSensitive || false;
+        const regex = Boolean(f.regex);
         const searchHiddenVersions = f.searchHiddenVersions || false;
         const tasks = items.map((item) => item.task);
         const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
@@ -552,16 +651,19 @@ const plugin = {
                 this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
             ));
         }
-        if (!lib.isQueryActive(promptText, caseSensitive)) {
-            return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false));
+        const queryActive = regex
+            ? lib.isRegexQueryActive(promptText)
+            : lib.isQueryActive(promptText, caseSensitive);
+        if (!queryActive) {
+            return passed.map((item) => this._annotateItem(item, [], '', caseSensitive, false, false));
         }
         const out = [];
         for (const item of passed) {
             const { matched, extraVersionNos } = this._matchItemSubstring(
-                item, promptText, fuzzy, caseSensitive, searchHiddenVersions
+                item, promptText, fuzzy, caseSensitive, searchHiddenVersions, regex
             );
             if (matched) {
-                out.push(this._annotateItem(item, extraVersionNos, promptText, caseSensitive, fuzzy));
+                out.push(this._annotateItem(item, extraVersionNos, promptText, caseSensitive, fuzzy, regex));
             }
         }
         return out;
@@ -594,11 +696,17 @@ const plugin = {
             if (task.envKey) envKeys.add(task.envKey);
             if (task.status) statuses.add(task.status);
             if (task.author && task.author.id) {
-                contributors.set(task.author.id, dashLibPersonLabel(task.author.name, task.author.email));
+                contributors.set(task.author.id, {
+                    name: String(task.author.name ?? '').trim(),
+                    email: String(task.author.email ?? '').trim()
+                });
             }
             for (const entry of task.allFeedback || []) {
                 if (entry.reviewer && entry.reviewer.id) {
-                    contributors.set(entry.reviewer.id, dashLibPersonLabel(entry.reviewer.name, entry.reviewer.email));
+                    contributors.set(entry.reviewer.id, {
+                        name: String(entry.reviewer.name ?? '').trim(),
+                        email: String(entry.reviewer.email ?? '').trim()
+                    });
                 }
                 if (entry.display && entry.display.isSystemFeedback) continue;
                 if (entry.display && entry.display.qualityRating) {
@@ -628,8 +736,12 @@ const plugin = {
             }).sort((a, b) => a.label.localeCompare(b.label)),
             statuses: [...statuses].map((id) => ({ id, label: id }))
                 .sort((a, b) => a.label.localeCompare(b.label)),
-            contributors: [...contributors.entries()].map(([id, label]) => ({ id, label }))
-                .sort((a, b) => a.label.localeCompare(b.label)),
+            contributors: [...contributors.entries()].map(([id, person]) => ({
+                id,
+                label: dashLibPersonLabel(person.name, person.email),
+                name: person.name || person.email || 'Unknown',
+                email: (person.name && person.email) ? person.email : ''
+            })).sort((a, b) => a.label.localeCompare(b.label)),
             promptRatings: DASH_LIB_PROMPT_RATING_ORDER
                 .filter((rating) => promptRatings.has(rating))
                 .map((rating) => ({ id: rating, label: rating })),

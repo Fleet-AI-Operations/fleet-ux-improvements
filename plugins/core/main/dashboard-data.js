@@ -2,13 +2,12 @@
 // Loaded after dashboard-lib.js, before dashboard.js; registers Context.dashboardData.
 
 const DASH_DATA_FEEDBACK_PAGE_SIZE = 200;
-const DASH_DATA_ID_CHUNK = 100;
 
 const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.3',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -19,6 +18,35 @@ const plugin = {
             enrichTasksWithHistory: (taskIds, profilesMap, options) => self._enrichTasksWithHistory(taskIds, profilesMap, options)
         };
         Logger.log('dashboard-data: module registered (Context.dashboardData)');
+    },
+
+    _pgInFilter(values) {
+        const lib = Context.dashboardLib;
+        if (!lib || typeof lib.pgInFilter !== 'function') {
+            throw new Error('dashboard-data: dashboardLib pgInFilter unavailable');
+        }
+        return lib.pgInFilter(values);
+    },
+
+    _pgInChunks(values) {
+        const lib = Context.dashboardLib;
+        if (!lib || typeof lib.pgInChunks !== 'function') {
+            throw new Error('dashboard-data: dashboardLib pgInChunks unavailable');
+        }
+        return lib.pgInChunks(values);
+    },
+
+    async _fetchProfilesByIds(profileIds) {
+        const chunks = this._pgInChunks(profileIds);
+        if (chunks.length === 0) return [];
+        const all = [];
+        for (const chunk of chunks) {
+            const rows = await this._pgQuery('profiles.select_person', {
+                id: this._pgInFilter(chunk)
+            });
+            all.push(...rows);
+        }
+        return all;
     },
 
     async _pgQuery(queryKey, overrides) {
@@ -79,10 +107,9 @@ const plugin = {
 
     async _fetchVersionsBatch(taskIds) {
         const versionRows = [];
-        for (let i = 0; i < taskIds.length; i += DASH_DATA_ID_CHUNK) {
-            const chunk = taskIds.slice(i, i + DASH_DATA_ID_CHUNK);
+        for (const chunk of this._pgInChunks(taskIds)) {
             const rows = await this._pgQuery('task_versions.select_history', {
-                task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                task_id: this._pgInFilter(chunk),
                 order: 'version_no.asc',
                 limit: String(Math.max(chunk.length * 20, 100))
             });
@@ -96,19 +123,15 @@ const plugin = {
         const knownIds = [...new Set(prefetched.map((f) => f && f.id).filter(Boolean))];
         const feedbackRows = [...prefetched];
         const seenIds = new Set(knownIds);
-        for (let i = 0; i < taskIds.length; i += DASH_DATA_ID_CHUNK) {
-            const chunk = taskIds.slice(i, i + DASH_DATA_ID_CHUNK);
+        for (const chunk of this._pgInChunks(taskIds)) {
             let offset = 0;
             while (true) {
                 const qs = {
-                    eval_task_id: chunk.length === 1 ? 'eq.' + chunk[0] : 'in.(' + chunk.join(',') + ')',
+                    eval_task_id: this._pgInFilter(chunk),
                     order: 'created_at.desc',
                     offset: String(offset),
                     limit: String(DASH_DATA_FEEDBACK_PAGE_SIZE)
                 };
-                if (knownIds.length > 0 && knownIds.length <= 200) {
-                    qs.id = 'not.in.(' + knownIds.join(',') + ')';
-                }
                 const page = await this._pgQuery('qa_feedback.select_row', qs);
                 let added = 0;
                 for (const row of page) {
@@ -160,9 +183,7 @@ const plugin = {
                 .filter((id) => id && !reviewerProfiles.has(id))
         )];
         if (missingReviewerIds.length > 0) {
-            const rows = await this._pgQuery('profiles.select_person', {
-                id: 'in.(' + missingReviewerIds.join(',') + ')'
-            });
+            const rows = await this._fetchProfilesByIds(missingReviewerIds);
             for (const [id, profile] of this._buildProfilesMap(rows)) {
                 reviewerProfiles.set(id, profile);
             }

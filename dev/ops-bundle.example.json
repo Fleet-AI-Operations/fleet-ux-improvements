@@ -23,6 +23,10 @@
         "table": "tasks",
         "select": "USE_EMBED_tasks_current_version"
       },
+      "tasks.select_search": {
+        "table": "tasks",
+        "select": "id,key,created_by,team_id,env_key,task_project_target_id,task_lifecycle_status,created_at,eval_task_versions!eval_tasks_current_version_fk(id,prompt,env_key,version_no,created_at)"
+      },
       "profiles.select_person": {
         "table": "profiles",
         "select": "id,full_name,email"
