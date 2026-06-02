@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.16',
+    _version: '4.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1878,7 +1878,7 @@ const plugin = {
         }
 
         let filters;
-        if (filterSource === 'search-defaults' || filterSource === 'tab-reset') {
+        if (filterSource === 'search-defaults' || filterSource === 'tab-reset' || filterSource === 'filter-reset') {
             filters = this._filtersAllSelectedFromBounds(bounds);
         } else {
             filters = this._currentClientFilters();
@@ -1901,6 +1901,8 @@ const plugin = {
         if (filterSource === 'client') {
             Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
                 + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+        } else if (filterSource === 'filter-reset') {
+            Logger.log('dashboard: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
         } else {
             Logger.log('dashboard: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
         }
@@ -2921,16 +2923,35 @@ const plugin = {
             <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden;">
                 <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <nav style="display: flex; gap: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
-                            <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
-                            <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
+                            <div style="display: flex; gap: 0; min-width: 0;">
+                                <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
+                                <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <div id="wf-dash-actions-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
+                                    <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
+                                </div>
+                                <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
+                                    <button type="button" id="wf-dash-reset-filters" style="${this._btnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
+                                </div>
+                            </div>
                         </nav>
+                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
+                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
+                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
+                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
+                        </div>
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
                                 <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                                    <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
-                                    <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 8px; font-weight: 600;">Contributor search</div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -2983,7 +3004,6 @@ const plugin = {
                                         </div>
                                         <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
                                     </div>
-                                    <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
@@ -2994,14 +3014,6 @@ const plugin = {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff);">
-                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Clear Parameters</button>
-                                    <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
-                                </div>
-                                <div id="wf-dash-universal-hint" style="display: none; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 8px;"></div>
-                                <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); margin-top: 8px;"></div>
                             </div>
                         </div>
 
@@ -3028,7 +3040,6 @@ const plugin = {
                                     <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
                                         <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions (requires hydrated results)
                                     </label>
-                                    <div id="wf-dash-substring-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
@@ -3037,10 +3048,6 @@ const plugin = {
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
                                 </div>
-                            </div>
-                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff); display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
-                                <div id="wf-dash-apply-hint" style="display: none; flex: 1; font-size: 11px; color: var(--muted-foreground, #64748b); text-align: right;"></div>
-                                <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
                             </div>
                         </div>
                     </div>
@@ -3308,6 +3315,8 @@ const plugin = {
         if (hiddenVersions) hiddenVersions.addEventListener('change', () => this._updateApplyFiltersUi());
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
+        const resetFilters = this._q('#wf-dash-reset-filters');
+        if (resetFilters) resetFilters.addEventListener('click', () => this._resetFiltersToDefaults());
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -3908,6 +3917,7 @@ const plugin = {
             errEl.style.display = 'none';
             errEl.textContent = '';
         }
+        this._syncLeftMessagesBar();
     },
 
     _refreshCatalogDependentUi() {
@@ -3926,6 +3936,7 @@ const plugin = {
         this._renderSearchTeamsList();
         this._renderSearchProjectsList();
         this._renderSearchEnvsList();
+        this._syncLeftMessagesBar();
     },
 
     _selectedFromList(scopeKey) {
@@ -4192,10 +4203,47 @@ const plugin = {
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
         if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
+        const searchActions = this._q('#wf-dash-actions-search');
+        const filterActions = this._q('#wf-dash-actions-filters');
+        if (searchActions) searchActions.style.display = tab === 'search' ? 'flex' : 'none';
+        if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
         this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
             btn.style.cssText = this._leftTabStyle(active);
         });
+        this._syncLeftMessagesBar();
+    },
+
+    _isMessageElVisible(el) {
+        if (!el || el.style.display === 'none') return false;
+        return Boolean((el.textContent || '').trim()) || el.children.length > 0;
+    },
+
+    _syncLeftMessagesBar() {
+        const bar = this._q('#wf-dash-left-messages');
+        if (!bar) return;
+        const tab = this._state.leftTab || 'search';
+        const sessionBanner = this._q('#wf-dash-session-refresh-banner');
+        const bootstrapErr = this._q('#wf-dash-bootstrap-error');
+        const universal = this._q('#wf-dash-universal-hint');
+        const rangeErr = this._q('#wf-dash-range-error');
+        const searchErr = this._q('#wf-dash-search-error');
+        const substringErr = this._q('#wf-dash-substring-error');
+        const applyHint = this._q('#wf-dash-apply-hint');
+        const sharedVisible = this._isMessageElVisible(sessionBanner) || this._isMessageElVisible(bootstrapErr);
+        const searchVisible = sharedVisible
+            || this._isMessageElVisible(universal)
+            || this._isMessageElVisible(rangeErr)
+            || this._isMessageElVisible(searchErr);
+        const filtersVisible = sharedVisible
+            || this._isMessageElVisible(substringErr)
+            || this._isMessageElVisible(applyHint);
+        const show = tab === 'filters' ? filtersVisible : searchVisible;
+        if (show) {
+            bar.style.display = 'flex';
+        } else {
+            bar.style.display = 'none';
+        }
     },
 
     // ── Dirty / range validation ──
@@ -4306,6 +4354,7 @@ const plugin = {
                 : this._btnPrimaryStyle();
         }
         this._syncFieldClearButtons();
+        this._syncLeftMessagesBar();
         return { check, isUniversal, blankBlocked };
     },
 
@@ -4374,10 +4423,15 @@ const plugin = {
         const selectionValid = this._isFilterSelectionValid();
         const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
-        const disabled = !this._state.cachedItems || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
+        const resetFiltersBtn = this._q('#wf-dash-reset-filters');
+        const noResults = !this._state.cachedItems;
+        const disabled = noResults || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
             applyBtn.disabled = disabled;
             applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
+        }
+        if (resetFiltersBtn) {
+            resetFiltersBtn.disabled = noResults || Boolean(this._state.loading);
         }
         const applyHint = this._q('#wf-dash-apply-hint');
         if (applyHint) {
@@ -4389,6 +4443,7 @@ const plugin = {
             }
         }
         this._syncFieldClearButtons();
+        this._syncLeftMessagesBar();
     },
 
     _updateSubstringErrorUi() {
@@ -4573,7 +4628,34 @@ const plugin = {
         this._state.sessionRefreshRequired = false;
         this._syncDashSessionRefreshBanner();
         this._validateRangeUi();
-        Logger.log('dashboard: search parameters cleared');
+        Logger.log('dashboard: search parameters reset');
+    },
+
+    _clearFilterUiFields() {
+        const prompt = this._q('#wf-dash-prompt');
+        if (prompt) prompt.value = '';
+        const hidden = this._q('#wf-dash-hidden-versions');
+        if (hidden) hidden.checked = false;
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = 'desc';
+        ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
+            const el = this._q(sel);
+            if (el) el.checked = false;
+        });
+        this._updateSubstringErrorUi();
+        this._syncFieldClearButtons();
+    },
+
+    _resetFiltersToDefaults() {
+        if (!this._state.cachedItems) {
+            Logger.debug('dashboard: filter reset skipped — no results loaded');
+            return;
+        }
+        this._clearFilterUiFields();
+        const ok = this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
+        if (ok) {
+            Logger.log('dashboard: filters reset to defaults (all options selected)');
+        }
     },
 
     _clearResults() {
@@ -4654,6 +4736,7 @@ const plugin = {
         }
         const el = this._q('#wf-dash-search-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
+        this._syncLeftMessagesBar();
         this._updateResultsStatus();
         this._renderResults();
     },
