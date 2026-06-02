@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.19',
+    _version: '4.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1636,12 +1636,12 @@ const plugin = {
             return new Set(optionIds);
         }
 
-        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
-            return new Set(optionIds);
+        if (prevSelected !== null && prevBoundIds.length > 0) {
+            return prevSelected;
         }
 
-        if (prevSelected && prevSelected.size > 0) {
-            return prevSelected;
+        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
+            return new Set(optionIds);
         }
 
         if (appliedSel.length > 0) {
@@ -2888,6 +2888,15 @@ const plugin = {
     _btnPrimaryDisabledStyle() {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
     },
+    _navBtnStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a);';
+    },
+    _navBtnPrimaryStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
+    },
+    _navBtnPrimaryDisabledStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    },
 
     _btnToggleStyle(active, colorKind) {
         const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
@@ -2945,12 +2954,12 @@ const plugin = {
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                 <div id="wf-dash-actions-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
+                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
                                 </div>
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-reset-filters" style="${this._btnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
+                                    <button type="button" id="wf-dash-reset-filters" style="${this._navBtnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-apply-filters" style="${this._navBtnPrimaryStyle()}">Apply</button>
                                 </div>
                             </div>
                         </nav>
@@ -4408,8 +4417,8 @@ const plugin = {
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
             searchBtn.style.cssText = searchDisabled
-                ? this._btnPrimaryDisabledStyle()
-                : this._btnPrimaryStyle();
+                ? this._navBtnPrimaryDisabledStyle()
+                : this._navBtnPrimaryStyle();
         }
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
@@ -4486,7 +4495,7 @@ const plugin = {
         const disabled = noResults || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
             applyBtn.disabled = disabled;
-            applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
+            applyBtn.style.cssText = disabled ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
         }
         if (resetFiltersBtn) {
             resetFiltersBtn.disabled = noResults || Boolean(this._state.loading);

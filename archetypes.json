@@ -1,7 +1,7 @@
 {
   "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.17",
+  "archetypesVersion": "10.18",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -46,8 +46,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "4.19",
-      "hash": "sha256-538a129cfaf975a336db51736de63307db1c6d95b90d10c4fafc97c457c92d8a",
+      "version": "4.20",
+      "hash": "sha256-c5645bbe3266ca0b6c61aabda9e7fea1bc53fd9db4d50d916d690d9934d63a0b",
       "log": false
     }
   ],
