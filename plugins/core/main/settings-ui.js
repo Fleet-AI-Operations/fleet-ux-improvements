@@ -1,14 +1,13 @@
 
 // settings-ui.js
 // Core plugin that provides the settings UI - persists across navigation.
-// Ops tab functionality (task link generator, verifier fetcher, password gate)
-// lives in ops-tab.js and is consumed here via Context.opsTab.
+// Ops dashboard enable/password toggles live in ops-tab.js (Context.opsTab).
 
 const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '8.2',
+    _version: '9.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -21,11 +20,69 @@ const plugin = {
     _docPaneCache: {},
     
     init(state, context) {
+        const self = this;
+        Context.settingsUi = {
+            openModal: (opts) => self.openModal(opts),
+            shouldShowUpdateBanner: () => self._shouldShowUpdateNotification(),
+            createUpdateNotificationHTML: () => self._createUpdateNotificationHTML(),
+            attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root)
+        };
         this._ensureDialogBackdropStyles();
         this._ensureSettingsButton();
         this._ensureModalPresence();
         this._startPresenceGuard();
         this._updatePulseAnimation();
+    },
+
+    /**
+     * @param {{ forceSettings?: boolean }} [opts]
+     * When forceSettings is true, always open the settings modal (not the Ops dashboard).
+     */
+    openModal(opts) {
+        const options = opts || {};
+        if (!options.forceSettings && this._shouldOpenOpsDashboard()) {
+            if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+                Context.dashboard.open();
+                Logger.log('settings-ui: opened Ops dashboard from gear');
+                return;
+            }
+            Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable');
+        }
+        this._openSettingsModal();
+    },
+
+    _shouldOpenOpsDashboard() {
+        if (!Context.opsTab) return false;
+        if (typeof Context.opsTab.shouldOpenDashboardOnSettings === 'function') {
+            return Context.opsTab.shouldOpenDashboardOnSettings() && Context.opsTab.isEnabled();
+        }
+        return Context.opsTab.isEnabled();
+    },
+
+    _openSettingsModal() {
+        let modal = document.getElementById('wf-settings-modal');
+
+        if (this._modalOpen && modal) {
+            this._closeModal();
+            return;
+        }
+        if (modal) {
+            this._captureOpsState(modal);
+            modal.remove();
+        }
+        modal = this._createModal();
+        try {
+            if (typeof modal.showModal === 'function') {
+                modal.showModal();
+            }
+        } catch (err) {
+            Logger.error('settings-ui: settings dialog showModal failed', err);
+            modal.remove();
+            this._modalOpen = false;
+            return;
+        }
+        this._modalOpen = true;
+        this._startForeignModalObserver(modal);
     },
 
     _ensureDialogBackdropStyles() {
@@ -137,7 +194,7 @@ const plugin = {
                 : 'color-mix(in srgb, var(--background, white) 30%, transparent)';
         });
 
-        settingsBtn.addEventListener('click', () => this._toggleModal());
+        settingsBtn.addEventListener('click', () => this.openModal());
     },
     
     _startPulseAnimation(settingsBtn) {
@@ -205,29 +262,7 @@ const plugin = {
     },
     
     _toggleModal() {
-        let modal = document.getElementById('wf-settings-modal');
-        
-        if (this._modalOpen && modal) {
-            this._closeModal();
-        } else {
-            if (modal) {
-                this._captureOpsState(modal);
-                modal.remove();
-            }
-            modal = this._createModal();
-            try {
-                if (typeof modal.showModal === 'function') {
-                    modal.showModal();
-                }
-            } catch (err) {
-                Logger.error('Settings dialog showModal failed', err);
-                modal.remove();
-                this._modalOpen = false;
-                return;
-            }
-            this._modalOpen = true;
-            this._startForeignModalObserver(modal);
-        }
+        this.openModal();
     },
 
     _ensureModalPresence() {
@@ -419,9 +454,7 @@ const plugin = {
         
         // Build script update notification HTML
         // Show if outdated OR if simulate update banner is enabled (for testing on dev branch)
-        const shouldShowUpdateNotification = (Context.isOutdated && Context.latestVersion) || 
-            (Context.isDevBranch && this._getPulseOverrideEnabled());
-        const updateNotificationHTML = shouldShowUpdateNotification
+        const updateNotificationHTML = this._shouldShowUpdateNotification()
             ? this._createUpdateNotificationHTML()
             : '';
         
@@ -524,14 +557,6 @@ const plugin = {
             </div>
             </div>
         ` : '';
-
-        const opsPaneHTML = Context.opsTab
-            ? Context.opsTab.renderPane(paneDisplay('ops'))
-            : `<div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${paneDisplay('ops')}; overflow-y: auto; min-height: 200px;">
-                <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0;">
-                    Ops module not loaded.
-                </p>
-            </div>`;
 
         modal.innerHTML = `
             <div id="wf-settings-content" style="${contentStyle}">
@@ -648,7 +673,6 @@ const plugin = {
             </div>
             </div>
             ${devPaneHTML}
-            ${opsPaneHTML}
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: ${paneDisplay('information')}; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
@@ -905,32 +929,14 @@ const plugin = {
             self._closeModal();
         });
 
-        // Update banner: show "Refresh Page with New Version" after newest-version link is clicked
-        const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
-        const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
-        const refreshBtn = Context.dom.query('#wf-update-refresh-btn', { root: modal, context: `${this.id}.updateRefreshBtn` });
-        if (newestLink && refreshRow) {
-            newestLink.addEventListener('click', () => {
-                refreshRow.style.display = 'block';
-            });
-        }
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                if (typeof Context.requestExtensionReload === 'function') {
-                    Context.requestExtensionReload('settings-ui update banner refresh');
-                } else {
-                    window.location.reload();
-                }
-            });
-        }
+        this._attachUpdateBannerListeners(modal, 'settings-ui');
 
         // Tab buttons
         this._attachTabListeners(modal);
-        if (Context.opsTab) {
-            Context.opsTab.attachListeners(modal, this);
-            Context.opsTab.onPaneOpened(modal, this);
-        } else {
-            Logger.warn('settings-ui: Context.opsTab unavailable; Ops listeners skipped');
+        if (Context.opsTab && typeof Context.opsTab.attachSettingsListeners === 'function') {
+            Context.opsTab.attachSettingsListeners(modal, this);
+        } else if (Context.opsTab) {
+            Logger.warn('settings-ui: Context.opsTab.attachSettingsListeners unavailable');
         }
         this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
@@ -1934,7 +1940,7 @@ const plugin = {
     },
 
     _getDefaultSettingsTabId() {
-        return Context.opsTab ? Context.opsTab.getDefaultTabId('information') : 'information';
+        return 'information';
     },
 
     _captureOpsState(modal) {
@@ -2016,9 +2022,6 @@ const plugin = {
 
     _getSettingsTabs() {
         const tabs = [];
-        if (Context.opsTab && Context.opsTab.isEnabled()) {
-            tabs.push({ id: 'ops', label: 'Ops' });
-        }
         tabs.push(
             { id: 'information', label: 'Information', doc: 'information-tab.md' },
             { id: 'settings', label: 'Settings' }
@@ -2435,6 +2438,34 @@ const plugin = {
         `;
     },
     
+    _shouldShowUpdateNotification() {
+        return (Context.isOutdated && Context.latestVersion) ||
+            (Context.isDevBranch && this._getPulseOverrideEnabled());
+    },
+
+    _attachUpdateBannerListeners(root, reloadSource) {
+        const modal = root;
+        if (!modal) return;
+        const source = reloadSource || 'settings-ui';
+        const newestLink = Context.dom.query('#wf-update-newest-link', { root: modal, context: `${this.id}.updateNewestLink` });
+        const refreshRow = Context.dom.query('#wf-update-refresh-row', { root: modal, context: `${this.id}.updateRefreshRow` });
+        const refreshBtn = Context.dom.query('#wf-update-refresh-btn', { root: modal, context: `${this.id}.updateRefreshBtn` });
+        if (newestLink && refreshRow) {
+            newestLink.addEventListener('click', () => {
+                refreshRow.style.display = 'block';
+            });
+        }
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                if (typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload(source + ' update banner refresh');
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+    },
+
     _createUpdateNotificationHTML() {
         const currentVersion = Context.version || 'unknown';
         // If simulate update banner is enabled, simulate update by using current version + 0.1 as latest

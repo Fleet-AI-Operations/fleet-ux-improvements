@@ -1,6 +1,5 @@
 // ============= dashboard.js =============
-// Worker Output Search dashboard, opened as a popup from the Ops tab
-// ("Open Dashboard" button under Team Member Search).
+// Worker Output Search (Ops dashboard): search output, team members, verifier fetch.
 //
 // This is the live port of the local prototype in local/dashboard. All data is
 // PostgREST table/query shapes come from the encrypted ops bundle (Context.opsTab).
@@ -59,6 +58,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
 const DASH_SEARCH_DEPTH_TOGGLE_ACTIVE = 'border: 2px solid #ca8a04; color: #a16207; background: transparent;';
+const DASH_FLAGGED_COLOR = '#a16207';
+const DASH_FLAGGED_BORDER = '#ca8a04';
+const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
@@ -180,8 +182,8 @@ function dashEscHtml(value) {
 const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
-    description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.55',
+    description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
+    _version: '4.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -201,7 +203,9 @@ const plugin = {
             open: () => this.open(),
             close: () => this.close(),
             toggle: () => this.toggle(),
-            isOpen: () => this._isOpen()
+            isOpen: () => this._isOpen(),
+            switchFleetTeam: (teamId) => this._switchFleetTeam(teamId),
+            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -352,7 +356,7 @@ const plugin = {
     async _pgQuery(queryKey, overrides, channel) {
         const ops = this._dashOpsTab();
         if (typeof ops.postgrestQuery !== 'function') {
-            throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
+            throw new Error('Ops dashboard PostgREST client unavailable. Unlock the Ops dashboard and try again.');
         }
         const needsActiveSearch = channel === 'search' || channel === 'hydrate';
         if (needsActiveSearch && !this._state.searchFetchActive && !this._state.hydrateFetchActive) {
@@ -2464,11 +2468,16 @@ const plugin = {
         }
         void this._doBootstrap();
         this._refreshCatalogDependentUi();
+        this._syncDashboardUpdateMode();
+        this._setSearchDepth('quick');
         Logger.log('dashboard: opened');
     },
 
     close() {
         if (!this._overlay) return;
+        if (this._modal && Context.opsTab && typeof Context.opsTab.captureState === 'function') {
+            Context.opsTab.captureState(this._modal);
+        }
         this._overlay.style.display = 'none';
         Logger.log('dashboard: closed');
     },
@@ -2539,7 +2548,8 @@ const plugin = {
         this._attachListeners();
         this._ensureSpinnerKeyframes();
         this._ensureMsOptionStyles();
-        this._setActiveTab(this._state.activeTab);
+        this._ensureHeaderActionStyles();
+        this._syncDashboardUpdateMode();
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
         this._refreshCatalogDependentUi();
@@ -2549,7 +2559,7 @@ const plugin = {
         this._syncFieldClearButtons();
         this._syncAllMsDropdowns();
         this._applyDefaultSearchDates();
-        this._state.searchDepth = this._readSearchDepthPref();
+        this._state.searchDepth = 'quick';
         this._syncSearchDepthUi();
         const pagePref = this._readResultsPageSizePref();
         this._state.resultsPageSize = pagePref === 'all' ? 'all' : (Number(pagePref) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
@@ -2579,6 +2589,66 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-spinner-style';
         style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        this._modal.appendChild(style);
+    },
+
+    _dashCloseIconSvg() {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    },
+
+    _ensureHeaderActionStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-header-btn-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-header-btn-style';
+        style.textContent = [
+            '#wf-dash-modal #wf-dash-header-ops {',
+            '  display: flex !important;',
+            '  align-items: center !important;',
+            '  flex-shrink: 0;',
+            '  gap: 8px;',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn {',
+            '  appearance: none !important;',
+            '  -webkit-appearance: none !important;',
+            '  box-sizing: border-box !important;',
+            '  margin: 0 !important;',
+            '  height: 32px !important;',
+            '  min-height: 32px !important;',
+            '  max-height: 32px !important;',
+            '  display: inline-flex !important;',
+            '  align-items: center !important;',
+            '  justify-content: center !important;',
+            '  line-height: 1 !important;',
+            '  vertical-align: middle !important;',
+            '  flex-shrink: 0;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  font-family: inherit;',
+            '}',
+            '#wf-dash-modal #wf-dash-open-settings.wf-dash-header-btn,',
+            '#wf-dash-modal #wf-ops-grade-assessments.wf-dash-header-btn {',
+            '  padding: 0 12px !important;',
+            '  font-size: 11px !important;',
+            '  font-weight: 600 !important;',
+            '  color: var(--foreground, #0f172a);',
+            '  background: var(--background, #fff);',
+            '}',
+            '#wf-dash-modal #wf-dash-close.wf-dash-header-btn {',
+            '  width: 32px !important;',
+            '  min-width: 32px !important;',
+            '  padding: 0 !important;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  background: transparent;',
+            '}',
+            '#wf-dash-modal #wf-dash-close.wf-dash-header-btn svg {',
+            '  display: block;',
+            '  flex-shrink: 0;',
+            '}',
+            '#wf-dash-modal a.wf-dash-header-btn {',
+            '  text-decoration: none !important;',
+            '}'
+        ].join('\n');
         this._modal.appendChild(style);
     },
 
@@ -2628,10 +2698,58 @@ const plugin = {
         this._modal.appendChild(style);
     },
 
+    _shouldShowDashboardUpdateTab() {
+        if (Context.settingsUi && typeof Context.settingsUi.shouldShowUpdateBanner === 'function') {
+            return Context.settingsUi.shouldShowUpdateBanner();
+        }
+        return Boolean(Context.isOutdated && Context.latestVersion);
+    },
+
+    _dashboardUpdateBannerHtml() {
+        if (!this._shouldShowDashboardUpdateTab()) return '';
+        if (Context.settingsUi && typeof Context.settingsUi.createUpdateNotificationHTML === 'function') {
+            return Context.settingsUi.createUpdateNotificationHTML();
+        }
+        return '';
+    },
+
+    _syncDashboardUpdateMode() {
+        if (!this._modal) return;
+        const updateActive = this._shouldShowDashboardUpdateTab();
+        const updateTab = this._modal.querySelector('[data-wf-dash-tab="update"]');
+        const updatePanel = this._modal.querySelector('[data-wf-dash-panel="update"]');
+        const headerTask = this._modal.querySelector('#wf-dash-header-task-link');
+        const headerOps = this._modal.querySelector('#wf-dash-header-ops');
+        const normalTabs = this._modal.querySelectorAll('[data-wf-dash-tab]:not([data-wf-dash-tab="update"])');
+        const normalPanels = this._modal.querySelectorAll('[data-wf-dash-panel]:not([data-wf-dash-panel="update"])');
+
+        if (updateActive) {
+            normalTabs.forEach((btn) => { btn.style.display = 'none'; });
+            normalPanels.forEach((panel) => { panel.style.display = 'none'; });
+            if (updateTab) updateTab.style.display = '';
+            if (updatePanel) updatePanel.style.display = 'flex';
+            if (headerTask) headerTask.style.display = 'none';
+            if (headerOps) headerOps.style.display = 'none';
+            this._setActiveTab('update');
+            Logger.info('dashboard: update tab active — other sections hidden');
+            return;
+        }
+
+        if (updateTab) updateTab.style.display = 'none';
+        if (updatePanel) updatePanel.style.display = 'none';
+        normalTabs.forEach((btn) => { btn.style.display = ''; });
+        if (headerTask) headerTask.style.display = '';
+        if (headerOps) headerOps.style.display = '';
+        const restoreTab = this._state.activeTab === 'update' ? 'search-output' : this._state.activeTab;
+        this._setActiveTab(restoreTab || 'search-output');
+    },
+
     _modalHtml() {
+        const ops = Context.opsTab;
         const tabs = [
-            { id: 'overview', label: 'Overview' },
-            { id: 'search-output', label: 'Search Output' }
+            { id: 'search-output', label: 'Search Output' },
+            { id: 'team-members', label: 'Team Members' },
+            { id: 'verifier-fetcher', label: 'Verifier Fetcher' }
         ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
@@ -2639,25 +2757,46 @@ const plugin = {
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
             ">${t.label}</button>`).join('');
+        const updateTabBtn = `<button type="button" class="wf-dash-tab" data-wf-dash-tab="update" style="
+                display: none; position: relative; padding: 10px 14px; font-size: 13px; font-weight: 600;
+                background: transparent; border: none; border-bottom: 2px solid transparent;
+                margin-bottom: -1px; cursor: pointer; color: #991b1b;
+            ">Update</button>`;
+        const updatePanelHtml = this._dashboardUpdateBannerHtml();
+        const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
+        const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
+            ? ops.renderGradeAssessmentsHeaderLink()
+            : '';
+        const teamPanel = ops && typeof ops.renderTeamMembersPanel === 'function' ? ops.renderTeamMembersPanel() : '';
+        const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
 
         return `
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                <div style="display: flex; align-items: center; gap: 0; min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+                <div id="wf-dash-header-tabs" style="display: flex; align-items: center; gap: 0; flex-shrink: 0; min-width: 0;">
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
                         ${tabBtns}
+                        ${updateTabBtn}
                     </nav>
                 </div>
-                <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
-                    flex-shrink: 0; width: 32px; height: 32px; display: inline-flex; align-items: center;
-                    justify-content: center; font-size: 20px; line-height: 1; border-radius: 6px;
-                    color: var(--muted-foreground, #64748b); background: transparent;
-                    border: 1px solid var(--border, #e2e8f0); cursor: pointer;
-                ">&times;</button>
+                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box; overflow: hidden;">
+                    <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
+                </div>
+                <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
+                    ${gradeAssessmentsLink}
+                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn">Open Settings</button>
+                    <button type="button" id="wf-dash-close" class="wf-dash-header-btn" aria-label="Close dashboard" title="Close">${this._dashCloseIconSvg()}</button>
+                </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
-                <div data-wf-dash-panel="overview" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">Overview content coming soon.</div>
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; align-items: center; overflow: hidden;">
+                    <div id="wf-dash-team-members-inner" style="width: 50%; max-width: 50%; min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
+                </div>
+                <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
+                <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
+                    <div style="width: 100%; max-width: 720px; box-sizing: border-box;">${updatePanelHtml}</div>
+                </div>
             </div>
         `;
     },
@@ -2969,8 +3108,32 @@ const plugin = {
         const closeBtn = this._q('#wf-dash-close');
         if (closeBtn) closeBtn.addEventListener('click', () => this.close());
 
+        const openSettingsBtn = this._q('#wf-dash-open-settings');
+        if (openSettingsBtn) {
+            openSettingsBtn.addEventListener('click', () => {
+                this.close();
+                if (Context.settingsUi && typeof Context.settingsUi.openModal === 'function') {
+                    Context.settingsUi.openModal({ forceSettings: true });
+                    Logger.log('dashboard: closed dashboard and opened extension settings');
+                } else {
+                    Logger.warn('dashboard: Context.settingsUi.openModal unavailable');
+                }
+            });
+        }
+
+        if (Context.opsTab && typeof Context.opsTab.attachDashboardListeners === 'function') {
+            Context.opsTab.attachDashboardListeners(modal, this);
+        }
+
+        if (Context.settingsUi && typeof Context.settingsUi.attachUpdateBannerListeners === 'function') {
+            Context.settingsUi.attachUpdateBannerListeners(modal, 'dashboard');
+        }
+
         modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => this._setActiveTab(btn.getAttribute('data-wf-dash-tab')));
+            btn.addEventListener('click', () => {
+                if (this._shouldShowDashboardUpdateTab() && btn.getAttribute('data-wf-dash-tab') !== 'update') return;
+                this._setActiveTab(btn.getAttribute('data-wf-dash-tab'));
+            });
         });
 
         const depthQuick = this._q('#wf-dash-depth-quick');
@@ -3452,20 +3615,33 @@ const plugin = {
     },
 
     _setActiveTab(tabId) {
+        if (this._shouldShowDashboardUpdateTab() && tabId !== 'update') {
+            tabId = 'update';
+        }
         this._state.activeTab = tabId;
         this._modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
-            const active = btn.getAttribute('data-wf-dash-tab') === tabId;
-            btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
-            btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
+            const id = btn.getAttribute('data-wf-dash-tab');
+            const active = id === tabId;
+            if (id === 'update') {
+                btn.style.color = active ? '#991b1b' : '#b91c1c';
+                btn.style.borderBottomColor = active ? '#dc2626' : 'transparent';
+            } else {
+                btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
+                btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
+            }
         });
+        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'update']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
-            if (tabId === 'search-output') {
+            if (flexPanels.has(tabId)) {
                 panel.style.display = active ? 'flex' : 'none';
             } else {
                 panel.style.display = active ? '' : 'none';
             }
         });
+        if (Context.opsTab && typeof Context.opsTab.onDashboardTabActivated === 'function') {
+            Context.opsTab.onDashboardTabActivated(this._modal, tabId);
+        }
     },
 
     // ── Author tokens ──
@@ -3520,6 +3696,47 @@ const plugin = {
             return `No author match for "${query}".`;
         }
         return 'Author lookup failed — try again.';
+    },
+
+    _normalizeAuthorPerson(person) {
+        const id = String(person && person.id || '').trim();
+        if (!id) return null;
+        return {
+            id,
+            full_name: person.full_name,
+            email: person.email
+        };
+    },
+
+    _setAuthorTokens(persons, options) {
+        if (!this._modal) {
+            Logger.warn('dashboard: setAuthorTokens skipped — modal not open');
+            return;
+        }
+        const opts = options || {};
+        const replace = opts.replace !== false;
+        const activeTab = opts.activeTab;
+        const normalized = (Array.isArray(persons) ? persons : [])
+            .map((p) => this._normalizeAuthorPerson(p))
+            .filter(Boolean);
+        if (replace) {
+            this._state.draftTokens = normalized;
+        } else {
+            for (const person of normalized) {
+                if (!this._state.draftTokens.some((t) => t.id === person.id)) {
+                    this._state.draftTokens.push(person);
+                }
+            }
+        }
+        this._hideAuthorCandidates();
+        this._setAuthorError('');
+        const input = this._q('#wf-dash-author-input');
+        if (input) input.value = '';
+        this._renderAuthorTokens();
+        this._validateRangeUi();
+        if (activeTab) this._setActiveTab(activeTab);
+        const label = normalized.map((p) => p.full_name || p.id).join(', ') || '(none)';
+        Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
     },
 
     _addAuthorToken(person) {
@@ -4236,7 +4453,9 @@ const plugin = {
                 if (sortEl) sortEl.value = 'desc';
                 this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
-                this._setLeftTab('filters');
+                if (items.length > 0) {
+                    this._setLeftTab('filters');
+                }
             } catch (err) {
                 if (this._handleDashSessionRefreshError(err)) {
                     this._setSearchError('');
@@ -4678,13 +4897,28 @@ const plugin = {
         const key = (status || 'unknown').toLowerCase();
         let color = 'var(--muted-foreground, #64748b)';
         let bg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent)';
+        let label = status || '—';
         if (key.includes('production')) { color = '#15803d'; bg = 'color-mix(in srgb, #16a34a 14%, transparent)'; }
+        else if (key === 'bugged') { color = DASH_FLAGGED_COLOR; bg = DASH_FLAGGED_BG; label = 'Bugged'; }
         else if (key.includes('review')) { color = '#b45309'; bg = 'color-mix(in srgb, #d97706 14%, transparent)'; }
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(status || '—')}</span>`;
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(label)}</span>`;
     },
 
     _qaAlertBadgeStyle() {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
+    },
+
+    _qaFlaggedChipStyle(fontWeight) {
+        const weight = fontWeight || '700';
+        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: ${weight}; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG};`;
+    },
+
+    _qaFlaggedBadgeStyle() {
+        return this._qaFlaggedChipStyle('700');
+    },
+
+    _qaFlaggedIssueBadgeStyle() {
+        return this._qaFlaggedChipStyle('600');
     },
 
     _disputeBlockStyle() {
@@ -4707,17 +4941,29 @@ const plugin = {
         };
     },
 
+    _qaFlaggedBlockStyle() {
+        return {
+            border: `1px solid ${DASH_FLAGGED_BORDER}`,
+            background: `color-mix(in srgb, ${DASH_FLAGGED_BORDER} 18%, var(--card, #ffffff))`
+        };
+    },
+
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
         const isSystem = Boolean(qa.isSystemFeedback);
-        const isYellowBlock = isSystem || qa.isEscalated || qa.isFlaggedAsBugged;
+        const isFlagged = Boolean(qa.isFlaggedAsBugged);
+        const isEscalatedBlock = isSystem || qa.isEscalated;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
         let border;
         let bg;
-        if (isYellowBlock) {
+        if (isFlagged) {
+            const flagged = this._qaFlaggedBlockStyle();
+            border = flagged.border;
+            bg = flagged.background;
+        } else if (isEscalatedBlock) {
             const yellow = this._qaYellowBlockStyle();
             border = yellow.border;
             bg = yellow.background;
@@ -4726,18 +4972,21 @@ const plugin = {
             bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
         }
         const alertBadge = this._qaAlertBadgeStyle();
+        const flaggedBadge = this._qaFlaggedBadgeStyle();
         const statusLabel = isSystem
             ? ''
             : (positive
                 ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
-                    : (qa.isFlaggedAsBugged
-                        ? `<span style="${alertBadge}">Flagged as Bugged</span>`
+                    : (isFlagged
+                        ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
                         : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`)));
-        const issueBadgeStyle = isYellowBlock
-            ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
-            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
+        const issueBadgeStyle = isFlagged
+            ? this._qaFlaggedIssueBadgeStyle()
+            : (isEscalatedBlock
+                ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
+                : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);');
         const rejectionBadges = qa.rejectionBadges || [];
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
@@ -4790,9 +5039,12 @@ const plugin = {
         } else if (entry.isPositive) {
             label = 'Accepted';
             cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
-        } else if (entry.isEscalated || entry.isFlaggedAsBugged) {
-            label = entry.isEscalated ? 'Escalated' : 'Bugged';
+        } else if (entry.isEscalated) {
+            label = 'Escalated';
             cls = this._qaAlertBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
+        } else if (entry.isFlaggedAsBugged) {
+            label = 'Flagged';
+            cls = this._qaFlaggedBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
         }
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
         if (isSystem) {

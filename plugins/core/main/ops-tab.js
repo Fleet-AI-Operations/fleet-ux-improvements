@@ -1,7 +1,7 @@
 // ops-tab.js
-// Core plugin that owns the Ops settings tab: task link generator, verifier code
-// fetcher, password gate, and copy-feedback helpers. Settings UI delegates Ops
-// rendering and listener attachment to this module via Context.opsTab.
+// Core plugin for the Ops dashboard backend: secrets/password gate, PostgREST,
+// team member search, verifier fetch, and task link helpers. UI lives in
+// dashboard.js; settings-ui.js hosts enable/password toggles only.
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
@@ -35,6 +35,8 @@ const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
 /** localStorage key for the dynamically captured Next.js router state tree for team member search */
 const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
+/** When true, extension gear opens the Ops dashboard instead of the settings modal */
+const OPS_DASHBOARD_OPEN_ON_SETTINGS_KEY = 'ops-dashboard-open-on-settings';
 /** localStorage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
 const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 /** Matches `"user":{"id":"<uuid>"` in Next.js RSC flight payloads */
@@ -136,13 +138,14 @@ async function opsDecryptWithPassword(blob, password) {
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
-    description: 'Provides the Ops tab UI and verifier code fetcher in the settings modal',
-    _version: '3.8',
+    description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
     _opsVerifierSourceText: '',
+    _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
     _opsTeamSearchActive: null,
     _opsTeamSearchMemberCache: null,
     _opsTeamSearchSelectedTeams: null,
@@ -179,15 +182,23 @@ const plugin = {
             isEnabled: () => this._getOpsTabEnabled(),
             isWanted: () => this._getOpsTabWanted(),
             hasStoredPassword: () => this._hasOpsStoredPassword(),
-            getDefaultTabId: (fallback) => (this._getOpsTabEnabled() ? 'ops' : (fallback || 'information')),
-            renderPane: (paneDisplay) => this._renderOpsPane(paneDisplay),
+            shouldOpenDashboardOnSettings: () => this._shouldOpenDashboardOnSettings(),
+            getOpsDashboardOpenOnSettings: () => this._getOpsDashboardOpenOnSettings(),
+            setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
             renderSettingsSection: () => this._renderOpsSettingsSection(),
-            attachListeners: (modal, settingsPlugin) => this._attachOpsListeners(modal, settingsPlugin),
-            onPaneOpened: (modal, settingsPlugin) => this._onOpsPaneOpened(modal, settingsPlugin),
-            captureState: (modal) => this._captureOpsTabState(modal),
+            renderTeamMembersPanel: () => this._renderTeamMembersPanel(),
+            renderVerifierFetcherPanel: () => this._renderVerifierFetcherPanel(),
+            renderGradeAssessmentsHeaderLink: () => this._renderGradeAssessmentsHeaderLink(),
+            renderTaskLinkBar: () => this._renderTaskLinkBar(),
+            attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
+            attachDashboardListeners: (dashModal, dashboardPlugin) => this._attachOpsDashboardListeners(dashModal, dashboardPlugin),
+            onDashboardTabActivated: (dashModal, tabId) => this._onDashboardTabActivated(dashModal, tabId),
+            captureState: (root) => this._captureOpsTabState(root),
             onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
+            resolveTaskLinkTarget: (raw) => this.resolveTaskLinkTarget(raw),
+            openTaskLink: (raw, opts) => this.openTaskLink(raw, opts),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
@@ -204,7 +215,7 @@ const plugin = {
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
             getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow)
         };
-        Logger.log('Ops tab module registered (Context.opsTab)');
+        Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
         this._subscribeOpsTeamSearchActionCapture();
@@ -225,11 +236,23 @@ const plugin = {
     },
 
     _getOpsTabWanted() {
-        return Storage.get('ops-tab-enabled', false);
+        return Storage.get('ops-tab-enabled', true);
     },
 
     _setOpsTabWanted(enabled) {
         Storage.set('ops-tab-enabled', enabled);
+    },
+
+    _getOpsDashboardOpenOnSettings() {
+        return Storage.get(OPS_DASHBOARD_OPEN_ON_SETTINGS_KEY, true);
+    },
+
+    _setOpsDashboardOpenOnSettings(enabled) {
+        Storage.set(OPS_DASHBOARD_OPEN_ON_SETTINGS_KEY, Boolean(enabled));
+    },
+
+    _shouldOpenDashboardOnSettings() {
+        return this._getOpsTabWanted() && this._getOpsDashboardOpenOnSettings();
     },
 
     _getOpsStoredPassword() {
@@ -312,7 +335,7 @@ const plugin = {
     _getOpsBundle() {
         const json = this._getOpsSecretsJson();
         if (!json || typeof json !== 'object' || !json.postgrest) {
-            throw new Error('Ops bundle not loaded. Unlock the Ops tab and ensure ops-secrets.enc.json is available on this branch.');
+            throw new Error('Ops bundle not loaded. Unlock the Ops dashboard and ensure ops-secrets.enc.json is available on this branch.');
         }
         return json;
     },
@@ -475,6 +498,53 @@ const plugin = {
             return OPS_TASK_URL_PREFIX + id;
         }
         return null;
+    },
+
+    async resolveTaskLinkTarget(raw) {
+        const url = this._buildOpsTaskUrl(raw);
+        if (!url) return null;
+        const parsed = this._parseOpsVerifierInput(raw);
+        let teamId = String(parsed.teamId || '').trim();
+        if (!teamId && (parsed.taskKey || parsed.taskId)) {
+            try {
+                const resolved = await this._resolveOpsVerifierFromTask(parsed);
+                teamId = String(resolved.teamId || '').trim();
+            } catch (e) {
+                Logger.debug('ops-tab: task link team_id lookup failed', e);
+            }
+        }
+        const taskId = String(parsed.taskId || this._extractOpsTaskIdentifier(raw) || '').trim();
+        return { url, teamId, taskId };
+    },
+
+    async openTaskLink(raw, opts) {
+        const options = opts || {};
+        const input = this._opsQuery(
+            options.root,
+            '#wf-ops-task-input',
+            'taskLinkOpen'
+        );
+        const value = raw != null ? raw : (input && input.value);
+        const target = await this.resolveTaskLinkTarget(value);
+        if (!target || !target.url) {
+            Logger.warn('ops-tab: openTaskLink skipped — no URL');
+            return;
+        }
+        const teamId = target.teamId;
+        if (teamId && Context.dashboard && typeof Context.dashboard.switchFleetTeam === 'function') {
+            try {
+                await Context.dashboard.switchFleetTeam(teamId);
+            } catch (e) {
+                Logger.warn('ops-tab: team switch before task link failed', e);
+            }
+        }
+        if (options.newTab) {
+            window.open(target.url, '_blank', 'noopener,noreferrer');
+            Logger.log('ops-tab: task link opened (new tab)');
+        } else {
+            this._getOpsPageWindow().location.href = target.url;
+            Logger.log('ops-tab: task link opened (current tab)');
+        }
     },
 
     _matchOpsJsonString(raw, key) {
@@ -1244,8 +1314,10 @@ const plugin = {
             '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
-            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:var(--brand,#4f46e5);background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
-            '.wf-ops-edit-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-edit-btn:hover{background:#ca8a04!important;color:#fff!important;border-color:#ca8a04!important;}',
+            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex-shrink:0;border-radius:6px;color:var(--muted-foreground,#64748b);border:1px solid var(--border,#e5e5e5);background:var(--background,white);text-decoration:none;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-profile-link-btn:hover{background:var(--foreground,#0f172a)!important;color:var(--background,#fff)!important;border-color:var(--foreground,#0f172a)!important;}',
             '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
             '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
             '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
@@ -1257,7 +1329,10 @@ const plugin = {
             '.wf-ops-staged-remove{background:rgba(239,68,68,0.14)!important;}',
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
             '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
-            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}'
+            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
+            '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
+            '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
+            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}'
         ].join('');
         document.head.appendChild(style);
     },
@@ -1658,6 +1733,11 @@ const plugin = {
             return;
         }
 
+        if (action === 'search-worker-output') {
+            this._openMemberInWorkerSearch(member);
+            return;
+        }
+
         if (action === 'edit') {
             this._startOpsMemberEdit(member);
             this._updateOpsMemberTileDom(modal, memberId, true);
@@ -1713,6 +1793,49 @@ const plugin = {
         return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
             '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
             '</span>';
+    },
+
+    _opsProfileLinkIconSvg() {
+        return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
+    },
+
+    _opsProfileLinkHtml(profileUrl, title) {
+        const url = String(profileUrl || '').trim();
+        if (!url) return '';
+        const label = title || 'Open profile in Fleet';
+        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn" ' +
+            'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
+            this._opsProfileLinkIconSvg() + '</a>';
+    },
+
+    _opsSearchWorkerOutputBtnHtml(memberId) {
+        const attrId = this._opsEscapeAttr(memberId);
+        return '<button type="button" class="wf-ops-action-btn wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
+            'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);padding:4px 8px;border:1px solid var(--border,#e5e5e5);' +
+            'border-radius:4px;background:var(--background,white);white-space:nowrap;cursor:pointer;">Search Worker Output</button>';
+    },
+
+    _opsMemberToAuthorPerson(member) {
+        if (!member || !member.id) return null;
+        return {
+            id: member.id,
+            full_name: member.full_name,
+            email: member.email
+        };
+    },
+
+    _openMemberInWorkerSearch(member) {
+        const person = this._opsMemberToAuthorPerson(member);
+        if (!person) {
+            Logger.warn('ops-tab: Search Worker Output skipped — missing member id');
+            return;
+        }
+        if (!Context.dashboard || typeof Context.dashboard.setAuthorTokens !== 'function') {
+            Logger.warn('ops-tab: Search Worker Output skipped — dashboard unavailable');
+            return;
+        }
+        Context.dashboard.setAuthorTokens([person], { replace: true, activeTab: 'search-output' });
+        Logger.log('ops-tab: Search Worker Output for ' + (person.full_name || person.id));
     },
 
     _renderOpsMemberTeamRowHtml(label, member, session) {
@@ -1802,25 +1925,21 @@ const plugin = {
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
             text + '</div>';
 
-        const openAttr = isOpen ? ' open' : '';
+        const openAttr = isOpen !== false ? ' open' : '';
 
         return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
-            '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
-                '<div style="min-width:0;flex:1;">' +
-                    '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-                        uiBadgeHtml + '<span>' + name + '</span>' +
-                    '</div>' +
-                    '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
+                '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">' +
+                    uiBadgeHtml +
+                    '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
+                    this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
                 '</div>' +
-                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-action-btn wf-ops-profile-btn" ' +
-                    'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);text-decoration:none;' +
-                    'padding:4px 8px;border:1px solid var(--border,#e5e5e5);border-radius:4px;background:var(--background,white);white-space:nowrap;">' +
-                    'Visit Profile' +
-                '</a>' +
+                this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
+            '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;min-width:0;">' + email + '</div>' +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
-                    '<span style="min-width:0;">▸ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
+                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
+                    '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
                     this._renderOpsMemberEditActionsHtml(memberId, session) +
                 '</summary>' +
                 '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
@@ -1892,7 +2011,7 @@ const plugin = {
 
         wrap.style.display = 'block';
         wrap.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, true)).join('');
     },
 
     async _handleOpsTeamSearch(modal) {
@@ -2295,37 +2414,178 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
+    _syncVerifierStatusRow(modal) {
+        const row = this._opsQuery(modal, '#wf-ops-verifier-status-row', 'verifierStatusRow');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
+        if (!row) return;
+        const hasStatus = Boolean(status && (status.textContent || '').trim());
+        row.style.display = hasStatus ? 'block' : 'none';
+    },
+
     _setOpsVerifierStatus(modal, message, isError) {
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
         if (!status) return;
         status.textContent = message || '';
-        status.style.display = message ? 'block' : 'none';
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+        this._syncVerifierStatusRow(modal);
     },
 
-    async _setOpsVerifierOutput(modal, value) {
+    _findVerifierContentMatchStarts(text, query) {
+        const starts = [];
+        const haystack = String(text || '');
+        const needle = String(query || '');
+        if (!needle || !haystack) return starts;
+        const hl = haystack.toLowerCase();
+        const nl = needle.toLowerCase();
+        let pos = 0;
+        while (pos < hl.length) {
+            const idx = hl.indexOf(nl, pos);
+            if (idx === -1) break;
+            starts.push(idx);
+            pos = idx + Math.max(nl.length, 1);
+        }
+        return starts;
+    },
+
+    _buildVerifierContentSearchHtml(text, query, activeIndex) {
+        const source = String(text || '');
+        const needle = String(query || '');
+        const starts = this._findVerifierContentMatchStarts(source, needle);
+        if (!needle) return { html: '', matchCount: 0, activeIndex: 0, matchStarts: [] };
+        const safeActive = starts.length === 0 ? 0 : Math.max(0, Math.min(activeIndex, starts.length - 1));
+        let html = '';
+        let last = 0;
+        starts.forEach((start, idx) => {
+            html += this._opsEscapeHtml(source.slice(last, start));
+            const activeClass = idx === safeActive ? ' wf-ops-verifier-hit-active' : '';
+            html += '<mark class="wf-ops-verifier-hit' + activeClass + '" data-wf-ops-verifier-hit="' + idx + '">'
+                + this._opsEscapeHtml(source.slice(start, start + needle.length)) + '</mark>';
+            last = start + needle.length;
+        });
+        html += this._opsEscapeHtml(source.slice(last));
+        return { html, matchCount: starts.length, activeIndex: safeActive, matchStarts: starts };
+    },
+
+    _updateVerifierContentSearchUi(modal) {
+        const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
+        const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
+        const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
+        const nextBtn = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNext');
+        const clearBtn = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClear');
+        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
+        const hasOutput = Boolean(this._opsVerifierSourceText);
+        const search = this._opsVerifierContentSearch;
+        const matchCount = search.matchStarts ? search.matchStarts.length : 0;
+        const hasQuery = Boolean((search.query || '').trim());
+
+        if (searchWrap) {
+            searchWrap.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (copyBtn) {
+            copyBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        if (clearBtn) {
+            clearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
+        }
+        if (countEl) {
+            if (!hasQuery) {
+                countEl.textContent = '';
+            } else if (matchCount === 0) {
+                countEl.textContent = 'No matches';
+            } else {
+                countEl.textContent = (search.index + 1) + ' / ' + matchCount;
+            }
+        }
+        const navDisabled = !hasQuery || matchCount === 0;
+        if (prevBtn) prevBtn.disabled = navDisabled;
+        if (nextBtn) nextBtn.disabled = navDisabled;
+    },
+
+    _clearVerifierContentSearch(modal) {
+        const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClearInput');
+        if (contentInput) contentInput.value = '';
+        this._applyVerifierContentSearch(modal, '');
+        this._captureOpsTabState(modal);
+        Logger.log('ops-tab: verifier content search cleared');
+    },
+
+    _scrollVerifierActiveContentMatch(modal) {
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
+        if (!output) return;
+        const active = output.querySelector('.wf-ops-verifier-hit-active');
+        if (active && typeof active.scrollIntoView === 'function') {
+            active.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
+    },
+
+    async _refreshVerifierOutputDisplay(modal) {
         const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
         const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
         const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
-        const text = value || '';
-        this._opsVerifierSourceText = text;
+        const text = this._opsVerifierSourceText || '';
+        const query = (this._opsVerifierContentSearch.query || '').trim();
 
         if (wrap) {
-            wrap.style.display = text ? 'block' : 'none';
+            wrap.style.display = text ? 'flex' : 'none';
         }
-        if (output) {
-            if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
-                await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
-            } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
-                Context.highlightJs.setPlainCode(output, text);
-            } else {
-                output.textContent = text;
-                output.className = text ? 'language-python' : 'language-plaintext';
-            }
+        if (!output) {
+            this._updateVerifierContentSearchUi(modal);
+            return;
         }
-        if (copyBtn) {
-            copyBtn.style.display = text ? 'inline-block' : 'none';
+
+        if (query) {
+            const built = this._buildVerifierContentSearchHtml(text, query, this._opsVerifierContentSearch.index);
+            this._opsVerifierContentSearch.matchStarts = built.matchStarts;
+            this._opsVerifierContentSearch.index = built.activeIndex;
+            output.innerHTML = built.html;
+            output.className = 'language-python';
+            this._updateVerifierContentSearchUi(modal);
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+            return;
         }
+
+        this._opsVerifierContentSearch.matchStarts = [];
+        this._opsVerifierContentSearch.index = 0;
+        if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
+            await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
+        } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
+            Context.highlightJs.setPlainCode(output, text);
+        } else {
+            output.textContent = text;
+            output.className = text ? 'language-python' : 'language-plaintext';
+        }
+        this._updateVerifierContentSearchUi(modal);
+    },
+
+    _applyVerifierContentSearch(modal, rawQuery) {
+        this._opsVerifierContentSearch.query = String(rawQuery || '');
+        this._opsVerifierContentSearch.index = 0;
+        void this._refreshVerifierOutputDisplay(modal);
+        const q = this._opsVerifierContentSearch.query.trim();
+        if (q) {
+            const n = this._opsVerifierContentSearch.matchStarts.length;
+            Logger.log('ops-tab: verifier content search — ' + n + ' match(es) for "' + q + '"');
+        }
+    },
+
+    _stepVerifierContentMatch(modal, delta) {
+        const search = this._opsVerifierContentSearch;
+        const count = search.matchStarts ? search.matchStarts.length : 0;
+        if (!count || !delta) return;
+        search.index = (search.index + delta + count) % count;
+        void this._refreshVerifierOutputDisplay(modal);
+        Logger.debug('ops-tab: verifier content match ' + (search.index + 1) + '/' + count);
+    },
+
+    async _setOpsVerifierOutput(modal, value) {
+        const text = value || '';
+        this._opsVerifierSourceText = text;
+        if (!text) {
+            this._opsVerifierContentSearch = { query: '', index: 0, matchStarts: [] };
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClear');
+            if (contentInput) contentInput.value = '';
+        }
+        await this._refreshVerifierOutputDisplay(modal);
     },
 
     _clearOpsVerifierVersionPicker(modal) {
@@ -2380,9 +2640,11 @@ const plugin = {
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
             verifierInput: verifierInput ? verifierInput.value : '',
-            verifierStatus: status && status.style.display !== 'none' ? (status.textContent || '') : '',
+            verifierStatus: status ? (status.textContent || '') : '',
             verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
             verifierOutput: this._opsVerifierSourceText || '',
+            verifierContentSearchQuery: this._opsVerifierContentSearch.query || '',
+            verifierContentSearchIndex: this._opsVerifierContentSearch.index || 0,
             verifierFetchState: fetchState
                 ? {
                     resolved: fetchState.resolved,
@@ -2420,6 +2682,16 @@ const plugin = {
 
         if (state.verifierOutput) {
             void this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+
+        if (state.verifierContentSearchQuery != null) {
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
+            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
+            if (state.verifierOutput) {
+                void this._refreshVerifierOutputDisplay(modal);
+            }
         }
 
         if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
@@ -2517,19 +2789,42 @@ const plugin = {
         const opsWantsEnabled = this._getOpsTabWanted();
         const opsHasStoredPassword = this._hasOpsStoredPassword();
         const opsNeedsPassword = opsWantsEnabled && !opsHasStoredPassword;
+        const opsUnlocked = opsWantsEnabled && opsHasStoredPassword;
         const switchHTML = this._renderOpsSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled);
+        const openOnSettings = this._getOpsDashboardOpenOnSettings();
+        const submoduleSwitchHTML = this._renderOpsSubSwitchHTML('wf-ops-dashboard-open-on-settings', openOnSettings);
         const passwordPanelDisplay = opsNeedsPassword ? 'block' : 'none';
+        const suboptionsDisplay = opsWantsEnabled ? 'block' : 'none';
+        const openDashboardBtnDisplay = opsUnlocked ? 'block' : 'none';
         return `
-            <!-- Ops Tab Toggle -->
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <div style="min-width: 0; padding-right: 10px;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Tab</div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px; line-height: 1.45;">
-                            Adds an Ops tab with operator tools. Enter the Ops password once; it is saved on this device.
-                        </div>
+                <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
+                        ${switchHTML}
                     </div>
-                    ${switchHTML}
+                    <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
+                            <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; flex: 1; min-width: 0;">
+                                Open dashboard when opening settings
+                            </label>
+                            ${submoduleSwitchHTML}
+                        </div>
+                        <button type="button" id="wf-ops-open-dashboard-btn" class="wf-ops-action-btn" style="
+                            display: ${openDashboardBtnDisplay};
+                            width: 100%;
+                            margin-top: 10px;
+                            padding: 8px 14px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-sizing: border-box;
+                        ">Open Dashboard</button>
+                    </div>
                 </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops password</label>
@@ -2561,14 +2856,45 @@ const plugin = {
             </div>`;
     },
 
+    _syncOpsSettingsSubmoduleVisibility(modal) {
+        const wrap = this._opsQuery(modal, '#wf-ops-dashboard-suboptions-wrap', 'opsSubmoduleWrap');
+        const openBtn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtn');
+        const wanted = this._getOpsTabWanted();
+        const unlocked = wanted && this._hasOpsStoredPassword();
+        if (wrap) wrap.style.display = wanted ? 'block' : 'none';
+        if (openBtn) openBtn.style.display = unlocked ? 'block' : 'none';
+    },
+
     _renderOpsSwitchHTML(id, isEnabled) {
-        const sliderBg = isEnabled ? '#22c55e' : '#ccc';
-        const knobLeftOn = 23;
-        const knobLeftOff = 3;
-        const knobBottom = 3;
-        const knobLeft = isEnabled ? knobLeftOn : knobLeftOff;
+        return this._renderOpsToggleSwitchHTML(id, isEnabled, {
+            onColor: '#22c55e',
+            width: 44,
+            height: 24,
+            knobSize: 18,
+            knobLeftOn: 23,
+            knobLeftOff: 3,
+            knobBottom: 3
+        });
+    },
+
+    _renderOpsSubSwitchHTML(id, isEnabled) {
+        return this._renderOpsToggleSwitchHTML(id, isEnabled, {
+            onColor: '#6366f1',
+            width: 33,
+            height: 18,
+            knobSize: 13.5,
+            knobLeftOn: 17,
+            knobLeftOff: 3,
+            knobBottom: 2
+        });
+    },
+
+    _renderOpsToggleSwitchHTML(id, isEnabled, spec) {
+        const onColor = spec.onColor;
+        const sliderBg = isEnabled ? onColor : '#ccc';
+        const knobLeft = isEnabled ? spec.knobLeftOn : spec.knobLeftOff;
         return `
-            <label style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+            <label style="position: relative; display: inline-block; width: ${spec.width}px; height: ${spec.height}px; flex-shrink: 0;">
                 <input type="checkbox" id="${id}" ${isEnabled ? 'checked' : ''} style="opacity: 0; width: 0; height: 0; position: absolute;">
                 <span class="wf-toggle-slider" style="
                     position: absolute;
@@ -2577,13 +2903,13 @@ const plugin = {
                     background-color: ${sliderBg};
                     transition: 0.2s;
                     border-radius: 24px;
-                " data-wf-on-color="#22c55e" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}">
+                " data-wf-on-color="${onColor}" data-wf-knob-left-on="${spec.knobLeftOn}" data-wf-knob-left-off="${spec.knobLeftOff}" data-wf-knob-bottom="${spec.knobBottom}">
                     <span style="
                         position: absolute;
-                        height: 18px;
-                        width: 18px;
+                        height: ${spec.knobSize}px;
+                        width: ${spec.knobSize}px;
                         left: ${knobLeft}px;
-                        bottom: ${knobBottom}px;
+                        bottom: ${spec.knobBottom}px;
                         background-color: white;
                         transition: 0.2s;
                         border-radius: 50%;
@@ -2594,12 +2920,10 @@ const plugin = {
         `;
     },
 
-    _renderOpsPane(paneDisplay) {
-        const display = paneDisplay || 'none';
+    _renderTeamMembersPanel() {
         return `
-            <div id="wf-settings-pane-ops" data-tab="ops" class="wf-settings-pane" style="display: ${display}; overflow-y: auto; min-height: 200px;">
-                <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #e5e5e5);">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #333);">
+                <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #0f172a); flex-shrink: 0;">
                         Team Member Search
                     </h3>
                     <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
@@ -2698,89 +3022,110 @@ const plugin = {
                             cursor: pointer;
                         ">Clear</button>
                     </div>
-                    <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; max-height: 360px; overflow-y: auto;">
+                    <div id="wf-ops-team-search-output-wrap" style="display: none; width: 100%; margin-top: 8px; flex: 1; min-height: 0; max-height: none; overflow-y: auto;">
                         <div id="wf-ops-team-search-cards"></div>
                     </div>
-                    <button type="button" id="wf-ops-open-dashboard" class="wf-ops-action-btn" style="
-                        display: block;
-                        width: 100%;
-                        margin-top: 10px;
-                        padding: 10px 16px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        text-align: center;
-                        color: var(--brand, #4f46e5);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        box-sizing: border-box;
-                        cursor: pointer;
-                    ">Open Dashboard</button>
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
-                        Task View Link Generator
-                    </h3>
-                    <input type="text" id="wf-ops-task-input" placeholder="Paste task key or UUID" autocomplete="off" style="
-                        width: 100%;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                    ">
-                </div>
-                <div id="wf-ops-link-row" style="display: none; align-items: stretch; gap: 8px;">
+                </div>`;
+    },
+
+    _renderTaskLinkBar() {
+        return `
+            <div id="wf-ops-task-link-bar" style="display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; max-width: 100%; box-sizing: border-box;">
+                <label for="wf-ops-task-input" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Go to Task:</label>
+                <input type="text" id="wf-ops-task-input" placeholder="Task key or UUID" autocomplete="off" title="Task View Link Generator" style="
+                    flex: 0 0 auto;
+                    width: 220px;
+                    max-width: 100%;
+                    min-width: 120px;
+                    padding: 6px 10px;
+                    font-size: 12px;
+                    border: 1px solid var(--border, #e2e8f0);
+                    border-radius: 6px;
+                    background: var(--background, #fff);
+                    color: var(--foreground, #0f172a);
+                    box-sizing: border-box;
+                ">
+                <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
                     <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
-                        flex: 1;
-                        min-width: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
-                        font-weight: 500;
-                        text-align: center;
-                        color: var(--brand, #4f46e5);
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: var(--brand, #2563eb);
                         background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid var(--border, #e2e8f0);
                         border-radius: 6px;
+                        cursor: pointer;
                     ">Open</button>
                     <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
-                        flex: 1;
-                        min-width: 0;
-                        padding: 10px 12px;
-                        font-size: 12px;
-                        font-weight: 500;
-                        text-align: center;
-                        color: var(--brand, #4f46e5);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                    ">Open in New Tab</button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
-                        flex-shrink: 0;
-                        padding: 2px 10px;
+                        padding: 6px 10px;
                         font-size: 11px;
-                        font-weight: 500;
-                        color: var(--muted-foreground, #666);
+                        font-weight: 600;
+                        color: var(--brand, #2563eb);
                         background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 4px;
+                        border: 1px solid var(--border, #e2e8f0);
+                        border-radius: 6px;
                         cursor: pointer;
-                        transition: background 0.2s, color 0.2s;
+                    ">New Tab</button>
+                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: var(--muted-foreground, #64748b);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e2e8f0);
+                        border-radius: 6px;
+                        cursor: pointer;
                     ">Copy</button>
                 </div>
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #333);">
-                        Verifier Code Fetcher
-                    </h3>
-                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
-                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
-                    </p>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                            flex: 1;
-                            min-width: 0;
+            </div>`;
+    },
+
+    _renderGradeAssessmentsHeaderLink() {
+        return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
+            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
+    },
+
+    _renderVerifierFetcherPanel() {
+        return `
+                <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                    <div style="flex-shrink: 0;">
+                        <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
+                            Verifier Code Fetcher
+                        </h3>
+                        <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                            Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
+                        </p>
+                        <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
+                                flex: 1;
+                                min-width: 0;
+                                padding: 8px 12px;
+                                font-size: 12px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: var(--background, white);
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ">
+                            <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
+                                flex-shrink: 0;
+                                padding: 8px 14px;
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: var(--brand, #4f46e5);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                            ">Fetch</button>
+                        </div>
+                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
+                            <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        </div>
+                        <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
+                            display: none;
+                            width: 100%;
+                            margin-top: 8px;
                             padding: 8px 12px;
                             font-size: 12px;
                             border: 1px solid var(--border, #e5e5e5);
@@ -2789,51 +3134,102 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        ">
-                        <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
+                        "></select>
+                    </div>
+                    <div id="wf-ops-verifier-content-search-wrap" style="
+                        display: none;
+                        flex-shrink: 0;
+                        align-self: flex-start;
+                        width: 30%;
+                        max-width: 30%;
+                        min-width: 12rem;
+                        margin-top: 8px;
+                        gap: 6px;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        flex-direction: row;
+                        justify-content: flex-start;
+                        box-sizing: border-box;
+                    ">
+                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Search in code:</label>
+                        <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
+                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
+                                flex: 1;
+                                min-width: 0;
+                                width: 100%;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: var(--background, white);
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ">
+                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" style="
+                                display: none;
+                                flex-shrink: 0;
+                                width: 26px;
+                                height: 26px;
+                                padding: 0;
+                                font-size: 16px;
+                                line-height: 1;
+                                font-weight: 600;
+                                color: var(--muted-foreground, #64748b);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                align-items: center;
+                                justify-content: center;
+                            ">&times;</button>
+                        </span>
+                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
+                        <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
-                            padding: 8px 14px;
-                            font-size: 12px;
+                            padding: 6px 10px;
+                            font-size: 11px;
                             font-weight: 600;
-                            color: var(--brand, #4f46e5);
+                            color: var(--foreground, #333);
                             background: var(--background, white);
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                        ">Fetch</button>
+                        ">Prev</button>
+                        <button type="button" id="wf-ops-verifier-content-next" class="wf-ops-action-btn" style="
+                            flex-shrink: 0;
+                            padding: 6px 10px;
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: var(--foreground, #333);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                        ">Next</button>
                         <button type="button" id="wf-ops-copy-verifier" style="
                             display: none;
                             flex-shrink: 0;
-                            padding: 2px 10px;
+                            padding: 6px 10px;
                             font-size: 11px;
                             font-weight: 500;
                             color: var(--muted-foreground, #666);
                             background: var(--background, white);
                             border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 4px;
+                            border-radius: 6px;
                             cursor: pointer;
                             transition: background 0.2s, color 0.2s;
                         ">Copy</button>
                     </div>
-                    <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
-                        display: none;
-                        width: 100%;
-                        margin-top: 8px;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    "></select>
                     <div id="wf-ops-verifier-output-wrap" style="
                         display: none;
+                        flex: 1;
+                        min-height: 0;
                         width: 100%;
                         margin-top: 8px;
+                        flex-direction: column;
                     ">
                         <pre style="
+                            flex: 1;
+                            min-height: 0;
                             width: 100%;
                             margin: 0;
                             padding: 8px 12px;
@@ -2843,32 +3239,13 @@ const plugin = {
                             background: var(--card, #fafafa);
                             color: var(--foreground, #333);
                             box-sizing: border-box;
-                            max-height: 320px;
                             overflow: auto;
                             white-space: pre-wrap;
                             word-break: break-word;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                         "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
                     </div>
-                </div>
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
-                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" class="wf-ops-action-btn" style="
-                        display: block;
-                        width: 100%;
-                        padding: 10px 16px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        text-align: center;
-                        text-decoration: none;
-                        color: var(--brand, #4f46e5);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        box-sizing: border-box;
-                    ">Grade Assessments</a>
-                </div>
-            </div>
-        `;
+                </div>`;
     },
 
     async _handleOpsVerifierFetch(modal) {
@@ -2903,12 +3280,8 @@ const plugin = {
             const result = await this._fetchOpsVerifierCode(parsed);
             this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
             await this._setOpsVerifierOutput(modal, result.source);
+            this._setOpsVerifierStatus(modal, '');
             const versionText = result.version != null ? 'v' + result.version : 'latest version';
-            const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
-            this._setOpsVerifierStatus(
-                modal,
-                'Fetched ' + versionText + ' (' + result.source.length + ' chars)' + teamNote + '.'
-            );
             Logger.log('ops-tab: verifier fetched ' + result.verifierId + ' ' + versionText);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
@@ -2937,12 +3310,7 @@ const plugin = {
         try {
             const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, version);
             await this._setOpsVerifierOutput(modal, result.source);
-            const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
-            this._setOpsVerifierStatus(
-                modal,
-                'Showing v' + (result.version != null ? result.version : version) +
-                ' (' + result.source.length + ' chars)' + teamNote + '.'
-            );
+            this._setOpsVerifierStatus(modal, '');
             Logger.log('ops-tab: verifier version selected ' + result.verifierId + ' v' + (result.version != null ? result.version : version));
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
@@ -2981,35 +3349,31 @@ const plugin = {
 
     _attachOpsTabToggleListener(modal, settingsPlugin) {
         const opsTabToggle = this._opsQuery(modal, '#wf-ops-tab-enabled', 'opsTabToggle');
-        if (!opsTabToggle) return;
+        if (!opsTabToggle || opsTabToggle.dataset.wfOpsTabToggleBound === '1') return;
+        opsTabToggle.dataset.wfOpsTabToggleBound = '1';
         const self = this;
         opsTabToggle.addEventListener('change', (e) => {
             const wantsEnabled = e.target.checked;
             const handleToggleChange = settingsPlugin && typeof settingsPlugin.handleToggleChange === 'function'
                 ? (evt) => settingsPlugin.handleToggleChange(evt)
                 : () => {};
-            const rebuildTabRow = settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function'
-                ? (m, p, o) => settingsPlugin.rebuildSettingsTabRow(m, p, o)
-                : () => {};
-            const getActiveTabId = settingsPlugin && typeof settingsPlugin.getActiveSettingsTabId === 'function'
-                ? (m) => settingsPlugin.getActiveSettingsTabId(m)
-                : () => null;
             if (!wantsEnabled) {
                 handleToggleChange(e);
                 self._setOpsTabWanted(false);
                 self._setOpsPasswordPanelVisible(modal, false);
                 self._setOpsPasswordError(modal, '');
-                Logger.log('ops-tab: tab disabled');
-                const activeTab = getActiveTabId(modal);
-                const nextTab = activeTab === 'ops' ? 'information' : activeTab;
-                rebuildTabRow(modal, nextTab);
+                self._syncOpsSettingsSubmoduleVisibility(modal);
+                if (Context.dashboard && typeof Context.dashboard.close === 'function' && Context.dashboard.isOpen()) {
+                    Context.dashboard.close();
+                }
+                Logger.log('ops-tab: Ops dashboard disabled');
                 return;
             }
             self._setOpsTabWanted(true);
+            self._syncOpsSettingsSubmoduleVisibility(modal);
             if (self._hasOpsStoredPassword()) {
                 handleToggleChange(e);
-                Logger.log('ops-tab: tab enabled');
-                rebuildTabRow(modal, null, { keepCurrentPane: true });
+                Logger.log('ops-tab: Ops dashboard enabled');
                 return;
             }
             e.target.checked = false;
@@ -3024,17 +3388,54 @@ const plugin = {
         });
     },
 
-    _attachOpsListeners(modal, settingsPlugin) {
+    _attachOpsDashboardOpenOnSettingsListener(modal) {
+        const toggle = this._opsQuery(modal, '#wf-ops-dashboard-open-on-settings', 'opsOpenOnSettingsToggle');
+        if (!toggle || toggle.dataset.wfOpsOpenOnSettingsBound === '1') return;
+        toggle.dataset.wfOpsOpenOnSettingsBound = '1';
+        toggle.addEventListener('change', (e) => {
+            this._setOpsDashboardOpenOnSettings(e.target.checked);
+            Logger.log('ops-tab: open dashboard on settings ' + (e.target.checked ? 'enabled' : 'disabled'));
+        });
+    },
+
+    _attachOpsOpenDashboardButtonListener(modal) {
+        const btn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtnAttach');
+        if (!btn || btn.dataset.wfOpsOpenDashboardBound === '1') return;
+        btn.dataset.wfOpsOpenDashboardBound = '1';
+        btn.addEventListener('click', () => {
+            if (!this._getOpsTabWanted() || !this._hasOpsStoredPassword()) {
+                Logger.warn('ops-tab: Open Dashboard skipped — not unlocked');
+                return;
+            }
+            if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+                Context.dashboard.open();
+                Logger.log('ops-tab: opened Ops dashboard from settings');
+            } else {
+                Logger.warn('ops-tab: Open Dashboard skipped — Context.dashboard unavailable');
+            }
+        });
+    },
+
+    _attachOpsSettingsListeners(modal, settingsPlugin) {
         if (!modal) return;
         this._injectOpsSpinnerStyle();
         this._attachOpsPasswordListeners(modal, settingsPlugin);
         this._attachOpsTabToggleListener(modal, settingsPlugin);
+        this._attachOpsDashboardOpenOnSettingsListener(modal);
+        this._attachOpsOpenDashboardButtonListener(modal);
+        this._syncOpsSettingsSubmoduleVisibility(modal);
+    },
 
-        if (modal.dataset.wfOpsListenersAttached === '1') {
+    _attachOpsDashboardListeners(dashModal, dashboardPlugin) {
+        if (!dashModal) return;
+        this._injectOpsSpinnerStyle();
+        const modal = dashModal;
+
+        if (modal.dataset.wfOpsDashboardListenersAttached === '1') {
             this._restoreOpsTabState(modal);
             return;
         }
-        modal.dataset.wfOpsListenersAttached = '1';
+        modal.dataset.wfOpsDashboardListenersAttached = '1';
 
         const teamSearchBtn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnAttach');
         const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputAttach');
@@ -3105,18 +3506,6 @@ const plugin = {
             });
         }
 
-        const openDashboardBtn = this._opsQuery(modal, '#wf-ops-open-dashboard', 'openDashboardBtnAttach');
-        if (openDashboardBtn) {
-            openDashboardBtn.addEventListener('click', () => {
-                if (Context.dashboard && typeof Context.dashboard.open === 'function') {
-                    Context.dashboard.open();
-                    Logger.log('ops-tab: dashboard opened from ops pane');
-                } else {
-                    Logger.warn('ops-tab: dashboard module unavailable (Context.dashboard.open missing)');
-                }
-            });
-        }
-
         if (!modal.dataset.wfOpsMemberEditDelegation) {
             modal.dataset.wfOpsMemberEditDelegation = '1';
             modal.addEventListener('click', (e) => {
@@ -3148,26 +3537,13 @@ const plugin = {
 
         if (openBtn) {
             openBtn.addEventListener('click', () => {
-                const url = openBtn.getAttribute('data-wf-ops-url');
-                if (!url) {
-                    Logger.warn('ops-tab: open link skipped (no URL)');
-                    return;
-                }
-                const pageWindow = this._getOpsPageWindow();
-                pageWindow.location.href = url;
-                Logger.log('ops-tab: task link opened (current tab)');
+                void this.openTaskLink(null, { root: modal, newTab: false });
             });
         }
 
         if (openNewTabBtn) {
             openNewTabBtn.addEventListener('click', () => {
-                const url = openNewTabBtn.getAttribute('data-wf-ops-url');
-                if (!url) {
-                    Logger.warn('ops-tab: open link new tab skipped (no URL)');
-                    return;
-                }
-                window.open(url, '_blank', 'noopener,noreferrer');
-                Logger.log('ops-tab: task link opened (new tab)');
+                void this.openTaskLink(null, { root: modal, newTab: true });
             });
         }
 
@@ -3197,6 +3573,12 @@ const plugin = {
         }
 
         if (verifierInput) {
+            verifierInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void this._handleOpsVerifierFetch(modal);
+                }
+            });
             verifierInput.addEventListener('paste', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
@@ -3205,6 +3587,40 @@ const plugin = {
             verifierInput.addEventListener('input', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
+                this._captureOpsTabState(modal);
+            });
+        }
+
+        const verifierContentSearch = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchAttach');
+        const verifierContentClear = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClearAttach');
+        const verifierContentPrev = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrevAttach');
+        const verifierContentNext = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNextAttach');
+        if (verifierContentClear) {
+            verifierContentClear.addEventListener('click', () => {
+                this._clearVerifierContentSearch(modal);
+            });
+        }
+        if (verifierContentSearch) {
+            verifierContentSearch.addEventListener('input', () => {
+                this._applyVerifierContentSearch(modal, verifierContentSearch.value);
+                this._captureOpsTabState(modal);
+            });
+            verifierContentSearch.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                this._stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
+                this._captureOpsTabState(modal);
+            });
+        }
+        if (verifierContentPrev) {
+            verifierContentPrev.addEventListener('click', () => {
+                this._stepVerifierContentMatch(modal, -1);
+                this._captureOpsTabState(modal);
+            });
+        }
+        if (verifierContentNext) {
+            verifierContentNext.addEventListener('click', () => {
+                this._stepVerifierContentMatch(modal, 1);
                 this._captureOpsTabState(modal);
             });
         }
@@ -3244,12 +3660,15 @@ const plugin = {
         this._restoreOpsTabState(modal);
     },
 
-    _onOpsPaneOpened(modal, settingsPlugin) {
-        if (!modal) return;
-        void this._revalidateOpsStoredPassword(modal, settingsPlugin).then(() => {
+    _onDashboardTabActivated(dashModal, tabId) {
+        if (!dashModal) return;
+        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
             if (this._getOpsTabEnabled()) {
                 void this._loadOpsSecrets(false);
             }
         });
+        if (tabId === 'team-members') {
+            this._restoreOpsTabState(dashModal);
+        }
     }
 };
