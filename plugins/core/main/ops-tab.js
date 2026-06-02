@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
 
@@ -500,21 +500,41 @@ const plugin = {
         return null;
     },
 
+    _opsTeamRef(teamId) {
+        const id = String(teamId || '').trim();
+        return id ? id.slice(0, 8) + '…' : '(none)';
+    },
+
     async resolveTaskLinkTarget(raw) {
         const url = this._buildOpsTaskUrl(raw);
         if (!url) return null;
         const parsed = this._parseOpsVerifierInput(raw);
         let teamId = String(parsed.teamId || '').trim();
+        let teamSource = teamId ? 'input' : 'none';
         if (!teamId && (parsed.taskKey || parsed.taskId)) {
             try {
                 const resolved = await this._resolveOpsVerifierFromTask(parsed);
                 teamId = String(resolved.teamId || '').trim();
+                teamSource = teamId ? 'tasks-lookup' : 'tasks-lookup-empty';
             } catch (e) {
                 Logger.debug('ops-tab: task link team_id lookup failed', e);
+                teamSource = 'tasks-lookup-failed';
             }
         }
         const taskId = String(parsed.taskId || this._extractOpsTaskIdentifier(raw) || '').trim();
-        return { url, teamId, taskId };
+        const taskRef = taskId
+            ? (taskId.length > 12 ? taskId.slice(0, 8) + '…' : taskId)
+            : '(none)';
+        Logger.log(
+            'ops-tab: task link target resolved — task=' + taskRef +
+            ' team=' + this._opsTeamRef(teamId) +
+            ' source=' + teamSource +
+            ' url=' + url
+        );
+        if (teamSource === 'tasks-lookup-empty') {
+            Logger.warn('ops-tab: task link — no team_id from PostgREST; open may use wrong team context');
+        }
+        return { url, teamId, taskId, teamSource };
     },
 
     async openTaskLink(raw, opts) {
@@ -530,21 +550,36 @@ const plugin = {
             Logger.warn('ops-tab: openTaskLink skipped — no URL');
             return;
         }
-        const teamId = target.teamId;
-        if (teamId && Context.dashboard && typeof Context.dashboard.switchFleetTeam === 'function') {
+        const teamId = String(target.teamId || '').trim();
+        const tabMode = options.newTab ? 'new tab' : 'current tab';
+        let teamSwitch = 'none';
+        if (!teamId) {
+            teamSwitch = 'skipped-no-team';
+            Logger.log('ops-tab: task link — no team_id; opening without team switch');
+        } else if (!Context.dashboard || typeof Context.dashboard.switchFleetTeam !== 'function') {
+            teamSwitch = 'skipped-no-dashboard';
+            Logger.warn('ops-tab: task link — dashboard.switchFleetTeam unavailable; opening without team switch');
+        } else {
             try {
                 await Context.dashboard.switchFleetTeam(teamId);
+                teamSwitch = 'switched';
+                Logger.log('ops-tab: task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
             } catch (e) {
+                teamSwitch = 'failed';
                 Logger.warn('ops-tab: team switch before task link failed', e);
             }
         }
         if (options.newTab) {
             window.open(target.url, '_blank', 'noopener,noreferrer');
-            Logger.log('ops-tab: task link opened (new tab)');
         } else {
             this._getOpsPageWindow().location.href = target.url;
-            Logger.log('ops-tab: task link opened (current tab)');
         }
+        Logger.log(
+            'ops-tab: task link opened (' + tabMode + ') — switch=' + teamSwitch +
+            ' team=' + this._opsTeamRef(teamId) +
+            ' source=' + (target.teamSource || 'unknown') +
+            ' url=' + target.url
+        );
     },
 
     _matchOpsJsonString(raw, key) {
