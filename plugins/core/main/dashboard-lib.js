@@ -142,10 +142,17 @@ function dashLibIsQaEscalatedForFleetReview(data) {
     return sources.some((s) => !taskOnly.has(s));
 }
 
-function dashLibIsQaFlaggedAsBugged(data) {
-    if (!data || typeof data !== 'object') return false;
-    if (!data.attempted_actions) return false;
-    return !data.task_feedback && !data.environment_feedback && !data.grading_feedback;
+function dashLibIsQaFlaggedAsBugged(data, feedbackContent) {
+    if (data && typeof data === 'object') {
+        if (data.bug_reason || data.bug_description) return true;
+        if (data.attempted_actions
+            && !data.task_feedback && !data.environment_feedback && !data.grading_feedback) {
+            return true;
+        }
+    }
+    const content = String(feedbackContent || '').trim();
+    if (content && /flagged as bugged/i.test(content)) return true;
+    return false;
 }
 
 function dashLibParseDateInput(dateLocal) {
@@ -195,7 +202,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -862,6 +869,8 @@ const plugin = {
         }
         const data = dashLibParseFeedbackData(feedbackRow.feedback_data);
         const textBlocks = [];
+        if (data.bug_reason) textBlocks.push({ label: 'Bug Reason', text: dashLibNormalizeNewlines(data.bug_reason) });
+        if (data.bug_description) textBlocks.push({ label: 'Bug Description', text: dashLibNormalizeNewlines(data.bug_description) });
         if (data.attempted_actions) textBlocks.push({ label: 'Attempted Actions', text: dashLibNormalizeNewlines(data.attempted_actions) });
         if (data.task_feedback) textBlocks.push({ label: 'Task Feedback', text: dashLibNormalizeNewlines(data.task_feedback) });
         if (data.environment_feedback) textBlocks.push({ label: 'Environment Feedback', text: dashLibNormalizeNewlines(data.environment_feedback) });
@@ -869,9 +878,11 @@ const plugin = {
         const labels = Array.isArray(data.rejection_reason_labels)
             ? data.rejection_reason_labels.map(String)
             : (data.rejection_reason_label ? [String(data.rejection_reason_label)] : []);
+        if (data.bug_reason) labels.unshift(String(data.bug_reason));
         const isPositive = Boolean(feedbackRow.is_positive_feedback);
         const isEscalated = !isPositive && dashLibIsQaEscalatedForFleetReview(data);
-        const isFlaggedAsBugged = !isPositive && !isEscalated && dashLibIsQaFlaggedAsBugged(data);
+        const isFlaggedAsBugged = !isPositive && !isEscalated
+            && dashLibIsQaFlaggedAsBugged(data, feedbackRow.feedback_content);
         return {
             isSystemFeedback: false,
             isPositive,

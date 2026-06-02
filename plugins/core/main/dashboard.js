@@ -59,6 +59,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
 const DASH_SEARCH_DEPTH_TOGGLE_ACTIVE = 'border: 2px solid #ca8a04; color: #a16207; background: transparent;';
+const DASH_FLAGGED_COLOR = '#a16207';
+const DASH_FLAGGED_BORDER = '#ca8a04';
+const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
@@ -181,7 +184,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.55',
+    _version: '3.56',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4678,13 +4681,23 @@ const plugin = {
         const key = (status || 'unknown').toLowerCase();
         let color = 'var(--muted-foreground, #64748b)';
         let bg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent)';
+        let label = status || '—';
         if (key.includes('production')) { color = '#15803d'; bg = 'color-mix(in srgb, #16a34a 14%, transparent)'; }
+        else if (key === 'bugged') { color = DASH_FLAGGED_COLOR; bg = DASH_FLAGGED_BG; label = 'Bugged'; }
         else if (key.includes('review')) { color = '#b45309'; bg = 'color-mix(in srgb, #d97706 14%, transparent)'; }
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(status || '—')}</span>`;
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(label)}</span>`;
     },
 
     _qaAlertBadgeStyle() {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
+    },
+
+    _qaFlaggedBadgeStyle() {
+        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG}; border: 1px solid ${DASH_FLAGGED_BORDER};`;
+    },
+
+    _qaFlaggedIssueBadgeStyle() {
+        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG}; border: 1px solid ${DASH_FLAGGED_BORDER};`;
     },
 
     _disputeBlockStyle() {
@@ -4707,17 +4720,29 @@ const plugin = {
         };
     },
 
+    _qaFlaggedBlockStyle() {
+        return {
+            border: `1px solid ${DASH_FLAGGED_BORDER}`,
+            background: `color-mix(in srgb, ${DASH_FLAGGED_BORDER} 18%, var(--card, #ffffff))`
+        };
+    },
+
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
         const isSystem = Boolean(qa.isSystemFeedback);
-        const isYellowBlock = isSystem || qa.isEscalated || qa.isFlaggedAsBugged;
+        const isFlagged = Boolean(qa.isFlaggedAsBugged);
+        const isEscalatedBlock = isSystem || qa.isEscalated;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
         let border;
         let bg;
-        if (isYellowBlock) {
+        if (isFlagged) {
+            const flagged = this._qaFlaggedBlockStyle();
+            border = flagged.border;
+            bg = flagged.background;
+        } else if (isEscalatedBlock) {
             const yellow = this._qaYellowBlockStyle();
             border = yellow.border;
             bg = yellow.background;
@@ -4726,18 +4751,21 @@ const plugin = {
             bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
         }
         const alertBadge = this._qaAlertBadgeStyle();
+        const flaggedBadge = this._qaFlaggedBadgeStyle();
         const statusLabel = isSystem
             ? ''
             : (positive
                 ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
-                    : (qa.isFlaggedAsBugged
-                        ? `<span style="${alertBadge}">Flagged as Bugged</span>`
+                    : (isFlagged
+                        ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
                         : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`)));
-        const issueBadgeStyle = isYellowBlock
-            ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
-            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
+        const issueBadgeStyle = isFlagged
+            ? this._qaFlaggedIssueBadgeStyle()
+            : (isEscalatedBlock
+                ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
+                : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);');
         const rejectionBadges = qa.rejectionBadges || [];
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
@@ -4790,9 +4818,12 @@ const plugin = {
         } else if (entry.isPositive) {
             label = 'Accepted';
             cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
-        } else if (entry.isEscalated || entry.isFlaggedAsBugged) {
-            label = entry.isEscalated ? 'Escalated' : 'Bugged';
+        } else if (entry.isEscalated) {
+            label = 'Escalated';
             cls = this._qaAlertBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
+        } else if (entry.isFlaggedAsBugged) {
+            label = 'Flagged';
+            cls = this._qaFlaggedBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
         }
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
         if (isSystem) {
