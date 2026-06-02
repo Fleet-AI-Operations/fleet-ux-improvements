@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -305,6 +305,15 @@ const plugin = {
                 opacity: 0.6;
                 font-weight: bold;
             }
+            [${ROOT_ATTR}] pre .fleet-paste-diff-equal-muted {
+                color: var(--muted-foreground, #737373);
+            }
+            [${ROOT_ATTR}] pre .fleet-paste-diff-equal-foreground {
+                color: var(--foreground, #171717);
+            }
+            .dark [${ROOT_ATTR}] pre .fleet-paste-diff-equal-foreground {
+                color: var(--foreground, #fafafa);
+            }
             [${ROOT_ATTR}] .fleet-paste-no-diff-badge {
                 display: inline-flex;
                 align-items: center;
@@ -379,6 +388,36 @@ const plugin = {
                 justify-content: space-between;
                 gap: 8px;
                 flex-wrap: wrap;
+            }
+            [${ROOT_ATTR}] pre.fleet-paste-pre {
+                max-height: none;
+                overflow: visible;
+                white-space: pre-wrap;
+                word-break: break-word;
+                border-radius: 0.375rem;
+                padding: 0.5rem;
+                font-family: ui-monospace, monospace;
+                font-size: 11px;
+                line-height: 1.4;
+            }
+            [${ROOT_ATTR}] pre.fleet-paste-paste-pre {
+                color: var(--muted-foreground, #737373);
+                background: var(--muted, rgba(0, 0, 0, 0.04));
+                border: 1px solid var(--border, #e5e5e5);
+            }
+            .dark [${ROOT_ATTR}] pre.fleet-paste-paste-pre {
+                background: rgba(255, 255, 255, 0.03);
+                border-color: rgba(255, 255, 255, 0.1);
+            }
+            [${ROOT_ATTR}] pre.fleet-paste-final-answer-pre {
+                color: var(--foreground, #171717);
+                background: var(--background, #fff);
+                border: 1px solid rgb(163, 163, 163);
+            }
+            .dark [${ROOT_ATTR}] pre.fleet-paste-final-answer-pre {
+                color: var(--foreground, #fafafa);
+                background: rgba(255, 255, 255, 0.05);
+                border-color: rgba(255, 255, 255, 0.38);
             }
         `;
         document.head.appendChild(style);
@@ -597,6 +636,7 @@ const plugin = {
             badge.className = 'fleet-paste-no-diff-badge';
             badge.textContent = 'NO DIFFERENCE';
             controls.appendChild(badge);
+            return controls;
         }
 
         const toggleLabel = document.createElement('label');
@@ -683,7 +723,7 @@ const plugin = {
                 label.className = 'mb-1 font-mono text-xs tabular-nums text-muted-foreground';
                 label.textContent = paste.timeLabel;
                 block.appendChild(label);
-                block.appendChild(this.buildPlainPre(paste.text));
+                block.appendChild(this.buildPlainPre(paste.text, 'paste'));
             }
 
             container.appendChild(block);
@@ -692,10 +732,12 @@ const plugin = {
         return container;
     },
 
-    buildPlainPre(text) {
+    buildPlainPre(text, role) {
         const pre = document.createElement('pre');
         pre.className =
-            'bg-muted/30 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border p-2 font-mono text-[11px] leading-4 text-foreground';
+            role === 'answer'
+                ? 'fleet-paste-pre fleet-paste-final-answer-pre'
+                : 'fleet-paste-pre fleet-paste-paste-pre';
         pre.textContent = text;
         return pre;
     },
@@ -722,7 +764,7 @@ const plugin = {
         beforeLabel.className =
             'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
         beforeLabel.textContent = 'Last paste';
-        const beforePre = this.buildPlainPre(paste.text);
+        const beforePre = this.buildPlainPre(paste.text, 'paste');
         beforePre.setAttribute('data-fleet-paste-diff-before', 'true');
         beforeSection.appendChild(beforeLabel);
         beforeSection.appendChild(beforePre);
@@ -732,7 +774,7 @@ const plugin = {
         afterLabel.className =
             'mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
         afterLabel.textContent = "Applicant's Final Answer";
-        const afterPre = this.buildPlainPre(applicantAnswer);
+        const afterPre = this.buildPlainPre(applicantAnswer, 'answer');
         afterPre.setAttribute('data-fleet-paste-diff-after', 'true');
         afterSection.appendChild(afterLabel);
         afterSection.appendChild(afterPre);
@@ -743,7 +785,12 @@ const plugin = {
 
         beforePre.dataset.originalText = paste.text;
         afterPre.dataset.originalText = applicantAnswer;
-        this.renderDiffPair(beforePre, afterPre, paste.text, applicantAnswer, ui);
+        if (noDifference) {
+            beforePre.textContent = paste.text;
+            afterPre.textContent = applicantAnswer;
+        } else {
+            this.renderDiffPair(beforePre, afterPre, paste.text, applicantAnswer, ui);
+        }
 
         if (noDifference) {
             stack.setAttribute('data-fleet-paste-no-diff', 'true');
@@ -948,7 +995,7 @@ const plugin = {
                     html += `<span style="${removeStyle}">${this.escapeHtml(text)}</span>`;
                 }
             } else {
-                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
+                html += `<span class="fleet-paste-diff-equal-muted">${this.escapeHtml(text)}</span>`;
             }
         });
 
@@ -972,7 +1019,7 @@ const plugin = {
                     html += `<span style="${addStyle}">${this.escapeHtml(text)}</span>`;
                 }
             } else {
-                html += `<span class="text-muted-foreground">${this.escapeHtml(text)}</span>`;
+                html += `<span class="fleet-paste-diff-equal-foreground">${this.escapeHtml(text)}</span>`;
             }
         });
 
