@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.6',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2714,18 +2714,21 @@ const plugin = {
                         ${updateTabBtn}
                     </nav>
                 </div>
-                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box;">
-                    ${taskLinkBar}
+                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box; overflow: hidden;">
+                    <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
                 </div>
                 <div id="wf-dash-header-ops" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-left: auto;">
                     <button type="button" id="wf-dash-open-settings" style="
-                        flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px;
+                        flex-shrink: 0; box-sizing: border-box; height: 32px; padding: 0 12px; margin: 0;
+                        display: inline-flex; align-items: center; justify-content: center;
+                        font-size: 11px; font-weight: 600; line-height: 1; border-radius: 6px;
                         color: var(--foreground, #0f172a); background: var(--background, #fff);
                         border: 1px solid var(--border, #e2e8f0); cursor: pointer;
                     ">Open Settings</button>
                     <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
-                        flex-shrink: 0; width: 32px; height: 32px; display: inline-flex; align-items: center;
-                        justify-content: center; font-size: 20px; line-height: 1; border-radius: 6px;
+                        flex-shrink: 0; box-sizing: border-box; width: 32px; height: 32px; padding: 0; margin: 0;
+                        display: inline-flex; align-items: center; justify-content: center;
+                        font-size: 20px; line-height: 1; border-radius: 6px;
                         color: var(--muted-foreground, #64748b); background: transparent;
                         border: 1px solid var(--border, #e2e8f0); cursor: pointer;
                     ">&times;</button>
