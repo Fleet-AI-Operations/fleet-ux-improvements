@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.20',
+    _version: '4.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4180,6 +4180,7 @@ const plugin = {
             this._syncMsDropdown(scopeKey);
             if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
         }
+        this._state.filterListBoundsPrev = listBounds;
         this._updateApplyFiltersUi();
         Logger.debug('dashboard: filter lists rendered');
     },
