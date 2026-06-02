@@ -9,7 +9,7 @@ const plugin = {
     name: 'Grade Clipboard Event Times',
     description:
         'Shows clipboard integrity event offsets as at Xm, Ys with delta from the previous event',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -21,6 +21,9 @@ const plugin = {
         const sec = Math.max(0, Math.floor(Number(totalSeconds)) || 0);
         const minutes = Math.floor(sec / 60);
         const seconds = sec % 60;
+        if (minutes === 0) {
+            return `${seconds}s`;
+        }
         return `${minutes}m, ${seconds}s`;
     },
 

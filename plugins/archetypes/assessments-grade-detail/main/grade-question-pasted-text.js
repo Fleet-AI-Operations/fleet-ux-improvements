@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.3',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -390,6 +390,9 @@ const plugin = {
         const sec = Math.max(0, Math.floor(Number(totalSeconds)) || 0);
         const minutes = Math.floor(sec / 60);
         const seconds = sec % 60;
+        if (minutes === 0) {
+            return `${seconds}s`;
+        }
         return `${minutes}m, ${seconds}s`;
     },
 
@@ -403,12 +406,16 @@ const plugin = {
         if (rawSec) {
             return { questionNum, seconds: parseInt(rawSec[1], 10) };
         }
-        const atMatch = trimmed.match(/at (\d+)m, (\d+)s/);
-        if (atMatch) {
+        const atMinSec = trimmed.match(/at (\d+)m, (\d+)s/);
+        if (atMinSec) {
             return {
                 questionNum,
-                seconds: parseInt(atMatch[1], 10) * 60 + parseInt(atMatch[2], 10)
+                seconds: parseInt(atMinSec[1], 10) * 60 + parseInt(atMinSec[2], 10)
             };
+        }
+        const atSecOnly = trimmed.match(/at (\d+)s\b/);
+        if (atSecOnly) {
+            return { questionNum, seconds: parseInt(atSecOnly[1], 10) };
         }
         return null;
     },
