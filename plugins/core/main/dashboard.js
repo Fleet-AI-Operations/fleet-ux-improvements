@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.14',
+    _version: '4.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1602,6 +1602,55 @@ const plugin = {
         };
     },
 
+    _isDimensionAllSelected(selected, boundIds) {
+        const bounds = boundIds || [];
+        if (bounds.length === 0) return true;
+        return (selected || []).length >= bounds.length;
+    },
+
+    _expandAppliedForBoundsGrowth(applied, prevBounds, newBounds) {
+        const next = Object.assign({}, applied);
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const prevLen = (prevBounds[draftKey] || []).length;
+            const newLen = (newBounds[draftKey] || []).length;
+            if (prevLen === 0 && newLen > 0) {
+                next[draftKey] = [...(newBounds[draftKey] || [])];
+            }
+        }
+        return next;
+    },
+
+    _checkedIdsForFilterScope(draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncFromApplied) {
+        const boundIds = listBounds[draftKey] || [];
+        const appliedSel = (applied && applied[draftKey]) || [];
+        const prevBoundIds = (prevBounds && prevBounds[draftKey]) || [];
+
+        if (syncFromApplied && applied) {
+            if (this._isDimensionAllSelected(appliedSel, boundIds)) {
+                return new Set(optionIds);
+            }
+            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
+        }
+
+        if (prevBoundIds.length === 0 && boundIds.length > 0 && appliedSel.length === 0) {
+            return new Set(optionIds);
+        }
+
+        if (prevSelected !== null && prevBoundIds.length > 0) {
+            return prevSelected;
+        }
+
+        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
+            return new Set(optionIds);
+        }
+
+        if (appliedSel.length > 0) {
+            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
+        }
+
+        return new Set();
+    },
+
     _readSearchDepthPref() {
         try {
             const v = this._pageWindow().localStorage.getItem(DASH_SEARCH_DEPTH_STORAGE_KEY);
@@ -1743,23 +1792,17 @@ const plugin = {
             this._getTeamCatalog()
         );
         this._state.filterListOptions = options;
-        if (!resetDrafts) {
-            const newBounds = this._listBoundsFromOptions(options);
-            for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
-                const prevLen = (prevBounds[draftKey] || []).length;
-                const newLen = (newBounds[draftKey] || []).length;
-                if (prevLen === 0 && newLen > 0) {
-                    const itemsEl = this._msItemsEl(scopeKey);
-                    if (!itemsEl) continue;
-                    itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
-                    this._updateMsCount(scopeKey);
-                }
-            }
+        const newBounds = this._listBoundsFromOptions(options);
+        this._state.filterListBoundsPrev = prevBounds;
+        if (!resetDrafts && this._state.appliedFilters) {
+            this._state.appliedFilters = this._expandAppliedForBoundsGrowth(
+                this._state.appliedFilters, prevBounds, newBounds
+            );
         }
         const tab = this._state.resultsKindTab || 'all';
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
-        return this._listBoundsFromOptions(options);
+        return newBounds;
     },
 
     _isFilterDraftValid(draft, listBounds) {
@@ -1835,7 +1878,7 @@ const plugin = {
         }
 
         let filters;
-        if (filterSource === 'search-defaults' || filterSource === 'tab-reset') {
+        if (filterSource === 'search-defaults' || filterSource === 'tab-reset' || filterSource === 'filter-reset') {
             filters = this._filtersAllSelectedFromBounds(bounds);
         } else {
             filters = this._currentClientFilters();
@@ -1858,6 +1901,8 @@ const plugin = {
         if (filterSource === 'client') {
             Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
                 + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+        } else if (filterSource === 'filter-reset') {
+            Logger.log('dashboard: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
         } else {
             Logger.log('dashboard: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
         }
@@ -2030,26 +2075,29 @@ const plugin = {
         this._syncResultsPagerUi();
     },
 
-    _recomputeFilteredItems() {
+    _onScopeDataEnriched() {
         const lib = dashLib();
         if (this._state.cachedItems === null) return false;
-        const filters = this._currentClientFilters();
-        const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
-        if (filterInvalid.invalid) {
-            this._updateSubstringErrorUi();
-            return false;
+        const newBounds = this._reindexFilterListsFromScope(false);
+        if (!newBounds) return false;
+        const applied = this._state.appliedFilters;
+        if (!applied) return false;
+        const filters = Object.assign({}, applied);
+        const filterInvalid = lib.isPromptFilterInvalid(
+            filters.promptText, filters.caseSensitive, filters.regex
+        );
+        if (!filterInvalid.invalid) {
+            const sortOrder = filters.sortOrder;
+            const scopeItems = this._getFilterScopeItems();
+            const result = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
+            this._state.filteredItems = result;
+            Logger.debug('dashboard: scope data enriched — ' + result.length + ' / ' + scopeItems.length + ' item(s) after reindex');
         }
-        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
-        const sortOrder = filters.sortOrder;
-        const scopeItems = this._getFilterScopeItems();
-        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
-        this._state.filteredItems = result;
-        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
-        this._reindexFilterListsFromScope(false);
         this._updateResultsStatus();
-        this._renderFilterLists({ syncDraftFromApplied: Boolean(this._state.appliedFilters) });
+        this._renderFilterLists({ syncDraftFromApplied: true });
         this._syncResultsToolbarDerivedUi();
-        return true;
+        this._updateApplyFiltersUi();
+        return !filterInvalid.invalid;
     },
 
     _applySortAndRender() {
@@ -2126,9 +2174,6 @@ const plugin = {
                 item.hydrated = true;
                 updated++;
             }
-            if (updated > 0 && this._state.cachedItems) {
-                this._reindexFilterListsFromScope(false);
-            }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
         } finally {
@@ -2149,7 +2194,7 @@ const plugin = {
         this._patchTaskCard(itemId);
         try {
             await this._hydrateItems([item]);
-            this._recomputeFilteredItems();
+            this._onScopeDataEnriched();
             this._patchTaskCard(itemId);
             Logger.log('dashboard: card hydrated in place — ' + itemId);
         } catch (err) {
@@ -2239,7 +2284,7 @@ const plugin = {
                 }
             }
             if (hydratedTotal > 0) {
-                this._recomputeFilteredItems();
+                this._onScopeDataEnriched();
                 if (this._autoHydrateContextKey() === contextKey) {
                     this._renderResults();
                 }
@@ -2413,7 +2458,7 @@ const plugin = {
                 }
                 this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
             }
-            this._recomputeFilteredItems();
+            this._onScopeDataEnriched();
             const meta = this._getResultsPaginationMeta();
             if (meta && meta.page >= meta.totalPages) {
                 this._state.resultsPage = 0;
@@ -2693,6 +2738,21 @@ const plugin = {
             '  word-break: normal;',
             '  color: var(--muted-foreground, #64748b);',
             '  font-size: 10px;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-sticky] {',
+            '  position: sticky;',
+            '  top: 0;',
+            '  z-index: 2;',
+            '  background: var(--card, #ffffff);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items] {',
+            '  max-height: min(320px, 45vh);',
+            '  overflow-y: auto;',
+            '  overflow-x: hidden;',
+            '  -webkit-overflow-scrolling: touch;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
+            '  box-shadow: 0 1px 0 var(--border, #e2e8f0);',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -2828,6 +2888,15 @@ const plugin = {
     _btnPrimaryDisabledStyle() {
         return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
     },
+    _navBtnStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a);';
+    },
+    _navBtnPrimaryStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
+    },
+    _navBtnPrimaryDisabledStyle() {
+        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    },
 
     _btnToggleStyle(active, colorKind) {
         const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
@@ -2878,16 +2947,35 @@ const plugin = {
             <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden;">
                 <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <nav style="display: flex; gap: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
-                            <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
-                            <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
+                            <div style="display: flex; gap: 0; min-width: 0;">
+                                <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
+                                <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <div id="wf-dash-actions-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
+                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
+                                </div>
+                                <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
+                                    <button type="button" id="wf-dash-reset-filters" style="${this._navBtnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-apply-filters" style="${this._navBtnPrimaryStyle()}">Apply</button>
+                                </div>
+                            </div>
                         </nav>
+                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
+                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
+                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
+                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
+                        </div>
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
                                 <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                                    <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
-                                    <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 8px; font-weight: 600;">Contributor search</div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -2940,7 +3028,6 @@ const plugin = {
                                         </div>
                                         <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
                                     </div>
-                                    <div id="wf-dash-range-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
@@ -2951,14 +3038,6 @@ const plugin = {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff);">
-                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._btnStyle()}">Clear Parameters</button>
-                                    <button type="button" id="wf-dash-search" style="${this._btnPrimaryStyle()}">Search</button>
-                                </div>
-                                <div id="wf-dash-universal-hint" style="display: none; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 8px;"></div>
-                                <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626); margin-top: 8px;"></div>
                             </div>
                         </div>
 
@@ -2985,18 +3064,13 @@ const plugin = {
                                     <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
                                         <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions (requires hydrated results)
                                     </label>
-                                    <div id="wf-dash-substring-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
-                                    <div style="${hint} margin-bottom: 8px;">Uncheck to hide; all checked shows everything from the search.</div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
                                 </div>
-                            </div>
-                            <div style="flex-shrink: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 12px 14px; background: var(--card, #ffffff); display: flex; justify-content: flex-end;">
-                                <button type="button" id="wf-dash-apply-filters" style="${this._btnPrimaryStyle()}">Apply</button>
                             </div>
                         </div>
                     </div>
@@ -3068,25 +3142,27 @@ const plugin = {
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
                         <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
         const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-')) ? `
-                <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
-                    <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
-                </div>` : '';
+                    <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                        <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
+                    </div>` : '';
         return `
-            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: hidden;">
-                <div style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
-                    <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
-                        <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
-                    </button>
-                    <span data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: none; align-items: center; gap: 6px; flex-shrink: 0;">
-                        ${bulk}
-                    </span>
-                    <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
-                    <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
-                        <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
-                    </button>
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
+                <div data-wf-dash-ms-sticky="${dashEscHtml(scopeKey)}">
+                    <div data-wf-dash-ms-header="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
+                        <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
+                            <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
+                        </button>
+                        <span data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: none; align-items: center; gap: 6px; flex-shrink: 0;">
+                            ${bulk}
+                        </span>
+                        <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                        <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
+                            <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
+                        </button>
+                    </div>
+                    ${filterRow}
                 </div>
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
-                    ${filterRow}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                     </div>
@@ -3260,8 +3336,12 @@ const plugin = {
         }
         const caseEl = this._q('#wf-dash-case');
         if (caseEl) caseEl.addEventListener('change', () => this._updateSubstringErrorUi());
+        const hiddenVersions = this._q('#wf-dash-hidden-versions');
+        if (hiddenVersions) hiddenVersions.addEventListener('change', () => this._updateApplyFiltersUi());
         const applyFilters = this._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
+        const resetFilters = this._q('#wf-dash-reset-filters');
+        if (resetFilters) resetFilters.addEventListener('click', () => this._resetFiltersToDefaults());
 
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) {
@@ -3477,7 +3557,7 @@ const plugin = {
     },
 
     _msPanelOpenStyle() {
-        return 'display: block; width: 100%; min-width: 0; overflow-x: hidden; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+        return 'display: block; width: 100%; min-width: 0; overflow-x: hidden; overflow-y: visible; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
     },
 
     _msItemsContainerStyle() {
@@ -3497,7 +3577,7 @@ const plugin = {
         const hasBulkActions = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-bulk-actions') === '1');
         const filterWrap = this._q('[data-wf-dash-ms-filter-wrap="' + scopeKey + '"]');
         if (filterWrap) {
-            const showFilter = optionCount >= 5;
+            const showFilter = open && optionCount >= 5;
             if (!showFilter) {
                 const input = filterWrap.querySelector('[data-wf-dash-ms-filter]');
                 if (input && input.value) {
@@ -3539,7 +3619,11 @@ const plugin = {
         const toggles = wrap ? wrap.querySelectorAll('[data-wf-dash-ms-toggle="' + scopeKey + '"]') : [];
         const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
         if (panel) panel.style.cssText = open ? this._msPanelOpenStyle() : 'display: none;';
-        if (wrap) wrap.style.width = '';
+        if (wrap) {
+            wrap.style.width = '';
+            if (open) wrap.setAttribute('data-wf-dash-ms-open', '1');
+            else wrap.removeAttribute('data-wf-dash-ms-open');
+        }
         toggles.forEach((toggle) => toggle.setAttribute('aria-expanded', open ? 'true' : 'false'));
         if (chevron) chevron.textContent = open ? '▾' : '▸';
         this._syncMsDropdownChrome(scopeKey);
@@ -3562,11 +3646,48 @@ const plugin = {
         this._syncAllMsDropdowns();
     },
 
+    _msDropdownScrollEl(scopeKey) {
+        const panelId = (scopeKey && scopeKey.startsWith('filter-'))
+            ? '#wf-dash-left-panel-filters'
+            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search' : null);
+        if (!panelId) return null;
+        const panel = this._q(panelId);
+        if (!panel || panel.style.display === 'none') return null;
+        for (const child of panel.children) {
+            if (!(child instanceof this._pageWindow().HTMLElement)) continue;
+            const oy = this._pageWindow().getComputedStyle(child).overflowY;
+            if (oy === 'auto' || oy === 'scroll') return child;
+        }
+        return null;
+    },
+
+    _scrollOpenedMsDropdownIntoView(scopeKey) {
+        const wrap = this._msWrapEl(scopeKey);
+        const scrollEl = this._msDropdownScrollEl(scopeKey);
+        if (!wrap || !scrollEl) return;
+        requestAnimationFrame(() => {
+            const scrollRect = scrollEl.getBoundingClientRect();
+            const wrapRect = wrap.getBoundingClientRect();
+            const extendsBelow = wrapRect.bottom > scrollRect.bottom + 1;
+            if (!extendsBelow) return;
+            const delta = wrapRect.top - scrollRect.top;
+            if (Math.abs(delta) < 1) return;
+            const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+            const next = Math.max(0, Math.min(scrollEl.scrollTop + delta, maxScroll));
+            if (next !== scrollEl.scrollTop) {
+                scrollEl.scrollTop = next;
+                Logger.debug('dashboard: scrolled filter menu into view — ' + scopeKey);
+            }
+        });
+    },
+
     _toggleMsDropdown(scopeKey) {
         const wasOpen = this._isMsDropdownOpen(scopeKey);
         this._state.msDropdownOpen = {};
-        if (!wasOpen) this._state.msDropdownOpen[scopeKey] = true;
+        const opening = !wasOpen;
+        if (opening) this._state.msDropdownOpen[scopeKey] = true;
         this._syncAllMsDropdowns();
+        if (opening) this._scrollOpenedMsDropdownIntoView(scopeKey);
     },
 
     _applyMsDropdownFilter(scopeKey, query) {
@@ -3862,6 +3983,7 @@ const plugin = {
             errEl.style.display = 'none';
             errEl.textContent = '';
         }
+        this._syncLeftMessagesBar();
     },
 
     _refreshCatalogDependentUi() {
@@ -3880,6 +4002,7 @@ const plugin = {
         this._renderSearchTeamsList();
         this._renderSearchProjectsList();
         this._renderSearchEnvsList();
+        this._syncLeftMessagesBar();
     },
 
     _selectedFromList(scopeKey) {
@@ -4008,9 +4131,11 @@ const plugin = {
         const options = this._state.filterListOptions;
         if (!this._state.cachedItems || !options) {
             this._resetFilterLists();
+            this._updateApplyFiltersUi();
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
+        const prevBounds = this._state.filterListBoundsPrev || {};
         const applied = this._state.appliedFilters;
         const draft = (syncDraftFromApplied && applied)
             ? applied
@@ -4032,9 +4157,13 @@ const plugin = {
             if (wrap) wrap.style.display = '';
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const irrelevantSet = irrelevance[draftKey] || new Set();
-            const prevSelected = (!syncDraftFromApplied || !applied)
-                ? new Set(this._selectedFromList(scopeKey))
-                : null;
+            const optionIds = optionItems.map((it) => it.id);
+            const prevSelected = syncDraftFromApplied
+                ? null
+                : new Set(this._selectedFromList(scopeKey));
+            const checkedIds = this._checkedIdsForFilterScope(
+                draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
+            );
             itemsEl.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
                 optionItems,
@@ -4043,20 +4172,14 @@ const plugin = {
                 false,
                 irrelevantSet
             );
-            if (syncDraftFromApplied && applied) {
-                const selected = new Set(applied[draftKey] || []);
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = selected.has(cb.value);
-                });
-            } else if (prevSelected) {
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevSelected.has(cb.value);
-                });
-            }
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                cb.checked = checkedIds.has(cb.value);
+            });
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
             if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
         }
+        this._state.filterListBoundsPrev = listBounds;
         this._updateApplyFiltersUi();
         Logger.debug('dashboard: filter lists rendered');
     },
@@ -4147,10 +4270,47 @@ const plugin = {
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
         if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
+        const searchActions = this._q('#wf-dash-actions-search');
+        const filterActions = this._q('#wf-dash-actions-filters');
+        if (searchActions) searchActions.style.display = tab === 'search' ? 'flex' : 'none';
+        if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
         this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
             btn.style.cssText = this._leftTabStyle(active);
         });
+        this._syncLeftMessagesBar();
+    },
+
+    _isMessageElVisible(el) {
+        if (!el || el.style.display === 'none') return false;
+        return Boolean((el.textContent || '').trim()) || el.children.length > 0;
+    },
+
+    _syncLeftMessagesBar() {
+        const bar = this._q('#wf-dash-left-messages');
+        if (!bar) return;
+        const tab = this._state.leftTab || 'search';
+        const sessionBanner = this._q('#wf-dash-session-refresh-banner');
+        const bootstrapErr = this._q('#wf-dash-bootstrap-error');
+        const universal = this._q('#wf-dash-universal-hint');
+        const rangeErr = this._q('#wf-dash-range-error');
+        const searchErr = this._q('#wf-dash-search-error');
+        const substringErr = this._q('#wf-dash-substring-error');
+        const applyHint = this._q('#wf-dash-apply-hint');
+        const sharedVisible = this._isMessageElVisible(sessionBanner) || this._isMessageElVisible(bootstrapErr);
+        const searchVisible = sharedVisible
+            || this._isMessageElVisible(universal)
+            || this._isMessageElVisible(rangeErr)
+            || this._isMessageElVisible(searchErr);
+        const filtersVisible = sharedVisible
+            || this._isMessageElVisible(substringErr)
+            || this._isMessageElVisible(applyHint);
+        const show = tab === 'filters' ? filtersVisible : searchVisible;
+        if (show) {
+            bar.style.display = 'flex';
+        } else {
+            bar.style.display = 'none';
+        }
     },
 
     // ── Dirty / range validation ──
@@ -4257,20 +4417,28 @@ const plugin = {
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
             searchBtn.style.cssText = searchDisabled
-                ? this._btnPrimaryDisabledStyle()
-                : this._btnPrimaryStyle();
+                ? this._navBtnPrimaryDisabledStyle()
+                : this._navBtnPrimaryStyle();
         }
         this._syncFieldClearButtons();
+        this._syncLeftMessagesBar();
         return { check, isUniversal, blankBlocked };
     },
 
     _isFilterSelectionValid() {
         if (!this._state.cachedItems) return false;
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        const applied = this._state.appliedFilters;
+        const options = this._state.filterListOptions;
+        const listBounds = options ? this._listBoundsFromOptions(options) : {};
+        for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
             if (!this._isFilterScopeVisible(scopeKey)) continue;
             const all = this._allFromList(scopeKey);
             if (all.length === 0) continue;
-            if (this._selectedFromList(scopeKey).length === 0) return false;
+            if (this._selectedFromList(scopeKey).length > 0) continue;
+            const boundIds = listBounds[draftKey] || [];
+            const appliedSel = (applied && applied[draftKey]) || [];
+            if (this._isDimensionAllSelected(appliedSel, boundIds)) continue;
+            return false;
         }
         return true;
     },
@@ -4287,7 +4455,7 @@ const plugin = {
 
     _filtersDraftDiffersFromApplied() {
         const applied = this._state.appliedFilters;
-        if (!applied) return false;
+        if (!applied) return this._state.cachedItems !== null;
         const draft = this._currentClientFilters();
         if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
@@ -4322,12 +4490,27 @@ const plugin = {
         const selectionValid = this._isFilterSelectionValid();
         const hasPendingChanges = this._filtersDraftDiffersFromApplied();
         const applyBtn = this._q('#wf-dash-apply-filters');
+        const resetFiltersBtn = this._q('#wf-dash-reset-filters');
+        const noResults = !this._state.cachedItems;
+        const disabled = noResults || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
-            const disabled = !this._state.cachedItems || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
             applyBtn.disabled = disabled;
-            applyBtn.style.cssText = disabled ? this._btnPrimaryDisabledStyle() : this._btnPrimaryStyle();
+            applyBtn.style.cssText = disabled ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
+        }
+        if (resetFiltersBtn) {
+            resetFiltersBtn.disabled = noResults || Boolean(this._state.loading);
+        }
+        const applyHint = this._q('#wf-dash-apply-hint');
+        if (applyHint) {
+            if (disabled && this._state.cachedItems && !selectionValid) {
+                applyHint.textContent = 'Select at least one option in each filter group.';
+                applyHint.style.display = 'block';
+            } else {
+                applyHint.style.display = 'none';
+            }
         }
         this._syncFieldClearButtons();
+        this._syncLeftMessagesBar();
     },
 
     _updateSubstringErrorUi() {
@@ -4512,7 +4695,34 @@ const plugin = {
         this._state.sessionRefreshRequired = false;
         this._syncDashSessionRefreshBanner();
         this._validateRangeUi();
-        Logger.log('dashboard: search parameters cleared');
+        Logger.log('dashboard: search parameters reset');
+    },
+
+    _clearFilterUiFields() {
+        const prompt = this._q('#wf-dash-prompt');
+        if (prompt) prompt.value = '';
+        const hidden = this._q('#wf-dash-hidden-versions');
+        if (hidden) hidden.checked = false;
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = 'desc';
+        ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
+            const el = this._q(sel);
+            if (el) el.checked = false;
+        });
+        this._updateSubstringErrorUi();
+        this._syncFieldClearButtons();
+    },
+
+    _resetFiltersToDefaults() {
+        if (!this._state.cachedItems) {
+            Logger.debug('dashboard: filter reset skipped — no results loaded');
+            return;
+        }
+        this._clearFilterUiFields();
+        const ok = this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
+        if (ok) {
+            Logger.log('dashboard: filters reset to defaults (all options selected)');
+        }
     },
 
     _clearResults() {
@@ -4593,6 +4803,7 @@ const plugin = {
         }
         const el = this._q('#wf-dash-search-error');
         if (el) { el.textContent = text ? 'Error: ' + text : ''; el.style.display = text ? 'block' : 'none'; }
+        this._syncLeftMessagesBar();
         this._updateResultsStatus();
         this._renderResults();
     },
