@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4853,12 +4853,17 @@ const plugin = {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
+    _qaFlaggedChipStyle(fontWeight) {
+        const weight = fontWeight || '700';
+        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: ${weight}; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG};`;
+    },
+
     _qaFlaggedBadgeStyle() {
-        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG}; border: 1px solid ${DASH_FLAGGED_BORDER};`;
+        return this._qaFlaggedChipStyle('700');
     },
 
     _qaFlaggedIssueBadgeStyle() {
-        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG}; border: 1px solid ${DASH_FLAGGED_BORDER};`;
+        return this._qaFlaggedChipStyle('600');
     },
 
     _disputeBlockStyle() {
