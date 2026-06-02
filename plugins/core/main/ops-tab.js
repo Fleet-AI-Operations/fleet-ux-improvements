@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.7',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2414,12 +2414,22 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
+    _syncVerifierStatusRow(modal) {
+        const row = this._opsQuery(modal, '#wf-ops-verifier-status-row', 'verifierStatusRow');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
+        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopyRow');
+        if (!row) return;
+        const hasStatus = Boolean(status && (status.textContent || '').trim());
+        const copyVisible = copyBtn && copyBtn.style.display !== 'none';
+        row.style.display = hasStatus || copyVisible ? 'flex' : 'none';
+    },
+
     _setOpsVerifierStatus(modal, message, isError) {
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
         if (!status) return;
         status.textContent = message || '';
-        status.style.display = message ? 'block' : 'none';
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+        this._syncVerifierStatusRow(modal);
     },
 
     _findVerifierContentMatchStarts(text, query) {
@@ -2507,6 +2517,7 @@ const plugin = {
         if (copyBtn) {
             copyBtn.style.display = text ? 'inline-block' : 'none';
         }
+        this._syncVerifierStatusRow(modal);
 
         if (!output) {
             this._updateVerifierContentSearchUi(modal);
@@ -2620,7 +2631,7 @@ const plugin = {
         this._opsTabState = {
             taskInput: taskInput ? taskInput.value : '',
             verifierInput: verifierInput ? verifierInput.value : '',
-            verifierStatus: status && status.style.display !== 'none' ? (status.textContent || '') : '',
+            verifierStatus: status ? (status.textContent || '') : '',
             verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
             verifierOutput: this._opsVerifierSourceText || '',
             verifierContentSearchQuery: this._opsVerifierContentSearch.query || '',
@@ -3098,6 +3109,9 @@ const plugin = {
                                 border: 1px solid var(--border, #e5e5e5);
                                 border-radius: 6px;
                             ">Fetch</button>
+                        </div>
+                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <div id="wf-ops-verifier-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                             <button type="button" id="wf-ops-copy-verifier" style="
                                 display: none;
                                 flex-shrink: 0;
@@ -3112,7 +3126,6 @@ const plugin = {
                                 transition: background 0.2s, color 0.2s;
                             ">Copy</button>
                         </div>
-                        <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                         <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
                             display: none;
                             width: 100%;
@@ -3135,11 +3148,15 @@ const plugin = {
                         align-items: center;
                         flex-wrap: wrap;
                         flex-direction: row;
+                        justify-content: flex-start;
+                        width: 100%;
                     ">
                         <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap;">Search in code:</label>
                         <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
-                            flex: 1;
-                            min-width: 140px;
+                            flex: 0 0 auto;
+                            width: 30%;
+                            max-width: 11rem;
+                            min-width: 6rem;
                             padding: 6px 10px;
                             font-size: 12px;
                             border: 1px solid var(--border, #e5e5e5);
