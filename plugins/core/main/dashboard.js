@@ -182,7 +182,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.49',
+    _version: '3.50',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -219,6 +219,8 @@ const plugin = {
             hydrateUi: {},
             hydrateBulkActive: false,
             hydrateFetchActive: false,
+            autoHydrateActive: false,
+            autoHydrateScheduled: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
             activeTab: 'search-output',
@@ -2082,6 +2084,82 @@ const plugin = {
         return (this._getViewItems() || []).filter((it) => !it.hydrated);
     },
 
+    _getUnhydratedOnPage() {
+        return this._getPaginatedViewItems().filter((it) => !it.hydrated);
+    },
+
+    _autoHydrateContextKey() {
+        const tab = this._state.resultsKindTab || 'all';
+        const page = this._state.resultsPage || 0;
+        const total = (this._getViewItems() || []).length;
+        return page + '|' + tab + '|' + total;
+    },
+
+    _scheduleAutoHydrateVisiblePage() {
+        if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
+        if (!this._bulkHydrateShowable()) return;
+        if (this._getUnhydratedOnPage().length === 0) return;
+        this._state.autoHydrateScheduled = true;
+        queueMicrotask(() => {
+            this._state.autoHydrateScheduled = false;
+            void this._autoHydrateVisiblePage();
+        });
+    },
+
+    async _autoHydrateVisiblePage() {
+        if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
+            return;
+        }
+        const contextKey = this._autoHydrateContextKey();
+        const toHydrate = this._getUnhydratedOnPage();
+        if (toHydrate.length === 0) return;
+
+        const meta = this._getResultsPaginationMeta();
+        Logger.log('dashboard: auto-hydrate page — ' + toHydrate.length + ' card(s)'
+            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+
+        this._state.autoHydrateActive = true;
+        let hydratedTotal = 0;
+        try {
+            for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+                if (this._autoHydrateContextKey() !== contextKey) {
+                    Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
+                    break;
+                }
+                const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+                for (const item of chunk) {
+                    this._getHydrateUi(item.id).status = 'loading';
+                    this._patchTaskCard(item.id);
+                }
+                hydratedTotal += await this._hydrateItems(chunk);
+                for (const item of chunk) {
+                    this._getHydrateUi(item.id).status = 'idle';
+                    this._patchTaskCard(item.id);
+                }
+            }
+            if (hydratedTotal > 0) {
+                this._recomputeFilteredItems();
+                if (this._autoHydrateContextKey() === contextKey) {
+                    this._renderResults();
+                }
+                Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s)');
+            }
+        } catch (err) {
+            for (const item of toHydrate) {
+                this._getHydrateUi(item.id).status = 'idle';
+                this._patchTaskCard(item.id);
+            }
+            if (!this._handleDashSessionRefreshError(err)) {
+                Logger.warn('dashboard: auto-hydrate page failed', err);
+            }
+        } finally {
+            this._state.autoHydrateActive = false;
+            this._syncBulkHydrateUi();
+        }
+    },
+
     _bulkHydrateShowable() {
         const committed = this._state.committed;
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
@@ -2194,7 +2272,7 @@ const plugin = {
     },
 
     async _bulkHydrateVisible() {
-        if (!this._bulkHydrateShowable() || this._state.hydrateBulkActive) return;
+        if (!this._bulkHydrateShowable() || this._state.hydrateBulkActive || this._state.autoHydrateActive) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             Logger.warn('dashboard: bulk hydrate skipped — dashboardData not loaded');
             return;
@@ -2351,6 +2429,7 @@ const plugin = {
         this._built = true;
         this._attachListeners();
         this._ensureSpinnerKeyframes();
+        this._ensureMsOptionStyles();
         this._setActiveTab(this._state.activeTab);
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
@@ -2391,6 +2470,52 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-spinner-style';
         style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        this._modal.appendChild(style);
+    },
+
+    _ensureMsOptionStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-ms-option-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-ms-option-style';
+        style.textContent = [
+            '#wf-dash-modal label[data-wf-dash-ms-option] {',
+            '  display: grid !important;',
+            '  grid-template-columns: auto minmax(0, 1fr);',
+            '  column-gap: 8px;',
+            '  align-items: start;',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-option-cb] {',
+            '  grid-column: 1;',
+            '  display: flex;',
+            '  align-items: flex-start;',
+            '  padding-top: 1px;',
+            '}',
+            '#wf-dash-modal label[data-wf-dash-ms-option] input[type="checkbox"] {',
+            '  display: inline-block !important;',
+            '  width: auto !important;',
+            '  max-width: none !important;',
+            '  flex: none !important;',
+            '  margin: 0 !important;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-option-text] {',
+            '  grid-column: 2;',
+            '  min-width: 0;',
+            '  overflow-wrap: break-word;',
+            '  word-break: normal;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-option-name] {',
+            '  overflow-wrap: break-word;',
+            '  word-break: normal;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-option-email] {',
+            '  overflow-wrap: break-word;',
+            '  word-break: normal;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  font-size: 10px;',
+            '}'
+        ].join('\n');
         this._modal.appendChild(style);
     },
 
@@ -2699,7 +2824,7 @@ const plugin = {
                     <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                 </div>` : '';
         return `
-            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 100%;">
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: hidden;">
                 <div style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
                     <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
                         <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
@@ -3081,11 +3206,11 @@ const plugin = {
     },
 
     _msPanelOpenStyle() {
-        return 'display: block; width: 100%; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+        return 'display: block; width: 100%; min-width: 0; overflow-x: hidden; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
     },
 
     _msItemsContainerStyle() {
-        return 'padding: 4px; display: flex; flex-direction: column; align-items: stretch; width: 100%; box-sizing: border-box;';
+        return 'padding: 4px; display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; overflow-x: hidden; box-sizing: border-box;';
     },
 
     _msOptionCount(scopeKey) {
@@ -3451,23 +3576,22 @@ const plugin = {
         const singleOption = items.length === 1;
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
-            const textColStyle = dim
-                ? 'min-width: 0; flex: 1; color: var(--muted-foreground, #64748b); opacity: 0.5;'
-                : 'min-width: 0; flex: 1;';
+            const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
             const email = String(it.email || '').trim();
+            const displayName = String(it.name || it.label || '').trim();
             const textHtml = email
-                ? `<div style="${textColStyle}">
-                    <div>${dashEscHtml(it.name || it.label)}</div>
-                    <div style="color: var(--muted-foreground, #64748b); font-size: 10px; word-break: break-all;">${dashEscHtml(email)}</div>
-                </div>`
-                : `<div style="${textColStyle} word-break: break-word;">${dashEscHtml(it.label)}</div>`;
+                ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
+                    <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
+                    <div data-wf-dash-ms-option-email="1">${dashEscHtml(email)}</div>
+                </span>`
+                : `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(it.label)}</span>`;
             const labelCursor = singleOption ? 'default' : 'pointer';
             const labelOpacity = singleOption ? '0.85' : '';
             const checked = singleOption || defaultChecked;
             const disabledAttr = singleOption ? ' disabled' : '';
             return `
-            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="display: flex; align-items: flex-start; gap: 8px; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a); width: 100%; box-sizing: border-box;${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
-                <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}" style="flex-shrink: 0; margin-top: 1px;"${checked ? ' checked' : ''}${disabledAttr}>
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a);${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
+                <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${checked ? ' checked' : ''}${disabledAttr}></span>
                 ${textHtml}
             </label>`;
         }).join('');
@@ -3946,6 +4070,8 @@ const plugin = {
             this._state.filteredItems = null;
             this._state.appliedFilters = null;
             this._state.hydrateBulkActive = false;
+            this._state.autoHydrateActive = false;
+            this._state.autoHydrateScheduled = false;
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
@@ -4063,6 +4189,8 @@ const plugin = {
         this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
         this._state.hydrateFetchActive = false;
+        this._state.autoHydrateActive = false;
+        this._state.autoHydrateScheduled = false;
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -4294,6 +4422,7 @@ const plugin = {
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
+        this._scheduleAutoHydrateVisiblePage();
     },
 
     _copyChipHtml(text) {
