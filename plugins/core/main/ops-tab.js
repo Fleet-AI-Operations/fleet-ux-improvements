@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1312,8 +1312,10 @@ const plugin = {
             '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
-            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:var(--brand,#4f46e5);background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
-            '.wf-ops-edit-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
+            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-edit-btn:hover{background:#ca8a04!important;color:#fff!important;border-color:#ca8a04!important;}',
+            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex-shrink:0;border-radius:6px;color:var(--muted-foreground,#64748b);border:1px solid var(--border,#e5e5e5);background:var(--background,white);text-decoration:none;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
+            '.wf-ops-profile-link-btn:hover{background:var(--foreground,#0f172a)!important;color:var(--background,#fff)!important;border-color:var(--foreground,#0f172a)!important;}',
             '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
             '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
             '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
@@ -1771,16 +1773,29 @@ const plugin = {
         if (session && session.editing) {
             const hasChanges = this._opsMemberEditHasChanges(session);
             const confirmDisabled = !hasChanges || session.applying;
-            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
+            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-right:8px;align-items:center;">' +
                 '<button type="button" class="wf-ops-confirm-btn" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
                     (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
                 '<button type="button" class="wf-ops-cancel-btn" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
                     (session.applying ? ' disabled' : '') + '>Cancel</button>' +
                 '</span>';
         }
-        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
+        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-right:8px;align-items:center;">' +
             '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
             '</span>';
+    },
+
+    _opsProfileLinkIconSvg() {
+        return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
+    },
+
+    _opsProfileLinkHtml(profileUrl, title) {
+        const url = String(profileUrl || '').trim();
+        if (!url) return '';
+        const label = title || 'Open profile in Fleet';
+        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn" ' +
+            'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
+            this._opsProfileLinkIconSvg() + '</a>';
     },
 
     _renderOpsMemberTeamRowHtml(label, member, session) {
@@ -1870,26 +1885,23 @@ const plugin = {
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
             text + '</div>';
 
-        const openAttr = isOpen ? ' open' : '';
+        const openAttr = isOpen !== false ? ' open' : '';
 
         return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
-            '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">' +
-                '<div style="min-width:0;flex:1;">' +
-                    '<div style="font-size:13px;font-weight:600;color:var(--foreground,#333);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-                        uiBadgeHtml + '<span>' + name + '</span>' +
-                    '</div>' +
-                    '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;">' + email + '</div>' +
+            '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:2px;align-items:start;">' +
+                '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                    uiBadgeHtml +
+                    '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
                 '</div>' +
-                '<a href="' + this._opsEscapeHtml(profileUrl) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-action-btn wf-ops-profile-btn" ' +
-                    'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);text-decoration:none;' +
-                    'padding:4px 8px;border:1px solid var(--border,#e5e5e5);border-radius:4px;background:var(--background,white);white-space:nowrap;">' +
-                    'Visit Profile' +
-                '</a>' +
+                '<div style="grid-row:span 2;align-self:center;">' +
+                    this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
+                '</div>' +
+                '<div style="font-size:11px;color:var(--muted-foreground,#666);min-width:0;">' + email + '</div>' +
             '</div>' +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
-                    '<span style="min-width:0;">▸ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
+                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
                     this._renderOpsMemberEditActionsHtml(memberId, session) +
+                    '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
                 '</summary>' +
                 '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
                     'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
@@ -1960,7 +1972,7 @@ const plugin = {
 
         wrap.style.display = 'block';
         wrap.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, true)).join('');
     },
 
     async _handleOpsTeamSearch(modal) {
