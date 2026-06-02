@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1728,6 +1728,11 @@ const plugin = {
             return;
         }
 
+        if (action === 'search-worker-output') {
+            this._openMemberInWorkerSearch(member);
+            return;
+        }
+
         if (action === 'edit') {
             this._startOpsMemberEdit(member);
             this._updateOpsMemberTileDom(modal, memberId, true);
@@ -1796,6 +1801,36 @@ const plugin = {
         return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn" ' +
             'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
             this._opsProfileLinkIconSvg() + '</a>';
+    },
+
+    _opsSearchWorkerOutputBtnHtml(memberId) {
+        const attrId = this._opsEscapeAttr(memberId);
+        return '<button type="button" class="wf-ops-action-btn wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
+            'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);padding:4px 8px;border:1px solid var(--border,#e5e5e5);' +
+            'border-radius:4px;background:var(--background,white);white-space:nowrap;cursor:pointer;">Search Worker Output</button>';
+    },
+
+    _opsMemberToAuthorPerson(member) {
+        if (!member || !member.id) return null;
+        return {
+            id: member.id,
+            full_name: member.full_name,
+            email: member.email
+        };
+    },
+
+    _openMemberInWorkerSearch(member) {
+        const person = this._opsMemberToAuthorPerson(member);
+        if (!person) {
+            Logger.warn('ops-tab: Search Worker Output skipped — missing member id');
+            return;
+        }
+        if (!Context.dashboard || typeof Context.dashboard.setAuthorTokens !== 'function') {
+            Logger.warn('ops-tab: Search Worker Output skipped — dashboard unavailable');
+            return;
+        }
+        Context.dashboard.setAuthorTokens([person], { replace: true, activeTab: 'search-output' });
+        Logger.log('ops-tab: Search Worker Output for ' + (person.full_name || person.id));
     },
 
     _renderOpsMemberTeamRowHtml(label, member, session) {
@@ -1893,7 +1928,8 @@ const plugin = {
                     uiBadgeHtml +
                     '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
                 '</div>' +
-                '<div style="grid-row:span 2;align-self:center;">' +
+                '<div style="grid-row:span 2;align-self:center;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">' +
+                    this._opsSearchWorkerOutputBtnHtml(memberId) +
                     this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
                 '</div>' +
                 '<div style="font-size:11px;color:var(--muted-foreground,#666);min-width:0;">' + email + '</div>' +

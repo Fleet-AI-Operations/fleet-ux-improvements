@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -204,7 +204,8 @@ const plugin = {
             close: () => this.close(),
             toggle: () => this.toggle(),
             isOpen: () => this._isOpen(),
-            switchFleetTeam: (teamId) => this._switchFleetTeam(teamId)
+            switchFleetTeam: (teamId) => this._switchFleetTeam(teamId),
+            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -3560,6 +3561,47 @@ const plugin = {
             return `No author match for "${query}".`;
         }
         return 'Author lookup failed — try again.';
+    },
+
+    _normalizeAuthorPerson(person) {
+        const id = String(person && person.id || '').trim();
+        if (!id) return null;
+        return {
+            id,
+            full_name: person.full_name,
+            email: person.email
+        };
+    },
+
+    _setAuthorTokens(persons, options) {
+        if (!this._modal) {
+            Logger.warn('dashboard: setAuthorTokens skipped — modal not open');
+            return;
+        }
+        const opts = options || {};
+        const replace = opts.replace !== false;
+        const activeTab = opts.activeTab;
+        const normalized = (Array.isArray(persons) ? persons : [])
+            .map((p) => this._normalizeAuthorPerson(p))
+            .filter(Boolean);
+        if (replace) {
+            this._state.draftTokens = normalized;
+        } else {
+            for (const person of normalized) {
+                if (!this._state.draftTokens.some((t) => t.id === person.id)) {
+                    this._state.draftTokens.push(person);
+                }
+            }
+        }
+        this._hideAuthorCandidates();
+        this._setAuthorError('');
+        const input = this._q('#wf-dash-author-input');
+        if (input) input.value = '';
+        this._renderAuthorTokens();
+        this._validateRangeUi();
+        if (activeTab) this._setActiveTab(activeTab);
+        const label = normalized.map((p) => p.full_name || p.id).join(', ') || '(none)';
+        Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
     },
 
     _addAuthorToken(person) {
