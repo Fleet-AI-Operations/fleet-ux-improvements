@@ -181,7 +181,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.53',
+    _version: '3.54',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1756,15 +1756,17 @@ const plugin = {
         const tab = this._state.resultsKindTab || 'all';
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
-        this._syncBulkHydrateUi();
         return this._listBoundsFromOptions(options);
+    },
+
+    _syncResultsToolbarDerivedUi() {
+        this._syncResultsRangeCountUi();
+        this._syncBulkHydrateUi();
     },
 
     _syncResultsListDerivedUi({ reindexFilters } = {}) {
         if (reindexFilters && this._state.cachedItems) {
             this._reindexFilterListsFromScope(false);
-        } else {
-            this._syncBulkHydrateUi();
         }
     },
 
@@ -1806,6 +1808,7 @@ const plugin = {
             this._updateResultsStatus();
             this._renderResults();
             this._updateResultsKindTabsUi();
+            this._syncResultsToolbarDerivedUi();
             return false;
         }
 
@@ -1848,14 +1851,13 @@ const plugin = {
         if (filterSource === 'client') {
             this._renderFilterLists();
             this._syncResultsListDerivedUi();
-        } else {
-            this._syncBulkHydrateUi();
         }
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
         this._updateApplyFiltersUi();
         this._renderResults();
         this._updateResultsKindTabsUi();
+        this._syncResultsToolbarDerivedUi();
         return true;
     },
 
@@ -1972,7 +1974,6 @@ const plugin = {
         this._state.resultsPage = next;
         Logger.log('dashboard: results page — ' + (next + 1) + ' / ' + meta.totalPages);
         this._renderResults();
-        this._syncBulkHydrateUi();
         this._syncResultsPagerUi();
     },
 
@@ -2029,8 +2030,7 @@ const plugin = {
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
         this._updateResultsStatus();
-        this._syncResultsListDerivedUi();
-        this._syncResultsRangeCountUi();
+        this._syncResultsToolbarDerivedUi();
         return true;
     },
 
@@ -2287,6 +2287,22 @@ const plugin = {
     _syncBulkHydrateUi() {
         const btn = this._q('#wf-dash-bulk-hydrate');
         if (!btn) return;
+        const committed = this._state.committed;
+        const canLabel = Boolean(
+            committed
+            && committed.searchDepth === 'quick'
+            && this._state.filteredItems !== null
+            && this._state.cachedItems !== null
+        );
+        if (canLabel) {
+            const kinds = this._committedSearchKinds(committed);
+            const tab = this._state.resultsKindTab || 'all';
+            const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
+            const unhydratedCount = this._getUnhydratedInView().length;
+            btn.textContent = unhydratedCount > 0
+                ? base + ' (' + unhydratedCount + ' remaining)'
+                : base;
+        }
         if (!this._bulkHydrateShowable()) {
             btn.style.display = 'none';
             return;
@@ -2297,8 +2313,6 @@ const plugin = {
             return;
         }
         btn.style.display = '';
-        const label = this._bulkHydrateLabel() || 'Hydrate results';
-        btn.textContent = label;
         btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
     },
 
@@ -2962,7 +2976,6 @@ const plugin = {
                 this._state.resultsPage = 0;
                 Logger.log('dashboard: results page size — ' + val);
                 this._renderResults();
-                this._syncBulkHydrateUi();
                 this._syncResultsPagerUi();
             });
         }
@@ -4160,7 +4173,7 @@ const plugin = {
             this._setSearchError('');
             this._setSearchButtonLoading(true);
             this._updateResultsKindTabsUi();
-            this._syncBulkHydrateUi();
+            this._syncResultsToolbarDerivedUi();
             this._updateResultsStatus();
             this._renderResults();
 
@@ -4222,7 +4235,7 @@ const plugin = {
                     this._updateResultsStatus();
                     this._renderResults();
                     this._updateResultsKindTabsUi();
-                    this._syncBulkHydrateUi();
+                    this._syncResultsToolbarDerivedUi();
                 }
             }
         } catch (err) {
@@ -4436,13 +4449,9 @@ const plugin = {
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
             el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}</span>`;
-            this._syncBulkHydrateUi();
-            this._syncResultsRangeCountUi();
             return;
         }
         el.textContent = '';
-        this._syncBulkHydrateUi();
-        this._syncResultsRangeCountUi();
     },
 
     // ── Results rendering ──
@@ -4482,14 +4491,12 @@ const plugin = {
                     ? 'No results in this tab.'
                     : 'No results match the current filters.';
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
-            this._syncResultsRangeCountUi();
-            this._syncBulkHydrateUi();
+            this._syncResultsToolbarDerivedUi();
             return;
         }
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
-        this._syncResultsRangeCountUi();
-        this._syncBulkHydrateUi();
+        this._syncResultsToolbarDerivedUi();
         this._scheduleAutoHydrateVisiblePage();
     },
 
