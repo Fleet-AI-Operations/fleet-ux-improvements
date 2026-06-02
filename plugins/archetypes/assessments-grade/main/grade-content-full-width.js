@@ -1,5 +1,5 @@
 // ============= grade-content-full-width.js =============
-// Archetype: assessments-grade (Grade Assessments at work/assessments/grade).
+// Archetype: assessments-grade (work/assessments/grade).
 // Removes max-w-6xl from the main content wrapper so the grading UI can use full width.
 
 const MAX_WIDTH_CLASS = 'max-w-6xl';

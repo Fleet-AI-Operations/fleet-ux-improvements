@@ -1,5 +1,5 @@
 // ============= grade-question-pasted-text.js =============
-// Archetype: assessments-grade — inject per-question pasted clipboard text into grading sections.
+// Archetype: assessments-grade-detail (work/assessments/grade/*) — per-question pasted clipboard text.
 
 const STYLE_ID = 'fleet-assessments-grade-paste-diff-style';
 const ROOT_ATTR = 'data-fleet-grade-pasted-text';

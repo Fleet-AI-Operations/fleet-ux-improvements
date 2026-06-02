@@ -1,5 +1,5 @@
 // ============= clipboard-event-relative-times.js =============
-// Archetype: assessments-grade (Grade Assessments at work/assessments/grade).
+// Archetype: assessments-grade-detail (work/assessments/grade/*).
 // Rewrites clipboard integrity event offsets (+Ns) as elapsed time (at Xm, Ys) with deltas.
 
 const EVENT_LINE_RE =
