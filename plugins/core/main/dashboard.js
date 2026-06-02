@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3054,9 +3054,10 @@ const plugin = {
         const openSettingsBtn = this._q('#wf-dash-open-settings');
         if (openSettingsBtn) {
             openSettingsBtn.addEventListener('click', () => {
+                this.close();
                 if (Context.settingsUi && typeof Context.settingsUi.openModal === 'function') {
                     Context.settingsUi.openModal({ forceSettings: true });
-                    Logger.log('dashboard: opened extension settings from dashboard');
+                    Logger.log('dashboard: closed dashboard and opened extension settings');
                 } else {
                     Logger.warn('dashboard: Context.settingsUi.openModal unavailable');
                 }

@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2633,21 +2633,41 @@ const plugin = {
         const opsWantsEnabled = this._getOpsTabWanted();
         const opsHasStoredPassword = this._hasOpsStoredPassword();
         const opsNeedsPassword = opsWantsEnabled && !opsHasStoredPassword;
+        const opsUnlocked = opsWantsEnabled && opsHasStoredPassword;
         const switchHTML = this._renderOpsSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled);
         const openOnSettings = this._getOpsDashboardOpenOnSettings();
-        const submoduleSwitchHTML = this._renderOpsSwitchHTML('wf-ops-dashboard-open-on-settings', openOnSettings);
+        const submoduleSwitchHTML = this._renderOpsSubSwitchHTML('wf-ops-dashboard-open-on-settings', openOnSettings);
         const passwordPanelDisplay = opsNeedsPassword ? 'block' : 'none';
-        const submoduleDisplay = opsWantsEnabled ? 'block' : 'none';
+        const suboptionsDisplay = opsWantsEnabled ? 'block' : 'none';
+        const openDashboardBtnDisplay = opsUnlocked ? 'block' : 'none';
         return `
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
-                    ${switchHTML}
-                </div>
-                <div id="wf-ops-dashboard-open-on-settings-wrap" style="display: ${submoduleDisplay}; margin-top: 10px; padding: 10px 14px 10px 22px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                        <div style="font-size: 13px; font-weight: 500; color: var(--foreground, #333);">Open dashboard when opening settings</div>
-                        ${submoduleSwitchHTML}
+                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
+                        ${switchHTML}
+                    </div>
+                    <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
+                            <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; flex: 1; min-width: 0;">
+                                Open dashboard when opening settings
+                            </label>
+                            ${submoduleSwitchHTML}
+                        </div>
+                        <button type="button" id="wf-ops-open-dashboard-btn" class="wf-ops-action-btn" style="
+                            display: ${openDashboardBtnDisplay};
+                            width: 100%;
+                            margin-top: 10px;
+                            padding: 8px 14px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: var(--brand, #4f46e5);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-sizing: border-box;
+                        ">Open Dashboard</button>
                     </div>
                 </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
@@ -2681,19 +2701,44 @@ const plugin = {
     },
 
     _syncOpsSettingsSubmoduleVisibility(modal) {
-        const wrap = this._opsQuery(modal, '#wf-ops-dashboard-open-on-settings-wrap', 'opsSubmoduleWrap');
-        if (!wrap) return;
-        wrap.style.display = this._getOpsTabWanted() ? 'block' : 'none';
+        const wrap = this._opsQuery(modal, '#wf-ops-dashboard-suboptions-wrap', 'opsSubmoduleWrap');
+        const openBtn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtn');
+        const wanted = this._getOpsTabWanted();
+        const unlocked = wanted && this._hasOpsStoredPassword();
+        if (wrap) wrap.style.display = wanted ? 'block' : 'none';
+        if (openBtn) openBtn.style.display = unlocked ? 'block' : 'none';
     },
 
     _renderOpsSwitchHTML(id, isEnabled) {
-        const sliderBg = isEnabled ? '#22c55e' : '#ccc';
-        const knobLeftOn = 23;
-        const knobLeftOff = 3;
-        const knobBottom = 3;
-        const knobLeft = isEnabled ? knobLeftOn : knobLeftOff;
+        return this._renderOpsToggleSwitchHTML(id, isEnabled, {
+            onColor: '#22c55e',
+            width: 44,
+            height: 24,
+            knobSize: 18,
+            knobLeftOn: 23,
+            knobLeftOff: 3,
+            knobBottom: 3
+        });
+    },
+
+    _renderOpsSubSwitchHTML(id, isEnabled) {
+        return this._renderOpsToggleSwitchHTML(id, isEnabled, {
+            onColor: '#6366f1',
+            width: 33,
+            height: 18,
+            knobSize: 13.5,
+            knobLeftOn: 17,
+            knobLeftOff: 3,
+            knobBottom: 2
+        });
+    },
+
+    _renderOpsToggleSwitchHTML(id, isEnabled, spec) {
+        const onColor = spec.onColor;
+        const sliderBg = isEnabled ? onColor : '#ccc';
+        const knobLeft = isEnabled ? spec.knobLeftOn : spec.knobLeftOff;
         return `
-            <label style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+            <label style="position: relative; display: inline-block; width: ${spec.width}px; height: ${spec.height}px; flex-shrink: 0;">
                 <input type="checkbox" id="${id}" ${isEnabled ? 'checked' : ''} style="opacity: 0; width: 0; height: 0; position: absolute;">
                 <span class="wf-toggle-slider" style="
                     position: absolute;
@@ -2702,13 +2747,13 @@ const plugin = {
                     background-color: ${sliderBg};
                     transition: 0.2s;
                     border-radius: 24px;
-                " data-wf-on-color="#22c55e" data-wf-knob-left-on="${knobLeftOn}" data-wf-knob-left-off="${knobLeftOff}" data-wf-knob-bottom="${knobBottom}">
+                " data-wf-on-color="${onColor}" data-wf-knob-left-on="${spec.knobLeftOn}" data-wf-knob-left-off="${spec.knobLeftOff}" data-wf-knob-bottom="${spec.knobBottom}">
                     <span style="
                         position: absolute;
-                        height: 18px;
-                        width: 18px;
+                        height: ${spec.knobSize}px;
+                        width: ${spec.knobSize}px;
                         left: ${knobLeft}px;
-                        bottom: ${knobBottom}px;
+                        bottom: ${spec.knobBottom}px;
                         background-color: white;
                         transition: 0.2s;
                         border-radius: 50%;
@@ -3137,12 +3182,31 @@ const plugin = {
         });
     },
 
+    _attachOpsOpenDashboardButtonListener(modal) {
+        const btn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtnAttach');
+        if (!btn || btn.dataset.wfOpsOpenDashboardBound === '1') return;
+        btn.dataset.wfOpsOpenDashboardBound = '1';
+        btn.addEventListener('click', () => {
+            if (!this._getOpsTabWanted() || !this._hasOpsStoredPassword()) {
+                Logger.warn('ops-tab: Open Dashboard skipped — not unlocked');
+                return;
+            }
+            if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+                Context.dashboard.open();
+                Logger.log('ops-tab: opened Ops dashboard from settings');
+            } else {
+                Logger.warn('ops-tab: Open Dashboard skipped — Context.dashboard unavailable');
+            }
+        });
+    },
+
     _attachOpsSettingsListeners(modal, settingsPlugin) {
         if (!modal) return;
         this._injectOpsSpinnerStyle();
         this._attachOpsPasswordListeners(modal, settingsPlugin);
         this._attachOpsTabToggleListener(modal, settingsPlugin);
         this._attachOpsDashboardOpenOnSettingsListener(modal);
+        this._attachOpsOpenDashboardButtonListener(modal);
         this._syncOpsSettingsSubmoduleVisibility(modal);
     },
 
