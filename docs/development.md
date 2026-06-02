@@ -15,7 +15,7 @@ This document defines the **step-by-step** workflow for creating, testing, and p
 - **Module / Plugin**: A JS file that exports a `plugin` object and is loaded based on `archetypes.json`.
 - **Archetype**: A page type (e.g., `qa-tool-use`) with its own plugin list, URL pattern, and optional disambiguation selectors.
 - **Userscript**: `fleet.user.js` installed in Tampermonkey, which fetches `archetypes.json` and plugins from GitHub at runtime.
-- **Core plugin**: Runs on every page regardless of archetype (e.g., settings UI, ops tab).
+- **Core plugin**: Runs on every page regardless of archetype (e.g., settings UI, Ops dashboard).
 - **Dev plugin**: Like a core plugin but only loaded on non-main-like branches (e.g., logger panel).
 - **Archetype plugin**: Runs only on the matching archetype's URL.
 
@@ -112,7 +112,7 @@ Plugins can declare a `subOptions` array to expose per-plugin toggles in the set
 | `archetypesVersion` | string | Bumped by `update-versions.sh` whenever plugin entries change |
 | `coreOnlyMode` | boolean | When `true`, archetype plugins are skipped; core plugins (settings UI) still run. Toggle with `toggle-core-only-mode.sh`. |
 | `logs` | object | Remote log flags: `{ debug, verbose, submodule }`. When set, overrides local GM storage defaults. Used to enable logging for all users without them changing settings. |
-| `opsAccess` | object | `{ passwordHash: "sha256-..." }`. Hash for the ops tab password gate. Generate with `hash-ops-password.sh`. |
+| `opsAccess` | object | `{ passwordHash: "sha256-..." }`. Hash for the Ops dashboard password gate. Generate with `hash-ops-password.sh`. |
 | `opsSecrets` | object | `{ encryptedFile: "ops-secrets.enc.json" }`. Path (repo root) to the committed encrypted secrets JSON. Plaintext lives in gitignored `local/ops-secrets.json`; encrypt with `encrypt-ops-secrets.sh`. |
 | `corePlugins` | array | Core plugins loaded on every page (all branches). |
 | `devPlugins` | array | Dev-only core plugins; only loaded on non-main-like branches. |
@@ -186,8 +186,8 @@ Scripts in `dev/utils/` automate branch creation, `fleet.user.js` sync, version 
 | **apply-archetypes-boolean-patch.sh** | Validate and merge boolean-only edits into `archetypes.json`. Used by the Apply archetypes boolean patch GitHub Actions workflow. |
 | **delete-branch.sh** | Delete the current branch locally and on origin. Use after a branch has been merged. |
 | **toggle-core-only-mode.sh** | Toggle `coreOnlyMode` in `archetypes.json` (and compute hashes). |
-| **hash-ops-password.sh** | Generate a SHA-256 hash for the ops tab password and print the value to paste into `archetypes.json`. |
-| **encrypt-ops-secrets.sh** | Encrypt gitignored `local/ops-secrets.json` with the Ops password into committed `ops-secrets.enc.json` (AES-256-GCM + PBKDF2). The Ops tab decrypts this file at runtime using the password stored on the device. |
+| **hash-ops-password.sh** | Generate a SHA-256 hash for the Ops dashboard password and print the value to paste into `archetypes.json`. |
+| **encrypt-ops-secrets.sh** | Encrypt gitignored `local/ops-secrets.json` with the Ops password into committed `ops-secrets.enc.json` (AES-256-GCM + PBKDF2). `ops-tab.js` decrypts this file at runtime using the password stored on the device. |
 
 Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
@@ -240,18 +240,19 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
 **encrypt-ops-bundle.sh** — `./dev/utils/encrypt-ops-bundle.sh encrypt` (preferred)
 
-Operator-only bundle (team UUIDs, PostgREST table/query catalog, Fleet web paths) for the Ops tab:
+Operator-only bundle (team UUIDs, PostgREST table/query catalog, Fleet web paths) for the Ops dashboard:
 
 1. Copy `dev/ops-bundle.example.json` structure into `local/ops-bundle.json` (`local/` is gitignored).
-2. Put the Ops password in `local/PostgREST/password` (gitignored). Same password unlocks the Ops tab in Settings.
-3. Edit `local/ops-bundle.json` when schema or team lists change.
-4. Run `./dev/utils/encrypt-ops-bundle.sh encrypt` (reads the password file automatically).
-5. Run `./dev/utils/hash-ops-password.sh` when the password changes; update `archetypes.json` → `opsAccess.passwordHash`.
-6. Commit `ops-secrets.enc.json` at the repo root only. Never commit `local/ops-bundle.json` or `local/PostgREST/password`.
+2. Put the Ops password in `local/PostgREST/password` (gitignored). Same password unlocks **Enable Ops Dashboard** in Settings.
+3. With **Open dashboard when opening settings** enabled (default), the extension gear opens the dashboard when unlocked.
+4. Edit `local/ops-bundle.json` when schema or team lists change.
+5. Run `./dev/utils/encrypt-ops-bundle.sh encrypt` (reads the password file automatically).
+6. Run `./dev/utils/hash-ops-password.sh` when the password changes; update `archetypes.json` → `opsAccess.passwordHash`.
+7. Commit `ops-secrets.enc.json` at the repo root only. Never commit `local/ops-bundle.json` or `local/PostgREST/password`.
 
 Instructions: `local/PostgREST/OPS-ENCRYPT-INSTRUCTIONS.md` (gitignored).
 
-At runtime, when the Ops tab is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` and decrypts it with the device-stored Ops password. Use `Context.opsTab.getSecrets()` / `getOpsBundle()`, `postgrestQuery(queryKey, overrides)`, `getFleetWebPath(key)`, and `resolveTable(tableKey)` — not literal Supabase table names in plugin source.
+At runtime, when the Ops dashboard is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` and decrypts it with the device-stored Ops password. Use `Context.opsTab.getSecrets()` / `getOpsBundle()`, `postgrestQuery(queryKey, overrides)`, `getFleetWebPath(key)`, and `resolveTable(tableKey)` — not literal Supabase table names in plugin source. The fullscreen dashboard UI lives in `dashboard.js` (Search Output, Team Members, Verifier Fetcher).
 
 `./dev/utils/encrypt-ops-bundle.sh decrypt` prints decrypted JSON for local verification.
 

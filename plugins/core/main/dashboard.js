@@ -1,6 +1,5 @@
 // ============= dashboard.js =============
-// Worker Output Search dashboard, opened as a popup from the Ops tab
-// ("Open Dashboard" button under Team Member Search).
+// Worker Output Search (Ops dashboard): search output, team members, verifier fetch.
 //
 // This is the live port of the local prototype in local/dashboard. All data is
 // PostgREST table/query shapes come from the encrypted ops bundle (Context.opsTab).
@@ -183,8 +182,8 @@ function dashEscHtml(value) {
 const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
-    description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.56',
+    description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -204,7 +203,8 @@ const plugin = {
             open: () => this.open(),
             close: () => this.close(),
             toggle: () => this.toggle(),
-            isOpen: () => this._isOpen()
+            isOpen: () => this._isOpen(),
+            switchFleetTeam: (teamId) => this._switchFleetTeam(teamId)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -355,7 +355,7 @@ const plugin = {
     async _pgQuery(queryKey, overrides, channel) {
         const ops = this._dashOpsTab();
         if (typeof ops.postgrestQuery !== 'function') {
-            throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
+            throw new Error('Ops dashboard PostgREST client unavailable. Unlock the Ops dashboard and try again.');
         }
         const needsActiveSearch = channel === 'search' || channel === 'hydrate';
         if (needsActiveSearch && !this._state.searchFetchActive && !this._state.hydrateFetchActive) {
@@ -2472,6 +2472,9 @@ const plugin = {
 
     close() {
         if (!this._overlay) return;
+        if (this._modal && Context.opsTab && typeof Context.opsTab.captureState === 'function') {
+            Context.opsTab.captureState(this._modal);
+        }
         this._overlay.style.display = 'none';
         Logger.log('dashboard: closed');
     },
@@ -2632,9 +2635,11 @@ const plugin = {
     },
 
     _modalHtml() {
+        const ops = Context.opsTab;
         const tabs = [
-            { id: 'overview', label: 'Overview' },
-            { id: 'search-output', label: 'Search Output' }
+            { id: 'search-output', label: 'Search Output' },
+            { id: 'team-members', label: 'Team Members' },
+            { id: 'verifier-fetcher', label: 'Verifier Fetcher' }
         ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
@@ -2642,6 +2647,9 @@ const plugin = {
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
             ">${t.label}</button>`).join('');
+        const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
+        const teamPanel = ops && typeof ops.renderTeamMembersPanel === 'function' ? ops.renderTeamMembersPanel() : '';
+        const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
 
         return `
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
@@ -2651,16 +2659,25 @@ const plugin = {
                         ${tabBtns}
                     </nav>
                 </div>
-                <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
-                    flex-shrink: 0; width: 32px; height: 32px; display: inline-flex; align-items: center;
-                    justify-content: center; font-size: 20px; line-height: 1; border-radius: 6px;
-                    color: var(--muted-foreground, #64748b); background: transparent;
-                    border: 1px solid var(--border, #e2e8f0); cursor: pointer;
-                ">&times;</button>
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0;">
+                    ${taskLinkBar}
+                    <button type="button" id="wf-dash-open-settings" style="
+                        flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px;
+                        color: var(--foreground, #0f172a); background: var(--background, #fff);
+                        border: 1px solid var(--border, #e2e8f0); cursor: pointer;
+                    ">Open Settings</button>
+                    <button type="button" id="wf-dash-close" aria-label="Close dashboard" title="Close" style="
+                        flex-shrink: 0; width: 32px; height: 32px; display: inline-flex; align-items: center;
+                        justify-content: center; font-size: 20px; line-height: 1; border-radius: 6px;
+                        color: var(--muted-foreground, #64748b); background: transparent;
+                        border: 1px solid var(--border, #e2e8f0); cursor: pointer;
+                    ">&times;</button>
+                </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
-                <div data-wf-dash-panel="overview" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b);">Overview content coming soon.</div>
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${teamPanel}</div>
+                <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
             </div>
         `;
     },
@@ -2971,6 +2988,22 @@ const plugin = {
 
         const closeBtn = this._q('#wf-dash-close');
         if (closeBtn) closeBtn.addEventListener('click', () => this.close());
+
+        const openSettingsBtn = this._q('#wf-dash-open-settings');
+        if (openSettingsBtn) {
+            openSettingsBtn.addEventListener('click', () => {
+                if (Context.settingsUi && typeof Context.settingsUi.openModal === 'function') {
+                    Context.settingsUi.openModal({ forceSettings: true });
+                    Logger.log('dashboard: opened extension settings from dashboard');
+                } else {
+                    Logger.warn('dashboard: Context.settingsUi.openModal unavailable');
+                }
+            });
+        }
+
+        if (Context.opsTab && typeof Context.opsTab.attachDashboardListeners === 'function') {
+            Context.opsTab.attachDashboardListeners(modal, this);
+        }
 
         modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
             btn.addEventListener('click', () => this._setActiveTab(btn.getAttribute('data-wf-dash-tab')));
@@ -3461,14 +3494,18 @@ const plugin = {
             btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
             btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
         });
+        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
-            if (tabId === 'search-output') {
+            if (flexPanels.has(tabId)) {
                 panel.style.display = active ? 'flex' : 'none';
             } else {
                 panel.style.display = active ? '' : 'none';
             }
         });
+        if (Context.opsTab && typeof Context.opsTab.onDashboardTabActivated === 'function') {
+            Context.opsTab.onDashboardTabActivated(this._modal, tabId);
+        }
     },
 
     // ── Author tokens ──

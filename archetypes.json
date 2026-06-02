@@ -1,7 +1,7 @@
 {
-  "version": "9.3.0",
+  "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.109",
+  "archetypesVersion": "9.112",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,14 +22,14 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "3.8",
-      "hash": "sha256-96dfab418a6742012a51684f7bc4c1e107908467ed5d8b1cc7b5800449188815",
+      "version": "4.0",
+      "hash": "sha256-61c07f85a8a819a5704875da457835d41d92d3caded36d978d354d0a5d284f2f",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "8.2",
-      "hash": "sha256-2f48eff815de8bce564793a9e6a801349ecb8bd74be4a6690380cb4d3479dd88",
+      "version": "9.0",
+      "hash": "sha256-ee522013da7cb259c0bd49c33d31268958820f583ccc7c4ad93e36582d4cf47a",
       "log": false
     },
     {
@@ -40,14 +40,14 @@
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.5",
-      "hash": "sha256-3e1f232c90fe214f68232e7015b6e353c82680a7e7026a80ee36fd7f65b15cbb",
+      "version": "1.6",
+      "hash": "sha256-5625d704b244bc698b056840baa2f3b84e7fbfee72bc0fef260832b62bd930e2",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "3.56",
-      "hash": "sha256-18b88feefbd0d82767041906a5491a91c1411bc869bc057471b82d6cd73a8df1",
+      "version": "4.0",
+      "hash": "sha256-e50f642e65998961aa66e4b7eeeed3687c4a8c989192bf410a17ce48e46b9877",
       "log": false
     }
   ],

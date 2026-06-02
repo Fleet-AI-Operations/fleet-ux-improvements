@@ -7,7 +7,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -51,7 +51,7 @@ const plugin = {
 
     async _pgQuery(queryKey, overrides) {
         if (!Context.opsTab || typeof Context.opsTab.postgrestQuery !== 'function') {
-            throw new Error('Ops tab PostgREST client unavailable. Unlock the Ops tab and try again.');
+            throw new Error('Ops dashboard PostgREST client unavailable. Unlock the Ops dashboard and try again.');
         }
         const rows = await Context.opsTab.postgrestQuery(queryKey, overrides || {});
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
