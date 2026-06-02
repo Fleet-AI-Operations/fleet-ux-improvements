@@ -181,7 +181,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Worker Output Search dashboard popup (task creations + QA reviews) opened from the Ops tab; all data via documented Fleet PostgREST endpoints',
-    _version: '3.52',
+    _version: '3.53',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4657,7 +4657,7 @@ const plugin = {
 
     _disputeBlockStyle() {
         return {
-            border: '2px solid #7c3aed',
+            border: '1px solid #7c3aed',
             background: 'color-mix(in srgb, #7c3aed 24%, var(--card, #ffffff))'
         };
     },
