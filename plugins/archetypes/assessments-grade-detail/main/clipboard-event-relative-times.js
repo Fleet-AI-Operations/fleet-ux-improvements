@@ -9,7 +9,7 @@ const plugin = {
     name: 'Grade Clipboard Event Times',
     description:
         'Shows clipboard integrity event offsets as at Xm, Ys with delta from the previous event',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -30,7 +30,7 @@ const plugin = {
             return atPart;
         }
         const delta = Math.max(0, totalSeconds - previousSeconds);
-        return `${atPart} (Δ${this.formatDuration(delta)})`;
+        return `${atPart} (${this.formatDuration(delta)} since last clipboard event)`;
     },
 
     isEventSummaryLine(el) {

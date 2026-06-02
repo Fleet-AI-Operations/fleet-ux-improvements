@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -434,7 +434,7 @@ const plugin = {
         let label = this.formatDuration(seconds);
         if (previousSecondsOnQuestion != null) {
             const delta = Math.max(0, seconds - previousSecondsOnQuestion);
-            label += ` · Δ${this.formatDuration(delta)}`;
+            label += ` (${this.formatDuration(delta)} since last clipboard event)`;
         }
         return label;
     },
