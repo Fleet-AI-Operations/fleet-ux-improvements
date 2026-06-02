@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.24",
+  "archetypesVersion": "10.25",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "4.11",
-      "hash": "sha256-27e90ae69dd82f6e900af291d35bd65975451c180dd92595ce6e277ca1714e69",
+      "version": "4.12",
+      "hash": "sha256-9ac12be761353cb9bebb4d986f59befc4e4d7d3948fd4846ddbf6873ef880198",
       "log": false
     },
     {

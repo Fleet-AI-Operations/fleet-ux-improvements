@@ -145,7 +145,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.11',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1928,8 +1928,10 @@ const plugin = {
 
         if (teamAdds.length && !this._opsTeamAddMemberActionCache.nextAction) {
             this._setOpsTeamSearchStatus(modal,
-                'Cannot add to team: add-member credentials missing. Open Fleet /dashboard/team and add a member once, then retry.',
-                true, false, true);
+                'Cannot add to team: add-member credentials missing. Open ' +
+                '<a href="' + this._opsEscapeAttr(OPS_TEAM_SEARCH_URL) + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' +
+                'Fleet /dashboard/team</a> and add a member once, then retry.',
+                true, true, true);
             return;
         }
 
