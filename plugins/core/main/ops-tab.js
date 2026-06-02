@@ -139,12 +139,13 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.6',
+    _version: '4.7',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
     _opsVerifierSourceText: '',
+    _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
     _opsTeamSearchActive: null,
     _opsTeamSearchMemberCache: null,
     _opsTeamSearchSelectedTeams: null,
@@ -187,6 +188,7 @@ const plugin = {
             renderSettingsSection: () => this._renderOpsSettingsSection(),
             renderTeamMembersPanel: () => this._renderTeamMembersPanel(),
             renderVerifierFetcherPanel: () => this._renderVerifierFetcherPanel(),
+            renderGradeAssessmentsHeaderLink: () => this._renderGradeAssessmentsHeaderLink(),
             renderTaskLinkBar: () => this._renderTaskLinkBar(),
             attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
             attachDashboardListeners: (dashModal, dashboardPlugin) => this._attachOpsDashboardListeners(dashModal, dashboardPlugin),
@@ -1327,7 +1329,10 @@ const plugin = {
             '.wf-ops-staged-remove{background:rgba(239,68,68,0.14)!important;}',
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
             '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
-            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}'
+            '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
+            '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
+            '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
+            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}'
         ].join('');
         document.head.appendChild(style);
     },
@@ -2417,29 +2422,150 @@ const plugin = {
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
     },
 
-    async _setOpsVerifierOutput(modal, value) {
+    _findVerifierContentMatchStarts(text, query) {
+        const starts = [];
+        const haystack = String(text || '');
+        const needle = String(query || '');
+        if (!needle || !haystack) return starts;
+        const hl = haystack.toLowerCase();
+        const nl = needle.toLowerCase();
+        let pos = 0;
+        while (pos < hl.length) {
+            const idx = hl.indexOf(nl, pos);
+            if (idx === -1) break;
+            starts.push(idx);
+            pos = idx + Math.max(nl.length, 1);
+        }
+        return starts;
+    },
+
+    _buildVerifierContentSearchHtml(text, query, activeIndex) {
+        const source = String(text || '');
+        const needle = String(query || '');
+        const starts = this._findVerifierContentMatchStarts(source, needle);
+        if (!needle) return { html: '', matchCount: 0, activeIndex: 0, matchStarts: [] };
+        const safeActive = starts.length === 0 ? 0 : Math.max(0, Math.min(activeIndex, starts.length - 1));
+        let html = '';
+        let last = 0;
+        starts.forEach((start, idx) => {
+            html += this._opsEscapeHtml(source.slice(last, start));
+            const activeClass = idx === safeActive ? ' wf-ops-verifier-hit-active' : '';
+            html += '<mark class="wf-ops-verifier-hit' + activeClass + '" data-wf-ops-verifier-hit="' + idx + '">'
+                + this._opsEscapeHtml(source.slice(start, start + needle.length)) + '</mark>';
+            last = start + needle.length;
+        });
+        html += this._opsEscapeHtml(source.slice(last));
+        return { html, matchCount: starts.length, activeIndex: safeActive, matchStarts: starts };
+    },
+
+    _updateVerifierContentSearchUi(modal) {
+        const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
+        const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
+        const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
+        const nextBtn = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNext');
+        const hasOutput = Boolean(this._opsVerifierSourceText);
+        const search = this._opsVerifierContentSearch;
+        const matchCount = search.matchStarts ? search.matchStarts.length : 0;
+        const hasQuery = Boolean((search.query || '').trim());
+
+        if (searchWrap) {
+            searchWrap.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (countEl) {
+            if (!hasQuery) {
+                countEl.textContent = '';
+            } else if (matchCount === 0) {
+                countEl.textContent = 'No matches';
+            } else {
+                countEl.textContent = (search.index + 1) + ' / ' + matchCount;
+            }
+        }
+        const navDisabled = !hasQuery || matchCount === 0;
+        if (prevBtn) prevBtn.disabled = navDisabled;
+        if (nextBtn) nextBtn.disabled = navDisabled;
+    },
+
+    _scrollVerifierActiveContentMatch(modal) {
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
+        if (!output) return;
+        const active = output.querySelector('.wf-ops-verifier-hit-active');
+        if (active && typeof active.scrollIntoView === 'function') {
+            active.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
+    },
+
+    async _refreshVerifierOutputDisplay(modal) {
         const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
         const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
         const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
-        const text = value || '';
-        this._opsVerifierSourceText = text;
+        const text = this._opsVerifierSourceText || '';
+        const query = (this._opsVerifierContentSearch.query || '').trim();
 
         if (wrap) {
-            wrap.style.display = text ? 'block' : 'none';
-        }
-        if (output) {
-            if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
-                await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
-            } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
-                Context.highlightJs.setPlainCode(output, text);
-            } else {
-                output.textContent = text;
-                output.className = text ? 'language-python' : 'language-plaintext';
-            }
+            wrap.style.display = text ? 'flex' : 'none';
         }
         if (copyBtn) {
             copyBtn.style.display = text ? 'inline-block' : 'none';
         }
+
+        if (!output) {
+            this._updateVerifierContentSearchUi(modal);
+            return;
+        }
+
+        if (query) {
+            const built = this._buildVerifierContentSearchHtml(text, query, this._opsVerifierContentSearch.index);
+            this._opsVerifierContentSearch.matchStarts = built.matchStarts;
+            this._opsVerifierContentSearch.index = built.activeIndex;
+            output.innerHTML = built.html;
+            output.className = 'language-python';
+            this._updateVerifierContentSearchUi(modal);
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+            return;
+        }
+
+        this._opsVerifierContentSearch.matchStarts = [];
+        this._opsVerifierContentSearch.index = 0;
+        if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
+            await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
+        } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
+            Context.highlightJs.setPlainCode(output, text);
+        } else {
+            output.textContent = text;
+            output.className = text ? 'language-python' : 'language-plaintext';
+        }
+        this._updateVerifierContentSearchUi(modal);
+    },
+
+    _applyVerifierContentSearch(modal, rawQuery) {
+        this._opsVerifierContentSearch.query = String(rawQuery || '');
+        this._opsVerifierContentSearch.index = 0;
+        void this._refreshVerifierOutputDisplay(modal);
+        const q = this._opsVerifierContentSearch.query.trim();
+        if (q) {
+            const n = this._opsVerifierContentSearch.matchStarts.length;
+            Logger.log('ops-tab: verifier content search — ' + n + ' match(es) for "' + q + '"');
+        }
+    },
+
+    _stepVerifierContentMatch(modal, delta) {
+        const search = this._opsVerifierContentSearch;
+        const count = search.matchStarts ? search.matchStarts.length : 0;
+        if (!count || !delta) return;
+        search.index = (search.index + delta + count) % count;
+        void this._refreshVerifierOutputDisplay(modal);
+        Logger.debug('ops-tab: verifier content match ' + (search.index + 1) + '/' + count);
+    },
+
+    async _setOpsVerifierOutput(modal, value) {
+        const text = value || '';
+        this._opsVerifierSourceText = text;
+        if (!text) {
+            this._opsVerifierContentSearch = { query: '', index: 0, matchStarts: [] };
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClear');
+            if (contentInput) contentInput.value = '';
+        }
+        await this._refreshVerifierOutputDisplay(modal);
     },
 
     _clearOpsVerifierVersionPicker(modal) {
@@ -2497,6 +2623,8 @@ const plugin = {
             verifierStatus: status && status.style.display !== 'none' ? (status.textContent || '') : '',
             verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
             verifierOutput: this._opsVerifierSourceText || '',
+            verifierContentSearchQuery: this._opsVerifierContentSearch.query || '',
+            verifierContentSearchIndex: this._opsVerifierContentSearch.index || 0,
             verifierFetchState: fetchState
                 ? {
                     resolved: fetchState.resolved,
@@ -2534,6 +2662,16 @@ const plugin = {
 
         if (state.verifierOutput) {
             void this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+
+        if (state.verifierContentSearchQuery != null) {
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
+            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
+            if (state.verifierOutput) {
+                void this._refreshVerifierOutputDisplay(modal);
+            }
         }
 
         if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
@@ -2922,19 +3060,63 @@ const plugin = {
             </div>`;
     },
 
+    _renderGradeAssessmentsHeaderLink() {
+        return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
+            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
+    },
+
     _renderVerifierFetcherPanel() {
         return `
-                <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto;">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a); flex-shrink: 0;">
-                        Verifier Code Fetcher
-                    </h3>
-                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
-                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data.
-                    </p>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                            flex: 1;
-                            min-width: 0;
+                <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                    <div style="flex-shrink: 0;">
+                        <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
+                            Verifier Code Fetcher
+                        </h3>
+                        <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                            Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
+                        </p>
+                        <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
+                                flex: 1;
+                                min-width: 0;
+                                padding: 8px 12px;
+                                font-size: 12px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: var(--background, white);
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ">
+                            <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
+                                flex-shrink: 0;
+                                padding: 8px 14px;
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: var(--brand, #4f46e5);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                            ">Fetch</button>
+                            <button type="button" id="wf-ops-copy-verifier" style="
+                                display: none;
+                                flex-shrink: 0;
+                                padding: 2px 10px;
+                                font-size: 11px;
+                                font-weight: 500;
+                                color: var(--muted-foreground, #666);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 4px;
+                                cursor: pointer;
+                                transition: background 0.2s, color 0.2s;
+                            ">Copy</button>
+                        </div>
+                        <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
+                            display: none;
+                            width: 100%;
+                            margin-top: 8px;
                             padding: 8px 12px;
                             font-size: 12px;
                             border: 1px solid var(--border, #e5e5e5);
@@ -2943,51 +3125,63 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        ">
-                        <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 8px 14px;
+                        "></select>
+                    </div>
+                    <div id="wf-ops-verifier-content-search-wrap" style="
+                        display: none;
+                        flex-shrink: 0;
+                        margin-top: 8px;
+                        gap: 8px;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        flex-direction: row;
+                    ">
+                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap;">Search in code:</label>
+                        <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
+                            flex: 1;
+                            min-width: 140px;
+                            padding: 6px 10px;
                             font-size: 12px;
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            background: var(--background, white);
+                            color: var(--foreground, #333);
+                            box-sizing: border-box;
+                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                        ">
+                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; min-width: 4.5em;"></span>
+                        <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
+                            flex-shrink: 0;
+                            padding: 6px 10px;
+                            font-size: 11px;
                             font-weight: 600;
-                            color: var(--brand, #4f46e5);
+                            color: var(--foreground, #333);
                             background: var(--background, white);
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                        ">Fetch</button>
-                        <button type="button" id="wf-ops-copy-verifier" style="
-                            display: none;
+                        ">Prev</button>
+                        <button type="button" id="wf-ops-verifier-content-next" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
-                            padding: 2px 10px;
+                            padding: 6px 10px;
                             font-size: 11px;
-                            font-weight: 500;
-                            color: var(--muted-foreground, #666);
+                            font-weight: 600;
+                            color: var(--foreground, #333);
                             background: var(--background, white);
                             border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 4px;
-                            cursor: pointer;
-                            transition: background 0.2s, color 0.2s;
-                        ">Copy</button>
+                            border-radius: 6px;
+                        ">Next</button>
                     </div>
-                    <div id="wf-ops-verifier-status" style="display: none; margin-top: 8px; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
-                        display: none;
-                        width: 100%;
-                        margin-top: 8px;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    "></select>
                     <div id="wf-ops-verifier-output-wrap" style="
                         display: none;
+                        flex: 1;
+                        min-height: 0;
                         width: 100%;
                         margin-top: 8px;
+                        flex-direction: column;
                     ">
                         <pre style="
+                            flex: 1;
+                            min-height: 0;
                             width: 100%;
                             margin: 0;
                             padding: 8px 12px;
@@ -2997,29 +3191,12 @@ const plugin = {
                             background: var(--card, #fafafa);
                             color: var(--foreground, #333);
                             box-sizing: border-box;
-                            max-height: 320px;
                             overflow: auto;
                             white-space: pre-wrap;
                             word-break: break-word;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                         "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
                     </div>
-                </div>
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                    <a href="${OPS_GRADE_ASSESSMENTS_URL}" target="_blank" rel="noopener noreferrer" id="wf-ops-grade-assessments" class="wf-ops-action-btn" style="
-                        display: inline-block;
-                        padding: 8px 14px;
-                        font-size: 12px;
-                        font-weight: 600;
-                        text-align: center;
-                        text-decoration: none;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        box-sizing: border-box;
-                    ">Grade Assessments</a>
-                </div>
                 </div>`;
     },
 
@@ -3357,6 +3534,12 @@ const plugin = {
         }
 
         if (verifierInput) {
+            verifierInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void this._handleOpsVerifierFetch(modal);
+                }
+            });
             verifierInput.addEventListener('paste', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
@@ -3365,6 +3548,34 @@ const plugin = {
             verifierInput.addEventListener('input', () => {
                 this._setOpsVerifierStatus(modal, '');
                 this._clearOpsVerifierVersionPicker(modal);
+                this._captureOpsTabState(modal);
+            });
+        }
+
+        const verifierContentSearch = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchAttach');
+        const verifierContentPrev = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrevAttach');
+        const verifierContentNext = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNextAttach');
+        if (verifierContentSearch) {
+            verifierContentSearch.addEventListener('input', () => {
+                this._applyVerifierContentSearch(modal, verifierContentSearch.value);
+                this._captureOpsTabState(modal);
+            });
+            verifierContentSearch.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                this._stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
+                this._captureOpsTabState(modal);
+            });
+        }
+        if (verifierContentPrev) {
+            verifierContentPrev.addEventListener('click', () => {
+                this._stepVerifierContentMatch(modal, -1);
+                this._captureOpsTabState(modal);
+            });
+        }
+        if (verifierContentNext) {
+            verifierContentNext.addEventListener('click', () => {
+                this._stepVerifierContentMatch(modal, 1);
                 this._captureOpsTabState(modal);
             });
         }

@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.12',
+    _version: '4.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2643,6 +2643,9 @@ const plugin = {
             '#wf-dash-modal #wf-dash-close.wf-dash-header-btn svg {',
             '  display: block;',
             '  flex-shrink: 0;',
+            '}',
+            '#wf-dash-modal a.wf-dash-header-btn {',
+            '  text-decoration: none !important;',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -2760,6 +2763,9 @@ const plugin = {
             ">Update</button>`;
         const updatePanelHtml = this._dashboardUpdateBannerHtml();
         const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
+        const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
+            ? ops.renderGradeAssessmentsHeaderLink()
+            : '';
         const teamPanel = ops && typeof ops.renderTeamMembersPanel === 'function' ? ops.renderTeamMembersPanel() : '';
         const verifierPanel = ops && typeof ops.renderVerifierFetcherPanel === 'function' ? ops.renderVerifierFetcherPanel() : '';
 
@@ -2776,6 +2782,7 @@ const plugin = {
                     <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
                 </div>
                 <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
+                    ${gradeAssessmentsLink}
                     <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn">Open Settings</button>
                     <button type="button" id="wf-dash-close" class="wf-dash-header-btn" aria-label="Close dashboard" title="Close">${this._dashCloseIconSvg()}</button>
                 </div>
