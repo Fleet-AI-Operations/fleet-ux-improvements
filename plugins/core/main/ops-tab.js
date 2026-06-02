@@ -139,7 +139,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2417,11 +2417,9 @@ const plugin = {
     _syncVerifierStatusRow(modal) {
         const row = this._opsQuery(modal, '#wf-ops-verifier-status-row', 'verifierStatusRow');
         const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
-        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopyRow');
         if (!row) return;
         const hasStatus = Boolean(status && (status.textContent || '').trim());
-        const copyVisible = copyBtn && copyBtn.style.display !== 'none';
-        row.style.display = hasStatus || copyVisible ? 'flex' : 'none';
+        row.style.display = hasStatus ? 'block' : 'none';
     },
 
     _setOpsVerifierStatus(modal, message, isError) {
@@ -2473,6 +2471,8 @@ const plugin = {
         const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
         const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
         const nextBtn = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNext');
+        const clearBtn = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClear');
+        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
         const hasOutput = Boolean(this._opsVerifierSourceText);
         const search = this._opsVerifierContentSearch;
         const matchCount = search.matchStarts ? search.matchStarts.length : 0;
@@ -2480,6 +2480,12 @@ const plugin = {
 
         if (searchWrap) {
             searchWrap.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (copyBtn) {
+            copyBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        if (clearBtn) {
+            clearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
         }
         if (countEl) {
             if (!hasQuery) {
@@ -2493,6 +2499,14 @@ const plugin = {
         const navDisabled = !hasQuery || matchCount === 0;
         if (prevBtn) prevBtn.disabled = navDisabled;
         if (nextBtn) nextBtn.disabled = navDisabled;
+    },
+
+    _clearVerifierContentSearch(modal) {
+        const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClearInput');
+        if (contentInput) contentInput.value = '';
+        this._applyVerifierContentSearch(modal, '');
+        this._captureOpsTabState(modal);
+        Logger.log('ops-tab: verifier content search cleared');
     },
 
     _scrollVerifierActiveContentMatch(modal) {
@@ -2514,11 +2528,6 @@ const plugin = {
         if (wrap) {
             wrap.style.display = text ? 'flex' : 'none';
         }
-        if (copyBtn) {
-            copyBtn.style.display = text ? 'inline-block' : 'none';
-        }
-        this._syncVerifierStatusRow(modal);
-
         if (!output) {
             this._updateVerifierContentSearchUi(modal);
             return;
@@ -3110,21 +3119,8 @@ const plugin = {
                                 border-radius: 6px;
                             ">Fetch</button>
                         </div>
-                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <div id="wf-ops-verifier-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                            <button type="button" id="wf-ops-copy-verifier" style="
-                                display: none;
-                                flex-shrink: 0;
-                                padding: 2px 10px;
-                                font-size: 11px;
-                                font-weight: 500;
-                                color: var(--muted-foreground, #666);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 4px;
-                                cursor: pointer;
-                                transition: background 0.2s, color 0.2s;
-                            ">Copy</button>
+                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
+                            <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                         </div>
                         <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
                             display: none;
@@ -3143,30 +3139,52 @@ const plugin = {
                     <div id="wf-ops-verifier-content-search-wrap" style="
                         display: none;
                         flex-shrink: 0;
+                        align-self: flex-start;
+                        width: 30%;
+                        max-width: 30%;
+                        min-width: 12rem;
                         margin-top: 8px;
-                        gap: 8px;
+                        gap: 6px;
                         align-items: center;
                         flex-wrap: wrap;
                         flex-direction: row;
                         justify-content: flex-start;
-                        width: 100%;
+                        box-sizing: border-box;
                     ">
-                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap;">Search in code:</label>
-                        <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
-                            flex: 0 0 auto;
-                            width: 30%;
-                            max-width: 11rem;
-                            min-width: 6rem;
-                            padding: 6px 10px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--background, white);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        ">
-                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; min-width: 4.5em;"></span>
+                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Search in code:</label>
+                        <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
+                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
+                                flex: 1;
+                                min-width: 0;
+                                width: 100%;
+                                padding: 6px 10px;
+                                font-size: 12px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: var(--background, white);
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ">
+                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" style="
+                                display: none;
+                                flex-shrink: 0;
+                                width: 26px;
+                                height: 26px;
+                                padding: 0;
+                                font-size: 16px;
+                                line-height: 1;
+                                font-weight: 600;
+                                color: var(--muted-foreground, #64748b);
+                                background: var(--background, white);
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                cursor: pointer;
+                                align-items: center;
+                                justify-content: center;
+                            ">&times;</button>
+                        </span>
+                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
                         <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
                             flex-shrink: 0;
                             padding: 6px 10px;
@@ -3187,6 +3205,19 @@ const plugin = {
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
                         ">Next</button>
+                        <button type="button" id="wf-ops-copy-verifier" style="
+                            display: none;
+                            flex-shrink: 0;
+                            padding: 6px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: var(--muted-foreground, #666);
+                            background: var(--background, white);
+                            border: 1px solid var(--border, #e5e5e5);
+                            border-radius: 6px;
+                            cursor: pointer;
+                            transition: background 0.2s, color 0.2s;
+                        ">Copy</button>
                     </div>
                     <div id="wf-ops-verifier-output-wrap" style="
                         display: none;
@@ -3249,12 +3280,8 @@ const plugin = {
             const result = await this._fetchOpsVerifierCode(parsed);
             this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
             await this._setOpsVerifierOutput(modal, result.source);
+            this._setOpsVerifierStatus(modal, '');
             const versionText = result.version != null ? 'v' + result.version : 'latest version';
-            const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
-            this._setOpsVerifierStatus(
-                modal,
-                'Fetched ' + versionText + ' (' + result.source.length + ' chars)' + teamNote + '.'
-            );
             Logger.log('ops-tab: verifier fetched ' + result.verifierId + ' ' + versionText);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
@@ -3283,12 +3310,7 @@ const plugin = {
         try {
             const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, version);
             await this._setOpsVerifierOutput(modal, result.source);
-            const teamNote = result.teamId ? ' (team ' + result.teamId.slice(0, 8) + '...)' : '';
-            this._setOpsVerifierStatus(
-                modal,
-                'Showing v' + (result.version != null ? result.version : version) +
-                ' (' + result.source.length + ' chars)' + teamNote + '.'
-            );
+            this._setOpsVerifierStatus(modal, '');
             Logger.log('ops-tab: verifier version selected ' + result.verifierId + ' v' + (result.version != null ? result.version : version));
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
@@ -3570,8 +3592,14 @@ const plugin = {
         }
 
         const verifierContentSearch = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchAttach');
+        const verifierContentClear = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClearAttach');
         const verifierContentPrev = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrevAttach');
         const verifierContentNext = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNextAttach');
+        if (verifierContentClear) {
+            verifierContentClear.addEventListener('click', () => {
+                this._clearVerifierContentSearch(modal);
+            });
+        }
         if (verifierContentSearch) {
             verifierContentSearch.addEventListener('input', () => {
                 this._applyVerifierContentSearch(modal, verifierContentSearch.value);
