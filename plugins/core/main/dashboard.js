@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.18',
+    _version: '4.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3638,11 +3638,48 @@ const plugin = {
         this._syncAllMsDropdowns();
     },
 
+    _msDropdownScrollEl(scopeKey) {
+        const panelId = (scopeKey && scopeKey.startsWith('filter-'))
+            ? '#wf-dash-left-panel-filters'
+            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search' : null);
+        if (!panelId) return null;
+        const panel = this._q(panelId);
+        if (!panel || panel.style.display === 'none') return null;
+        for (const child of panel.children) {
+            if (!(child instanceof this._pageWindow().HTMLElement)) continue;
+            const oy = this._pageWindow().getComputedStyle(child).overflowY;
+            if (oy === 'auto' || oy === 'scroll') return child;
+        }
+        return null;
+    },
+
+    _scrollOpenedMsDropdownIntoView(scopeKey) {
+        const wrap = this._msWrapEl(scopeKey);
+        const scrollEl = this._msDropdownScrollEl(scopeKey);
+        if (!wrap || !scrollEl) return;
+        requestAnimationFrame(() => {
+            const scrollRect = scrollEl.getBoundingClientRect();
+            const wrapRect = wrap.getBoundingClientRect();
+            const extendsBelow = wrapRect.bottom > scrollRect.bottom + 1;
+            if (!extendsBelow) return;
+            const delta = wrapRect.top - scrollRect.top;
+            if (Math.abs(delta) < 1) return;
+            const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+            const next = Math.max(0, Math.min(scrollEl.scrollTop + delta, maxScroll));
+            if (next !== scrollEl.scrollTop) {
+                scrollEl.scrollTop = next;
+                Logger.debug('dashboard: scrolled filter menu into view — ' + scopeKey);
+            }
+        });
+    },
+
     _toggleMsDropdown(scopeKey) {
         const wasOpen = this._isMsDropdownOpen(scopeKey);
         this._state.msDropdownOpen = {};
-        if (!wasOpen) this._state.msDropdownOpen[scopeKey] = true;
+        const opening = !wasOpen;
+        if (opening) this._state.msDropdownOpen[scopeKey] = true;
         this._syncAllMsDropdowns();
+        if (opening) this._scrollOpenedMsDropdownIntoView(scopeKey);
     },
 
     _applyMsDropdownFilter(scopeKey, query) {
