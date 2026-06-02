@@ -1,7 +1,7 @@
 {
   "version": "9.3.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "9.129",
+  "archetypesVersion": "10.11",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -518,6 +518,46 @@
           "name": "novnc-clipboard-bridge.js",
           "version": "1.1",
           "hash": "sha256-6c5c31f50878010a97dd053b5b2ce252a59c1b7ebb39ff5d135611e3ef484994",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "assessments-grade",
+      "name": "Assessments Grade",
+      "description": "Assessment grading queue at work/assessments/grade",
+      "urlPattern": "work/assessments/grade",
+      "disambiguationSelectors": [
+        "text:To grade"
+      ],
+      "plugins": [
+        {
+          "name": "grade-content-full-width.js",
+          "version": "1.0",
+          "hash": "sha256-9f023778f7689b94da062bf7c292ff101eb39ff768ecc1f4c292de842ea5d2d7",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "assessments-grade-detail",
+      "name": "Assessments Grade Detail",
+      "description": "Individual assessment grading at work/assessments/grade/*",
+      "urlPattern": "work/assessments/grade/*",
+      "disambiguationSelectors": [
+        "text:← Back to queue"
+      ],
+      "plugins": [
+        {
+          "name": "clipboard-event-relative-times.js",
+          "version": "1.2",
+          "hash": "sha256-3cc93b4e3efaa74595a8f462d45ed90864a79c078ffac69b029b0d1497d55f4e",
+          "log": false
+        },
+        {
+          "name": "grade-question-pasted-text.js",
+          "version": "1.8",
+          "hash": "sha256-4d6f44e6a2ca43a74709a0ef0ad371b6e6d60ac743dd3710d9529abbe320bd46",
           "log": false
         }
       ]
