@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.15',
+    _version: '4.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1602,6 +1602,55 @@ const plugin = {
         };
     },
 
+    _isDimensionAllSelected(selected, boundIds) {
+        const bounds = boundIds || [];
+        if (bounds.length === 0) return true;
+        return (selected || []).length >= bounds.length;
+    },
+
+    _expandAppliedForBoundsGrowth(applied, prevBounds, newBounds) {
+        const next = Object.assign({}, applied);
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const prevLen = (prevBounds[draftKey] || []).length;
+            const newLen = (newBounds[draftKey] || []).length;
+            if (prevLen === 0 && newLen > 0) {
+                next[draftKey] = [...(newBounds[draftKey] || [])];
+            }
+        }
+        return next;
+    },
+
+    _checkedIdsForFilterScope(draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncFromApplied) {
+        const boundIds = listBounds[draftKey] || [];
+        const appliedSel = (applied && applied[draftKey]) || [];
+        const prevBoundIds = (prevBounds && prevBounds[draftKey]) || [];
+
+        if (syncFromApplied && applied) {
+            if (this._isDimensionAllSelected(appliedSel, boundIds)) {
+                return new Set(optionIds);
+            }
+            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
+        }
+
+        if (prevBoundIds.length === 0 && boundIds.length > 0 && appliedSel.length === 0) {
+            return new Set(optionIds);
+        }
+
+        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
+            return new Set(optionIds);
+        }
+
+        if (prevSelected && prevSelected.size > 0) {
+            return prevSelected;
+        }
+
+        if (appliedSel.length > 0) {
+            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
+        }
+
+        return new Set();
+    },
+
     _readSearchDepthPref() {
         try {
             const v = this._pageWindow().localStorage.getItem(DASH_SEARCH_DEPTH_STORAGE_KEY);
@@ -1743,23 +1792,17 @@ const plugin = {
             this._getTeamCatalog()
         );
         this._state.filterListOptions = options;
-        if (!resetDrafts) {
-            const newBounds = this._listBoundsFromOptions(options);
-            for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
-                const prevLen = (prevBounds[draftKey] || []).length;
-                const newLen = (newBounds[draftKey] || []).length;
-                if (prevLen === 0 && newLen > 0) {
-                    const itemsEl = this._msItemsEl(scopeKey);
-                    if (!itemsEl) continue;
-                    itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
-                    this._updateMsCount(scopeKey);
-                }
-            }
+        const newBounds = this._listBoundsFromOptions(options);
+        this._state.filterListBoundsPrev = prevBounds;
+        if (!resetDrafts && this._state.appliedFilters) {
+            this._state.appliedFilters = this._expandAppliedForBoundsGrowth(
+                this._state.appliedFilters, prevBounds, newBounds
+            );
         }
         const tab = this._state.resultsKindTab || 'all';
         Logger.log('dashboard: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
-        return this._listBoundsFromOptions(options);
+        return newBounds;
     },
 
     _isFilterDraftValid(draft, listBounds) {
@@ -2030,26 +2073,26 @@ const plugin = {
         this._syncResultsPagerUi();
     },
 
-    _recomputeFilteredItems() {
+    _onScopeDataEnriched() {
         const lib = dashLib();
         if (this._state.cachedItems === null) return false;
-        this._reindexFilterListsFromScope(false);
+        const newBounds = this._reindexFilterListsFromScope(false);
+        if (!newBounds) return false;
         const applied = this._state.appliedFilters;
-        const filters = applied
-            ? Object.assign({}, applied)
-            : this._currentClientFilters();
+        if (!applied) return false;
+        const filters = Object.assign({}, applied);
         const filterInvalid = lib.isPromptFilterInvalid(
             filters.promptText, filters.caseSensitive, filters.regex
         );
         if (!filterInvalid.invalid) {
-            const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
             const sortOrder = filters.sortOrder;
             const scopeItems = this._getFilterScopeItems();
-            const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+            const result = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
             this._state.filteredItems = result;
+            Logger.debug('dashboard: scope data enriched — ' + result.length + ' / ' + scopeItems.length + ' item(s) after reindex');
         }
         this._updateResultsStatus();
-        this._renderFilterLists({ syncDraftFromApplied: false });
+        this._renderFilterLists({ syncDraftFromApplied: true });
         this._syncResultsToolbarDerivedUi();
         this._updateApplyFiltersUi();
         return !filterInvalid.invalid;
@@ -2129,9 +2172,6 @@ const plugin = {
                 item.hydrated = true;
                 updated++;
             }
-            if (updated > 0 && this._state.cachedItems) {
-                this._reindexFilterListsFromScope(false);
-            }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
         } finally {
@@ -2152,7 +2192,7 @@ const plugin = {
         this._patchTaskCard(itemId);
         try {
             await this._hydrateItems([item]);
-            this._recomputeFilteredItems();
+            this._onScopeDataEnriched();
             this._patchTaskCard(itemId);
             Logger.log('dashboard: card hydrated in place — ' + itemId);
         } catch (err) {
@@ -2242,7 +2282,7 @@ const plugin = {
                 }
             }
             if (hydratedTotal > 0) {
-                this._recomputeFilteredItems();
+                this._onScopeDataEnriched();
                 if (this._autoHydrateContextKey() === contextKey) {
                     this._renderResults();
                 }
@@ -2416,7 +2456,7 @@ const plugin = {
                 }
                 this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
             }
-            this._recomputeFilteredItems();
+            this._onScopeDataEnriched();
             const meta = this._getResultsPaginationMeta();
             if (meta && meta.page >= meta.totalPages) {
                 this._state.resultsPage = 0;
@@ -4018,6 +4058,7 @@ const plugin = {
             return;
         }
         const listBounds = this._listBoundsFromOptions(options);
+        const prevBounds = this._state.filterListBoundsPrev || {};
         const applied = this._state.appliedFilters;
         const draft = (syncDraftFromApplied && applied)
             ? applied
@@ -4039,9 +4080,13 @@ const plugin = {
             if (wrap) wrap.style.display = '';
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const irrelevantSet = irrelevance[draftKey] || new Set();
-            const prevSelected = (!syncDraftFromApplied || !applied)
-                ? new Set(this._selectedFromList(scopeKey))
-                : null;
+            const optionIds = optionItems.map((it) => it.id);
+            const prevSelected = syncDraftFromApplied
+                ? null
+                : new Set(this._selectedFromList(scopeKey));
+            const checkedIds = this._checkedIdsForFilterScope(
+                draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
+            );
             itemsEl.innerHTML = this._multiSelectItemsHtml(
                 scopeKey,
                 optionItems,
@@ -4050,16 +4095,9 @@ const plugin = {
                 false,
                 irrelevantSet
             );
-            if (syncDraftFromApplied && applied) {
-                const selected = new Set(applied[draftKey] || []);
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = selected.has(cb.value);
-                });
-            } else if (prevSelected) {
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                    cb.checked = prevSelected.has(cb.value);
-                });
-            }
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                cb.checked = checkedIds.has(cb.value);
+            });
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
             if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -4273,11 +4311,18 @@ const plugin = {
 
     _isFilterSelectionValid() {
         if (!this._state.cachedItems) return false;
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        const applied = this._state.appliedFilters;
+        const options = this._state.filterListOptions;
+        const listBounds = options ? this._listBoundsFromOptions(options) : {};
+        for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
             if (!this._isFilterScopeVisible(scopeKey)) continue;
             const all = this._allFromList(scopeKey);
             if (all.length === 0) continue;
-            if (this._selectedFromList(scopeKey).length === 0) return false;
+            if (this._selectedFromList(scopeKey).length > 0) continue;
+            const boundIds = listBounds[draftKey] || [];
+            const appliedSel = (applied && applied[draftKey]) || [];
+            if (this._isDimensionAllSelected(appliedSel, boundIds)) continue;
+            return false;
         }
         return true;
     },
