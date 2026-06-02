@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2469,6 +2469,7 @@ const plugin = {
         void this._doBootstrap();
         this._refreshCatalogDependentUi();
         this._syncDashboardUpdateMode();
+        this._setSearchDepth('quick');
         Logger.log('dashboard: opened');
     },
 
@@ -2557,7 +2558,7 @@ const plugin = {
         this._syncFieldClearButtons();
         this._syncAllMsDropdowns();
         this._applyDefaultSearchDates();
-        this._state.searchDepth = this._readSearchDepthPref();
+        this._state.searchDepth = 'quick';
         this._syncSearchDepthUi();
         const pagePref = this._readResultsPageSizePref();
         this._state.resultsPageSize = pagePref === 'all' ? 'all' : (Number(pagePref) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
