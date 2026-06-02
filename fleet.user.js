@@ -1444,7 +1444,9 @@
             } catch (_e) { /* ignore */ }
             const method = (config && config.method) || (resource && resource.method) || 'GET';
             const headers = (config && config.headers) || (resource && resource.headers) || null;
-            return { url, urlObj, method: String(method).toUpperCase(), headers, pageWindow };
+            let body = (config && config.body != null) ? config.body : (resource && resource.body);
+            if (body instanceof URLSearchParams) body = body.toString();
+            return { url, urlObj, method: String(method).toUpperCase(), headers, body, pageWindow };
         },
 
         _matchSubscribers(meta) {

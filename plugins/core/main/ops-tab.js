@@ -35,6 +35,12 @@ const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
 /** localStorage key for the dynamically captured Next.js router state tree for team member search */
 const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
+/** localStorage key for the Next.js server action hash for dashboard team add-member */
+const OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-add-member-next-action';
+/** localStorage key for the Next.js router state tree for dashboard team add-member */
+const OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-add-member-router-state';
+/** Default team tier when adding a member via the dashboard team server action */
+const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
 const OPS_DASHBOARD_OPEN_ON_SETTINGS_KEY = 'ops-dashboard-open-on-settings';
 /** localStorage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
@@ -139,7 +145,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.10',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
 
@@ -155,6 +161,8 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
+    /** Dynamically discovered team add-member server action (same URL as search, different action hash) */
+    _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -217,8 +225,9 @@ const plugin = {
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
+        this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
-        this._subscribeOpsTeamSearchActionCapture();
+        this._subscribeOpsTeamDashboardActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
@@ -1098,6 +1107,58 @@ const plugin = {
         return null;
     },
 
+    _opsSetCookie(name, value) {
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            const doc = pageWindow.document;
+            if (!doc) return;
+            const secure = pageWindow.location && pageWindow.location.protocol === 'https:' ? '; Secure' : '';
+            doc.cookie = name + '=' + encodeURIComponent(value) + '; path=/' + secure + '; SameSite=Lax';
+        } catch (e) {
+            Logger.warn('ops-tab: cookie write failed for ' + name, e);
+        }
+    },
+
+    async _opsWithCurrentTeamCookie(teamId, fn) {
+        const prevTeamId = this._getOpsCookieValue('current-team-id');
+        const prevTeamRole = this._getOpsCookieValue('current-team-role');
+        this._opsSetCookie('current-team-id', teamId);
+        try {
+            return await fn();
+        } finally {
+            if (prevTeamId) this._opsSetCookie('current-team-id', prevTeamId);
+            if (prevTeamRole) this._opsSetCookie('current-team-role', prevTeamRole);
+        }
+    },
+
+    _opsNormalizeRequestBody(body) {
+        if (body == null) return '';
+        if (typeof body === 'string') return body;
+        if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {
+            return new TextDecoder().decode(body);
+        }
+        try {
+            return String(body);
+        } catch (_e) {
+            return '';
+        }
+    },
+
+    _opsClassifyTeamDashboardPostBody(body) {
+        const text = this._opsNormalizeRequestBody(body);
+        if (!text || text.charAt(0) !== '[') return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (_e) {
+            return null;
+        }
+        if (!Array.isArray(parsed)) return null;
+        if (Array.isArray(parsed[0])) return 'add-member';
+        if (parsed.length >= 4 && typeof parsed[0] === 'string' && OPS_UUID_RE.test(parsed[0])) return 'search';
+        return null;
+    },
+
     _loadOpsTeamSearchActionFromStorage() {
         try {
             const storage = this._getOpsPageWindow().localStorage;
@@ -1110,6 +1171,21 @@ const plugin = {
             }
         } catch (e) {
             Logger.debug('ops-tab: team search action localStorage hydration failed', e);
+        }
+    },
+
+    _loadOpsTeamAddMemberActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsTeamAddMemberActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: team add-member action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team add-member action localStorage hydration failed', e);
         }
     },
 
@@ -1147,14 +1223,48 @@ const plugin = {
         Logger.info('ops-tab: team search action cache cleared (will re-discover on next search)');
     },
 
-    _subscribeOpsTeamSearchActionCapture() {
+    _persistOpsTeamAddMemberAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsTeamAddMemberActionCache.nextAction;
+        this._opsTeamAddMemberActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team add-member action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: team add-member action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsTeamAddMemberActionCache() {
+        this._opsTeamAddMemberActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: team add-member action cache clear failed', e);
+        }
+        Logger.info('ops-tab: team add-member action cache cleared (will re-discover on next add)');
+    },
+
+    _subscribeOpsTeamDashboardActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
             Logger.debug('ops-tab: NetworkObserver unavailable; passive team action capture skipped');
             return;
         }
         const self = this;
         Context.networkObserver.subscribe({
-            id: 'ops-tab-team-search-action',
+            id: 'ops-tab-team-dashboard-actions',
             matches(meta) {
                 return meta.method === 'POST'
                     && !!meta.urlObj
@@ -1163,13 +1273,23 @@ const plugin = {
             onRequest(meta) {
                 const nextAction = self._opsReadHeader(meta.headers, 'next-action');
                 const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
-                if (nextAction && nextAction !== self._opsTeamSearchActionCache.nextAction) {
-                    self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
-                    Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                if (!nextAction) return;
+
+                const kind = self._opsClassifyTeamDashboardPostBody(meta.body);
+                if (kind === 'search') {
+                    if (nextAction !== self._opsTeamSearchActionCache.nextAction) {
+                        self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
+                        Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                } else if (kind === 'add-member') {
+                    if (nextAction !== self._opsTeamAddMemberActionCache.nextAction) {
+                        self._persistOpsTeamAddMemberAction({ nextAction, routerState: routerState || '' });
+                        Logger.info('ops-tab: team add-member action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
                 }
             }
         });
-        Logger.debug('ops-tab: team search action passive watcher registered');
+        Logger.debug('ops-tab: team dashboard action passive watcher registered');
     },
 
     _opsTeamSearchActionStaleError() {
@@ -1178,8 +1298,26 @@ const plugin = {
         return err;
     },
 
+    _opsTeamAddMemberActionStaleError() {
+        const err = new Error('Team add-member credentials are stale or missing.');
+        err.opsTeamAddMemberActionStale = true;
+        return err;
+    },
+
     _isOpsTeamSearchActionStaleError(err) {
         return !!(err && err.opsTeamSearchActionStale);
+    },
+
+    _isOpsTeamAddMemberActionStaleError(err) {
+        return !!(err && err.opsTeamAddMemberActionStale);
+    },
+
+    _getOpsInvokerPermissionKeys() {
+        const userId = this._getOpsCurrentUserId();
+        const cache = this._opsTeamSearchMemberCache;
+        if (!userId || !cache || !cache.memberMap) return [];
+        const invoker = cache.memberMap.get(userId);
+        return invoker ? this._opsMemberPermissionKeys(invoker) : [];
     },
 
     _renderOpsTeamSearchActionRefreshBannerHtml() {
@@ -1198,7 +1336,7 @@ const plugin = {
             '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
             '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
-            'Open the Team page to refresh them, then return here and search again.',
+            'Open the Team page, run a member search or add a member once, then return here and try again.',
             '</p>',
             '</div>',
             '</div>',
@@ -1282,6 +1420,78 @@ const plugin = {
             throw new Error('Team search HTTP ' + res.status + ': ' + text.slice(0, 300));
         }
         return text;
+    },
+
+    async _opsPostTeamDashboardAction(bodyPayload, actionCache, actionKind, logLabel) {
+        if (!actionCache || !actionCache.nextAction) {
+            throw actionKind === 'search'
+                ? this._opsTeamSearchActionStaleError()
+                : this._opsTeamAddMemberActionStaleError();
+        }
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const { nextAction, routerState } = actionCache;
+
+        const headers = {
+            accept: 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': nextAction
+        };
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
+
+        const body = JSON.stringify(bodyPayload);
+        Logger.debug('ops-tab: ' + logLabel + ' fetch', {
+            action: nextAction.slice(0, 12) + '…',
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, OPS_TEAM_SEARCH_URL, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+
+        const text = await res.text().catch(() => '');
+
+        if (res.status === 404) {
+            Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
+            if (actionKind === 'search') {
+                this._clearOpsTeamSearchActionCache();
+                throw this._opsTeamSearchActionStaleError();
+            }
+            this._clearOpsTeamAddMemberActionCache();
+            throw this._opsTeamAddMemberActionStaleError();
+        }
+
+        if (!res.ok) {
+            throw new Error('Team ' + logLabel + ' HTTP ' + res.status + ': ' + text.slice(0, 300));
+        }
+        return text;
+    },
+
+    async _opsAddMemberToTeam(teamId, email, permissionKeys) {
+        if (!teamId || !email) throw new Error('Missing team or email for add-member');
+        const perms = Array.isArray(permissionKeys) ? permissionKeys.filter(Boolean) : [];
+        if (!perms.length) {
+            throw new Error('At least one permission is required to add a team member');
+        }
+
+        const role = OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE;
+        const bodyPayload = [[email], role, perms];
+
+        await this._opsWithCurrentTeamCookie(teamId, () =>
+            this._opsPostTeamDashboardAction(
+                bodyPayload,
+                this._opsTeamAddMemberActionCache,
+                'add-member',
+                'add-member'
+            )
+        );
+        Logger.debug('ops-tab: added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
     },
 
     async _fetchOpsTeamSearchAllMembers(teamId, userId, query) {
@@ -1607,7 +1817,7 @@ const plugin = {
     },
 
     _toggleOpsMemberEditTeam(session, label) {
-        if (!session || !session.baselineTeams.has(label)) return;
+        if (!session || !label) return;
         if (session.stagedTeams.has(label)) {
             session.stagedTeams.delete(label);
         } else {
@@ -1711,20 +1921,41 @@ const plugin = {
         if (!session || !member || !cache || session.applying) return;
         if (!this._opsMemberEditHasChanges(session)) return;
 
+        const teamAdds = [...session.stagedTeams].filter((label) => !session.baselineTeams.has(label));
         const teamRemovals = [...session.baselineTeams].filter((label) => !session.stagedTeams.has(label));
         const permAdds = [...session.stagedPerms].filter((key) => !session.baselinePerms.has(key));
         const permRemovals = [...session.baselinePerms].filter((key) => !session.stagedPerms.has(key));
+
+        if (teamAdds.length && !this._opsTeamAddMemberActionCache.nextAction) {
+            this._setOpsTeamSearchStatus(modal,
+                'Cannot add to team: add-member credentials missing. Open Fleet /dashboard/team and add a member once, then retry.',
+                true, false, true);
+            return;
+        }
+
+        const addMemberPerms = [...session.stagedPerms];
+        if (!addMemberPerms.length) {
+            addMemberPerms.push(...this._getOpsInvokerPermissionKeys());
+        }
 
         session.applying = true;
         this._updateOpsMemberTileDom(modal, memberId, true);
 
         try {
+            for (const label of teamAdds) {
+                const teamId = this._getOpsTeamUuidByLabel(label);
+                if (!teamId) throw new Error('No team UUID for "' + label + '"');
+                await this._opsAddMemberToTeam(teamId, session.email, addMemberPerms);
+            }
             for (const label of teamRemovals) {
                 const teamId = this._getOpsTeamUuidByLabel(label);
                 if (!teamId) throw new Error('No team UUID for "' + label + '"');
                 await this._opsRemoveMemberFromTeam(teamId, session.email);
             }
-            for (const permKey of permAdds) {
+            const permAddsToApply = teamAdds.length
+                ? permAdds.filter((key) => !addMemberPerms.includes(key))
+                : permAdds;
+            for (const permKey of permAddsToApply) {
                 await this._opsModifyMemberPermission(memberId, permKey, 'add');
             }
             for (const permKey of permRemovals) {
@@ -1736,7 +1967,8 @@ const plugin = {
             this._cancelOpsMemberEdit(memberId);
 
             Logger.log('ops-tab: member edit applied for ' + session.email +
-                ' (teams -' + teamRemovals.length + ', perms +' + permAdds.length + ' -' + permRemovals.length + ')');
+                ' (teams +' + teamAdds.length + ' -' + teamRemovals.length +
+                ', perms +' + permAddsToApply.length + ' -' + permRemovals.length + ')');
 
             const openIds = this._captureOpsOpenMemberDetails(modal);
             openIds.add(memberId);
@@ -1884,8 +2116,13 @@ const plugin = {
 
         if (editing) {
             if (!inBaseline) {
-                return '<div style="font-size:11px;padding:2px 4px;color:var(--muted-foreground,#999);">' +
-                    '<span style="opacity:0.35;">—</span> ' + this._opsEscapeHtml(label) + '</div>';
+                const changed = inStaged;
+                const stagedClass = changed ? ' wf-ops-staged-add' : '';
+                const icon = changed ? '✅ ' : '<span style="opacity:0.35;">—</span> ';
+                const color = changed ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)';
+                return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-team" data-ops-member-id="' +
+                    attrId + '" data-ops-team-label="' + attrLabel + '" style="font-size:11px;color:' + color + ';">' +
+                    icon + this._opsEscapeHtml(label) + '</button>';
             }
             const changed = inStaged !== inBaseline;
             const stagedClass = changed ? ' wf-ops-staged-remove' : '';
