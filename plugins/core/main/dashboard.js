@@ -64,7 +64,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
-    deep: 'Loads all prompt versions and QA feedback per task (slower, full timelines on cards).'
+    deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
 };
 
 /** Tab strip order when one task matches multiple output kinds. */
@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.23',
+    _version: '4.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1246,44 +1246,6 @@ const plugin = {
         return allFeedback;
     },
 
-    async _buildEnrichedTasksById(taskRows, feedbackRows, enrichOptions) {
-        const taskById = new Map(taskRows.map((row) => [row.id, row]));
-        const profileIds = new Set();
-        for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
-        for (const fb of feedbackRows) if (fb.created_by) profileIds.add(fb.created_by);
-
-        const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
-        const profileIdsArr = [...profileIds];
-        const [profileRows, targetToProjectId] = await Promise.all([
-            profileIdsArr.length > 0 ? this._fetchProfilesByIds(profileIdsArr, 'search') : [],
-            this._fetchTargetProjectMap(uniqueTargetIds)
-        ]);
-        const profilesMap = this._buildProfilesMap(profileRows);
-        Logger.debug('dashboard: search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
-
-        const allTaskIds = [...taskById.keys()];
-        const opts = enrichOptions || {};
-        const enrichment = allTaskIds.length > 0
-            ? await Context.dashboardData.enrichTasksWithHistory(allTaskIds, profilesMap, {
-                prefetchedFeedbackRows: opts.prefetchedFeedbackRows || feedbackRows,
-                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
-            })
-            : new Map();
-        Logger.debug('dashboard: search enrichment complete (' + allTaskIds.length + ' task(s))');
-
-        const enrichedTasksById = new Map();
-        for (const taskId of allTaskIds) {
-            const taskRow = taskById.get(taskId);
-            if (!taskRow) continue;
-            const task = this._rowToTask(taskRow, profilesMap, null, targetToProjectId);
-            const hist = enrichment.get(taskId);
-            task.promptVersions = (hist && hist.promptVersions) || [];
-            task.allFeedback = (hist && hist.allFeedback) || [];
-            enrichedTasksById.set(taskId, task);
-        }
-        return { enrichedTasksById, profilesMap };
-    },
-
     async _buildQuickTasksById(taskRows, feedbackRows) {
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
         const profileIds = new Set();
@@ -1495,18 +1457,8 @@ const plugin = {
             }
         }
 
-        const isQuickSearch = searchDepth === 'quick';
-        if (isQuickSearch) {
-            this._setSearchLoadPhase('Assembling results…');
-        } else {
-            this._setSearchLoadPhase('Enriching prompt versions and feedback history…');
-        }
-        const { enrichedTasksById, profilesMap } = isQuickSearch
-            ? await this._buildQuickTasksById(allTaskRows, allFeedbackRows)
-            : await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
-                prefetchedFeedbackRows: allFeedbackRows,
-                skipFeedbackFetch: !includeQa && !includeDisputes
-            });
+        this._setSearchLoadPhase('Assembling results…');
+        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows);
         if (includeDisputes && disputesBulk.rows.length > 0) {
             this._setSearchLoadPhase('Loading dispute resolver profiles…');
             await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
@@ -1550,7 +1502,13 @@ const plugin = {
             );
         }
 
-        return mergedItems.map((item) => Object.assign({}, item, { hydrated: !isQuickSearch }));
+        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
+        return {
+            items: resultItems,
+            allFeedbackRows,
+            includeQa,
+            includeDisputes
+        };
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -2174,18 +2132,21 @@ const plugin = {
         return profilesMap;
     },
 
-    async _hydrateItems(items) {
-        const lib = dashLib();
+    async _hydrateItems(items, enrichOptions) {
         const toHydrate = (items || []).filter((it) => it && !it.hydrated);
         if (toHydrate.length === 0) return 0;
 
         const taskIds = [...new Set(toHydrate.map((it) => it.task.id).filter(Boolean))];
         const profilesMap = this._profilesMapFromHydrateItems(toHydrate);
+        const opts = enrichOptions || {};
 
         this._state.hydrateFetchActive = true;
         let updated = 0;
         try {
-            const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {});
+            const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {
+                prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
+                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+            });
             for (const item of this._state.cachedItems || []) {
                 if (!taskIds.includes(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
@@ -2205,6 +2166,41 @@ const plugin = {
         } finally {
             this._state.hydrateFetchActive = false;
         }
+    },
+
+    async _hydrateAllSearchResults(items, options) {
+        const opts = options || {};
+        const toHydrate = (items || []).filter((it) => it && !it.hydrated);
+        if (toHydrate.length === 0) return 0;
+
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            throw new Error('Dashboard helpers not loaded. Reload the page and try again.');
+        }
+
+        const enrichOptions = {
+            prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
+            skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+        };
+        const total = toHydrate.length;
+        let hydratedTotal = 0;
+        Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
+
+        for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+            const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+            const done = i;
+            if (typeof opts.onProgress === 'function') {
+                opts.onProgress(done, total);
+            }
+            hydratedTotal += await this._hydrateItems(chunk, enrichOptions);
+        }
+        if (typeof opts.onProgress === 'function') {
+            opts.onProgress(total, total);
+        }
+        if (hydratedTotal > 0) {
+            this._onScopeDataEnriched();
+        }
+        Logger.log('dashboard: deep search hydrate complete — ' + hydratedTotal + ' card(s)');
+        return hydratedTotal;
     },
 
     async _hydrateCard(itemId) {
@@ -4640,7 +4636,7 @@ const plugin = {
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
                     + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
                     + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
-                const items = await this._fetchWorkerOutputSearch({
+                const searchResult = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
                     includeQa,
@@ -4650,9 +4646,22 @@ const plugin = {
                     scope,
                     searchDepth
                 });
-                this._setSearchLoadPhase('Applying filters…');
+                const items = searchResult.items;
                 this._state.cachedItems = items;
-                Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
+                if (searchDepth === 'deep' && items.length > 0) {
+                    await this._hydrateAllSearchResults(items, {
+                        prefetchedFeedbackRows: searchResult.allFeedbackRows,
+                        skipFeedbackFetch: !searchResult.includeQa && !searchResult.includeDisputes,
+                        onProgress: (done, total) => {
+                            this._setSearchLoadPhase(
+                                'Hydrating results (' + done + '/' + total + ')…'
+                            );
+                        }
+                    });
+                }
+                this._setSearchLoadPhase('Applying filters…');
+                Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
+                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : ''));
                 const prompt = this._q('#wf-dash-prompt');
                 if (prompt) prompt.value = '';
                 const hidden = this._q('#wf-dash-hidden-versions');
@@ -4930,7 +4939,7 @@ const plugin = {
                 return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
-            const depthNote = committed.searchDepth === 'quick' ? ' · quick search' : '';
+            const depthNote = committed.searchDepth === 'deep' ? ' · deep search' : ' · quick search';
             const disputesNote = s.disputesBulkIncomplete
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
