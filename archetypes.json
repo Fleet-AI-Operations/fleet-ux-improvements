@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.25",
+  "archetypesVersion": "10.26",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -535,6 +535,12 @@
           "name": "grade-content-full-width.js",
           "version": "1.0",
           "hash": "sha256-9f023778f7689b94da062bf7c292ff101eb39ff768ecc1f4c292de842ea5d2d7",
+          "log": false
+        },
+        {
+          "name": "submitted-prompt-scroll-resize.js",
+          "version": "1.0",
+          "hash": "sha256-e3ed474778273d3ece03efd94ab73dd3268e543cc9ba6173bf3ceb887c5db7a5",
           "log": false
         }
       ]
