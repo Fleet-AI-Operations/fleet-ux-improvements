@@ -1,19 +1,17 @@
 // ============= submitted-prompt-scroll-resize.js =============
 // Archetype: assessments-grade (work/assessments/grade).
-// Replaces line-clamped submitted prompts with scrollable, vertically resizable boxes.
+// Expands line-clamped submitted prompts so the full text is visible (no scroll or resize).
 
-const STYLE_ID = 'fleet-assessments-grade-prompt-scroll-style';
-const APPLIED_ATTR = 'data-fleet-grade-prompt-scroll';
+const STYLE_ID = 'fleet-assessments-grade-prompt-expand-style';
+const APPLIED_ATTR = 'data-fleet-grade-prompt-expand';
 const QUEUE_PATH = 'work/assessments/grade';
-const INITIAL_HEIGHT = '6rem';
-const MIN_HEIGHT = '4rem';
 
 const plugin = {
     id: 'assessmentsGradeSubmittedPromptScroll',
-    name: 'Submitted Prompt Scroll Resize',
+    name: 'Submitted Prompt Full Text',
     description:
-        'Replaces line-clamped submitted prompts in the grading queue with scrollable, vertically resizable boxes',
-    _version: '1.1',
+        'Expands submitted prompts in the grading queue so the full text is visible instead of line-clamped',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -38,11 +36,9 @@ const plugin = {
         style.id = STYLE_ID;
         style.textContent = `
             [${APPLIED_ATTR}] {
-                overflow-y: auto !important;
-                resize: vertical;
-                min-height: ${MIN_HEIGHT};
-                height: ${INITIAL_HEIGHT};
-                max-width: 34rem;
+                overflow: visible !important;
+                height: auto !important;
+                max-height: none !important;
             }
             [${APPLIED_ATTR}] > p {
                 display: block !important;
@@ -93,9 +89,12 @@ const plugin = {
         return false;
     },
 
-    applyScrollResize(box, paragraph) {
+    expandPromptBox(box, paragraph) {
         this.clearLineClamp(paragraph);
         box.removeAttribute('title');
+        box.style.overflow = 'visible';
+        box.style.height = 'auto';
+        box.style.maxHeight = 'none';
         box.setAttribute(APPLIED_ATTR, '1');
     },
 
@@ -120,7 +119,7 @@ const plugin = {
             if (!this.needsApply(box, paragraph)) {
                 continue;
             }
-            this.applyScrollResize(box, paragraph);
+            this.expandPromptBox(box, paragraph);
             appliedThisPass += 1;
         }
 
@@ -133,12 +132,12 @@ const plugin = {
 
         if (!state.activationLogged) {
             Logger.info(
-                `${this.id}: scrollable resize boxes active for ${appliedThisPass} submitted prompt(s)`
+                `${this.id}: full prompt text active for ${appliedThisPass} submitted prompt(s)`
             );
             state.activationLogged = true;
         } else {
             Logger.debug(
-                `${this.id}: refreshed ${appliedThisPass} prompt box(es) (total ${state.totalApplied})`
+                `${this.id}: expanded ${appliedThisPass} prompt box(es) (total ${state.totalApplied})`
             );
         }
     }
