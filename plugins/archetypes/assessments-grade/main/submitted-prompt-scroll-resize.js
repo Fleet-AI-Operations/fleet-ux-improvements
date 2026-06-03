@@ -2,8 +2,9 @@
 // Archetype: assessments-grade (work/assessments/grade).
 // Replaces line-clamped submitted prompts with scrollable, vertically resizable boxes.
 
+const STYLE_ID = 'fleet-assessments-grade-prompt-scroll-style';
 const APPLIED_ATTR = 'data-fleet-grade-prompt-scroll';
-const PROMPT_HEADER = 'Submitted prompt';
+const QUEUE_PATH = 'work/assessments/grade';
 const INITIAL_HEIGHT = '6rem';
 const MIN_HEIGHT = '4rem';
 
@@ -12,93 +13,118 @@ const plugin = {
     name: 'Submitted Prompt Scroll Resize',
     description:
         'Replaces line-clamped submitted prompts in the grading queue with scrollable, vertically resizable boxes',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
+        stylesInjected: false,
         activationLogged: false,
         missingLogged: false,
         totalApplied: 0
     },
 
-    findSubmittedPromptColumnIndex(table) {
-        const headers = table.querySelectorAll('thead th');
-        for (let i = 0; i < headers.length; i += 1) {
-            if ((headers[i].textContent || '').trim() === PROMPT_HEADER) {
-                return i;
-            }
-        }
-        return -1;
+    isGradeQueuePage() {
+        const path = (Context.currentPath || '').replace(/^\/+/, '');
+        return path === QUEUE_PATH;
     },
 
-    findPromptParagraph(box) {
-        for (const el of box.querySelectorAll('p')) {
-            if (el.classList.contains('break-words')) {
-                return el;
+    ensureStyles(state) {
+        if (state.stylesInjected || document.getElementById(STYLE_ID)) {
+            state.stylesInjected = true;
+            return;
+        }
+
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            [${APPLIED_ATTR}] {
+                overflow-y: auto !important;
+                resize: vertical;
+                min-height: ${MIN_HEIGHT};
+                height: ${INITIAL_HEIGHT};
+                max-width: 34rem;
+            }
+            [${APPLIED_ATTR}] > p {
+                display: block !important;
+                overflow: visible !important;
+                -webkit-box-orient: unset !important;
+                -webkit-line-clamp: unset !important;
+                line-clamp: unset !important;
+            }
+        `;
+        document.head.appendChild(style);
+        state.stylesInjected = true;
+    },
+
+    clearLineClamp(paragraph) {
+        for (const className of [...paragraph.classList]) {
+            if (className.startsWith('line-clamp-')) {
+                paragraph.classList.remove(className);
             }
         }
-        return box.querySelector('p');
+        paragraph.style.display = 'block';
+        paragraph.style.overflow = 'visible';
+        paragraph.style.webkitBoxOrient = 'unset';
+        paragraph.style.webkitLineClamp = 'unset';
+    },
+
+    findPromptBoxes() {
+        const boxes = [];
+        const paragraphs = document.querySelectorAll('table tbody td p.break-words');
+        for (const paragraph of paragraphs) {
+            const box = paragraph.closest('div.rounded-md.border');
+            if (!box || box.querySelector(':scope > p') !== paragraph) {
+                continue;
+            }
+            boxes.push({ box, paragraph });
+        }
+        return boxes;
+    },
+
+    needsApply(box, paragraph) {
+        if (!box.hasAttribute(APPLIED_ATTR)) {
+            return true;
+        }
+        for (const className of paragraph.classList) {
+            if (className.startsWith('line-clamp-')) {
+                return true;
+            }
+        }
+        return false;
     },
 
     applyScrollResize(box, paragraph) {
-        paragraph.classList.remove('line-clamp-4');
+        this.clearLineClamp(paragraph);
         box.removeAttribute('title');
-
-        box.style.overflowY = 'auto';
-        box.style.resize = 'vertical';
-        box.style.minHeight = MIN_HEIGHT;
-        box.style.height = box.style.height || INITIAL_HEIGHT;
-        box.style.maxWidth = box.style.maxWidth || '34rem';
-
         box.setAttribute(APPLIED_ATTR, '1');
     },
 
     onMutation(state) {
-        const tables = Context.dom.queryAll('table', { context: `${this.id}.tables` });
-        if (!tables.length) {
+        if (!this.isGradeQueuePage()) {
+            return;
+        }
+
+        this.ensureStyles(state);
+
+        const promptBoxes = this.findPromptBoxes();
+        if (!promptBoxes.length) {
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: grading queue table not found yet`);
+                Logger.debug(`${this.id}: submitted prompt cells not found yet`);
                 state.missingLogged = true;
             }
             return;
         }
 
         let appliedThisPass = 0;
-
-        for (const table of tables) {
-            const columnIndex = this.findSubmittedPromptColumnIndex(table);
-            if (columnIndex < 0) {
+        for (const { box, paragraph } of promptBoxes) {
+            if (!this.needsApply(box, paragraph)) {
                 continue;
             }
-
-            const rows = table.querySelectorAll('tbody tr');
-            for (const row of rows) {
-                const cells = row.querySelectorAll('td');
-                const cell = cells[columnIndex];
-                if (!cell) {
-                    continue;
-                }
-
-                const box = cell.querySelector('div.rounded-md.border');
-                if (!box || box.hasAttribute(APPLIED_ATTR)) {
-                    continue;
-                }
-
-                const paragraph = this.findPromptParagraph(box);
-                if (!paragraph) {
-                    continue;
-                }
-
-                this.applyScrollResize(box, paragraph);
-                appliedThisPass += 1;
-            }
+            this.applyScrollResize(box, paragraph);
+            appliedThisPass += 1;
         }
 
         if (appliedThisPass === 0) {
-            if (state.totalApplied === 0 && !state.missingLogged) {
-                Logger.debug(`${this.id}: no submitted prompt cells found yet`);
-                state.missingLogged = true;
-            }
             return;
         }
 
@@ -112,7 +138,7 @@ const plugin = {
             state.activationLogged = true;
         } else {
             Logger.debug(
-                `${this.id}: applied scroll resize to ${appliedThisPass} prompt box(es) (total ${state.totalApplied})`
+                `${this.id}: refreshed ${appliedThisPass} prompt box(es) (total ${state.totalApplied})`
             );
         }
     }

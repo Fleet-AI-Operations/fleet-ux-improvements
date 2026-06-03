@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.26",
+  "archetypesVersion": "10.27",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -539,8 +539,8 @@
         },
         {
           "name": "submitted-prompt-scroll-resize.js",
-          "version": "1.0",
-          "hash": "sha256-e3ed474778273d3ece03efd94ab73dd3268e543cc9ba6173bf3ceb887c5db7a5",
+          "version": "1.1",
+          "hash": "sha256-a65b9765a6fd26b316074d9a6cda6868a701f83ac93d83678fd42ca50caf00c4",
           "log": false
         }
       ]
