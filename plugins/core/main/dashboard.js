@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.22',
+    _version: '4.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -834,7 +834,7 @@ const plugin = {
             key: row.key || '',
             author: {
                 id: row.created_by || '',
-                name: (profile && profile.full_name) || '',
+                name: profile ? this._personChipName(profile, row.created_by) : '',
                 email: (profile && profile.email) || ''
             },
             prompt,
@@ -867,6 +867,32 @@ const plugin = {
         }, 'author');
         const mapped = rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
         return this._filterAndRankPersons(mapped, q);
+    },
+
+    _personRawName(person) {
+        return String(person && (person.full_name ?? person.name) || '').trim();
+    },
+
+    _personNameLooksLikeId(rawName, id) {
+        return Boolean(rawName && id && rawName.toLowerCase() === id.toLowerCase());
+    },
+
+    /** Name field for person chips (email shown separately when name is absent). */
+    _personChipName(profile, personId) {
+        if (!profile) return '';
+        const rawName = this._personRawName(profile);
+        const id = String(personId || profile.id || '').trim();
+        return this._personNameLooksLikeId(rawName, id) ? '' : rawName;
+    },
+
+    /** Display label for a person: name when present, else email, else id. */
+    _personDisplayLabel(person) {
+        if (!person) return '';
+        const id = String(person.id || '').trim();
+        const rawName = this._personRawName(person);
+        const email = String(person.email || '').trim();
+        const name = this._personNameLooksLikeId(rawName, id) ? '' : rawName;
+        return name || email || id;
     },
 
     _personSearchHaystack(person) {
@@ -1304,7 +1330,7 @@ const plugin = {
                 const versionInfo = dashLib().resolveVersionAtFeedback(rawLike, feedback.created_at);
                 qaFeedback = dashLib().buildQaFeedbackDisplay(feedback, versionInfo, {
                     id: feedback.created_by,
-                    name: (qaReviewerProfile && qaReviewerProfile.full_name) || '',
+                    name: qaReviewerProfile ? this._personChipName(qaReviewerProfile, feedback.created_by) : '',
                     email: (qaReviewerProfile && qaReviewerProfile.email) || ''
                 });
             }
@@ -3856,7 +3882,7 @@ const plugin = {
         this._renderAuthorTokens();
         this._validateRangeUi();
         if (activeTab) this._setActiveTab(activeTab);
-        const label = normalized.map((p) => p.full_name || p.id).join(', ') || '(none)';
+        const label = normalized.map((p) => this._personDisplayLabel(p)).join(', ') || '(none)';
         Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
     },
 
@@ -3867,7 +3893,7 @@ const plugin = {
         this._setAuthorError('');
         this._renderAuthorTokens();
         this._validateRangeUi();
-        Logger.log('dashboard: author token added (' + (person.full_name || person.id) + ')');
+        Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
     _removeAuthorToken(id) {
@@ -3886,7 +3912,8 @@ const plugin = {
             const chip = this._pageWindow().document.createElement('span');
             chip.setAttribute('data-wf-dash-token', t.id);
             chip.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));';
-            chip.innerHTML = `${dashEscHtml(t.full_name || t.id)}<button type="button" data-wf-dash-remove-token="${dashEscHtml(t.id)}" aria-label="Remove ${dashEscHtml(t.full_name || t.id)}" style="border: none; background: transparent; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 0 0 2px;">&times;</button>`;
+            const tokenLabel = this._personDisplayLabel(t);
+            chip.innerHTML = `${dashEscHtml(tokenLabel)}<button type="button" data-wf-dash-remove-token="${dashEscHtml(t.id)}" aria-label="Remove ${dashEscHtml(tokenLabel)}" style="border: none; background: transparent; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 0 0 2px;">&times;</button>`;
             frag.appendChild(chip);
         }
         box.insertBefore(frag, input);
@@ -3907,11 +3934,15 @@ const plugin = {
         wrap.innerHTML = `
             <p style="padding: 6px 10px; font-size: 11px; color: var(--muted-foreground, #64748b); border-bottom: 1px solid var(--border, #e2e8f0);">Multiple matches — pick one:</p>
             <div style="max-height: 180px; overflow-y: auto; padding: 4px;">
-                ${results.map((c) => `
+                ${results.map((c) => {
+                    const label = this._personDisplayLabel(c);
+                    const showEmail = c.email && label !== c.email;
+                    return `
                     <button type="button" data-wf-dash-candidate="${dashEscHtml(c.id)}" style="display: block; width: 100%; text-align: left; padding: 6px 8px; font-size: 11px; background: transparent; border: none; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
-                        <span style="font-weight: 600;">${dashEscHtml(c.full_name)}</span>
-                        <span style="margin-left: 8px; color: var(--muted-foreground, #64748b);">${dashEscHtml(c.email)}</span>
-                    </button>`).join('')}
+                        <span style="font-weight: 600;">${dashEscHtml(label)}</span>
+                        ${showEmail ? `<span style="margin-left: 8px; color: var(--muted-foreground, #64748b);">${dashEscHtml(c.email)}</span>` : ''}
+                    </button>`;
+                }).join('')}
             </div>`;
         wrap.style.display = 'block';
     },
@@ -4564,7 +4595,7 @@ const plugin = {
             }
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
-            const authorLabels = this._state.draftTokens.map((t) => t.full_name || t.email || t.id);
+            const authorLabels = this._state.draftTokens.map((t) => this._personDisplayLabel(t));
             this._state.committed = {
                 authorIds,
                 authorCount: authorIds.length,
