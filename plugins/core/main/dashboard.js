@@ -83,6 +83,11 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
+const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
+
+function dashIsTeamMembersMsKey(scopeKey) {
+    return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
+}
 
 function dashLib() {
     return Context.dashboardLib;
@@ -183,7 +188,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.25',
+    _version: '4.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -207,7 +212,18 @@ const plugin = {
             switchFleetTeam: (teamId) => this._switchFleetTeam(teamId),
             setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options),
             copyChipHtml: (text) => this._copyChipHtml(text),
-            personChipsHtml: (name, email, id, linkTitle) => this._personChipsHtml(name, email, id, linkTitle)
+            personChipsHtml: (name, email, id, linkTitle) => this._personChipsHtml(name, email, id, linkTitle),
+            panelBoxStyle: () => this._panelBoxStyle(),
+            labelStyle: () => this._labelStyle(),
+            hintStyle: () => this._hintStyle(),
+            inputStyle: () => this._inputStyle(),
+            navBtnStyle: () => this._navBtnStyle(),
+            navBtnPrimaryStyle: () => this._navBtnPrimaryStyle(),
+            multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => this._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
+            renderMsList: (scopeKey, items, emptyHint, preserveSelected) => this._renderMsList(scopeKey, items, emptyHint, preserveSelected),
+            resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
+            openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
+            selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -2874,8 +2890,8 @@ const plugin = {
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
-                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; align-items: center; overflow: hidden;">
-                    <div id="wf-dash-team-members-inner" style="width: 50%; max-width: 50%; min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden;">
+                    <div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
                 </div>
                 <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
                 <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
@@ -3165,7 +3181,7 @@ const plugin = {
         const bulk = bulkActions ? `
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
                         <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
-        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-')) ? `
+        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-') || scopeKey.startsWith('team-members-')) ? `
                     <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
                         <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                     </div>` : '';
@@ -3402,6 +3418,9 @@ const plugin = {
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
             if (msKey.startsWith('search-')) this._validateRangeUi();
+            if (msKey.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                Context.opsTab.onTeamMemberMsChange(this._modal);
+            }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
                 this._renderFilterLists();
             }
@@ -3439,6 +3458,9 @@ const plugin = {
                 this._setMultiselectChecked(key, true);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
+                if (key.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                    Context.opsTab.onTeamMemberMsChange(this._modal);
+                }
                 return;
             }
             const msNone = e.target.closest('[data-wf-dash-ms-none]');
@@ -3447,6 +3469,9 @@ const plugin = {
                 this._setMultiselectChecked(key, false);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
+                if (key.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                    Context.opsTab.onTeamMemberMsChange(this._modal);
+                }
                 return;
             }
             const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
@@ -3654,14 +3679,16 @@ const plugin = {
     },
 
     _syncAllMsDropdowns() {
-        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
         for (const key of keys) this._syncMsDropdown(key);
     },
 
     _closeAllMsDropdowns() {
         this._state.msDropdownOpen = {};
         this._state.msDropdownFilter = {};
-        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
         for (const scopeKey of scopeKeys) {
             const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
             if (input) input.value = '';
@@ -3673,7 +3700,8 @@ const plugin = {
     _msDropdownScrollEl(scopeKey) {
         const panelId = (scopeKey && scopeKey.startsWith('filter-'))
             ? '#wf-dash-left-panel-filters'
-            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search' : null);
+            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search'
+                : (scopeKey && scopeKey.startsWith('team-members-') ? '#wf-ops-team-left-scroll' : null));
         if (!panelId) return null;
         const panel = this._q(panelId);
         if (!panel || panel.style.display === 'none') return null;
@@ -3707,6 +3735,13 @@ const plugin = {
 
     _toggleMsDropdown(scopeKey) {
         const wasOpen = this._isMsDropdownOpen(scopeKey);
+        if (dashIsTeamMembersMsKey(scopeKey)) {
+            if (wasOpen) delete this._state.msDropdownOpen[scopeKey];
+            else this._state.msDropdownOpen[scopeKey] = true;
+            this._syncMsDropdown(scopeKey);
+            if (!wasOpen) this._scrollOpenedMsDropdownIntoView(scopeKey);
+            return;
+        }
         this._state.msDropdownOpen = {};
         const opening = !wasOpen;
         if (opening) this._state.msDropdownOpen[scopeKey] = true;
@@ -4087,6 +4122,43 @@ const plugin = {
             countEl.style.display = all.length > 0 ? 'inline' : 'none';
         }
         this._syncMsDropdownChrome(scopeKey);
+    },
+
+    _renderMsList(scopeKey, items, emptyHint, preserveSelected) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return;
+        const prev = preserveSelected instanceof Set
+            ? preserveSelected
+            : new Set(this._selectedFromList(scopeKey));
+        itemsEl.innerHTML = this._multiSelectItemsHtml(scopeKey, items, emptyHint, false, false);
+        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            if (prev.has(cb.value)) cb.checked = true;
+        });
+        this._updateMsCount(scopeKey);
+        this._syncMsDropdown(scopeKey);
+        this._syncMsDropdownFilterUi(scopeKey);
+    },
+
+    _openTeamMemberMsDropdowns() {
+        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+            this._state.msDropdownOpen[key] = true;
+            this._syncMsDropdown(key);
+        }
+    },
+
+    _resetTeamMemberMsDropdowns() {
+        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+            delete this._state.msDropdownOpen[key];
+            delete this._state.msDropdownFilter[key];
+            const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
+            if (input) input.value = '';
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) {
+                itemsEl.innerHTML = this._multiSelectItemsHtml(key, [], 'Run search to enable', false, false);
+            }
+            this._updateMsCount(key);
+            this._syncMsDropdown(key);
+        }
     },
 
     _renderSearchTeamsList() {
