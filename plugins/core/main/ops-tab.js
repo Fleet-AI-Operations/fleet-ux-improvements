@@ -145,7 +145,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.12',
+    _version: '4.13',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2171,11 +2171,24 @@ const plugin = {
             this._opsEscapeHtml(permLabel) + '</div>';
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
-        const memberId = member.id || '';
+    _renderOpsTeamMemberPersonChipsHtml(member) {
+        const dash = Context.dashboard;
+        if (dash && typeof dash.personChipsHtml === 'function') {
+            return dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
+        }
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        return '<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;min-width:0;">' +
+            '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
+            (email ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + email + '</span>' : '') +
+            this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
+        '</span>';
+    },
+
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
+        const memberId = member.id || '';
+        const personChipsHtml = this._renderOpsTeamMemberPersonChipsHtml(member);
         const teamLabels = member.teamLabels || new Set();
         const session = this._getOpsMemberEditSession(memberId);
         const displayTeamLabels = session ? session.stagedTeams : teamLabels;
@@ -2205,12 +2218,10 @@ const plugin = {
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
                 '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">' +
                     uiBadgeHtml +
-                    '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
-                    this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
+                    personChipsHtml +
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
-            '<div style="font-size:11px;color:var(--muted-foreground,#666);margin-top:2px;min-width:0;">' + email + '</div>' +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
                     '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +

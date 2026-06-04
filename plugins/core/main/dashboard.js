@@ -183,7 +183,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.24',
+    _version: '4.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -205,7 +205,9 @@ const plugin = {
             toggle: () => this.toggle(),
             isOpen: () => this._isOpen(),
             switchFleetTeam: (teamId) => this._switchFleetTeam(teamId),
-            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options)
+            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options),
+            copyChipHtml: (text) => this._copyChipHtml(text),
+            personChipsHtml: (name, email, id, linkTitle) => this._personChipsHtml(name, email, id, linkTitle)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
