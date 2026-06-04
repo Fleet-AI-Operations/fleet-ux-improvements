@@ -188,7 +188,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.26',
+    _version: '4.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5275,9 +5275,10 @@ const plugin = {
 
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
+        const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
         const isFlagged = Boolean(qa.isFlaggedAsBugged);
-        const isEscalatedBlock = isSystem || qa.isEscalated;
+        const isEscalatedBlock = isSystem || isVerifierFailure || qa.isEscalated;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -5298,7 +5299,9 @@ const plugin = {
         }
         const alertBadge = this._qaAlertBadgeStyle();
         const flaggedBadge = this._qaFlaggedBadgeStyle();
-        const statusLabel = isSystem
+        const statusLabel = isVerifierFailure
+            ? `<span style="${alertBadge}">Verifier Generation Error</span>`
+            : (isSystem
             ? ''
             : (positive
                 ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
@@ -5306,7 +5309,7 @@ const plugin = {
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
-                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`)));
+                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
         const issueBadgeStyle = isFlagged
             ? this._qaFlaggedIssueBadgeStyle()
             : (isEscalatedBlock
@@ -5317,7 +5320,7 @@ const plugin = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
         const blocks = (qa.textBlocks || []).map((b) => {
-            const blockLabel = isSystem ? b.label : dashQaTextBlockLabel(b.label, positive);
+            const blockLabel = (isSystem || isVerifierFailure) ? b.label : dashQaTextBlockLabel(b.label, positive);
             const body = b.text
                 ? this._dashHighlightedHtml(b.text, hq, cs, fz, rx)
                 : '—';
@@ -5354,7 +5357,9 @@ const plugin = {
     },
 
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
-        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback));
+        const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+            || isVerifierFailure;
         const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
         let label = 'Returned';
         let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
@@ -5493,7 +5498,7 @@ const plugin = {
             prompt: v.prompt,
             env_key: v.envKey
         }));
-        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback);
+        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback && !f.isVerifierFailure);
         const fallbackNo = firstNegative
             ? firstNegative.linkedDisplayVersionNo
             : (promptVersions.length ? promptVersions[promptVersions.length - 1].displayVersionNo : 1);

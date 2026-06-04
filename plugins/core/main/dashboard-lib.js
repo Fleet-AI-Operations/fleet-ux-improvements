@@ -32,6 +32,9 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     escalated: 'Escalated'
 };
 
+const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
+const DASH_LIB_VERIFIER_FAILURE_BADGE = 'Verifier Generation Error';
+
 function dashLibPgInFilter(values) {
     const list = (Array.isArray(values) ? values : []).filter((v) => v != null && v !== '');
     if (list.length === 0) return null;
@@ -203,7 +206,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.12',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -286,6 +289,8 @@ const plugin = {
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
+            buildVerifierFailureDisplayFromEvent: bind(self._buildVerifierFailureDisplayFromEvent),
+            feedbackEntriesFromTaskEvents: bind(self._feedbackEntriesFromTaskEvents),
             buildDisputeDisplay: bind(self._buildDisputeDisplay),
 
             dateLocalToIso: bind(self._dateLocalToIso),
@@ -429,6 +434,7 @@ const plugin = {
     },
 
     _returnTypeOf(entry) {
+        if (entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure)) return null;
         if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) return null;
         if (entry.isPositive) return 'accepted';
         if (entry.isEscalated) return 'escalated';
@@ -716,7 +722,7 @@ const plugin = {
                         email: String(entry.reviewer.email ?? '').trim()
                     });
                 }
-                if (entry.display && entry.display.isSystemFeedback) continue;
+                if (entry.display && (entry.display.isSystemFeedback || entry.display.isVerifierFailure)) continue;
                 if (entry.display && entry.display.qualityRating) {
                     promptRatings.add(entry.display.qualityRating);
                 }
@@ -844,6 +850,69 @@ const plugin = {
                 ? String(disputeRow.original_feedback_created_at)
                 : null
         };
+    },
+
+    _isVerifierFailedTaskEvent(event) {
+        return String(event && event.event_type || '') === DASH_LIB_VERIFIER_FAILED_EVENT_TYPE;
+    },
+
+    _buildVerifierFailureDisplayFromEvent(event, versionInfo) {
+        const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+        const textBlocks = [];
+        const errorMessage = String(payload.error_message || '').trim();
+        if (errorMessage) {
+            textBlocks.push({ label: 'Error Message', text: dashLibNormalizeNewlines(errorMessage) });
+        }
+        if (payload.attempt_number != null && payload.attempt_number !== '') {
+            textBlocks.push({ label: 'Attempt Number', text: String(payload.attempt_number) });
+        }
+        const runtimeVersion = String(payload.runtime_version || '').trim();
+        if (runtimeVersion) {
+            textBlocks.push({ label: 'Runtime Version', text: runtimeVersion });
+        }
+        return {
+            isSystemFeedback: true,
+            isVerifierFailure: true,
+            isPositive: false,
+            isEscalated: false,
+            isFlaggedAsBugged: false,
+            qualityRating: null,
+            versionNo: versionInfo.displayVersionNo || versionInfo.versionNo,
+            totalVersions: versionInfo.totalVersions,
+            textBlocks,
+            rejectionBadges: [],
+            feedbackAt: String((event && event.occurred_at) || ''),
+            qaReviewerId: '',
+            qaReviewerName: '',
+            qaReviewerEmail: ''
+        };
+    },
+
+    _buildFeedbackEntryFromVerifierFailureEvent(event, rawVersions) {
+        const versionInfo = this._resolveVersionAtFeedback(rawVersions, event.occurred_at);
+        const display = this._buildVerifierFailureDisplayFromEvent(event, versionInfo);
+        return {
+            id: 'event-' + String(event.id),
+            feedbackAt: String(event.occurred_at || ''),
+            isPositive: false,
+            isEscalated: false,
+            isFlaggedAsBugged: false,
+            isSystemFeedback: true,
+            isVerifierFailure: true,
+            reviewer: { id: '', name: 'System', email: '' },
+            linkedVersionNo: versionInfo.rawVersionNo,
+            linkedDisplayVersionNo: versionInfo.displayVersionNo,
+            display
+        };
+    },
+
+    _feedbackEntriesFromTaskEvents(events, rawVersions) {
+        const entries = [];
+        for (const event of events || []) {
+            if (!this._isVerifierFailedTaskEvent(event)) continue;
+            entries.push(this._buildFeedbackEntryFromVerifierFailureEvent(event, rawVersions));
+        }
+        return entries;
     },
 
     _buildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {
