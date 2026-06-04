@@ -1,0 +1,10 @@
+backups/
+local-utils/
+.cursor/
+local/
+
+dev/ops-bundle.example.json
+
+.DS_Store
+.gitignore
+__pycache__/
