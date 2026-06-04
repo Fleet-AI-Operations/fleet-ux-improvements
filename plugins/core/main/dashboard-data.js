@@ -2,12 +2,14 @@
 // Loaded after dashboard-lib.js, before dashboard.js; registers Context.dashboardData.
 
 const DASH_DATA_FEEDBACK_PAGE_SIZE = 200;
+const DASH_DATA_FLEET_ORIGIN = 'https://www.fleetai.com';
+const DASH_DATA_FLEET_API = DASH_DATA_FLEET_ORIGIN + '/api';
 
 const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.6',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -98,11 +100,125 @@ const plugin = {
             isEscalated: display.isEscalated,
             isFlaggedAsBugged: display.isFlaggedAsBugged,
             isSystemFeedback: Boolean(display.isSystemFeedback),
+            isVerifierFailure: Boolean(display.isVerifierFailure),
             reviewer,
             linkedVersionNo: versionInfo.rawVersionNo,
             linkedDisplayVersionNo: versionInfo.displayVersionNo,
             display
         };
+    },
+
+    _normalizeTaskEventsResponse(data) {
+        if (!data) return [];
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.events)) return data.events;
+        return [];
+    },
+
+    async _fetchTaskEventsForTask(taskId) {
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.getFleetWebPath !== 'function') return [];
+        const path = ops.getFleetWebPath('task_events');
+        if (!path) return [];
+        const url = DASH_DATA_FLEET_API + path + '?taskId=' + encodeURIComponent(taskId);
+        const requestFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch : fetch;
+        const res = await requestFetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                accept: 'application/json',
+                referer: DASH_DATA_FLEET_ORIGIN + '/'
+            }
+        });
+        if (res.status === 404) return [];
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Fleet task events API ' + res.status + ': ' + (text || res.statusText));
+        }
+        return this._normalizeTaskEventsResponse(await res.json());
+    },
+
+    async _fetchTaskEventsByTaskId(taskIds) {
+        const ids = [...new Set((taskIds || []).filter(Boolean))];
+        if (ids.length === 0) return new Map();
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.getFleetWebPath !== 'function' || !ops.getFleetWebPath('task_events')) {
+            return new Map();
+        }
+        const map = new Map();
+        for (const chunk of this._pgInChunks(ids)) {
+            const results = await Promise.all(chunk.map(async (taskId) => {
+                try {
+                    const events = await this._fetchTaskEventsForTask(taskId);
+                    return { taskId, events };
+                } catch (e) {
+                    Logger.debug('dashboard-data: task events fetch failed — ' + taskId, e);
+                    return { taskId, events: [] };
+                }
+            }));
+            for (const { taskId, events } of results) {
+                if (events.length > 0) map.set(taskId, events);
+            }
+        }
+        Logger.debug('dashboard-data: task events fetched (' + map.size + ' / ' + ids.length + ' task(s))');
+        return map;
+    },
+
+    _eventsNeedRscResolve(events, lib) {
+        for (const event of events || []) {
+            const payload = event && event.payload;
+            if (lib.payloadHasUnresolvedRscRefs(payload)) return true;
+        }
+        return false;
+    },
+
+    async _resolveTaskEventsWithRsc(taskId, taskKey, jsonEvents, lib) {
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.fetchTaskDataRsc !== 'function') return jsonEvents || [];
+        const key = String(taskKey || '').trim();
+        if (!key) {
+            Logger.debug('dashboard-data: task events RSC skipped — no task key for ' + taskId);
+            return jsonEvents || [];
+        }
+        let flightText = '';
+        try {
+            flightText = await ops.fetchTaskDataRsc(key, taskId);
+        } catch (e) {
+            Logger.debug('dashboard-data: task events RSC fetch failed — ' + taskId, e);
+            return jsonEvents || [];
+        }
+        if (!flightText) return jsonEvents || [];
+
+        const flightTable = lib.parseRscFlightStringTable(flightText);
+        const rscEvents = lib.extractEventsFromRscFlight(flightText);
+        if (!rscEvents.length) {
+            Logger.debug('dashboard-data: task events RSC had no events chunk — ' + taskId);
+            return lib.resolveTaskEventsWithFlightTable(jsonEvents || [], flightTable);
+        }
+
+        const resolvedRsc = lib.resolveTaskEventsWithFlightTable(rscEvents, flightTable);
+        const merged = lib.mergeTaskEventsPreferRsc(jsonEvents || [], resolvedRsc);
+        const stillUnresolved = this._eventsNeedRscResolve(merged, lib);
+        if (stillUnresolved) {
+            Logger.debug('dashboard-data: task events still have unresolved RSC refs after flight parse — ' + taskId);
+        }
+        return merged;
+    },
+
+    _countEventFeedbackTypes(entries) {
+        let verifier = 0;
+        let bugged = 0;
+        for (const entry of entries || []) {
+            if (entry.isVerifierFailure) verifier++;
+            else if (entry.isFlaggedAsBugged) bugged++;
+        }
+        return { verifier, bugged };
+    },
+
+    _sortFeedbackEntries(entries) {
+        return [...entries].sort((a, b) => (
+            a.feedbackAt < b.feedbackAt ? 1 : a.feedbackAt > b.feedbackAt ? -1 : 0
+        ));
     },
 
     async _fetchVersionsBatch(taskIds) {
@@ -154,7 +270,7 @@ const plugin = {
     /**
      * @param {string[]} taskIds
      * @param {Map<string, {full_name: string, email: string}>} [profilesMap]
-     * @param {{ prefetchedFeedbackRows?: object[], skipFeedbackFetch?: boolean }} [options]
+     * @param {{ prefetchedFeedbackRows?: object[], skipFeedbackFetch?: boolean, taskKeysByTaskId?: Record<string, string> }} [options]
      * @returns {Promise<Map<string, { promptVersions: object[], allFeedback: object[] }>>}
      */
     async _enrichTasksWithHistory(taskIds, profilesMap, options) {
@@ -167,13 +283,17 @@ const plugin = {
 
         const prefetched = Array.isArray(opts.prefetchedFeedbackRows) ? opts.prefetchedFeedbackRows : [];
         const skipFeedbackFetch = Boolean(opts.skipFeedbackFetch);
+        const taskKeysByTaskId = opts.taskKeysByTaskId && typeof opts.taskKeysByTaskId === 'object'
+            ? opts.taskKeysByTaskId
+            : {};
         const feedbackPromise = skipFeedbackFetch
             ? Promise.resolve(prefetched)
             : this._fetchFeedbackBatch(ids, prefetched);
 
-        const [versionRows, feedbackRows] = await Promise.all([
+        const [versionRows, feedbackRows, eventsByTaskId] = await Promise.all([
             this._fetchVersionsBatch(ids),
-            feedbackPromise
+            feedbackPromise,
+            this._fetchTaskEventsByTaskId(ids)
         ]);
 
         const reviewerProfiles = new Map(profilesMap || []);
@@ -197,9 +317,27 @@ const plugin = {
             const rawVersions = versionsByTask.get(taskId) || [];
             const promptVersions = lib.computeDisplayVersions(rawVersions);
             const taskFeedback = feedbackByTask.get(taskId) || [];
-            const allFeedback = taskFeedback
-                .map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles))
-                .sort((a, b) => (a.feedbackAt < b.feedbackAt ? 1 : a.feedbackAt > b.feedbackAt ? -1 : 0));
+            const qaEntries = taskFeedback
+                .map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles));
+
+            let taskEvents = eventsByTaskId.get(taskId) || [];
+            if (this._eventsNeedRscResolve(taskEvents, lib)) {
+                const taskKey = taskKeysByTaskId[taskId];
+                taskEvents = await this._resolveTaskEventsWithRsc(taskId, taskKey, taskEvents, lib);
+            }
+
+            const eventEntries = lib.feedbackEntriesFromTaskEvents(taskEvents, rawVersions, {
+                dedupeAgainst: qaEntries
+            });
+            const allFeedback = this._sortFeedbackEntries([...qaEntries, ...eventEntries]);
+            if (eventEntries.length > 0) {
+                const counts = this._countEventFeedbackTypes(eventEntries);
+                const parts = [];
+                if (counts.verifier > 0) parts.push(counts.verifier + ' verifier');
+                if (counts.bugged > 0) parts.push(counts.bugged + ' bugged');
+                Logger.debug('dashboard-data: merged task event feedback for ' + taskId
+                    + ' (' + parts.join(', ') + ')');
+            }
             result.set(taskId, { promptVersions, allFeedback });
         }
 

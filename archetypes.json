@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.25",
+  "archetypesVersion": "10.35",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "4.12",
-      "hash": "sha256-9ac12be761353cb9bebb4d986f59befc4e4d7d3948fd4846ddbf6873ef880198",
+      "version": "4.15",
+      "hash": "sha256-d2e848db088f7fe7b2e584b7d692f72e8f53d172dde9cedeed6a891965a4ac04",
       "log": false
     },
     {
@@ -34,20 +34,20 @@
     },
     {
       "name": "dashboard-lib.js",
-      "version": "1.12",
-      "hash": "sha256-25b18768b69c4bd93246c7efb31ea31bfde106578478a4d94a0873892b70e4a4",
+      "version": "1.14",
+      "hash": "sha256-230ebf99b50dfed7b364bd521e7b77720704da415ff16afa354fc0a2b39f5538",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.6",
-      "hash": "sha256-5625d704b244bc698b056840baa2f3b84e7fbfee72bc0fef260832b62bd930e2",
+      "version": "1.8",
+      "hash": "sha256-442538f3c5e805332a37d3ce728822532b0cfb60e3bfb3fe5a43b7b58c029ce3",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "4.22",
-      "hash": "sha256-fa9a741cc1d85f1fb9e206d3fb936d3a54022bd85057526ef0ecba352fdbc57f",
+      "version": "4.27",
+      "hash": "sha256-9fe3959ac332c5f052dfbb17ed07f15f5bb5e66e73cbf8dc617accde4279ab6b",
       "log": false
     }
   ],
@@ -535,6 +535,12 @@
           "name": "grade-content-full-width.js",
           "version": "1.0",
           "hash": "sha256-9f023778f7689b94da062bf7c292ff101eb39ff768ecc1f4c292de842ea5d2d7",
+          "log": false
+        },
+        {
+          "name": "submitted-prompt-scroll-resize.js",
+          "version": "1.2",
+          "hash": "sha256-674dcc6a32f1eaa2f313c10f9b72de66029b376e7dc2b1ba617a6dc82124bd0f",
           "log": false
         }
       ]

@@ -64,7 +64,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
-    deep: 'Loads all prompt versions and QA feedback per task (slower, full timelines on cards).'
+    deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
 };
 
 /** Tab strip order when one task matches multiple output kinds. */
@@ -83,6 +83,11 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
+const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
+
+function dashIsTeamMembersMsKey(scopeKey) {
+    return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
+}
 
 function dashLib() {
     return Context.dashboardLib;
@@ -183,7 +188,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.22',
+    _version: '4.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -205,7 +210,20 @@ const plugin = {
             toggle: () => this.toggle(),
             isOpen: () => this._isOpen(),
             switchFleetTeam: (teamId) => this._switchFleetTeam(teamId),
-            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options)
+            setAuthorTokens: (persons, options) => this._setAuthorTokens(persons, options),
+            copyChipHtml: (text) => this._copyChipHtml(text),
+            personChipsHtml: (name, email, id, linkTitle) => this._personChipsHtml(name, email, id, linkTitle),
+            panelBoxStyle: () => this._panelBoxStyle(),
+            labelStyle: () => this._labelStyle(),
+            hintStyle: () => this._hintStyle(),
+            inputStyle: () => this._inputStyle(),
+            navBtnStyle: () => this._navBtnStyle(),
+            navBtnPrimaryStyle: () => this._navBtnPrimaryStyle(),
+            multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => this._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
+            renderMsList: (scopeKey, items, emptyHint, preserveSelected) => this._renderMsList(scopeKey, items, emptyHint, preserveSelected),
+            resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
+            openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
+            selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -834,7 +852,7 @@ const plugin = {
             key: row.key || '',
             author: {
                 id: row.created_by || '',
-                name: (profile && profile.full_name) || '',
+                name: profile ? this._personChipName(profile, row.created_by) : '',
                 email: (profile && profile.email) || ''
             },
             prompt,
@@ -867,6 +885,32 @@ const plugin = {
         }, 'author');
         const mapped = rows.map((p) => ({ id: p.id, full_name: p.full_name, email: p.email }));
         return this._filterAndRankPersons(mapped, q);
+    },
+
+    _personRawName(person) {
+        return String(person && (person.full_name ?? person.name) || '').trim();
+    },
+
+    _personNameLooksLikeId(rawName, id) {
+        return Boolean(rawName && id && rawName.toLowerCase() === id.toLowerCase());
+    },
+
+    /** Name field for person chips (email shown separately when name is absent). */
+    _personChipName(profile, personId) {
+        if (!profile) return '';
+        const rawName = this._personRawName(profile);
+        const id = String(personId || profile.id || '').trim();
+        return this._personNameLooksLikeId(rawName, id) ? '' : rawName;
+    },
+
+    /** Display label for a person: name when present, else email, else id. */
+    _personDisplayLabel(person) {
+        if (!person) return '';
+        const id = String(person.id || '').trim();
+        const rawName = this._personRawName(person);
+        const email = String(person.email || '').trim();
+        const name = this._personNameLooksLikeId(rawName, id) ? '' : rawName;
+        return name || email || id;
     },
 
     _personSearchHaystack(person) {
@@ -1220,44 +1264,6 @@ const plugin = {
         return allFeedback;
     },
 
-    async _buildEnrichedTasksById(taskRows, feedbackRows, enrichOptions) {
-        const taskById = new Map(taskRows.map((row) => [row.id, row]));
-        const profileIds = new Set();
-        for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
-        for (const fb of feedbackRows) if (fb.created_by) profileIds.add(fb.created_by);
-
-        const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
-        const profileIdsArr = [...profileIds];
-        const [profileRows, targetToProjectId] = await Promise.all([
-            profileIdsArr.length > 0 ? this._fetchProfilesByIds(profileIdsArr, 'search') : [],
-            this._fetchTargetProjectMap(uniqueTargetIds)
-        ]);
-        const profilesMap = this._buildProfilesMap(profileRows);
-        Logger.debug('dashboard: search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
-
-        const allTaskIds = [...taskById.keys()];
-        const opts = enrichOptions || {};
-        const enrichment = allTaskIds.length > 0
-            ? await Context.dashboardData.enrichTasksWithHistory(allTaskIds, profilesMap, {
-                prefetchedFeedbackRows: opts.prefetchedFeedbackRows || feedbackRows,
-                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
-            })
-            : new Map();
-        Logger.debug('dashboard: search enrichment complete (' + allTaskIds.length + ' task(s))');
-
-        const enrichedTasksById = new Map();
-        for (const taskId of allTaskIds) {
-            const taskRow = taskById.get(taskId);
-            if (!taskRow) continue;
-            const task = this._rowToTask(taskRow, profilesMap, null, targetToProjectId);
-            const hist = enrichment.get(taskId);
-            task.promptVersions = (hist && hist.promptVersions) || [];
-            task.allFeedback = (hist && hist.allFeedback) || [];
-            enrichedTasksById.set(taskId, task);
-        }
-        return { enrichedTasksById, profilesMap };
-    },
-
     async _buildQuickTasksById(taskRows, feedbackRows) {
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
         const profileIds = new Set();
@@ -1304,7 +1310,7 @@ const plugin = {
                 const versionInfo = dashLib().resolveVersionAtFeedback(rawLike, feedback.created_at);
                 qaFeedback = dashLib().buildQaFeedbackDisplay(feedback, versionInfo, {
                     id: feedback.created_by,
-                    name: (qaReviewerProfile && qaReviewerProfile.full_name) || '',
+                    name: qaReviewerProfile ? this._personChipName(qaReviewerProfile, feedback.created_by) : '',
                     email: (qaReviewerProfile && qaReviewerProfile.email) || ''
                 });
             }
@@ -1469,18 +1475,8 @@ const plugin = {
             }
         }
 
-        const isQuickSearch = searchDepth === 'quick';
-        if (isQuickSearch) {
-            this._setSearchLoadPhase('Assembling results…');
-        } else {
-            this._setSearchLoadPhase('Enriching prompt versions and feedback history…');
-        }
-        const { enrichedTasksById, profilesMap } = isQuickSearch
-            ? await this._buildQuickTasksById(allTaskRows, allFeedbackRows)
-            : await this._buildEnrichedTasksById(allTaskRows, allFeedbackRows, {
-                prefetchedFeedbackRows: allFeedbackRows,
-                skipFeedbackFetch: !includeQa && !includeDisputes
-            });
+        this._setSearchLoadPhase('Assembling results…');
+        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows);
         if (includeDisputes && disputesBulk.rows.length > 0) {
             this._setSearchLoadPhase('Loading dispute resolver profiles…');
             await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
@@ -1524,7 +1520,13 @@ const plugin = {
             );
         }
 
-        return mergedItems.map((item) => Object.assign({}, item, { hydrated: !isQuickSearch }));
+        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
+        return {
+            items: resultItems,
+            allFeedbackRows,
+            includeQa,
+            includeDisputes
+        };
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -2148,18 +2150,28 @@ const plugin = {
         return profilesMap;
     },
 
-    async _hydrateItems(items) {
-        const lib = dashLib();
+    async _hydrateItems(items, enrichOptions) {
         const toHydrate = (items || []).filter((it) => it && !it.hydrated);
         if (toHydrate.length === 0) return 0;
 
         const taskIds = [...new Set(toHydrate.map((it) => it.task.id).filter(Boolean))];
         const profilesMap = this._profilesMapFromHydrateItems(toHydrate);
+        const opts = enrichOptions || {};
+        const taskKeysByTaskId = {};
+        for (const it of toHydrate) {
+            if (it && it.task && it.task.id && it.task.key) {
+                taskKeysByTaskId[it.task.id] = it.task.key;
+            }
+        }
 
         this._state.hydrateFetchActive = true;
         let updated = 0;
         try {
-            const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {});
+            const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {
+                prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
+                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch),
+                taskKeysByTaskId
+            });
             for (const item of this._state.cachedItems || []) {
                 if (!taskIds.includes(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
@@ -2179,6 +2191,41 @@ const plugin = {
         } finally {
             this._state.hydrateFetchActive = false;
         }
+    },
+
+    async _hydrateAllSearchResults(items, options) {
+        const opts = options || {};
+        const toHydrate = (items || []).filter((it) => it && !it.hydrated);
+        if (toHydrate.length === 0) return 0;
+
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            throw new Error('Dashboard helpers not loaded. Reload the page and try again.');
+        }
+
+        const enrichOptions = {
+            prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
+            skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+        };
+        const total = toHydrate.length;
+        let hydratedTotal = 0;
+        Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
+
+        for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+            const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+            const done = i;
+            if (typeof opts.onProgress === 'function') {
+                opts.onProgress(done, total);
+            }
+            hydratedTotal += await this._hydrateItems(chunk, enrichOptions);
+        }
+        if (typeof opts.onProgress === 'function') {
+            opts.onProgress(total, total);
+        }
+        if (hydratedTotal > 0) {
+            this._onScopeDataEnriched();
+        }
+        Logger.log('dashboard: deep search hydrate complete — ' + hydratedTotal + ' card(s)');
+        return hydratedTotal;
     },
 
     async _hydrateCard(itemId) {
@@ -2850,8 +2897,8 @@ const plugin = {
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
                 <div data-wf-dash-panel="search-output" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">${this._searchPanelHtml()}</div>
-                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; align-items: center; overflow: hidden;">
-                    <div id="wf-dash-team-members-inner" style="width: 50%; max-width: 50%; min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
+                <div data-wf-dash-panel="team-members" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden;">
+                    <div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">${teamPanel}</div>
                 </div>
                 <div data-wf-dash-panel="verifier-fetcher" style="flex: 1; min-height: 0; display: none; flex-direction: column;">${verifierPanel}</div>
                 <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
@@ -3141,7 +3188,7 @@ const plugin = {
         const bulk = bulkActions ? `
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
                         <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
-        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-')) ? `
+        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-') || scopeKey.startsWith('team-members-')) ? `
                     <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
                         <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                     </div>` : '';
@@ -3378,6 +3425,9 @@ const plugin = {
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
             if (msKey.startsWith('search-')) this._validateRangeUi();
+            if (msKey.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                Context.opsTab.onTeamMemberMsChange(this._modal);
+            }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
                 this._renderFilterLists();
             }
@@ -3415,6 +3465,9 @@ const plugin = {
                 this._setMultiselectChecked(key, true);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
+                if (key.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                    Context.opsTab.onTeamMemberMsChange(this._modal);
+                }
                 return;
             }
             const msNone = e.target.closest('[data-wf-dash-ms-none]');
@@ -3423,6 +3476,9 @@ const plugin = {
                 this._setMultiselectChecked(key, false);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
+                if (key.startsWith('team-members-') && Context.opsTab && typeof Context.opsTab.onTeamMemberMsChange === 'function') {
+                    Context.opsTab.onTeamMemberMsChange(this._modal);
+                }
                 return;
             }
             const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
@@ -3630,14 +3686,16 @@ const plugin = {
     },
 
     _syncAllMsDropdowns() {
-        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
         for (const key of keys) this._syncMsDropdown(key);
     },
 
     _closeAllMsDropdowns() {
         this._state.msDropdownOpen = {};
         this._state.msDropdownFilter = {};
-        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(['search-teams', 'search-projects', 'search-envs']);
+        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
         for (const scopeKey of scopeKeys) {
             const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
             if (input) input.value = '';
@@ -3649,7 +3707,8 @@ const plugin = {
     _msDropdownScrollEl(scopeKey) {
         const panelId = (scopeKey && scopeKey.startsWith('filter-'))
             ? '#wf-dash-left-panel-filters'
-            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search' : null);
+            : (scopeKey && scopeKey.startsWith('search-') ? '#wf-dash-left-panel-search'
+                : (scopeKey && scopeKey.startsWith('team-members-') ? '#wf-ops-team-left-scroll' : null));
         if (!panelId) return null;
         const panel = this._q(panelId);
         if (!panel || panel.style.display === 'none') return null;
@@ -3683,6 +3742,13 @@ const plugin = {
 
     _toggleMsDropdown(scopeKey) {
         const wasOpen = this._isMsDropdownOpen(scopeKey);
+        if (dashIsTeamMembersMsKey(scopeKey)) {
+            if (wasOpen) delete this._state.msDropdownOpen[scopeKey];
+            else this._state.msDropdownOpen[scopeKey] = true;
+            this._syncMsDropdown(scopeKey);
+            if (!wasOpen) this._scrollOpenedMsDropdownIntoView(scopeKey);
+            return;
+        }
         this._state.msDropdownOpen = {};
         const opening = !wasOpen;
         if (opening) this._state.msDropdownOpen[scopeKey] = true;
@@ -3856,7 +3922,7 @@ const plugin = {
         this._renderAuthorTokens();
         this._validateRangeUi();
         if (activeTab) this._setActiveTab(activeTab);
-        const label = normalized.map((p) => p.full_name || p.id).join(', ') || '(none)';
+        const label = normalized.map((p) => this._personDisplayLabel(p)).join(', ') || '(none)';
         Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
     },
 
@@ -3867,7 +3933,7 @@ const plugin = {
         this._setAuthorError('');
         this._renderAuthorTokens();
         this._validateRangeUi();
-        Logger.log('dashboard: author token added (' + (person.full_name || person.id) + ')');
+        Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
     _removeAuthorToken(id) {
@@ -3886,7 +3952,8 @@ const plugin = {
             const chip = this._pageWindow().document.createElement('span');
             chip.setAttribute('data-wf-dash-token', t.id);
             chip.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 12%, transparent); color: var(--brand, var(--primary, #2563eb));';
-            chip.innerHTML = `${dashEscHtml(t.full_name || t.id)}<button type="button" data-wf-dash-remove-token="${dashEscHtml(t.id)}" aria-label="Remove ${dashEscHtml(t.full_name || t.id)}" style="border: none; background: transparent; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 0 0 2px;">&times;</button>`;
+            const tokenLabel = this._personDisplayLabel(t);
+            chip.innerHTML = `${dashEscHtml(tokenLabel)}<button type="button" data-wf-dash-remove-token="${dashEscHtml(t.id)}" aria-label="Remove ${dashEscHtml(tokenLabel)}" style="border: none; background: transparent; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 0 0 2px;">&times;</button>`;
             frag.appendChild(chip);
         }
         box.insertBefore(frag, input);
@@ -3907,11 +3974,15 @@ const plugin = {
         wrap.innerHTML = `
             <p style="padding: 6px 10px; font-size: 11px; color: var(--muted-foreground, #64748b); border-bottom: 1px solid var(--border, #e2e8f0);">Multiple matches — pick one:</p>
             <div style="max-height: 180px; overflow-y: auto; padding: 4px;">
-                ${results.map((c) => `
+                ${results.map((c) => {
+                    const label = this._personDisplayLabel(c);
+                    const showEmail = c.email && label !== c.email;
+                    return `
                     <button type="button" data-wf-dash-candidate="${dashEscHtml(c.id)}" style="display: block; width: 100%; text-align: left; padding: 6px 8px; font-size: 11px; background: transparent; border: none; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
-                        <span style="font-weight: 600;">${dashEscHtml(c.full_name)}</span>
-                        <span style="margin-left: 8px; color: var(--muted-foreground, #64748b);">${dashEscHtml(c.email)}</span>
-                    </button>`).join('')}
+                        <span style="font-weight: 600;">${dashEscHtml(label)}</span>
+                        ${showEmail ? `<span style="margin-left: 8px; color: var(--muted-foreground, #64748b);">${dashEscHtml(c.email)}</span>` : ''}
+                    </button>`;
+                }).join('')}
             </div>`;
         wrap.style.display = 'block';
     },
@@ -4058,6 +4129,43 @@ const plugin = {
             countEl.style.display = all.length > 0 ? 'inline' : 'none';
         }
         this._syncMsDropdownChrome(scopeKey);
+    },
+
+    _renderMsList(scopeKey, items, emptyHint, preserveSelected) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return;
+        const prev = preserveSelected instanceof Set
+            ? preserveSelected
+            : new Set(this._selectedFromList(scopeKey));
+        itemsEl.innerHTML = this._multiSelectItemsHtml(scopeKey, items, emptyHint, false, false);
+        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            if (prev.has(cb.value)) cb.checked = true;
+        });
+        this._updateMsCount(scopeKey);
+        this._syncMsDropdown(scopeKey);
+        this._syncMsDropdownFilterUi(scopeKey);
+    },
+
+    _openTeamMemberMsDropdowns() {
+        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+            this._state.msDropdownOpen[key] = true;
+            this._syncMsDropdown(key);
+        }
+    },
+
+    _resetTeamMemberMsDropdowns() {
+        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+            delete this._state.msDropdownOpen[key];
+            delete this._state.msDropdownFilter[key];
+            const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
+            if (input) input.value = '';
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) {
+                itemsEl.innerHTML = this._multiSelectItemsHtml(key, [], 'Run search to enable', false, false);
+            }
+            this._updateMsCount(key);
+            this._syncMsDropdown(key);
+        }
     },
 
     _renderSearchTeamsList() {
@@ -4564,7 +4672,7 @@ const plugin = {
             }
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
-            const authorLabels = this._state.draftTokens.map((t) => t.full_name || t.email || t.id);
+            const authorLabels = this._state.draftTokens.map((t) => this._personDisplayLabel(t));
             this._state.committed = {
                 authorIds,
                 authorCount: authorIds.length,
@@ -4609,7 +4717,7 @@ const plugin = {
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
                     + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
                     + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
-                const items = await this._fetchWorkerOutputSearch({
+                const searchResult = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
                     includeQa,
@@ -4619,9 +4727,22 @@ const plugin = {
                     scope,
                     searchDepth
                 });
-                this._setSearchLoadPhase('Applying filters…');
+                const items = searchResult.items;
                 this._state.cachedItems = items;
-                Logger.log('dashboard: search loaded ' + items.length + ' item(s)');
+                if (searchDepth === 'deep' && items.length > 0) {
+                    await this._hydrateAllSearchResults(items, {
+                        prefetchedFeedbackRows: searchResult.allFeedbackRows,
+                        skipFeedbackFetch: !searchResult.includeQa && !searchResult.includeDisputes,
+                        onProgress: (done, total) => {
+                            this._setSearchLoadPhase(
+                                'Hydrating results (' + done + '/' + total + ')…'
+                            );
+                        }
+                    });
+                }
+                this._setSearchLoadPhase('Applying filters…');
+                Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
+                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : ''));
                 const prompt = this._q('#wf-dash-prompt');
                 if (prompt) prompt.value = '';
                 const hidden = this._q('#wf-dash-hidden-versions');
@@ -4899,7 +5020,7 @@ const plugin = {
                 return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
-            const depthNote = committed.searchDepth === 'quick' ? ' · quick search' : '';
+            const depthNote = committed.searchDepth === 'deep' ? ' · deep search' : ' · quick search';
             const disputesNote = s.disputesBulkIncomplete
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
@@ -5161,9 +5282,10 @@ const plugin = {
 
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
+        const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
         const isFlagged = Boolean(qa.isFlaggedAsBugged);
-        const isEscalatedBlock = isSystem || qa.isEscalated;
+        const isEscalatedBlock = isSystem || isVerifierFailure || qa.isEscalated;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -5184,7 +5306,9 @@ const plugin = {
         }
         const alertBadge = this._qaAlertBadgeStyle();
         const flaggedBadge = this._qaFlaggedBadgeStyle();
-        const statusLabel = isSystem
+        const statusLabel = isVerifierFailure
+            ? `<span style="${alertBadge}">Verifier Generation Error</span>`
+            : (isSystem
             ? ''
             : (positive
                 ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
@@ -5192,7 +5316,7 @@ const plugin = {
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
-                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`)));
+                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
         const issueBadgeStyle = isFlagged
             ? this._qaFlaggedIssueBadgeStyle()
             : (isEscalatedBlock
@@ -5203,7 +5327,7 @@ const plugin = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
         const blocks = (qa.textBlocks || []).map((b) => {
-            const blockLabel = isSystem ? b.label : dashQaTextBlockLabel(b.label, positive);
+            const blockLabel = (isSystem || isVerifierFailure) ? b.label : dashQaTextBlockLabel(b.label, positive);
             const body = b.text
                 ? this._dashHighlightedHtml(b.text, hq, cs, fz, rx)
                 : '—';
@@ -5240,7 +5364,9 @@ const plugin = {
     },
 
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
-        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback));
+        const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+            || isVerifierFailure;
         const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
         let label = 'Returned';
         let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
@@ -5379,7 +5505,7 @@ const plugin = {
             prompt: v.prompt,
             env_key: v.envKey
         }));
-        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback);
+        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback && !f.isVerifierFailure);
         const fallbackNo = firstNegative
             ? firstNegative.linkedDisplayVersionNo
             : (promptVersions.length ? promptVersions[promptVersions.length - 1].displayVersionNo : 1);
