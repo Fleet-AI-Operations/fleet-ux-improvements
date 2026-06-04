@@ -34,6 +34,9 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
 
 const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
 const DASH_LIB_VERIFIER_FAILURE_BADGE = 'Verifier Generation Error';
+const DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE = 'qa.revision_requested';
+const DASH_LIB_RSC_REF_RE = /^\$(\d+)$/;
+const DASH_LIB_BUG_REPORT_DEDUP_MS = 2000;
 
 function dashLibPgInFilter(values) {
     const list = (Array.isArray(values) ? values : []).filter((v) => v != null && v !== '');
@@ -145,6 +148,88 @@ function dashLibIsQaEscalatedForFleetReview(data) {
     return sources.some((s) => !taskOnly.has(s));
 }
 
+function dashLibParseRscFlightStringTable(flightText) {
+    const table = new Map();
+    const text = String(flightText || '');
+    if (!text) return table;
+    for (const line of text.split('\n')) {
+        const m = line.match(/^(\d+):T[^,]*,(.*)$/);
+        if (!m) continue;
+        const id = Number(m[1]);
+        if (!Number.isInteger(id)) continue;
+        table.set(id, m[2]);
+    }
+    return table;
+}
+
+function dashLibResolveRscFlightRef(value, table) {
+    const raw = String(value ?? '');
+    const m = raw.match(DASH_LIB_RSC_REF_RE);
+    if (!m || !table) return raw;
+    const resolved = table.get(Number(m[1]));
+    return resolved != null ? String(resolved) : raw;
+}
+
+function dashLibResolveRscRefsInValue(value, table) {
+    if (value == null) return value;
+    if (typeof value === 'string') return dashLibResolveRscFlightRef(value, table);
+    if (Array.isArray(value)) return value.map((v) => dashLibResolveRscRefsInValue(v, table));
+    if (typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+            out[k] = dashLibResolveRscRefsInValue(v, table);
+        }
+        return out;
+    }
+    return value;
+}
+
+function dashLibExtractEventsFromRscFlight(flightText) {
+    const text = String(flightText || '');
+    if (!text) return [];
+    for (const line of text.split('\n')) {
+        const colon = line.indexOf(':');
+        if (colon < 1) continue;
+        const body = line.slice(colon + 1);
+        if (!body.includes('"events"')) continue;
+        try {
+            const parsed = JSON.parse(body);
+            if (parsed && Array.isArray(parsed.events)) return parsed.events;
+        } catch (_e) {
+            /* try next line */
+        }
+    }
+    return [];
+}
+
+function dashLibPayloadHasUnresolvedRscRefs(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+    const data = payload.feedback_data;
+    if (!data || typeof data !== 'object') return false;
+    for (const v of Object.values(data)) {
+        if (typeof v === 'string' && DASH_LIB_RSC_REF_RE.test(v.trim())) return true;
+    }
+    if (typeof payload.feedback_content === 'string' && DASH_LIB_RSC_REF_RE.test(payload.feedback_content.trim())) {
+        return true;
+    }
+    return false;
+}
+
+function dashLibResolveTaskEventPayload(event, table) {
+    if (!event || typeof event !== 'object' || !table || table.size === 0) return event;
+    const payload = event.payload;
+    if (!payload || typeof payload !== 'object') return event;
+    return {
+        ...event,
+        payload: dashLibResolveRscRefsInValue(payload, table)
+    };
+}
+
+function dashLibResolveTaskEventsWithFlightTable(events, table) {
+    if (!table || table.size === 0) return events || [];
+    return (events || []).map((e) => dashLibResolveTaskEventPayload(e, table));
+}
+
 function dashLibIsQaFlaggedAsBugged(data, feedbackContent) {
     if (data && typeof data === 'object') {
         if (data.bug_reason || data.bug_description) return true;
@@ -206,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.13',
+    _version: '1.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -290,7 +375,14 @@ const plugin = {
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
             buildVerifierFailureDisplayFromEvent: bind(self._buildVerifierFailureDisplayFromEvent),
+            buildBugReportDisplayFromEvent: bind(self._buildBugReportDisplayFromEvent),
             feedbackEntriesFromTaskEvents: bind(self._feedbackEntriesFromTaskEvents),
+            parseRscFlightStringTable: dashLibParseRscFlightStringTable,
+            resolveRscFlightRef: dashLibResolveRscFlightRef,
+            extractEventsFromRscFlight: dashLibExtractEventsFromRscFlight,
+            payloadHasUnresolvedRscRefs: dashLibPayloadHasUnresolvedRscRefs,
+            resolveTaskEventsWithFlightTable: dashLibResolveTaskEventsWithFlightTable,
+            mergeTaskEventsPreferRsc: bind(self._mergeTaskEventsPreferRsc),
             buildDisputeDisplay: bind(self._buildDisputeDisplay),
 
             dateLocalToIso: bind(self._dateLocalToIso),
@@ -906,11 +998,113 @@ const plugin = {
         };
     },
 
-    _feedbackEntriesFromTaskEvents(events, rawVersions) {
+    _isBugReportTaskEvent(event) {
+        if (String(event && event.event_type || '') !== DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE) {
+            return false;
+        }
+        const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+        return dashLibIsQaFlaggedAsBugged(payload.feedback_data, payload.feedback_content);
+    },
+
+    _reviewerFromTaskEventActor(actor) {
+        if (!actor || typeof actor !== 'object') {
+            return { id: '', name: '', email: '' };
+        }
+        return {
+            id: String(actor.id || ''),
+            name: String(actor.full_name || actor.name || ''),
+            email: String(actor.email || '')
+        };
+    },
+
+    _buildBugReportDisplayFromEvent(event, versionInfo) {
+        const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+        const feedbackData = payload.feedback_data && typeof payload.feedback_data === 'object'
+            ? payload.feedback_data
+            : {};
+        const pseudoRow = {
+            created_at: event.occurred_at,
+            is_positive_feedback: Boolean(payload.is_positive_feedback),
+            is_system_feedback: false,
+            feedback_content: payload.feedback_content,
+            feedback_data: feedbackData
+        };
+        const reviewer = this._reviewerFromTaskEventActor(event.actor);
+        return this._buildQaFeedbackDisplay(pseudoRow, versionInfo, reviewer);
+    },
+
+    _buildFeedbackEntryFromBugReportEvent(event, rawVersions) {
+        const versionInfo = this._resolveVersionAtFeedback(rawVersions, event.occurred_at);
+        const display = this._buildBugReportDisplayFromEvent(event, versionInfo);
+        const reviewer = this._reviewerFromTaskEventActor(event.actor);
+        return {
+            id: 'event-bug-' + String(event.id),
+            feedbackAt: String(event.occurred_at || ''),
+            isPositive: false,
+            isEscalated: display.isEscalated,
+            isFlaggedAsBugged: display.isFlaggedAsBugged,
+            isSystemFeedback: false,
+            isVerifierFailure: false,
+            reviewer,
+            linkedVersionNo: versionInfo.rawVersionNo,
+            linkedDisplayVersionNo: versionInfo.displayVersionNo,
+            display
+        };
+    },
+
+    _isDuplicateBugReportEvent(eventEntry, qaEntries) {
+        const at = Date.parse(eventEntry.feedbackAt || '');
+        if (!Number.isFinite(at)) return false;
+        const bugReason = (eventEntry.display && eventEntry.display.rejectionBadges && eventEntry.display.rejectionBadges[0])
+            ? String(eventEntry.display.rejectionBadges[0])
+            : '';
+        for (const qa of qaEntries || []) {
+            if (!qa.isFlaggedAsBugged) continue;
+            const qaAt = Date.parse(qa.feedbackAt || '');
+            if (!Number.isFinite(qaAt) || Math.abs(qaAt - at) > DASH_LIB_BUG_REPORT_DEDUP_MS) continue;
+            const qaReason = (qa.display && qa.display.rejectionBadges && qa.display.rejectionBadges[0])
+                ? String(qa.display.rejectionBadges[0])
+                : '';
+            if (!bugReason || !qaReason || bugReason === qaReason) return true;
+        }
+        return false;
+    },
+
+    _mergeTaskEventsPreferRsc(jsonEvents, rscEvents) {
+        const byId = new Map();
+        for (const event of jsonEvents || []) {
+            if (event && event.id != null) byId.set(event.id, event);
+        }
+        for (const event of rscEvents || []) {
+            if (!event || event.id == null) continue;
+            const prev = byId.get(event.id);
+            if (prev) {
+                byId.set(event.id, {
+                    ...prev,
+                    ...event,
+                    payload: event.payload != null ? event.payload : prev.payload,
+                    actor: event.actor != null ? event.actor : prev.actor
+                });
+            } else {
+                byId.set(event.id, event);
+            }
+        }
+        return [...byId.values()];
+    },
+
+    _feedbackEntriesFromTaskEvents(events, rawVersions, options) {
+        const opts = options || {};
+        const dedupeAgainst = Array.isArray(opts.dedupeAgainst) ? opts.dedupeAgainst : [];
         const entries = [];
         for (const event of events || []) {
-            if (!this._isVerifierFailedTaskEvent(event)) continue;
-            entries.push(this._buildFeedbackEntryFromVerifierFailureEvent(event, rawVersions));
+            if (this._isVerifierFailedTaskEvent(event)) {
+                entries.push(this._buildFeedbackEntryFromVerifierFailureEvent(event, rawVersions));
+                continue;
+            }
+            if (!this._isBugReportTaskEvent(event)) continue;
+            const entry = this._buildFeedbackEntryFromBugReportEvent(event, rawVersions);
+            if (this._isDuplicateBugReportEvent(entry, dedupeAgainst)) continue;
+            entries.push(entry);
         }
         return entries;
     },

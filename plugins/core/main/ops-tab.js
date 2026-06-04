@@ -39,6 +39,11 @@ const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-route
 const OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-add-member-next-action';
 /** localStorage key for the Next.js router state tree for dashboard team add-member */
 const OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-add-member-router-state';
+/** localStorage key for the Next.js server action hash for dashboard task data (events) */
+const OPS_TASK_DATA_ACTION_STORAGE_KEY = 'fleet-ux:ops-task-data-next-action';
+/** localStorage key for the Next.js router state tree for dashboard task data */
+const OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-task-data-router-state';
+const OPS_TASK_DATA_PATH_RE = /^\/dashboard\/data\/tasks\/[^/]+$/;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
@@ -145,7 +150,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.14',
+    _version: '4.15',
     phase: 'core',
     enabledByDefault: true,
 
@@ -162,6 +167,8 @@ const plugin = {
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
     /** Dynamically discovered team add-member server action (same URL as search, different action hash) */
     _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
+    /** Dynamically discovered task detail server action (task events RSC payload) */
+    _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -221,13 +228,17 @@ const plugin = {
             // tableKey → resolved table name from decrypted ops bundle
             postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params),
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
-            getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow)
+            getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow),
+            getTaskDataActionCache: () => this._opsTaskDataActionCache,
+            fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid)
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
         this._loadOpsTeamAddMemberActionFromStorage();
+        this._loadOpsTaskDataActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
         this._subscribeOpsTeamDashboardActionCapture();
+        this._subscribeOpsTaskDataActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
@@ -1159,6 +1170,21 @@ const plugin = {
         return null;
     },
 
+    _opsClassifyTaskDataPostBody(body) {
+        const text = this._opsNormalizeRequestBody(body);
+        if (!text || text.charAt(0) !== '[') return false;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (_e) {
+            return false;
+        }
+        return Array.isArray(parsed)
+            && parsed.length === 1
+            && typeof parsed[0] === 'string'
+            && OPS_UUID_RE.test(parsed[0]);
+    },
+
     _loadOpsTeamSearchActionFromStorage() {
         try {
             const storage = this._getOpsPageWindow().localStorage;
@@ -1257,6 +1283,106 @@ const plugin = {
         Logger.info('ops-tab: team add-member action cache cleared (will re-discover on next add)');
     },
 
+    _loadOpsTaskDataActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_TASK_DATA_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsTaskDataActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: task data action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: task data action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsTaskDataAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsTaskDataActionCache.nextAction;
+        this._opsTaskDataActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_TASK_DATA_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: task data action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: task data action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsTaskDataActionCache() {
+        this._opsTaskDataActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_TASK_DATA_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: task data action cache clear failed', e);
+        }
+        Logger.info('ops-tab: task data action cache cleared (will re-discover on next task page load)');
+    },
+
+    async _fetchOpsTaskDataRsc(taskKey, taskUuid) {
+        const key = String(taskKey || '').trim();
+        const uuid = String(taskUuid || '').trim();
+        if (!key || !uuid) return '';
+        if (!this._opsTaskDataActionCache.nextAction) {
+            Logger.debug('ops-tab: task data RSC skipped — no captured next-action for ' + key);
+            return '';
+        }
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const { nextAction, routerState } = this._opsTaskDataActionCache;
+        const url = OPS_FLEET_ORIGIN + '/dashboard/data/tasks/' + encodeURIComponent(key);
+
+        const headers = {
+            accept: 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': nextAction
+        };
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
+
+        const body = JSON.stringify([uuid]);
+        Logger.debug('ops-tab: task data RSC fetch', {
+            taskKey: key.slice(0, 24) + (key.length > 24 ? '…' : ''),
+            taskUuid: uuid.slice(0, 8) + '…',
+            action: nextAction.slice(0, 12) + '…',
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+        const text = await res.text().catch(() => '');
+
+        if (res.status === 404) {
+            Logger.warn('ops-tab: task data RSC got 404 — server action stale, clearing cache');
+            this._clearOpsTaskDataActionCache();
+            return '';
+        }
+        if (!res.ok) {
+            Logger.warn('ops-tab: task data RSC HTTP ' + res.status + ': ' + text.slice(0, 200));
+            return '';
+        }
+        return text;
+    },
+
     _subscribeOpsTeamDashboardActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
             Logger.debug('ops-tab: NetworkObserver unavailable; passive team action capture skipped');
@@ -1290,6 +1416,33 @@ const plugin = {
             }
         });
         Logger.debug('ops-tab: team dashboard action passive watcher registered');
+    },
+
+    _subscribeOpsTaskDataActionCapture() {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.debug('ops-tab: NetworkObserver unavailable; passive task data action capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'ops-tab-task-data-actions',
+            matches(meta) {
+                return meta.method === 'POST'
+                    && !!meta.urlObj
+                    && OPS_TASK_DATA_PATH_RE.test(meta.urlObj.pathname);
+            },
+            onRequest(meta) {
+                const nextAction = self._opsReadHeader(meta.headers, 'next-action');
+                const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
+                if (!nextAction) return;
+                if (!self._opsClassifyTaskDataPostBody(meta.body)) return;
+                if (nextAction !== self._opsTaskDataActionCache.nextAction) {
+                    self._persistOpsTaskDataAction({ nextAction, routerState: routerState || '' });
+                    Logger.info('ops-tab: task data action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                }
+            }
+        });
+        Logger.debug('ops-tab: task data action passive watcher registered');
     },
 
     _opsTeamSearchActionStaleError() {

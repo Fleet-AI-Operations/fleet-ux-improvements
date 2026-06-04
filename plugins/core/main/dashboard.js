@@ -2157,13 +2157,20 @@ const plugin = {
         const taskIds = [...new Set(toHydrate.map((it) => it.task.id).filter(Boolean))];
         const profilesMap = this._profilesMapFromHydrateItems(toHydrate);
         const opts = enrichOptions || {};
+        const taskKeysByTaskId = {};
+        for (const it of toHydrate) {
+            if (it && it.task && it.task.id && it.task.key) {
+                taskKeysByTaskId[it.task.id] = it.task.key;
+            }
+        }
 
         this._state.hydrateFetchActive = true;
         let updated = 0;
         try {
             const enrichment = await Context.dashboardData.enrichTasksWithHistory(taskIds, profilesMap, {
                 prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
-                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+                skipFeedbackFetch: Boolean(opts.skipFeedbackFetch),
+                taskKeysByTaskId
             });
             for (const item of this._state.cachedItems || []) {
                 if (!taskIds.includes(item.task.id) || item.hydrated) continue;
