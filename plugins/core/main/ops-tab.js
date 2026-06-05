@@ -158,6 +158,7 @@ const plugin = {
     _opsVerifierSourceText: '',
     _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
     _opsTeamSearchActive: null,
+    _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
     /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
     _opsFellowsSearchComplete: null,
@@ -1530,7 +1531,7 @@ const plugin = {
         Logger.info('ops-tab: team search refresh banner shown — user must visit /dashboard/team');
     },
 
-    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset, signal) {
         if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
 
@@ -1567,7 +1568,8 @@ const plugin = {
             method: 'POST',
             headers,
             body,
-            credentials: 'include'
+            credentials: 'include',
+            signal: signal || undefined
         });
 
         const text = await res.text().catch(() => '');
@@ -1656,26 +1658,77 @@ const plugin = {
         Logger.debug('ops-tab: added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
     },
 
-    async _fetchOpsTeamSearchAllMembers(teamId, userId, query) {
+    _abortOpsTeamSearchInFlight(reason) {
+        if (this._opsTeamSearchAbortController) {
+            this._opsTeamSearchAbortController.abort();
+            this._opsTeamSearchAbortController = null;
+            Logger.debug('ops-tab: team search in-flight requests aborted — ' + reason);
+        }
+    },
+
+    _isOpsTeamSearchAbortError(err) {
+        return !!(err && (err.name === 'AbortError' || err.code === 20));
+    },
+
+    async _fetchOpsTeamSearchAllMembers(teamId, userId, query, sessionId, signal) {
         const allMembers = [];
+        const seenIds = new Set();
         let offset = 0;
         let hasMore = true;
         let pageCount = 0;
         const maxPages = 200;
 
         while (hasMore && pageCount < maxPages) {
+            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+                Logger.debug('ops-tab: team search pagination stopped — session superseded');
+                break;
+            }
+            if (signal && signal.aborted) break;
+
             pageCount++;
-            const raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset);
+            let raw;
+            try {
+                raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset, signal);
+            } catch (e) {
+                if (this._isOpsTeamSearchAbortError(e)) {
+                    Logger.debug('ops-tab: team search page fetch aborted');
+                    break;
+                }
+                throw e;
+            }
+
+            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+                Logger.debug('ops-tab: team search pagination stopped after fetch — session superseded');
+                break;
+            }
+
             const parsed = this._parseOpsTeamSearchResponse(raw);
             if (!parsed || !Array.isArray(parsed.members)) break;
 
-            allMembers.push(...parsed.members);
-            hasMore = parsed.hasMore === true && parsed.members.length > 0;
+            const pageMembers = parsed.members;
+            if (pageMembers.length === 0) break;
+
+            let newCount = 0;
+            for (const member of pageMembers) {
+                if (member && member.id && !seenIds.has(member.id)) {
+                    seenIds.add(member.id);
+                    allMembers.push(member);
+                    newCount++;
+                }
+            }
+
+            if (newCount === 0) {
+                Logger.debug('ops-tab: team search pagination stopped — page had no new members');
+                break;
+            }
+
+            const fullPage = pageMembers.length >= OPS_TEAM_SEARCH_PAGE_LIMIT;
+            hasMore = parsed.hasMore === true && fullPage;
             offset += OPS_TEAM_SEARCH_PAGE_LIMIT;
 
             if (hasMore) {
-                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + parsed.members.length +
-                    ' members (total ' + allMembers.length + ', hasMore)');
+                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + pageMembers.length +
+                    ' members (' + newCount + ' new, total ' + allMembers.length + ', hasMore)');
             }
         }
 
@@ -1777,6 +1830,7 @@ const plugin = {
     },
 
     _clearOpsTeamSearchResults(modal) {
+        this._abortOpsTeamSearchInFlight('results cleared');
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
         this._opsFellowsSearchComplete = null;
@@ -1806,6 +1860,8 @@ const plugin = {
     },
 
     _onOpsModalClosed() {
+        this._abortOpsTeamSearchInFlight('modal closed');
+        this._opsTeamSearchActive = null;
         this._clearOpsMemberEditState();
     },
 
@@ -2453,6 +2509,10 @@ const plugin = {
 
         this._injectOpsSpinnerStyle();
 
+        this._abortOpsTeamSearchInFlight('new search started');
+        const abortController = new AbortController();
+        this._opsTeamSearchAbortController = abortController;
+
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
@@ -2500,12 +2560,14 @@ const plugin = {
 
         const searches = allTeams.map(async ([teamId, teamLabel]) => {
             try {
-                const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
+                const members = await this._fetchOpsTeamSearchAllMembers(
+                    teamId, userId, query, sessionId, abortController.signal);
                 if (this._opsTeamSearchActive !== sessionId) return;
                 if (staleActionDetected) return;
                 this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
                 Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
+                if (this._isOpsTeamSearchAbortError(e)) return;
                 if (this._isOpsTeamSearchActionStaleError(e)) {
                     staleActionDetected = true;
                     Logger.warn('ops-tab: team search credentials stale for ' + teamLabel);
@@ -2520,6 +2582,7 @@ const plugin = {
         await Promise.allSettled(searches);
 
         if (this._opsTeamSearchActive === sessionId) {
+            this._opsTeamSearchAbortController = null;
             if (staleActionDetected) {
                 this._showOpsTeamSearchActionRefreshBanner(modal);
                 this._opsTeamSearchMemberCache = null;
