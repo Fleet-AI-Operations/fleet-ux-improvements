@@ -187,7 +187,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.34',
+    _version: '4.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1699,28 +1699,29 @@ const plugin = {
         const qaPromise = includeQa
             ? this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : Promise.resolve([]);
+        const resolverPromise = (includeDisputes && authorIds.length > 0)
+            ? this._fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope)
+            : Promise.resolve({
+                resolverDisputeTaskIds: new Set(),
+                resolverDisputeAtByTaskId: new Map(),
+                bulkIncomplete: false
+            });
 
-        const [bootstrap, creationRows, feedbackRows] = await Promise.all([
+        const [bootstrap, creationRows, feedbackRows, resolverResult] = await Promise.all([
             bootstrapPromise,
             tasksPromise,
-            qaPromise
+            qaPromise,
+            resolverPromise
         ]);
         this._state.openDisputesByTaskId = bootstrap.openDisputesByTaskId;
         this._state.resolvedDisputeTaskIds = bootstrap.resolvedDisputeTaskIds;
         this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
         let bulkIncomplete = bootstrap.bulkIncomplete;
-
-        let resolverDisputeTaskIds = new Set();
-        if (includeDisputes && authorIds.length > 0) {
-            const resolverResult = await this._fetchDisputeResolverTaskIds(
-                authorIds, afterIso, beforeIso, scope
-            );
-            resolverDisputeTaskIds = resolverResult.resolverDisputeTaskIds;
-            bulkIncomplete = bulkIncomplete || resolverResult.bulkIncomplete;
-            for (const [taskId, at] of resolverResult.resolverDisputeAtByTaskId) {
-                const prev = bootstrap.resolvedDisputeAtByTaskId.get(taskId);
-                if (!prev || at > prev) bootstrap.resolvedDisputeAtByTaskId.set(taskId, at);
-            }
+        const resolverDisputeTaskIds = resolverResult.resolverDisputeTaskIds;
+        bulkIncomplete = bulkIncomplete || resolverResult.bulkIncomplete;
+        for (const [taskId, at] of resolverResult.resolverDisputeAtByTaskId) {
+            const prev = bootstrap.resolvedDisputeAtByTaskId.get(taskId);
+            if (!prev || at > prev) bootstrap.resolvedDisputeAtByTaskId.set(taskId, at);
         }
         this._state.resolverDisputeTaskIds = resolverDisputeTaskIds;
         this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
