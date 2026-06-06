@@ -356,6 +356,11 @@
       "file": "prompt-version-actions.js",
       "name": "Prompt Version Actions",
       "description": "On dashboard task prompt history rows, copy version UUID prefix and open view-task link per display version"
+    },
+    {
+      "file": "task-user-story-section.js",
+      "name": "Task User Story Section",
+      "description": "Shows task user story between Project and Contributors with copy and vertical resize"
     }
   ],
   "archetypes/dashboard-data-expert/main": [

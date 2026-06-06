@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.40",
+  "archetypesVersion": "10.41",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "4.18",
-      "hash": "sha256-3c51e0d27d873c2191a10079d655b56f0010eeb1aa366de957dbc446f84a5a36",
+      "version": "4.19",
+      "hash": "sha256-091d809a7377da45d01422c652982b04e0e08f8362d1649eabf06f66b008b72b",
       "log": false
     },
     {
@@ -488,6 +488,12 @@
           "name": "prompt-version-actions.js",
           "version": "1.0",
           "hash": "sha256-17fe37d5f65156322fc5e2b9d59dbe9a3f95c2594ac97844b4e8dc6ddb6d8efd",
+          "log": false
+        },
+        {
+          "name": "task-user-story-section.js",
+          "version": "1.0",
+          "hash": "sha256-f450f816bc1adc0b48d2023c33d5b3ad4b4f54558c334f65fc15b99f9709a827",
           "log": false
         }
       ]

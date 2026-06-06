@@ -176,7 +176,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.18',
+    _version: '4.19',
     phase: 'core',
     enabledByDefault: true,
 
@@ -244,6 +244,7 @@ const plugin = {
             resolveTaskLinkTarget: (raw) => this.resolveTaskLinkTarget(raw),
             openTaskLink: (raw, opts) => this.openTaskLink(raw, opts),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
+            fetchTaskUserStory: (parsed) => this._fetchOpsTaskUserStory(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
             getOpsBundle: () => this._getOpsBundle(),
@@ -872,6 +873,76 @@ const plugin = {
             verifierId: verifierId || parsed.verifierId || '',
             verifierKey: verifierKey || parsed.verifierKey || '',
             verifierVersion: verifierVersion != null ? verifierVersion : (parsed.verifierVersion != null ? parsed.verifierVersion : null)
+        };
+    },
+
+    async _fetchOpsTaskUserStory(parsed) {
+        const taskKey = String(parsed.taskKey || '').trim();
+        const taskId = String(parsed.taskId || '').trim();
+        if (!taskKey && !taskId) {
+            throw new Error('taskKey or taskId required for user story lookup.');
+        }
+
+        const taskParams = { select: 'id,task_scenario_id', limit: 1 };
+        if (taskKey) taskParams.key = 'eq.' + taskKey;
+        else taskParams.id = 'eq.' + taskId;
+
+        Logger.debug('ops-tab: user story task lookup', {
+            taskKey: taskKey || '(none)',
+            taskId: taskId ? taskId.slice(0, 8) + '…' : '(none)'
+        });
+
+        const taskRows = await this._opsPostgrestGetByKey('tasks', taskParams);
+        const taskRow = Array.isArray(taskRows) ? taskRows[0] : taskRows;
+        if (!taskRow || !taskRow.id) {
+            return {
+                taskId: '',
+                taskScenarioId: null,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'task_not_found'
+            };
+        }
+
+        const scenarioId = taskRow.task_scenario_id;
+        if (scenarioId == null) {
+            return {
+                taskId: taskRow.id,
+                taskScenarioId: null,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'no_scenario_id'
+            };
+        }
+
+        const scenRows = await this._opsPostgrestGet('task_scenarios', {
+            select: 'scenario_title,user_story,human_annotator_instructions',
+            id: 'eq.' + scenarioId,
+            limit: 1
+        });
+        const scenRow = Array.isArray(scenRows) ? scenRows[0] : scenRows;
+        if (!scenRow) {
+            return {
+                taskId: taskRow.id,
+                taskScenarioId: scenarioId,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'scenario_not_found'
+            };
+        }
+
+        return {
+            taskId: taskRow.id,
+            taskScenarioId: scenarioId,
+            scenarioTitle: scenRow.scenario_title != null ? String(scenRow.scenario_title) : null,
+            userStory: scenRow.user_story != null ? String(scenRow.user_story) : null,
+            humanAnnotatorInstructions: scenRow.human_annotator_instructions != null
+                ? String(scenRow.human_annotator_instructions)
+                : null,
+            reason: null
         };
     },
 
