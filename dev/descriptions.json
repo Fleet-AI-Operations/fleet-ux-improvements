@@ -242,7 +242,13 @@
       "description": "Sorts environment cards A–Z by name on the task creation environment picker page."
     }
   ],
-  "archetypes/task-view/main": [],
+  "archetypes/task-view/main": [
+    {
+      "file": "activity-identity-reveal.js",
+      "name": "Activity Identity Reveal",
+      "description": "When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link"
+    }
+  ],
   "archetypes/tool-use-revision/main": [
     {
       "file": "bug-report-expand.js",
