@@ -150,7 +150,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.15',
+    _version: '4.16',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2354,15 +2354,24 @@ const plugin = {
 
     _renderOpsTeamMemberPersonChipsHtml(member) {
         const dash = Context.dashboard;
+        const memberId = String(member.id || '').trim();
         if (dash && typeof dash.personChipsHtml === 'function') {
-            return dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
+            let html = dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
+            if (memberId && typeof dash.copyChipHtml === 'function') {
+                html = html.replace(/(<a href)/, dash.copyChipHtml(memberId) + '$1');
+            }
+            return html;
         }
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
+        const idChip = memberId && dash && typeof dash.copyChipHtml === 'function'
+            ? dash.copyChipHtml(memberId)
+            : (memberId ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(memberId) + '</span>' : '');
         return '<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;min-width:0;">' +
             '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
             (email ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + email + '</span>' : '') +
+            idChip +
             this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
         '</span>';
     },
