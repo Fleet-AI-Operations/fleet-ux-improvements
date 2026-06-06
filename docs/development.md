@@ -240,12 +240,12 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
 **encrypt-ops-bundle.sh** — `./dev/utils/encrypt-ops-bundle.sh encrypt` (preferred)
 
-Operator-only bundle (team UUIDs, PostgREST table/query catalog, Fleet web paths) for the Ops dashboard:
+Operator-only bundle (PostgREST table/query catalog, Fleet web paths) for the Ops dashboard.
 
 1. Create or update `local/ops-bundle.json` (`local/` is gitignored). Use your local `dev/ops-bundle.example.json` (gitignored) as a schema template, or `./dev/utils/encrypt-ops-bundle.sh decrypt` on a machine that already has the bundle.
 2. Put the Ops password in `local/PostgREST/password` (gitignored). Same password unlocks **Enable Ops Dashboard** in Settings.
 3. With **Open dashboard when opening settings** enabled (default), the extension gear opens the dashboard when unlocked.
-4. Edit `local/ops-bundle.json` when schema or team lists change.
+4. Edit `local/ops-bundle.json` when PostgREST query shapes or Fleet web paths change.
 5. Run `./dev/utils/encrypt-ops-bundle.sh encrypt` (reads the password file automatically).
 6. Run `./dev/utils/hash-ops-password.sh` when the password changes; update `archetypes.json` → `opsAccess.passwordHash`.
 7. Commit `ops-secrets.enc.json` at the repo root only. Never commit `local/ops-bundle.json` or `local/PostgREST/password`.
