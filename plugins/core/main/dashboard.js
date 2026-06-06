@@ -17,7 +17,7 @@ const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
 const DASH_CARD_KIND_TAB_GAP = '0.25rem';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
-const DASH_BOOTSTRAP_VERSION = 1;
+const DASH_BOOTSTRAP_VERSION = 2;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,8 +69,6 @@ const DASH_SEARCH_DEPTH_HINTS = {
 
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
-
-const DASH_EXCLUDED_TEAM_NAMES = ['Fleet Fellows', 'Trace QA'];
 
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
@@ -188,7 +186,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.27',
+    _version: '4.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -289,12 +287,21 @@ const plugin = {
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             if (!parsed || parsed.version !== DASH_BOOTSTRAP_VERSION) return null;
+            const currentProfileId = this._dashGetCurrentUserId();
+            if (parsed.profileId && currentProfileId && parsed.profileId !== currentProfileId) {
+                Logger.debug('dashboard: bootstrap cache discarded (profile mismatch)');
+                return null;
+            }
             if (parsed.updatedAt) {
                 const ageMs = Date.now() - Date.parse(parsed.updatedAt);
                 if (!Number.isNaN(ageMs) && ageMs > DASH_BOOTSTRAP_TTL_MS) {
                     Logger.debug('dashboard: bootstrap cache expired (age ' + Math.round(ageMs / 3600000) + 'h)');
                     return null;
                 }
+            }
+            if (parsed.profileId && Array.isArray(parsed.teams) && Context.opsTab
+                && typeof Context.opsTab.hydrateUserTeamCatalog === 'function') {
+                Context.opsTab.hydrateUserTeamCatalog(parsed.profileId, parsed.teams);
             }
             return parsed;
         } catch (_e) {
@@ -306,6 +313,8 @@ const plugin = {
         const entry = {
             version: DASH_BOOTSTRAP_VERSION,
             updatedAt: new Date().toISOString(),
+            profileId: data.profileId || '',
+            teams: data.teams || [],
             projects: data.projects,
             environments: data.environments
         };
@@ -326,13 +335,34 @@ const plugin = {
 
     // ── Catalog / team helpers ──
 
+    _dashFormatTeamDisplayLabel(name) {
+        if (Context.opsTab && typeof Context.opsTab.formatTeamDisplayLabel === 'function') {
+            return Context.opsTab.formatTeamDisplayLabel(name);
+        }
+        const full = String(name || '').trim();
+        const prefix = 'Task Designers - ';
+        return full.startsWith(prefix) ? full.slice(prefix.length).trim() : full;
+    },
+
+    _dashIsTaskDesignersTeam(name) {
+        if (Context.opsTab && typeof Context.opsTab.isTaskDesignersTeam === 'function') {
+            return Context.opsTab.isTaskDesignersTeam(name);
+        }
+        return String(name || '').startsWith('Task Designers - ');
+    },
+
     _getTeamCatalog() {
+        const fromCatalog = this._state.catalog && Array.isArray(this._state.catalog.teams)
+            ? this._state.catalog.teams
+            : null;
+        if (fromCatalog && fromCatalog.length > 0) {
+            return fromCatalog
+                .map((t) => [t.id, t.displayName || this._dashFormatTeamDisplayLabel(t.name)])
+                .filter((pair) => Array.isArray(pair) && pair[0] && pair[1]);
+        }
         try {
-            const secrets = Context.opsTab && typeof Context.opsTab.getSecrets === 'function'
-                ? Context.opsTab.getSecrets()
-                : null;
-            if (secrets && Array.isArray(secrets['team-uuids'])) {
-                return secrets['team-uuids'].filter((pair) => Array.isArray(pair) && pair[0] && pair[1]);
+            if (Context.opsTab && typeof Context.opsTab.getUserTeamCatalog === 'function') {
+                return Context.opsTab.getUserTeamCatalog();
             }
         } catch (e) {
             Logger.debug('dashboard: team catalog read failed', e);
@@ -340,13 +370,24 @@ const plugin = {
         return [];
     },
 
-    _isExcludedTeamName(label) {
-        const norm = String(label || '').trim().toLowerCase();
-        return DASH_EXCLUDED_TEAM_NAMES.some((name) => name.toLowerCase() === norm);
-    },
-
     _getSearchableTeamCatalog() {
-        return this._getTeamCatalog().filter(([, label]) => !this._isExcludedTeamName(label));
+        const fromCatalog = this._state.catalog && Array.isArray(this._state.catalog.teams)
+            ? this._state.catalog.teams
+            : null;
+        if (fromCatalog && fromCatalog.length > 0) {
+            return fromCatalog
+                .filter((t) => this._dashIsTaskDesignersTeam(t.name))
+                .map((t) => [t.id, t.displayName || this._dashFormatTeamDisplayLabel(t.name)])
+                .filter((pair) => pair[0] && pair[1]);
+        }
+        try {
+            if (Context.opsTab && typeof Context.opsTab.getUserTeamCatalog === 'function') {
+                return Context.opsTab.getUserTeamCatalog();
+            }
+        } catch (e) {
+            Logger.debug('dashboard: searchable team catalog read failed', e);
+        }
+        return [];
     },
 
     _teamName(teamId) {
@@ -954,13 +995,28 @@ const plugin = {
     // ── Bootstrap (projects + environments) ──
 
     async _runBootstrap() {
-        const teamCatalog = this._getSearchableTeamCatalog();
-        const teamIds = teamCatalog.map(([id]) => id);
+        const ops = this._dashOpsTab();
+        const profileId = this._dashGetCurrentUserId();
+        if (!profileId) {
+            throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        }
+
         const projectsParams = {
             status: 'neq.archived',
             order: 'created_at.desc',
             limit: '400'
         };
+
+        const userTeams = await ops.fetchUserTeamCatalog(profileId);
+        const teams = userTeams.map((t) => ({
+            id: t.id,
+            name: t.name,
+            displayName: t.displayName || this._dashFormatTeamDisplayLabel(t.name)
+        }));
+        const teamIds = userTeams
+            .filter((t) => this._dashIsTaskDesignersTeam(t.name))
+            .map((t) => t.id);
+
         const fetchBootstrapProjects = async () => {
             if (teamIds.length === 0) {
                 return this._pgQuery('task_projects.select_bootstrap', projectsParams, 'bootstrap');
@@ -977,6 +1033,7 @@ const plugin = {
             }
             return merged;
         };
+
         const [projectPages, environments] = await Promise.all([
             fetchBootstrapProjects(),
             this._pgQuery('environments.select_bootstrap', {
@@ -988,7 +1045,7 @@ const plugin = {
         const projectRows = Array.isArray(projectPages) ? projectPages : [];
         for (const row of projectRows) if (!projectsById.has(row.id)) projectsById.set(row.id, row);
         const projects = Array.from(projectsById.values());
-        return this._writeBootstrapCache({ projects, environments });
+        return this._writeBootstrapCache({ profileId, teams, projects, environments });
     },
 
     async _doBootstrap() {
@@ -1000,7 +1057,8 @@ const plugin = {
             this._state.catalog = result;
             this._state.bootstrapStatus = 'done';
             this._state.sessionRefreshRequired = false;
-            Logger.log('dashboard: bootstrap complete (' + result.projects.length + ' projects, ' + result.environments.length + ' environments)');
+            Logger.log('dashboard: bootstrap complete (' + (result.teams ? result.teams.length : 0) + ' teams, '
+                + result.projects.length + ' projects, ' + result.environments.length + ' environments)');
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
                 this._state.bootstrapError = null;
@@ -4959,7 +5017,6 @@ const plugin = {
     _setSearchLoadPhase(message) {
         if (!this._state || !this._state.loading) return;
         this._state.searchLoadPhase = String(message || '').trim();
-        this._renderResults();
     },
 
     _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes }) {
@@ -5039,10 +5096,9 @@ const plugin = {
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
         if (s.loading) {
-            const phase = String(s.searchLoadPhase || '').trim();
-            wrap.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
+            if (wrap.querySelector('[data-wf-dash-results-loading]')) return;
+            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: center; justify-content: center; padding: 48px 16px; min-height: 120px;">
                 ${this._loadingSpinnerHtml(20)}
-                ${phase ? `<span style="font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;">${dashEscHtml(phase)}</span>` : ''}
             </div>`;
             return;
         }

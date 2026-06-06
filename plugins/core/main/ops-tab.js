@@ -54,9 +54,35 @@ const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
 const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
-/** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
-const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
+/** Fleet API prefix for teams included in dashboard / ops team search. */
+const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
+/** Display labels that alone do not qualify a member for the UI badge. */
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts']);
+
+function opsIsTaskDesignersTeamName(name) {
+    return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
+}
+
+function opsFormatTeamDisplayLabel(name) {
+    const full = String(name || '').trim();
+    if (opsIsTaskDesignersTeamName(full)) {
+        return full.slice(OPS_TASK_DESIGNERS_TEAM_PREFIX.length).trim();
+    }
+    return full;
+}
+
+function opsNormalizeTeamCatalogEntry(team) {
+    const name = String(team && team.name || '').trim();
+    const id = String(team && team.id || '').trim();
+    if (!id || !name) return null;
+    return {
+        id,
+        name,
+        displayName: String(team.displayName || opsFormatTeamDisplayLabel(name)).trim() || name,
+        role: team.role || null,
+        membershipCreatedAt: team.membershipCreatedAt || null
+    };
+}
 /** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
 const OPS_ALL_PERMISSIONS = [
     ['QA_CUA_TASKS', 'QA CUA Tasks'],
@@ -150,7 +176,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.15',
+    _version: '4.19',
     phase: 'core',
     enabledByDefault: true,
 
@@ -158,8 +184,9 @@ const plugin = {
     _opsVerifierSourceText: '',
     _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
     _opsTeamSearchActive: null,
+    _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
-    /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
+    /** Legacy Fellows-search gate; team search is Task Designers only, so this stays true when idle. */
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
     _opsMemberEditState: null,
@@ -172,6 +199,8 @@ const plugin = {
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
+    /** Runtime team catalog for the logged-in user (from PostgREST team_member embed) */
+    _opsUserTeamCatalogCache: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -215,6 +244,7 @@ const plugin = {
             resolveTaskLinkTarget: (raw) => this.resolveTaskLinkTarget(raw),
             openTaskLink: (raw, opts) => this.openTaskLink(raw, opts),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
+            fetchTaskUserStory: (parsed) => this._fetchOpsTaskUserStory(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
             getOpsBundle: () => this._getOpsBundle(),
@@ -230,7 +260,12 @@ const plugin = {
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
             getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow),
             getTaskDataActionCache: () => this._opsTaskDataActionCache,
-            fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid)
+            fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
+            fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
+            getUserTeamCatalog: () => this.getUserTeamCatalog(),
+            hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams),
+            isTaskDesignersTeam: (name) => opsIsTaskDesignersTeamName(name),
+            formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name)
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -841,6 +876,76 @@ const plugin = {
         };
     },
 
+    async _fetchOpsTaskUserStory(parsed) {
+        const taskKey = String(parsed.taskKey || '').trim();
+        const taskId = String(parsed.taskId || '').trim();
+        if (!taskKey && !taskId) {
+            throw new Error('taskKey or taskId required for user story lookup.');
+        }
+
+        const taskParams = { select: 'id,task_scenario_id', limit: 1 };
+        if (taskKey) taskParams.key = 'eq.' + taskKey;
+        else taskParams.id = 'eq.' + taskId;
+
+        Logger.debug('ops-tab: user story task lookup', {
+            taskKey: taskKey || '(none)',
+            taskId: taskId ? taskId.slice(0, 8) + '…' : '(none)'
+        });
+
+        const taskRows = await this._opsPostgrestGetByKey('tasks', taskParams);
+        const taskRow = Array.isArray(taskRows) ? taskRows[0] : taskRows;
+        if (!taskRow || !taskRow.id) {
+            return {
+                taskId: '',
+                taskScenarioId: null,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'task_not_found'
+            };
+        }
+
+        const scenarioId = taskRow.task_scenario_id;
+        if (scenarioId == null) {
+            return {
+                taskId: taskRow.id,
+                taskScenarioId: null,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'no_scenario_id'
+            };
+        }
+
+        const scenRows = await this._opsPostgrestGet('task_scenarios', {
+            select: 'scenario_title,user_story,human_annotator_instructions',
+            id: 'eq.' + scenarioId,
+            limit: 1
+        });
+        const scenRow = Array.isArray(scenRows) ? scenRows[0] : scenRows;
+        if (!scenRow) {
+            return {
+                taskId: taskRow.id,
+                taskScenarioId: scenarioId,
+                scenarioTitle: null,
+                userStory: null,
+                humanAnnotatorInstructions: null,
+                reason: 'scenario_not_found'
+            };
+        }
+
+        return {
+            taskId: taskRow.id,
+            taskScenarioId: scenarioId,
+            scenarioTitle: scenRow.scenario_title != null ? String(scenRow.scenario_title) : null,
+            userStory: scenRow.user_story != null ? String(scenRow.user_story) : null,
+            humanAnnotatorInstructions: scenRow.human_annotator_instructions != null
+                ? String(scenRow.human_annotator_instructions)
+                : null,
+            reason: null
+        };
+    },
+
     async _resolveOpsVerifierByTaskKey(taskKey, teamId) {
         if (!taskKey) return null;
         const prefix = 'verifier-' + taskKey + '-';
@@ -895,18 +1000,83 @@ const plugin = {
     },
 
     async _resolveOpsTeamId(pageWindow) {
-        try {
-            const params = { select: 'team_id', limit: 1 };
-            const rows = await this._opsPostgrestQuery('team_members.select_team', params);
-            const row = Array.isArray(rows) ? rows[0] : rows;
-            if (row && row.team_id) {
-                Logger.debug('ops-tab: resolved team_id from team_members: ' + row.team_id);
-                return row.team_id;
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: team_members lookup failed', e);
+        const fromCookie = this._getOpsCookieValue('current-team-id');
+        if (fromCookie && OPS_UUID_RE.test(fromCookie)) {
+            Logger.debug('ops-tab: resolved team_id from current-team-id cookie: ' + fromCookie);
+            return fromCookie;
+        }
+        const catalog = this.getUserTeamCatalog();
+        if (catalog.length > 0 && catalog[0][0]) {
+            Logger.debug('ops-tab: resolved team_id from user team catalog: ' + catalog[0][0]);
+            return catalog[0][0];
         }
         return '';
+    },
+
+    _hydrateUserTeamCatalog(profileId, teams) {
+        const id = String(profileId || '').trim();
+        if (!id || !OPS_UUID_RE.test(id) || !Array.isArray(teams)) return;
+        this._opsUserTeamCatalogCache = {
+            profileId: id,
+            fetchedAt: new Date().toISOString(),
+            teams: teams.map((t) => opsNormalizeTeamCatalogEntry(t)).filter(Boolean)
+        };
+    },
+
+    async fetchUserTeamCatalog(profileId, options) {
+        const force = options && options.force;
+        const id = String(profileId || this._getOpsCurrentUserId() || '').trim();
+        if (!id || !OPS_UUID_RE.test(id)) {
+            throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        }
+        const cache = this._opsUserTeamCatalogCache;
+        if (!force && cache && cache.profileId === id && Array.isArray(cache.teams)) {
+            return cache.teams;
+        }
+        const rows = await this._opsPostgrestGet('team_member', {
+            select: '*,team:team(*)',
+            profile_id: 'eq.' + id,
+            status: 'eq.ACTIVE'
+        });
+        const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+        const teams = list
+            .map((row) => {
+                const team = row && row.team;
+                if (!team || !team.id || !team.name) return null;
+                return opsNormalizeTeamCatalogEntry({
+                    id: team.id,
+                    name: team.name,
+                    role: row.role || null,
+                    membershipCreatedAt: row.created_at || null
+                });
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        this._opsUserTeamCatalogCache = {
+            profileId: id,
+            fetchedAt: new Date().toISOString(),
+            teams
+        };
+        Logger.info('ops-tab: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        return teams;
+    },
+
+    getUserTeamCatalog() {
+        const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
+            ? this._opsUserTeamCatalogCache.teams
+            : [];
+        return teams
+            .filter((t) => opsIsTaskDesignersTeamName(t.name))
+            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)]);
+    },
+
+    getUserTeamByLabel(label) {
+        const norm = String(label || '').trim();
+        if (!norm) return '';
+        const teams = this._opsUserTeamCatalogCache && this._opsUserTeamCatalogCache.teams;
+        if (!Array.isArray(teams)) return '';
+        const found = teams.find((t) => t.displayName === norm || t.name === norm);
+        return found ? found.id : '';
     },
 
     _getOpsCookieValue(name) {
@@ -944,6 +1114,9 @@ const plugin = {
     _persistOpsCurrentUserId(userId, source) {
         if (!userId || !OPS_UUID_RE.test(userId)) return;
         const changed = userId !== this._opsCurrentUserIdCache;
+        if (changed) {
+            this._opsUserTeamCatalogCache = null;
+        }
         this._opsCurrentUserIdCache = userId;
         try {
             const storage = this._getOpsPageWindow().localStorage;
@@ -1082,10 +1255,7 @@ const plugin = {
     },
 
     _getOpsTeamUuidByLabel(label) {
-        const secrets = this._getOpsSecretsJson();
-        if (!secrets || !Array.isArray(secrets['team-uuids'])) return '';
-        const entry = secrets['team-uuids'].find(pair => Array.isArray(pair) && pair[1] === label);
-        return entry ? String(entry[0]) : '';
+        return this.getUserTeamByLabel(label);
     },
 
     _getOpsNextDeploymentId(pageWindow) {
@@ -1530,8 +1700,8 @@ const plugin = {
         Logger.info('ops-tab: team search refresh banner shown — user must visit /dashboard/team');
     },
 
-    async _fetchOpsTeamSearchPage(teamId, userId, query, offset) {
-        if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
+    async _fetchOpsTeamSearchPage(teamId, userId, query, offset, signal) {
+        if (!teamId) throw new Error('No team ID available for search.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
 
         if (!this._opsTeamSearchActionCache.nextAction) {
@@ -1567,7 +1737,8 @@ const plugin = {
             method: 'POST',
             headers,
             body,
-            credentials: 'include'
+            credentials: 'include',
+            signal: signal || undefined
         });
 
         const text = await res.text().catch(() => '');
@@ -1656,26 +1827,77 @@ const plugin = {
         Logger.debug('ops-tab: added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
     },
 
-    async _fetchOpsTeamSearchAllMembers(teamId, userId, query) {
+    _abortOpsTeamSearchInFlight(reason) {
+        if (this._opsTeamSearchAbortController) {
+            this._opsTeamSearchAbortController.abort();
+            this._opsTeamSearchAbortController = null;
+            Logger.debug('ops-tab: team search in-flight requests aborted — ' + reason);
+        }
+    },
+
+    _isOpsTeamSearchAbortError(err) {
+        return !!(err && (err.name === 'AbortError' || err.code === 20));
+    },
+
+    async _fetchOpsTeamSearchAllMembers(teamId, userId, query, sessionId, signal) {
         const allMembers = [];
+        const seenIds = new Set();
         let offset = 0;
         let hasMore = true;
         let pageCount = 0;
         const maxPages = 200;
 
         while (hasMore && pageCount < maxPages) {
+            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+                Logger.debug('ops-tab: team search pagination stopped — session superseded');
+                break;
+            }
+            if (signal && signal.aborted) break;
+
             pageCount++;
-            const raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset);
+            let raw;
+            try {
+                raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset, signal);
+            } catch (e) {
+                if (this._isOpsTeamSearchAbortError(e)) {
+                    Logger.debug('ops-tab: team search page fetch aborted');
+                    break;
+                }
+                throw e;
+            }
+
+            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+                Logger.debug('ops-tab: team search pagination stopped after fetch — session superseded');
+                break;
+            }
+
             const parsed = this._parseOpsTeamSearchResponse(raw);
             if (!parsed || !Array.isArray(parsed.members)) break;
 
-            allMembers.push(...parsed.members);
-            hasMore = parsed.hasMore === true && parsed.members.length > 0;
+            const pageMembers = parsed.members;
+            if (pageMembers.length === 0) break;
+
+            let newCount = 0;
+            for (const member of pageMembers) {
+                if (member && member.id && !seenIds.has(member.id)) {
+                    seenIds.add(member.id);
+                    allMembers.push(member);
+                    newCount++;
+                }
+            }
+
+            if (newCount === 0) {
+                Logger.debug('ops-tab: team search pagination stopped — page had no new members');
+                break;
+            }
+
+            const fullPage = pageMembers.length >= OPS_TEAM_SEARCH_PAGE_LIMIT;
+            hasMore = parsed.hasMore === true && fullPage;
             offset += OPS_TEAM_SEARCH_PAGE_LIMIT;
 
             if (hasMore) {
-                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + parsed.members.length +
-                    ' members (total ' + allMembers.length + ', hasMore)');
+                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + pageMembers.length +
+                    ' members (' + newCount + ' new, total ' + allMembers.length + ', hasMore)');
             }
         }
 
@@ -1777,6 +1999,7 @@ const plugin = {
     },
 
     _clearOpsTeamSearchResults(modal) {
+        this._abortOpsTeamSearchInFlight('results cleared');
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
         this._opsFellowsSearchComplete = null;
@@ -1806,6 +2029,8 @@ const plugin = {
     },
 
     _onOpsModalClosed() {
+        this._abortOpsTeamSearchInFlight('modal closed');
+        this._opsTeamSearchActive = null;
         this._clearOpsMemberEditState();
     },
 
@@ -1874,9 +2099,6 @@ const plugin = {
     _opsMemberQualifiesForUiBadge(member) {
         const teamLabels = member.teamLabels;
         if (!teamLabels || teamLabels.size === 0) return false;
-        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
-        // No UI badges until the full Fleet Fellows search has finished.
-        if (this._opsFellowsSearchComplete !== true) return false;
         for (const label of teamLabels) {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
@@ -2298,15 +2520,24 @@ const plugin = {
 
     _renderOpsTeamMemberPersonChipsHtml(member) {
         const dash = Context.dashboard;
+        const memberId = String(member.id || '').trim();
         if (dash && typeof dash.personChipsHtml === 'function') {
-            return dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
+            let html = dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
+            if (memberId && typeof dash.copyChipHtml === 'function') {
+                html = html.replace(/(<a href)/, dash.copyChipHtml(memberId) + '$1');
+            }
+            return html;
         }
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(member.id || '');
+        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
+        const idChip = memberId && dash && typeof dash.copyChipHtml === 'function'
+            ? dash.copyChipHtml(memberId)
+            : (memberId ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(memberId) + '</span>' : '');
         return '<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;min-width:0;">' +
             '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
             (email ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + email + '</span>' : '') +
+            idChip +
             this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
         '</span>';
     },
@@ -2433,16 +2664,25 @@ const plugin = {
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
         const query = input ? input.value.trim() : '';
 
-        const secrets = this._getOpsSecretsJson();
-        const allTeams = secrets && Array.isArray(secrets['team-uuids']) ? secrets['team-uuids'] : [];
-
-        if (!allTeams.length) {
-            this._setOpsTeamSearchStatus(modal, 'No teams found in secrets. Ensure ops secrets are decrypted.', true);
-            return;
-        }
         const userId = this._getOpsCurrentUserId();
         if (!userId) {
             this._setOpsTeamSearchStatus(modal, 'No user ID found. Open Fleet while logged in and try again.', true);
+            return;
+        }
+
+        let allTeams = this.getUserTeamCatalog();
+        if (!allTeams.length) {
+            try {
+                await this.fetchUserTeamCatalog(userId);
+                allTeams = this.getUserTeamCatalog();
+            } catch (e) {
+                Logger.warn('ops-tab: team search — failed to load user team catalog', e);
+                this._setOpsTeamSearchStatus(modal, 'Failed to load your teams: ' + (e.message || String(e)), true);
+                return;
+            }
+        }
+        if (!allTeams.length) {
+            this._setOpsTeamSearchStatus(modal, 'No teams found for your account.', true);
             return;
         }
 
@@ -2452,6 +2692,10 @@ const plugin = {
         }
 
         this._injectOpsSpinnerStyle();
+
+        this._abortOpsTeamSearchInFlight('new search started');
+        const abortController = new AbortController();
+        this._opsTeamSearchAbortController = abortController;
 
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
@@ -2472,19 +2716,15 @@ const plugin = {
         let doneCount = 0;
         let staleActionDetected = false;
 
-        const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
-        this._opsFellowsSearchComplete = fellowsEntry ? false : true;
+        this._opsFellowsSearchComplete = true;
 
         const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
 
-        const finishTeamSearch = (teamLabel) => {
+        const finishTeamSearch = (_teamLabel) => {
             pendingCount--;
             doneCount++;
             if (this._opsTeamSearchActive !== sessionId) return;
-            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
-                this._opsFellowsSearchComplete = true;
-            }
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
@@ -2500,12 +2740,14 @@ const plugin = {
 
         const searches = allTeams.map(async ([teamId, teamLabel]) => {
             try {
-                const members = await this._fetchOpsTeamSearchAllMembers(teamId, userId, query);
+                const members = await this._fetchOpsTeamSearchAllMembers(
+                    teamId, userId, query, sessionId, abortController.signal);
                 if (this._opsTeamSearchActive !== sessionId) return;
                 if (staleActionDetected) return;
                 this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
                 Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
+                if (this._isOpsTeamSearchAbortError(e)) return;
                 if (this._isOpsTeamSearchActionStaleError(e)) {
                     staleActionDetected = true;
                     Logger.warn('ops-tab: team search credentials stale for ' + teamLabel);
@@ -2520,6 +2762,7 @@ const plugin = {
         await Promise.allSettled(searches);
 
         if (this._opsTeamSearchActive === sessionId) {
+            this._opsTeamSearchAbortController = null;
             if (staleActionDetected) {
                 this._showOpsTeamSearchActionRefreshBanner(modal);
                 this._opsTeamSearchMemberCache = null;
