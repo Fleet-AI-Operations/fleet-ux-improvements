@@ -25,6 +25,7 @@ const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
 const DASH_DISPUTES_PAGE_SIZE = 50;
 const DASH_DISPUTES_MAX_PAGES = 100;
+const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
@@ -186,7 +187,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.30',
+    _version: '4.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -253,6 +254,9 @@ const plugin = {
             searchLoadPhase: '',
             searchError: null,
             disputesBulkIncomplete: false,
+            openDisputesByTaskId: null,
+            resolvedDisputeTaskIds: null,
+            resolverDisputeTaskIds: null,
             committed: null,
             appliedFilters: null,
             filterListOptions: null,
@@ -433,8 +437,13 @@ const plugin = {
     // ── Fleet web API (session cookies; same-origin) ──
 
     async _fleetWebGet(path, channel) {
-        if (channel === 'search' && !this._state.searchFetchActive) {
-            Logger.warn('dashboard: blocked Fleet web API call outside search — ' + path);
+        const allowed = channel === 'search'
+            ? this._state.searchFetchActive
+            : channel === 'hydrate'
+                ? this._state.hydrateFetchActive
+                : true;
+        if ((channel === 'search' || channel === 'hydrate') && !allowed) {
+            Logger.warn('dashboard: blocked Fleet web API call outside search/hydrate — ' + path);
             throw new Error('Fleet web API call blocked: data is cached until a new search.');
         }
         const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
@@ -458,6 +467,10 @@ const plugin = {
 
     _fleetWebGetSearch(path) {
         return this._fleetWebGet(path, 'search');
+    },
+
+    _fleetWebGetHydrate(path) {
+        return this._fleetWebGet(path, 'hydrate');
     },
 
     async _fleetWebPost(path) {
@@ -718,67 +731,187 @@ const plugin = {
         return { rows: allRows, capped };
     },
 
-    async _fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope) {
+    _contributorSetFromAuthorIds(authorIds) {
+        if (!authorIds || authorIds.length === 0) return null;
+        return new Set(authorIds.flatMap((id) => {
+            const raw = String(id).trim();
+            if (!raw) return [];
+            const norm = this._dashNormProfileId(raw);
+            return norm === raw ? [raw] : [raw, norm];
+        }));
+    },
+
+    /** Stage 1 — always at search start: open rows in full, resolved as task-id Set only (no date filter). */
+    async _fetchDisputesBootstrap(scope) {
         const teamIds = (scope && scope.teamIds) || [];
         if (teamIds.length === 0) {
-            Logger.debug('dashboard: disputes bulk skipped — no team scope');
-            return { byTaskId: new Map(), rows: [], bulkIncomplete: false };
+            Logger.debug('dashboard: disputes bootstrap skipped — no team scope');
+            return {
+                openDisputesByTaskId: new Map(),
+                resolvedDisputeTaskIds: new Set(),
+                bulkIncomplete: false
+            };
         }
-        const contributorSet = authorIds.length > 0
-            ? new Set(authorIds.flatMap((id) => {
-                const raw = String(id).trim();
-                if (!raw) return [];
-                const norm = this._dashNormProfileId(raw);
-                return norm === raw ? [raw] : [raw, norm];
-            }))
-            : null;
-        let openRows = [];
-        let resolvedRows = [];
-        let bulkIncomplete = false;
-        if (contributorSet) {
-            const resolvedResult = await this._fetchDisputesBulkPages(
-                teamIds, 'resolved', afterIso, beforeIso, contributorSet
-            );
-            resolvedRows = resolvedResult.rows;
-            bulkIncomplete = resolvedResult.capped;
-        } else {
-            const [openResult, resolvedResult] = await Promise.all([
-                this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, contributorSet),
-                this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, contributorSet)
-            ]);
-            openRows = openResult.rows;
-            resolvedRows = resolvedResult.rows;
-            bulkIncomplete = openResult.capped || resolvedResult.capped;
-        }
-        const seenIds = new Set();
-        const allRows = [];
-        for (const row of [...openRows, ...resolvedRows]) {
-            if (!row || row.id == null || seenIds.has(row.id)) continue;
-            seenIds.add(row.id);
-            allRows.push(row);
-        }
-        const filtered = allRows.filter((row) => {
-            if (!row || !row.eval_task_id) return false;
-            if (!this._disputeMatchesContributorFilter(row, contributorSet)) return false;
-            if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) return false;
-            return true;
-        });
-        const byTaskId = new Map();
-        for (const row of filtered) {
+        this._setSearchLoadPhase('Loading dispute bootstrap (open + resolved)…');
+        const [openResult, resolvedResult] = await Promise.all([
+            this._fetchDisputesBulkPages(teamIds, null, null, null, null),
+            this._fetchDisputesBulkPages(teamIds, 'resolved', null, null, null)
+        ]);
+        const openDisputesByTaskId = new Map();
+        for (const row of openResult.rows) {
+            if (!row || !row.eval_task_id) continue;
             const taskId = row.eval_task_id;
-            const bucket = byTaskId.get(taskId);
+            const bucket = openDisputesByTaskId.get(taskId);
             if (bucket) bucket.push(row);
-            else byTaskId.set(taskId, [row]);
+            else openDisputesByTaskId.set(taskId, [row]);
         }
-        Logger.log('dashboard: disputes bulk — ' + openRows.length + ' open, ' + resolvedRows.length
-            + ' resolved, ' + filtered.length + ' after filter'
-            + (contributorSet ? ' (resolver resolved_by + resolved_at)' : ' (created_at)')
-            + ' across ' + byTaskId.size + ' task(s)'
-            + (bulkIncomplete ? ' · bulk pagination capped' : ''));
+        const resolvedDisputeTaskIds = new Set();
+        for (const row of resolvedResult.rows) {
+            if (row && row.eval_task_id) resolvedDisputeTaskIds.add(row.eval_task_id);
+        }
+        const bulkIncomplete = openResult.capped || resolvedResult.capped;
+        Logger.log('dashboard: disputes bootstrap — ' + openResult.rows.length + ' open row(s) across '
+            + openDisputesByTaskId.size + ' task(s), ' + resolvedDisputeTaskIds.size
+            + ' resolved task id(s)'
+            + (bulkIncomplete ? ' · pagination capped' : ''));
         if (bulkIncomplete) {
-            Logger.warn('dashboard: disputes bulk incomplete — narrow the date range or team scope');
+            Logger.warn('dashboard: disputes bootstrap incomplete — narrow team scope');
         }
-        return { byTaskId, rows: filtered, bulkIncomplete };
+        return { openDisputesByTaskId, resolvedDisputeTaskIds, bulkIncomplete };
+    },
+
+    /** Stage 2 — resolver discovery when Disputes toggle + specific author IDs. */
+    async _fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope) {
+        const teamIds = (scope && scope.teamIds) || [];
+        const resolverIds = new Set();
+        if (teamIds.length === 0 || !authorIds || authorIds.length === 0) {
+            return resolverIds;
+        }
+        const contributorSet = this._contributorSetFromAuthorIds(authorIds);
+        this._setSearchLoadPhase('Loading disputes resolved by selected user(s)…');
+        const resolvedResult = await this._fetchDisputesBulkPages(
+            teamIds, 'resolved', afterIso, beforeIso, contributorSet
+        );
+        for (const row of resolvedResult.rows) {
+            if (!row || !row.eval_task_id) continue;
+            if (!this._disputeMatchesContributorFilter(row, contributorSet)) continue;
+            if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) continue;
+            resolverIds.add(row.eval_task_id);
+        }
+        Logger.log('dashboard: dispute resolver discovery — ' + resolverIds.size + ' task id(s)'
+            + (resolvedResult.capped ? ' · pagination capped' : ''));
+        return { resolverDisputeTaskIds: resolverIds, bulkIncomplete: resolvedResult.capped };
+    },
+
+    _allDisputeTaskIdSet(openDisputesByTaskId, resolvedDisputeTaskIds, resolverDisputeTaskIds) {
+        const ids = new Set();
+        if (openDisputesByTaskId) {
+            for (const taskId of openDisputesByTaskId.keys()) ids.add(taskId);
+        }
+        if (resolvedDisputeTaskIds) {
+            for (const taskId of resolvedDisputeTaskIds) ids.add(taskId);
+        }
+        if (resolverDisputeTaskIds) {
+            for (const taskId of resolverDisputeTaskIds) ids.add(taskId);
+        }
+        return ids;
+    },
+
+    _trimOpenDisputesToTarget(targetTaskIds) {
+        const openMap = this._state.openDisputesByTaskId;
+        if (!openMap || openMap.size === 0 || !targetTaskIds || targetTaskIds.size === 0) {
+            if (openMap) this._state.openDisputesByTaskId = new Map();
+            return;
+        }
+        const trimmed = new Map();
+        let dropped = 0;
+        for (const [taskId, rows] of openMap) {
+            if (targetTaskIds.has(taskId)) trimmed.set(taskId, rows);
+            else dropped++;
+        }
+        this._state.openDisputesByTaskId = trimmed;
+        if (dropped > 0) {
+            Logger.debug('dashboard: trimmed open dispute cache — kept ' + trimmed.size
+                + ' task(s), dropped ' + dropped);
+        }
+    },
+
+    async _fetchTaskDisputesForTask(taskId) {
+        const qs = new URLSearchParams({ taskId: String(taskId) });
+        const page = await this._fleetWebGetHydrate('/disputes/task-disputes?' + qs.toString());
+        return (page && Array.isArray(page.disputes)) ? page.disputes : [];
+    },
+
+    async _fetchTaskDisputesBatch(taskIds) {
+        const byTaskId = new Map();
+        const ids = [...new Set((taskIds || []).filter(Boolean))];
+        if (ids.length === 0) return byTaskId;
+        let idx = 0;
+        const concurrency = Math.min(DASH_DISPUTES_TASK_FETCH_CONCURRENCY, ids.length);
+        const worker = async () => {
+            while (idx < ids.length) {
+                const taskId = ids[idx++];
+                try {
+                    const rows = await this._fetchTaskDisputesForTask(taskId);
+                    if (rows.length > 0) byTaskId.set(taskId, rows);
+                } catch (e) {
+                    Logger.warn('dashboard: task-disputes failed — task ' + String(taskId).slice(0, 8), e);
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: concurrency }, () => worker()));
+        Logger.log('dashboard: task-disputes batch — ' + byTaskId.size + '/' + ids.length + ' task(s) with resolved history');
+        return byTaskId;
+    },
+
+    async _hydrateDisputesForItems(items, profilesMap) {
+        const list = (items || []).filter((it) => it && it.task && it.task.id);
+        if (list.length === 0) return 0;
+
+        const targetSet = new Set(list.map((it) => it.task.id));
+        const openMap = this._state.openDisputesByTaskId || new Map();
+        const resolvedIds = this._state.resolvedDisputeTaskIds || new Set();
+        const resolverIds = this._state.resolverDisputeTaskIds || new Set();
+        const allDisputeIds = this._allDisputeTaskIdSet(openMap, resolvedIds, resolverIds);
+
+        const disputedInResults = [...targetSet].filter((id) => allDisputeIds.has(id));
+        const needResolvedFetch = disputedInResults.filter((taskId) => (
+            resolvedIds.has(taskId) || resolverIds.has(taskId)
+        ));
+
+        let resolvedByTaskId = new Map();
+        if (needResolvedFetch.length > 0) {
+            resolvedByTaskId = await this._fetchTaskDisputesBatch(needResolvedFetch);
+            const resolverProfileIds = [];
+            for (const rows of resolvedByTaskId.values()) {
+                for (const row of rows) {
+                    if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+                }
+            }
+            if (resolverProfileIds.length > 0) {
+                await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+            }
+        }
+
+        let attached = 0;
+        for (const item of list) {
+            const taskId = item.task.id;
+            if (!allDisputeIds.has(taskId)) continue;
+            const openRows = openMap.get(taskId) || [];
+            const resolvedRows = resolvedByTaskId.get(taskId) || [];
+            const combined = [...openRows, ...resolvedRows];
+            if (combined.length === 0) continue;
+            this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
+            if (!item.kinds.includes('dispute')) {
+                item.kinds.push('dispute');
+                item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
+            }
+            attached++;
+        }
+        if (attached > 0) {
+            Logger.log('dashboard: dispute hydration — ' + attached + ' card(s)');
+        }
+        return attached;
     },
 
     _disputeRowsToDisplays(rows, profilesMap) {
@@ -1400,29 +1533,31 @@ const plugin = {
         }));
     },
 
-    _disputeItemsFromRows(disputeByTaskId, enrichedTasksById, profilesMap) {
+    _disputeDiscoveryItemsFromTaskIds(taskIds, enrichedTasksById, openDisputesByTaskId) {
         const items = [];
-        for (const [taskId, rows] of disputeByTaskId) {
+        const openMap = openDisputesByTaskId || new Map();
+        for (const taskId of taskIds) {
             const task = enrichedTasksById.get(taskId);
-            if (!task || !rows || rows.length === 0) continue;
-            let sortAt = rows[0].resolved_at || rows[0].created_at || '';
-            for (const row of rows) {
-                const candidate = row.resolved_at || row.created_at;
+            if (!task) continue;
+            let sortAt = task.createdAt || '';
+            const openRows = openMap.get(taskId) || [];
+            for (const row of openRows) {
+                const candidate = row.created_at || '';
                 if (candidate && candidate > sortAt) sortAt = candidate;
             }
-            const linkedFeedbackId = rows.find((r) => r.feedback_id != null);
+            const linked = openRows.find((r) => r.feedback_id != null);
             items.push({
                 id: 'dispute-' + taskId,
                 kind: 'dispute',
                 sortAt,
                 task,
-                selectedFeedbackId: linkedFeedbackId ? String(linkedFeedbackId.feedback_id) : null,
+                selectedFeedbackId: linked ? String(linked.feedback_id) : null,
                 qaFeedback: null,
-                disputes: this._disputeRowsToDisplays(rows, profilesMap)
+                disputes: []
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
-        Logger.log('dashboard: dispute items built — ' + items.length);
+        Logger.log('dashboard: dispute discovery items — ' + items.length);
         return items;
     },
 
@@ -1439,39 +1574,29 @@ const plugin = {
         item.disputes = merged;
     },
 
-    _attachDisputesToMergedItems(mergedItems, bulkByTaskId, profilesMap) {
-        if (!mergedItems || mergedItems.length === 0 || !bulkByTaskId || bulkByTaskId.size === 0) {
-            return mergedItems;
+    _discoveryDisputeTaskIds(includeDisputes, authorIds, bootstrap, resolverDisputeTaskIds) {
+        if (!includeDisputes) return [];
+        if (authorIds && authorIds.length > 0) {
+            return [...resolverDisputeTaskIds];
         }
-        let attached = 0;
-        let skipped = 0;
-        for (const item of mergedItems) {
-            const taskId = item.task.id;
-            const bulkRows = bulkByTaskId.get(taskId);
-            if (!bulkRows || bulkRows.length === 0) {
-                skipped++;
-                continue;
-            }
-            this._mergeBulkDisputesOntoItem(item, bulkRows, profilesMap);
-            if (!item.kinds.includes('dispute')) item.kinds.push('dispute');
-            item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
-            attached++;
-        }
-        Logger.log('dashboard: disputes attached from bulk — ' + attached + ' card(s)');
-        Logger.debug('dashboard: disputes bulk attach skipped — ' + skipped + ' card(s) with no in-scope dispute');
-        return mergedItems;
+        const ids = new Set([
+            ...(bootstrap.openDisputesByTaskId ? bootstrap.openDisputesByTaskId.keys() : []),
+            ...(bootstrap.resolvedDisputeTaskIds || [])
+        ]);
+        return [...ids];
     },
 
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
         this._state.disputesBulkIncomplete = false;
+        this._state.openDisputesByTaskId = new Map();
+        this._state.resolvedDisputeTaskIds = new Set();
+        this._state.resolverDisputeTaskIds = new Set();
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
             includeTaskCreation,
             includeQa,
             includeDisputes
         }));
-        const disputesPromise = includeDisputes
-            ? this._fetchDisputesBulkForSearch(authorIds, afterIso, beforeIso, scope)
-            : Promise.resolve({ byTaskId: new Map(), rows: [], bulkIncomplete: false });
+        const bootstrapPromise = this._fetchDisputesBootstrap(scope);
         const tasksPromise = includeTaskCreation
             ? this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : Promise.resolve([]);
@@ -1479,15 +1604,29 @@ const plugin = {
             ? this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
             : Promise.resolve([]);
 
-        const [disputesBulk, creationRows, feedbackRows] = await Promise.all([
-            disputesPromise,
+        const [bootstrap, creationRows, feedbackRows] = await Promise.all([
+            bootstrapPromise,
             tasksPromise,
             qaPromise
         ]);
-        const bulkByTaskId = disputesBulk.byTaskId;
-        this._state.disputesBulkIncomplete = Boolean(includeDisputes && disputesBulk.bulkIncomplete);
+        this._state.openDisputesByTaskId = bootstrap.openDisputesByTaskId;
+        this._state.resolvedDisputeTaskIds = bootstrap.resolvedDisputeTaskIds;
+        let bulkIncomplete = bootstrap.bulkIncomplete;
 
-        const disputeTaskIds = includeDisputes ? [...bulkByTaskId.keys()] : [];
+        let resolverDisputeTaskIds = new Set();
+        if (includeDisputes && authorIds.length > 0) {
+            const resolverResult = await this._fetchDisputeResolverTaskIds(
+                authorIds, afterIso, beforeIso, scope
+            );
+            resolverDisputeTaskIds = resolverResult.resolverDisputeTaskIds;
+            bulkIncomplete = bulkIncomplete || resolverResult.bulkIncomplete;
+        }
+        this._state.resolverDisputeTaskIds = resolverDisputeTaskIds;
+        this._state.disputesBulkIncomplete = bulkIncomplete;
+
+        const disputeTaskIds = this._discoveryDisputeTaskIds(
+            includeDisputes, authorIds, bootstrap, resolverDisputeTaskIds
+        );
 
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
@@ -1535,10 +1674,6 @@ const plugin = {
 
         this._setSearchLoadPhase('Assembling results…');
         const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows);
-        if (includeDisputes && disputesBulk.rows.length > 0) {
-            this._setSearchLoadPhase('Loading dispute resolver profiles…');
-            await this._supplementProfilesMap(profilesMap, disputesBulk.rows.map((row) => row.resolved_by));
-        }
 
         const items = [];
         if (includeTaskCreation) {
@@ -1551,12 +1686,13 @@ const plugin = {
         if (includeQa && feedbackRows.length > 0) {
             items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
         }
-        if (includeDisputes && bulkByTaskId.size > 0) {
-            const scopedBulk = new Map();
-            for (const [taskId, rows] of bulkByTaskId) {
-                if (enrichedTasksById.has(taskId)) scopedBulk.set(taskId, rows);
-            }
-            const disputeItems = this._disputeItemsFromRows(scopedBulk, enrichedTasksById, profilesMap);
+        if (includeDisputes && disputeTaskIds.length > 0) {
+            const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
+            const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
+                inScopeIds,
+                enrichedTasksById,
+                bootstrap.openDisputesByTaskId
+            );
             const existingTaskIds = new Set(items.map((it) => it.task.id));
             for (const disputeItem of disputeItems) {
                 if (!existingTaskIds.has(disputeItem.task.id)) {
@@ -1567,16 +1703,9 @@ const plugin = {
         }
 
         this._setSearchLoadPhase('Assembling result cards…');
-        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
-
-        if (includeDisputes && mergedItems.length > 0 && bulkByTaskId.size > 0) {
-            this._setSearchLoadPhase('Attaching disputes from bulk results…');
-            mergedItems = this._attachDisputesToMergedItems(
-                mergedItems,
-                bulkByTaskId,
-                profilesMap
-            );
-        }
+        const mergedItems = this._mergeWorkerOutputItemsByTask(items);
+        const targetTaskIds = new Set(mergedItems.map((it) => it.task.id));
+        this._trimOpenDisputesToTarget(targetTaskIds);
 
         const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
         return {
@@ -2230,6 +2359,10 @@ const plugin = {
                 skipFeedbackFetch: Boolean(opts.skipFeedbackFetch),
                 taskKeysByTaskId
             });
+            const hydratedItems = (this._state.cachedItems || []).filter(
+                (it) => taskIds.includes(it.task.id) && !it.hydrated
+            );
+            await this._hydrateDisputesForItems(hydratedItems, profilesMap);
             for (const item of this._state.cachedItems || []) {
                 if (!taskIds.includes(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
@@ -4760,6 +4893,9 @@ const plugin = {
             this._state.autoHydratePending = false;
             this._state.autoHydratePendingLogged = false;
             this._state.disputesBulkIncomplete = false;
+            this._state.openDisputesByTaskId = null;
+            this._state.resolvedDisputeTaskIds = null;
+            this._state.resolverDisputeTaskIds = null;
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
@@ -4790,7 +4926,7 @@ const plugin = {
                 if (searchDepth === 'deep' && items.length > 0) {
                     await this._hydrateAllSearchResults(items, {
                         prefetchedFeedbackRows: searchResult.allFeedbackRows,
-                        skipFeedbackFetch: !searchResult.includeQa && !searchResult.includeDisputes,
+                        skipFeedbackFetch: false,
                         onProgress: (done, total) => {
                             this._setSearchLoadPhase(
                                 'Hydrating results (' + done + '/' + total + ')…'

@@ -1,4 +1,5 @@
-// dashboard-data.js — PostgREST enrichment for Worker Output Search.
+// dashboard-data.js — PostgREST + Fleet event enrichment for Worker Output Search.
+// Dispute hydration (bootstrap + task-disputes) lives in dashboard.js; see local/PostgREST/philosophy.md.
 // Loaded after dashboard-lib.js, before dashboard.js; registers Context.dashboardData.
 
 const DASH_DATA_FEEDBACK_PAGE_SIZE = 200;
@@ -9,7 +10,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
