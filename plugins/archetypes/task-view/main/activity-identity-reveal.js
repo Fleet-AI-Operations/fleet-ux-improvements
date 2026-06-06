@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -39,10 +39,14 @@ const plugin = {
         missingRootLogged: false,
         missingActivityLogged: false,
         activationLogged: false,
+        mappingSummaryLogged: false,
+        revealComplete: false,
         revealedCount: 0
     },
 
     onMutation(state) {
+        if (state.revealComplete) return;
+
         const opsEnabled = this._isOpsUnlocked();
         const taskId = this._extractTaskIdFromPath();
 
@@ -57,6 +61,8 @@ const plugin = {
             state.fetchFailed = false;
             state.revealCache = null;
             state.activationLogged = false;
+            state.mappingSummaryLogged = false;
+            state.revealComplete = false;
             state.revealedCount = 0;
             state.opsBlockedLogged = false;
         }
@@ -102,11 +108,6 @@ const plugin = {
         if (!state.fetchDone && !state.fetchStarted) {
             state.fetchStarted = true;
             void this._fetchAndReveal(state, taskId, entries);
-            return;
-        }
-
-        if (state.fetchDone && state.revealCache) {
-            this._applyReveal(state, entries, state.revealCache);
         }
     },
 
@@ -117,6 +118,8 @@ const plugin = {
         state.fetchFailed = false;
         state.missingActivityLogged = false;
         state.activationLogged = false;
+        state.mappingSummaryLogged = false;
+        state.revealComplete = false;
         state.revealedCount = 0;
         state.revealCache = null;
         state.taskIdMissingLogged = false;
@@ -158,6 +161,7 @@ const plugin = {
             Logger.warn(PLUGIN_ID + ': Ops PostgREST client unavailable');
             state.fetchFailed = true;
             state.fetchStarted = false;
+            state.revealComplete = true;
             return;
         }
 
@@ -191,6 +195,7 @@ const plugin = {
             state.fetchFailed = false;
             state.revealCache = revealCache;
             this._applyReveal(state, entries, revealCache);
+            state.revealComplete = true;
         } catch (err) {
             if (state.taskId !== taskId) {
                 state.fetchStarted = false;
@@ -198,6 +203,7 @@ const plugin = {
             }
             state.fetchFailed = true;
             state.fetchStarted = false;
+            state.revealComplete = true;
             const refresh = ops.isSessionRefreshRequiredError && ops.isSessionRefreshRequiredError(err);
             if (refresh) {
                 Logger.warn(PLUGIN_ID + ': session refresh required — reload Fleet and retry');
@@ -472,9 +478,12 @@ const plugin = {
         }
 
         const mappedCount = assignments.filter((a) => a.userId).length;
-        Logger.log(PLUGIN_ID + ': mapped ' + mappedCount + '/' + assignments.length + ' activity entries');
+        if (!state.mappingSummaryLogged) {
+            Logger.log(PLUGIN_ID + ': mapped ' + mappedCount + '/' + assignments.length + ' activity entries');
+            state.mappingSummaryLogged = true;
+        }
 
-        if (mappedCount === 0 && assignments.length > 0) {
+        if (mappedCount === 0 && assignments.length > 0 && !state.activationLogged) {
             Logger.warn(
                 PLUGIN_ID + ': no DOM entries matched — task ' + state.taskId
                 + ', ' + feedbackRows.length + ' feedback row(s)'
@@ -497,10 +506,18 @@ const plugin = {
         if (newlyRevealed > 0) {
             state.revealedCount += newlyRevealed;
             if (!state.activationLogged) {
-                Logger.info(PLUGIN_ID + ': revealed identities for task ' + state.taskId);
+                Logger.info(
+                    PLUGIN_ID + ': revealed ' + newlyRevealed + ' name(s) for task ' + state.taskId
+                    + ' (' + mappedCount + '/' + assignments.length + ' mapped)'
+                );
                 state.activationLogged = true;
             }
-            Logger.debug(PLUGIN_ID + ': revealed ' + newlyRevealed + ' name(s), total ' + state.revealedCount);
+        } else if (!state.activationLogged && mappedCount > 0) {
+            Logger.info(
+                PLUGIN_ID + ': no new names to reveal for task ' + state.taskId
+                + ' (' + mappedCount + '/' + assignments.length + ' mapped)'
+            );
+            state.activationLogged = true;
         }
     },
 
