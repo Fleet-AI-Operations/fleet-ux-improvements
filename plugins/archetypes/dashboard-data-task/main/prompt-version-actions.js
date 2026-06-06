@@ -2,7 +2,6 @@
 // Dashboard task detail: copy version UUID prefix and open view-task link per prompt history card.
 
 const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
-const TASK_DATA_PATH_RE = /^\/dashboard\/data\/tasks\/[^/]+$/;
 const PLUGIN_ID = 'prompt-version-actions';
 const VIEW_TASK_URL_PREFIX = 'https://www.fleetai.com/work/problems/view-task/';
 const ENHANCED_ATTR = 'data-fleet-prompt-version-actions';
@@ -17,31 +16,26 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task per version',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         taskKey: '',
-        versionByDisplayNo: null,
-        captureLogged: false,
+        versionRows: null,
+        fetchStarted: false,
+        fetchFailed: false,
         missingHistoryLogged: false,
         missingVersionsLogged: false,
         activationLogged: false,
-        enhancedCount: 0,
-        networkSubscribed: false
+        enhancedCount: 0
     },
 
-    init(state, context) {
+    init(state) {
         const taskKey = this._extractTaskKeyFromPath();
         if (taskKey !== state.taskKey) {
-            state.taskKey = taskKey;
-            state.versionByDisplayNo = new Map();
-            state.captureLogged = false;
-            state.missingVersionsLogged = false;
-            state.enhancedCount = 0;
+            this._resetTaskState(state, taskKey);
         }
-        this._subscribeVersionCapture(state, context);
     },
 
     onMutation(state) {
@@ -49,23 +43,13 @@ const plugin = {
         if (!taskKey) return;
 
         if (taskKey !== state.taskKey) {
-            state.taskKey = taskKey;
-            state.versionByDisplayNo = new Map();
-            state.captureLogged = false;
-            state.missingHistoryLogged = false;
-            state.missingVersionsLogged = false;
-            state.activationLogged = false;
-            state.enhancedCount = 0;
+            this._resetTaskState(state, taskKey);
         }
 
-        if (!state.versionByDisplayNo || state.versionByDisplayNo.size === 0) {
-            if (!state.missingVersionsLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for prompt version data from page network');
-                state.missingVersionsLogged = true;
-            }
-            return;
+        if (!state.fetchStarted) {
+            state.fetchStarted = true;
+            void this._fetchVersionRows(state, taskKey);
         }
-        state.missingVersionsLogged = false;
 
         const cards = this._findPromptHistoryCards();
         if (!cards.length) {
@@ -82,9 +66,22 @@ const plugin = {
         }
         state.missingHistoryLogged = false;
 
+        if (!state.versionRows) {
+            if (state.fetchFailed) return;
+            if (!state.missingVersionsLogged) {
+                Logger.debug(PLUGIN_ID + ': waiting for prompt version fetch');
+                state.missingVersionsLogged = true;
+            }
+            return;
+        }
+        state.missingVersionsLogged = false;
+
+        const computed = this._computeDisplayVersions(state.versionRows);
+        const byPrompt = this._buildPromptLookup(computed);
+
         let newlyEnhanced = 0;
         for (const card of cards) {
-            if (this._enhanceVersionCard(card, state.versionByDisplayNo)) newlyEnhanced += 1;
+            if (this._enhanceVersionCard(card, byPrompt, computed)) newlyEnhanced += 1;
         }
 
         if (newlyEnhanced > 0) {
@@ -97,6 +94,17 @@ const plugin = {
         }
     },
 
+    _resetTaskState(state, taskKey) {
+        state.taskKey = taskKey;
+        state.versionRows = null;
+        state.fetchStarted = false;
+        state.fetchFailed = false;
+        state.missingHistoryLogged = false;
+        state.missingVersionsLogged = false;
+        state.activationLogged = false;
+        state.enhancedCount = 0;
+    },
+
     _extractTaskKeyFromPath() {
         const path = Context.currentPath || '';
         const match = path.match(TASK_KEY_FROM_PATH_RE);
@@ -106,84 +114,82 @@ const plugin = {
         return /^task_/i.test(last) ? last : '';
     },
 
-    _subscribeVersionCapture(state, context) {
-        if (state.networkSubscribed) return;
-        const observer = Context.networkObserver;
-        if (!observer || typeof observer.subscribe !== 'function') {
-            Logger.debug(PLUGIN_ID + ': NetworkObserver unavailable; version capture skipped');
+    async _fetchVersionRows(state, taskKey) {
+        const opsTab = Context.opsTab;
+        if (!opsTab) {
+            Logger.warn(PLUGIN_ID + ': Context.opsTab unavailable');
+            state.fetchFailed = true;
             return;
         }
 
-        const self = this;
-        observer.subscribe({
-            id: PLUGIN_ID + '-version-capture',
-            matches(meta) {
-                if (!meta.urlObj) return false;
-                const host = meta.urlObj.hostname || '';
-                const path = meta.urlObj.pathname || '';
-                if (host.endsWith('fleetai.com') && TASK_DATA_PATH_RE.test(path)) return true;
-                if (host === 'api.fleetai.com' && path.includes('/rest/v1/eval_task_versions')) return true;
-                return false;
-            },
-            onResponse(meta, response) {
-                if (!response || !response.ok) return;
-                response.text().then((text) => {
-                    try {
-                        self._ingestVersionPayload(state, meta, text);
-                    } catch (e) {
-                        Logger.debug(PLUGIN_ID + ': version response parse failed', e);
-                    }
-                }).catch(() => { /* ignore */ });
+        Logger.log(PLUGIN_ID + ': fetching prompt versions for ' + taskKey);
+        try {
+            const taskRow = await this._lookupTaskRow(opsTab, taskKey);
+            if (!taskRow || !taskRow.id) {
+                Logger.warn(PLUGIN_ID + ': task not found for key ' + taskKey);
+                state.versionRows = [];
+                state.fetchFailed = true;
+                return;
             }
-        });
 
-        state.networkSubscribed = true;
-        Logger.debug(PLUGIN_ID + ': prompt version network capture subscribed');
-    },
+            const rows = await this._fetchVersionHistory(opsTab, taskRow.id);
+            if (state.taskKey !== taskKey) return;
 
-    _ingestVersionPayload(state, meta, text) {
-        const path = meta.urlObj && meta.urlObj.pathname ? meta.urlObj.pathname : '';
-        let added = 0;
-
-        if (path.includes('/rest/v1/eval_task_versions')) {
-            added = this._mergeEvalTaskVersionsResponse(state, text);
-        } else {
-            added = this._mergePromptVersionsFromText(state, text);
-        }
-
-        if (added > 0 && !state.captureLogged) {
-            state.captureLogged = true;
-            Logger.log(PLUGIN_ID + ': captured ' + state.versionByDisplayNo.size + ' display version id(s) from page data');
+            state.versionRows = rows;
+            state.fetchFailed = false;
+            Logger.log(PLUGIN_ID + ': loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
+        } catch (err) {
+            if (state.taskKey !== taskKey) return;
+            state.versionRows = null;
+            state.fetchFailed = true;
+            const refresh = opsTab.isSessionRefreshRequiredError && opsTab.isSessionRefreshRequiredError(err);
+            if (refresh) {
+                Logger.warn(PLUGIN_ID + ': session refresh required — reload Fleet and retry');
+            } else {
+                Logger.warn(PLUGIN_ID + ': version fetch failed for ' + taskKey, err);
+            }
         }
     },
 
-    _mergeEvalTaskVersionsResponse(state, text) {
+    async _lookupTaskRow(opsTab, taskKey) {
+        try {
+            const rows = await opsTab.postgrestQuery('tasks.select_verifier_lookup', {
+                key: 'eq.' + taskKey,
+                limit: '1'
+            });
+            return Array.isArray(rows) ? rows[0] : rows;
+        } catch (_e) {
+            const rows = await opsTab.postgrestGet('tasks', {
+                select: 'id,key',
+                key: 'eq.' + taskKey,
+                limit: '1'
+            });
+            return Array.isArray(rows) ? rows[0] : rows;
+        }
+    },
+
+    async _fetchVersionHistory(opsTab, taskId) {
+        const params = {
+            task_id: 'eq.' + taskId,
+            order: 'version_no.asc',
+            limit: '100'
+        };
         let rows;
         try {
-            rows = JSON.parse(text);
+            rows = await opsTab.postgrestQuery('task_versions.select_history', params);
         } catch (_e) {
-            return 0;
+            rows = await opsTab.postgrestGet('task_versions', Object.assign({
+                select: 'id,task_id,version_no,created_at,prompt,env_key'
+            }, params));
         }
-        if (!Array.isArray(rows) || rows.length === 0) return 0;
-
-        const lib = Context.dashboardLib;
-        const computed = lib && typeof lib.computeDisplayVersions === 'function'
-            ? lib.computeDisplayVersions(rows)
-            : this._computeDisplayVersionsFallback(rows);
-
-        let added = 0;
-        for (const version of computed) {
-            const displayNo = Number(version.displayVersionNo);
-            const id = String(version.id || '').trim();
-            if (!displayNo || !UUID_RE.test(id)) continue;
-            if (state.versionByDisplayNo.get(displayNo) === id) continue;
-            state.versionByDisplayNo.set(displayNo, id);
-            added += 1;
-        }
-        return added;
+        return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 
-    _computeDisplayVersionsFallback(rawVersions) {
+    _computeDisplayVersions(rawVersions) {
+        const lib = Context.dashboardLib;
+        if (lib && typeof lib.computeDisplayVersions === 'function') {
+            return lib.computeDisplayVersions(rawVersions);
+        }
         const sorted = [...rawVersions].sort((a, b) => a.version_no - b.version_no);
         const result = [];
         let prevPrompt = null;
@@ -194,7 +200,9 @@ const plugin = {
                 displayNo += 1;
                 result.push({
                     id: String(v.id ?? ''),
-                    displayVersionNo: displayNo
+                    versionNo: v.version_no,
+                    displayVersionNo: displayNo,
+                    prompt
                 });
                 prevPrompt = prompt;
             }
@@ -202,63 +210,47 @@ const plugin = {
         return result;
     },
 
-    _mergePromptVersionsFromText(state, text) {
-        const versions = this._extractPromptVersionsArray(text);
-        if (!versions || versions.length === 0) return 0;
-
-        let added = 0;
-        for (const version of versions) {
-            const displayNo = Number(
-                version.display_version_no != null ? version.display_version_no : version.displayVersionNo
-            );
-            const id = String(version.id || '').trim();
-            if (!displayNo || !UUID_RE.test(id)) continue;
-            if (state.versionByDisplayNo.get(displayNo) === id) continue;
-            state.versionByDisplayNo.set(displayNo, id);
-            added += 1;
-        }
-        return added;
+    _normalizePrompt(text) {
+        return String(text || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\u00a0/g, ' ')
+            .trim();
     },
 
-    _extractPromptVersionsArray(text) {
-        if (!text) return null;
-
-        try {
-            const parsed = JSON.parse(text);
-            const fromObj = this._promptVersionsFromObject(parsed);
-            if (fromObj) return fromObj;
-        } catch (_e) { /* fall through */ }
-
-        const marker = '"prompt_versions"';
-        const startIdx = text.indexOf(marker);
-        if (startIdx === -1) return null;
-
-        const arrStart = text.indexOf('[', startIdx);
-        if (arrStart === -1) return null;
-
-        let depth = 0;
-        for (let i = arrStart; i < text.length; i += 1) {
-            const ch = text[i];
-            if (ch === '[') depth += 1;
-            else if (ch === ']') {
-                depth -= 1;
-                if (depth === 0) {
-                    try {
-                        const arr = JSON.parse(text.slice(arrStart, i + 1));
-                        return Array.isArray(arr) ? arr : null;
-                    } catch (_e2) {
-                        return null;
-                    }
-                }
-            }
-        }
-        return null;
+    _normalizePromptLoose(text) {
+        return this._normalizePrompt(text).replace(/\s+/g, ' ');
     },
 
-    _promptVersionsFromObject(data) {
-        if (!data || typeof data !== 'object') return null;
-        if (Array.isArray(data.prompt_versions)) return data.prompt_versions;
-        if (data.task && Array.isArray(data.task.prompt_versions)) return data.task.prompt_versions;
+    _buildPromptLookup(computed) {
+        const exact = new Map();
+        const loose = new Map();
+        for (const version of computed) {
+            const prompt = String(version.prompt ?? '');
+            exact.set(this._normalizePrompt(prompt), version);
+            loose.set(this._normalizePromptLoose(prompt), version);
+        }
+        return { exact, loose };
+    },
+
+    _resolveVersionForCard(card, byPrompt, computed) {
+        const pre = card.querySelector('pre');
+        const cardPrompt = pre ? pre.textContent : '';
+        const exactKey = this._normalizePrompt(cardPrompt);
+        const looseKey = this._normalizePromptLoose(cardPrompt);
+
+        if (exactKey && byPrompt.exact.has(exactKey)) {
+            return byPrompt.exact.get(exactKey);
+        }
+        if (looseKey && byPrompt.loose.has(looseKey)) {
+            return byPrompt.loose.get(looseKey);
+        }
+
+        const displayNo = this._parseDisplayVersionNo(
+            card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2 > div.flex.flex-wrap.items-center.gap-x-2.gap-y-1.text-xs.text-muted-foreground')
+        );
+        if (displayNo) {
+            return computed.find((v) => v.displayVersionNo === displayNo) || null;
+        }
         return null;
     },
 
@@ -291,7 +283,7 @@ const plugin = {
         return null;
     },
 
-    _enhanceVersionCard(card, versionByDisplayNo) {
+    _enhanceVersionCard(card, byPrompt, computed) {
         const headerRow = card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2');
         if (!headerRow) return false;
 
@@ -299,12 +291,20 @@ const plugin = {
         if (!metaDiv || metaDiv.querySelector('[' + ENHANCED_ATTR + '="1"]')) return false;
 
         const displayNo = this._parseDisplayVersionNo(metaDiv);
-        if (!displayNo) return false;
-
-        const versionId = versionByDisplayNo.get(displayNo);
-        if (!versionId) {
-            Logger.debug(PLUGIN_ID + ': no version id for display v' + displayNo);
+        const matched = this._resolveVersionForCard(card, byPrompt, computed);
+        const versionId = matched && String(matched.id || '').trim();
+        if (!displayNo || !versionId || !UUID_RE.test(versionId)) {
+            Logger.debug(PLUGIN_ID + ': no version id for card'
+                + (displayNo ? ' v' + displayNo : '')
+                + (matched && matched.displayVersionNo != null && displayNo !== matched.displayVersionNo
+                    ? ' (text matched v' + matched.displayVersionNo + ')'
+                    : ''));
             return false;
+        }
+
+        if (matched.displayVersionNo !== displayNo) {
+            Logger.debug(PLUGIN_ID + ': prompt text matched v' + matched.displayVersionNo
+                + ' for card badge v' + displayNo);
         }
 
         const actions = document.createElement('span');
