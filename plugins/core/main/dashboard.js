@@ -83,9 +83,15 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
+const DASH_MS_HOVER_OPEN_MS = 300;
+const DASH_MS_HOVER_CLOSE_MS = 50;
 
 function dashIsTeamMembersMsKey(scopeKey) {
     return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
+}
+
+function dashIsFilterMsKey(scopeKey) {
+    return Boolean(scopeKey && scopeKey.startsWith('filter-'));
 }
 
 function dashLib() {
@@ -187,7 +193,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.35',
+    _version: '4.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -271,7 +277,9 @@ const plugin = {
             targetIdsCacheKey: '',
             targetIdsCache: null,
             msDropdownOpen: {},
-            msDropdownFilter: {}
+            msDropdownFilter: {},
+            msDropdownPinned: {},
+            msDropdownHoverTimers: {}
         };
     },
 
@@ -1914,10 +1922,17 @@ const plugin = {
     _expandAppliedForBoundsGrowth(applied, prevBounds, newBounds) {
         const next = Object.assign({}, applied);
         for (const { draftKey } of DASH_FILTER_SCOPES) {
-            const prevLen = (prevBounds[draftKey] || []).length;
-            const newLen = (newBounds[draftKey] || []).length;
-            if (prevLen === 0 && newLen > 0) {
-                next[draftKey] = [...(newBounds[draftKey] || [])];
+            const prevBoundIds = prevBounds[draftKey] || [];
+            const newBoundIds = newBounds[draftKey] || [];
+            const appliedSel = (applied[draftKey] || []);
+            if (prevBoundIds.length === 0 && newBoundIds.length > 0) {
+                next[draftKey] = [...newBoundIds];
+            } else if (
+                prevBoundIds.length > 0
+                && newBoundIds.length > prevBoundIds.length
+                && this._isDimensionAllSelected(appliedSel, prevBoundIds)
+            ) {
+                next[draftKey] = [...newBoundIds];
             }
         }
         return next;
@@ -3046,6 +3061,9 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-ms-option-style';
         style.textContent = [
+            '#wf-dash-modal label[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"] {',
+            '  display: none !important;',
+            '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
             '  grid-template-columns: auto minmax(0, 1fr);',
@@ -3377,8 +3395,8 @@ const plugin = {
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
                                             ${this._multiSelectHtml('search-teams', 'Team', 'All teams', false)}
-                                            ${this._multiSelectHtml('search-projects', 'Projects', 'All projects', false)}
-                                            ${this._multiSelectHtml('search-envs', 'Environments', 'All environments', false)}
+                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', false)}
+                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', false)}
                                         </div>
                                     </div>
                                 </div>
@@ -3468,10 +3486,10 @@ const plugin = {
 
     _filterScopeLabel(scopeKey) {
         const labels = {
-            'filter-prompt-history': 'Prompt History',
+            'filter-prompt-history': 'Task Lifecycle History',
             'filter-teams': 'Team',
-            'filter-projects': 'Projects',
-            'filter-envs': 'Environments',
+            'filter-projects': 'Project',
+            'filter-envs': 'Environment',
             'filter-statuses': 'Current task status',
             'filter-contributors': 'Contributor',
             'filter-prompt-ratings': 'Prompt rating',
@@ -3712,6 +3730,24 @@ const plugin = {
             if (filterEl && filterEl.matches('[data-wf-dash-ms-filter]') && modal.contains(filterEl)) {
                 this._applyMsDropdownFilter(filterEl.getAttribute('data-wf-dash-ms-filter'), filterEl.value);
             }
+        });
+
+        modal.addEventListener('mouseover', (e) => {
+            const wrap = e.target.closest('[data-wf-dash-ms-wrap]');
+            if (!wrap || !modal.contains(wrap)) return;
+            if (wrap.contains(e.relatedTarget)) return;
+            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
+            if (!dashIsFilterMsKey(scopeKey)) return;
+            this._scheduleMsHoverOpen(scopeKey);
+        });
+
+        modal.addEventListener('mouseout', (e) => {
+            const wrap = e.target.closest('[data-wf-dash-ms-wrap]');
+            if (!wrap || !modal.contains(wrap)) return;
+            if (wrap.contains(e.relatedTarget)) return;
+            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
+            if (!dashIsFilterMsKey(scopeKey)) return;
+            this._scheduleMsHoverClose(scopeKey);
         });
 
         modal.addEventListener('change', (e) => {
@@ -3988,9 +4024,81 @@ const plugin = {
         for (const key of keys) this._syncMsDropdown(key);
     },
 
+    _anyFilterMsPinned() {
+        const pinned = this._state.msDropdownPinned || {};
+        return Object.keys(pinned).some((key) => pinned[key]);
+    },
+
+    _clearMsHoverTimers(scopeKey) {
+        const timers = (this._state.msDropdownHoverTimers || {})[scopeKey];
+        if (!timers) return;
+        if (timers.open) clearTimeout(timers.open);
+        if (timers.close) clearTimeout(timers.close);
+        delete this._state.msDropdownHoverTimers[scopeKey];
+    },
+
+    _clearAllMsHoverTimers() {
+        for (const key of Object.keys(this._state.msDropdownHoverTimers || {})) {
+            this._clearMsHoverTimers(key);
+        }
+    },
+
+    _scheduleMsHoverOpen(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (this._anyFilterMsPinned()) return;
+        if (this._state.msDropdownPinned[scopeKey]) return;
+        this._clearMsHoverTimers(scopeKey);
+        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
+        timers.open = setTimeout(() => {
+            delete timers.open;
+            if (this._anyFilterMsPinned()) return;
+            this._openMsDropdownHover(scopeKey);
+        }, DASH_MS_HOVER_OPEN_MS);
+        this._state.msDropdownHoverTimers[scopeKey] = timers;
+    },
+
+    _scheduleMsHoverClose(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (this._state.msDropdownPinned[scopeKey]) return;
+        if (this._anyFilterMsPinned()) return;
+        this._clearMsHoverTimers(scopeKey);
+        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
+        timers.close = setTimeout(() => {
+            delete timers.close;
+            this._closeMsHoverDropdown(scopeKey);
+        }, DASH_MS_HOVER_CLOSE_MS);
+        this._state.msDropdownHoverTimers[scopeKey] = timers;
+    },
+
+    _openMsDropdownHover(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        for (const { scopeKey: key } of DASH_FILTER_SCOPES) {
+            if (key === scopeKey) continue;
+            if (this._state.msDropdownPinned[key]) continue;
+            if (this._isMsDropdownOpen(key)) {
+                delete this._state.msDropdownOpen[key];
+                this._syncMsDropdown(key);
+            }
+            this._clearMsHoverTimers(key);
+        }
+        this._state.msDropdownOpen[scopeKey] = true;
+        this._syncMsDropdown(scopeKey);
+        this._scrollOpenedMsDropdownIntoView(scopeKey);
+    },
+
+    _closeMsHoverDropdown(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (this._state.msDropdownPinned[scopeKey]) return;
+        if (!this._isMsDropdownOpen(scopeKey)) return;
+        delete this._state.msDropdownOpen[scopeKey];
+        this._syncMsDropdown(scopeKey);
+    },
+
     _closeAllMsDropdowns() {
+        this._clearAllMsHoverTimers();
         this._state.msDropdownOpen = {};
         this._state.msDropdownFilter = {};
+        this._state.msDropdownPinned = {};
         const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
             .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
         for (const scopeKey of scopeKeys) {
@@ -4046,11 +4154,39 @@ const plugin = {
             if (!wasOpen) this._scrollOpenedMsDropdownIntoView(scopeKey);
             return;
         }
+        this._clearMsHoverTimers(scopeKey);
+        if (dashIsFilterMsKey(scopeKey)) {
+            const opening = !wasOpen;
+            if (opening) {
+                this._state.msDropdownOpen = {};
+                this._state.msDropdownOpen[scopeKey] = true;
+                this._state.msDropdownPinned[scopeKey] = true;
+                for (const { scopeKey: key } of DASH_FILTER_SCOPES) {
+                    if (key !== scopeKey) delete this._state.msDropdownPinned[key];
+                }
+            } else {
+                delete this._state.msDropdownOpen[scopeKey];
+                delete this._state.msDropdownPinned[scopeKey];
+            }
+            this._syncAllMsDropdowns();
+            if (opening) this._scrollOpenedMsDropdownIntoView(scopeKey);
+            return;
+        }
         this._state.msDropdownOpen = {};
         const opening = !wasOpen;
         if (opening) this._state.msDropdownOpen[scopeKey] = true;
         this._syncAllMsDropdowns();
         if (opening) this._scrollOpenedMsDropdownIntoView(scopeKey);
+    },
+
+    _msDropdownFilterMatchText(label, lib, q) {
+        const parts = [label.getAttribute('data-wf-dash-ms-label') || ''];
+        const nameEl = label.querySelector('[data-wf-dash-ms-option-name]');
+        const emailEl = label.querySelector('[data-wf-dash-ms-option-email]');
+        if (nameEl) parts.push(nameEl.textContent || '');
+        if (emailEl) parts.push(emailEl.textContent || '');
+        const text = parts.filter(Boolean).join(' ');
+        return lib.textMatchesQuery(text, q, true, false);
     },
 
     _applyMsDropdownFilter(scopeKey, query) {
@@ -4064,9 +4200,9 @@ const plugin = {
         const lib = dashLib();
         let visible = 0;
         optionLabels.forEach((label) => {
-            const text = label.getAttribute('data-wf-dash-ms-label') || '';
-            const show = !q || lib.textMatchesQuery(text, q, true, false);
-            label.style.display = show ? '' : 'none';
+            const show = !q || this._msDropdownFilterMatchText(label, lib, q);
+            if (show) label.removeAttribute('data-wf-dash-ms-filter-hidden');
+            else label.setAttribute('data-wf-dash-ms-filter-hidden', '1');
             if (show) visible += 1;
         });
         let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
