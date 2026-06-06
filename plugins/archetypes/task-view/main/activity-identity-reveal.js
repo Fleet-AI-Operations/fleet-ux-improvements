@@ -2,16 +2,28 @@
 // Task view: when Ops is unlocked, replace anonymized activity names with real profile name + email + expert link.
 
 const PLUGIN_ID = 'activity-identity-reveal';
-const VIEW_TASK_UUID_RE = /\/work\/problems\/view-task\/([0-9a-f-]{36})/i;
+const VIEW_TASK_ID_FROM_PATH_RE = /(?:^|\/)view-task\/([^/?#\s]+)/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FLEET_ORIGIN = 'https://www.fleetai.com';
 const ENHANCED_ATTR = 'data-fleet-identity-reveal';
 const MIN_FEEDBACK_MATCH_SCORE = 8;
+
+const LABEL_TO_FIELD = {
+    'rejection reason': 'rejectionLabels',
+    'attempted actions': 'attemptedActions',
+    'task issues': 'taskFeedback',
+    'general feedback': 'generalFeedback',
+    'bug reason': 'bugReason',
+    'bug description': 'bugDescription',
+    'resolution': 'resolutionText',
+    "writer's dispute": 'writerDispute'
+};
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -22,6 +34,9 @@ const plugin = {
         fetchDone: false,
         fetchFailed: false,
         revealCache: null,
+        opsBlockedLogged: false,
+        taskIdMissingLogged: false,
+        missingRootLogged: false,
         missingActivityLogged: false,
         activationLogged: false,
         revealedCount: 0
@@ -43,14 +58,38 @@ const plugin = {
             state.revealCache = null;
             state.activationLogged = false;
             state.revealedCount = 0;
+            state.opsBlockedLogged = false;
         }
 
-        if (!opsEnabled || !taskId) return;
+        if (!opsEnabled) {
+            if (!state.opsBlockedLogged) {
+                Logger.info(PLUGIN_ID + ': inactive — Ops not enabled');
+                state.opsBlockedLogged = true;
+            }
+            return;
+        }
+        state.opsBlockedLogged = false;
+
+        if (!taskId) {
+            if (!state.taskIdMissingLogged) {
+                Logger.warn(PLUGIN_ID + ': no eval task id in path "' + (Context.currentPath || '') + '"');
+                state.taskIdMissingLogged = true;
+            }
+            return;
+        }
+        state.taskIdMissingLogged = false;
 
         const root = document.querySelector('[data-ui="view-task"]');
-        if (!root) return;
+        if (!root) {
+            if (!state.missingRootLogged) {
+                Logger.debug(PLUGIN_ID + ': waiting for [data-ui="view-task"]');
+                state.missingRootLogged = true;
+            }
+            return;
+        }
+        state.missingRootLogged = false;
 
-        const entries = root.querySelectorAll('.py-1');
+        const entries = this._findActivityEntries(root);
         if (!entries.length) {
             if (!state.missingActivityLogged) {
                 Logger.debug(PLUGIN_ID + ': waiting for Activity & Feedback entries');
@@ -80,6 +119,7 @@ const plugin = {
         state.activationLogged = false;
         state.revealedCount = 0;
         state.revealCache = null;
+        state.taskIdMissingLogged = false;
     },
 
     _isOpsUnlocked() {
@@ -89,8 +129,27 @@ const plugin = {
 
     _extractTaskIdFromPath() {
         const path = Context.currentPath || '';
-        const match = path.match(VIEW_TASK_UUID_RE);
-        return match ? match[1] : '';
+        const match = path.match(VIEW_TASK_ID_FROM_PATH_RE);
+        if (!match) return '';
+        const candidate = String(match[1] || '').trim();
+        return UUID_RE.test(candidate) ? candidate : '';
+    },
+
+    _findActivityEntries(root) {
+        const spaceY2 = root.querySelector('.w-full.space-y-3 .space-y-2');
+        if (spaceY2) {
+            const scoped = spaceY2.querySelectorAll(':scope > .py-1');
+            if (scoped.length) return [...scoped];
+        }
+        return [...root.querySelectorAll('.space-y-2 > .py-1')];
+    },
+
+    _abortFetch(state, taskId) {
+        if (state.taskId !== taskId || !this._isOpsUnlocked()) {
+            state.fetchStarted = false;
+            return true;
+        }
+        return false;
     },
 
     async _fetchAndReveal(state, taskId, entries) {
@@ -102,21 +161,30 @@ const plugin = {
             return;
         }
 
+        Logger.info(PLUGIN_ID + ': fetching QA feedback + task author for ' + taskId);
+
         try {
             const [feedbackRows, taskRow] = await Promise.all([
                 this._fetchFeedbackRows(ops, taskId),
                 this._fetchTaskRow(ops, taskId)
             ]);
-            if (state.taskId !== taskId || !this._isOpsUnlocked()) return;
+            if (this._abortFetch(state, taskId)) return;
 
             const userIds = new Set();
-            if (taskRow && taskRow.created_by) userIds.add(String(taskRow.created_by));
+            const authorId = taskRow && taskRow.created_by ? String(taskRow.created_by) : '';
+            if (authorId) userIds.add(authorId);
             for (const row of feedbackRows) {
                 if (row && row.created_by) userIds.add(String(row.created_by));
             }
 
             const profiles = await this._fetchProfiles(ops, [...userIds]);
-            if (state.taskId !== taskId || !this._isOpsUnlocked()) return;
+            if (this._abortFetch(state, taskId)) return;
+
+            Logger.info(
+                PLUGIN_ID + ': loaded ' + feedbackRows.length + ' feedback row(s)'
+                + (authorId ? ', author ' + authorId : ', no author')
+                + ', ' + profiles.size + ' profile(s)'
+            );
 
             const revealCache = { feedbackRows, taskRow, profiles };
             state.fetchDone = true;
@@ -124,7 +192,10 @@ const plugin = {
             state.revealCache = revealCache;
             this._applyReveal(state, entries, revealCache);
         } catch (err) {
-            if (state.taskId !== taskId) return;
+            if (state.taskId !== taskId) {
+                state.fetchStarted = false;
+                return;
+            }
             state.fetchFailed = true;
             state.fetchStarted = false;
             const refresh = ops.isSessionRefreshRequiredError && ops.isSessionRefreshRequiredError(err);
@@ -195,45 +266,100 @@ const plugin = {
         return map;
     },
 
-    _resolveEntryUserId(entry, feedbackRows, taskRow, placeholderMap) {
-        const headerText = this._normalizeMatchText(entry.textContent || '');
-        let placeholder = '';
+    _classifyEntry(entry) {
+        const header = entry.querySelector('.text-sm');
+        const headerText = this._normalizeMatchText(header ? header.textContent : entry.textContent);
+        if (/\bcreated the task\b/.test(headerText)) return 'task_created';
+        if (/\bupdated the prompt\b/.test(headerText)) return 'prompt_updated';
+        if (/\bdispute on\b/.test(headerText) && /'s feedback/.test(headerText)) return 'dispute';
+        if (/\brequested changes\b/.test(headerText)) return 'qa_feedback';
+        return 'unknown';
+    },
 
-        if (/\bcreated the task\b/i.test(headerText) || /\bupdated the prompt\b/i.test(headerText)) {
-            const authorId = taskRow && taskRow.created_by ? String(taskRow.created_by) : '';
-            const spans = this._findNameSpans(entry);
-            if (spans[0]) placeholder = this._normalizePlaceholder(spans[0].textContent);
-            return { userId: authorId, placeholder };
+    _extractLabeledBlocks(entry) {
+        const blocks = {};
+        const labels = entry.querySelectorAll('.text-sm.text-muted-foreground.font-medium.mb-1');
+        for (const labelEl of labels) {
+            const labelKey = this._normalizeMatchText(labelEl.textContent);
+            const field = LABEL_TO_FIELD[labelKey];
+            if (!field) continue;
+            const valueEl = labelEl.nextElementSibling;
+            if (!valueEl) continue;
+            blocks[field] = this._normalizeMatchText(valueEl.textContent);
         }
+        return blocks;
+    },
 
-        const feedback = this._matchFeedbackRow(entry, feedbackRows);
-        if (feedback && feedback.created_by) {
-            const spans = this._findNameSpans(entry);
-            if (spans[0]) placeholder = this._normalizePlaceholder(spans[0].textContent);
-            return { userId: String(feedback.created_by), placeholder };
-        }
+    _buildFeedbackFingerprint(row) {
+        const data = this._parseFeedbackData(row);
+        const labels = Array.isArray(data.rejection_reason_labels)
+            ? data.rejection_reason_labels.map(String)
+            : (data.rejection_reason_label ? [String(data.rejection_reason_label)] : []);
+        return {
+            id: row && row.id,
+            created_by: row && row.created_by ? String(row.created_by) : '',
+            rejectionLabels: labels.map((l) => this._normalizeMatchText(l)).filter(Boolean),
+            attemptedActions: this._normalizeMatchText(data.attempted_actions),
+            taskFeedback: this._normalizeMatchText(data.task_feedback),
+            generalFeedback: this._normalizeMatchText(data.general_feedback),
+            bugReason: this._normalizeMatchText(data.bug_reason),
+            bugDescription: this._normalizeMatchText(data.bug_description),
+            feedbackContent: this._normalizeMatchText(row && row.feedback_content)
+        };
+    },
 
-        const spans = this._findNameSpans(entry);
-        for (const span of spans) {
-            const name = this._normalizePlaceholder(span.textContent);
-            if (name === 'you') {
-                const youFeedback = this._matchFeedbackRow(entry, feedbackRows);
-                if (youFeedback && youFeedback.created_by) {
-                    return { userId: String(youFeedback.created_by), placeholder: name };
-                }
+    _scoreFeedbackMatch(blocks, fingerprint) {
+        let score = 0;
+
+        if (blocks.rejectionLabels && fingerprint.rejectionLabels.length) {
+            const domNorm = blocks.rejectionLabels;
+            for (const label of fingerprint.rejectionLabels) {
+                if (label && domNorm.includes(label)) score += 20;
             }
-            const mapped = placeholderMap.get(name);
-            if (mapped) return { userId: mapped, placeholder: name };
         }
 
-        return { userId: '', placeholder };
+        score += this._blockSnippetScore(blocks.attemptedActions, fingerprint.attemptedActions, 18, 20);
+        score += this._blockSnippetScore(blocks.taskFeedback, fingerprint.taskFeedback, 15, 20);
+        score += this._blockSnippetScore(blocks.generalFeedback, fingerprint.generalFeedback, 15, 20);
+        score += this._blockSnippetScore(blocks.bugDescription, fingerprint.bugDescription, 12, 15);
+        score += this._blockSnippetScore(blocks.resolutionText, fingerprint.bugDescription, 10, 15);
+
+        if (blocks.bugReason && fingerprint.bugReason) {
+            if (blocks.bugReason.includes(fingerprint.bugReason) || fingerprint.bugReason.includes(blocks.bugReason)) {
+                score += 18;
+            }
+        }
+        if (blocks.generalFeedback && fingerprint.bugReason && blocks.generalFeedback.includes(fingerprint.bugReason)) {
+            score += 15;
+        }
+        if (blocks.generalFeedback && fingerprint.feedbackContent) {
+            const snippet = fingerprint.feedbackContent.slice(0, 80);
+            if (snippet.length > 20 && blocks.generalFeedback.includes(snippet)) score += 12;
+        }
+        if (blocks.resolutionText && fingerprint.bugReason && blocks.resolutionText.includes(fingerprint.bugReason)) {
+            score += 12;
+        }
+
+        return score;
+    },
+
+    _blockSnippetScore(blockText, apiText, weight, minLen) {
+        if (!blockText || !apiText) return 0;
+        const snippet = apiText.slice(0, 60);
+        if (snippet.length >= minLen && blockText.includes(snippet)) return weight;
+        const longer = apiText.slice(0, Math.min(apiText.length, 100));
+        if (longer.length >= minLen && blockText.includes(longer)) return weight - 4;
+        if (apiText.length >= minLen && blockText.includes(apiText.slice(0, minLen))) return weight - 6;
+        return 0;
     },
 
     _matchFeedbackRow(entry, feedbackRows) {
+        const blocks = this._extractLabeledBlocks(entry);
         let best = null;
         let bestScore = 0;
         for (const row of feedbackRows || []) {
-            const score = this._scoreFeedbackMatch(entry, row);
+            const fp = this._buildFeedbackFingerprint(row);
+            const score = this._scoreFeedbackMatch(blocks, fp);
             if (score > bestScore) {
                 bestScore = score;
                 best = row;
@@ -242,45 +368,45 @@ const plugin = {
         return bestScore >= MIN_FEEDBACK_MATCH_SCORE ? best : null;
     },
 
-    _scoreFeedbackMatch(entry, feedback) {
-        const entryNorm = this._normalizeMatchText(entry.textContent || '');
-        const data = this._parseFeedbackData(feedback);
-        let score = 0;
+    _resolveEntryUserId(entry, feedbackRows, taskRow, placeholderMap) {
+        const kind = this._classifyEntry(entry);
+        const spans = this._findNameSpans(entry);
+        const placeholder = spans[0] ? this._normalizePlaceholder(spans[0].textContent) : '';
 
-        const labels = Array.isArray(data.rejection_reason_labels)
-            ? data.rejection_reason_labels
-            : (data.rejection_reason_label ? [data.rejection_reason_label] : []);
-        for (const label of labels) {
-            const norm = this._normalizeMatchText(label);
-            if (norm && entryNorm.includes(norm)) score += 10;
+        if (kind === 'task_created' || kind === 'prompt_updated') {
+            const authorId = taskRow && taskRow.created_by ? String(taskRow.created_by) : '';
+            return { userId: authorId, placeholder, kind };
         }
 
-        score += this._snippetScore(entryNorm, data.attempted_actions, 15, 20);
-        score += this._snippetScore(entryNorm, data.task_feedback, 12, 20);
-        score += this._snippetScore(entryNorm, data.general_feedback, 12, 20);
-        score += this._snippetScore(entryNorm, data.bug_description, 12, 20);
-
-        if (data.bug_reason) {
-            const norm = this._normalizeMatchText(data.bug_reason);
-            if (norm && entryNorm.includes(norm)) score += 15;
+        if (kind === 'qa_feedback' || kind === 'unknown') {
+            const feedback = this._matchFeedbackRow(entry, feedbackRows);
+            if (feedback && feedback.created_by) {
+                return { userId: String(feedback.created_by), placeholder, kind };
+            }
         }
 
-        const content = this._normalizeMatchText(feedback && feedback.feedback_content);
-        if (content.length > 30) {
-            const snippet = content.slice(0, 80);
-            if (entryNorm.includes(snippet)) score += 8;
+        if (kind === 'dispute' || kind === 'unknown') {
+            for (const span of spans) {
+                const name = this._normalizePlaceholder(span.textContent);
+                if (!name || name === 'you') continue;
+                const mapped = placeholderMap.get(name);
+                if (mapped) return { userId: mapped, placeholder: name, kind };
+            }
         }
 
-        return score;
-    },
+        for (const span of spans) {
+            const name = this._normalizePlaceholder(span.textContent);
+            if (name === 'you') {
+                const youFeedback = this._matchFeedbackRow(entry, feedbackRows);
+                if (youFeedback && youFeedback.created_by) {
+                    return { userId: String(youFeedback.created_by), placeholder: name, kind };
+                }
+            }
+            const mapped = placeholderMap.get(name);
+            if (mapped) return { userId: mapped, placeholder: name, kind };
+        }
 
-    _snippetScore(entryNorm, text, weight, minLen) {
-        if (!text) return 0;
-        const norm = this._normalizeMatchText(text);
-        const snippet = norm.slice(0, 60);
-        if (snippet.length >= minLen && entryNorm.includes(snippet)) return weight;
-        if (norm.length >= minLen && entryNorm.includes(norm.slice(0, Math.min(norm.length, 100)))) return weight - 3;
-        return 0;
+        return { userId: '', placeholder, kind };
     },
 
     _parseFeedbackData(row) {
@@ -345,6 +471,16 @@ const plugin = {
             }
         }
 
+        const mappedCount = assignments.filter((a) => a.userId).length;
+        Logger.log(PLUGIN_ID + ': mapped ' + mappedCount + '/' + assignments.length + ' activity entries');
+
+        if (mappedCount === 0 && assignments.length > 0) {
+            Logger.warn(
+                PLUGIN_ID + ': no DOM entries matched — task ' + state.taskId
+                + ', ' + feedbackRows.length + ' feedback row(s)'
+            );
+        }
+
         let newlyRevealed = 0;
 
         for (const item of assignments) {
@@ -361,7 +497,7 @@ const plugin = {
         if (newlyRevealed > 0) {
             state.revealedCount += newlyRevealed;
             if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': revealed identities for task ' + state.taskId);
+                Logger.info(PLUGIN_ID + ': revealed identities for task ' + state.taskId);
                 state.activationLogged = true;
             }
             Logger.debug(PLUGIN_ID + ': revealed ' + newlyRevealed + ' name(s), total ' + state.revealedCount);
