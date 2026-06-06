@@ -486,8 +486,8 @@
         },
         {
           "name": "prompt-version-actions.js",
-          "version": "1.1",
-          "hash": "sha256-c75cb1008e88098e2fd873bfd65e668908adfffcfcb67ed5b63b75ae432110d2",
+          "version": "1.2",
+          "hash": "sha256-bf56ac01d1d1d2dceb7d7859b233a0891a0e50195a901fb9f949957773a612bd",
           "log": false
         },
         {

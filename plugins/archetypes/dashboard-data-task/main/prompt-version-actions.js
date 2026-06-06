@@ -15,13 +15,14 @@ const EXTERNAL_LINK_PATH_SNIPPET = 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2
 const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
-    description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task per version',
-    _version: '1.1',
+    description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         taskKey: '',
+        evalTaskId: '',
         versionRows: null,
         fetchStarted: false,
         fetchFailed: false,
@@ -66,7 +67,7 @@ const plugin = {
         }
         state.missingHistoryLogged = false;
 
-        if (!state.versionRows) {
+        if (!state.versionRows || !state.evalTaskId) {
             if (state.fetchFailed) return;
             if (!state.missingVersionsLogged) {
                 Logger.debug(PLUGIN_ID + ': waiting for prompt version fetch');
@@ -81,7 +82,7 @@ const plugin = {
 
         let newlyEnhanced = 0;
         for (const card of cards) {
-            if (this._enhanceVersionCard(card, byPrompt, computed)) newlyEnhanced += 1;
+            if (this._enhanceVersionCard(card, byPrompt, computed, state.evalTaskId)) newlyEnhanced += 1;
         }
 
         if (newlyEnhanced > 0) {
@@ -96,6 +97,7 @@ const plugin = {
 
     _resetTaskState(state, taskKey) {
         state.taskKey = taskKey;
+        state.evalTaskId = '';
         state.versionRows = null;
         state.fetchStarted = false;
         state.fetchFailed = false;
@@ -135,9 +137,11 @@ const plugin = {
             const rows = await this._fetchVersionHistory(opsTab, taskRow.id);
             if (state.taskKey !== taskKey) return;
 
+            state.evalTaskId = String(taskRow.id).trim();
             state.versionRows = rows;
             state.fetchFailed = false;
             Logger.log(PLUGIN_ID + ': loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
+            Logger.log(PLUGIN_ID + ': eval task id captured for view links');
         } catch (err) {
             if (state.taskKey !== taskKey) return;
             state.versionRows = null;
@@ -283,7 +287,7 @@ const plugin = {
         return null;
     },
 
-    _enhanceVersionCard(card, byPrompt, computed) {
+    _enhanceVersionCard(card, byPrompt, computed, evalTaskId) {
         const headerRow = card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2');
         if (!headerRow) return false;
 
@@ -293,7 +297,8 @@ const plugin = {
         const displayNo = this._parseDisplayVersionNo(metaDiv);
         const matched = this._resolveVersionForCard(card, byPrompt, computed);
         const versionId = matched && String(matched.id || '').trim();
-        if (!displayNo || !versionId || !UUID_RE.test(versionId)) {
+        const taskId = String(evalTaskId || '').trim();
+        if (!displayNo || !versionId || !UUID_RE.test(versionId) || !UUID_RE.test(taskId)) {
             Logger.debug(PLUGIN_ID + ': no version id for card'
                 + (displayNo ? ' v' + displayNo : '')
                 + (matched && matched.displayVersionNo != null && displayNo !== matched.displayVersionNo
@@ -312,7 +317,7 @@ const plugin = {
         actions.setAttribute(ENHANCED_ATTR, '1');
         actions.setAttribute('data-fleet-plugin', PLUGIN_ID);
         actions.appendChild(this._createVersionIdCopyButton(versionId, displayNo));
-        actions.appendChild(this._createViewTaskLink(versionId, displayNo));
+        actions.appendChild(this._createViewTaskLink(taskId, displayNo));
         metaDiv.appendChild(actions);
         return true;
     },
@@ -343,15 +348,15 @@ const plugin = {
         return button;
     },
 
-    _createViewTaskLink(versionId, displayNo) {
+    _createViewTaskLink(evalTaskId, displayNo) {
         const link = document.createElement('a');
-        link.href = VIEW_TASK_URL_PREFIX + encodeURIComponent(versionId);
+        link.href = VIEW_TASK_URL_PREFIX + encodeURIComponent(evalTaskId);
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.className =
             'inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground';
-        link.title = 'Open version v' + displayNo + ' in Fleet';
-        link.setAttribute('aria-label', 'Open version v' + displayNo + ' in Fleet');
+        link.title = 'Open task (v' + displayNo + ') in Fleet';
+        link.setAttribute('aria-label', 'Open task (v' + displayNo + ') in Fleet');
         link.setAttribute('data-fleet-plugin', PLUGIN_ID);
 
         const text = document.createElement('span');
