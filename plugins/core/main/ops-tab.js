@@ -54,8 +54,8 @@ const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
 const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
-/** Team labels that alone do not qualify a member for the UI badge (must match ops-secrets labels). */
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', 'Fleet Fellows']);
+/** Team labels that alone do not qualify a member for the UI badge (Fleet API team.name values). */
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Task Designers - Tryouts', 'Fleet Fellows']);
 const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
 /** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
 const OPS_ALL_PERMISSIONS = [
@@ -150,7 +150,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.16',
+    _version: '4.17',
     phase: 'core',
     enabledByDefault: true,
 
@@ -173,6 +173,8 @@ const plugin = {
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
+    /** Runtime team catalog for the logged-in user (from PostgREST team_member embed) */
+    _opsUserTeamCatalogCache: null,
     _opsSecretsCache: {
         json: null,
         loadError: null,
@@ -231,7 +233,10 @@ const plugin = {
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
             getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow),
             getTaskDataActionCache: () => this._opsTaskDataActionCache,
-            fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid)
+            fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
+            fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
+            getUserTeamCatalog: () => this.getUserTeamCatalog(),
+            hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams)
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -896,18 +901,86 @@ const plugin = {
     },
 
     async _resolveOpsTeamId(pageWindow) {
-        try {
-            const params = { select: 'team_id', limit: 1 };
-            const rows = await this._opsPostgrestQuery('team_members.select_team', params);
-            const row = Array.isArray(rows) ? rows[0] : rows;
-            if (row && row.team_id) {
-                Logger.debug('ops-tab: resolved team_id from team_members: ' + row.team_id);
-                return row.team_id;
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: team_members lookup failed', e);
+        const fromCookie = this._getOpsCookieValue('current-team-id');
+        if (fromCookie && OPS_UUID_RE.test(fromCookie)) {
+            Logger.debug('ops-tab: resolved team_id from current-team-id cookie: ' + fromCookie);
+            return fromCookie;
+        }
+        const catalog = this.getUserTeamCatalog();
+        if (catalog.length > 0 && catalog[0][0]) {
+            Logger.debug('ops-tab: resolved team_id from user team catalog: ' + catalog[0][0]);
+            return catalog[0][0];
         }
         return '';
+    },
+
+    _hydrateUserTeamCatalog(profileId, teams) {
+        const id = String(profileId || '').trim();
+        if (!id || !OPS_UUID_RE.test(id) || !Array.isArray(teams)) return;
+        this._opsUserTeamCatalogCache = {
+            profileId: id,
+            fetchedAt: new Date().toISOString(),
+            teams: teams.map((t) => ({
+                id: String(t.id || ''),
+                name: String(t.name || ''),
+                role: t.role || null,
+                membershipCreatedAt: t.membershipCreatedAt || null
+            })).filter((t) => t.id && t.name)
+        };
+    },
+
+    async fetchUserTeamCatalog(profileId, options) {
+        const force = options && options.force;
+        const id = String(profileId || this._getOpsCurrentUserId() || '').trim();
+        if (!id || !OPS_UUID_RE.test(id)) {
+            throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        }
+        const cache = this._opsUserTeamCatalogCache;
+        if (!force && cache && cache.profileId === id && Array.isArray(cache.teams)) {
+            return cache.teams;
+        }
+        const rows = await this._opsPostgrestGet('team_member', {
+            select: '*,team:team(*)',
+            profile_id: 'eq.' + id,
+            status: 'eq.ACTIVE'
+        });
+        const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+        const teams = list
+            .map((row) => {
+                const team = row && row.team;
+                if (!team || !team.id || !team.name) return null;
+                return {
+                    id: String(team.id),
+                    name: String(team.name),
+                    role: row.role || null,
+                    membershipCreatedAt: row.created_at || null
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.name.localeCompare(b.name));
+        this._opsUserTeamCatalogCache = {
+            profileId: id,
+            fetchedAt: new Date().toISOString(),
+            teams
+        };
+        Logger.info('ops-tab: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        return teams;
+    },
+
+    getUserTeamCatalog() {
+        const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
+            ? this._opsUserTeamCatalogCache.teams
+            : [];
+        return teams.map((t) => [t.id, t.name]);
+    },
+
+    getUserTeamByLabel(label) {
+        const norm = String(label || '').trim();
+        if (!norm) return '';
+        const teams = this._opsUserTeamCatalogCache && this._opsUserTeamCatalogCache.teams;
+        if (!Array.isArray(teams)) return '';
+        const found = teams.find((t) => t.name === norm);
+        return found ? found.id : '';
     },
 
     _getOpsCookieValue(name) {
@@ -945,6 +1018,9 @@ const plugin = {
     _persistOpsCurrentUserId(userId, source) {
         if (!userId || !OPS_UUID_RE.test(userId)) return;
         const changed = userId !== this._opsCurrentUserIdCache;
+        if (changed) {
+            this._opsUserTeamCatalogCache = null;
+        }
         this._opsCurrentUserIdCache = userId;
         try {
             const storage = this._getOpsPageWindow().localStorage;
@@ -1083,10 +1159,7 @@ const plugin = {
     },
 
     _getOpsTeamUuidByLabel(label) {
-        const secrets = this._getOpsSecretsJson();
-        if (!secrets || !Array.isArray(secrets['team-uuids'])) return '';
-        const entry = secrets['team-uuids'].find(pair => Array.isArray(pair) && pair[1] === label);
-        return entry ? String(entry[0]) : '';
+        return this.getUserTeamByLabel(label);
     },
 
     _getOpsNextDeploymentId(pageWindow) {
@@ -1532,7 +1605,7 @@ const plugin = {
     },
 
     async _fetchOpsTeamSearchPage(teamId, userId, query, offset, signal) {
-        if (!teamId) throw new Error('No team ID available for search. Ensure Computer Use UUID is in decrypted secrets.');
+        if (!teamId) throw new Error('No team ID available for search.');
         if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
 
         if (!this._opsTeamSearchActionCache.nextAction) {
@@ -2498,16 +2571,25 @@ const plugin = {
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
         const query = input ? input.value.trim() : '';
 
-        const secrets = this._getOpsSecretsJson();
-        const allTeams = secrets && Array.isArray(secrets['team-uuids']) ? secrets['team-uuids'] : [];
-
-        if (!allTeams.length) {
-            this._setOpsTeamSearchStatus(modal, 'No teams found in secrets. Ensure ops secrets are decrypted.', true);
-            return;
-        }
         const userId = this._getOpsCurrentUserId();
         if (!userId) {
             this._setOpsTeamSearchStatus(modal, 'No user ID found. Open Fleet while logged in and try again.', true);
+            return;
+        }
+
+        let allTeams = this.getUserTeamCatalog();
+        if (!allTeams.length) {
+            try {
+                await this.fetchUserTeamCatalog(userId);
+                allTeams = this.getUserTeamCatalog();
+            } catch (e) {
+                Logger.warn('ops-tab: team search — failed to load user team catalog', e);
+                this._setOpsTeamSearchStatus(modal, 'Failed to load your teams: ' + (e.message || String(e)), true);
+                return;
+            }
+        }
+        if (!allTeams.length) {
+            this._setOpsTeamSearchStatus(modal, 'No teams found for your account.', true);
             return;
         }
 
