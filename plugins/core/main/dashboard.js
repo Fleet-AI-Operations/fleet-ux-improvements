@@ -187,7 +187,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.31',
+    _version: '4.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5150,9 +5150,29 @@ const plugin = {
         if (clearParams) clearParams.disabled = loading;
     },
 
+    _syncSearchLoadPhaseUi() {
+        const wrap = this._q('#wf-dash-results');
+        if (!wrap || !this._state || !this._state.loading) return;
+        const phase = String(this._state.searchLoadPhase || '').trim();
+        const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
+        let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
+        if (!loadingEl) {
+            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
+                ${this._loadingSpinnerHtml(20)}
+                <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
+            </div>`;
+            return;
+        }
+        const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
+        if (!phaseEl) return;
+        phaseEl.textContent = phase;
+        phaseEl.style.display = phase ? '' : 'none';
+    },
+
     _setSearchLoadPhase(message) {
         if (!this._state || !this._state.loading) return;
         this._state.searchLoadPhase = String(message || '').trim();
+        this._syncSearchLoadPhaseUi();
     },
 
     _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes }) {
@@ -5232,10 +5252,7 @@ const plugin = {
         const muted = 'font-size: 12px; color: var(--muted-foreground, #64748b);';
 
         if (s.loading) {
-            if (wrap.querySelector('[data-wf-dash-results-loading]')) return;
-            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: center; justify-content: center; padding: 48px 16px; min-height: 120px;">
-                ${this._loadingSpinnerHtml(20)}
-            </div>`;
+            this._syncSearchLoadPhaseUi();
             return;
         }
         if (s.searchError && !s.cachedItems) {
