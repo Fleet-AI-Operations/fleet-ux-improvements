@@ -21,7 +21,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -120,6 +120,7 @@ const plugin = {
         const section = document.createElement('div');
         section.setAttribute('data-fleet-plugin', PLUGIN_ID);
         section.setAttribute('data-fleet-task-key', taskKey);
+        section.className = 'rounded-md border border-border p-3';
 
         const headerRow = document.createElement('div');
         headerRow.className = 'mb-2 flex flex-wrap items-center justify-between gap-2';
