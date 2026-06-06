@@ -70,8 +70,6 @@ const DASH_SEARCH_DEPTH_HINTS = {
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 
-const DASH_EXCLUDED_TEAM_NAMES = ['Fleet Fellows', 'Trace QA'];
-
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
@@ -188,7 +186,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.28',
+    _version: '4.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -337,13 +335,29 @@ const plugin = {
 
     // ── Catalog / team helpers ──
 
+    _dashFormatTeamDisplayLabel(name) {
+        if (Context.opsTab && typeof Context.opsTab.formatTeamDisplayLabel === 'function') {
+            return Context.opsTab.formatTeamDisplayLabel(name);
+        }
+        const full = String(name || '').trim();
+        const prefix = 'Task Designers - ';
+        return full.startsWith(prefix) ? full.slice(prefix.length).trim() : full;
+    },
+
+    _dashIsTaskDesignersTeam(name) {
+        if (Context.opsTab && typeof Context.opsTab.isTaskDesignersTeam === 'function') {
+            return Context.opsTab.isTaskDesignersTeam(name);
+        }
+        return String(name || '').startsWith('Task Designers - ');
+    },
+
     _getTeamCatalog() {
         const fromCatalog = this._state.catalog && Array.isArray(this._state.catalog.teams)
             ? this._state.catalog.teams
             : null;
         if (fromCatalog && fromCatalog.length > 0) {
             return fromCatalog
-                .map((t) => [t.id, t.name])
+                .map((t) => [t.id, t.displayName || this._dashFormatTeamDisplayLabel(t.name)])
                 .filter((pair) => Array.isArray(pair) && pair[0] && pair[1]);
         }
         try {
@@ -356,13 +370,24 @@ const plugin = {
         return [];
     },
 
-    _isExcludedTeamName(label) {
-        const norm = String(label || '').trim().toLowerCase();
-        return DASH_EXCLUDED_TEAM_NAMES.some((name) => name.toLowerCase() === norm);
-    },
-
     _getSearchableTeamCatalog() {
-        return this._getTeamCatalog().filter(([, label]) => !this._isExcludedTeamName(label));
+        const fromCatalog = this._state.catalog && Array.isArray(this._state.catalog.teams)
+            ? this._state.catalog.teams
+            : null;
+        if (fromCatalog && fromCatalog.length > 0) {
+            return fromCatalog
+                .filter((t) => this._dashIsTaskDesignersTeam(t.name))
+                .map((t) => [t.id, t.displayName || this._dashFormatTeamDisplayLabel(t.name)])
+                .filter((pair) => pair[0] && pair[1]);
+        }
+        try {
+            if (Context.opsTab && typeof Context.opsTab.getUserTeamCatalog === 'function') {
+                return Context.opsTab.getUserTeamCatalog();
+            }
+        } catch (e) {
+            Logger.debug('dashboard: searchable team catalog read failed', e);
+        }
+        return [];
     },
 
     _teamName(teamId) {
@@ -983,9 +1008,13 @@ const plugin = {
         };
 
         const userTeams = await ops.fetchUserTeamCatalog(profileId);
-        const teams = userTeams.map((t) => ({ id: t.id, name: t.name }));
+        const teams = userTeams.map((t) => ({
+            id: t.id,
+            name: t.name,
+            displayName: t.displayName || this._dashFormatTeamDisplayLabel(t.name)
+        }));
         const teamIds = userTeams
-            .filter((t) => !this._isExcludedTeamName(t.name))
+            .filter((t) => this._dashIsTaskDesignersTeam(t.name))
             .map((t) => t.id);
 
         const fetchBootstrapProjects = async () => {

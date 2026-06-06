@@ -54,9 +54,35 @@ const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
 const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
-/** Team labels that alone do not qualify a member for the UI badge (Fleet API team.name values). */
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Task Designers - Tryouts', 'Fleet Fellows']);
-const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
+/** Fleet API prefix for teams included in dashboard / ops team search. */
+const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
+/** Display labels that alone do not qualify a member for the UI badge. */
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts']);
+
+function opsIsTaskDesignersTeamName(name) {
+    return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
+}
+
+function opsFormatTeamDisplayLabel(name) {
+    const full = String(name || '').trim();
+    if (opsIsTaskDesignersTeamName(full)) {
+        return full.slice(OPS_TASK_DESIGNERS_TEAM_PREFIX.length).trim();
+    }
+    return full;
+}
+
+function opsNormalizeTeamCatalogEntry(team) {
+    const name = String(team && team.name || '').trim();
+    const id = String(team && team.id || '').trim();
+    if (!id || !name) return null;
+    return {
+        id,
+        name,
+        displayName: String(team.displayName || opsFormatTeamDisplayLabel(name)).trim() || name,
+        role: team.role || null,
+        membershipCreatedAt: team.membershipCreatedAt || null
+    };
+}
 /** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
 const OPS_ALL_PERMISSIONS = [
     ['QA_CUA_TASKS', 'QA CUA Tasks'],
@@ -150,7 +176,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.17',
+    _version: '4.18',
     phase: 'core',
     enabledByDefault: true,
 
@@ -160,7 +186,7 @@ const plugin = {
     _opsTeamSearchActive: null,
     _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
-    /** null when idle; false while Fleet Fellows search runs; true once Fellows has fully resolved. */
+    /** Legacy Fellows-search gate; team search is Task Designers only, so this stays true when idle. */
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
     _opsMemberEditState: null,
@@ -236,7 +262,9 @@ const plugin = {
             fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
             fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
             getUserTeamCatalog: () => this.getUserTeamCatalog(),
-            hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams)
+            hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams),
+            isTaskDesignersTeam: (name) => opsIsTaskDesignersTeamName(name),
+            formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name)
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -920,12 +948,7 @@ const plugin = {
         this._opsUserTeamCatalogCache = {
             profileId: id,
             fetchedAt: new Date().toISOString(),
-            teams: teams.map((t) => ({
-                id: String(t.id || ''),
-                name: String(t.name || ''),
-                role: t.role || null,
-                membershipCreatedAt: t.membershipCreatedAt || null
-            })).filter((t) => t.id && t.name)
+            teams: teams.map((t) => opsNormalizeTeamCatalogEntry(t)).filter(Boolean)
         };
     },
 
@@ -949,15 +972,15 @@ const plugin = {
             .map((row) => {
                 const team = row && row.team;
                 if (!team || !team.id || !team.name) return null;
-                return {
-                    id: String(team.id),
-                    name: String(team.name),
+                return opsNormalizeTeamCatalogEntry({
+                    id: team.id,
+                    name: team.name,
                     role: row.role || null,
                     membershipCreatedAt: row.created_at || null
-                };
+                });
             })
             .filter(Boolean)
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .sort((a, b) => a.displayName.localeCompare(b.displayName));
         this._opsUserTeamCatalogCache = {
             profileId: id,
             fetchedAt: new Date().toISOString(),
@@ -971,7 +994,9 @@ const plugin = {
         const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
             ? this._opsUserTeamCatalogCache.teams
             : [];
-        return teams.map((t) => [t.id, t.name]);
+        return teams
+            .filter((t) => opsIsTaskDesignersTeamName(t.name))
+            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)]);
     },
 
     getUserTeamByLabel(label) {
@@ -979,7 +1004,7 @@ const plugin = {
         if (!norm) return '';
         const teams = this._opsUserTeamCatalogCache && this._opsUserTeamCatalogCache.teams;
         if (!Array.isArray(teams)) return '';
-        const found = teams.find((t) => t.name === norm);
+        const found = teams.find((t) => t.displayName === norm || t.name === norm);
         return found ? found.id : '';
     },
 
@@ -2003,9 +2028,6 @@ const plugin = {
     _opsMemberQualifiesForUiBadge(member) {
         const teamLabels = member.teamLabels;
         if (!teamLabels || teamLabels.size === 0) return false;
-        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
-        // No UI badges until the full Fleet Fellows search has finished.
-        if (this._opsFellowsSearchComplete !== true) return false;
         for (const label of teamLabels) {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
@@ -2623,19 +2645,15 @@ const plugin = {
         let doneCount = 0;
         let staleActionDetected = false;
 
-        const fellowsEntry = allTeams.find(([, label]) => label === OPS_FLEET_FELLOWS_TEAM_LABEL) || null;
-        this._opsFellowsSearchComplete = fellowsEntry ? false : true;
+        this._opsFellowsSearchComplete = true;
 
         const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
 
-        const finishTeamSearch = (teamLabel) => {
+        const finishTeamSearch = (_teamLabel) => {
             pendingCount--;
             doneCount++;
             if (this._opsTeamSearchActive !== sessionId) return;
-            if (teamLabel === OPS_FLEET_FELLOWS_TEAM_LABEL) {
-                this._opsFellowsSearchComplete = true;
-            }
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
