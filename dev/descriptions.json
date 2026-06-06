@@ -351,6 +351,11 @@
       "file": "verifier-code-block.js",
       "name": "Verifier Code Block",
       "description": "Fetches and displays verifier Python code on dashboard task pages that show \"No verifier\""
+    },
+    {
+      "file": "prompt-version-actions.js",
+      "name": "Prompt Version Actions",
+      "description": "On dashboard task prompt history rows, copy version UUID prefix and open view-task link per display version"
     }
   ],
   "archetypes/dashboard-data-expert/main": [
