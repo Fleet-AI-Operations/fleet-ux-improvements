@@ -196,7 +196,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.40',
+    _version: '4.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3128,7 +3128,7 @@ const plugin = {
             '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
-            '  grid-template-columns: auto minmax(0, 1fr);',
+            '  grid-template-columns: auto auto minmax(0, 1fr);',
             '  column-gap: 8px;',
             '  align-items: start;',
             '  width: 100%;',
@@ -3140,6 +3140,21 @@ const plugin = {
             '  align-items: flex-start;',
             '  padding-top: 1px;',
             '}',
+            '#wf-dash-modal [data-wf-dash-ms-option-count] {',
+            '  grid-column: 2;',
+            '  flex-shrink: 0;',
+            '  align-self: start;',
+            '  min-width: 1.25rem;',
+            '  padding: 0 5px;',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '  line-height: 1.35;',
+            '  text-align: center;',
+            '  border-radius: 999px;',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #64748b);',
+            '  box-sizing: border-box;',
+            '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] input[type="checkbox"] {',
             '  display: inline-block !important;',
             '  width: auto !important;',
@@ -3148,10 +3163,16 @@ const plugin = {
             '  margin: 0 !important;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-option-text] {',
-            '  grid-column: 2;',
+            '  grid-column: 3;',
             '  min-width: 0;',
             '  overflow-wrap: break-word;',
             '  word-break: normal;',
+            '}',
+            '#wf-dash-modal label[data-wf-dash-ms-option]:not(:has([data-wf-dash-ms-option-count])) {',
+            '  grid-template-columns: auto minmax(0, 1fr);',
+            '}',
+            '#wf-dash-modal label[data-wf-dash-ms-option]:not(:has([data-wf-dash-ms-option-count])) [data-wf-dash-ms-option-text] {',
+            '  grid-column: 2;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-option-name] {',
             '  overflow-wrap: break-word;',
@@ -4674,16 +4695,25 @@ const plugin = {
         return [...items.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
-    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds) {
+    _msOptionCountBadgeHtml(count) {
+        if (count == null) return '';
+        return `<span data-wf-dash-ms-option-count="1" aria-label="${dashEscHtml(String(count))} matching results">${dashEscHtml(String(count))}</span>`;
+    },
+
+    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts) {
         if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
+        const counts = optionCounts instanceof Map ? optionCounts : null;
         const singleOption = items.length === 1;
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
             const email = String(it.email || '').trim();
             const displayName = String(it.name || it.label || '').trim();
+            const countBadge = counts && counts.has(it.id)
+                ? this._msOptionCountBadgeHtml(counts.get(it.id))
+                : '';
             const textHtml = email
                 ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
                     <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
@@ -4697,6 +4727,7 @@ const plugin = {
             return `
             <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a);${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
                 <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${checked ? ' checked' : ''}${disabledAttr}></span>
+                ${countBadge}
                 ${textHtml}
             </label>`;
         }).join('');
@@ -4838,6 +4869,9 @@ const plugin = {
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
             : lib.emptyFilterIrrelevance();
+        const optionCounts = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
+            ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, options)
+            : lib.emptyFilterOptionCounts();
 
         for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
             const itemsEl = this._msItemsEl(scopeKey);
@@ -4851,6 +4885,7 @@ const plugin = {
             if (wrap) wrap.style.display = '';
             const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
             const irrelevantSet = irrelevance[draftKey] || new Set();
+            const countsForScope = optionCounts[draftKey] || new Map();
             const optionIds = optionItems.map((it) => it.id);
             const prevSelected = syncDraftFromApplied
                 ? null
@@ -4864,7 +4899,8 @@ const plugin = {
                 emptyHint,
                 false,
                 false,
-                irrelevantSet
+                irrelevantSet,
+                countsForScope
             );
             itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                 cb.checked = checkedIds.has(cb.value);
