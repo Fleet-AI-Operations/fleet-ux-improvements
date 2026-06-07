@@ -19,6 +19,7 @@ const DASH_CARD_KIND_TAB_HEIGHT = '24px';
 const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
 const DASH_CARD_KIND_TAB_GAP = '0.25rem';
 const DASH_HYDRATE_TASK_CHUNK = 25;
+const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 2;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
@@ -195,7 +196,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.39',
+    _version: '4.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2310,6 +2311,14 @@ const plugin = {
         return Number.isFinite(n) && n > 0 ? n : DASH_RESULTS_PAGE_SIZE_DEFAULT;
     },
 
+    _getQuickHydrateBatchSize() {
+        const ps = this._state.resultsPageSize;
+        if (ps === 'all') return DASH_HYDRATE_BATCH_MAX;
+        const n = Number(ps);
+        const display = Number.isFinite(n) && n > 0 ? n : DASH_RESULTS_PAGE_SIZE_DEFAULT;
+        return Math.min(display, DASH_HYDRATE_BATCH_MAX);
+    },
+
     _applyResultsPageSizeForNewSearch() {
         const pref = this._readResultsPageSizePref();
         if (pref === 'all') {
@@ -2671,13 +2680,14 @@ const plugin = {
 
         this._state.autoHydrateActive = true;
         let hydratedTotal = 0;
+        const batchSize = this._getQuickHydrateBatchSize();
         try {
-            for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+            for (let i = 0; i < toHydrate.length; i += batchSize) {
                 if (this._autoHydrateContextKey() !== contextKey) {
                     Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
                     break;
                 }
-                const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+                const chunk = toHydrate.slice(i, i + batchSize);
                 for (const item of chunk) {
                     this._getHydrateUi(item.id).status = 'loading';
                     this._patchTaskCard(item.id);
@@ -2847,9 +2857,10 @@ const plugin = {
         this._syncBulkHydrateUi();
         this._setBulkHydrateProgress(0, toHydrate.length);
         let hydratedTotal = 0;
+        const batchSize = this._getQuickHydrateBatchSize();
         try {
-            for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
-                const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
+            for (let i = 0; i < toHydrate.length; i += batchSize) {
+                const chunk = toHydrate.slice(i, i + batchSize);
                 for (const item of chunk) {
                     this._getHydrateUi(item.id).status = 'loading';
                     this._patchTaskCard(item.id);
