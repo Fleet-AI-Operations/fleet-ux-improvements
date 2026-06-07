@@ -84,7 +84,6 @@ const DASH_FILTER_SCOPES = [
 ];
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 50;
 
 function dashIsTeamMembersMsKey(scopeKey) {
     return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
@@ -193,7 +192,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.37',
+    _version: '4.38',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3783,15 +3782,6 @@ const plugin = {
             this._scheduleMsHoverOpen(scopeKey);
         });
 
-        modal.addEventListener('mouseout', (e) => {
-            const wrap = e.target.closest('[data-wf-dash-ms-wrap]');
-            if (!wrap || !modal.contains(wrap)) return;
-            if (wrap.contains(e.relatedTarget)) return;
-            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
-            if (!dashIsFilterMsKey(scopeKey)) return;
-            this._scheduleMsHoverClose(scopeKey);
-        });
-
         modal.addEventListener('change', (e) => {
             const cb = e.target;
             if (!cb || cb.type !== 'checkbox') return;
@@ -4073,9 +4063,8 @@ const plugin = {
 
     _clearMsHoverTimers(scopeKey) {
         const timers = (this._state.msDropdownHoverTimers || {})[scopeKey];
-        if (!timers) return;
-        if (timers.open) clearTimeout(timers.open);
-        if (timers.close) clearTimeout(timers.close);
+        if (!timers || !timers.open) return;
+        clearTimeout(timers.open);
         delete this._state.msDropdownHoverTimers[scopeKey];
     },
 
@@ -4099,19 +4088,6 @@ const plugin = {
         this._state.msDropdownHoverTimers[scopeKey] = timers;
     },
 
-    _scheduleMsHoverClose(scopeKey) {
-        if (!dashIsFilterMsKey(scopeKey)) return;
-        if (this._state.msDropdownPinned[scopeKey]) return;
-        if (this._anyFilterMsPinned()) return;
-        this._clearMsHoverTimers(scopeKey);
-        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
-        timers.close = setTimeout(() => {
-            delete timers.close;
-            this._closeMsHoverDropdown(scopeKey);
-        }, DASH_MS_HOVER_CLOSE_MS);
-        this._state.msDropdownHoverTimers[scopeKey] = timers;
-    },
-
     _openMsDropdownHover(scopeKey) {
         if (!dashIsFilterMsKey(scopeKey)) return;
         for (const { scopeKey: key } of DASH_FILTER_SCOPES) {
@@ -4126,14 +4102,6 @@ const plugin = {
         this._state.msDropdownOpen[scopeKey] = true;
         this._syncMsDropdown(scopeKey);
         this._scrollOpenedMsDropdownIntoView(scopeKey);
-    },
-
-    _closeMsHoverDropdown(scopeKey) {
-        if (!dashIsFilterMsKey(scopeKey)) return;
-        if (this._state.msDropdownPinned[scopeKey]) return;
-        if (!this._isMsDropdownOpen(scopeKey)) return;
-        delete this._state.msDropdownOpen[scopeKey];
-        this._syncMsDropdown(scopeKey);
     },
 
     _closeAllMsDropdowns() {
