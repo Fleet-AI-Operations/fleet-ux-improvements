@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.45',
+    _version: '4.46',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5185,7 +5185,7 @@ const plugin = {
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
             : lib.emptyFilterIrrelevance();
-        const optionCounts = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
+        const optionCounts = scopeItems.length > 0
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, options)
             : lib.emptyFilterOptionCounts();
 

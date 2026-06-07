@@ -291,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.15',
+    _version: '1.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -925,15 +925,35 @@ const plugin = {
         return result;
     },
 
+    _effectiveDraftForOptionCounts(draft, listBounds) {
+        if (!draft) return draft;
+        const bounds = listBounds || {};
+        const effective = { ...draft };
+        for (const dim of this._checkboxFilterDimensions) {
+            const all = bounds[dim.draftKey] || [];
+            const selected = effective[dim.draftKey] || [];
+            if (all.length > 0 && selected.length === 0) {
+                effective[dim.draftKey] = [...all];
+            }
+        }
+        const allHistory = bounds.promptHistory || [];
+        const selectedHistory = effective.promptHistory || [];
+        if (allHistory.length > 0 && selectedHistory.length === 0) {
+            effective.promptHistory = [...allHistory];
+        }
+        return effective;
+    },
+
     _computeFilterOptionCounts(items, draft, listBounds, options) {
         const result = this._emptyFilterOptionCounts();
+        const effectiveDraft = this._effectiveDraftForOptionCounts(draft, listBounds);
         for (const dim of this._checkboxFilterDimensions) {
             const optionList = (options && options[dim.optionsKey]) || [];
             const counts = result[dim.draftKey];
             for (const { id } of optionList) {
                 const count = items.filter(({ task }) => (
                     dim.getValues(task).includes(id)
-                    && this._taskPassesFilterDimensions(task, draft, listBounds, dim.draftKey)
+                    && this._taskPassesFilterDimensions(task, effectiveDraft, listBounds, dim.draftKey)
                 )).length;
                 counts.set(id, count);
             }
@@ -943,8 +963,8 @@ const plugin = {
         for (const { id } of historyOptions) {
             const count = items.filter((item) => (
                 this._itemPromptHistory(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, id)
             )).length;
             historyCounts.set(id, count);
         }
