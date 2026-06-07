@@ -11,6 +11,9 @@
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
+const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
+const DASH_SIDE_PANEL_MIN_WIDTH = 320;
+const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_KIND_TAB_HEIGHT = '24px';
 const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
@@ -192,7 +195,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.38',
+    _version: '4.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -206,6 +209,7 @@ const plugin = {
     _onKeydown: null,
     _keydownDoc: null,
     _searchLoadEntrySeq: 0,
+    _splitResizeAttached: false,
 
     init() {
         this._state = this._createInitialState();
@@ -228,7 +232,8 @@ const plugin = {
             renderMsList: (scopeKey, items, emptyHint, preserveSelected) => this._renderMsList(scopeKey, items, emptyHint, preserveSelected),
             resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
             openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
-            selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey)
+            selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey),
+            splitPanelSectionHtml: (leftHtml, rightHtml) => this._splitPanelSectionHtml(leftHtml, rightHtml)
         };
         Logger.log('dashboard: module registered (Context.dashboard)');
     },
@@ -2915,6 +2920,7 @@ const plugin = {
         this._refreshCatalogDependentUi();
         this._syncDashboardUpdateMode();
         this._setSearchDepth('quick');
+        requestAnimationFrame(() => this._applyAllSidePanelWidths());
         Logger.log('dashboard: opened');
     },
 
@@ -2990,10 +2996,14 @@ const plugin = {
         this._overlay = overlay;
         this._modal = modal;
         this._built = true;
+        this._splitResizeAttached = false;
         this._attachListeners();
         this._ensureSpinnerKeyframes();
         this._ensureMsOptionStyles();
         this._ensureHeaderActionStyles();
+        this._ensureSplitPanelResizeStyles();
+        this._attachSplitPanelResize();
+        this._applyAllSidePanelWidths();
         this._syncDashboardUpdateMode();
         this._syncOutputToggleUi();
         this._syncLeftTabUi();
@@ -3340,15 +3350,136 @@ const plugin = {
             : base + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _readSidePanelWidthPref() {
+        try {
+            const raw = this._pageWindow().localStorage.getItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY);
+            const n = parseInt(raw, 10);
+            if (!Number.isFinite(n) || n < DASH_SIDE_PANEL_MIN_WIDTH) return DASH_SIDE_PANEL_MIN_WIDTH;
+            return n;
+        } catch (_e) {
+            return DASH_SIDE_PANEL_MIN_WIDTH;
+        }
+    },
+
+    _writeSidePanelWidthPref(widthPx) {
+        try {
+            const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
+            this._pageWindow().localStorage.setItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+        } catch (e) {
+            Logger.warn('dashboard: failed to write side panel width pref', e);
+        }
+    },
+
+    _splitPanelHandleStyle() {
+        return 'flex-shrink: 0; width: 8px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
+            + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;';
+    },
+
+    _splitPanelHandleHtml() {
+        return '<div data-wf-dash-split-handle role="separator" aria-orientation="vertical"'
+            + ' aria-label="Resize side panel" tabindex="0" title="Drag to resize side panel"'
+            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+    },
+
+    _splitPanelAsideStyle(widthPx) {
+        const w = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx || DASH_SIDE_PANEL_MIN_WIDTH));
+        return 'width: ' + w + 'px; min-width: ' + DASH_SIDE_PANEL_MIN_WIDTH + 'px; flex-shrink: 0;'
+            + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
+    },
+
+    _splitPanelSectionHtml(leftHtml, rightHtml) {
+        const width = this._readSidePanelWidthPref();
+        return '<section data-wf-dash-split-root style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
+            + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
+            + this._splitPanelHandleHtml()
+            + '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
+            + rightHtml + '</div></section>';
+    },
+
+    _clampSidePanelWidth(root, widthPx) {
+        const rootW = root ? root.getBoundingClientRect().width : 0;
+        const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
+        const basis = rootW > 0 ? rootW : fallbackW;
+        const handleReserve = 16;
+        const max = Math.max(
+            DASH_SIDE_PANEL_MIN_WIDTH,
+            basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve
+        );
+        return Math.round(Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.min(max, widthPx)));
+    },
+
+    _applySidePanelWidth(root, widthPx) {
+        if (!root) return;
+        const left = root.querySelector('[data-wf-dash-split-left]');
+        if (!left) return;
+        const clamped = this._clampSidePanelWidth(root, widthPx);
+        left.style.width = clamped + 'px';
+        left.style.minWidth = DASH_SIDE_PANEL_MIN_WIDTH + 'px';
+        left.style.maxWidth = clamped + 'px';
+    },
+
+    _applyAllSidePanelWidths(widthPx) {
+        if (!this._modal) return;
+        const pref = widthPx != null ? widthPx : this._readSidePanelWidthPref();
+        this._modal.querySelectorAll('[data-wf-dash-split-root]').forEach((root) => {
+            this._applySidePanelWidth(root, pref);
+        });
+    },
+
+    _ensureSplitPanelResizeStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-split-resize-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-split-resize-style';
+        style.textContent = [
+            '[data-wf-dash-split-handle]:hover,',
+            '[data-wf-dash-split-handle]:active {',
+            '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
+    },
+
+    _attachSplitPanelResize() {
+        if (!this._modal || this._splitResizeAttached) return;
+        this._splitResizeAttached = true;
+        const doc = this._pageWindow().document;
+        this._modal.addEventListener('mousedown', (e) => {
+            const handle = e.target.closest('[data-wf-dash-split-handle]');
+            if (!handle || !this._modal.contains(handle)) return;
+            e.preventDefault();
+            const root = handle.closest('[data-wf-dash-split-root]');
+            const left = root ? root.querySelector('[data-wf-dash-split-left]') : null;
+            if (!root || !left) return;
+            const startX = e.clientX;
+            const startWidth = left.getBoundingClientRect().width;
+            const onMove = (ev) => {
+                const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
+                this._applySidePanelWidth(root, next);
+            };
+            const onUp = () => {
+                doc.removeEventListener('mousemove', onMove);
+                doc.removeEventListener('mouseup', onUp);
+                doc.body.style.cursor = '';
+                doc.body.style.userSelect = '';
+                const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
+                this._writeSidePanelWidthPref(finalWidth);
+                this._applyAllSidePanelWidths(finalWidth);
+                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px');
+            };
+            doc.body.style.cursor = 'col-resize';
+            doc.body.style.userSelect = 'none';
+            doc.addEventListener('mousemove', onMove);
+            doc.addEventListener('mouseup', onUp);
+        });
+    },
+
     _searchPanelHtml() {
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const hint = this._hintStyle();
         const input = this._inputStyle();
         const leftTab = this._state ? this._state.leftTab : 'search';
-        return `
-            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden;">
-                <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+        const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                         <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
                             <div style="display: flex; gap: 0; min-width: 0;">
@@ -3476,10 +3607,9 @@ const plugin = {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </aside>
-
-                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                    </div>`;
+        const rightHtml = `
+                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
                             <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; flex-wrap: wrap;">
@@ -3520,9 +3650,8 @@ const plugin = {
                         </div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
-                </div>
-            </section>
-        `;
+                </div>`;
+        return this._splitPanelSectionHtml(leftHtml, rightHtml);
     },
 
     _filterScopeLabel(scopeKey) {
@@ -4271,6 +4400,9 @@ const plugin = {
         });
         if (Context.opsTab && typeof Context.opsTab.onDashboardTabActivated === 'function') {
             Context.opsTab.onDashboardTabActivated(this._modal, tabId);
+        }
+        if (tabId === 'search-output' || tabId === 'team-members') {
+            requestAnimationFrame(() => this._applyAllSidePanelWidths());
         }
     },
 

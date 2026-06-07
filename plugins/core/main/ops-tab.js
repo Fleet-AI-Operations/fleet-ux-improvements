@@ -176,7 +176,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.19',
+    _version: '4.20',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3587,10 +3587,11 @@ const plugin = {
         const msPerms = dash && typeof dash.multiSelectHtml === 'function'
             ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', true)
             : '';
+        const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
+            ? dash.splitPanelSectionHtml.bind(dash)
+            : null;
 
-        return `
-            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">
-                <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+        const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                         <div style="padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
                             <div>
@@ -3622,9 +3623,9 @@ const plugin = {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </aside>
-                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                    </div>`;
+        const rightHtml = `
+                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                         <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
                             <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
@@ -3649,7 +3650,16 @@ const plugin = {
                     <div id="wf-ops-team-search-output-wrap" style="display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px;">
                         <div id="wf-ops-team-search-cards"></div>
                     </div>
-                </div>
+                </div>`;
+
+        if (splitPanel) return splitPanel(leftHtml, rightHtml);
+
+        return `
+            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">
+                <aside style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                    ${leftHtml}
+                </aside>
+                ${rightHtml}
             </section>`;
     },
 
