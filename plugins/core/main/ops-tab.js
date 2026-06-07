@@ -62,7 +62,8 @@ const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-
 /** Fleet API prefix for teams included in dashboard / ops team search. */
 const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
 /** Display labels that alone do not qualify a member for the UI badge. */
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts']);
+const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', OPS_FLEET_FELLOWS_TEAM_LABEL]);
 
 function opsIsTaskDesignersTeamName(name) {
     return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
@@ -181,7 +182,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1640,7 +1641,7 @@ const plugin = {
         const memberIds = this._getVisibleTeamMemberIds(modal, cache);
         const toFetch = memberIds.filter((id) => {
             const entry = this._opsExpertStatsCache.get(id);
-            return !entry || (!entry.creator && !entry.qa && !entry.error && !entry.loading);
+            return !entry || (!entry.creator && !entry.qa && !entry.error);
         });
         if (toFetch.length === 0) return;
 
@@ -2481,6 +2482,7 @@ const plugin = {
     _opsMemberQualifiesForUiBadge(member) {
         const teamLabels = member.teamLabels;
         if (!teamLabels || teamLabels.size === 0) return false;
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
         for (const label of teamLabels) {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
@@ -3140,6 +3142,7 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
+                void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
             this._captureOpsTabState(modal);
