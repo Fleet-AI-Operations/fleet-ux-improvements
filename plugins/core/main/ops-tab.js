@@ -182,7 +182,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1624,11 +1624,11 @@ const plugin = {
 
     _getVisibleTeamMemberIds(modal, cache) {
         if (!cache || !cache.memberMap) return [];
-        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
-        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
+        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
+        const permConstraints = this._getOpsTeamMemberPermConstraints();
         return [...cache.memberMap.values()]
-            .filter((m) => this._opsTeamMemberMatchesTeamFilter(m, selectedTeams))
-            .filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions))
+            .filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints))
+            .filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints))
             .map((m) => m.id)
             .filter(Boolean);
     },
@@ -1685,82 +1685,23 @@ const plugin = {
         await Promise.all(Array.from({ length: poolSize }, () => worker()));
     },
 
-    _opsBuildTeamMemberFilterMeta(memberMap, selectedTeams, selectedPermissions) {
-        const members = [...memberMap.values()];
-        const teamLabelSet = new Set();
-        const permKeySet = new Set();
-        for (const m of members) {
-            for (const label of m.teamLabels || []) teamLabelSet.add(label);
-            for (const key of this._opsMemberPermissionKeys(m)) permKeySet.add(key);
-        }
-
-        const countForTeam = (label) => members.filter((m) =>
-            (m.teamLabels || new Set()).has(label) &&
-            this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions)
-        ).length;
-
-        const countForPerm = (key) => members.filter((m) =>
-            this._opsTeamMemberMatchesTeamFilter(m, selectedTeams) &&
-            new Set(this._opsMemberPermissionKeys(m)).has(key)
-        ).length;
-
-        const teamItems = [...teamLabelSet].sort((a, b) => a.localeCompare(b)).map((label) => ({ id: label, label }));
-        const permItems = [...permKeySet].sort((a, b) => {
-            const la = OPS_PERMISSION_LABEL_BY_KEY[a] || a;
-            const lb = OPS_PERMISSION_LABEL_BY_KEY[b] || b;
-            return la.localeCompare(lb);
-        }).map((key) => ({ id: key, label: OPS_PERMISSION_LABEL_BY_KEY[key] || key }));
-
-        const teamCounts = new Map();
-        const permCounts = new Map();
-        const irrelevantTeams = new Set();
-        const irrelevantPerms = new Set();
-
-        for (const item of teamItems) {
-            const c = countForTeam(item.id);
-            teamCounts.set(item.id, c);
-            if (selectedPermissions.size > 0 && c === 0) irrelevantTeams.add(item.id);
-        }
-        for (const item of permItems) {
-            const c = countForPerm(item.id);
-            permCounts.set(item.id, c);
-            if (selectedTeams.size > 0 && c === 0) irrelevantPerms.add(item.id);
-        }
-
-        return { teamItems, permItems, teamCounts, permCounts, irrelevantTeams, irrelevantPerms };
-    },
-
-    _refreshOpsTeamMemberFilterLists(modal, options) {
+    _populateOpsTeamMemberConstraintLists(allTeams, options) {
         const dash = Context.dashboard;
-        if (!dash || typeof dash.renderTeamMemberFilterLists !== 'function') return;
+        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
         const opts = options || {};
-        const preserveSelections = opts.preserveSelections !== false;
         if (opts.loading) {
-            dash.renderTeamMemberFilterLists({
-                loading: true,
-                prevTeams: new Set(),
-                prevPerms: new Set()
-            });
+            dash.renderTeamMemberConstraintLists({ loading: true, preserveSelections: false });
             return;
         }
-        const memberMap = opts.memberMap || (this._opsTeamSearchMemberCache && this._opsTeamSearchMemberCache.memberMap);
-        if (!memberMap || memberMap.size === 0) {
-            dash.renderTeamMemberFilterLists({ loading: false, teamItems: [], permItems: [] });
-            return;
-        }
-        const selectedTeams = preserveSelections ? this._getOpsTeamSearchSelectedTeams() : new Set();
-        const selectedPermissions = preserveSelections ? this._getOpsTeamSearchSelectedPermissions() : new Set();
-        const meta = this._opsBuildTeamMemberFilterMeta(memberMap, selectedTeams, selectedPermissions);
-        dash.renderTeamMemberFilterLists({
+        const teamItems = (allTeams || [])
+            .map(([, label]) => ({ id: label, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        const permItems = OPS_ALL_PERMISSIONS.map(([id, label]) => ({ id, label }));
+        dash.renderTeamMemberConstraintLists({
             loading: false,
-            teamItems: meta.teamItems,
-            permItems: meta.permItems,
-            teamCounts: meta.teamCounts,
-            permCounts: meta.permCounts,
-            irrelevantTeams: meta.irrelevantTeams,
-            irrelevantPerms: meta.irrelevantPerms,
-            prevTeams: preserveSelections ? selectedTeams : new Set(),
-            prevPerms: preserveSelections ? selectedPermissions : new Set()
+            teamItems,
+            permItems,
+            preserveSelections: opts.preserveSelections !== false
         });
     },
 
@@ -2443,38 +2384,66 @@ const plugin = {
         this._clearOpsMemberEditState();
     },
 
-    _getOpsTeamSearchSelectedTeams() {
+    _getOpsTeamMemberTeamConstraints() {
         const dash = Context.dashboard;
-        if (dash && typeof dash.selectedMsValues === 'function') {
-            return new Set(dash.selectedMsValues('team-members-teams'));
+        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
+            return dash.readTeamMemberConstraints('team-members-teams');
         }
-        return new Set();
+        return { include: new Set(), exclude: new Set() };
     },
 
-    _getOpsTeamSearchSelectedPermissions() {
+    _getOpsTeamMemberPermConstraints() {
         const dash = Context.dashboard;
-        if (dash && typeof dash.selectedMsValues === 'function') {
-            return new Set(dash.selectedMsValues('team-members-permissions'));
+        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
+            return dash.readTeamMemberConstraints('team-members-permissions');
         }
-        return new Set();
+        return { include: new Set(), exclude: new Set() };
     },
 
-    _opsTeamMemberMatchesPermissionFilter(member, selectedPermissions) {
-        if (!selectedPermissions || selectedPermissions.size === 0) return true;
-        const memberPerms = new Set(this._opsMemberPermissionKeys(member));
-        for (const key of selectedPermissions) {
-            if (memberPerms.has(key)) return true;
-        }
-        return false;
-    },
-
-    _opsTeamMemberMatchesTeamFilter(member, selectedTeams) {
-        if (!selectedTeams || selectedTeams.size === 0) return true;
+    _opsMemberMatchesTeamConstraints(member, constraints) {
+        const include = constraints && constraints.include ? constraints.include : new Set();
+        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
         const teamLabels = member.teamLabels || new Set();
-        for (const label of selectedTeams) {
-            if (teamLabels.has(label)) return true;
+        if (include.size > 0) {
+            let matched = false;
+            for (const label of include) {
+                if (teamLabels.has(label)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
         }
-        return false;
+        for (const label of exclude) {
+            if (teamLabels.has(label)) return false;
+        }
+        return true;
+    },
+
+    _opsMemberMatchesPermConstraints(member, constraints) {
+        const include = constraints && constraints.include ? constraints.include : new Set();
+        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
+        const memberPerms = new Set(this._opsMemberPermissionKeys(member));
+        if (include.size > 0) {
+            let matched = false;
+            for (const key of include) {
+                if (memberPerms.has(key)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
+        }
+        for (const key of exclude) {
+            if (memberPerms.has(key)) return false;
+        }
+        return true;
+    },
+
+    _opsMemberHasActiveConstraints(constraints) {
+        if (!constraints) return false;
+        return (constraints.include && constraints.include.size > 0)
+            || (constraints.exclude && constraints.exclude.size > 0);
     },
 
     _opsEscapeAttr(str) {
@@ -2985,7 +2954,6 @@ const plugin = {
     _filterOpsTeamSearchCards(modal) {
         const cache = this._opsTeamSearchMemberCache;
         if (!cache) return;
-        this._refreshOpsTeamMemberFilterLists(modal);
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
         void this._hydrateOpsTeamMemberStatsForVisible(modal);
     },
@@ -3001,14 +2969,10 @@ const plugin = {
 
         let members = [...memberMap.values()];
 
-        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
-        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
-        if (selectedTeams.size > 0) {
-            members = members.filter((m) => this._opsTeamMemberMatchesTeamFilter(m, selectedTeams));
-        }
-        if (selectedPermissions.size > 0) {
-            members = members.filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions));
-        }
+        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
+        const permConstraints = this._getOpsTeamMemberPermConstraints();
+        members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints));
+        members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints));
 
         let resolvedOpenIds = openIds;
         if (!(openMemberIds instanceof Set) && pendingCount === 0 && openIds.size === 0 && members.length > 0) {
@@ -3021,7 +2985,8 @@ const plugin = {
             } else {
                 wrap.style.display = 'block';
                 let msg = 'No members found.';
-                const hasFilters = selectedTeams.size > 0 || selectedPermissions.size > 0;
+                const hasFilters = this._opsMemberHasActiveConstraints(teamConstraints)
+                    || this._opsMemberHasActiveConstraints(permConstraints);
                 if (hasFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
@@ -3087,13 +3052,13 @@ const plugin = {
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
-        // Show filter panel; reset MS selections/filters so partial search does not auto-narrow
+        // Show filter panel; populate full catalogs with no default constraints
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
         if (filterWrap) filterWrap.style.display = 'flex';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsFilterState === 'function') {
-            Context.dashboard.resetTeamMemberMsFilterState();
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberConstraintState === 'function') {
+            Context.dashboard.resetTeamMemberConstraintState();
         }
-        this._refreshOpsTeamMemberFilterLists(modal, { loading: true, preserveSelections: false });
+        this._populateOpsTeamMemberConstraintLists(allTeams, { preserveSelections: false });
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -3110,9 +3075,6 @@ const plugin = {
             doneCount++;
             if (this._opsTeamSearchActive !== sessionId) return;
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
-            if (memberMap.size > 0) {
-                this._refreshOpsTeamMemberFilterLists(modal, { memberMap, preserveSelections: false });
-            }
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
                     spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
@@ -3155,7 +3117,6 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
-                this._refreshOpsTeamMemberFilterLists(modal, { memberMap, preserveSelections: false });
                 this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
                 void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }
@@ -3971,11 +3932,11 @@ const plugin = {
         const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
         const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
         const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
-        const msTeams = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', true)
+        const msTeams = dash && typeof dash.teamMemberConstraintMultiSelectHtml === 'function'
+            ? dash.teamMemberConstraintMultiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams')
             : '';
-        const msPerms = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', true)
+        const msPerms = dash && typeof dash.teamMemberConstraintMultiSelectHtml === 'function'
+            ? dash.teamMemberConstraintMultiSelectHtml('team-members-permissions', 'Permissions', 'All permissions')
             : '';
         const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
             ? dash.splitPanelSectionHtml.bind(dash)
@@ -4001,7 +3962,7 @@ const plugin = {
                             <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <div>
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
-                                    <p style="${hint} margin: 0 0 8px 0;">None selected = all.</p>
+                                    <p style="${hint} margin: 0 0 8px 0;">Use In / Not in (teams) and Has / Doesn't Have (permissions). Leave all unchecked to show everyone.</p>
                                     <div style="display: flex; flex-direction: column; gap: 12px;">
                                         ${msTeams}
                                         ${msPerms}

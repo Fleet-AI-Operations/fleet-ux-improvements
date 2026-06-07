@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.49',
+    _version: '4.50',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -237,10 +237,12 @@ const plugin = {
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => this._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 this._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
-            renderTeamMemberFilterLists: (opts) => this._renderTeamMemberFilterLists(opts),
+            renderTeamMemberConstraintLists: (opts) => this._renderTeamMemberConstraintLists(opts),
+            readTeamMemberConstraints: (scopeKey) => this._readDualConstraintSelection(scopeKey),
+            resetTeamMemberConstraintState: () => this._resetTeamMemberConstraintState(),
+            teamMemberConstraintMultiSelectHtml: (scopeKey, label, emptyHint) =>
+                this._teamMemberConstraintMultiSelectHtml(scopeKey, label, emptyHint),
             resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
-            resetTeamMemberMsFilterState: () => this._resetTeamMemberMsFilterState(),
-            openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
             selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey),
             splitPanelSectionHtml: (leftHtml, rightHtml) => this._splitPanelSectionHtml(leftHtml, rightHtml)
         };
@@ -3245,6 +3247,22 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel][data-wf-dash-ms-flyout-flip="1"] {',
             '  transform: translateX(0) scale(1);',
             '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-always-open="1"] [data-wf-dash-ms-panel] {',
+            '  display: block;',
+            '  max-height: none;',
+            '  opacity: 1;',
+            '  overflow: visible;',
+            '  border-top: 1px solid var(--border, #e2e8f0);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-always-open="1"] [data-wf-dash-ms-items] {',
+            '  max-height: min(320px, 45vh);',
+            '  overflow-y: auto;',
+            '  overflow-x: hidden;',
+            '  -webkit-overflow-scrolling: touch;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
+            '  display: none !important;',
+            '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-panel] {',
             '  overflow: hidden;',
             '  max-height: 0;',
@@ -3816,6 +3834,30 @@ const plugin = {
         `;
     },
 
+    _teamMemberConstraintMultiSelectHtml(scopeKey, label, emptyHint) {
+        const filterRow = `
+                    <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
+                        <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
+                    </div>`;
+        const panelStyle = 'display: block; max-height: none; opacity: 1; overflow: visible; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+        return `
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}" data-wf-dash-ms-always-open="1" style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
+                <div data-wf-dash-ms-sticky="${dashEscHtml(scopeKey)}">
+                    <div data-wf-dash-ms-header="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
+                        <span style="flex: 1; min-width: 0; font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
+                        <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                    </div>
+                    ${filterRow}
+                </div>
+                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelStyle}">
+                    <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
+                        <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     _q(selector) {
         return this._modal ? this._modal.querySelector(selector) : null;
     },
@@ -4079,6 +4121,9 @@ const plugin = {
             if (!cb || cb.type !== 'checkbox') return;
             const msKey = cb.getAttribute('data-wf-dash-ms');
             if (!msKey) return;
+            if (msKey.startsWith('team-members-') && cb.checked) {
+                this._enforceDualConstraintPolarity(msKey, cb);
+            }
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
             if (msKey.startsWith('search-')) this._validateRangeUi();
@@ -4450,8 +4495,9 @@ const plugin = {
         const wrap = this._msWrapEl(scopeKey);
         const hasBulkActions = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-bulk-actions') === '1');
         const filterWrap = this._q('[data-wf-dash-ms-filter-wrap="' + scopeKey + '"]');
+        const alwaysOpen = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-always-open') === '1');
         if (filterWrap) {
-            const showFilter = open && optionCount >= 5;
+            const showFilter = (open || alwaysOpen) && optionCount >= 5;
             if (!showFilter) {
                 const input = filterWrap.querySelector('[data-wf-dash-ms-filter]');
                 if (input && input.value) {
@@ -4467,7 +4513,7 @@ const plugin = {
             bulkEl.style.display = showBulk ? 'inline-flex' : 'none';
         }
         const itemsEl = this._msItemsEl(scopeKey);
-        if (itemsEl) {
+        if (itemsEl && !scopeKey.startsWith('team-members-')) {
             const singleOption = optionCount === 1;
             itemsEl.querySelectorAll('label[data-wf-dash-ms-option]').forEach((label) => {
                 const cb = label.querySelector('input[type="checkbox"]');
@@ -4685,6 +4731,32 @@ const plugin = {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return;
         const q = String(query || '').trim();
+        const dualRows = itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]');
+        if (dualRows.length > 0) {
+            const qLower = q.toLowerCase();
+            let visible = 0;
+            dualRows.forEach((row) => {
+                const text = row.getAttribute('data-wf-dash-ms-label') || '';
+                const show = !q || text.toLowerCase().includes(qLower);
+                if (show) row.removeAttribute('data-wf-dash-ms-filter-hidden');
+                else row.setAttribute('data-wf-dash-ms-filter-hidden', '1');
+                if (show) visible += 1;
+            });
+            let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
+            if (q && visible === 0) {
+                if (!noMatchEl) {
+                    noMatchEl = document.createElement('p');
+                    noMatchEl.setAttribute('data-wf-dash-ms-no-match', '1');
+                    noMatchEl.style.cssText = 'padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);';
+                    noMatchEl.textContent = 'No matches';
+                    itemsEl.appendChild(noMatchEl);
+                }
+                noMatchEl.style.display = '';
+            } else if (noMatchEl) {
+                noMatchEl.style.display = 'none';
+            }
+            return;
+        }
         const optionLabels = itemsEl.querySelectorAll('label[data-wf-dash-ms-option]');
         if (optionLabels.length === 0) return;
         const lib = dashLib();
@@ -5052,9 +5124,98 @@ const plugin = {
         }).join('');
     },
 
+    _msOptionCount(scopeKey) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return 0;
+        if (scopeKey.startsWith('team-members-')) {
+            return itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length;
+        }
+        return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
+    },
+
+    _enforceDualConstraintPolarity(scopeKey, cb) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl || !cb) return;
+        const polarity = cb.getAttribute('data-wf-dash-ms-polarity');
+        if (polarity !== 'include' && polarity !== 'exclude') return;
+        const opposite = polarity === 'include' ? 'exclude' : 'include';
+        itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms-polarity="' + opposite + '"]').forEach((other) => {
+            if (other.value === cb.value) other.checked = false;
+        });
+    },
+
+    _readDualConstraintSelection(scopeKey) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        const include = new Set();
+        const exclude = new Set();
+        if (!itemsEl) return { include, exclude };
+        itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms-polarity="include"]:checked').forEach((cb) => {
+            if (cb.value) include.add(cb.value);
+        });
+        itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms-polarity="exclude"]:checked').forEach((cb) => {
+            if (cb.value) exclude.add(cb.value);
+        });
+        return { include, exclude };
+    },
+
+    _dualConstraintItemsHtml(scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, loading) {
+        if (loading) {
+            return '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>';
+        }
+        if (!items || items.length === 0) {
+            return '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(emptyHint) + '</p>';
+        }
+        const header = '<div data-wf-dash-ms-dual-header="1" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:4px 8px;font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:0.04em;">' +
+            '<span></span>' +
+            '<span style="text-align:center;min-width:3.5em;">' + dashEscHtml(colIncludeLabel) + '</span>' +
+            '<span style="text-align:center;min-width:3.5em;">' + dashEscHtml(colExcludeLabel) + '</span>' +
+            '</div>';
+        const rows = items.map((it) => {
+            const id = String(it.id || '').trim();
+            const label = String(it.label || id).trim();
+            return '<div data-wf-dash-ms-dual-row="1" data-wf-dash-ms-label="' + dashEscHtml(label) + '" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:4px 8px;font-size:11px;align-items:center;color:var(--foreground,#0f172a);">' +
+                '<span data-wf-dash-ms-option-text="1" style="min-width:0;">' + dashEscHtml(label) + '</span>' +
+                '<span style="text-align:center;"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="include"></span>' +
+                '<span style="text-align:center;"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="exclude"></span>' +
+                '</div>';
+        }).join('');
+        return header + rows;
+    },
+
+    _renderDualConstraintMsList(scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, preserve, opts) {
+        const itemsEl = this._msItemsEl(scopeKey);
+        if (!itemsEl) return;
+        const options = opts || {};
+        const loading = Boolean(options.loading);
+        const prev = preserve || { include: new Set(), exclude: new Set() };
+        itemsEl.innerHTML = this._dualConstraintItemsHtml(
+            scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, loading
+        );
+        if (!loading) {
+            itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms-polarity="include"]').forEach((cb) => {
+                if (prev.include.has(cb.value)) cb.checked = true;
+            });
+            itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms-polarity="exclude"]').forEach((cb) => {
+                if (prev.exclude.has(cb.value)) cb.checked = true;
+            });
+        }
+        this._state.msDropdownOpen[scopeKey] = true;
+        this._updateMsCount(scopeKey);
+        this._syncMsDropdown(scopeKey, { immediate: true });
+        this._syncMsDropdownFilterUi(scopeKey);
+    },
+
     _updateMsCount(scopeKey) {
         const countEl = this._q('#wf-dash-' + scopeKey + '-count');
         if (!countEl) return;
+        if (scopeKey.startsWith('team-members-')) {
+            const sel = this._readDualConstraintSelection(scopeKey);
+            const n = sel.include.size + sel.exclude.size;
+            countEl.textContent = String(n);
+            countEl.style.display = n > 0 ? 'inline' : 'none';
+            this._syncMsDropdownChrome(scopeKey);
+            return;
+        }
         const all = this._allFromList(scopeKey);
         const n = this._selectedFromList(scopeKey).length;
         if (scopeKey.startsWith('search-')) {
@@ -5088,9 +5249,17 @@ const plugin = {
         this._syncMsDropdownFilterUi(scopeKey);
     },
 
-    _renderTeamMemberFilterLists(opts) {
+    _renderTeamMemberConstraintLists(opts) {
         const options = opts || {};
         const loading = Boolean(options.loading);
+        const emptySel = { include: new Set(), exclude: new Set() };
+        const preserveSelections = options.preserveSelections !== false;
+        const prevTeams = preserveSelections
+            ? this._readDualConstraintSelection('team-members-teams')
+            : emptySel;
+        const prevPerms = preserveSelections
+            ? this._readDualConstraintSelection('team-members-permissions')
+            : emptySel;
         if (!loading) {
             for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
                 delete this._state.msDropdownFilter[key];
@@ -5098,42 +5267,36 @@ const plugin = {
                 if (input) input.value = '';
             }
         }
-        const prevTeams = options.prevTeams instanceof Set
-            ? options.prevTeams
-            : new Set(this._selectedFromList('team-members-teams'));
-        const prevPerms = options.prevPerms instanceof Set
-            ? options.prevPerms
-            : new Set(this._selectedFromList('team-members-permissions'));
-        const teamHint = loading ? 'Loading…' : 'No teams in results';
-        const permHint = loading ? 'Loading…' : 'No permissions in results';
-        this._renderMsList('team-members-teams', options.teamItems || [], teamHint, prevTeams, {
-            loading,
-            irrelevantIds: options.irrelevantTeams,
-            optionCounts: options.teamCounts
-        });
-        this._renderMsList('team-members-permissions', options.permItems || [], permHint, prevPerms, {
-            loading,
-            irrelevantIds: options.irrelevantPerms,
-            optionCounts: options.permCounts
-        });
-        if (!loading) {
-            this._openTeamMemberMsDropdowns();
-        }
+        this._renderDualConstraintMsList(
+            'team-members-teams',
+            options.teamItems || [],
+            'In',
+            'Not in',
+            loading ? 'Loading…' : 'No teams available',
+            prevTeams,
+            { loading }
+        );
+        this._renderDualConstraintMsList(
+            'team-members-permissions',
+            options.permItems || [],
+            'Has',
+            "Doesn't Have",
+            loading ? 'Loading…' : 'No permissions available',
+            prevPerms,
+            { loading }
+        );
     },
 
-    _openTeamMemberMsDropdowns() {
-        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
-            this._state.msDropdownOpen[key] = true;
-            this._syncMsDropdown(key, { immediate: true });
-        }
-    },
-
-    _resetTeamMemberMsFilterState() {
+    _resetTeamMemberConstraintState() {
         for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
             delete this._state.msDropdownFilter[key];
             const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
             if (input) input.value = '';
-            this._setMultiselectChecked(key, false);
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) {
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            }
+            this._updateMsCount(key);
         }
     },
 
@@ -5145,10 +5308,15 @@ const plugin = {
             if (input) input.value = '';
             const itemsEl = this._msItemsEl(key);
             if (itemsEl) {
-                itemsEl.innerHTML = this._multiSelectItemsHtml(key, [], 'Run search to enable', false, false);
+                const labels = key === 'team-members-teams'
+                    ? ['In', 'Not in']
+                    : ['Has', "Doesn't Have"];
+                itemsEl.innerHTML = this._dualConstraintItemsHtml(
+                    key, [], labels[0], labels[1], 'Run search to enable', false
+                );
             }
             this._updateMsCount(key);
-            this._syncMsDropdown(key);
+            this._syncMsDropdown(key, { immediate: true });
         }
     },
 
