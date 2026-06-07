@@ -182,7 +182,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1734,8 +1734,13 @@ const plugin = {
         const dash = Context.dashboard;
         if (!dash || typeof dash.renderTeamMemberFilterLists !== 'function') return;
         const opts = options || {};
+        const preserveSelections = opts.preserveSelections !== false;
         if (opts.loading) {
-            dash.renderTeamMemberFilterLists({ loading: true });
+            dash.renderTeamMemberFilterLists({
+                loading: true,
+                prevTeams: new Set(),
+                prevPerms: new Set()
+            });
             return;
         }
         const memberMap = opts.memberMap || (this._opsTeamSearchMemberCache && this._opsTeamSearchMemberCache.memberMap);
@@ -1743,8 +1748,8 @@ const plugin = {
             dash.renderTeamMemberFilterLists({ loading: false, teamItems: [], permItems: [] });
             return;
         }
-        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
-        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
+        const selectedTeams = preserveSelections ? this._getOpsTeamSearchSelectedTeams() : new Set();
+        const selectedPermissions = preserveSelections ? this._getOpsTeamSearchSelectedPermissions() : new Set();
         const meta = this._opsBuildTeamMemberFilterMeta(memberMap, selectedTeams, selectedPermissions);
         dash.renderTeamMemberFilterLists({
             loading: false,
@@ -1754,8 +1759,8 @@ const plugin = {
             permCounts: meta.permCounts,
             irrelevantTeams: meta.irrelevantTeams,
             irrelevantPerms: meta.irrelevantPerms,
-            prevTeams: selectedTeams,
-            prevPerms: selectedPermissions
+            prevTeams: preserveSelections ? selectedTeams : new Set(),
+            prevPerms: preserveSelections ? selectedPermissions : new Set()
         });
     },
 
@@ -3005,6 +3010,11 @@ const plugin = {
             members = members.filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions));
         }
 
+        let resolvedOpenIds = openIds;
+        if (!(openMemberIds instanceof Set) && pendingCount === 0 && openIds.size === 0 && members.length > 0) {
+            resolvedOpenIds = new Set(members.map((m) => m.id));
+        }
+
         if (members.length === 0) {
             if (pendingCount > 0) {
                 wrap.style.display = 'none';
@@ -3025,7 +3035,7 @@ const plugin = {
 
         wrap.style.display = 'block';
         cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id))).join('');
 
         if (pendingCount === 0) {
             void this._hydrateOpsTeamMemberStatsForVisible(modal);
@@ -3077,10 +3087,13 @@ const plugin = {
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
-        // Show filter panel; retain ms checkbox selections
+        // Show filter panel; reset MS selections/filters so partial search does not auto-narrow
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
         if (filterWrap) filterWrap.style.display = 'flex';
-        this._refreshOpsTeamMemberFilterLists(modal, { loading: true });
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsFilterState === 'function') {
+            Context.dashboard.resetTeamMemberMsFilterState();
+        }
+        this._refreshOpsTeamMemberFilterLists(modal, { loading: true, preserveSelections: false });
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -3098,7 +3111,7 @@ const plugin = {
             if (this._opsTeamSearchActive !== sessionId) return;
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
             if (memberMap.size > 0) {
-                this._refreshOpsTeamMemberFilterLists(modal, { memberMap });
+                this._refreshOpsTeamMemberFilterLists(modal, { memberMap, preserveSelections: false });
             }
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
@@ -3142,6 +3155,8 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
+                this._refreshOpsTeamMemberFilterLists(modal, { memberMap, preserveSelections: false });
+                this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
                 void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }

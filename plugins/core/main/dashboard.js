@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.48',
+    _version: '4.49',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -239,6 +239,7 @@ const plugin = {
                 this._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             renderTeamMemberFilterLists: (opts) => this._renderTeamMemberFilterLists(opts),
             resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
+            resetTeamMemberMsFilterState: () => this._resetTeamMemberMsFilterState(),
             openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
             selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey),
             splitPanelSectionHtml: (leftHtml, rightHtml) => this._splitPanelSectionHtml(leftHtml, rightHtml)
@@ -5023,7 +5024,7 @@ const plugin = {
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
-        const singleOption = items.length === 1;
+        const singleOption = items.length === 1 && !scopeKey.startsWith('team-members-');
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
@@ -5090,6 +5091,13 @@ const plugin = {
     _renderTeamMemberFilterLists(opts) {
         const options = opts || {};
         const loading = Boolean(options.loading);
+        if (!loading) {
+            for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+                delete this._state.msDropdownFilter[key];
+                const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
+                if (input) input.value = '';
+            }
+        }
         const prevTeams = options.prevTeams instanceof Set
             ? options.prevTeams
             : new Set(this._selectedFromList('team-members-teams'));
@@ -5116,7 +5124,16 @@ const plugin = {
     _openTeamMemberMsDropdowns() {
         for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
             this._state.msDropdownOpen[key] = true;
-            this._syncMsDropdown(key);
+            this._syncMsDropdown(key, { immediate: true });
+        }
+    },
+
+    _resetTeamMemberMsFilterState() {
+        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
+            delete this._state.msDropdownFilter[key];
+            const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
+            if (input) input.value = '';
+            this._setMultiselectChecked(key, false);
         }
     },
 
