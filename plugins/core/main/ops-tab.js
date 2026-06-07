@@ -182,7 +182,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1555,56 +1555,86 @@ const plugin = {
         return Math.max(1, Math.round(s / 60)) + 'm';
     },
 
-    _formatOpsExpertCreatorStatsLine(data) {
-        if (!data || typeof data !== 'object') return 'Creator · —';
-        const parts = ['Creator'];
-        if (data.totalSubmissions != null) parts.push(data.totalSubmissions + ' submitted');
-        if (data.acceptanceRate != null) parts.push(data.acceptanceRate + '% accepted');
-        if (data.avgCreationTimeSeconds != null) {
-            parts.push('~' + this._opsFormatDurationMinutes(data.avgCreationTimeSeconds) + ' avg');
+    _opsExpertQaAcceptanceRatePercent(data) {
+        if (!data || typeof data !== 'object') return null;
+        if (data.acceptanceRate != null) {
+            const rate = Number(data.acceptanceRate);
+            if (Number.isFinite(rate)) return Math.round(rate);
         }
-        return parts.join(' · ');
+        const accepted = data.acceptedReviews ?? data.acceptedCount ?? data.qaAccepted;
+        const rejected = data.rejectedReviews ?? data.rejectedCount ?? data.qaRejected;
+        if (accepted != null && rejected != null) {
+            const total = Number(accepted) + Number(rejected);
+            if (Number.isFinite(total) && total > 0) {
+                return Math.round((Number(accepted) / total) * 100);
+            }
+        }
+        return null;
     },
 
-    _formatOpsExpertQaStatsLine(data) {
-        if (!data || typeof data !== 'object') return 'QA · —';
+    _opsExpertCreatorStatsColumns(data) {
+        if (!data || typeof data !== 'object') return ['Creator', '—', '—', '—'];
+        return [
+            'Creator',
+            data.totalSubmissions != null ? data.totalSubmissions + ' submitted' : '—',
+            data.acceptanceRate != null ? data.acceptanceRate + '% AR' : '—',
+            data.avgCreationTimeSeconds != null
+                ? '~' + this._opsFormatDurationMinutes(data.avgCreationTimeSeconds) + ' avg'
+                : '—'
+        ];
+    },
+
+    _opsExpertQaStatsColumns(data) {
+        if (!data || typeof data !== 'object') return ['QA', '—', '—', '—'];
         const reviews = data.reviewsCompleted ?? data.totalReviews ?? data.tasksReviewed ?? data.tasksCompleted;
         const avgSec = data.avgReviewTimeSeconds ?? data.avgQaTimeSeconds ?? data.avgTimePerQaSeconds
             ?? data.avgReviewDurationSeconds;
-        let accepted = data.acceptedReviews ?? data.acceptedCount ?? data.qaAccepted;
-        let rejected = data.rejectedReviews ?? data.rejectedCount ?? data.qaRejected;
-        if (accepted == null && rejected == null && data.acceptanceRate != null && reviews != null) {
-            const rate = Number(data.acceptanceRate);
-            if (Number.isFinite(rate) && reviews > 0) {
-                accepted = Math.round(reviews * rate / 100);
-                rejected = Math.max(0, reviews - accepted);
-            }
-        }
-        const parts = ['QA'];
-        if (reviews != null) parts.push(reviews + ' reviews');
-        if (avgSec != null) parts.push('~' + this._opsFormatDurationMinutes(avgSec) + ' avg');
-        if (accepted != null && rejected != null) parts.push(accepted + ':' + rejected);
-        return parts.join(' · ');
+        const arPercent = this._opsExpertQaAcceptanceRatePercent(data);
+        return [
+            'QA',
+            reviews != null ? reviews + ' reviews' : '—',
+            arPercent != null ? arPercent + '% AR' : '—',
+            avgSec != null ? '~' + this._opsFormatDurationMinutes(avgSec) + ' avg' : '—'
+        ];
+    },
+
+    _opsExpertStatsStatusColumns(role, message) {
+        return [role, message, '—', '—'];
+    },
+
+    _opsExpertStatsGridHtml(creatorCols, qaCols, opts) {
+        const plain = !!(opts && opts.plain);
+        const gridClass = plain
+            ? 'wf-ops-member-stats-grid wf-ops-member-stats-grid--plain'
+            : 'wf-ops-member-stats-grid';
+        const rows = plain ? creatorCols : creatorCols.concat(qaCols);
+        const cells = rows.map((col) => '<span>' + this._opsEscapeHtml(col || '—') + '</span>').join('');
+        return '<div class="' + gridClass + '" data-ops-member-stats-grid>' + cells + '</div>';
     },
 
     _renderOpsTeamMemberStatsInnerHtml(entry) {
         if (!this._opsExpertStatsActionCache.nextAction) {
             const msg = 'Stats unavailable (open an expert profile once)';
-            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml(msg) + '</div>' +
-                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml(msg) + '</div>';
+            return this._opsExpertStatsGridHtml([msg], [msg], { plain: true });
         }
         if (!entry || entry.loading) {
             const msg = 'Loading stats…';
-            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml('Creator · ' + msg) + '</div>' +
-                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml('QA · ' + msg) + '</div>';
+            return this._opsExpertStatsGridHtml(
+                this._opsExpertStatsStatusColumns('Creator', msg),
+                this._opsExpertStatsStatusColumns('QA', msg)
+            );
         }
         if (entry.error) {
             const msg = 'Stats unavailable';
-            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml('Creator · ' + msg) + '</div>' +
-                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml('QA · ' + msg) + '</div>';
+            return this._opsExpertStatsGridHtml(
+                this._opsExpertStatsStatusColumns('Creator', msg),
+                this._opsExpertStatsStatusColumns('QA', msg)
+            );
         }
-        return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml(this._formatOpsExpertCreatorStatsLine(entry.creator)) + '</div>' +
-            '<div data-ops-member-stats-qa>' + this._opsEscapeHtml(this._formatOpsExpertQaStatsLine(entry.qa)) + '</div>';
+        return this._opsExpertStatsGridHtml(
+            this._opsExpertCreatorStatsColumns(entry.creator),
+            this._opsExpertQaStatsColumns(entry.qa)
+        );
     },
 
     _renderOpsTeamMemberStatsHtml(memberId) {
@@ -2311,7 +2341,9 @@ const plugin = {
             '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
             '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
             '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
-            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}'
+            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}',
+            '.wf-ops-member-stats-grid{display:grid;grid-template-columns:max-content max-content max-content max-content;column-gap:10px;row-gap:2px;}',
+            '.wf-ops-member-stats-grid--plain{grid-template-columns:1fr;}'
         ].join('');
         document.head.appendChild(style);
     },
