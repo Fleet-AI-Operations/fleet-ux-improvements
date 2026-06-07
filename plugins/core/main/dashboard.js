@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.47',
+    _version: '4.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -235,7 +235,9 @@ const plugin = {
             navBtnStyle: () => this._navBtnStyle(),
             navBtnPrimaryStyle: () => this._navBtnPrimaryStyle(),
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => this._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
-            renderMsList: (scopeKey, items, emptyHint, preserveSelected) => this._renderMsList(scopeKey, items, emptyHint, preserveSelected),
+            renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
+                this._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
+            renderTeamMemberFilterLists: (opts) => this._renderTeamMemberFilterLists(opts),
             resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
             openTeamMemberMsDropdowns: () => this._openTeamMemberMsDropdowns(),
             selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey),
@@ -5064,19 +5066,51 @@ const plugin = {
         this._syncMsDropdownChrome(scopeKey);
     },
 
-    _renderMsList(scopeKey, items, emptyHint, preserveSelected) {
+    _renderMsList(scopeKey, items, emptyHint, preserveSelected, opts) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return;
+        const options = opts || {};
         const prev = preserveSelected instanceof Set
             ? preserveSelected
             : new Set(this._selectedFromList(scopeKey));
-        itemsEl.innerHTML = this._multiSelectItemsHtml(scopeKey, items, emptyHint, false, false);
+        const loading = Boolean(options.loading);
+        const irrelevantIds = options.irrelevantIds || null;
+        const optionCounts = options.optionCounts instanceof Map ? options.optionCounts : null;
+        itemsEl.innerHTML = this._multiSelectItemsHtml(
+            scopeKey, items, emptyHint, loading, false, irrelevantIds, optionCounts
+        );
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             if (prev.has(cb.value)) cb.checked = true;
         });
         this._updateMsCount(scopeKey);
         this._syncMsDropdown(scopeKey);
         this._syncMsDropdownFilterUi(scopeKey);
+    },
+
+    _renderTeamMemberFilterLists(opts) {
+        const options = opts || {};
+        const loading = Boolean(options.loading);
+        const prevTeams = options.prevTeams instanceof Set
+            ? options.prevTeams
+            : new Set(this._selectedFromList('team-members-teams'));
+        const prevPerms = options.prevPerms instanceof Set
+            ? options.prevPerms
+            : new Set(this._selectedFromList('team-members-permissions'));
+        const teamHint = loading ? 'Loading…' : 'No teams in results';
+        const permHint = loading ? 'Loading…' : 'No permissions in results';
+        this._renderMsList('team-members-teams', options.teamItems || [], teamHint, prevTeams, {
+            loading,
+            irrelevantIds: options.irrelevantTeams,
+            optionCounts: options.teamCounts
+        });
+        this._renderMsList('team-members-permissions', options.permItems || [], permHint, prevPerms, {
+            loading,
+            irrelevantIds: options.irrelevantPerms,
+            optionCounts: options.permCounts
+        });
+        if (!loading) {
+            this._openTeamMemberMsDropdowns();
+        }
     },
 
     _openTeamMemberMsDropdowns() {

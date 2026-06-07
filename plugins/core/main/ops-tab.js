@@ -44,6 +44,11 @@ const OPS_TASK_DATA_ACTION_STORAGE_KEY = 'fleet-ux:ops-task-data-next-action';
 /** localStorage key for the Next.js router state tree for dashboard task data */
 const OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-task-data-router-state';
 const OPS_TASK_DATA_PATH_RE = /^\/dashboard\/data\/tasks\/[^/]+$/;
+const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
+/** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
+const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
+const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
+const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
@@ -176,7 +181,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.21',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -196,6 +201,11 @@ const plugin = {
     _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
     /** Dynamically discovered task detail server action (task events RSC payload) */
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
+    /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
+    _opsExpertStatsActionCache: { nextAction: null, routerState: null },
+    /** memberId → { loading?, creator?, qa?, error? } */
+    _opsExpertStatsCache: null,
+    _opsExpertStatsHydrateGen: 0,
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -272,9 +282,12 @@ const plugin = {
         this._loadOpsTeamSearchActionFromStorage();
         this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsTaskDataActionFromStorage();
+        this._loadOpsExpertStatsActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
+        this._opsExpertStatsCache = new Map();
         this._subscribeOpsTeamDashboardActionCapture();
         this._subscribeOpsTaskDataActionCapture();
+        this._subscribeOpsExpertActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
@@ -1369,6 +1382,382 @@ const plugin = {
             && OPS_UUID_RE.test(parsed[0]);
     },
 
+    _opsClassifyExpertPostBody(body) {
+        const text = this._opsNormalizeRequestBody(body);
+        if (!text || text.charAt(0) !== '[') return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (_e) {
+            return null;
+        }
+        if (!Array.isArray(parsed) || parsed.length === 0) return null;
+        if (typeof parsed[0] !== 'string' || !OPS_UUID_RE.test(parsed[0])) return null;
+        if (parsed.length === 1) return 'breakdown';
+        if (parsed.length >= 2) {
+            if (parsed[1] === false) return 'stats-creator';
+            if (parsed[1] === true) return 'stats-qa';
+            if (typeof parsed[1] === 'number') return 'activities';
+        }
+        return null;
+    },
+
+    _loadOpsExpertStatsActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: expert stats action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsExpertStatsAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsExpertStatsActionCache.nextAction;
+        this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: expert stats action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsExpertStatsActionCache() {
+        this._opsExpertStatsActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action cache clear failed', e);
+        }
+        Logger.info('ops-tab: expert stats action cache cleared (will re-discover on expert profile visit)');
+    },
+
+    _opsExpertStatsActionStaleError() {
+        const err = new Error('Expert stats credentials are stale or missing.');
+        err.opsExpertStatsActionStale = true;
+        return err;
+    },
+
+    _isOpsExpertStatsActionStaleError(err) {
+        return !!(err && err.opsExpertStatsActionStale);
+    },
+
+    _subscribeOpsExpertActionCapture() {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.debug('ops-tab: NetworkObserver unavailable; passive expert action capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'ops-tab-expert-dashboard-actions',
+            matches(meta) {
+                return meta.method === 'POST'
+                    && !!meta.urlObj
+                    && OPS_EXPERT_PATH_RE.test(meta.urlObj.pathname);
+            },
+            onRequest(meta) {
+                const nextAction = self._opsReadHeader(meta.headers, 'next-action');
+                const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
+                if (!nextAction) return;
+                const kind = self._opsClassifyExpertPostBody(meta.body);
+                if (kind === 'stats-creator' || kind === 'stats-qa') {
+                    if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
+                        self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
+                        Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                }
+            }
+        });
+        Logger.debug('ops-tab: expert dashboard action passive watcher registered');
+    },
+
+    async _fetchOpsExpertRsc(expertId, bodyPayload, actionCache, logLabel) {
+        const id = String(expertId || '').trim();
+        if (!id) throw new Error('Missing expert id for RSC fetch');
+        if (!actionCache || !actionCache.nextAction) {
+            throw this._opsExpertStatsActionStaleError();
+        }
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const { nextAction, routerState } = actionCache;
+        const url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+
+        const headers = {
+            accept: 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': nextAction
+        };
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
+
+        const body = JSON.stringify(bodyPayload);
+        Logger.debug('ops-tab: ' + logLabel + ' fetch', {
+            expertId: id.slice(0, 8) + '…',
+            action: nextAction.slice(0, 12) + '…',
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+        const text = await res.text().catch(() => '');
+
+        if (res.status === 404) {
+            Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
+            this._clearOpsExpertStatsActionCache();
+            throw this._opsExpertStatsActionStaleError();
+        }
+        if (!res.ok) {
+            throw new Error('Expert ' + logLabel + ' HTTP ' + res.status + ': ' + text.slice(0, 300));
+        }
+        return text;
+    },
+
+    async _fetchOpsExpertStats(expertId, qaMode) {
+        const body = [expertId, Boolean(qaMode)];
+        const text = await this._fetchOpsExpertRsc(
+            expertId,
+            body,
+            this._opsExpertStatsActionCache,
+            qaMode ? 'stats qa' : 'stats creator'
+        );
+        return this._parseOpsTeamSearchResponse(text);
+    },
+
+    _opsFormatDurationMinutes(seconds) {
+        const s = Number(seconds);
+        if (!Number.isFinite(s) || s <= 0) return '—';
+        return Math.max(1, Math.round(s / 60)) + 'm';
+    },
+
+    _formatOpsExpertCreatorStatsLine(data) {
+        if (!data || typeof data !== 'object') return 'Creator · —';
+        const parts = ['Creator'];
+        if (data.totalSubmissions != null) parts.push(data.totalSubmissions + ' submitted');
+        if (data.acceptanceRate != null) parts.push(data.acceptanceRate + '% accepted');
+        if (data.avgCreationTimeSeconds != null) {
+            parts.push('~' + this._opsFormatDurationMinutes(data.avgCreationTimeSeconds) + ' avg');
+        }
+        return parts.join(' · ');
+    },
+
+    _formatOpsExpertQaStatsLine(data) {
+        if (!data || typeof data !== 'object') return 'QA · —';
+        const reviews = data.reviewsCompleted ?? data.totalReviews ?? data.tasksReviewed ?? data.tasksCompleted;
+        const avgSec = data.avgReviewTimeSeconds ?? data.avgQaTimeSeconds ?? data.avgTimePerQaSeconds
+            ?? data.avgReviewDurationSeconds;
+        let accepted = data.acceptedReviews ?? data.acceptedCount ?? data.qaAccepted;
+        let rejected = data.rejectedReviews ?? data.rejectedCount ?? data.qaRejected;
+        if (accepted == null && rejected == null && data.acceptanceRate != null && reviews != null) {
+            const rate = Number(data.acceptanceRate);
+            if (Number.isFinite(rate) && reviews > 0) {
+                accepted = Math.round(reviews * rate / 100);
+                rejected = Math.max(0, reviews - accepted);
+            }
+        }
+        const parts = ['QA'];
+        if (reviews != null) parts.push(reviews + ' reviews');
+        if (avgSec != null) parts.push('~' + this._opsFormatDurationMinutes(avgSec) + ' avg');
+        if (accepted != null && rejected != null) parts.push(accepted + ':' + rejected);
+        return parts.join(' · ');
+    },
+
+    _renderOpsTeamMemberStatsInnerHtml(entry) {
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            const msg = 'Stats unavailable (open an expert profile once)';
+            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml(msg) + '</div>' +
+                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml(msg) + '</div>';
+        }
+        if (!entry || entry.loading) {
+            const msg = 'Loading stats…';
+            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml('Creator · ' + msg) + '</div>' +
+                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml('QA · ' + msg) + '</div>';
+        }
+        if (entry.error) {
+            const msg = 'Stats unavailable';
+            return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml('Creator · ' + msg) + '</div>' +
+                '<div data-ops-member-stats-qa>' + this._opsEscapeHtml('QA · ' + msg) + '</div>';
+        }
+        return '<div data-ops-member-stats-creator>' + this._opsEscapeHtml(this._formatOpsExpertCreatorStatsLine(entry.creator)) + '</div>' +
+            '<div data-ops-member-stats-qa>' + this._opsEscapeHtml(this._formatOpsExpertQaStatsLine(entry.qa)) + '</div>';
+    },
+
+    _renderOpsTeamMemberStatsHtml(memberId) {
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
+            this._renderOpsTeamMemberStatsInnerHtml(entry) +
+        '</div>';
+    },
+
+    _patchOpsTeamMemberStats(modal, memberId) {
+        const tile = modal.querySelector('[data-ops-member-tile="' + this._opsEscapeAttr(String(memberId)) + '"]');
+        const slot = tile && tile.querySelector('[data-ops-member-stats]');
+        if (!slot) return;
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        slot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+    },
+
+    _getVisibleTeamMemberIds(modal, cache) {
+        if (!cache || !cache.memberMap) return [];
+        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
+        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
+        return [...cache.memberMap.values()]
+            .filter((m) => this._opsTeamMemberMatchesTeamFilter(m, selectedTeams))
+            .filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions))
+            .map((m) => m.id)
+            .filter(Boolean);
+    },
+
+    async _hydrateOpsTeamMemberStatsForVisible(modal) {
+        if (!modal || !this._opsExpertStatsCache) return;
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) return;
+
+        const memberIds = this._getVisibleTeamMemberIds(modal, cache);
+        const toFetch = memberIds.filter((id) => {
+            const entry = this._opsExpertStatsCache.get(id);
+            return !entry || (!entry.creator && !entry.qa && !entry.error && !entry.loading);
+        });
+        if (toFetch.length === 0) return;
+
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            for (const id of toFetch) {
+                this._opsExpertStatsCache.set(id, { error: 'missing-credentials' });
+                this._patchOpsTeamMemberStats(modal, id);
+            }
+            return;
+        }
+
+        const gen = ++this._opsExpertStatsHydrateGen;
+        for (const id of toFetch) {
+            this._opsExpertStatsCache.set(id, { loading: true });
+            this._patchOpsTeamMemberStats(modal, id);
+        }
+
+        let cursor = 0;
+        const worker = async () => {
+            while (cursor < toFetch.length) {
+                if (gen !== this._opsExpertStatsHydrateGen) return;
+                const id = toFetch[cursor++];
+                try {
+                    const [creator, qa] = await Promise.all([
+                        this._fetchOpsExpertStats(id, false),
+                        this._fetchOpsExpertStats(id, true)
+                    ]);
+                    if (gen !== this._opsExpertStatsHydrateGen) return;
+                    this._opsExpertStatsCache.set(id, { creator, qa });
+                    Logger.debug('ops-tab: expert stats loaded for ' + id.slice(0, 8) + '…');
+                } catch (e) {
+                    if (gen !== this._opsExpertStatsHydrateGen) return;
+                    Logger.warn('ops-tab: expert stats failed for ' + id.slice(0, 8) + '…', e);
+                    this._opsExpertStatsCache.set(id, { error: e.message || String(e) });
+                }
+                this._patchOpsTeamMemberStats(modal, id);
+            }
+        };
+
+        const poolSize = Math.min(OPS_EXPERT_STATS_HYDRATE_CONCURRENCY, toFetch.length);
+        await Promise.all(Array.from({ length: poolSize }, () => worker()));
+    },
+
+    _opsBuildTeamMemberFilterMeta(memberMap, selectedTeams, selectedPermissions) {
+        const members = [...memberMap.values()];
+        const teamLabelSet = new Set();
+        const permKeySet = new Set();
+        for (const m of members) {
+            for (const label of m.teamLabels || []) teamLabelSet.add(label);
+            for (const key of this._opsMemberPermissionKeys(m)) permKeySet.add(key);
+        }
+
+        const countForTeam = (label) => members.filter((m) =>
+            (m.teamLabels || new Set()).has(label) &&
+            this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions)
+        ).length;
+
+        const countForPerm = (key) => members.filter((m) =>
+            this._opsTeamMemberMatchesTeamFilter(m, selectedTeams) &&
+            new Set(this._opsMemberPermissionKeys(m)).has(key)
+        ).length;
+
+        const teamItems = [...teamLabelSet].sort((a, b) => a.localeCompare(b)).map((label) => ({ id: label, label }));
+        const permItems = [...permKeySet].sort((a, b) => {
+            const la = OPS_PERMISSION_LABEL_BY_KEY[a] || a;
+            const lb = OPS_PERMISSION_LABEL_BY_KEY[b] || b;
+            return la.localeCompare(lb);
+        }).map((key) => ({ id: key, label: OPS_PERMISSION_LABEL_BY_KEY[key] || key }));
+
+        const teamCounts = new Map();
+        const permCounts = new Map();
+        const irrelevantTeams = new Set();
+        const irrelevantPerms = new Set();
+
+        for (const item of teamItems) {
+            const c = countForTeam(item.id);
+            teamCounts.set(item.id, c);
+            if (selectedPermissions.size > 0 && c === 0) irrelevantTeams.add(item.id);
+        }
+        for (const item of permItems) {
+            const c = countForPerm(item.id);
+            permCounts.set(item.id, c);
+            if (selectedTeams.size > 0 && c === 0) irrelevantPerms.add(item.id);
+        }
+
+        return { teamItems, permItems, teamCounts, permCounts, irrelevantTeams, irrelevantPerms };
+    },
+
+    _refreshOpsTeamMemberFilterLists(modal, options) {
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.renderTeamMemberFilterLists !== 'function') return;
+        const opts = options || {};
+        if (opts.loading) {
+            dash.renderTeamMemberFilterLists({ loading: true });
+            return;
+        }
+        const memberMap = opts.memberMap || (this._opsTeamSearchMemberCache && this._opsTeamSearchMemberCache.memberMap);
+        if (!memberMap || memberMap.size === 0) {
+            dash.renderTeamMemberFilterLists({ loading: false, teamItems: [], permItems: [] });
+            return;
+        }
+        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
+        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
+        const meta = this._opsBuildTeamMemberFilterMeta(memberMap, selectedTeams, selectedPermissions);
+        dash.renderTeamMemberFilterLists({
+            loading: false,
+            teamItems: meta.teamItems,
+            permItems: meta.permItems,
+            teamCounts: meta.teamCounts,
+            permCounts: meta.permCounts,
+            irrelevantTeams: meta.irrelevantTeams,
+            irrelevantPerms: meta.irrelevantPerms,
+            prevTeams: selectedTeams,
+            prevPerms: selectedPermissions
+        });
+    },
+
     _loadOpsTeamSearchActionFromStorage() {
         try {
             const storage = this._getOpsPageWindow().localStorage;
@@ -2017,16 +2406,16 @@ const plugin = {
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
         this._opsFellowsSearchComplete = null;
+        this._opsExpertStatsHydrateGen++;
+        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
         this._clearOpsMemberEditState();
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
 
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputClear');
         const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputClear');
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
 
         if (filterWrap) filterWrap.style.display = 'none';
-        if (filterInput) filterInput.value = '';
         if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
             Context.dashboard.resetTeamMemberMsDropdowns();
         }
@@ -2071,27 +2460,6 @@ const plugin = {
             if (memberPerms.has(key)) return true;
         }
         return false;
-    },
-
-    _populateOpsTeamMemberFilterLists(allTeams) {
-        const dash = Context.dashboard;
-        if (!dash || typeof dash.renderMsList !== 'function') return;
-
-        const prevTeams = typeof dash.selectedMsValues === 'function'
-            ? new Set(dash.selectedMsValues('team-members-teams'))
-            : new Set();
-        const teamItems = (allTeams || []).map(([, label]) => ({ id: label, label }));
-        dash.renderMsList('team-members-teams', teamItems, 'No teams', prevTeams);
-
-        const prevPerms = typeof dash.selectedMsValues === 'function'
-            ? new Set(dash.selectedMsValues('team-members-permissions'))
-            : new Set();
-        const permItems = OPS_ALL_PERMISSIONS.map(([key, label]) => ({ id: key, label }));
-        dash.renderMsList('team-members-permissions', permItems, 'No permissions', prevPerms);
-
-        if (typeof dash.openTeamMemberMsDropdowns === 'function') {
-            dash.openTeamMemberMsDropdowns();
-        }
     },
 
     _opsTeamMemberMatchesTeamFilter(member, selectedTeams) {
@@ -2592,6 +2960,7 @@ const plugin = {
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
+            this._renderOpsTeamMemberStatsHtml(memberId) +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
                     '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
@@ -2606,23 +2975,12 @@ const plugin = {
         '</div>';
     },
 
-    _opsTeamMemberMatchesFilter(member, allTeams, filterText) {
-        if (!filterText) return true;
-        const teamLabels = member.teamLabels || new Set();
-        const perms = this._opsMemberPermissionKeys(member);
-        const haystack = [
-            member.full_name || '',
-            member.email || '',
-            ...[...teamLabels],
-            ...perms.map((p) => this._getOpsPermissionDisplayLabel(p))
-        ].join(' ').toLowerCase();
-        return filterText.toLowerCase().split(/\s+/).filter(Boolean).every(t => haystack.includes(t));
-    },
-
     _filterOpsTeamSearchCards(modal) {
         const cache = this._opsTeamSearchMemberCache;
         if (!cache) return;
+        this._refreshOpsTeamMemberFilterLists(modal);
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+        void this._hydrateOpsTeamMemberStatsForVisible(modal);
     },
 
     _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount, openMemberIds) {
@@ -2630,8 +2988,6 @@ const plugin = {
         const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsInner');
         if (!wrap || !cards) return;
 
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
-        const filterText = filterInput ? filterInput.value : '';
         const openIds = openMemberIds instanceof Set
             ? openMemberIds
             : this._captureOpsOpenMemberDetails(modal);
@@ -2646,9 +3002,6 @@ const plugin = {
         if (selectedPermissions.size > 0) {
             members = members.filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions));
         }
-        if (filterText) {
-            members = members.filter(m => this._opsTeamMemberMatchesFilter(m, allTeams, filterText));
-        }
 
         if (members.length === 0) {
             if (pendingCount > 0) {
@@ -2656,7 +3009,7 @@ const plugin = {
             } else {
                 wrap.style.display = 'block';
                 let msg = 'No members found.';
-                const hasFilters = filterText || selectedTeams.size > 0 || selectedPermissions.size > 0;
+                const hasFilters = selectedTeams.size > 0 || selectedPermissions.size > 0;
                 if (hasFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
@@ -2670,7 +3023,11 @@ const plugin = {
 
         wrap.style.display = 'block';
         cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, true)).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, openIds.has(m.id))).join('');
+
+        if (pendingCount === 0) {
+            void this._hydrateOpsTeamMemberStatsForVisible(modal);
+        }
     },
 
     async _handleOpsTeamSearch(modal) {
@@ -2718,12 +3075,10 @@ const plugin = {
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
-        // Show filter panel; clear text filter only (retain ms checkbox selections)
+        // Show filter panel; retain ms checkbox selections
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputReset');
         if (filterWrap) filterWrap.style.display = 'flex';
-        if (filterInput) filterInput.value = '';
-        this._populateOpsTeamMemberFilterLists(allTeams);
+        this._refreshOpsTeamMemberFilterLists(modal, { loading: true });
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -2740,6 +3095,9 @@ const plugin = {
             doneCount++;
             if (this._opsTeamSearchActive !== sessionId) return;
             this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
+            if (memberMap.size > 0) {
+                this._refreshOpsTeamMemberFilterLists(modal, { memberMap });
+            }
             if (pendingCount > 0) {
                 this._setOpsTeamSearchStatus(modal,
                     spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
@@ -3624,10 +3982,6 @@ const plugin = {
                         <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
                             <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <div>
-                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600; color: var(--foreground, #0f172a);">Filter results</label>
-                                    <input type="text" id="wf-ops-team-filter-input" placeholder="Name, email, team, or permission…" autocomplete="off" style="${input} width: 100%; font-size: 12px; padding: 6px 12px;">
-                                </div>
-                                <div>
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
                                     <p style="${hint} margin: 0 0 8px 0;">None selected = all.</p>
                                     <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -4103,13 +4457,6 @@ const plugin = {
             });
             teamSearchInput.addEventListener('input', () => {
                 this._captureOpsTabState(modal);
-            });
-        }
-
-        const teamFilterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputAttach');
-        if (teamFilterInput) {
-            teamFilterInput.addEventListener('input', () => {
-                this._filterOpsTeamSearchCards(modal);
             });
         }
 
