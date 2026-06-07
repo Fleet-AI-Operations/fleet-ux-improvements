@@ -291,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.16',
+    _version: '1.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -829,8 +829,11 @@ const plugin = {
         }
         const projects = (catalog && catalog.projects) || [];
         const environments = (catalog && catalog.environments) || [];
+        const catalogTeamIds = new Set((teamCatalog || []).map((pair) => pair && pair[0]).filter(Boolean));
         return {
-            teams: [...teamIds].map((id) => ({
+            teams: [...teamIds]
+                .filter((id) => catalogTeamIds.size === 0 || catalogTeamIds.has(id))
+                .map((id) => ({
                 id,
                 label: dashLibTeamNameFromCatalog(id, teamCatalog) || id.slice(0, 8)
             })).sort((a, b) => a.label.localeCompare(b.label)),

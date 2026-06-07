@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.46',
+    _version: '4.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -406,8 +406,8 @@ const plugin = {
                 .filter((pair) => pair[0] && pair[1]);
         }
         try {
-            if (Context.opsTab && typeof Context.opsTab.getUserTeamCatalog === 'function') {
-                return Context.opsTab.getUserTeamCatalog();
+            if (Context.opsTab && typeof Context.opsTab.getUserTaskDesignersTeamCatalog === 'function') {
+                return Context.opsTab.getUserTaskDesignersTeamCatalog();
             }
         } catch (e) {
             Logger.debug('dashboard: searchable team catalog read failed', e);
@@ -2159,7 +2159,7 @@ const plugin = {
         const options = lib.buildFilterListOptions(
             scopeItems,
             this._state.catalog,
-            this._getTeamCatalog()
+            this._getSearchableTeamCatalog()
         );
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);

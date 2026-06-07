@@ -176,7 +176,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.20',
+    _version: '4.21',
     phase: 'core',
     enabledByDefault: true,
 
@@ -186,7 +186,7 @@ const plugin = {
     _opsTeamSearchActive: null,
     _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
-    /** Legacy Fellows-search gate; team search is Task Designers only, so this stays true when idle. */
+    /** Legacy Fellows-search gate; team member search uses all user teams. */
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
     _opsMemberEditState: null,
@@ -263,6 +263,7 @@ const plugin = {
             fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
             fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
             getUserTeamCatalog: () => this.getUserTeamCatalog(),
+            getUserTaskDesignersTeamCatalog: () => this.getUserTaskDesignersTeamCatalog(),
             hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams),
             isTaskDesignersTeam: (name) => opsIsTaskDesignersTeamName(name),
             formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name)
@@ -1061,13 +1062,26 @@ const plugin = {
         return teams;
     },
 
+    _mapUserTeamCatalogPairs(teams, { taskDesignersOnly = false } = {}) {
+        const list = Array.isArray(teams) ? teams : [];
+        return list
+            .filter((t) => !taskDesignersOnly || opsIsTaskDesignersTeamName(t.name))
+            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)])
+            .filter((pair) => pair[0] && pair[1]);
+    },
+
     getUserTeamCatalog() {
         const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
             ? this._opsUserTeamCatalogCache.teams
             : [];
-        return teams
-            .filter((t) => opsIsTaskDesignersTeamName(t.name))
-            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)]);
+        return this._mapUserTeamCatalogPairs(teams);
+    },
+
+    getUserTaskDesignersTeamCatalog() {
+        const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
+            ? this._opsUserTeamCatalogCache.teams
+            : [];
+        return this._mapUserTeamCatalogPairs(teams, { taskDesignersOnly: true });
     },
 
     getUserTeamByLabel(label) {
