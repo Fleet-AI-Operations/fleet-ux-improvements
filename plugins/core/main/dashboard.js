@@ -14,6 +14,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
+const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_KIND_TAB_HEIGHT = '24px';
 const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
@@ -199,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.44',
+    _version: '4.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3499,9 +3500,14 @@ const plugin = {
         const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
         const basis = rootW > 0 ? rootW : fallbackW;
         const handleReserve = 16;
+        const viewportW = this._pageWindow().innerWidth || basis;
+        const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
             DASH_SIDE_PANEL_MIN_WIDTH,
-            basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve
+            Math.min(
+                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve,
+                viewportCap
+            )
         );
         return Math.round(Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.min(max, widthPx)));
     },
@@ -4058,7 +4064,10 @@ const plugin = {
             if (this._flyoutResizeTimer) clearTimeout(this._flyoutResizeTimer);
             this._flyoutResizeTimer = setTimeout(() => {
                 this._flyoutResizeTimer = null;
-                if (this._isOpen()) this._repositionOpenFlyouts();
+                if (this._isOpen()) {
+                    this._repositionOpenFlyouts();
+                    this._applyAllSidePanelWidths();
+                }
             }, 100);
         }, { passive: true });
 
