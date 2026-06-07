@@ -88,6 +88,9 @@ const DASH_FILTER_SCOPES = [
 ];
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_MS_HOVER_OPEN_MS = 300;
+const DASH_MS_HOVER_CLOSE_MS = 50;
+const DASH_MS_FLYOUT_ANIM_MS = 140;
+const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
 function dashIsTeamMembersMsKey(scopeKey) {
     return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
@@ -196,7 +199,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.41',
+    _version: '4.42',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3190,13 +3193,81 @@ const plugin = {
             '  z-index: 2;',
             '  background: var(--card, #ffffff);',
             '}',
-            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items] {',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"] {',
+            '  position: relative;',
+            '  overflow: visible;',
+            '  z-index: 1;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] {',
+            '  z-index: 4;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"] [data-wf-dash-ms-panel] {',
+            '  position: fixed;',
+            '  width: ' + DASH_MS_FLYOUT_WIDTH + ';',
+            '  min-width: 12rem;',
+            '  max-width: calc(100vw - 48px);',
+            '  z-index: 2147483601;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  border-radius: 10px;',
+            '  background: var(--card, #ffffff);',
+            '  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);',
+            '  box-sizing: border-box;',
+            '  opacity: 0;',
+            '  visibility: hidden;',
+            '  transform: translateX(-8px) scale(0.98);',
+            '  transform-origin: left top;',
+            '  transition:',
+            '    opacity ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    transform ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    visibility 0s linear ' + DASH_MS_FLYOUT_ANIM_MS + 'ms;',
+            '  pointer-events: none;',
+            '  overflow: hidden;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"] [data-wf-dash-ms-panel][data-wf-dash-ms-flyout-flip="1"] {',
+            '  transform: translateX(8px) scale(0.98);',
+            '  transform-origin: right top;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel] {',
+            '  opacity: 1;',
+            '  visibility: visible;',
+            '  transform: translateX(0) scale(1);',
+            '  transition:',
+            '    opacity ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    transform ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    visibility 0s;',
+            '  pointer-events: auto;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel][data-wf-dash-ms-flyout-flip="1"] {',
+            '  transform: translateX(0) scale(1);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items] {',
             '  max-height: min(320px, 45vh);',
             '  overflow-y: auto;',
             '  overflow-x: hidden;',
             '  -webkit-overflow-scrolling: touch;',
             '}',
-            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
+            '#wf-dash-modal [data-wf-dash-ms-wrap]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-panel] {',
+            '  overflow: hidden;',
+            '  max-height: 0;',
+            '  opacity: 0;',
+            '  border-top: 1px solid transparent;',
+            '  transition:',
+            '    max-height ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    opacity ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
+            '    border-color ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap]:not([data-wf-dash-ms-flyout="1"])[data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel] {',
+            '  max-height: min(480px, 55vh);',
+            '  opacity: 1;',
+            '  border-top-color: var(--border, #e2e8f0);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-items] {',
+            '  max-height: min(320px, 45vh);',
+            '  overflow-y: auto;',
+            '  overflow-x: hidden;',
+            '  -webkit-overflow-scrolling: touch;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-sticky] {',
             '  box-shadow: 0 1px 0 var(--border, #e2e8f0);',
             '}'
         ].join('\n');
@@ -3702,6 +3773,7 @@ const plugin = {
     },
 
     _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
+        const isFlyout = dashIsFilterMsKey(scopeKey);
         const bulk = bulkActions ? `
                         <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
                         <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
@@ -3709,8 +3781,12 @@ const plugin = {
                     <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
                         <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
                     </div>` : '';
+        const flyoutAttr = isFlyout ? ' data-wf-dash-ms-flyout="1"' : '';
+        const panelInitialStyle = isFlyout
+            ? 'display: none;'
+            : 'display: block; max-height: 0; opacity: 0; overflow: hidden; border-top: 1px solid transparent; background: var(--card, #ffffff);';
         return `
-            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
+            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${flyoutAttr}${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
                 <div data-wf-dash-ms-sticky="${dashEscHtml(scopeKey)}">
                     <div data-wf-dash-ms-header="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
@@ -3721,12 +3797,13 @@ const plugin = {
                         </span>
                         <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
-                            <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
+                            <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">${isFlyout ? '▸' : '▸'}</span>
                         </button>
                     </div>
-                    ${filterRow}
+                    ${isFlyout ? '' : filterRow}
                 </div>
-                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="display: none;">
+                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelInitialStyle}">
+                    ${isFlyout ? filterRow : ''}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                     </div>
@@ -3935,6 +4012,17 @@ const plugin = {
         });
 
         modal.addEventListener('mouseover', (e) => {
+            const panel = e.target.closest('[data-wf-dash-ms-panel]');
+            if (panel && modal.contains(panel)) {
+                const panelScope = panel.getAttribute('data-wf-dash-ms-panel');
+                if (dashIsFilterMsKey(panelScope)) {
+                    this._clearMsHoverTimers(panelScope);
+                    if (!this._isMsDropdownOpen(panelScope) && !this._state.msDropdownPinned[panelScope]) {
+                        this._scheduleMsHoverOpen(panelScope);
+                    }
+                    return;
+                }
+            }
             const wrap = e.target.closest('[data-wf-dash-ms-wrap]');
             if (!wrap || !modal.contains(wrap)) return;
             if (wrap.contains(e.relatedTarget)) return;
@@ -3942,6 +4030,35 @@ const plugin = {
             if (!dashIsFilterMsKey(scopeKey)) return;
             this._scheduleMsHoverOpen(scopeKey);
         });
+
+        modal.addEventListener('mouseout', (e) => {
+            const panel = e.target.closest('[data-wf-dash-ms-panel]');
+            if (panel && modal.contains(panel)) {
+                const panelScope = panel.getAttribute('data-wf-dash-ms-panel');
+                if (dashIsFilterMsKey(panelScope)) {
+                    if (panel.contains(e.relatedTarget)) return;
+                    const wrap = this._msWrapEl(panelScope);
+                    if (wrap && wrap.contains(e.relatedTarget)) return;
+                    this._scheduleMsHoverClose(panelScope);
+                    return;
+                }
+            }
+            const wrap = e.target.closest('[data-wf-dash-ms-wrap]');
+            if (!wrap || !modal.contains(wrap)) return;
+            if (wrap.contains(e.relatedTarget)) return;
+            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
+            if (!dashIsFilterMsKey(scopeKey)) return;
+            this._scheduleMsHoverClose(scopeKey);
+        });
+
+        const filtersScroll = this._q('#wf-dash-left-panel-filters > div');
+        if (filtersScroll) {
+            filtersScroll.addEventListener('scroll', () => {
+                for (const { scopeKey } of DASH_FILTER_SCOPES) {
+                    if (this._isMsDropdownOpen(scopeKey)) this._positionMsFlyoutPanel(scopeKey);
+                }
+            }, { passive: true });
+        }
 
         modal.addEventListener('change', (e) => {
             const cb = e.target;
@@ -4142,6 +4259,134 @@ const plugin = {
         return 'display: block; width: 100%; min-width: 0; overflow-x: hidden; overflow-y: visible; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
     },
 
+    _msChevronForScope(scopeKey, open) {
+        if (dashIsFilterMsKey(scopeKey)) return open ? '◂' : '▸';
+        return open ? '▾' : '▸';
+    },
+
+    _clearMsFlyoutAnimFallback(scopeKey) {
+        const timers = (this._state.msDropdownHoverTimers || {})[scopeKey];
+        if (!timers || !timers.flyoutFallback) return;
+        clearTimeout(timers.flyoutFallback);
+        delete timers.flyoutFallback;
+    },
+
+    _resetMsFlyoutPanelPosition(panel) {
+        if (!panel) return;
+        panel.style.left = '';
+        panel.style.top = '';
+        panel.style.right = '';
+        panel.removeAttribute('data-wf-dash-ms-flyout-flip');
+    },
+
+    _positionMsFlyoutPanel(scopeKey) {
+        const wrap = this._msWrapEl(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        const header = wrap ? wrap.querySelector('[data-wf-dash-ms-header]') : null;
+        if (!wrap || !panel || !header || !this._modal) return;
+        this._resetMsFlyoutPanelPosition(panel);
+        const modalRect = this._modal.getBoundingClientRect();
+        const headerRect = header.getBoundingClientRect();
+        const gap = 4;
+        panel.style.top = headerRect.top + 'px';
+        panel.style.left = (headerRect.right + gap) + 'px';
+        let panelRect = panel.getBoundingClientRect();
+        if (panelRect.right > modalRect.right - gap) {
+            panel.setAttribute('data-wf-dash-ms-flyout-flip', '1');
+            panel.style.left = (headerRect.left - gap - panelRect.width) + 'px';
+            panelRect = panel.getBoundingClientRect();
+        }
+        if (panelRect.bottom > modalRect.bottom - gap) {
+            panel.style.top = (headerRect.top - (panelRect.bottom - modalRect.bottom + gap)) + 'px';
+            panelRect = panel.getBoundingClientRect();
+        }
+        if (panelRect.top < modalRect.top + gap) {
+            panel.style.top = (modalRect.top + gap) + 'px';
+        }
+    },
+
+    _setMsFlyoutPanelVisible(scopeKey, visible, immediate) {
+        const wrap = this._msWrapEl(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        if (!wrap || !panel) return;
+        this._clearMsFlyoutAnimFallback(scopeKey);
+        if (visible) {
+            panel.style.display = 'block';
+            panel.style.top = '0px';
+            panel.removeAttribute('data-wf-dash-ms-flyout-flip');
+            if (immediate) {
+                wrap.setAttribute('data-wf-dash-ms-open', '1');
+                this._positionMsFlyoutPanel(scopeKey);
+                return;
+            }
+            wrap.removeAttribute('data-wf-dash-ms-open');
+            requestAnimationFrame(() => {
+                this._positionMsFlyoutPanel(scopeKey);
+                requestAnimationFrame(() => {
+                    wrap.setAttribute('data-wf-dash-ms-open', '1');
+                });
+            });
+            return;
+        }
+        if (immediate || !wrap.hasAttribute('data-wf-dash-ms-open')) {
+            wrap.removeAttribute('data-wf-dash-ms-open');
+            panel.style.display = 'none';
+            this._resetMsFlyoutPanelPosition(panel);
+            return;
+        }
+        wrap.removeAttribute('data-wf-dash-ms-open');
+        const finalize = () => {
+            if (this._isMsDropdownOpen(scopeKey)) return;
+            panel.style.display = 'none';
+            this._resetMsFlyoutPanelPosition(panel);
+        };
+        const onEnd = (e) => {
+            if (e.target !== panel) return;
+            if (e.propertyName !== 'opacity' && e.propertyName !== 'transform') return;
+            finalize();
+        };
+        panel.addEventListener('transitionend', onEnd, { once: true });
+        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
+        timers.flyoutFallback = setTimeout(finalize, DASH_MS_FLYOUT_ANIM_MS + 50);
+        this._state.msDropdownHoverTimers[scopeKey] = timers;
+    },
+
+    _setMsAccordionPanelVisible(scopeKey, visible, immediate) {
+        const wrap = this._msWrapEl(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        if (!wrap || !panel) return;
+        if (visible) {
+            panel.style.display = 'block';
+            if (immediate) {
+                wrap.setAttribute('data-wf-dash-ms-open', '1');
+                return;
+            }
+            wrap.removeAttribute('data-wf-dash-ms-open');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    wrap.setAttribute('data-wf-dash-ms-open', '1');
+                });
+            });
+            return;
+        }
+        if (immediate || !wrap.hasAttribute('data-wf-dash-ms-open')) {
+            wrap.removeAttribute('data-wf-dash-ms-open');
+            panel.style.display = 'none';
+            return;
+        }
+        wrap.removeAttribute('data-wf-dash-ms-open');
+        const finalize = () => {
+            if (this._isMsDropdownOpen(scopeKey)) return;
+            panel.style.display = 'none';
+        };
+        const onEnd = (e) => {
+            if (e.target !== panel || e.propertyName !== 'max-height') return;
+            finalize();
+        };
+        panel.addEventListener('transitionend', onEnd, { once: true });
+        setTimeout(finalize, DASH_MS_FLYOUT_ANIM_MS + 50);
+    },
+
     _msItemsContainerStyle() {
         return 'padding: 4px; display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; overflow-x: hidden; box-sizing: border-box;';
     },
@@ -4194,27 +4439,27 @@ const plugin = {
         }
     },
 
-    _syncMsDropdown(scopeKey) {
+    _syncMsDropdown(scopeKey, options) {
+        const immediate = Boolean(options && options.immediate);
         const open = this._isMsDropdownOpen(scopeKey);
-        const panel = this._msPanelEl(scopeKey);
         const wrap = this._msWrapEl(scopeKey);
         const toggles = wrap ? wrap.querySelectorAll('[data-wf-dash-ms-toggle="' + scopeKey + '"]') : [];
         const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
-        if (panel) panel.style.cssText = open ? this._msPanelOpenStyle() : 'display: none;';
-        if (wrap) {
-            wrap.style.width = '';
-            if (open) wrap.setAttribute('data-wf-dash-ms-open', '1');
-            else wrap.removeAttribute('data-wf-dash-ms-open');
+        if (dashIsFilterMsKey(scopeKey)) {
+            this._setMsFlyoutPanelVisible(scopeKey, open, immediate);
+        } else {
+            this._setMsAccordionPanelVisible(scopeKey, open, immediate);
         }
+        if (wrap) wrap.style.width = '';
         toggles.forEach((toggle) => toggle.setAttribute('aria-expanded', open ? 'true' : 'false'));
-        if (chevron) chevron.textContent = open ? '▾' : '▸';
+        if (chevron) chevron.textContent = this._msChevronForScope(scopeKey, open);
         this._syncMsDropdownChrome(scopeKey);
     },
 
-    _syncAllMsDropdowns() {
+    _syncAllMsDropdowns(options) {
         const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
             .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
-        for (const key of keys) this._syncMsDropdown(key);
+        for (const key of keys) this._syncMsDropdown(key, options);
     },
 
     _anyFilterMsPinned() {
@@ -4223,10 +4468,14 @@ const plugin = {
     },
 
     _clearMsHoverTimers(scopeKey) {
-        const timers = (this._state.msDropdownHoverTimers || {})[scopeKey];
-        if (!timers || !timers.open) return;
-        clearTimeout(timers.open);
-        delete this._state.msDropdownHoverTimers[scopeKey];
+        const store = this._state.msDropdownHoverTimers || {};
+        const timers = store[scopeKey];
+        if (!timers) return;
+        if (timers.open) clearTimeout(timers.open);
+        if (timers.close) clearTimeout(timers.close);
+        delete timers.open;
+        delete timers.close;
+        if (Object.keys(timers).length === 0) delete store[scopeKey];
     },
 
     _clearAllMsHoverTimers() {
@@ -4246,6 +4495,22 @@ const plugin = {
             if (this._anyFilterMsPinned()) return;
             this._openMsDropdownHover(scopeKey);
         }, DASH_MS_HOVER_OPEN_MS);
+        this._state.msDropdownHoverTimers[scopeKey] = timers;
+    },
+
+    _scheduleMsHoverClose(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (this._state.msDropdownPinned[scopeKey]) return;
+        if (this._anyFilterMsPinned()) return;
+        this._clearMsHoverTimers(scopeKey);
+        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
+        timers.close = setTimeout(() => {
+            delete timers.close;
+            if (this._state.msDropdownPinned[scopeKey]) return;
+            if (!this._isMsDropdownOpen(scopeKey)) return;
+            delete this._state.msDropdownOpen[scopeKey];
+            this._syncMsDropdown(scopeKey);
+        }, DASH_MS_HOVER_CLOSE_MS);
         this._state.msDropdownHoverTimers[scopeKey] = timers;
     },
 
@@ -4277,7 +4542,7 @@ const plugin = {
             if (input) input.value = '';
             this._applyMsDropdownFilter(scopeKey, '');
         }
-        this._syncAllMsDropdowns();
+        this._syncAllMsDropdowns({ immediate: true });
     },
 
     _msDropdownScrollEl(scopeKey) {
@@ -4297,6 +4562,10 @@ const plugin = {
     },
 
     _scrollOpenedMsDropdownIntoView(scopeKey) {
+        if (dashIsFilterMsKey(scopeKey)) {
+            this._positionMsFlyoutPanel(scopeKey);
+            return;
+        }
         const wrap = this._msWrapEl(scopeKey);
         const scrollEl = this._msDropdownScrollEl(scopeKey);
         if (!wrap || !scrollEl) return;
