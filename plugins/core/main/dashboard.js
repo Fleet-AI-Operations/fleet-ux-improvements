@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.50',
+    _version: '4.51',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3263,6 +3263,49 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
             '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-header],',
+            '#wf-dash-modal [data-wf-dash-ms-dual-row] {',
+            '  display: grid !important;',
+            '  grid-template-columns: minmax(0, 1fr) 3.5em 3.5em;',
+            '  column-gap: 8px;',
+            '  align-items: center;',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-header] {',
+            '  padding: 4px 8px;',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  text-transform: uppercase;',
+            '  letter-spacing: 0.04em;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-row] {',
+            '  padding: 4px 8px;',
+            '  font-size: 11px;',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-label] {',
+            '  grid-column: 1;',
+            '  min-width: 0;',
+            '  overflow-wrap: break-word;',
+            '  word-break: normal;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-col] {',
+            '  display: flex;',
+            '  justify-content: center;',
+            '  align-items: center;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-col="include"] { grid-column: 2; }',
+            '#wf-dash-modal [data-wf-dash-ms-dual-col="exclude"] { grid-column: 3; }',
+            '#wf-dash-modal [data-wf-dash-ms-dual-header] [data-wf-dash-ms-dual-col] {',
+            '  text-align: center;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-dual-row] input[type="checkbox"] {',
+            '  display: inline-block !important;',
+            '  width: auto !important;',
+            '  margin: 0 !important;',
+            '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-panel] {',
             '  overflow: hidden;',
             '  max-height: 0;',
@@ -5165,18 +5208,18 @@ const plugin = {
         if (!items || items.length === 0) {
             return '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(emptyHint) + '</p>';
         }
-        const header = '<div data-wf-dash-ms-dual-header="1" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:4px 8px;font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:0.04em;">' +
-            '<span></span>' +
-            '<span style="text-align:center;min-width:3.5em;">' + dashEscHtml(colIncludeLabel) + '</span>' +
-            '<span style="text-align:center;min-width:3.5em;">' + dashEscHtml(colExcludeLabel) + '</span>' +
+        const header = '<div data-wf-dash-ms-dual-header="1">' +
+            '<span data-wf-dash-ms-dual-label="1"></span>' +
+            '<span data-wf-dash-ms-dual-col="include">' + dashEscHtml(colIncludeLabel) + '</span>' +
+            '<span data-wf-dash-ms-dual-col="exclude">' + dashEscHtml(colExcludeLabel) + '</span>' +
             '</div>';
         const rows = items.map((it) => {
             const id = String(it.id || '').trim();
             const label = String(it.label || id).trim();
-            return '<div data-wf-dash-ms-dual-row="1" data-wf-dash-ms-label="' + dashEscHtml(label) + '" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:4px 8px;font-size:11px;align-items:center;color:var(--foreground,#0f172a);">' +
-                '<span data-wf-dash-ms-option-text="1" style="min-width:0;">' + dashEscHtml(label) + '</span>' +
-                '<span style="text-align:center;"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="include"></span>' +
-                '<span style="text-align:center;"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="exclude"></span>' +
+            return '<div data-wf-dash-ms-dual-row="1" data-wf-dash-ms-label="' + dashEscHtml(label) + '">' +
+                '<span data-wf-dash-ms-dual-label="1">' + dashEscHtml(label) + '</span>' +
+                '<span data-wf-dash-ms-dual-col="include"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="include"></span>' +
+                '<span data-wf-dash-ms-dual-col="exclude"><input type="checkbox" value="' + dashEscHtml(id) + '" data-wf-dash-ms="' + dashEscHtml(scopeKey) + '" data-wf-dash-ms-polarity="exclude"></span>' +
                 '</div>';
         }).join('');
         return header + rows;
