@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.51',
+    _version: '4.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -240,8 +240,6 @@ const plugin = {
             renderTeamMemberConstraintLists: (opts) => this._renderTeamMemberConstraintLists(opts),
             readTeamMemberConstraints: (scopeKey) => this._readDualConstraintSelection(scopeKey),
             resetTeamMemberConstraintState: () => this._resetTeamMemberConstraintState(),
-            teamMemberConstraintMultiSelectHtml: (scopeKey, label, emptyHint) =>
-                this._teamMemberConstraintMultiSelectHtml(scopeKey, label, emptyHint),
             resetTeamMemberMsDropdowns: () => this._resetTeamMemberMsDropdowns(),
             selectedMsValues: (scopeKey) => this._selectedFromList(scopeKey),
             splitPanelSectionHtml: (leftHtml, rightHtml) => this._splitPanelSectionHtml(leftHtml, rightHtml)
@@ -3247,26 +3245,13 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel][data-wf-dash-ms-flyout-flip="1"] {',
             '  transform: translateX(0) scale(1);',
             '}',
-            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-always-open="1"] [data-wf-dash-ms-panel] {',
-            '  display: block;',
-            '  max-height: none;',
-            '  opacity: 1;',
-            '  overflow: visible;',
-            '  border-top: 1px solid var(--border, #e2e8f0);',
-            '}',
-            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-always-open="1"] [data-wf-dash-ms-items] {',
-            '  max-height: min(320px, 45vh);',
-            '  overflow-y: auto;',
-            '  overflow-x: hidden;',
-            '  -webkit-overflow-scrolling: touch;',
-            '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-header],',
             '#wf-dash-modal [data-wf-dash-ms-dual-row] {',
             '  display: grid !important;',
-            '  grid-template-columns: minmax(0, 1fr) 3.5em 3.5em;',
+            '  grid-template-columns: minmax(0, 1fr) 2.5rem 5.5rem;',
             '  column-gap: 8px;',
             '  align-items: center;',
             '  width: 100%;',
@@ -3300,6 +3285,7 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-ms-dual-col="exclude"] { grid-column: 3; }',
             '#wf-dash-modal [data-wf-dash-ms-dual-header] [data-wf-dash-ms-dual-col] {',
             '  text-align: center;',
+            '  white-space: nowrap;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-row] input[type="checkbox"] {',
             '  display: inline-block !important;',
@@ -3326,6 +3312,13 @@ const plugin = {
             '  overflow-y: auto;',
             '  overflow-x: hidden;',
             '  -webkit-overflow-scrolling: touch;',
+            '}',
+            '#wf-dash-left-panel-search > div [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel],',
+            '#wf-dash-left-panel-search > div [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items],',
+            '#wf-ops-team-left-scroll [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel],',
+            '#wf-ops-team-left-scroll [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items] {',
+            '  max-height: none;',
+            '  overflow-y: visible;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-open="1"]:not([data-wf-dash-ms-flyout="1"]) [data-wf-dash-ms-sticky] {',
             '  box-shadow: 0 1px 0 var(--border, #e2e8f0);',
@@ -3877,30 +3870,6 @@ const plugin = {
         `;
     },
 
-    _teamMemberConstraintMultiSelectHtml(scopeKey, label, emptyHint) {
-        const filterRow = `
-                    <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
-                        <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
-                    </div>`;
-        const panelStyle = 'display: block; max-height: none; opacity: 1; overflow: visible; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
-        return `
-            <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}" data-wf-dash-ms-always-open="1" style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
-                <div data-wf-dash-ms-sticky="${dashEscHtml(scopeKey)}">
-                    <div data-wf-dash-ms-header="${dashEscHtml(scopeKey)}" style="display: flex; align-items: center; width: 100%; padding: 6px 10px; gap: 8px; box-sizing: border-box;">
-                        <span style="flex: 1; min-width: 0; font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
-                        <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
-                    </div>
-                    ${filterRow}
-                </div>
-                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelStyle}">
-                    <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
-                        <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    },
-
     _q(selector) {
         return this._modal ? this._modal.querySelector(selector) : null;
     },
@@ -4288,8 +4257,8 @@ const plugin = {
                 if (itemId) void this._hydrateCard(itemId);
                 return;
             }
-            if (!e.target.closest('[data-wf-dash-ms-wrap]') && Object.keys(this._state.msDropdownOpen).length > 0) {
-                this._closeAllMsDropdowns();
+            if (!e.target.closest('[data-wf-dash-ms-wrap]')) {
+                this._closeFlyoutMsDropdowns();
             }
         });
 
@@ -4538,9 +4507,8 @@ const plugin = {
         const wrap = this._msWrapEl(scopeKey);
         const hasBulkActions = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-bulk-actions') === '1');
         const filterWrap = this._q('[data-wf-dash-ms-filter-wrap="' + scopeKey + '"]');
-        const alwaysOpen = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-always-open') === '1');
         if (filterWrap) {
-            const showFilter = (open || alwaysOpen) && optionCount >= 5;
+            const showFilter = open && optionCount >= 5;
             if (!showFilter) {
                 const input = filterWrap.querySelector('[data-wf-dash-ms-filter]');
                 if (input && input.value) {
@@ -4682,6 +4650,18 @@ const plugin = {
             this._applyMsDropdownFilter(scopeKey, '');
         }
         this._syncAllMsDropdowns({ immediate: true });
+    },
+
+    _closeFlyoutMsDropdowns() {
+        const anyFlyoutOpen = DASH_FILTER_SCOPES.some((s) => this._isMsDropdownOpen(s.scopeKey));
+        if (!anyFlyoutOpen) return;
+        this._clearAllMsHoverTimers();
+        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            if (!this._isMsDropdownOpen(scopeKey)) continue;
+            delete this._state.msDropdownOpen[scopeKey];
+            delete this._state.msDropdownPinned[scopeKey];
+            this._syncMsDropdown(scopeKey, { immediate: true });
+        }
     },
 
     _msDropdownScrollEl(scopeKey) {
@@ -5242,9 +5222,8 @@ const plugin = {
                 if (prev.exclude.has(cb.value)) cb.checked = true;
             });
         }
-        this._state.msDropdownOpen[scopeKey] = true;
         this._updateMsCount(scopeKey);
-        this._syncMsDropdown(scopeKey, { immediate: true });
+        this._syncMsDropdown(scopeKey);
         this._syncMsDropdownFilterUi(scopeKey);
     },
 

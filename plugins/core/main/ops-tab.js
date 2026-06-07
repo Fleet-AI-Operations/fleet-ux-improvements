@@ -182,7 +182,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.4',
+    _version: '6.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -207,6 +207,8 @@ const plugin = {
     /** memberId → { loading?, creator?, qa?, error? } */
     _opsExpertStatsCache: null,
     _opsExpertStatsHydrateGen: 0,
+    /** Set of member IDs whose card details are open; null = all-expanded default */
+    _opsMemberDetailsOpenIds: null,
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -2365,11 +2367,13 @@ const plugin = {
         const row = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRow');
         const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
         const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
+        const expandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtn');
         const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStatusPlaceholder');
         if (!status) return;
         if (!message) {
             if (row) row.style.display = 'none';
             if (clearBtn) clearBtn.style.display = 'none';
+            if (expandAllBtn) expandAllBtn.style.display = 'none';
             if (placeholder) placeholder.style.display = '';
             return;
         }
@@ -2378,12 +2382,24 @@ const plugin = {
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
         if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
         if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
+        if (expandAllBtn) expandAllBtn.style.display = showClear ? 'inline-block' : 'none';
+    },
+
+    _syncOpsExpandAllBtn(modal) {
+        const btn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtnSync');
+        if (!btn || btn.style.display === 'none') return;
+        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
+        if (!cards) return;
+        const details = cards.querySelectorAll('.wf-ops-member-details');
+        const anyOpen = Array.from(details).some((d) => d.open);
+        btn.textContent = anyOpen ? 'Collapse All' : 'Expand All';
     },
 
     _clearOpsTeamSearchResults(modal) {
         this._abortOpsTeamSearchInFlight('results cleared');
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
+        this._opsMemberDetailsOpenIds = null;
         this._opsFellowsSearchComplete = null;
         this._opsExpertStatsHydrateGen++;
         if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
@@ -2995,10 +3011,6 @@ const plugin = {
         const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsInner');
         if (!wrap || !cards) return;
 
-        const openIds = openMemberIds instanceof Set
-            ? openMemberIds
-            : this._captureOpsOpenMemberDetails(modal);
-
         let members = [...memberMap.values()];
 
         const teamConstraints = this._getOpsTeamMemberTeamConstraints();
@@ -3006,9 +3018,15 @@ const plugin = {
         members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints));
         members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints));
 
-        let resolvedOpenIds = openIds;
-        if (!(openMemberIds instanceof Set) && pendingCount === 0 && openIds.size === 0 && members.length > 0) {
+        let resolvedOpenIds;
+        if (this._opsMemberDetailsOpenIds !== null) {
+            resolvedOpenIds = this._opsMemberDetailsOpenIds;
+        } else if (openMemberIds instanceof Set) {
+            resolvedOpenIds = openMemberIds;
+        } else if (pendingCount === 0 && members.length > 0) {
             resolvedOpenIds = new Set(members.map((m) => m.id));
+        } else {
+            resolvedOpenIds = this._captureOpsOpenMemberDetails(modal);
         }
 
         if (members.length === 0) {
@@ -3033,6 +3051,8 @@ const plugin = {
         wrap.style.display = 'block';
         cards.innerHTML = members.map((m) =>
             this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id))).join('');
+
+        this._syncOpsExpandAllBtn(modal);
 
         if (pendingCount === 0) {
             void this._hydrateOpsTeamMemberStatsForVisible(modal);
@@ -3080,6 +3100,7 @@ const plugin = {
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
+        this._opsMemberDetailsOpenIds = null;
         this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
@@ -3964,11 +3985,11 @@ const plugin = {
         const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
         const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
         const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
-        const msTeams = dash && typeof dash.teamMemberConstraintMultiSelectHtml === 'function'
-            ? dash.teamMemberConstraintMultiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams')
+        const msTeams = dash && typeof dash.multiSelectHtml === 'function'
+            ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', false)
             : '';
-        const msPerms = dash && typeof dash.teamMemberConstraintMultiSelectHtml === 'function'
-            ? dash.teamMemberConstraintMultiSelectHtml('team-members-permissions', 'Permissions', 'All permissions')
+        const msPerms = dash && typeof dash.multiSelectHtml === 'function'
+            ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', false)
             : '';
         const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
             ? dash.splitPanelSectionHtml.bind(dash)
@@ -4008,18 +4029,30 @@ const plugin = {
                     <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                         <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
                             <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                            <button type="button" id="wf-ops-team-search-clear-btn" style="
-                                display: none;
-                                flex-shrink: 0;
-                                padding: 2px 10px;
-                                font-size: 11px;
-                                font-weight: 500;
-                                color: var(--muted-foreground, #666);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 4px;
-                                cursor: pointer;
-                            ">Clear</button>
+                            <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+                                <button type="button" id="wf-ops-team-expand-all-btn" style="
+                                    display: none;
+                                    padding: 2px 10px;
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: var(--muted-foreground, #666);
+                                    background: var(--background, white);
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                ">Collapse All</button>
+                                <button type="button" id="wf-ops-team-search-clear-btn" style="
+                                    display: none;
+                                    padding: 2px 10px;
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: var(--muted-foreground, #666);
+                                    background: var(--background, white);
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                ">Clear</button>
+                            </div>
                         </div>
                         <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
                             Results
@@ -4476,6 +4509,47 @@ const plugin = {
             teamSearchClearBtn.addEventListener('click', () => {
                 this._clearOpsTeamSearchResults(modal);
             });
+        }
+
+        const teamExpandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtnAttach');
+        if (teamExpandAllBtn) {
+            teamExpandAllBtn.addEventListener('click', () => {
+                const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
+                if (!cards) return;
+                const details = [...cards.querySelectorAll('.wf-ops-member-details')];
+                const anyOpen = details.some((d) => d.open);
+                const shouldOpen = !anyOpen;
+                if (this._opsMemberDetailsOpenIds === null) {
+                    this._opsMemberDetailsOpenIds = new Set();
+                }
+                details.forEach((d) => {
+                    d.open = shouldOpen;
+                    const memberId = d.getAttribute('data-member-id');
+                    if (!memberId) return;
+                    if (shouldOpen) this._opsMemberDetailsOpenIds.add(memberId);
+                    else this._opsMemberDetailsOpenIds.delete(memberId);
+                });
+                this._syncOpsExpandAllBtn(modal);
+                Logger.log('ops-tab: team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
+            });
+        }
+
+        if (!modal.dataset.wfOpsMemberDetailsToggle) {
+            modal.dataset.wfOpsMemberDetailsToggle = '1';
+            modal.addEventListener('toggle', (e) => {
+                const detailsEl = e.target;
+                if (!detailsEl || !detailsEl.classList.contains('wf-ops-member-details')) return;
+                const memberId = detailsEl.getAttribute('data-member-id');
+                if (!memberId) return;
+                if (this._opsMemberDetailsOpenIds === null) {
+                    const cache = this._opsTeamSearchMemberCache;
+                    const allIds = cache ? [...cache.memberMap.keys()] : [];
+                    this._opsMemberDetailsOpenIds = new Set(allIds);
+                }
+                if (detailsEl.open) this._opsMemberDetailsOpenIds.add(memberId);
+                else this._opsMemberDetailsOpenIds.delete(memberId);
+                this._syncOpsExpandAllBtn(modal);
+            }, true);
         }
 
         if (!modal.dataset.wfOpsMemberEditDelegation) {
