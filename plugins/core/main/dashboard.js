@@ -88,7 +88,7 @@ const DASH_FILTER_SCOPES = [
 ];
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 50;
+const DASH_MS_HOVER_CLOSE_MS = 100;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
@@ -199,7 +199,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.43',
+    _version: '4.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
