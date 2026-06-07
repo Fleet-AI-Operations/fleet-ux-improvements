@@ -193,7 +193,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.36',
+    _version: '4.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -206,6 +206,7 @@ const plugin = {
     _state: null,
     _onKeydown: null,
     _keydownDoc: null,
+    _searchLoadEntrySeq: 0,
 
     init() {
         this._state = this._createInitialState();
@@ -258,6 +259,7 @@ const plugin = {
             hasSearched: false,
             loading: false,
             searchLoadPhase: '',
+            searchLoadLog: [],
             searchError: null,
             disputesBulkIncomplete: false,
             openDisputesByTaskId: null,
@@ -832,10 +834,15 @@ const plugin = {
                 bulkIncomplete: false
             };
         }
-        this._setSearchLoadPhase('Loading dispute bootstrap (open + resolved)…');
         const [openResult, resolvedResult] = await Promise.all([
-            this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null),
-            this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, null)
+            this._trackSearchLoadPromise(
+                'Open disputes (bulk pagination)',
+                this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null)
+            ),
+            this._trackSearchLoadPromise(
+                'Resolved disputes (bulk pagination)',
+                this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, null)
+            )
         ]);
         const openDisputesByTaskId = new Map();
         let openRowCount = 0;
@@ -881,7 +888,6 @@ const plugin = {
             return { resolverDisputeTaskIds: resolverIds, resolverDisputeAtByTaskId, bulkIncomplete: false };
         }
         const contributorSet = this._contributorSetFromAuthorIds(authorIds);
-        this._setSearchLoadPhase('Loading disputes resolved by selected user(s)…');
         const resolvedResult = await this._fetchDisputesBulkPages(
             teamIds, 'resolved', afterIso, beforeIso, contributorSet
         );
@@ -1360,8 +1366,10 @@ const plugin = {
                 targetIds = this._state.targetIdsCache;
                 Logger.debug('dashboard: project→target ids from cache (' + targetIds.length + ' targets)');
             } else {
-                this._setSearchLoadPhase('Resolving project targets…');
-                targetIds = await this._fetchTargetIdsForProjects(projectIds);
+                targetIds = await this._trackSearchLoadPromise(
+                    'Project targets for ' + projectIds.length + ' project(s)',
+                    this._fetchTargetIdsForProjects(projectIds)
+                );
                 this._state.targetIdsCacheKey = cacheKey;
                 this._state.targetIdsCache = targetIds;
             }
@@ -1558,7 +1566,11 @@ const plugin = {
         return allFeedback;
     },
 
-    async _buildQuickTasksById(taskRows, feedbackRows) {
+    async _buildQuickTasksById(taskRows, feedbackRows, options) {
+        const opts = options || {};
+        const track = opts.trackSearchLoad
+            ? (message, promise) => this._trackSearchLoadPromise(message, promise)
+            : (_message, promise) => Promise.resolve(promise);
         const taskById = new Map(taskRows.map((row) => [row.id, row]));
         const profileIds = new Set();
         for (const row of taskRows) if (row.created_by) profileIds.add(row.created_by);
@@ -1567,8 +1579,18 @@ const plugin = {
         const uniqueTargetIds = [...new Set(taskRows.map((r) => r.task_project_target_id).filter(Boolean))];
         const profileIdsArr = [...profileIds];
         const [profileRows, targetToProjectId] = await Promise.all([
-            profileIdsArr.length > 0 ? this._fetchProfilesByIds(profileIdsArr, 'search') : [],
-            this._fetchTargetProjectMap(uniqueTargetIds)
+            profileIdsArr.length > 0
+                ? track(
+                    'Contributor profiles (' + profileIdsArr.length + ')',
+                    this._fetchProfilesByIds(profileIdsArr, 'search')
+                )
+                : Promise.resolve([]),
+            uniqueTargetIds.length > 0
+                ? track(
+                    'Target→project map (' + uniqueTargetIds.length + ')',
+                    this._fetchTargetProjectMap(uniqueTargetIds)
+                )
+                : Promise.resolve(new Map())
         ]);
         const profilesMap = this._buildProfilesMap(profileRows);
         Logger.debug('dashboard: quick search profiles resolved (' + profileRows.length + ' / ' + profileIds.size + ')');
@@ -1702,13 +1724,22 @@ const plugin = {
         }));
         const bootstrapPromise = this._fetchDisputesBootstrap(scope, afterIso, beforeIso);
         const tasksPromise = includeTaskCreation
-            ? this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            ? this._trackSearchLoadPromise(
+                'Task creation rows',
+                this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            )
             : Promise.resolve([]);
         const qaPromise = includeQa
-            ? this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            ? this._trackSearchLoadPromise(
+                'QA feedback rows',
+                this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
+            )
             : Promise.resolve([]);
         const resolverPromise = (includeDisputes && authorIds.length > 0)
-            ? this._fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope)
+            ? this._trackSearchLoadPromise(
+                'Disputes resolved by selected author(s)',
+                this._fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope)
+            )
             : Promise.resolve({
                 resolverDisputeTaskIds: new Set(),
                 resolverDisputeAtByTaskId: new Map(),
@@ -1744,15 +1775,21 @@ const plugin = {
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
         const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIds.includes(id));
         if (missingQaTaskIds.length > 0 || missingDisputeTaskIds.length > 0) {
-            this._setSearchLoadPhase('Loading tasks linked from QA and disputes…');
+            this._setSearchLoadPhase('Loading linked tasks…');
         }
         const [qaOnlyRows, disputeOnlyRows] = await Promise.all([
             missingQaTaskIds.length > 0
-                ? this._fetchTaskRowsByIds(missingQaTaskIds, scope)
-                : [],
+                ? this._trackSearchLoadPromise(
+                    'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
+                    this._fetchTaskRowsByIds(missingQaTaskIds, scope)
+                )
+                : Promise.resolve([]),
             missingDisputeTaskIds.length > 0
-                ? this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
-                : []
+                ? this._trackSearchLoadPromise(
+                    'Tasks from disputes (' + missingDisputeTaskIds.length + ' id(s))',
+                    this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
+                )
+                : Promise.resolve([])
         ]);
 
         const allTaskRows = [...creationRows];
@@ -1772,8 +1809,11 @@ const plugin = {
 
         let allFeedbackRows = [...feedbackRows];
         if (includeDisputes && disputeTaskIds.length > 0 && !includeQa) {
-            this._setSearchLoadPhase('Loading QA feedback for dispute tasks…');
-            const disputeQaRows = await this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope);
+            this._setSearchLoadPhase('Loading supplementary QA feedback…');
+            const disputeQaRows = await this._trackSearchLoadPromise(
+                'QA feedback for ' + disputeTaskIds.length + ' dispute task(s)',
+                this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope)
+            );
             const seenFb = new Set(allFeedbackRows.map((f) => f.id));
             for (const fb of disputeQaRows) {
                 if (!seenFb.has(fb.id)) {
@@ -1784,7 +1824,9 @@ const plugin = {
         }
 
         this._setSearchLoadPhase('Assembling results…');
-        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows);
+        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
+            trackSearchLoad: true
+        });
 
         const items = [];
         if (includeTaskCreation) {
@@ -5139,6 +5181,7 @@ const plugin = {
             this._state.resolvedDisputeTaskIds = null;
             this._state.resolvedDisputeAtByTaskId = null;
             this._state.resolverDisputeTaskIds = null;
+            this._resetSearchLoadLog();
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
             this._setSearchButtonLoading(true);
@@ -5167,15 +5210,24 @@ const plugin = {
                 const items = searchResult.items;
                 this._state.cachedItems = items;
                 if (searchDepth === 'deep' && items.length > 0) {
+                    this._setSearchLoadPhase('Hydrating results…');
+                    const hydrateLogId = this._beginSearchLoadEntry('Deep hydration (0/' + items.length + ')');
                     await this._hydrateAllSearchResults(items, {
                         prefetchedFeedbackRows: searchResult.allFeedbackRows,
                         skipFeedbackFetch: false,
                         onProgress: (done, total) => {
-                            this._setSearchLoadPhase(
-                                'Hydrating results (' + done + '/' + total + ')…'
-                            );
+                            this._setSearchLoadPhase('Hydrating results (' + done + '/' + total + ')…');
+                            if (hydrateLogId != null) {
+                                this._updateSearchLoadEntry(hydrateLogId, 'Deep hydration (' + done + '/' + total + ')');
+                            }
                         }
                     });
+                    if (hydrateLogId != null) {
+                        this._resolveSearchLoadEntry(
+                            hydrateLogId,
+                            'Deep hydration (' + items.length + '/' + items.length + ')'
+                        );
+                    }
                 }
                 this._setSearchLoadPhase('Applying filters…');
                 Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
@@ -5211,6 +5263,7 @@ const plugin = {
                 this._state.searchFetchActive = false;
                 this._state.loading = false;
                 this._state.searchLoadPhase = '';
+                this._resetSearchLoadLog();
                 this._setSearchButtonLoading(false);
                 this._updateSubstringErrorUi();
                 this._updateApplyFiltersUi();
@@ -5393,23 +5446,104 @@ const plugin = {
         if (clearParams) clearParams.disabled = loading;
     },
 
+    _resetSearchLoadLog() {
+        if (!this._state) return;
+        this._state.searchLoadLog = [];
+        this._searchLoadEntrySeq = 0;
+    },
+
+    _beginSearchLoadEntry(message) {
+        if (!this._state || !this._state.loading) return null;
+        const id = ++this._searchLoadEntrySeq;
+        const entry = { id, message: String(message || '').trim(), resolved: false };
+        if (!Array.isArray(this._state.searchLoadLog)) this._state.searchLoadLog = [];
+        this._state.searchLoadLog.unshift(entry);
+        this._syncSearchLoadPhaseUi();
+        return id;
+    },
+
+    _updateSearchLoadEntry(id, message) {
+        if (!this._state || id == null) return;
+        const log = this._state.searchLoadLog;
+        if (!Array.isArray(log)) return;
+        const entry = log.find((e) => e.id === id);
+        if (!entry || entry.resolved) return;
+        entry.message = String(message || '').trim();
+        this._syncSearchLoadPhaseUi();
+    },
+
+    _resolveSearchLoadEntry(id, message) {
+        if (!this._state || id == null) return;
+        const log = this._state.searchLoadLog;
+        if (!Array.isArray(log)) return;
+        const entry = log.find((e) => e.id === id);
+        if (!entry) return;
+        entry.resolved = true;
+        if (message) entry.message = String(message).trim();
+        this._syncSearchLoadPhaseUi();
+    },
+
+    _trackSearchLoadPromise(message, promise) {
+        const id = this._beginSearchLoadEntry(message);
+        return Promise.resolve(promise).then(
+            (value) => {
+                this._resolveSearchLoadEntry(id);
+                return value;
+            },
+            (err) => {
+                this._resolveSearchLoadEntry(id, message + ' — failed');
+                throw err;
+            }
+        );
+    },
+
+    _visibleSearchLoadLogEntries() {
+        const log = Array.isArray(this._state.searchLoadLog) ? this._state.searchLoadLog : [];
+        const unresolved = log.filter((e) => !e.resolved).length;
+        const cap = Math.max(unresolved, 5);
+        return log.slice(0, cap);
+    },
+
+    _searchLoadLogHtml() {
+        const entries = this._visibleSearchLoadLogEntries();
+        if (entries.length === 0) return '';
+        const lineStyle = 'font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);'
+            + ' font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;'
+            + ' line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+        const lines = entries.map((e) => {
+            const mark = e.resolved ? '[x]' : '[ ]';
+            return `<div data-wf-dash-results-load-log-line="${e.id}" style="${lineStyle}">${dashEscHtml(mark + ' ' + e.message)}</div>`;
+        }).join('');
+        return `<div data-wf-dash-results-load-log style="margin-top: 8px; max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;">${lines}</div>`;
+    },
+
     _syncSearchLoadPhaseUi() {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !this._state || !this._state.loading) return;
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
+        const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
-            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
+            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
                 ${this._loadingSpinnerHtml(20)}
-                <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
+                <div data-wf-dash-results-load-col style="${colStyle}">
+                    <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
+                    ${logHtml}
+                </div>
             </div>`;
             return;
         }
         const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
-        if (!phaseEl) return;
-        phaseEl.textContent = phase;
-        phaseEl.style.display = phase ? '' : 'none';
+        if (phaseEl) {
+            phaseEl.textContent = phase;
+            phaseEl.style.display = phase ? '' : 'none';
+        }
+        const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
+        const logEl = loadingEl.querySelector('[data-wf-dash-results-load-log]');
+        if (logEl) logEl.remove();
+        if (logHtml && colEl) colEl.insertAdjacentHTML('beforeend', logHtml);
     },
 
     _setSearchLoadPhase(message) {
