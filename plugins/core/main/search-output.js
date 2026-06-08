@@ -2546,6 +2546,11 @@ const searchOutputMethods = {
             if (keptIds.has(id)) newHydrateUi[id] = this._state.hydrateUi[id];
         }
         this._state.hydrateUi = newHydrateUi;
+        const newUserStoryUi = {};
+        for (const id of Object.keys(this._state.userStoryUi || {})) {
+            if (keptIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
+        }
+        this._state.userStoryUi = newUserStoryUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
             + filtered.length + ' remaining');
@@ -2884,6 +2889,124 @@ const searchOutputMethods = {
             this._state.hydrateUi[id] = { status: 'idle' };
         }
         return this._state.hydrateUi[id];
+    },
+
+    _getUserStoryUi(itemId) {
+        const id = String(itemId || '');
+        if (!id) return { status: 'idle', visible: false, userStory: null, message: null };
+        if (!this._state.userStoryUi[id]) {
+            this._state.userStoryUi[id] = {
+                status: 'idle',
+                visible: false,
+                userStory: null,
+                message: null
+            };
+        }
+        return this._state.userStoryUi[id];
+    },
+
+    _userStoryEmptyMessage(reason) {
+        if (reason === 'no_scenario_id') return 'No scenario linked to this task.';
+        if (reason === 'scenario_not_found') return 'Scenario not found.';
+        if (reason === 'task_not_found') return 'Task not found.';
+        return 'No user story for this task.';
+    },
+
+    _userStoryBtnStyle(disabled) {
+        let style = 'padding: 0; font-size: 12px; font-weight: 500; border: none; background: transparent; '
+            + 'color: var(--secondary-foreground, var(--accent-foreground, #64748b)); '
+            + 'text-decoration: underline; text-underline-offset: 2px; cursor: pointer;';
+        if (disabled) style += ' opacity: 0.65; cursor: wait; pointer-events: none;';
+        return style;
+    },
+
+    _userStoryBodyStyle() {
+        return 'margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; '
+            + 'line-height: 1.5; font-size: 12px; color: var(--secondary-foreground, var(--accent-foreground, #64748b)); '
+            + 'background: color-mix(in srgb, var(--secondary, var(--accent, #f1f5f9)) 35%, transparent);';
+    },
+
+    _userStorySectionHtml(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        let btnLabel = 'Fetch User Story';
+        let btnDisabled = false;
+        if (ui.status === 'loading') {
+            btnLabel = 'Fetching user story…';
+            btnDisabled = true;
+        } else if (ui.status === 'loaded' || ui.status === 'error') {
+            btnLabel = ui.visible ? 'Hide User Story' : 'Show User Story';
+        }
+        const showBody = ui.visible && (ui.status === 'loaded' || ui.status === 'error');
+        let bodyHtml = '';
+        if (showBody) {
+            const text = ui.userStory != null && String(ui.userStory).trim()
+                ? dashEscHtml(String(ui.userStory))
+                : dashEscHtml(ui.message || 'No user story for this task.');
+            bodyHtml = `<pre style="${this._userStoryBodyStyle()}">${text}</pre>`;
+        }
+        return `
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                <button type="button" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}" style="${this._userStoryBtnStyle(btnDisabled)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                ${bodyHtml}
+            </div>`;
+    },
+
+    async _toggleUserStory(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) return;
+        const ui = this._getUserStoryUi(id);
+
+        if (ui.status === 'loaded' || ui.status === 'error') {
+            ui.visible = !ui.visible;
+            Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
+            this._patchTaskCard(id);
+            return;
+        }
+        if (ui.status === 'loading') return;
+
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
+            ui.status = 'error';
+            ui.message = 'User story unavailable (ops module not loaded).';
+            ui.visible = true;
+            Logger.warn('dashboard: user story fetch unavailable — ops module missing');
+            this._patchTaskCard(id);
+            return;
+        }
+
+        ui.status = 'loading';
+        this._patchTaskCard(id);
+
+        const taskKey = String(item.task.key || '').trim();
+        const taskId = String(item.task.id || '').trim();
+        Logger.log('dashboard: fetching user story — ' + (taskKey || taskId.slice(0, 8) + '…'));
+        try {
+            const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
+            const userStory = result && result.userStory != null ? String(result.userStory) : '';
+            if (!userStory.trim()) {
+                const reason = result && result.reason ? result.reason : 'empty';
+                ui.userStory = null;
+                ui.message = this._userStoryEmptyMessage(reason);
+                Logger.warn('dashboard: user story empty — ' + id + ' (' + reason + ')');
+            } else {
+                ui.userStory = userStory;
+                ui.message = null;
+                Logger.log('dashboard: user story fetched — ' + id + ' (' + userStory.length + ' chars)');
+            }
+            ui.status = 'loaded';
+            ui.visible = true;
+        } catch (err) {
+            ui.status = 'error';
+            ui.userStory = null;
+            ui.message = this._isDashSessionRefreshError(err)
+                ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
+                : 'Could not load user story.';
+            ui.visible = true;
+            Logger.warn('dashboard: user story fetch failed — ' + id, err);
+        }
+        this._patchTaskCard(id);
     },
 
     _profilesMapFromHydrateItems(items) {
@@ -3430,8 +3553,8 @@ const searchOutputMethods = {
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <div style="position: relative; min-width: 0;">
-                                        <input type="text" id="wf-dash-prompt" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px;">
-                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnOverlayStyle()} display: none;">&times;</button>
+                                        <textarea id="wf-dash-prompt" rows="1" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px; resize: none; overflow: hidden; line-height: 1.4; min-height: 36px;"></textarea>
+                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnStyle()} position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; font-size: 15px; display: none;">&times;</button>
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
@@ -4127,12 +4250,21 @@ const searchOutputMethods = {
         if (clearPrompt) {
             clearPrompt.style.display = (prompt && prompt.value.trim()) ? '' : 'none';
         }
+        this._syncPromptFilterHeight(prompt);
         const after = (this._q('#wf-dash-after') || {}).value || '';
         const before = (this._q('#wf-dash-before') || {}).value || '';
         const clearDates = this._q('#wf-dash-clear-dates');
         if (clearDates) {
             clearDates.style.display = (after || before) ? '' : 'none';
         }
+    },
+
+    _syncPromptFilterHeight(el) {
+        const prompt = el || this._q('#wf-dash-prompt');
+        if (!prompt || String(prompt.tagName || '').toUpperCase() !== 'TEXTAREA') return;
+        prompt.style.height = 'auto';
+        const minHeight = 36;
+        prompt.style.height = Math.max(minHeight, prompt.scrollHeight) + 'px';
     },
 
     _validateRangeUi() {
@@ -4532,6 +4664,7 @@ const searchOutputMethods = {
         this._state.cardUi = {};
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
+        this._state.userStoryUi = {};
         this._state.resultsKindTab = 'all';
         this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
@@ -5389,6 +5522,7 @@ const searchOutputMethods = {
                 <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                 </div>
+                ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
         return this._resultCardOuterWrap(item, cardHtml);
@@ -5540,6 +5674,7 @@ const searchOutputMethods = {
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     ${reviewerBadges}
                 </div>
+                ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionSections}
@@ -5720,11 +5855,12 @@ function attachSearchOutputListeners(modal, dash) {
         const prompt = dash._q('#wf-dash-prompt');
         if (prompt) {
             prompt.addEventListener('input', () => {
+                dash._syncPromptFilterHeight(prompt);
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
             });
             prompt.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
                     dash._applyFiltersAndRender();
                 }
@@ -5904,6 +6040,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._hydrateCard(itemId);
                 return;
             }
+            const userStoryBtn = e.target.closest('[data-wf-dash-user-story]');
+            if (userStoryBtn && modal.contains(userStoryBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = userStoryBtn.getAttribute('data-item-id');
+                if (itemId) void dash._toggleUserStory(itemId);
+                return;
+            }
     });
         modal.addEventListener('change', (e) => {
             const sel = e.target;
@@ -5922,7 +6066,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.11',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -210,6 +210,7 @@ const plugin = {
             cardUi: {},
             taskOpenUi: {},
             disputeClaimUi: {},
+            userStoryUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
