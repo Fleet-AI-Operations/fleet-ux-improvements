@@ -49,7 +49,7 @@ const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
 /** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
-/** localStorage key for expert page server action — body [] on /dashboard/data/experts/{id} */
+/** localStorage key for expert profile dates server action — body [expertId, teamUuid] */
 const OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-profile-next-action';
 const OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-profile-router-state';
 const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
@@ -186,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.5',
+    _version: '7.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -210,7 +210,7 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
-    /** Expert page action — body [] on /dashboard/data/experts/{id} → expert.created_at / last_sign_in_at */
+    /** Expert profile dates action — POST body [expertId, current-team-id] → line 1 expert.created_at / last_sign_in_at */
     _opsExpertProfileActionCache: { nextAction: null, routerState: null },
     /** memberId → { loading?, creator?, qa?, createdAt?, lastSignInAt?, error? } */
     _opsExpertStatsCache: null,
@@ -1422,14 +1422,14 @@ const plugin = {
         } catch (_e) {
             return null;
         }
-        if (!Array.isArray(parsed)) return null;
-        if (parsed.length === 0) return 'expert-page';
+        if (!Array.isArray(parsed) || parsed.length === 0) return null;
         if (typeof parsed[0] !== 'string' || !OPS_UUID_RE.test(parsed[0])) return null;
         if (parsed.length === 1) return 'breakdown';
         if (parsed.length >= 2) {
             if (parsed[1] === false) return 'stats-creator';
             if (parsed[1] === true) return 'stats-qa';
             if (typeof parsed[1] === 'number') return 'activities';
+            if (typeof parsed[1] === 'string' && OPS_UUID_RE.test(parsed[1])) return 'profile';
         }
         return null;
     },
@@ -1501,10 +1501,10 @@ const plugin = {
             const routerState = storage.getItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
             if (nextAction) {
                 this._opsExpertProfileActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: expert page action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('ops-tab: expert profile action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert page action localStorage hydration failed', e);
+            Logger.debug('ops-tab: expert profile action localStorage hydration failed', e);
         }
     },
 
@@ -1521,10 +1521,10 @@ const plugin = {
                 }
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert page action persist failed', e);
+            Logger.debug('ops-tab: expert profile action persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: expert page action updated (' + nextAction.slice(0, 12) + '…)');
+            Logger.log('ops-tab: expert profile action updated (' + nextAction.slice(0, 12) + '…)');
         }
     },
 
@@ -1537,9 +1537,9 @@ const plugin = {
                 storage.removeItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert page action cache clear failed', e);
+            Logger.debug('ops-tab: expert profile action cache clear failed', e);
         }
-        Logger.info('ops-tab: expert page action cache cleared (will re-discover on expert profile visit)');
+        Logger.info('ops-tab: expert profile action cache cleared (will re-discover on expert profile visit)');
     },
 
     _subscribeOpsExpertActionCapture() {
@@ -1565,10 +1565,10 @@ const plugin = {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
-                } else if (kind === 'expert-page') {
+                } else if (kind === 'profile') {
                     if (nextAction !== self._opsExpertProfileActionCache.nextAction) {
                         self._persistOpsExpertProfileAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: expert page action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.info('ops-tab: expert profile action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                 }
             }
@@ -1640,27 +1640,52 @@ const plugin = {
         return this._parseOpsTeamSearchResponse(text);
     },
 
+    async _fetchOpsExpertProfileRsc(expertId, teamId) {
+        const id = String(expertId || '').trim();
+        const tid = String(teamId || '').trim();
+        if (!id || !tid) return null;
+        return this._opsWithCurrentTeamCookie(tid, () =>
+            this._fetchOpsExpertRsc(
+                id,
+                [id, tid],
+                this._opsExpertProfileActionCache,
+                'expert profile',
+                { clearCache: 'profile', returnNullOn404: true }
+            )
+        );
+    },
+
+    _opsGetProfileFetchTeamId() {
+        const tid = this._getOpsCookieValue('current-team-id');
+        return tid && OPS_UUID_RE.test(tid) ? tid : '';
+    },
+
     async _fetchOpsExpertProfile(expertId) {
         if (!this._opsExpertProfileActionCache.nextAction) {
             return null;
         }
         const id = String(expertId || '').trim();
-        if (!id) return null;
+        const teamId = this._opsGetProfileFetchTeamId();
+        if (!id || !teamId) return null;
 
+        const empty = { createdAt: null, lastSignInAt: null };
         try {
-            const text = await this._fetchOpsExpertRsc(
-                id,
-                [],
-                this._opsExpertProfileActionCache,
-                'expert page',
-                { clearCache: 'profile', returnNullOn404: true }
-            );
-            if (!text) return null;
-            return this._parseOpsExpertProfileFlight(text, id);
+            const text = await this._fetchOpsExpertProfileRsc(id, teamId);
+            if (!text) return empty;
+            const parsed = this._parseOpsExpertProfileFlight(text, id);
+            if (parsed && (parsed.createdAt || parsed.lastSignInAt)) {
+                Logger.debug('ops-tab: expert profile dates found for ' + id.slice(0, 8) + '…');
+                return parsed;
+            }
+            if (this._opsExpertProfileResponseLooksStale(text)) {
+                Logger.info('ops-tab: expert profile action looks stale (page-load response) — clearing cache; open an expert profile page to recapture');
+                this._clearOpsExpertProfileActionCache();
+            }
         } catch (e) {
-            Logger.warn('ops-tab: expert page fetch threw for ' + id.slice(0, 8) + '…', e);
-            return null;
+            Logger.debug('ops-tab: expert profile fetch failed for ' + id.slice(0, 8) + '…', e);
         }
+        Logger.debug('ops-tab: expert profile dates unavailable for ' + id.slice(0, 8) + '…');
+        return empty;
     },
 
     _opsParseRscJsonLines(text) {
@@ -1691,8 +1716,12 @@ const plugin = {
 
     _opsExtractExpertFromObject(obj, expertId) {
         if (!obj || typeof obj !== 'object') return null;
-        if (obj.expert && typeof obj.expert === 'object' && this._opsExpertRecordHasDates(obj.expert)) {
-            if (this._opsExpertRecordMatchesId(obj.expert, expertId)) return obj.expert;
+        const candidates = ['expert', 'profile'];
+        for (const key of candidates) {
+            const record = obj[key];
+            if (record && typeof record === 'object' && this._opsExpertRecordHasDates(record)) {
+                if (this._opsExpertRecordMatchesId(record, expertId)) return record;
+            }
         }
         if (this._opsExpertRecordHasDates(obj) && this._opsExpertRecordMatchesId(obj, expertId)) {
             return obj;
@@ -1701,8 +1730,11 @@ const plugin = {
         for (const key of wrappers) {
             const inner = obj[key];
             if (!inner || typeof inner !== 'object') continue;
-            if (inner.expert && typeof inner.expert === 'object' && this._opsExpertRecordHasDates(inner.expert)) {
-                if (this._opsExpertRecordMatchesId(inner.expert, expertId)) return inner.expert;
+            for (const innerKey of candidates) {
+                const record = inner[innerKey];
+                if (record && typeof record === 'object' && this._opsExpertRecordHasDates(record)) {
+                    if (this._opsExpertRecordMatchesId(record, expertId)) return record;
+                }
             }
             if (this._opsExpertRecordHasDates(inner) && this._opsExpertRecordMatchesId(inner, expertId)) {
                 return inner;
@@ -1713,10 +1745,18 @@ const plugin = {
 
     _opsExtractExpertRecordFromRawText(text, expertId) {
         if (!text) return null;
-        const needle = '"expert":{';
+        for (const field of ['expert', 'profile']) {
+            const found = this._opsExtractExpertJsonFieldFromRawText(text, expertId, field);
+            if (found) return found;
+        }
+        return null;
+    },
+
+    _opsExtractExpertJsonFieldFromRawText(text, expertId, fieldName) {
+        const needle = '"' + fieldName + '":{';
         let idx = 0;
         while ((idx = text.indexOf(needle, idx)) !== -1) {
-            const start = idx + '"expert":'.length;
+            const start = idx + ('"' + fieldName + '":').length;
             if (text.charAt(start) !== '{') {
                 idx++;
                 continue;
@@ -1747,6 +1787,15 @@ const plugin = {
         return null;
     },
 
+    _opsExpertProfileResponseLooksStale(text) {
+        for (const { obj } of this._opsParseRscJsonLines(text)) {
+            if (!obj || typeof obj !== 'object') continue;
+            if (obj.success === true && obj.data && typeof obj.data.status === 'string') return true;
+            if (obj.profile === null && typeof obj.error === 'string') return true;
+        }
+        return false;
+    },
+
     _opsExtractExpertRecordFromRsc(text, expertId) {
         for (const { obj } of this._opsParseRscJsonLines(text)) {
             const expert = this._opsExtractExpertFromObject(obj, expertId);
@@ -1762,13 +1811,13 @@ const plugin = {
 
         const expert = this._opsExtractExpertRecordFromRsc(text, wantId);
         if (!expert) {
-            Logger.debug('ops-tab: expert page flight missing expert record for ' + wantId.slice(0, 8) + '…');
+            Logger.debug('ops-tab: expert profile flight missing expert record for ' + wantId.slice(0, 8) + '…');
             return result;
         }
         if (typeof expert.created_at === 'string') result.createdAt = expert.created_at;
         if (typeof expert.last_sign_in_at === 'string') result.lastSignInAt = expert.last_sign_in_at;
         if (!result.createdAt && !result.lastSignInAt) {
-            Logger.debug('ops-tab: expert page record missing dates for ' + wantId.slice(0, 8) + '…');
+            Logger.debug('ops-tab: expert profile record missing dates for ' + wantId.slice(0, 8) + '…');
         }
         return result;
     },
@@ -1928,17 +1977,6 @@ const plugin = {
             .filter(Boolean);
     },
 
-    _opsResolveTeamIdForMember(member, allTeams) {
-        const teamLabels = member.teamLabels;
-        if (teamLabels && teamLabels.size > 0 && Array.isArray(allTeams)) {
-            for (const [teamId, label] of allTeams) {
-                if (teamLabels.has(label)) return teamId;
-            }
-        }
-        if (Array.isArray(allTeams) && allTeams.length > 0) return allTeams[0][0];
-        return null;
-    },
-
     async _hydrateOpsTeamMemberStatsForVisible(modal) {
         if (!modal || !this._opsExpertStatsCache) return;
         const cache = this._opsTeamSearchMemberCache;
@@ -1973,11 +2011,12 @@ const plugin = {
             while (cursor < toFetch.length) {
                 if (gen !== this._opsExpertStatsHydrateGen) return;
                 const id = toFetch[cursor++];
+                const hasProfileTeam = !!this._opsGetProfileFetchTeamId();
                 try {
                     const [creator, qa, profileData] = await Promise.all([
                         hasStats ? this._fetchOpsExpertStats(id, false) : Promise.resolve(null),
                         hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null),
-                        hasProfile ? this._fetchOpsExpertProfile(id) : Promise.resolve(null)
+                        hasProfile && hasProfileTeam ? this._fetchOpsExpertProfile(id) : Promise.resolve(null)
                     ]);
                     if (gen !== this._opsExpertStatsHydrateGen) return;
                     this._opsExpertStatsCache.set(id, {
