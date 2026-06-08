@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.78",
+  "archetypesVersion": "10.79",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -58,8 +58,8 @@
     },
     {
       "name": "team-members.js",
-      "version": "1.0",
-      "hash": "sha256-d0bca745904b5cabe926ce99211e22b46daf476a587fcf02ae1421f5e3c37611",
+      "version": "1.1",
+      "hash": "sha256-955c2c5ad995eba46fd39843710056e2643c6389ce94baadf5ce9da6b2b421bf",
       "log": false
     },
     {
