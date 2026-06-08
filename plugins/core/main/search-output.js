@@ -2912,43 +2912,101 @@ const searchOutputMethods = {
         return 'No user story for this task.';
     },
 
-    _userStoryBtnStyle(disabled) {
-        let style = 'padding: 0; font-size: 12px; font-weight: 500; border: none; background: transparent; '
-            + 'color: var(--secondary-foreground, var(--accent-foreground, #64748b)); '
-            + 'text-decoration: underline; text-underline-offset: 2px; cursor: pointer;';
-        if (disabled) style += ' opacity: 0.65; cursor: wait; pointer-events: none;';
-        return style;
+    _userStoryBodyText(ui) {
+        return ui.userStory != null && String(ui.userStory).trim()
+            ? dashEscHtml(String(ui.userStory))
+            : dashEscHtml(ui.message || 'No user story for this task.');
     },
 
-    _userStoryBodyStyle() {
-        return 'margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; '
-            + 'line-height: 1.5; font-size: 12px; color: var(--secondary-foreground, var(--accent-foreground, #64748b)); '
-            + 'background: color-mix(in srgb, var(--secondary, var(--accent, #f1f5f9)) 35%, transparent);';
+    _userStoryBtnLabel(ui) {
+        if (ui.status === 'loading') return 'Fetching user story…';
+        if (ui.status === 'loaded' || ui.status === 'error') {
+            return ui.visible ? 'Hide User Story' : 'Show User Story';
+        }
+        return 'Fetch User Story';
     },
 
     _userStorySectionHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
-        let btnLabel = 'Fetch User Story';
-        let btnDisabled = false;
-        if (ui.status === 'loading') {
-            btnLabel = 'Fetching user story…';
-            btnDisabled = true;
-        } else if (ui.status === 'loaded' || ui.status === 'error') {
-            btnLabel = ui.visible ? 'Hide User Story' : 'Show User Story';
-        }
-        const showBody = ui.visible && (ui.status === 'loaded' || ui.status === 'error');
-        let bodyHtml = '';
-        if (showBody) {
-            const text = ui.userStory != null && String(ui.userStory).trim()
-                ? dashEscHtml(String(ui.userStory))
-                : dashEscHtml(ui.message || 'No user story for this task.');
-            bodyHtml = `<pre style="${this._userStoryBodyStyle()}">${text}</pre>`;
-        }
+        const btnLabel = this._userStoryBtnLabel(ui);
+        const btnDisabled = ui.status === 'loading';
+        const hasPanel = ui.status === 'loaded' || ui.status === 'error';
+        const panelOpen = ui.visible && !ui.animateOpen;
+        const panelHtml = hasPanel
+            ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
+                + `<div data-wf-dash-user-story-inner><p class="wf-dash-user-story-body">${this._userStoryBodyText(ui)}</p></div>`
+                + '</div>'
+            : '';
         return `
-            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                <button type="button" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}" style="${this._userStoryBtnStyle(btnDisabled)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
-                ${bodyHtml}
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
+                <button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                ${panelHtml}
             </div>`;
+    },
+
+    _findUserStorySection(itemId) {
+        const wrap = this._q('#wf-dash-results');
+        if (!wrap || !itemId) return null;
+        for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            if (card.getAttribute('data-item-id') !== itemId) continue;
+            return card.querySelector('[data-wf-dash-user-story-section]');
+        }
+        return null;
+    },
+
+    _animateUserStoryOpen(itemId) {
+        const section = this._findUserStorySection(itemId);
+        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+        if (!panel) return;
+        panel.setAttribute('data-open', '0');
+        panel.setAttribute('aria-hidden', 'true');
+        const win = this._pageWindow();
+        win.requestAnimationFrame(() => {
+            win.requestAnimationFrame(() => {
+                panel.setAttribute('data-open', '1');
+                panel.setAttribute('aria-hidden', 'false');
+            });
+        });
+    },
+
+    _patchUserStorySection(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findUserStorySection(itemId);
+        if (!section) return false;
+        const ui = this._getUserStoryUi(itemId);
+        const btn = section.querySelector('[data-wf-dash-user-story]');
+        if (btn) {
+            btn.textContent = this._userStoryBtnLabel(ui);
+            if (ui.status === 'loading') {
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+            } else {
+                btn.disabled = false;
+                btn.removeAttribute('aria-busy');
+            }
+        }
+        const hasPanel = ui.status === 'loaded' || ui.status === 'error';
+        let panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        if (!hasPanel) {
+            if (panel) panel.remove();
+            return true;
+        }
+        const bodyText = this._userStoryBodyText(ui);
+        if (!panel) {
+            section.insertAdjacentHTML('beforeend',
+                `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
+                + `<div data-wf-dash-user-story-inner"><p class="wf-dash-user-story-body">${bodyText}</p></div>`
+                + '</div>');
+            panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        } else {
+            const body = panel.querySelector('.wf-dash-user-story-body');
+            if (body) body.innerHTML = bodyText;
+        }
+        if (panel) {
+            panel.setAttribute('data-open', ui.visible ? '1' : '0');
+            panel.setAttribute('aria-hidden', ui.visible ? 'false' : 'true');
+        }
+        return true;
     },
 
     async _toggleUserStory(itemId) {
@@ -2961,7 +3019,7 @@ const searchOutputMethods = {
         if (ui.status === 'loaded' || ui.status === 'error') {
             ui.visible = !ui.visible;
             Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
-            this._patchTaskCard(id);
+            if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
             return;
         }
         if (ui.status === 'loading') return;
@@ -2971,13 +3029,16 @@ const searchOutputMethods = {
             ui.status = 'error';
             ui.message = 'User story unavailable (ops module not loaded).';
             ui.visible = true;
+            ui.animateOpen = true;
             Logger.warn('dashboard: user story fetch unavailable — ops module missing');
             this._patchTaskCard(id);
+            delete ui.animateOpen;
+            this._animateUserStoryOpen(id);
             return;
         }
 
         ui.status = 'loading';
-        this._patchTaskCard(id);
+        if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
 
         const taskKey = String(item.task.key || '').trim();
         const taskId = String(item.task.id || '').trim();
@@ -2997,6 +3058,7 @@ const searchOutputMethods = {
             }
             ui.status = 'loaded';
             ui.visible = true;
+            ui.animateOpen = true;
         } catch (err) {
             ui.status = 'error';
             ui.userStory = null;
@@ -3004,9 +3066,14 @@ const searchOutputMethods = {
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
                 : 'Could not load user story.';
             ui.visible = true;
+            ui.animateOpen = true;
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         this._patchTaskCard(id);
+        if (ui.animateOpen) {
+            delete ui.animateOpen;
+            this._animateUserStoryOpen(id);
+        }
     },
 
     _profilesMapFromHydrateItems(items) {
@@ -6066,7 +6133,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.13',
+    _version: '1.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

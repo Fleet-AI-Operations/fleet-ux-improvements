@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -370,6 +370,7 @@ const plugin = {
             this._ensureSpinnerKeyframes();
             this._ensureMsOptionStyles();
             this._ensureHeaderActionStyles();
+            this._ensureUserStoryStyles();
             this._ensureSplitPanelResizeStyles();
             this._attachSplitPanelResize();
             this._applyAllSidePanelWidths();
@@ -911,6 +912,66 @@ const plugin = {
         this._modal.querySelectorAll('[data-wf-dash-split-root]').forEach((root) => {
             this._applySidePanelWidth(root, pref);
         });
+    },
+
+    _ensureUserStoryStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-user-story-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-user-story-style';
+        style.textContent = [
+            '#wf-dash-modal .wf-dash-user-story-btn {',
+            '  padding: 4px 10px;',
+            '  font-size: 11px;',
+            '  font-weight: 600;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--background, #fff);',
+            '  color: var(--muted-foreground, #64748b);',
+            '  font-family: inherit;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-btn:hover:not(:disabled) {',
+            '  background: var(--muted, #f1f5f9);',
+            '  border-color: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--muted-foreground, #64748b));',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-btn:disabled {',
+            '  opacity: 0.65;',
+            '  cursor: wait;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-body {',
+            '  margin: 8px 0 0;',
+            '  padding: 6px 0 2px 12px;',
+            '  border-left: 3px solid var(--border, #e2e8f0);',
+            '  white-space: pre-wrap;',
+            '  word-break: break-word;',
+            '  line-height: 1.5;',
+            '  font-size: 12px;',
+            '  font-family: inherit;',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel] {',
+            '  display: grid;',
+            '  grid-template-rows: 0fr;',
+            '  transition: grid-template-rows 160ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] {',
+            '  grid-template-rows: 1fr;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel] > [data-wf-dash-user-story-inner] {',
+            '  overflow: hidden;',
+            '  min-height: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-inner] {',
+            '  opacity: 0;',
+            '  transition: opacity 120ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] [data-wf-dash-user-story-inner] {',
+            '  opacity: 1;',
+            '  transition: opacity 180ms ease-in 40ms;',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
     },
 
     _ensureSplitPanelResizeStyles() {
