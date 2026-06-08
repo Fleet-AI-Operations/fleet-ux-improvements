@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.81",
+  "archetypesVersion": "10.82",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.3",
-      "hash": "sha256-637e39f00bb3389f4b3ef8a5571c0c730b6bc373458c8db70919e5517ca8d333",
+      "version": "7.4",
+      "hash": "sha256-5595b81cd6af8b36cae67f2f1d688b53314991c42a0f6e4092e19f34ba9e7702",
       "log": false
     },
     {
@@ -58,8 +58,8 @@
     },
     {
       "name": "team-members.js",
-      "version": "2.0",
-      "hash": "sha256-0f9dc4400445b3f8059fb26140600a42a14c05ae03a06cbcf0e5060a4513ed9b",
+      "version": "2.1",
+      "hash": "sha256-0560dbeff33f434197012780c215ed4858a90ce7ec0254f448aad7c129314e31",
       "log": false
     },
     {

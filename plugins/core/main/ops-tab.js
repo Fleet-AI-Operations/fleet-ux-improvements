@@ -186,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.3',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1875,13 +1875,9 @@ const plugin = {
     _getVisibleTeamMemberIds(modal, cache) {
         if (!cache || !cache.memberMap) return [];
         const active = this._opsTeamActiveFilters;
-        const teamConstraints = active ? active.teamConstraints : { include: new Set(), exclude: new Set() };
-        const permConstraints = active ? active.permConstraints : { include: new Set(), exclude: new Set() };
         const numericRows = active && active.numericFilters ? active.numericFilters : [];
         const andOr = active ? active.andOr : 'and';
         return [...cache.memberMap.values()]
-            .filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints))
-            .filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints))
             .filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr))
             .map((m) => m.id)
             .filter(Boolean);
@@ -2689,7 +2685,9 @@ const plugin = {
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
 
         if (filterWrap) filterWrap.style.display = 'none';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
+            Context.dashboard.resetTeamMemberFilters(modal);
+        } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
             Context.dashboard.resetTeamMemberMsDropdowns();
         }
         if (outputWrap) {
@@ -2775,9 +2773,7 @@ const plugin = {
     _opsTeamSearchHasActiveFilters() {
         const active = this._opsTeamActiveFilters;
         if (!active) return false;
-        return this._opsMemberHasActiveConstraints(active.teamConstraints)
-            || this._opsMemberHasActiveConstraints(active.permConstraints)
-            || (active.numericFilters && active.numericFilters.length > 0);
+        return !!(active.numericFilters && active.numericFilters.length > 0);
     },
 
     _opsTeamMemberNumericFieldValue(memberId, field) {
@@ -2861,21 +2857,11 @@ const plugin = {
             Logger.warn('ops-tab: team filters apply skipped — no search cache');
             return;
         }
-        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
-        const permConstraints = this._getOpsTeamMemberPermConstraints();
         const dash = Context.dashboard;
         const numeric = dash && typeof dash.readTeamMembersNumericFilters === 'function'
             ? dash.readTeamMembersNumericFilters(modal)
             : { rows: [], andOr: 'and' };
         this._opsTeamActiveFilters = {
-            teamConstraints: {
-                include: new Set(teamConstraints.include),
-                exclude: new Set(teamConstraints.exclude)
-            },
-            permConstraints: {
-                include: new Set(permConstraints.include),
-                exclude: new Set(permConstraints.exclude)
-            },
             numericFilters: numeric.rows || [],
             andOr: numeric.andOr || 'and'
         };
@@ -3408,12 +3394,8 @@ const plugin = {
         let members = [...memberMap.values()];
 
         const active = this._opsTeamActiveFilters;
-        const teamConstraints = active ? active.teamConstraints : { include: new Set(), exclude: new Set() };
-        const permConstraints = active ? active.permConstraints : { include: new Set(), exclude: new Set() };
         const numericRows = active && active.numericFilters ? active.numericFilters : [];
         const andOr = active ? active.andOr : 'and';
-        members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints));
-        members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints));
         members = members.filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr));
 
         let resolvedOpenIds;
@@ -3433,9 +3415,7 @@ const plugin = {
             } else {
                 wrap.style.display = 'block';
                 let msg = 'No members found.';
-                const hasFilters = this._opsMemberHasActiveConstraints(teamConstraints)
-                    || this._opsMemberHasActiveConstraints(permConstraints)
-                    || (numericRows && numericRows.length > 0);
+                const hasFilters = numericRows && numericRows.length > 0;
                 if (hasFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
@@ -3525,10 +3505,7 @@ const plugin = {
         if (filterWrap) filterWrap.style.display = 'flex';
         if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
             Context.dashboard.resetTeamMemberFilters(modal);
-        } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberConstraintState === 'function') {
-            Context.dashboard.resetTeamMemberConstraintState();
         }
-        this._populateOpsTeamMemberConstraintLists(allTeams, { loading: true, preserveSelections: false });
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -3587,7 +3564,6 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
-                this._indexOpsTeamMemberFiltersFromResults(memberMap, { preserveSelections: false });
                 this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
                 void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }

@@ -1,8 +1,6 @@
 // ============= team-members.js =============
 // Team Members tab for the Ops dashboard.
 
-const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
-
 const TEAM_MEMBERS_NUMERIC_FIELDS = [
     { id: 'tasks_submitted', label: 'Tasks Submitted' },
     { id: 'tasks_reviewed', label: 'Tasks Reviewed' },
@@ -20,10 +18,6 @@ const TEAM_MEMBERS_COMPARATORS = [
     { id: 'eq', label: '=' },
     { id: 'neq', label: '≠' }
 ];
-
-function dashIsTeamMembersMsKey(scopeKey) {
-    return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
-}
 
 function dashEscHtml(value) {
     return String(value == null ? '' : value)
@@ -71,78 +65,6 @@ function teamMembersNumericFilterRowHtml(opts) {
 }
 
 const teamMembersMethods = {
-    _renderTeamMemberConstraintLists(opts) {
-        const options = opts || {};
-        const loading = Boolean(options.loading);
-        const emptySel = { include: new Set(), exclude: new Set() };
-        const preserveSelections = options.preserveSelections !== false;
-        const prevTeams = preserveSelections
-            ? this._readDualConstraintSelection('team-members-teams')
-            : emptySel;
-        const prevPerms = preserveSelections
-            ? this._readDualConstraintSelection('team-members-permissions')
-            : emptySel;
-        if (!loading) {
-            for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
-                delete this._state.msDropdownFilter[key];
-                const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
-                if (input) input.value = '';
-            }
-        }
-        this._renderDualConstraintMsList(
-            'team-members-teams',
-            options.teamItems || [],
-            'In',
-            'Not in',
-            loading ? 'Loading…' : 'No teams in results',
-            prevTeams,
-            { loading }
-        );
-        this._renderDualConstraintMsList(
-            'team-members-permissions',
-            options.permItems || [],
-            'Has',
-            "Doesn't Have",
-            loading ? 'Loading…' : 'No permissions in results',
-            prevPerms,
-            { loading }
-        );
-    },
-
-    _resetTeamMemberConstraintState() {
-        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
-            delete this._state.msDropdownFilter[key];
-            const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
-            if (input) input.value = '';
-            const itemsEl = this._msItemsEl(key);
-            if (itemsEl) {
-                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
-            }
-            this._updateMsCount(key);
-        }
-    },
-
-    _resetTeamMemberMsDropdowns() {
-        for (const key of DASH_TEAM_MEMBERS_MS_KEYS) {
-            delete this._state.msDropdownOpen[key];
-            delete this._state.msDropdownFilter[key];
-            const input = this._q('[data-wf-dash-ms-filter="' + key + '"]');
-            if (input) input.value = '';
-            const itemsEl = this._msItemsEl(key);
-            if (itemsEl) {
-                const labels = key === 'team-members-teams'
-                    ? ['In', 'Not in']
-                    : ['Has', "Doesn't Have"];
-                itemsEl.innerHTML = this._dualConstraintItemsHtml(
-                    key, [], labels[0], labels[1], 'Run search to enable', false
-                );
-            }
-            this._updateMsCount(key);
-            this._syncMsDropdown(key, { immediate: true });
-        }
-        this._resetTeamMemberNumericFilters(this._modal);
-    },
-
     _resetTeamMemberNumericFilters(modal) {
         const root = modal || this._modal;
         if (!root) return;
@@ -150,6 +72,14 @@ const teamMembersMethods = {
         if (rowsEl) rowsEl.innerHTML = '';
         const andOrToggle = root.querySelector('#wf-ops-team-numeric-andor');
         if (andOrToggle) andOrToggle.checked = false;
+    },
+
+    _resetTeamMemberFilters(modal) {
+        this._resetTeamMemberNumericFilters(modal);
+    },
+
+    _resetTeamMemberMsDropdowns() {
+        this._resetTeamMemberNumericFilters(this._modal);
     },
 
     _buildNumericFilterRow(modal, opts) {
@@ -200,11 +130,6 @@ const teamMembersMethods = {
         return { rows, andOr };
     },
 
-    _resetTeamMemberFilters(modal) {
-        this._resetTeamMemberConstraintState();
-        this._resetTeamMemberNumericFilters(modal);
-    },
-
     _onTeamMembersApply(modal) {
         const ops = Context.opsTab;
         if (ops && typeof ops.applyTeamFilters === 'function') {
@@ -231,16 +156,9 @@ function teamMembersPanelHtml(_loader) {
     const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
     const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
     const applyBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : navBtn;
-    const msTeams = dash && typeof dash.multiSelectHtml === 'function'
-        ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', false)
-        : '';
-    const msPerms = dash && typeof dash.multiSelectHtml === 'function'
-        ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', false)
-        : '';
     const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
         ? dash.splitPanelSectionHtml.bind(dash)
         : null;
-    const compactInput = input + ' padding: 4px 8px; font-size: 11px;';
 
     const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
@@ -261,14 +179,6 @@ function teamMembersPanelHtml(_loader) {
                         <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
                             <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <div>
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
-                                    <p style="${hint} margin: 0 0 8px 0;">Stage filters below, then press Apply. Use In / Not in (teams) and Has / Doesn't Have (permissions).</p>
-                                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                                        ${msTeams}
-                                        ${msPerms}
-                                    </div>
-                                </div>
-                                <div>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <div style="${label} font-weight: 600; color: var(--foreground, #0f172a);">Numeric filters</div>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
@@ -276,7 +186,7 @@ function teamMembersPanelHtml(_loader) {
                                             <span>Match any (OR)</span>
                                         </label>
                                     </div>
-                                    <p style="${hint} margin: 0 0 8px 0;">Compare stats (loaded after search). Default matches all conditions (AND).</p>
+                                    <p style="${hint} margin: 0 0 8px 0;">Stage filters below, then press Apply. Stats load after search. Default matches all conditions (AND).</p>
                                     <div id="wf-ops-team-numeric-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
                                     <button type="button" id="wf-ops-team-numeric-add" style="${navBtn} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
                                 </div>
@@ -399,7 +309,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
