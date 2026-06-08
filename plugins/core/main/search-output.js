@@ -87,6 +87,91 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
 
+const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
+    { id: 'prompt_char_count', label: 'Prompt Length (chars)', type: 'number' },
+    { id: 'output_kind_count', label: 'Output Kind Count', type: 'number' },
+    { id: 'dispute_count', label: 'Dispute Count', type: 'number' },
+    { id: 'open_dispute_count', label: 'Open Dispute Count', type: 'number' },
+    { id: 'selected_qa_version', label: 'Selected QA Version No.', type: 'number' },
+    { id: 'selected_qa_total_versions', label: 'Total Versions at QA', type: 'number' },
+    { id: 'rejection_issue_count', label: 'QA Issue Badge Count', type: 'number' },
+    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true },
+    { id: 'qa_feedback_count', label: 'Total QA Rounds †', type: 'number', hydrateHint: true },
+    { id: 'returned_feedback_count', label: 'Returned QA Count †', type: 'number', hydrateHint: true },
+    { id: 'accepted_feedback_count', label: 'Accepted QA Count †', type: 'number', hydrateHint: true },
+    { id: 'escalated_feedback_count', label: 'Escalated Count †', type: 'number', hydrateHint: true },
+    { id: 'flagged_feedback_count', label: 'Flagged as Bugged Count †', type: 'number', hydrateHint: true },
+    { id: 'verifier_failure_count', label: 'Verifier Failure Count †', type: 'number', hydrateHint: true },
+    { id: 'card_activity_at', label: 'Card Activity Date', type: 'date' },
+    { id: 'task_created_at', label: 'Task Created Date', type: 'date' },
+    { id: 'qa_submitted_at', label: 'QA Submitted Date', type: 'date' },
+    { id: 'dispute_submitted_at', label: 'Latest Dispute Date', type: 'date' },
+    { id: 'first_qa_at', label: 'First QA Date †', type: 'date', hydrateHint: true },
+    { id: 'last_qa_at', label: 'Last QA Date †', type: 'date', hydrateHint: true },
+    { id: 'latest_version_at', label: 'Latest Prompt Version Date †', type: 'date', hydrateHint: true }
+];
+
+const DASH_OUTPUT_NUM_COMPARATORS = [
+    { id: 'gt', label: '>' },
+    { id: 'gte', label: '>=' },
+    { id: 'lt', label: '<' },
+    { id: 'lte', label: '<=' },
+    { id: 'eq', label: '=' },
+    { id: 'neq', label: '≠' }
+];
+
+const DASH_OUTPUT_DATE_COMPARATORS = [
+    { id: 'gt', label: 'After' },
+    { id: 'gte', label: 'On or after' },
+    { id: 'lt', label: 'Before' },
+    { id: 'lte', label: 'On or before' },
+    { id: 'eq', label: 'On' },
+    { id: 'neq', label: 'Not on' }
+];
+
+function dashManualFilterFieldOptionsHtml(selectedId) {
+    const sel = selectedId || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0].id;
+    return DASH_OUTPUT_MANUAL_FILTER_FIELDS.map((f) => {
+        const selected = f.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>' + dashEscHtml(f.label) + '</option>';
+    }).join('');
+}
+
+function dashManualComparatorOptionsHtml(fieldType, selectedId) {
+    const list = fieldType === 'date' ? DASH_OUTPUT_DATE_COMPARATORS : DASH_OUTPUT_NUM_COMPARATORS;
+    const sel = selectedId || list[0].id;
+    return list.map((c) => {
+        const selected = c.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
+    }).join('');
+}
+
+function dashManualFilterRowHtml(opts) {
+    const options = opts || {};
+    const field = options.field || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0].id;
+    const fieldMeta = DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === field)
+        || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0];
+    const isDate = fieldMeta.type === 'date';
+    const comparator = options.comparator || (isDate ? 'gte' : 'gte');
+    const value = options.value != null ? String(options.value) : '';
+    const selectStyle = options.selectStyle || '';
+    const inputStyle = options.inputStyle || '';
+    const removeBtnStyle = options.removeBtnStyle || '';
+    const compWidth = isDate ? '96px' : '52px';
+    return '<div data-wf-dash-manual-row="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
+        + '<select data-wf-dash-manual-field="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
+        + dashManualFilterFieldOptionsHtml(field)
+        + '</select>'
+        + '<select data-wf-dash-manual-comparator="1" style="' + selectStyle + ' width: ' + compWidth + '; flex-shrink: 0;">'
+        + dashManualComparatorOptionsHtml(isDate ? 'date' : 'number', comparator)
+        + '</select>'
+        + '<input type="' + (isDate ? 'date' : 'number') + '" data-wf-dash-manual-value="1" placeholder="Value" step="any" value="'
+        + dashEscHtml(value) + '" style="' + inputStyle + ' width: ' + (isDate ? '118px' : '72px') + '; flex-shrink: 0;">'
+        + '<button type="button" data-wf-dash-manual-remove="1" title="Remove filter" style="' + removeBtnStyle
+        + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
+        + '</div>';
+}
+
 
 function dashLib() {
     return Context.dashboardLib;
@@ -2065,9 +2150,270 @@ const searchOutputMethods = {
         return true;
     },
 
+    _buildManualFilterRow(opts) {
+        const rowsEl = this._q('#wf-dash-manual-rows');
+        if (!rowsEl) return;
+        const inputStyle = this.inputStyle() + ' padding: 4px 8px; font-size: 11px;';
+        const selectStyle = inputStyle;
+        const row = document.createElement('div');
+        row.innerHTML = dashManualFilterRowHtml({
+            field: opts && opts.field,
+            comparator: opts && opts.comparator,
+            value: opts && opts.value,
+            selectStyle,
+            inputStyle,
+            removeBtnStyle: ''
+        });
+        const rowEl = row.firstElementChild;
+        if (rowEl) rowsEl.appendChild(rowEl);
+        Logger.debug('search-output: manual filter row added');
+    },
+
+    _resetManualFilters() {
+        const rowsEl = this._q('#wf-dash-manual-rows');
+        if (rowsEl) rowsEl.innerHTML = '';
+        const andOrToggle = this._q('#wf-dash-manual-andor');
+        if (andOrToggle) andOrToggle.checked = false;
+    },
+
+    _readSearchOutputManualFilters() {
+        const rowsEl = this._q('#wf-dash-manual-rows');
+        const andOrToggle = this._q('#wf-dash-manual-andor');
+        const andOr = andOrToggle && andOrToggle.checked ? 'or' : 'and';
+        const rows = [];
+        if (!rowsEl) return { rows, andOr };
+        const lib = dashLib();
+        rowsEl.querySelectorAll('[data-wf-dash-manual-row]').forEach((rowEl) => {
+            const fieldEl = rowEl.querySelector('[data-wf-dash-manual-field]');
+            const compEl = rowEl.querySelector('[data-wf-dash-manual-comparator]');
+            const valueEl = rowEl.querySelector('[data-wf-dash-manual-value]');
+            const field = fieldEl ? fieldEl.value : '';
+            const comparator = compEl ? compEl.value : '';
+            const raw = valueEl ? valueEl.value.trim() : '';
+            if (!field || !comparator || raw === '') return;
+            const fieldMeta = DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === field);
+            const isDate = fieldMeta && fieldMeta.type === 'date';
+            let value;
+            if (isDate) {
+                const iso = lib.dateLocalToIso(raw, 'after');
+                if (!iso) return;
+                value = Date.parse(iso);
+                if (!Number.isFinite(value)) return;
+                rows.push({ field, comparator, value, valueType: 'date', dateLocal: raw });
+            } else {
+                value = Number(raw);
+                if (!Number.isFinite(value)) return;
+                rows.push({ field, comparator, value, valueType: 'number' });
+            }
+        });
+        return { rows, andOr };
+    },
+
+    _searchOutputManualFilterValue(item, fieldId) {
+        const task = item && item.task;
+        if (!task) return null;
+        const allFeedback = task.allFeedback || [];
+        const nonSystemFeedback = allFeedback.filter((e) => !e.isSystemFeedback && !(e.display && e.display.isSystemFeedback));
+        switch (fieldId) {
+            case 'prompt_char_count':
+                return (task.prompt || '').length;
+            case 'output_kind_count':
+                return (item.kinds && item.kinds.length) ? item.kinds.length : (item.kind ? 1 : 0);
+            case 'dispute_count':
+                return (item.disputes || []).length;
+            case 'open_dispute_count':
+                return (item.disputes || []).filter((d) => !d.resolutionAt).length;
+            case 'selected_qa_version':
+                return item.qaFeedback && item.qaFeedback.versionNo != null
+                    ? Number(item.qaFeedback.versionNo) : null;
+            case 'selected_qa_total_versions':
+                return item.qaFeedback && item.qaFeedback.totalVersions != null
+                    ? Number(item.qaFeedback.totalVersions) : null;
+            case 'rejection_issue_count':
+                if (!item.qaFeedback) return null;
+                return (item.qaFeedback.rejectionBadges || []).length;
+            case 'prompt_version_count':
+                if (!item.hydrated) return null;
+                return (task.promptVersions || []).length;
+            case 'qa_feedback_count':
+                if (!item.hydrated) return null;
+                return nonSystemFeedback.length;
+            case 'returned_feedback_count':
+                if (!item.hydrated) return null;
+                return nonSystemFeedback.filter((e) => !e.isPositive).length;
+            case 'accepted_feedback_count':
+                if (!item.hydrated) return null;
+                return nonSystemFeedback.filter((e) => e.isPositive).length;
+            case 'escalated_feedback_count':
+                if (!item.hydrated) return null;
+                return nonSystemFeedback.filter((e) => e.isEscalated).length;
+            case 'flagged_feedback_count':
+                if (!item.hydrated) return null;
+                return nonSystemFeedback.filter((e) => e.isFlaggedAsBugged).length;
+            case 'verifier_failure_count':
+                if (!item.hydrated) return null;
+                return allFeedback.filter((e) => e.isVerifierFailure || (e.display && e.display.isVerifierFailure)).length;
+            case 'card_activity_at': {
+                const ts = Date.parse(item.sortAt || '');
+                return Number.isFinite(ts) ? ts : null;
+            }
+            case 'task_created_at': {
+                const ts = Date.parse(task.createdAt || '');
+                return Number.isFinite(ts) ? ts : null;
+            }
+            case 'qa_submitted_at': {
+                if (!item.qaFeedback || !item.qaFeedback.feedbackAt) return null;
+                const ts = Date.parse(item.qaFeedback.feedbackAt);
+                return Number.isFinite(ts) ? ts : null;
+            }
+            case 'dispute_submitted_at': {
+                const disputes = item.disputes || [];
+                if (disputes.length === 0) return null;
+                let maxTs = null;
+                for (const d of disputes) {
+                    const ts = Date.parse(d.submittedAt || '');
+                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
+                }
+                return maxTs;
+            }
+            case 'first_qa_at': {
+                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
+                let minTs = null;
+                for (const e of nonSystemFeedback) {
+                    const ts = Date.parse(e.feedbackAt || '');
+                    if (Number.isFinite(ts) && (minTs == null || ts < minTs)) minTs = ts;
+                }
+                return minTs;
+            }
+            case 'last_qa_at': {
+                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
+                let maxTs = null;
+                for (const e of nonSystemFeedback) {
+                    const ts = Date.parse(e.feedbackAt || '');
+                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
+                }
+                return maxTs;
+            }
+            case 'latest_version_at': {
+                if (!item.hydrated) return null;
+                const versions = task.promptVersions || [];
+                if (versions.length === 0) return null;
+                let maxTs = null;
+                for (const v of versions) {
+                    const ts = Date.parse(v.createdAt || '');
+                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
+                }
+                return maxTs;
+            }
+            default:
+                return null;
+        }
+    },
+
+    _manualFilterSameLocalDay(actualMs, filterDayStartMs) {
+        const a = new Date(actualMs);
+        const b = new Date(filterDayStartMs);
+        return a.getFullYear() === b.getFullYear()
+            && a.getMonth() === b.getMonth()
+            && a.getDate() === b.getDate();
+    },
+
+    _manualFilterDayEndMs(dayStartMs) {
+        const d = new Date(dayStartMs);
+        d.setHours(23, 59, 59, 999);
+        return d.getTime();
+    },
+
+    _evaluateManualFilterComparator(actual, comparator, expected, valueType) {
+        if (actual == null || !Number.isFinite(actual)) return null;
+        if (!Number.isFinite(expected)) return false;
+        if (valueType === 'date') {
+            const dayEnd = this._manualFilterDayEndMs(expected);
+            switch (comparator) {
+                case 'gt': return actual > dayEnd;
+                case 'gte': return actual >= expected;
+                case 'lt': return actual < expected;
+                case 'lte': return actual <= dayEnd;
+                case 'eq': return this._manualFilterSameLocalDay(actual, expected);
+                case 'neq': return !this._manualFilterSameLocalDay(actual, expected);
+                default: return true;
+            }
+        }
+        switch (comparator) {
+            case 'gt': return actual > expected;
+            case 'gte': return actual >= expected;
+            case 'lt': return actual < expected;
+            case 'lte': return actual <= expected;
+            case 'eq': return actual === expected;
+            case 'neq': return actual !== expected;
+            default: return true;
+        }
+    },
+
+    _itemPassesManualFilters(item, rows, andOr) {
+        if (!rows || rows.length === 0) return true;
+        const results = rows.map((row) => {
+            const actual = this._searchOutputManualFilterValue(item, row.field);
+            if (actual == null || !Number.isFinite(actual)) return null;
+            return this._evaluateManualFilterComparator(
+                actual, row.comparator, row.value, row.valueType || 'number'
+            );
+        });
+        if (results.some((r) => r === null)) return true;
+        if (andOr === 'or') return results.some((r) => r === true);
+        return results.every((r) => r === true);
+    },
+
+    _applyManualFiltersToResult(items, manualRows, andOr) {
+        if (!manualRows || manualRows.length === 0) return items;
+        return items.filter((item) => this._itemPassesManualFilters(item, manualRows, andOr));
+    },
+
+    _manualFilterRowsEqual(a, b) {
+        const left = a || [];
+        const right = b || [];
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i++) {
+            const l = left[i];
+            const r = right[i];
+            if (l.field !== r.field || l.comparator !== r.comparator || l.value !== r.value) return false;
+        }
+        return true;
+    },
+
     _syncResultsToolbarDerivedUi() {
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
+        this._syncDropExcludedUi();
+    },
+
+    _syncDropExcludedUi() {
+        const btn = this._q('#wf-dash-drop-excluded');
+        if (!btn) return;
+        const cached = this._state.cachedItems;
+        const filtered = this._state.filteredItems;
+        const show = !this._state.loading
+            && cached !== null && filtered !== null
+            && this._hasActiveFilters()
+            && filtered.length < cached.length;
+        btn.style.display = show ? '' : 'none';
+    },
+
+    _dropExcludedResults() {
+        const filtered = this._state.filteredItems;
+        const cached = this._state.cachedItems;
+        if (!filtered || !cached || filtered.length >= cached.length) return;
+        const dropped = cached.length - filtered.length;
+        const keptIds = new Set(filtered.map((it) => it.id));
+        this._state.cachedItems = filtered.slice();
+        const newHydrateUi = {};
+        for (const id of Object.keys(this._state.hydrateUi || {})) {
+            if (keptIds.has(id)) newHydrateUi[id] = this._state.hydrateUi[id];
+        }
+        this._state.hydrateUi = newHydrateUi;
+        this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
+        Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
+            + filtered.length + ' remaining');
     },
 
     _syncResultsListDerivedUi({ reindexFilters } = {}) {
@@ -2103,7 +2449,9 @@ const searchOutputMethods = {
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
-            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
+            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc',
+            manualFilters: [],
+            manualAndOr: 'and'
         };
     },
 
@@ -2142,13 +2490,20 @@ const searchOutputMethods = {
 
         const scopeItems = this._getFilterScopeItems();
         const sortOrder = filters.sortOrder;
-        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const manual = this._readSearchOutputManualFilters();
+        const result = this._applyManualFiltersToResult(checkboxResult, manual.rows, manual.andOr);
         this._state.filteredItems = result;
-        this._state.appliedFilters = Object.assign({}, filters, { sortOrder });
+        this._state.appliedFilters = Object.assign({}, filters, {
+            sortOrder,
+            manualFilters: manual.rows,
+            manualAndOr: manual.andOr
+        });
 
         const tab = this._state.resultsKindTab || 'all';
         if (filterSource === 'client') {
             Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
+                + (manual.rows.length > 0 ? ' · ' + manual.rows.length + ' manual' : '')
                 + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
         } else if (filterSource === 'filter-reset') {
             Logger.log('dashboard: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
@@ -2346,7 +2701,10 @@ const searchOutputMethods = {
         if (!filterInvalid.invalid) {
             const sortOrder = filters.sortOrder;
             const scopeItems = this._getFilterScopeItems();
-            const result = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
+            const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
+            const manualRows = filters.manualFilters || [];
+            const manualAndOr = filters.manualAndOr || 'and';
+            const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
             this._state.filteredItems = result;
             Logger.debug('dashboard: scope data enriched — ' + result.length + ' / ' + scopeItems.length + ' item(s) after reindex');
         }
@@ -2367,7 +2725,10 @@ const searchOutputMethods = {
         this._state.resultsPage = 0;
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const scopeItems = this._getFilterScopeItems();
-        const result = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const manualRows = filters.manualFilters || [];
+        const manualAndOr = filters.manualAndOr || 'and';
+        const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = filters;
         Logger.log('dashboard: sort applied — ' + (sortOrder === 'asc' ? 'oldest first' : 'newest first'));
@@ -2967,6 +3328,19 @@ const searchOutputMethods = {
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
                                 </div>
+                                <div id="wf-dash-manual-filter-wrap">
+                                    <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
+                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Filters work best with hydrated results; unhydrated cards are not excluded for fields marked †.</p>
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
+                                        <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
+                                            <input type="checkbox" id="wf-dash-manual-andor" style="margin: 0;">
+                                            <span>Match any (OR)</span>
+                                        </label>
+                                    </div>
+                                    <div id="wf-dash-manual-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+                                    <button type="button" id="wf-dash-manual-add" style="${this._navBtnStyle()} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                </div>
                             </div>
                         </div>
                     </div>`;
@@ -2980,6 +3354,7 @@ const searchOutputMethods = {
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                 <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
+                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" style="${this._btnStyle()} display: none; font-size: 11px;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
                             </div>
                         </div>
@@ -3363,6 +3738,7 @@ const searchOutputMethods = {
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
             promptHistory: []
         };
+        this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
             const panel = this._msPanelEl(scopeKey);
             const itemsEl = this._msItemsEl(scopeKey);
@@ -3723,6 +4099,9 @@ const searchOutputMethods = {
         for (const key of keys) {
             if (!this._filterArraysEqual(draft[key], applied[key])) return true;
         }
+        const manual = this._readSearchOutputManualFilters();
+        if ((applied.manualAndOr || 'and') !== manual.andOr) return true;
+        if (!this._manualFilterRowsEqual(applied.manualFilters, manual.rows)) return true;
         return false;
     },
 
@@ -3915,6 +4294,7 @@ const searchOutputMethods = {
                 if (regexEl) regexEl.checked = false;
                 const sortEl = this._q('#wf-dash-sort');
                 if (sortEl) sortEl.value = 'desc';
+                this._resetManualFilters();
                 this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
                 if (items.length > 0) {
@@ -3993,6 +4373,7 @@ const searchOutputMethods = {
         });
         this._updateSubstringErrorUi();
         this._syncFieldClearButtons();
+        this._resetManualFilters();
     },
 
     _resetFiltersToDefaults() {
@@ -4068,7 +4449,8 @@ const searchOutputMethods = {
             || (applied.returnTypes || []).length < bounds.returnTypes.length
             || (applied.promptHistory || []).length < bounds.promptHistory.length
             || (applied.regex && lib.isRegexQueryActive(applied.promptText))
-            || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive));
+            || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
+            || ((applied.manualFilters || []).length > 0);
     },
 
     _applyFiltersAndRender() {
@@ -5235,6 +5617,41 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
 
+        const manualAdd = dash._q('#wf-dash-manual-add');
+        if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
+        const manualAndOr = dash._q('#wf-dash-manual-andor');
+        if (manualAndOr) manualAndOr.addEventListener('change', () => dash._updateApplyFiltersUi());
+        const manualRows = dash._q('#wf-dash-manual-rows');
+        if (manualRows) {
+            manualRows.addEventListener('change', (e) => {
+                const fieldSel = e.target.closest('[data-wf-dash-manual-field]');
+                if (!fieldSel) return;
+                const row = fieldSel.closest('[data-wf-dash-manual-row]');
+                if (!row) return;
+                const field = fieldSel.value;
+                const meta = DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === field);
+                const isDate = meta && meta.type === 'date';
+                const compSel = row.querySelector('[data-wf-dash-manual-comparator]');
+                const valueInp = row.querySelector('[data-wf-dash-manual-value]');
+                if (compSel) {
+                    compSel.innerHTML = dashManualComparatorOptionsHtml(isDate ? 'date' : 'number', isDate ? 'gte' : 'gte');
+                }
+                if (valueInp) {
+                    valueInp.type = isDate ? 'date' : 'number';
+                    valueInp.value = '';
+                }
+                dash._updateApplyFiltersUi();
+            });
+            manualRows.addEventListener('input', () => dash._updateApplyFiltersUi());
+            manualRows.addEventListener('click', (e) => {
+                const removeBtn = e.target.closest('[data-wf-dash-manual-remove]');
+                if (!removeBtn || !manualRows.contains(removeBtn)) return;
+                const row = removeBtn.closest('[data-wf-dash-manual-row]');
+                if (row) row.remove();
+                dash._updateApplyFiltersUi();
+            });
+        }
+
         const quickRange = dash._q('#wf-dash-quick-range');
         if (quickRange) {
             quickRange.addEventListener('change', () => {
@@ -5248,6 +5665,8 @@ function attachSearchOutputListeners(modal, dash) {
         if (search) search.addEventListener('click', () => { void dash._submitSearch(); });
         const clearParams = dash._q('#wf-dash-clear-params');
         if (clearParams) clearParams.addEventListener('click', () => dash._clearParameters());
+        const dropExcluded = dash._q('#wf-dash-drop-excluded');
+        if (dropExcluded) dropExcluded.addEventListener('click', () => dash._dropExcludedResults());
         const clearResults = dash._q('#wf-dash-clear-results');
         if (clearResults) clearResults.addEventListener('click', () => dash._clearResults());
 
@@ -5359,7 +5778,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
