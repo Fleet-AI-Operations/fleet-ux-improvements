@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -149,6 +149,13 @@ const plugin = {
             },
             resetTeamMemberMsDropdowns: () => {
                 if (typeof self._resetTeamMemberMsDropdowns === 'function') self._resetTeamMemberMsDropdowns();
+            },
+            resetTeamMemberFilters: (modal) => {
+                if (typeof self._resetTeamMemberFilters === 'function') self._resetTeamMemberFilters(modal);
+            },
+            readTeamMembersNumericFilters: (modal) => {
+                if (typeof self._readNumericFilters === 'function') return self._readNumericFilters(modal);
+                return { rows: [], andOr: 'and' };
             },
             captureTabState: (modal) => {
                 for (const tab of self._tabs) {

@@ -1,37 +1,28 @@
 // ============= team-members.js =============
 // Team Members tab for the Ops dashboard.
 
-// ============= dashboard.js =============
-// Worker Output Search (Ops dashboard): search output, team members, verifier fetch.
-//
-// This is the live port of the local prototype in local/dashboard. All data is
-// PostgREST table/query shapes come from the encrypted ops bundle (Context.opsTab).
-// which reuses the exact same Supabase runtime config + session token gathering as the
-// people lookup tool (cookies / sb-*-auth-token JWT). No secrets are hardcoded here.
-//
-// Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
-
-const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
-const DASH_SIDE_PANEL_MIN_WIDTH = 320;
-const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
-const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
-const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 100;
-const DASH_MS_FLYOUT_ANIM_MS = 140;
-const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
+
+const TEAM_MEMBERS_NUMERIC_FIELDS = [
+    { id: 'tasks_submitted', label: 'Tasks Submitted' },
+    { id: 'tasks_reviewed', label: 'Tasks Reviewed' },
+    { id: 'submission_ar', label: 'Submission AR (%)' },
+    { id: 'qa_ar', label: 'QA AR (%)' },
+    { id: 'avg_writing_time', label: 'Avg Writing Time (min)' },
+    { id: 'avg_qa_time', label: 'Avg QA Time (min)' }
+];
+
+const TEAM_MEMBERS_COMPARATORS = [
+    { id: 'gt', label: '>' },
+    { id: 'gte', label: '>=' },
+    { id: 'lt', label: '<' },
+    { id: 'lte', label: '<=' },
+    { id: 'eq', label: '=' },
+    { id: 'neq', label: '≠' }
+];
 
 function dashIsTeamMembersMsKey(scopeKey) {
     return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
-}
-
-function dashIsFilterMsKey(scopeKey) {
-    return Boolean(scopeKey && scopeKey.startsWith('filter-'));
-}
-
-
-function dashLib() {
-    return Context.dashboardLib;
 }
 
 function dashEscHtml(value) {
@@ -41,6 +32,42 @@ function dashEscHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function teamMembersNumericFieldOptionsHtml(selectedId) {
+    const sel = selectedId || 'tasks_submitted';
+    return TEAM_MEMBERS_NUMERIC_FIELDS.map((f) => {
+        const selected = f.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>' + dashEscHtml(f.label) + '</option>';
+    }).join('');
+}
+
+function teamMembersComparatorOptionsHtml(selectedId) {
+    const sel = selectedId || 'gte';
+    return TEAM_MEMBERS_COMPARATORS.map((c) => {
+        const selected = c.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
+    }).join('');
+}
+
+function teamMembersNumericFilterRowHtml(opts) {
+    const options = opts || {};
+    const field = options.field || 'tasks_submitted';
+    const comparator = options.comparator || 'gte';
+    const value = options.value != null ? String(options.value) : '';
+    const selectStyle = options.selectStyle || '';
+    const inputStyle = options.inputStyle || '';
+    const removeBtnStyle = options.removeBtnStyle || '';
+    return '<div data-wf-team-numeric-row="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
+        + '<select data-wf-team-numeric-field="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
+        + teamMembersNumericFieldOptionsHtml(field)
+        + '</select>'
+        + '<select data-wf-team-numeric-comparator="1" style="' + selectStyle + ' width: 52px; flex-shrink: 0;">'
+        + teamMembersComparatorOptionsHtml(comparator)
+        + '</select>'
+        + '<input type="number" data-wf-team-numeric-value="1" placeholder="Value" step="any" value="' + dashEscHtml(value) + '" style="' + inputStyle + ' width: 72px; flex-shrink: 0;">'
+        + '<button type="button" data-wf-team-numeric-remove="1" title="Remove filter" style="' + removeBtnStyle + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
+        + '</div>';
 }
 
 const teamMembersMethods = {
@@ -67,7 +94,7 @@ const teamMembersMethods = {
             options.teamItems || [],
             'In',
             'Not in',
-            loading ? 'Loading…' : 'No teams available',
+            loading ? 'Loading…' : 'No teams in results',
             prevTeams,
             { loading }
         );
@@ -76,7 +103,7 @@ const teamMembersMethods = {
             options.permItems || [],
             'Has',
             "Doesn't Have",
-            loading ? 'Loading…' : 'No permissions available',
+            loading ? 'Loading…' : 'No permissions in results',
             prevPerms,
             { loading }
         );
@@ -113,15 +140,83 @@ const teamMembersMethods = {
             this._updateMsCount(key);
             this._syncMsDropdown(key, { immediate: true });
         }
+        this._resetTeamMemberNumericFilters(this._modal);
     },
 
-    _onTeamMemberMsChange(modal) {
-        teamMembersOnMsChange(modal);
+    _resetTeamMemberNumericFilters(modal) {
+        const root = modal || this._modal;
+        if (!root) return;
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        if (rowsEl) rowsEl.innerHTML = '';
+        const andOrToggle = root.querySelector('#wf-ops-team-numeric-andor');
+        if (andOrToggle) andOrToggle.checked = false;
     },
+
+    _buildNumericFilterRow(modal, opts) {
+        const root = modal || this._modal;
+        if (!root) return;
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        if (!rowsEl) return;
+        const dash = Context.dashboard;
+        const inputStyle = dash && typeof dash.inputStyle === 'function'
+            ? dash.inputStyle() + ' padding: 4px 8px; font-size: 11px;'
+            : 'padding: 4px 8px; font-size: 11px; border: 1px solid var(--border, #e5e5e5); border-radius: 4px;';
+        const selectStyle = inputStyle;
+        const removeBtnStyle = '';
+        const row = document.createElement('div');
+        row.innerHTML = teamMembersNumericFilterRowHtml({
+            field: opts && opts.field,
+            comparator: opts && opts.comparator,
+            value: opts && opts.value,
+            selectStyle,
+            inputStyle,
+            removeBtnStyle
+        });
+        const rowEl = row.firstElementChild;
+        if (rowEl) rowsEl.appendChild(rowEl);
+        Logger.debug('team-members: numeric filter row added');
+    },
+
+    _readNumericFilters(modal) {
+        const root = modal || this._modal;
+        if (!root) return { rows: [], andOr: 'and' };
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        const andOrToggle = root.querySelector('#wf-ops-team-numeric-andor');
+        const andOr = andOrToggle && andOrToggle.checked ? 'or' : 'and';
+        const rows = [];
+        if (!rowsEl) return { rows, andOr };
+        rowsEl.querySelectorAll('[data-wf-team-numeric-row]').forEach((rowEl) => {
+            const fieldEl = rowEl.querySelector('[data-wf-team-numeric-field]');
+            const compEl = rowEl.querySelector('[data-wf-team-numeric-comparator]');
+            const valueEl = rowEl.querySelector('[data-wf-team-numeric-value]');
+            const field = fieldEl ? fieldEl.value : '';
+            const comparator = compEl ? compEl.value : '';
+            const raw = valueEl ? valueEl.value.trim() : '';
+            if (!field || !comparator || raw === '') return;
+            const value = Number(raw);
+            if (!Number.isFinite(value)) return;
+            rows.push({ field, comparator, value });
+        });
+        return { rows, andOr };
+    },
+
+    _resetTeamMemberFilters(modal) {
+        this._resetTeamMemberConstraintState();
+        this._resetTeamMemberNumericFilters(modal);
+    },
+
+    _onTeamMembersApply(modal) {
+        const ops = Context.opsTab;
+        if (ops && typeof ops.applyTeamFilters === 'function') {
+            void ops.applyTeamFilters(modal);
+        }
+    },
+
     _captureTeamMembersState(modal) {
         const ops = Context.opsTab;
         if (ops && typeof ops.captureTeamTabState === 'function') ops.captureTeamTabState(modal);
     },
+
     _restoreTeamMembersState(modal) {
         const ops = Context.opsTab;
         if (ops && typeof ops.restoreTeamTabState === 'function') ops.restoreTeamTabState(modal);
@@ -129,24 +224,25 @@ const teamMembersMethods = {
 };
 
 function teamMembersPanelHtml(_loader) {
-        // panelHtml receives the loader plugin; shared UI helpers live on Context.dashboard.
-        const dash = Context.dashboard;
-        const box = dash && typeof dash.panelBoxStyle === 'function' ? dash.panelBoxStyle() : 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
-        const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
-        const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
-        const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
-        const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
-        const msTeams = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', false)
-            : '';
-        const msPerms = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', false)
-            : '';
-        const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
-            ? dash.splitPanelSectionHtml.bind(dash)
-            : null;
+    const dash = Context.dashboard;
+    const box = dash && typeof dash.panelBoxStyle === 'function' ? dash.panelBoxStyle() : 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
+    const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
+    const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
+    const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
+    const applyBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : navBtn;
+    const msTeams = dash && typeof dash.multiSelectHtml === 'function'
+        ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', false)
+        : '';
+    const msPerms = dash && typeof dash.multiSelectHtml === 'function'
+        ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', false)
+        : '';
+    const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
+        ? dash.splitPanelSectionHtml.bind(dash)
+        : null;
+    const compactInput = input + ' padding: 4px 8px; font-size: 11px;';
 
-        const leftHtml = `
+    const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                         <div style="padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
                             <div>
@@ -166,16 +262,29 @@ function teamMembersPanelHtml(_loader) {
                             <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <div>
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
-                                    <p style="${hint} margin: 0 0 8px 0;">Use In / Not in (teams) and Has / Doesn't Have (permissions). Leave all unchecked to show everyone.</p>
+                                    <p style="${hint} margin: 0 0 8px 0;">Stage filters below, then press Apply. Use In / Not in (teams) and Has / Doesn't Have (permissions).</p>
                                     <div style="display: flex; flex-direction: column; gap: 12px;">
                                         ${msTeams}
                                         ${msPerms}
                                     </div>
                                 </div>
+                                <div>
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
+                                        <div style="${label} font-weight: 600; color: var(--foreground, #0f172a);">Numeric filters</div>
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
+                                            <input type="checkbox" id="wf-ops-team-numeric-andor" style="margin: 0;">
+                                            <span>Match any (OR)</span>
+                                        </label>
+                                    </div>
+                                    <p style="${hint} margin: 0 0 8px 0;">Compare stats (loaded after search). Default matches all conditions (AND).</p>
+                                    <div id="wf-ops-team-numeric-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+                                    <button type="button" id="wf-ops-team-numeric-add" style="${navBtn} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                </div>
+                                <button type="button" id="wf-ops-team-apply-filters" style="${applyBtn} width: 100%; font-weight: 600;">Apply</button>
                             </div>
                         </div>
                     </div>`;
-        const rightHtml = `
+    const rightHtml = `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                         <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
@@ -215,20 +324,19 @@ function teamMembersPanelHtml(_loader) {
                     </div>
                 </div>`;
 
-        if (splitPanel) {
-            return '<div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">'
-                + splitPanel(leftHtml, rightHtml) + '</div>';
-        }
-
+    if (splitPanel) {
         return '<div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">'
-            + '<section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">'
-            + '<aside style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">'
-            + leftHtml
-            + '</aside>'
-            + rightHtml
-            + '</section></div>';
-}
+            + splitPanel(leftHtml, rightHtml) + '</div>';
+    }
 
+    return '<div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">'
+        + '<section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">'
+        + '<aside style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">'
+        + leftHtml
+        + '</aside>'
+        + rightHtml
+        + '</section></div>';
+}
 
 function attachTeamMembersListeners(modal, dash) {
     const ops = Context.opsTab;
@@ -261,6 +369,23 @@ function attachTeamMembersListeners(modal, dash) {
     if (teamExpandAllBtn && typeof ops.toggleTeamExpandAll === 'function') {
         teamExpandAllBtn.addEventListener('click', () => ops.toggleTeamExpandAll(modal));
     }
+    const applyBtn = modal.querySelector('#wf-ops-team-apply-filters');
+    if (applyBtn && typeof dash._onTeamMembersApply === 'function') {
+        applyBtn.addEventListener('click', () => dash._onTeamMembersApply(modal));
+    }
+    const addNumericBtn = modal.querySelector('#wf-ops-team-numeric-add');
+    if (addNumericBtn && typeof dash._buildNumericFilterRow === 'function') {
+        addNumericBtn.addEventListener('click', () => dash._buildNumericFilterRow(modal));
+    }
+    const numericRows = modal.querySelector('#wf-ops-team-numeric-rows');
+    if (numericRows) {
+        numericRows.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('[data-wf-team-numeric-remove]');
+            if (!removeBtn) return;
+            const row = removeBtn.closest('[data-wf-team-numeric-row]');
+            if (row) row.remove();
+        });
+    }
     if (!modal.dataset.wfOpsMemberDetailsToggle && typeof ops.attachTeamMemberDetailsToggle === 'function') {
         ops.attachTeamMemberDetailsToggle(modal);
     }
@@ -270,16 +395,11 @@ function attachTeamMembersListeners(modal, dash) {
     if (typeof ops.restoreTeamTabState === 'function') ops.restoreTeamTabState(modal);
 }
 
-function teamMembersOnMsChange(modal) {
-    const ops = Context.opsTab;
-    if (ops && typeof ops.filterTeamSearchCards === 'function') ops.filterTeamSearchCards(modal);
-}
-
 const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '1.1',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

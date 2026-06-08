@@ -186,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.2',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -196,6 +196,8 @@ const plugin = {
     _opsTeamSearchActive: null,
     _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
+    /** Last-applied team member filters (categorical + numeric); null = show all */
+    _opsTeamActiveFilters: null,
     /** Legacy Fellows-search gate; team member search uses all user teams. */
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
@@ -256,6 +258,7 @@ const plugin = {
             handleTeamSearch: (modal) => this._handleOpsTeamSearch(modal),
             clearTeamSearchResults: (modal) => this._clearOpsTeamSearchResults(modal),
             filterTeamSearchCards: (modal) => this._filterOpsTeamSearchCards(modal),
+            applyTeamFilters: (modal) => this._applyOpsTeamFilters(modal),
             populateTeamMemberConstraintLists: (teams, opts) => this._populateOpsTeamMemberConstraintLists(teams, opts),
             toggleTeamExpandAll: (modal) => this._toggleOpsTeamExpandAll(modal),
             attachTeamMemberDetailsToggle: (modal) => this._attachOpsTeamMemberDetailsToggle(modal),
@@ -1871,11 +1874,15 @@ const plugin = {
 
     _getVisibleTeamMemberIds(modal, cache) {
         if (!cache || !cache.memberMap) return [];
-        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
-        const permConstraints = this._getOpsTeamMemberPermConstraints();
+        const active = this._opsTeamActiveFilters;
+        const teamConstraints = active ? active.teamConstraints : { include: new Set(), exclude: new Set() };
+        const permConstraints = active ? active.permConstraints : { include: new Set(), exclude: new Set() };
+        const numericRows = active && active.numericFilters ? active.numericFilters : [];
+        const andOr = active ? active.andOr : 'and';
         return [...cache.memberMap.values()]
             .filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints))
             .filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints))
+            .filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr))
             .map((m) => m.id)
             .filter(Boolean);
     },
@@ -1952,6 +1959,11 @@ const plugin = {
 
         const poolSize = Math.min(OPS_EXPERT_STATS_HYDRATE_CONCURRENCY, toFetch.length);
         await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+        if (this._opsTeamActiveFilters && this._opsTeamActiveFilters.numericFilters
+            && this._opsTeamActiveFilters.numericFilters.length > 0) {
+            this._filterOpsTeamSearchCards(modal);
+        }
     },
 
     _populateOpsTeamMemberConstraintLists(allTeams, options) {
@@ -1972,6 +1984,34 @@ const plugin = {
             permItems,
             preserveSelections: opts.preserveSelections !== false
         });
+    },
+
+    _indexOpsTeamMemberFiltersFromResults(memberMap, options) {
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
+        const opts = options || {};
+        const teamLabels = new Set();
+        const permKeys = new Set();
+        if (memberMap) {
+            for (const member of memberMap.values()) {
+                const labels = member.teamLabels;
+                if (labels) {
+                    for (const label of labels) teamLabels.add(label);
+                }
+                for (const key of this._opsMemberPermissionKeys(member)) permKeys.add(key);
+            }
+        }
+        const teamItems = [...teamLabels].sort((a, b) => a.localeCompare(b))
+            .map((label) => ({ id: label, label }));
+        const permItems = [...permKeys].sort((a, b) => a.localeCompare(b))
+            .map((key) => ({ id: key, label: OPS_PERMISSION_LABEL_BY_KEY[key] || key }));
+        dash.renderTeamMemberConstraintLists({
+            loading: false,
+            teamItems,
+            permItems,
+            preserveSelections: opts.preserveSelections !== false
+        });
+        Logger.debug('ops-tab: team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
     },
 
     _loadOpsTeamSearchActionFromStorage() {
@@ -2636,6 +2676,7 @@ const plugin = {
         this._abortOpsTeamSearchInFlight('results cleared');
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
+        this._opsTeamActiveFilters = null;
         this._opsMemberDetailsOpenIds = null;
         this._opsFellowsSearchComplete = null;
         this._opsExpertStatsHydrateGen++;
@@ -2729,6 +2770,120 @@ const plugin = {
         if (!constraints) return false;
         return (constraints.include && constraints.include.size > 0)
             || (constraints.exclude && constraints.exclude.size > 0);
+    },
+
+    _opsTeamSearchHasActiveFilters() {
+        const active = this._opsTeamActiveFilters;
+        if (!active) return false;
+        return this._opsMemberHasActiveConstraints(active.teamConstraints)
+            || this._opsMemberHasActiveConstraints(active.permConstraints)
+            || (active.numericFilters && active.numericFilters.length > 0);
+    },
+
+    _opsTeamMemberNumericFieldValue(memberId, field) {
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        if (!entry || entry.loading || entry.error) return null;
+        if (!entry.creator && !entry.qa && !entry.createdAt) return null;
+        switch (field) {
+            case 'tasks_submitted':
+                return entry.creator && entry.creator.totalSubmissions != null
+                    ? Number(entry.creator.totalSubmissions) : null;
+            case 'tasks_reviewed': {
+                if (!entry.qa) return null;
+                const reviews = entry.qa.reviewsCompleted ?? entry.qa.totalReviews
+                    ?? entry.qa.tasksReviewed ?? entry.qa.tasksCompleted;
+                return reviews != null ? Number(reviews) : null;
+            }
+            case 'submission_ar':
+                return entry.creator && entry.creator.acceptanceRate != null
+                    ? Number(entry.creator.acceptanceRate) : null;
+            case 'qa_ar':
+                return this._opsExpertQaAcceptanceRatePercent(entry.qa);
+            case 'avg_writing_time':
+                return entry.creator && entry.creator.avgCreationTimeSeconds != null
+                    ? Number(entry.creator.avgCreationTimeSeconds) / 60 : null;
+            case 'avg_qa_time': {
+                if (!entry.qa) return null;
+                const avgSec = entry.qa.avgReviewTimeSeconds ?? entry.qa.avgQaTimeSeconds
+                    ?? entry.qa.avgTimePerQaSeconds ?? entry.qa.avgReviewDurationSeconds;
+                return avgSec != null ? Number(avgSec) / 60 : null;
+            }
+            default:
+                return null;
+        }
+    },
+
+    _opsEvaluateNumericComparison(actual, comparator, expected) {
+        if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+        switch (comparator) {
+            case 'gt': return actual > expected;
+            case 'gte': return actual >= expected;
+            case 'lt': return actual < expected;
+            case 'lte': return actual <= expected;
+            case 'eq': return actual === expected;
+            case 'neq': return actual !== expected;
+            default: return true;
+        }
+    },
+
+    _opsMemberMatchesNumericFilters(member, rows, andOr) {
+        if (!rows || rows.length === 0) return true;
+        const results = rows.map((row) => {
+            const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
+            if (actual == null || !Number.isFinite(actual)) return null;
+            return this._opsEvaluateNumericComparison(actual, row.comparator, row.value);
+        });
+        if (results.some((r) => r === null)) return true;
+        if (andOr === 'or') return results.some((r) => r === true);
+        return results.every((r) => r === true);
+    },
+
+    _opsCountTeamMembersPendingNumericStats(members, numericRows) {
+        if (!numericRows || numericRows.length === 0 || !members || !members.length) return 0;
+        let pending = 0;
+        for (const member of members) {
+            let needsStats = false;
+            for (const row of numericRows) {
+                const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
+                if (actual == null || !Number.isFinite(actual)) {
+                    needsStats = true;
+                    break;
+                }
+            }
+            if (needsStats) pending++;
+        }
+        return pending;
+    },
+
+    _applyOpsTeamFilters(modal) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) {
+            Logger.warn('ops-tab: team filters apply skipped — no search cache');
+            return;
+        }
+        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
+        const permConstraints = this._getOpsTeamMemberPermConstraints();
+        const dash = Context.dashboard;
+        const numeric = dash && typeof dash.readTeamMembersNumericFilters === 'function'
+            ? dash.readTeamMembersNumericFilters(modal)
+            : { rows: [], andOr: 'and' };
+        this._opsTeamActiveFilters = {
+            teamConstraints: {
+                include: new Set(teamConstraints.include),
+                exclude: new Set(teamConstraints.exclude)
+            },
+            permConstraints: {
+                include: new Set(permConstraints.include),
+                exclude: new Set(permConstraints.exclude)
+            },
+            numericFilters: numeric.rows || [],
+            andOr: numeric.andOr || 'and'
+        };
+        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+        void this._hydrateOpsTeamMemberStatsForVisible(modal);
+        Logger.log('ops-tab: team filters applied — '
+            + this._opsTeamActiveFilters.numericFilters.length + ' numeric, mode '
+            + this._opsTeamActiveFilters.andOr);
     },
 
     _opsEscapeAttr(str) {
@@ -3249,12 +3404,17 @@ const plugin = {
         const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsInner');
         if (!wrap || !cards) return;
 
+        const totalCount = memberMap.size;
         let members = [...memberMap.values()];
 
-        const teamConstraints = this._getOpsTeamMemberTeamConstraints();
-        const permConstraints = this._getOpsTeamMemberPermConstraints();
+        const active = this._opsTeamActiveFilters;
+        const teamConstraints = active ? active.teamConstraints : { include: new Set(), exclude: new Set() };
+        const permConstraints = active ? active.permConstraints : { include: new Set(), exclude: new Set() };
+        const numericRows = active && active.numericFilters ? active.numericFilters : [];
+        const andOr = active ? active.andOr : 'and';
         members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamConstraints));
         members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permConstraints));
+        members = members.filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr));
 
         let resolvedOpenIds;
         if (this._opsMemberDetailsOpenIds !== null) {
@@ -3274,7 +3434,8 @@ const plugin = {
                 wrap.style.display = 'block';
                 let msg = 'No members found.';
                 const hasFilters = this._opsMemberHasActiveConstraints(teamConstraints)
-                    || this._opsMemberHasActiveConstraints(permConstraints);
+                    || this._opsMemberHasActiveConstraints(permConstraints)
+                    || (numericRows && numericRows.length > 0);
                 if (hasFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
@@ -3294,6 +3455,21 @@ const plugin = {
         this._syncOpsExpandAllBtn(modal);
 
         if (pendingCount === 0) {
+            if (this._opsTeamSearchHasActiveFilters()) {
+                let statusMsg = members.length + ' of ' + totalCount + ' member'
+                    + (totalCount !== 1 ? 's' : '') + ' match filters.';
+                const pendingStats = this._opsCountTeamMembersPendingNumericStats(members, numericRows);
+                if (pendingStats > 0) {
+                    statusMsg += ' Stats still loading for ' + pendingStats + ' member'
+                        + (pendingStats !== 1 ? 's' : '') + '; results will update.';
+                }
+                this._setOpsTeamSearchStatus(modal, statusMsg, false, false, true);
+            } else if (totalCount > 0) {
+                this._setOpsTeamSearchStatus(modal,
+                    totalCount + ' unique member' + (totalCount !== 1 ? 's' : '')
+                        + ' across ' + allTeams.length + ' teams.',
+                    false, false, true);
+            }
             void this._hydrateOpsTeamMemberStatsForVisible(modal);
         }
     },
@@ -3339,18 +3515,20 @@ const plugin = {
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
+        this._opsTeamActiveFilters = null;
         this._opsMemberDetailsOpenIds = null;
         this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
-        // Show filter panel; populate full catalogs with no default constraints
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
         if (filterWrap) filterWrap.style.display = 'flex';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberConstraintState === 'function') {
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
+            Context.dashboard.resetTeamMemberFilters(modal);
+        } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberConstraintState === 'function') {
             Context.dashboard.resetTeamMemberConstraintState();
         }
-        this._populateOpsTeamMemberConstraintLists(allTeams, { preserveSelections: false });
+        this._populateOpsTeamMemberConstraintLists(allTeams, { loading: true, preserveSelections: false });
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -3409,6 +3587,7 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
+                this._indexOpsTeamMemberFiltersFromResults(memberMap, { preserveSelections: false });
                 this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
                 void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }
