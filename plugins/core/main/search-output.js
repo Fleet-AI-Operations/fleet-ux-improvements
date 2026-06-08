@@ -3194,15 +3194,6 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </nav>
-                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
-                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
-                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
-                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
-                        </div>
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
@@ -3316,6 +3307,15 @@ const searchOutputMethods = {
                                     <button type="button" id="wf-dash-manual-add" style="${this._navBtnStyle()} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
                                 </div>
                             </div>
+                        </div>
+                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
+                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
+                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
+                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
                         </div>
                     </div>`;
         const rightHtml = `
@@ -5752,7 +5752,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
