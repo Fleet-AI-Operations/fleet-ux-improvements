@@ -24,8 +24,9 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     qa: 'QA',
     dispute: 'Disputes'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['returned', 'disputed', 'flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
+    accepted: 'Accepted',
     returned: 'Returned',
     disputed: 'Disputed',
     flagged: 'Flagged',
@@ -291,7 +292,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -725,7 +726,8 @@ const plugin = {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
             const rt = this._returnTypeOf(entry);
-            if (rt === 'returned') flags.add('returned');
+            if (rt === 'accepted') flags.add('accepted');
+            else if (rt === 'returned') flags.add('returned');
             else if (rt === 'escalated') flags.add('escalated');
             else if (rt === 'bugged') flags.add('flagged');
         }
