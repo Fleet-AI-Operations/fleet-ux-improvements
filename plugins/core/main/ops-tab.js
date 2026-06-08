@@ -49,9 +49,6 @@ const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
 /** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
-/** localStorage key for expert profile dates server action — body [expertId, teamUuid] */
-const OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-profile-next-action';
-const OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-profile-router-state';
 const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
@@ -186,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.8',
+    _version: '7.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -210,9 +207,7 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
-    /** Expert profile dates action — POST body [expertId, current-team-id] → line 1 expert.created_at / last_sign_in_at */
-    _opsExpertProfileActionCache: { nextAction: null, routerState: null },
-    /** memberId → { loading?, creator?, qa?, createdAt?, lastSignInAt?, error? } */
+    /** memberId → { loading?, creator?, qa?, error? } */
     _opsExpertStatsCache: null,
     _opsExpertStatsHydrateGen: 0,
     /** Set of member IDs whose card details are open; null = all-expanded default */
@@ -313,7 +308,6 @@ const plugin = {
         this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsTaskDataActionFromStorage();
         this._loadOpsExpertStatsActionFromStorage();
-        this._loadOpsExpertProfileActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
         this._opsExpertStatsCache = new Map();
         this._subscribeOpsTeamDashboardActionCapture();
@@ -1429,7 +1423,6 @@ const plugin = {
             if (parsed[1] === false) return 'stats-creator';
             if (parsed[1] === true) return 'stats-qa';
             if (typeof parsed[1] === 'number') return 'activities';
-            if (typeof parsed[1] === 'string' && OPS_UUID_RE.test(parsed[1])) return 'profile';
         }
         return null;
     },
@@ -1493,55 +1486,6 @@ const plugin = {
         return !!(err && err.opsExpertStatsActionStale);
     },
 
-    _loadOpsExpertProfileActionFromStorage() {
-        try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const nextAction = storage.getItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY);
-            const routerState = storage.getItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
-            if (nextAction) {
-                this._opsExpertProfileActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: expert profile action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: expert profile action localStorage hydration failed', e);
-        }
-    },
-
-    _persistOpsExpertProfileAction({ nextAction, routerState }) {
-        if (!nextAction) return;
-        const changed = nextAction !== this._opsExpertProfileActionCache.nextAction;
-        this._opsExpertProfileActionCache = { nextAction, routerState: routerState || '' };
-        try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.setItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY, nextAction);
-                if (routerState) {
-                    storage.setItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY, routerState);
-                }
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: expert profile action persist failed', e);
-        }
-        if (changed) {
-            Logger.log('ops-tab: expert profile action updated (' + nextAction.slice(0, 12) + '…)');
-        }
-    },
-
-    _clearOpsExpertProfileActionCache() {
-        this._opsExpertProfileActionCache = { nextAction: null, routerState: null };
-        try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.removeItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY);
-                storage.removeItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: expert profile action cache clear failed', e);
-        }
-        Logger.info('ops-tab: expert profile action cache cleared (will re-discover on expert profile visit)');
-    },
-
     _subscribeOpsExpertActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
             Logger.debug('ops-tab: NetworkObserver unavailable; passive expert action capture skipped');
@@ -1565,19 +1509,13 @@ const plugin = {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
-                } else if (kind === 'profile') {
-                    if (nextAction !== self._opsExpertProfileActionCache.nextAction) {
-                        self._persistOpsExpertProfileAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: expert profile action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
-                    }
                 }
             }
         });
         Logger.debug('ops-tab: expert dashboard action passive watcher registered');
     },
 
-    async _fetchOpsExpertRsc(expertId, bodyPayload, actionCache, logLabel, opts) {
-        const options = opts || {};
+    async _fetchOpsExpertRsc(expertId, bodyPayload, actionCache, logLabel) {
         const id = String(expertId || '').trim();
         if (!id) throw new Error('Missing expert id for RSC fetch');
         if (!actionCache || !actionCache.nextAction) {
@@ -1615,12 +1553,7 @@ const plugin = {
 
         if (res.status === 404) {
             Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
-            if (options.clearCache === 'profile') {
-                this._clearOpsExpertProfileActionCache();
-            } else {
-                this._clearOpsExpertStatsActionCache();
-            }
-            if (options.returnNullOn404) return null;
+            this._clearOpsExpertStatsActionCache();
             throw this._opsExpertStatsActionStaleError();
         }
         if (!res.ok) {
@@ -1640,54 +1573,6 @@ const plugin = {
         return this._parseOpsTeamSearchResponse(text);
     },
 
-    async _fetchOpsExpertProfileRsc(expertId, teamId) {
-        const id = String(expertId || '').trim();
-        const tid = String(teamId || '').trim();
-        if (!id || !tid) return null;
-        return this._opsWithCurrentTeamCookie(tid, () =>
-            this._fetchOpsExpertRsc(
-                id,
-                [id, tid],
-                this._opsExpertProfileActionCache,
-                'expert profile',
-                { clearCache: 'profile', returnNullOn404: true }
-            )
-        );
-    },
-
-    _opsGetProfileFetchTeamId() {
-        const tid = this._getOpsCookieValue('current-team-id');
-        return tid && OPS_UUID_RE.test(tid) ? tid : '';
-    },
-
-    async _fetchOpsExpertProfile(expertId) {
-        if (!this._opsExpertProfileActionCache.nextAction) {
-            return null;
-        }
-        const id = String(expertId || '').trim();
-        const teamId = this._opsGetProfileFetchTeamId();
-        if (!id || !teamId) return null;
-
-        const empty = { createdAt: null, lastSignInAt: null };
-        try {
-            const text = await this._fetchOpsExpertProfileRsc(id, teamId);
-            if (!text) return empty;
-            const parsed = this._parseOpsExpertProfileFlight(text, id);
-            if (parsed && (parsed.createdAt || parsed.lastSignInAt)) {
-                Logger.debug('ops-tab: expert profile dates found for ' + id.slice(0, 8) + '…');
-                return parsed;
-            }
-            if (this._opsExpertProfileResponseLooksStale(text)) {
-                Logger.info('ops-tab: expert profile action looks stale (page-load response) — clearing cache; open an expert profile page to recapture');
-                this._clearOpsExpertProfileActionCache();
-            }
-        } catch (e) {
-            Logger.debug('ops-tab: expert profile fetch failed for ' + id.slice(0, 8) + '…', e);
-        }
-        Logger.debug('ops-tab: expert profile dates unavailable for ' + id.slice(0, 8) + '…');
-        return empty;
-    },
-
     _opsParseRscJsonLines(text) {
         if (!text) return [];
         const lines = [];
@@ -1702,145 +1587,10 @@ const plugin = {
         return lines;
     },
 
-    _opsExpertRecordHasDates(expert) {
-        return !!(expert && typeof expert === 'object' &&
-            (typeof expert.created_at === 'string' || typeof expert.last_sign_in_at === 'string'));
-    },
-
-    _opsExpertRecordMatchesId(expert, expertId) {
-        const wantId = String(expertId || '').trim().toLowerCase();
-        if (!wantId) return true;
-        const uid = String(expert.user_id || expert.id || '').trim().toLowerCase();
-        return !uid || uid === wantId;
-    },
-
-    _opsExtractExpertFromObject(obj, expertId) {
-        if (!obj || typeof obj !== 'object') return null;
-        const candidates = ['expert', 'profile'];
-        for (const key of candidates) {
-            const record = obj[key];
-            if (record && typeof record === 'object' && this._opsExpertRecordHasDates(record)) {
-                if (this._opsExpertRecordMatchesId(record, expertId)) return record;
-            }
-        }
-        if (this._opsExpertRecordHasDates(obj) && this._opsExpertRecordMatchesId(obj, expertId)) {
-            return obj;
-        }
-        const wrappers = ['data', 'result', 'payload'];
-        for (const key of wrappers) {
-            const inner = obj[key];
-            if (!inner || typeof inner !== 'object') continue;
-            for (const innerKey of candidates) {
-                const record = inner[innerKey];
-                if (record && typeof record === 'object' && this._opsExpertRecordHasDates(record)) {
-                    if (this._opsExpertRecordMatchesId(record, expertId)) return record;
-                }
-            }
-            if (this._opsExpertRecordHasDates(inner) && this._opsExpertRecordMatchesId(inner, expertId)) {
-                return inner;
-            }
-        }
-        return null;
-    },
-
-    _opsExtractExpertRecordFromRawText(text, expertId) {
-        if (!text) return null;
-        for (const field of ['expert', 'profile']) {
-            const found = this._opsExtractExpertJsonFieldFromRawText(text, expertId, field);
-            if (found) return found;
-        }
-        return null;
-    },
-
-    _opsExtractExpertJsonFieldFromRawText(text, expertId, fieldName) {
-        const needle = '"' + fieldName + '":{';
-        let idx = 0;
-        while ((idx = text.indexOf(needle, idx)) !== -1) {
-            const start = idx + ('"' + fieldName + '":').length;
-            if (text.charAt(start) !== '{') {
-                idx++;
-                continue;
-            }
-            let depth = 0;
-            let end = -1;
-            for (let i = start; i < text.length; i++) {
-                const ch = text.charAt(i);
-                if (ch === '{') depth++;
-                else if (ch === '}') {
-                    depth--;
-                    if (depth === 0) {
-                        end = i + 1;
-                        break;
-                    }
-                }
-            }
-            if (end > start) {
-                try {
-                    const expert = JSON.parse(text.slice(start, end));
-                    if (this._opsExpertRecordHasDates(expert) && this._opsExpertRecordMatchesId(expert, expertId)) {
-                        return expert;
-                    }
-                } catch (_e) { /* try next occurrence */ }
-            }
-            idx++;
-        }
-        return null;
-    },
-
-    _opsExpertProfileResponseLooksStale(text) {
-        for (const { obj } of this._opsParseRscJsonLines(text)) {
-            if (!obj || typeof obj !== 'object') continue;
-            if (obj.success === true && obj.data && typeof obj.data.status === 'string') return true;
-            if (obj.profile === null && typeof obj.error === 'string') return true;
-        }
-        return false;
-    },
-
-    _opsExtractExpertRecordFromRsc(text, expertId) {
-        for (const { obj } of this._opsParseRscJsonLines(text)) {
-            const expert = this._opsExtractExpertFromObject(obj, expertId);
-            if (expert) return expert;
-        }
-        return this._opsExtractExpertRecordFromRawText(text, expertId);
-    },
-
-    _parseOpsExpertProfileFlight(text, expertId) {
-        const result = { createdAt: null, lastSignInAt: null };
-        const wantId = String(expertId || '').trim().toLowerCase();
-        if (!wantId || !text) return result;
-
-        const expert = this._opsExtractExpertRecordFromRsc(text, wantId);
-        if (!expert) {
-            Logger.debug('ops-tab: expert profile flight missing expert record for ' + wantId.slice(0, 8) + '…');
-            return result;
-        }
-        if (typeof expert.created_at === 'string') result.createdAt = expert.created_at;
-        if (typeof expert.last_sign_in_at === 'string') result.lastSignInAt = expert.last_sign_in_at;
-        if (!result.createdAt && !result.lastSignInAt) {
-            Logger.debug('ops-tab: expert profile record missing dates for ' + wantId.slice(0, 8) + '…');
-        }
-        return result;
-    },
-
     _opsFormatDurationMinutes(seconds) {
         const s = Number(seconds);
         if (!Number.isFinite(s) || s <= 0) return '—';
         return Math.max(1, Math.round(s / 60)) + 'm';
-    },
-
-    _opsFormatRelativeLocalDate(isoString) {
-        if (!isoString || typeof isoString !== 'string') return '—';
-        const d = new Date(isoString);
-        if (isNaN(d.getTime())) return '—';
-        const now = new Date();
-        const todayStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
-        const dStr = d.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
-        if (dStr === todayStr) return 'Today';
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yStr = yesterday.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
-        if (dStr === yStr) return 'Yesterday';
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     },
 
     _opsExpertQaAcceptanceRatePercent(data) {
@@ -1925,30 +1675,10 @@ const plugin = {
         );
     },
 
-    _renderOpsTeamMemberMetaInnerHtml(entry) {
-        if (!this._opsExpertProfileActionCache.nextAction) {
-            return '<span style="color:var(--muted-foreground,#666);">Dates unavailable (open an expert profile once)</span>';
-        }
-        if (!entry || entry.loading) {
-            return '<span style="color:var(--muted-foreground,#666);">Joined … · Last active …</span>';
-        }
-        const joined = this._opsFormatRelativeLocalDate(entry.createdAt);
-        const lastActive = this._opsFormatRelativeLocalDate(entry.lastSignInAt);
-        return '<span>Joined ' + this._opsEscapeHtml(joined) +
-            ' · Last active ' + this._opsEscapeHtml(lastActive) + '</span>';
-    },
-
     _renderOpsTeamMemberStatsHtml(memberId) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
             this._renderOpsTeamMemberStatsInnerHtml(entry) +
-        '</div>';
-    },
-
-    _renderOpsTeamMemberMetaHtml(memberId) {
-        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
-        return '<div data-ops-member-meta style="margin-top:4px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
-            this._renderOpsTeamMemberMetaInnerHtml(entry) +
         '</div>';
     },
 
@@ -1958,8 +1688,6 @@ const plugin = {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         const statsSlot = tile.querySelector('[data-ops-member-stats]');
         if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
-        const metaSlot = tile.querySelector('[data-ops-member-meta]');
-        if (metaSlot) metaSlot.innerHTML = this._renderOpsTeamMemberMetaInnerHtml(entry);
     },
 
     _patchOpsTeamMemberStats(modal, memberId) {
@@ -1985,14 +1713,13 @@ const plugin = {
         const memberIds = this._getVisibleTeamMemberIds(modal, cache);
         const toFetch = memberIds.filter((id) => {
             const entry = this._opsExpertStatsCache.get(id);
-            return !entry || (!entry.creator && !entry.qa && !entry.createdAt && !entry.error);
+            return !entry || (!entry.creator && !entry.qa && !entry.error);
         });
         if (toFetch.length === 0) return;
 
         const hasStats = !!this._opsExpertStatsActionCache.nextAction;
-        const hasProfile = !!this._opsExpertProfileActionCache.nextAction;
 
-        if (!hasStats && !hasProfile) {
+        if (!hasStats) {
             for (const id of toFetch) {
                 this._opsExpertStatsCache.set(id, { error: 'missing-credentials' });
                 this._patchOpsTeamMemberCard(modal, id);
@@ -2011,20 +1738,13 @@ const plugin = {
             while (cursor < toFetch.length) {
                 if (gen !== this._opsExpertStatsHydrateGen) return;
                 const id = toFetch[cursor++];
-                const hasProfileTeam = !!this._opsGetProfileFetchTeamId();
                 try {
-                    const [creator, qa, profileData] = await Promise.all([
+                    const [creator, qa] = await Promise.all([
                         hasStats ? this._fetchOpsExpertStats(id, false) : Promise.resolve(null),
-                        hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null),
-                        hasProfile && hasProfileTeam ? this._fetchOpsExpertProfile(id) : Promise.resolve(null)
+                        hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null)
                     ]);
                     if (gen !== this._opsExpertStatsHydrateGen) return;
-                    this._opsExpertStatsCache.set(id, {
-                        creator,
-                        qa,
-                        createdAt: profileData ? profileData.createdAt : null,
-                        lastSignInAt: profileData ? profileData.lastSignInAt : null
-                    });
+                    this._opsExpertStatsCache.set(id, { creator, qa });
                     Logger.debug('ops-tab: expert card data loaded for ' + id.slice(0, 8) + '…');
                 } catch (e) {
                     if (gen !== this._opsExpertStatsHydrateGen) return;
@@ -2857,7 +2577,7 @@ const plugin = {
     _opsTeamMemberNumericFieldValue(memberId, field) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         if (!entry || entry.loading || entry.error) return null;
-        if (!entry.creator && !entry.qa && !entry.createdAt) return null;
+        if (!entry.creator && !entry.qa) return null;
         switch (field) {
             case 'tasks_submitted':
                 return entry.creator && entry.creator.totalSubmissions != null
@@ -3440,7 +3160,6 @@ const plugin = {
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
-            this._renderOpsTeamMemberMetaHtml(memberId) +
             this._renderOpsTeamMemberStatsHtml(memberId) +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
