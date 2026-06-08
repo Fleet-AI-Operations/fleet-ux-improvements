@@ -48,6 +48,9 @@ const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
 /** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
+/** localStorage key for expert profile server action — body [expertId, teamUuid] */
+const OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-profile-next-action';
+const OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-profile-router-state';
 const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
@@ -182,7 +185,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.5',
+    _version: '6.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -204,7 +207,9 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
-    /** memberId → { loading?, creator?, qa?, error? } */
+    /** Expert profile action — body [expertId, teamUuid] → profile.timezone, etc. */
+    _opsExpertProfileActionCache: { nextAction: null, routerState: null },
+    /** memberId → { loading?, creator?, qa?, profile?, timezone?, createdAt?, lastSignInAt?, error? } */
     _opsExpertStatsCache: null,
     _opsExpertStatsHydrateGen: 0,
     /** Set of member IDs whose card details are open; null = all-expanded default */
@@ -286,6 +291,7 @@ const plugin = {
         this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsTaskDataActionFromStorage();
         this._loadOpsExpertStatsActionFromStorage();
+        this._loadOpsExpertProfileActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
         this._opsExpertStatsCache = new Map();
         this._subscribeOpsTeamDashboardActionCapture();
@@ -1401,6 +1407,7 @@ const plugin = {
             if (parsed[1] === false) return 'stats-creator';
             if (parsed[1] === true) return 'stats-qa';
             if (typeof parsed[1] === 'number') return 'activities';
+            if (typeof parsed[1] === 'string' && OPS_UUID_RE.test(parsed[1])) return 'profile';
         }
         return null;
     },
@@ -1464,6 +1471,55 @@ const plugin = {
         return !!(err && err.opsExpertStatsActionStale);
     },
 
+    _loadOpsExpertProfileActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsExpertProfileActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: expert profile action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert profile action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsExpertProfileAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsExpertProfileActionCache.nextAction;
+        this._opsExpertProfileActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert profile action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: expert profile action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsExpertProfileActionCache() {
+        this._opsExpertProfileActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_EXPERT_PROFILE_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_EXPERT_PROFILE_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert profile action cache clear failed', e);
+        }
+        Logger.info('ops-tab: expert profile action cache cleared (will re-discover on expert profile visit)');
+    },
+
     _subscribeOpsExpertActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
             Logger.debug('ops-tab: NetworkObserver unavailable; passive expert action capture skipped');
@@ -1486,6 +1542,11 @@ const plugin = {
                     if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                } else if (kind === 'profile') {
+                    if (nextAction !== self._opsExpertProfileActionCache.nextAction) {
+                        self._persistOpsExpertProfileAction({ nextAction, routerState: routerState || '' });
+                        Logger.info('ops-tab: expert profile action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                 }
             }
@@ -1551,10 +1612,162 @@ const plugin = {
         return this._parseOpsTeamSearchResponse(text);
     },
 
+    async _fetchOpsExpertProfile(expertId, teamId) {
+        if (!this._opsExpertProfileActionCache.nextAction) {
+            return null;
+        }
+        const id = String(expertId || '').trim();
+        const tid = String(teamId || '').trim();
+        if (!id || !tid) return null;
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const { nextAction, routerState } = this._opsExpertProfileActionCache;
+        const url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+
+        const headers = {
+            accept: 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': nextAction
+        };
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
+
+        const body = JSON.stringify([id, tid]);
+        Logger.debug('ops-tab: expert profile fetch', {
+            expertId: id.slice(0, 8) + '…',
+            teamId: tid.slice(0, 8) + '…',
+            action: nextAction.slice(0, 12) + '…'
+        });
+
+        let text;
+        try {
+            const res = await this._opsWithCurrentTeamCookie(tid, () =>
+                requestFetch.call(pageWindow, url, {
+                    method: 'POST',
+                    headers,
+                    body,
+                    credentials: 'include'
+                })
+            );
+            if (res.status === 404) {
+                Logger.warn('ops-tab: expert profile got 404 — action stale, clearing cache');
+                this._clearOpsExpertProfileActionCache();
+                return null;
+            }
+            if (!res.ok) {
+                Logger.warn('ops-tab: expert profile HTTP ' + res.status + ' for ' + id.slice(0, 8) + '…');
+                return null;
+            }
+            text = await res.text().catch(() => '');
+        } catch (e) {
+            Logger.warn('ops-tab: expert profile fetch threw for ' + id.slice(0, 8) + '…', e);
+            return null;
+        }
+        return this._parseOpsExpertProfileFlight(text, id);
+    },
+
+    _parseOpsExpertProfileFlight(text, expertId) {
+        if (!text) return null;
+        const result = { timezone: null, createdAt: null, lastSignInAt: null };
+
+        // Parse line 1: for profile.timezone
+        for (const line of text.split('\n')) {
+            const t = line.trim();
+            if (t.startsWith('1:{') || t.startsWith('1:"')) {
+                try {
+                    const parsed = JSON.parse(t.slice(2));
+                    if (parsed && parsed.profile) {
+                        if (typeof parsed.profile.timezone === 'string') {
+                            result.timezone = parsed.profile.timezone;
+                        }
+                    }
+                } catch (_e) { /* try next */ }
+                break;
+            }
+        }
+
+        // Scan all flight lines for a user object whose id matches expertId
+        if (expertId) {
+            const idLower = String(expertId).toLowerCase();
+            for (const line of text.split('\n')) {
+                const colon = line.indexOf(':');
+                if (colon < 1) continue;
+                const body = line.slice(colon + 1).trim();
+                if (!body.startsWith('{') && !body.startsWith('[')) continue;
+                if (!body.includes(idLower) && !body.includes(expertId)) continue;
+                let parsed;
+                try { parsed = JSON.parse(body); } catch (_e) { continue; }
+                const found = this._opsExtractExpertUserFromParsed(parsed, expertId, 0);
+                if (found) {
+                    if (found.created_at) result.createdAt = found.created_at;
+                    if (found.last_sign_in_at) result.lastSignInAt = found.last_sign_in_at;
+                    if (result.createdAt && result.lastSignInAt) break;
+                }
+            }
+        }
+
+        return result;
+    },
+
+    _opsExtractExpertUserFromParsed(node, expertId, depth) {
+        if (!node || typeof node !== 'object' || depth > 10) return null;
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                const found = this._opsExtractExpertUserFromParsed(item, expertId, depth + 1);
+                if (found) return found;
+            }
+            return null;
+        }
+        // Check if this node is the user record we want
+        if (typeof node.id === 'string' &&
+            node.id.toLowerCase() === String(expertId).toLowerCase() &&
+            (node.created_at || node.last_sign_in_at)) {
+            return node;
+        }
+        for (const val of Object.values(node)) {
+            if (val && typeof val === 'object') {
+                const found = this._opsExtractExpertUserFromParsed(val, expertId, depth + 1);
+                if (found) return found;
+            }
+        }
+        return null;
+    },
+
     _opsFormatDurationMinutes(seconds) {
         const s = Number(seconds);
         if (!Number.isFinite(s) || s <= 0) return '—';
         return Math.max(1, Math.round(s / 60)) + 'm';
+    },
+
+    _opsFormatRelativeLocalDate(isoString) {
+        if (!isoString || typeof isoString !== 'string') return '—';
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return '—';
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+        const dStr = d.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+        if (dStr === todayStr) return 'Today';
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = yesterday.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+        if (dStr === yStr) return 'Yesterday';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    },
+
+    _opsTimezoneShortLabel(ianaTimezone) {
+        if (!ianaTimezone || typeof ianaTimezone !== 'string') return null;
+        try {
+            const parts = Intl.DateTimeFormat('en-US', { timeZone: ianaTimezone, timeZoneName: 'short' })
+                .formatToParts(new Date());
+            const tzPart = parts.find((p) => p.type === 'timeZoneName');
+            return tzPart ? tzPart.value : null;
+        } catch (_e) {
+            // Fallback: last segment of IANA name (e.g. "New_York")
+            const seg = ianaTimezone.split('/').pop();
+            return seg ? seg.replace(/_/g, ' ') : null;
+        }
     },
 
     _opsExpertQaAcceptanceRatePercent(data) {
@@ -1639,6 +1852,21 @@ const plugin = {
         );
     },
 
+    _renderOpsTeamMemberMetaInnerHtml(entry) {
+        if (!this._opsExpertProfileActionCache.nextAction) {
+            return '<span style="color:var(--muted-foreground,#666);">Profile unavailable (open an expert profile once)</span>';
+        }
+        if (!entry || entry.loading) {
+            return '<span style="color:var(--muted-foreground,#666);">Joined … · Last active … · …</span>';
+        }
+        const joined = this._opsFormatRelativeLocalDate(entry.createdAt);
+        const lastActive = this._opsFormatRelativeLocalDate(entry.lastSignInAt);
+        const tzLabel = entry.timezone ? (this._opsTimezoneShortLabel(entry.timezone) || entry.timezone) : '—';
+        return '<span>Joined ' + this._opsEscapeHtml(joined) +
+            ' · Last active ' + this._opsEscapeHtml(lastActive) +
+            ' · ' + this._opsEscapeHtml(tzLabel) + '</span>';
+    },
+
     _renderOpsTeamMemberStatsHtml(memberId) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
@@ -1646,12 +1874,25 @@ const plugin = {
         '</div>';
     },
 
-    _patchOpsTeamMemberStats(modal, memberId) {
-        const tile = modal.querySelector('[data-ops-member-tile="' + this._opsEscapeAttr(String(memberId)) + '"]');
-        const slot = tile && tile.querySelector('[data-ops-member-stats]');
-        if (!slot) return;
+    _renderOpsTeamMemberMetaHtml(memberId) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
-        slot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+        return '<div data-ops-member-meta style="margin-top:4px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
+            this._renderOpsTeamMemberMetaInnerHtml(entry) +
+        '</div>';
+    },
+
+    _patchOpsTeamMemberCard(modal, memberId) {
+        const tile = modal.querySelector('[data-ops-member-tile="' + this._opsEscapeAttr(String(memberId)) + '"]');
+        if (!tile) return;
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        const statsSlot = tile.querySelector('[data-ops-member-stats]');
+        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+        const metaSlot = tile.querySelector('[data-ops-member-meta]');
+        if (metaSlot) metaSlot.innerHTML = this._renderOpsTeamMemberMetaInnerHtml(entry);
+    },
+
+    _patchOpsTeamMemberStats(modal, memberId) {
+        this._patchOpsTeamMemberCard(modal, memberId);
     },
 
     _getVisibleTeamMemberIds(modal, cache) {
@@ -1665,6 +1906,17 @@ const plugin = {
             .filter(Boolean);
     },
 
+    _opsResolveTeamIdForMember(member, allTeams) {
+        const teamLabels = member.teamLabels;
+        if (teamLabels && teamLabels.size > 0 && Array.isArray(allTeams)) {
+            for (const [teamId, label] of allTeams) {
+                if (teamLabels.has(label)) return teamId;
+            }
+        }
+        if (Array.isArray(allTeams) && allTeams.length > 0) return allTeams[0][0];
+        return null;
+    },
+
     async _hydrateOpsTeamMemberStatsForVisible(modal) {
         if (!modal || !this._opsExpertStatsCache) return;
         const cache = this._opsTeamSearchMemberCache;
@@ -1673,14 +1925,17 @@ const plugin = {
         const memberIds = this._getVisibleTeamMemberIds(modal, cache);
         const toFetch = memberIds.filter((id) => {
             const entry = this._opsExpertStatsCache.get(id);
-            return !entry || (!entry.creator && !entry.qa && !entry.error);
+            return !entry || (!entry.creator && !entry.qa && !entry.createdAt && !entry.error);
         });
         if (toFetch.length === 0) return;
 
-        if (!this._opsExpertStatsActionCache.nextAction) {
+        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
+        const hasProfile = !!this._opsExpertProfileActionCache.nextAction;
+
+        if (!hasStats && !hasProfile) {
             for (const id of toFetch) {
                 this._opsExpertStatsCache.set(id, { error: 'missing-credentials' });
-                this._patchOpsTeamMemberStats(modal, id);
+                this._patchOpsTeamMemberCard(modal, id);
             }
             return;
         }
@@ -1688,7 +1943,7 @@ const plugin = {
         const gen = ++this._opsExpertStatsHydrateGen;
         for (const id of toFetch) {
             this._opsExpertStatsCache.set(id, { loading: true });
-            this._patchOpsTeamMemberStats(modal, id);
+            this._patchOpsTeamMemberCard(modal, id);
         }
 
         let cursor = 0;
@@ -1696,20 +1951,29 @@ const plugin = {
             while (cursor < toFetch.length) {
                 if (gen !== this._opsExpertStatsHydrateGen) return;
                 const id = toFetch[cursor++];
+                const member = cache.memberMap.get(id);
+                const teamId = member ? this._opsResolveTeamIdForMember(member, cache.allTeams) : null;
                 try {
-                    const [creator, qa] = await Promise.all([
-                        this._fetchOpsExpertStats(id, false),
-                        this._fetchOpsExpertStats(id, true)
+                    const [creator, qa, profileData] = await Promise.all([
+                        hasStats ? this._fetchOpsExpertStats(id, false) : Promise.resolve(null),
+                        hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null),
+                        hasProfile && teamId ? this._fetchOpsExpertProfile(id, teamId) : Promise.resolve(null)
                     ]);
                     if (gen !== this._opsExpertStatsHydrateGen) return;
-                    this._opsExpertStatsCache.set(id, { creator, qa });
-                    Logger.debug('ops-tab: expert stats loaded for ' + id.slice(0, 8) + '…');
+                    this._opsExpertStatsCache.set(id, {
+                        creator,
+                        qa,
+                        timezone: profileData ? profileData.timezone : null,
+                        createdAt: profileData ? profileData.createdAt : null,
+                        lastSignInAt: profileData ? profileData.lastSignInAt : null
+                    });
+                    Logger.debug('ops-tab: expert card data loaded for ' + id.slice(0, 8) + '…');
                 } catch (e) {
                     if (gen !== this._opsExpertStatsHydrateGen) return;
-                    Logger.warn('ops-tab: expert stats failed for ' + id.slice(0, 8) + '…', e);
+                    Logger.warn('ops-tab: expert card data failed for ' + id.slice(0, 8) + '…', e);
                     this._opsExpertStatsCache.set(id, { error: e.message || String(e) });
                 }
-                this._patchOpsTeamMemberStats(modal, id);
+                this._patchOpsTeamMemberCard(modal, id);
             }
         };
 
@@ -2984,6 +3248,7 @@ const plugin = {
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
+            this._renderOpsTeamMemberMetaHtml(memberId) +
             this._renderOpsTeamMemberStatsHtml(memberId) +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
