@@ -5162,6 +5162,7 @@ const searchOutputMethods = {
         }).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx) : '';
         const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
+        const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
@@ -5170,6 +5171,7 @@ const searchOutputMethods = {
                     </div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
+                <div style="margin-top: 8px;">${submittedHtml}</div>
                 ${feedbackHtml}${fallbackHtml}${orphanHtml}
             </div>`;
     },
@@ -5198,6 +5200,7 @@ const searchOutputMethods = {
                     ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
+                <div style="margin-top: 8px;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
             </div>`;
         if (item.qaFeedback) {
             bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx);
@@ -5314,18 +5317,15 @@ const searchOutputMethods = {
             renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
         }
 
-        const selectedVersion = versionByDisplayNo.get(selectedDisplayNo) || versions[versions.length - 1];
         const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
 
         const reviewerBadges = allFeedback.length > 0
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
-        let row3Left;
+        let row3Left = '';
         if (expanded) {
             row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
-        } else {
-            row3Left = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(selectedVersion && selectedVersion.createdAt));
         }
 
         let versionControls = '';
@@ -5352,6 +5352,13 @@ const searchOutputMethods = {
             );
         }).join('');
 
+        const row3Html = (row3Left || versionControls)
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
+                    ${row3Left}
+                    ${versionControls}
+                </div>`
+            : '';
+
         const cardHtml = `
             <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
@@ -5370,10 +5377,7 @@ const searchOutputMethods = {
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     ${reviewerBadges}
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
-                    ${row3Left}
-                    ${versionControls}
-                </div>
+                ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionSections}
                 </div>
@@ -5755,7 +5759,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
