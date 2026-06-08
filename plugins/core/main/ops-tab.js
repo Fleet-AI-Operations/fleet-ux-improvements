@@ -186,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.1',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3185,7 +3185,7 @@ const plugin = {
         '</span>';
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen, teamsSearchComplete = true) {
         const memberId = member.id || '';
         const personChipsHtml = this._renderOpsTeamMemberPersonChipsHtml(member);
         const teamLabels = member.teamLabels || new Set();
@@ -3193,7 +3193,7 @@ const plugin = {
         const displayTeamLabels = session ? session.stagedTeams : teamLabels;
         const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
         const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
-        const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
+        const showUiBadge = teamsSearchComplete && this._opsMemberQualifiesForUiBadge(member);
         const uiBadgeHtml = showUiBadge
             ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
             : '';
@@ -3287,8 +3287,9 @@ const plugin = {
         });
 
         wrap.style.display = 'block';
+        const teamsSearchComplete = pendingCount === 0;
         cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id))).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id), teamsSearchComplete)).join('');
 
         this._syncOpsExpandAllBtn(modal);
 
