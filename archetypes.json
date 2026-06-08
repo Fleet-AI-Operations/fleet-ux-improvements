@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.42",
+  "archetypesVersion": "10.91",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,32 +22,50 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "4.19",
-      "hash": "sha256-091d809a7377da45d01422c652982b04e0e08f8362d1649eabf06f66b008b72b",
+      "version": "7.9",
+      "hash": "sha256-a82a4d8bcde2be5c0ee6d1451a0502d6ddc4da2f0964c126ca161881896b57ef",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "9.1",
-      "hash": "sha256-125812214b8c1cc8dda1c08a951450be2e40984db96915ec9a26d6f8b1edcb66",
+      "version": "9.2",
+      "hash": "sha256-4f15e4766f40be6ae3be3d7b02d1bff3900873f2e1f332b9e81a38efbb9836d5",
       "log": false
     },
     {
       "name": "dashboard-lib.js",
-      "version": "1.14",
-      "hash": "sha256-230ebf99b50dfed7b364bd521e7b77720704da415ff16afa354fc0a2b39f5538",
+      "version": "2.0",
+      "hash": "sha256-1e26dd6a7a30ddfa3f7b17387eb2ecebce2d0d87bc667e1baf3038a7e4b5a750",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "1.8",
-      "hash": "sha256-442538f3c5e805332a37d3ce728822532b0cfb60e3bfb3fe5a43b7b58c029ce3",
+      "version": "2.0",
+      "hash": "sha256-df593a4dbc99150c4d45430c688fde2bd78639719b94d14c332cb451e506a5e6",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "4.30",
-      "hash": "sha256-0186577fa6732fb5f6fa50980d3c77fc4d88857ed3df079eb5dc10686a12f9ee",
+      "version": "5.3",
+      "hash": "sha256-a6176f98bf2e2ca93aa46f8c14fc1d82bd08c759e9e375b4c502d45e09062a9d",
+      "log": false
+    },
+    {
+      "name": "search-output.js",
+      "version": "1.6",
+      "hash": "sha256-2fb9a883b1ffe251177b91311df36280d85b683ef60a8a9e0a7bd34fafa1c402",
+      "log": false
+    },
+    {
+      "name": "team-members.js",
+      "version": "2.2",
+      "hash": "sha256-1fe71abba61996f75a1c846d8015eced56ec958cf6f064ac532b832aab95db86",
+      "log": false
+    },
+    {
+      "name": "verifier-fetcher.js",
+      "version": "1.0",
+      "hash": "sha256-0571981347a46d97c38aefa3f1088537418ea88b736bd55ed53cf66c307d9b71",
       "log": false
     }
   ],
@@ -469,7 +487,14 @@
       "description": "Page for viewing a task (view-task)",
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
-      "plugins": []
+      "plugins": [
+        {
+          "name": "activity-identity-reveal.js",
+          "version": "1.2",
+          "hash": "sha256-b8e25f71aab92c2aa7f0006c64ceb398eff2b8f2a20d4a5263182b342f1049d5",
+          "log": true
+        }
+      ]
     },
     {
       "id": "dashboard-data-task",

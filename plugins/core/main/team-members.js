@@ -1,0 +1,340 @@
+// ============= team-members.js =============
+// Team Members tab for the Ops dashboard.
+
+const TEAM_MEMBERS_NUMERIC_FIELDS = [
+    { id: 'tasks_submitted', label: 'Tasks Submitted' },
+    { id: 'tasks_reviewed', label: 'Tasks Reviewed' },
+    { id: 'submission_ar', label: 'Submission AR (%)' },
+    { id: 'qa_ar', label: 'QA AR (%)' },
+    { id: 'avg_writing_time', label: 'Avg Writing Time (min)' },
+    { id: 'avg_qa_time', label: 'Avg QA Time (min)' }
+];
+
+const TEAM_MEMBERS_COMPARATORS = [
+    { id: 'gt', label: '>' },
+    { id: 'gte', label: '>=' },
+    { id: 'lt', label: '<' },
+    { id: 'lte', label: '<=' },
+    { id: 'eq', label: '=' },
+    { id: 'neq', label: '≠' }
+];
+
+function dashEscHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function teamMembersNumericFieldOptionsHtml(selectedId) {
+    const sel = selectedId || 'tasks_submitted';
+    return TEAM_MEMBERS_NUMERIC_FIELDS.map((f) => {
+        const selected = f.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>' + dashEscHtml(f.label) + '</option>';
+    }).join('');
+}
+
+function teamMembersComparatorOptionsHtml(selectedId) {
+    const sel = selectedId || 'gte';
+    return TEAM_MEMBERS_COMPARATORS.map((c) => {
+        const selected = c.id === sel ? ' selected' : '';
+        return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
+    }).join('');
+}
+
+function teamMembersNumericFilterRowHtml(opts) {
+    const options = opts || {};
+    const field = options.field || 'tasks_submitted';
+    const comparator = options.comparator || 'gte';
+    const value = options.value != null ? String(options.value) : '';
+    const selectStyle = options.selectStyle || '';
+    const inputStyle = options.inputStyle || '';
+    const removeBtnStyle = options.removeBtnStyle || '';
+    return '<div data-wf-team-numeric-row="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
+        + '<select data-wf-team-numeric-field="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
+        + teamMembersNumericFieldOptionsHtml(field)
+        + '</select>'
+        + '<select data-wf-team-numeric-comparator="1" style="' + selectStyle + ' width: 52px; flex-shrink: 0;">'
+        + teamMembersComparatorOptionsHtml(comparator)
+        + '</select>'
+        + '<input type="number" data-wf-team-numeric-value="1" placeholder="Value" step="any" value="' + dashEscHtml(value) + '" style="' + inputStyle + ' width: 72px; flex-shrink: 0;">'
+        + '<button type="button" data-wf-team-numeric-remove="1" title="Remove filter" style="' + removeBtnStyle + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
+        + '</div>';
+}
+
+const teamMembersMethods = {
+    _resetTeamMemberNumericFilters(modal) {
+        const root = modal || this._modal;
+        if (!root) return;
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        if (rowsEl) rowsEl.innerHTML = '';
+        const andOrToggle = root.querySelector('#wf-ops-team-numeric-andor');
+        if (andOrToggle) andOrToggle.checked = false;
+    },
+
+    _resetTeamMemberFilters(modal) {
+        this._resetTeamMemberNumericFilters(modal);
+    },
+
+    _resetTeamMemberMsDropdowns() {
+        this._resetTeamMemberNumericFilters(this._modal);
+    },
+
+    _buildNumericFilterRow(modal, opts) {
+        const root = modal || this._modal;
+        if (!root) return;
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        if (!rowsEl) return;
+        const dash = Context.dashboard;
+        const inputStyle = dash && typeof dash.inputStyle === 'function'
+            ? dash.inputStyle() + ' padding: 4px 8px; font-size: 11px;'
+            : 'padding: 4px 8px; font-size: 11px; border: 1px solid var(--border, #e5e5e5); border-radius: 4px;';
+        const selectStyle = inputStyle;
+        const removeBtnStyle = '';
+        const row = document.createElement('div');
+        row.innerHTML = teamMembersNumericFilterRowHtml({
+            field: opts && opts.field,
+            comparator: opts && opts.comparator,
+            value: opts && opts.value,
+            selectStyle,
+            inputStyle,
+            removeBtnStyle
+        });
+        const rowEl = row.firstElementChild;
+        if (rowEl) rowsEl.appendChild(rowEl);
+        Logger.debug('team-members: numeric filter row added');
+    },
+
+    _readNumericFilters(modal) {
+        const root = modal || this._modal;
+        if (!root) return { rows: [], andOr: 'and' };
+        const rowsEl = root.querySelector('#wf-ops-team-numeric-rows');
+        const andOrToggle = root.querySelector('#wf-ops-team-numeric-andor');
+        const andOr = andOrToggle && andOrToggle.checked ? 'or' : 'and';
+        const rows = [];
+        if (!rowsEl) return { rows, andOr };
+        rowsEl.querySelectorAll('[data-wf-team-numeric-row]').forEach((rowEl) => {
+            const fieldEl = rowEl.querySelector('[data-wf-team-numeric-field]');
+            const compEl = rowEl.querySelector('[data-wf-team-numeric-comparator]');
+            const valueEl = rowEl.querySelector('[data-wf-team-numeric-value]');
+            const field = fieldEl ? fieldEl.value : '';
+            const comparator = compEl ? compEl.value : '';
+            const raw = valueEl ? valueEl.value.trim() : '';
+            if (!field || !comparator || raw === '') return;
+            const value = Number(raw);
+            if (!Number.isFinite(value)) return;
+            rows.push({ field, comparator, value });
+        });
+        return { rows, andOr };
+    },
+
+    _onTeamMembersApply(modal) {
+        const ops = Context.opsTab;
+        if (ops && typeof ops.applyTeamFilters === 'function') {
+            void ops.applyTeamFilters(modal);
+        }
+    },
+
+    _captureTeamMembersState(modal) {
+        const ops = Context.opsTab;
+        if (ops && typeof ops.captureTeamTabState === 'function') ops.captureTeamTabState(modal);
+    },
+
+    _restoreTeamMembersState(modal) {
+        const ops = Context.opsTab;
+        if (ops && typeof ops.restoreTeamTabState === 'function') ops.restoreTeamTabState(modal);
+    }
+};
+
+function teamMembersPanelHtml(_loader) {
+    const dash = Context.dashboard;
+    const box = dash && typeof dash.panelBoxStyle === 'function' ? dash.panelBoxStyle() : 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
+    const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
+    const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
+    const searchBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--primary-foreground, #ffffff); background: var(--brand, var(--primary, #2563eb)); border: 1px solid var(--brand, var(--primary, #2563eb)); border-radius: 6px; cursor: pointer;';
+    const hollowBtn = dash && typeof dash.navBtnStyle === 'function' ? dash.navBtnStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); background: var(--background, white); border: 1px solid var(--border, #e2e8f0); border-radius: 6px; cursor: pointer;';
+    const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
+        ? dash.splitPanelSectionHtml.bind(dash)
+        : null;
+
+    const leftHtml = `
+                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                        <div style="padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+                            <div>
+                                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #0f172a);">
+                                    Team Member Search
+                                </h3>
+                                <p style="${hint} margin: 0; line-height: 1.45;">
+                                    Search the Computer Use team by name or email. Leave blank to list all members.
+                                </p>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: stretch;">
+                                <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="${input} flex: 1; min-width: 0;">
+                                <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="${searchBtn} flex-shrink: 0;">Search</button>
+                            </div>
+                        </div>
+                        <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
+                            <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
+                                <div>
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
+                                        <div style="${label} font-weight: 600; color: var(--foreground, #0f172a);">Numeric filters</div>
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
+                                            <input type="checkbox" id="wf-ops-team-numeric-andor" style="margin: 0;">
+                                            <span>Match any (OR)</span>
+                                        </label>
+                                    </div>
+                                    <p style="${hint} margin: 0 0 8px 0;">Stage filters below, then press Apply. Stats load after search. Default matches all conditions (AND).</p>
+                                    <div id="wf-ops-team-numeric-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+                                    <button type="button" id="wf-ops-team-numeric-add" style="${hollowBtn} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                </div>
+                                <button type="button" id="wf-ops-team-apply-filters" style="${hollowBtn} width: 100%; font-weight: 600;">Apply</button>
+                            </div>
+                        </div>
+                    </div>`;
+    const rightHtml = `
+                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+                        <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                            <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+                                <button type="button" id="wf-ops-team-expand-all-btn" style="
+                                    display: none;
+                                    padding: 2px 10px;
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: var(--muted-foreground, #666);
+                                    background: var(--background, white);
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                ">Collapse All</button>
+                                <button type="button" id="wf-ops-team-search-clear-btn" style="
+                                    display: none;
+                                    padding: 2px 10px;
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: var(--muted-foreground, #666);
+                                    background: var(--background, white);
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                ">Clear</button>
+                            </div>
+                        </div>
+                        <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
+                            Results
+                            <span style="display: block; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 4px;">Run a search to list team members.</span>
+                        </div>
+                    </div>
+                    <div id="wf-ops-team-search-output-wrap" style="display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px;">
+                        <div id="wf-ops-team-search-cards"></div>
+                    </div>
+                </div>`;
+
+    if (splitPanel) {
+        return '<div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">'
+            + splitPanel(leftHtml, rightHtml) + '</div>';
+    }
+
+    return '<div id="wf-dash-team-members-inner" style="width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">'
+        + '<section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">'
+        + '<aside style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">'
+        + leftHtml
+        + '</aside>'
+        + rightHtml
+        + '</section></div>';
+}
+
+function attachTeamMembersListeners(modal, dash) {
+    const ops = Context.opsTab;
+    if (!ops) return;
+    if (modal.dataset.wfTeamMembersListenersAttached === '1') {
+        if (typeof ops.restoreTeamTabState === 'function') ops.restoreTeamTabState(modal);
+        return;
+    }
+    modal.dataset.wfTeamMembersListenersAttached = '1';
+    if (typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
+
+    const teamSearchBtn = modal.querySelector('#wf-ops-team-search-btn');
+    const teamSearchInput = modal.querySelector('#wf-ops-team-search-input');
+    if (teamSearchBtn && typeof ops.handleTeamSearch === 'function') {
+        teamSearchBtn.addEventListener('click', () => { void ops.handleTeamSearch(modal); });
+    }
+    if (teamSearchInput && typeof ops.handleTeamSearch === 'function') {
+        teamSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void ops.handleTeamSearch(modal); }
+        });
+        teamSearchInput.addEventListener('input', () => {
+            if (typeof ops.captureTeamTabState === 'function') ops.captureTeamTabState(modal);
+        });
+    }
+    const teamSearchClearBtn = modal.querySelector('#wf-ops-team-search-clear-btn');
+    if (teamSearchClearBtn && typeof ops.clearTeamSearchResults === 'function') {
+        teamSearchClearBtn.addEventListener('click', () => ops.clearTeamSearchResults(modal));
+    }
+    const teamExpandAllBtn = modal.querySelector('#wf-ops-team-expand-all-btn');
+    if (teamExpandAllBtn && typeof ops.toggleTeamExpandAll === 'function') {
+        teamExpandAllBtn.addEventListener('click', () => ops.toggleTeamExpandAll(modal));
+    }
+    const applyBtn = modal.querySelector('#wf-ops-team-apply-filters');
+    if (applyBtn && typeof dash._onTeamMembersApply === 'function') {
+        applyBtn.addEventListener('click', () => dash._onTeamMembersApply(modal));
+    }
+    const addNumericBtn = modal.querySelector('#wf-ops-team-numeric-add');
+    if (addNumericBtn && typeof dash._buildNumericFilterRow === 'function') {
+        addNumericBtn.addEventListener('click', () => dash._buildNumericFilterRow(modal));
+    }
+    const numericRows = modal.querySelector('#wf-ops-team-numeric-rows');
+    if (numericRows) {
+        numericRows.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('[data-wf-team-numeric-remove]');
+            if (!removeBtn) return;
+            const row = removeBtn.closest('[data-wf-team-numeric-row]');
+            if (row) row.remove();
+        });
+    }
+    if (!modal.dataset.wfOpsMemberDetailsToggle && typeof ops.attachTeamMemberDetailsToggle === 'function') {
+        ops.attachTeamMemberDetailsToggle(modal);
+    }
+    if (!modal.dataset.wfOpsMemberEditDelegation && typeof ops.attachTeamMemberEditDelegation === 'function') {
+        ops.attachTeamMemberEditDelegation(modal);
+    }
+    if (typeof ops.restoreTeamTabState === 'function') ops.restoreTeamTabState(modal);
+}
+
+const plugin = {
+    id: 'team-members',
+    name: 'Team Members',
+    description: 'Team member search tab for the Ops dashboard',
+    _version: '2.2',
+    phase: 'core',
+    enabledByDefault: true,
+    initialState: { registered: false },
+
+    init() {
+        const loader = Context.dashboard && Context.dashboard._loader;
+        if (!loader) {
+            Logger.error('team-members: dashboard loader not registered');
+            return;
+        }
+        Object.assign(loader, teamMembersMethods);
+        Context.dashboard.registerTab({
+            id: 'team-members',
+            label: 'Team Members',
+            panelHtml(dash) { return teamMembersPanelHtml(dash); },
+            attachListeners(modal, dash) { attachTeamMembersListeners(modal, dash); },
+            onActivate(modal, dash) {
+                if (typeof dash._restoreTeamMembersState === 'function') dash._restoreTeamMembersState(modal);
+                requestAnimationFrame(() => dash._applyAllSidePanelWidths());
+            },
+            captureState(modal, dash) {
+                if (typeof dash._captureTeamMembersState === 'function') dash._captureTeamMembersState(modal);
+            }
+        });
+        Logger.log('team-members: tab registered');
+    }
+
+};

@@ -1,7 +1,8 @@
 // ops-tab.js
 // Core plugin for the Ops dashboard backend: secrets/password gate, PostgREST,
-// team member search, verifier fetch, and task link helpers. UI lives in
-// dashboard.js; settings-ui.js hosts enable/password toggles only.
+// team member search backend, verifier fetch backend, and task link helpers.
+// Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js;
+// settings-ui.js hosts enable/password toggles only.
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
@@ -44,6 +45,11 @@ const OPS_TASK_DATA_ACTION_STORAGE_KEY = 'fleet-ux:ops-task-data-next-action';
 /** localStorage key for the Next.js router state tree for dashboard task data */
 const OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-task-data-router-state';
 const OPS_TASK_DATA_PATH_RE = /^\/dashboard\/data\/tasks\/[^/]+$/;
+const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
+/** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
+const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
+const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
+const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
@@ -57,7 +63,8 @@ const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-
 /** Fleet API prefix for teams included in dashboard / ops team search. */
 const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
 /** Display labels that alone do not qualify a member for the UI badge. */
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts']);
+const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
+const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', OPS_FLEET_FELLOWS_TEAM_LABEL]);
 
 function opsIsTaskDesignersTeamName(name) {
     return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
@@ -176,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '4.19',
+    _version: '7.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -186,7 +193,9 @@ const plugin = {
     _opsTeamSearchActive: null,
     _opsTeamSearchAbortController: null,
     _opsTeamSearchMemberCache: null,
-    /** Legacy Fellows-search gate; team search is Task Designers only, so this stays true when idle. */
+    /** Last-applied team member filters (categorical + numeric); null = show all */
+    _opsTeamActiveFilters: null,
+    /** Legacy Fellows-search gate; team member search uses all user teams. */
     _opsFellowsSearchComplete: null,
     /** memberId → staged edit session while permissions tray is in edit mode */
     _opsMemberEditState: null,
@@ -196,6 +205,13 @@ const plugin = {
     _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
     /** Dynamically discovered task detail server action (task events RSC payload) */
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
+    /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
+    _opsExpertStatsActionCache: { nextAction: null, routerState: null },
+    /** memberId → { loading?, creator?, qa?, error? } */
+    _opsExpertStatsCache: null,
+    _opsExpertStatsHydrateGen: 0,
+    /** Set of member IDs whose card details are open; null = all-expanded default */
+    _opsMemberDetailsOpenIds: null,
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -229,15 +245,34 @@ const plugin = {
             getOpsDashboardOpenOnSettings: () => this._getOpsDashboardOpenOnSettings(),
             setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
             renderSettingsSection: () => this._renderOpsSettingsSection(),
-            renderTeamMembersPanel: () => this._renderTeamMembersPanel(),
-            renderVerifierFetcherPanel: () => this._renderVerifierFetcherPanel(),
             renderGradeAssessmentsHeaderLink: () => this._renderGradeAssessmentsHeaderLink(),
             renderTaskLinkBar: () => this._renderTaskLinkBar(),
             attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
-            attachDashboardListeners: (dashModal, dashboardPlugin) => this._attachOpsDashboardListeners(dashModal, dashboardPlugin),
-            onDashboardTabActivated: (dashModal, tabId) => this._onDashboardTabActivated(dashModal, tabId),
-            onTeamMemberMsChange: (dashModal) => this._filterOpsTeamSearchCards(dashModal),
+            attachTaskLinkListeners: (dashModal) => this._attachOpsTaskLinkListeners(dashModal),
+            injectSpinnerStyle: () => this._injectOpsSpinnerStyle(),
+            handleTeamSearch: (modal) => this._handleOpsTeamSearch(modal),
+            clearTeamSearchResults: (modal) => this._clearOpsTeamSearchResults(modal),
+            filterTeamSearchCards: (modal) => this._filterOpsTeamSearchCards(modal),
+            applyTeamFilters: (modal) => this._applyOpsTeamFilters(modal),
+            populateTeamMemberConstraintLists: (teams, opts) => this._populateOpsTeamMemberConstraintLists(teams, opts),
+            toggleTeamExpandAll: (modal) => this._toggleOpsTeamExpandAll(modal),
+            attachTeamMemberDetailsToggle: (modal) => this._attachOpsTeamMemberDetailsToggle(modal),
+            attachTeamMemberEditDelegation: (modal) => this._attachOpsTeamMemberEditDelegation(modal),
+            captureTeamTabState: (modal) => this._captureOpsTeamTabState(modal),
+            restoreTeamTabState: (modal) => this._restoreOpsTeamTabState(modal),
+            handleVerifierFetch: (modal) => this._handleOpsVerifierFetch(modal),
+            handleVerifierVersionChange: (modal) => this._handleOpsVerifierVersionChange(modal),
+            setVerifierStatus: (modal, msg, isError) => this._setOpsVerifierStatus(modal, msg, isError),
+            clearVerifierVersionPicker: (modal) => this._clearOpsVerifierVersionPicker(modal),
+            applyVerifierContentSearch: (modal, query) => this._applyVerifierContentSearch(modal, query),
+            clearVerifierContentSearch: (modal) => this._clearVerifierContentSearch(modal),
+            stepVerifierContentMatch: (modal, dir) => this._stepVerifierContentMatch(modal, dir),
+            captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
+            restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
+            copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
+            captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
+            revalidateOnDashboardTabActivated: (dashModal) => this._revalidateOnDashboardTabActivated(dashModal),
             onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
@@ -263,6 +298,7 @@ const plugin = {
             fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
             fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
             getUserTeamCatalog: () => this.getUserTeamCatalog(),
+            getUserTaskDesignersTeamCatalog: () => this.getUserTaskDesignersTeamCatalog(),
             hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams),
             isTaskDesignersTeam: (name) => opsIsTaskDesignersTeamName(name),
             formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name)
@@ -271,9 +307,12 @@ const plugin = {
         this._loadOpsTeamSearchActionFromStorage();
         this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsTaskDataActionFromStorage();
+        this._loadOpsExpertStatsActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
+        this._opsExpertStatsCache = new Map();
         this._subscribeOpsTeamDashboardActionCapture();
         this._subscribeOpsTaskDataActionCapture();
+        this._subscribeOpsExpertActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
@@ -1061,13 +1100,26 @@ const plugin = {
         return teams;
     },
 
+    _mapUserTeamCatalogPairs(teams, { taskDesignersOnly = false } = {}) {
+        const list = Array.isArray(teams) ? teams : [];
+        return list
+            .filter((t) => !taskDesignersOnly || opsIsTaskDesignersTeamName(t.name))
+            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)])
+            .filter((pair) => pair[0] && pair[1]);
+    },
+
     getUserTeamCatalog() {
         const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
             ? this._opsUserTeamCatalogCache.teams
             : [];
-        return teams
-            .filter((t) => opsIsTaskDesignersTeamName(t.name))
-            .map((t) => [t.id, t.displayName || opsFormatTeamDisplayLabel(t.name)]);
+        return this._mapUserTeamCatalogPairs(teams);
+    },
+
+    getUserTaskDesignersTeamCatalog() {
+        const teams = this._opsUserTeamCatalogCache && Array.isArray(this._opsUserTeamCatalogCache.teams)
+            ? this._opsUserTeamCatalogCache.teams
+            : [];
+        return this._mapUserTeamCatalogPairs(teams, { taskDesignersOnly: true });
     },
 
     getUserTeamByLabel(label) {
@@ -1353,6 +1405,411 @@ const plugin = {
             && parsed.length === 1
             && typeof parsed[0] === 'string'
             && OPS_UUID_RE.test(parsed[0]);
+    },
+
+    _opsClassifyExpertPostBody(body) {
+        const text = this._opsNormalizeRequestBody(body);
+        if (!text || text.charAt(0) !== '[') return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (_e) {
+            return null;
+        }
+        if (!Array.isArray(parsed) || parsed.length === 0) return null;
+        if (typeof parsed[0] !== 'string' || !OPS_UUID_RE.test(parsed[0])) return null;
+        if (parsed.length === 1) return 'breakdown';
+        if (parsed.length >= 2) {
+            if (parsed[1] === false) return 'stats-creator';
+            if (parsed[1] === true) return 'stats-qa';
+            if (typeof parsed[1] === 'number') return 'activities';
+        }
+        return null;
+    },
+
+    _loadOpsExpertStatsActionFromStorage() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (!storage) return;
+            const nextAction = storage.getItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
+            const routerState = storage.getItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
+            if (nextAction) {
+                this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
+                Logger.debug('ops-tab: expert stats action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action localStorage hydration failed', e);
+        }
+    },
+
+    _persistOpsExpertStatsAction({ nextAction, routerState }) {
+        if (!nextAction) return;
+        const changed = nextAction !== this._opsExpertStatsActionCache.nextAction;
+        this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.setItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY, nextAction);
+                if (routerState) {
+                    storage.setItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, routerState);
+                }
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action persist failed', e);
+        }
+        if (changed) {
+            Logger.log('ops-tab: expert stats action updated (' + nextAction.slice(0, 12) + '…)');
+        }
+    },
+
+    _clearOpsExpertStatsActionCache() {
+        this._opsExpertStatsActionCache = { nextAction: null, routerState: null };
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) {
+                storage.removeItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
+                storage.removeItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: expert stats action cache clear failed', e);
+        }
+        Logger.info('ops-tab: expert stats action cache cleared (will re-discover on expert profile visit)');
+    },
+
+    _opsExpertStatsActionStaleError() {
+        const err = new Error('Expert stats credentials are stale or missing.');
+        err.opsExpertStatsActionStale = true;
+        return err;
+    },
+
+    _isOpsExpertStatsActionStaleError(err) {
+        return !!(err && err.opsExpertStatsActionStale);
+    },
+
+    _subscribeOpsExpertActionCapture() {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.debug('ops-tab: NetworkObserver unavailable; passive expert action capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'ops-tab-expert-dashboard-actions',
+            matches(meta) {
+                return meta.method === 'POST'
+                    && !!meta.urlObj
+                    && OPS_EXPERT_PATH_RE.test(meta.urlObj.pathname);
+            },
+            onRequest(meta) {
+                const nextAction = self._opsReadHeader(meta.headers, 'next-action');
+                const routerState = self._opsReadHeader(meta.headers, 'next-router-state-tree');
+                if (!nextAction) return;
+                const kind = self._opsClassifyExpertPostBody(meta.body);
+                if (kind === 'stats-creator' || kind === 'stats-qa') {
+                    if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
+                        self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
+                        Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                }
+            }
+        });
+        Logger.debug('ops-tab: expert dashboard action passive watcher registered');
+    },
+
+    async _fetchOpsExpertRsc(expertId, bodyPayload, actionCache, logLabel) {
+        const id = String(expertId || '').trim();
+        if (!id) throw new Error('Missing expert id for RSC fetch');
+        if (!actionCache || !actionCache.nextAction) {
+            throw this._opsExpertStatsActionStaleError();
+        }
+
+        const pageWindow = this._getOpsPageWindow();
+        const requestFetch = pageWindow.fetch || fetch;
+        const deploymentId = this._getOpsNextDeploymentId(pageWindow);
+        const { nextAction, routerState } = actionCache;
+        const url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+
+        const headers = {
+            accept: 'text/x-component',
+            'content-type': 'text/plain;charset=UTF-8',
+            'next-action': nextAction
+        };
+        if (routerState) headers['next-router-state-tree'] = routerState;
+        if (deploymentId) headers['x-deployment-id'] = deploymentId;
+
+        const body = JSON.stringify(bodyPayload);
+        Logger.debug('ops-tab: ' + logLabel + ' fetch', {
+            expertId: id.slice(0, 8) + '…',
+            action: nextAction.slice(0, 12) + '…',
+            hasDeploymentId: !!deploymentId
+        });
+
+        const res = await requestFetch.call(pageWindow, url, {
+            method: 'POST',
+            headers,
+            body,
+            credentials: 'include'
+        });
+        const text = await res.text().catch(() => '');
+
+        if (res.status === 404) {
+            Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
+            this._clearOpsExpertStatsActionCache();
+            throw this._opsExpertStatsActionStaleError();
+        }
+        if (!res.ok) {
+            throw new Error('Expert ' + logLabel + ' HTTP ' + res.status + ': ' + text.slice(0, 300));
+        }
+        return text;
+    },
+
+    async _fetchOpsExpertStats(expertId, qaMode) {
+        const body = [expertId, Boolean(qaMode)];
+        const text = await this._fetchOpsExpertRsc(
+            expertId,
+            body,
+            this._opsExpertStatsActionCache,
+            qaMode ? 'stats qa' : 'stats creator'
+        );
+        return this._parseOpsTeamSearchResponse(text);
+    },
+
+    _opsParseRscJsonLines(text) {
+        if (!text) return [];
+        const lines = [];
+        for (const line of text.split('\n')) {
+            const t = line.trim();
+            const m = t.match(/^(\d+):(\{.*\})\s*$/);
+            if (!m) continue;
+            try {
+                lines.push({ lineId: m[1], obj: JSON.parse(m[2]) });
+            } catch (_e) { /* skip malformed flight line */ }
+        }
+        return lines;
+    },
+
+    _opsFormatDurationMinutes(seconds) {
+        const s = Number(seconds);
+        if (!Number.isFinite(s) || s <= 0) return '—';
+        return Math.max(1, Math.round(s / 60)) + 'm';
+    },
+
+    _opsExpertQaAcceptanceRatePercent(data) {
+        if (!data || typeof data !== 'object') return null;
+        if (data.acceptanceRate != null) {
+            const rate = Number(data.acceptanceRate);
+            if (Number.isFinite(rate)) return Math.round(rate);
+        }
+        const accepted = data.acceptedReviews ?? data.acceptedCount ?? data.qaAccepted;
+        const rejected = data.rejectedReviews ?? data.rejectedCount ?? data.qaRejected;
+        if (accepted != null && rejected != null) {
+            const total = Number(accepted) + Number(rejected);
+            if (Number.isFinite(total) && total > 0) {
+                return Math.round((Number(accepted) / total) * 100);
+            }
+        }
+        return null;
+    },
+
+    _opsExpertCreatorStatsColumns(data) {
+        if (!data || typeof data !== 'object') return ['Creator', '—', '—', '—'];
+        return [
+            'Creator',
+            data.totalSubmissions != null ? data.totalSubmissions + ' submitted' : '—',
+            data.acceptanceRate != null ? data.acceptanceRate + '% AR' : '—',
+            data.avgCreationTimeSeconds != null
+                ? '~' + this._opsFormatDurationMinutes(data.avgCreationTimeSeconds) + ' avg'
+                : '—'
+        ];
+    },
+
+    _opsExpertQaStatsColumns(data) {
+        if (!data || typeof data !== 'object') return ['QA', '—', '—', '—'];
+        const reviews = data.reviewsCompleted ?? data.totalReviews ?? data.tasksReviewed ?? data.tasksCompleted;
+        const avgSec = data.avgReviewTimeSeconds ?? data.avgQaTimeSeconds ?? data.avgTimePerQaSeconds
+            ?? data.avgReviewDurationSeconds;
+        const arPercent = this._opsExpertQaAcceptanceRatePercent(data);
+        return [
+            'QA',
+            reviews != null ? reviews + ' reviews' : '—',
+            arPercent != null ? arPercent + '% AR' : '—',
+            avgSec != null ? '~' + this._opsFormatDurationMinutes(avgSec) + ' avg' : '—'
+        ];
+    },
+
+    _opsExpertStatsStatusColumns(role, message) {
+        return [role, message, '—', '—'];
+    },
+
+    _opsExpertStatsGridHtml(creatorCols, qaCols, opts) {
+        const plain = !!(opts && opts.plain);
+        const gridClass = plain
+            ? 'wf-ops-member-stats-grid wf-ops-member-stats-grid--plain'
+            : 'wf-ops-member-stats-grid';
+        const rows = plain ? creatorCols : creatorCols.concat(qaCols);
+        const cells = rows.map((col) => '<span>' + this._opsEscapeHtml(col || '—') + '</span>').join('');
+        return '<div class="' + gridClass + '" data-ops-member-stats-grid>' + cells + '</div>';
+    },
+
+    _renderOpsTeamMemberStatsInnerHtml(entry) {
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            const msg = 'Stats unavailable (open an expert profile once)';
+            return this._opsExpertStatsGridHtml([msg], [msg], { plain: true });
+        }
+        if (!entry || entry.loading) {
+            const msg = 'Loading stats…';
+            return this._opsExpertStatsGridHtml(
+                this._opsExpertStatsStatusColumns('Creator', msg),
+                this._opsExpertStatsStatusColumns('QA', msg)
+            );
+        }
+        if (entry.error) {
+            const msg = 'Stats unavailable';
+            return this._opsExpertStatsGridHtml(
+                this._opsExpertStatsStatusColumns('Creator', msg),
+                this._opsExpertStatsStatusColumns('QA', msg)
+            );
+        }
+        return this._opsExpertStatsGridHtml(
+            this._opsExpertCreatorStatsColumns(entry.creator),
+            this._opsExpertQaStatsColumns(entry.qa)
+        );
+    },
+
+    _renderOpsTeamMemberStatsHtml(memberId) {
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
+            this._renderOpsTeamMemberStatsInnerHtml(entry) +
+        '</div>';
+    },
+
+    _patchOpsTeamMemberCard(modal, memberId) {
+        const tile = modal.querySelector('[data-ops-member-tile="' + this._opsEscapeAttr(String(memberId)) + '"]');
+        if (!tile) return;
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        const statsSlot = tile.querySelector('[data-ops-member-stats]');
+        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+    },
+
+    _patchOpsTeamMemberStats(modal, memberId) {
+        this._patchOpsTeamMemberCard(modal, memberId);
+    },
+
+    _getVisibleTeamMemberIds(modal, cache) {
+        if (!cache || !cache.memberMap) return [];
+        const active = this._opsTeamActiveFilters;
+        const numericRows = active && active.numericFilters ? active.numericFilters : [];
+        const andOr = active ? active.andOr : 'and';
+        return [...cache.memberMap.values()]
+            .filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr))
+            .map((m) => m.id)
+            .filter(Boolean);
+    },
+
+    async _hydrateOpsTeamMemberStatsForVisible(modal) {
+        if (!modal || !this._opsExpertStatsCache) return;
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) return;
+
+        const memberIds = this._getVisibleTeamMemberIds(modal, cache);
+        const toFetch = memberIds.filter((id) => {
+            const entry = this._opsExpertStatsCache.get(id);
+            return !entry || (!entry.creator && !entry.qa && !entry.error);
+        });
+        if (toFetch.length === 0) return;
+
+        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
+
+        if (!hasStats) {
+            for (const id of toFetch) {
+                this._opsExpertStatsCache.set(id, { error: 'missing-credentials' });
+                this._patchOpsTeamMemberCard(modal, id);
+            }
+            return;
+        }
+
+        const gen = ++this._opsExpertStatsHydrateGen;
+        for (const id of toFetch) {
+            this._opsExpertStatsCache.set(id, { loading: true });
+            this._patchOpsTeamMemberCard(modal, id);
+        }
+
+        let cursor = 0;
+        const worker = async () => {
+            while (cursor < toFetch.length) {
+                if (gen !== this._opsExpertStatsHydrateGen) return;
+                const id = toFetch[cursor++];
+                try {
+                    const [creator, qa] = await Promise.all([
+                        hasStats ? this._fetchOpsExpertStats(id, false) : Promise.resolve(null),
+                        hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null)
+                    ]);
+                    if (gen !== this._opsExpertStatsHydrateGen) return;
+                    this._opsExpertStatsCache.set(id, { creator, qa });
+                    Logger.debug('ops-tab: expert card data loaded for ' + id.slice(0, 8) + '…');
+                } catch (e) {
+                    if (gen !== this._opsExpertStatsHydrateGen) return;
+                    Logger.warn('ops-tab: expert card data failed for ' + id.slice(0, 8) + '…', e);
+                    this._opsExpertStatsCache.set(id, { error: e.message || String(e) });
+                }
+                this._patchOpsTeamMemberCard(modal, id);
+            }
+        };
+
+        const poolSize = Math.min(OPS_EXPERT_STATS_HYDRATE_CONCURRENCY, toFetch.length);
+        await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+        if (this._opsTeamActiveFilters && this._opsTeamActiveFilters.numericFilters
+            && this._opsTeamActiveFilters.numericFilters.length > 0) {
+            this._filterOpsTeamSearchCards(modal);
+        }
+    },
+
+    _populateOpsTeamMemberConstraintLists(allTeams, options) {
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
+        const opts = options || {};
+        if (opts.loading) {
+            dash.renderTeamMemberConstraintLists({ loading: true, preserveSelections: false });
+            return;
+        }
+        const teamItems = (allTeams || [])
+            .map(([, label]) => ({ id: label, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        const permItems = OPS_ALL_PERMISSIONS.map(([id, label]) => ({ id, label }));
+        dash.renderTeamMemberConstraintLists({
+            loading: false,
+            teamItems,
+            permItems,
+            preserveSelections: opts.preserveSelections !== false
+        });
+    },
+
+    _indexOpsTeamMemberFiltersFromResults(memberMap, options) {
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
+        const opts = options || {};
+        const teamLabels = new Set();
+        const permKeys = new Set();
+        if (memberMap) {
+            for (const member of memberMap.values()) {
+                const labels = member.teamLabels;
+                if (labels) {
+                    for (const label of labels) teamLabels.add(label);
+                }
+                for (const key of this._opsMemberPermissionKeys(member)) permKeys.add(key);
+            }
+        }
+        const teamItems = [...teamLabels].sort((a, b) => a.localeCompare(b))
+            .map((label) => ({ id: label, label }));
+        const permItems = [...permKeys].sort((a, b) => a.localeCompare(b))
+            .map((key) => ({ id: key, label: OPS_PERMISSION_LABEL_BY_KEY[key] || key }));
+        dash.renderTeamMemberConstraintLists({
+            loading: false,
+            teamItems,
+            permItems,
+            preserveSelections: opts.preserveSelections !== false
+        });
+        Logger.debug('ops-tab: team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
     },
 
     _loadOpsTeamSearchActionFromStorage() {
@@ -1961,33 +2418,33 @@ const plugin = {
             '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
             '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
             '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
-            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}'
+            '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}',
+            '.wf-ops-member-stats-grid{display:grid;grid-template-columns:max-content max-content max-content max-content;column-gap:10px;row-gap:2px;}',
+            '.wf-ops-member-stats-grid--plain{grid-template-columns:1fr;}'
         ].join('');
         document.head.appendChild(style);
     },
 
     _parseOpsTeamSearchResponse(text) {
         if (!text) return null;
-        for (const line of text.split('\n')) {
-            const t = line.trim();
-            if (t.startsWith('1:{') || t.startsWith('1:{"')) {
-                try { return JSON.parse(t.slice(2)); } catch (_e) { /* try next */ }
-            }
+        const lines = this._opsParseRscJsonLines(text);
+        for (const { lineId, obj } of lines) {
+            if (lineId === '1') return obj;
         }
-        const m = text.match(/^1:(\{.+\})\s*$/m);
-        if (m) { try { return JSON.parse(m[1]); } catch (_e) {} }
-        return null;
+        return lines.length > 0 ? lines[0].obj : null;
     },
 
     _setOpsTeamSearchStatus(modal, message, isError, isHtml, showClear) {
         const row = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRow');
         const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
         const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
+        const expandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtn');
         const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStatusPlaceholder');
         if (!status) return;
         if (!message) {
             if (row) row.style.display = 'none';
             if (clearBtn) clearBtn.style.display = 'none';
+            if (expandAllBtn) expandAllBtn.style.display = 'none';
             if (placeholder) placeholder.style.display = '';
             return;
         }
@@ -1996,24 +2453,39 @@ const plugin = {
         status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
         if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
         if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
+        if (expandAllBtn) expandAllBtn.style.display = showClear ? 'inline-block' : 'none';
+    },
+
+    _syncOpsExpandAllBtn(modal) {
+        const btn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtnSync');
+        if (!btn || btn.style.display === 'none') return;
+        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
+        if (!cards) return;
+        const details = cards.querySelectorAll('.wf-ops-member-details');
+        const anyOpen = Array.from(details).some((d) => d.open);
+        btn.textContent = anyOpen ? 'Collapse All' : 'Expand All';
     },
 
     _clearOpsTeamSearchResults(modal) {
         this._abortOpsTeamSearchInFlight('results cleared');
         this._opsTeamSearchActive = null;
         this._opsTeamSearchMemberCache = null;
+        this._opsTeamActiveFilters = null;
+        this._opsMemberDetailsOpenIds = null;
         this._opsFellowsSearchComplete = null;
+        this._opsExpertStatsHydrateGen++;
+        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
         this._clearOpsMemberEditState();
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
 
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputClear');
         const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputClear');
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
 
         if (filterWrap) filterWrap.style.display = 'none';
-        if (filterInput) filterInput.value = '';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
+            Context.dashboard.resetTeamMemberFilters(modal);
+        } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
             Context.dashboard.resetTeamMemberMsDropdowns();
         }
         if (outputWrap) {
@@ -2034,59 +2506,168 @@ const plugin = {
         this._clearOpsMemberEditState();
     },
 
-    _getOpsTeamSearchSelectedTeams() {
+    _getOpsTeamMemberTeamConstraints() {
         const dash = Context.dashboard;
-        if (dash && typeof dash.selectedMsValues === 'function') {
-            return new Set(dash.selectedMsValues('team-members-teams'));
+        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
+            return dash.readTeamMemberConstraints('team-members-teams');
         }
-        return new Set();
+        return { include: new Set(), exclude: new Set() };
     },
 
-    _getOpsTeamSearchSelectedPermissions() {
+    _getOpsTeamMemberPermConstraints() {
         const dash = Context.dashboard;
-        if (dash && typeof dash.selectedMsValues === 'function') {
-            return new Set(dash.selectedMsValues('team-members-permissions'));
+        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
+            return dash.readTeamMemberConstraints('team-members-permissions');
         }
-        return new Set();
+        return { include: new Set(), exclude: new Set() };
     },
 
-    _opsTeamMemberMatchesPermissionFilter(member, selectedPermissions) {
-        if (!selectedPermissions || selectedPermissions.size === 0) return true;
-        const memberPerms = new Set(this._opsMemberPermissionKeys(member));
-        for (const key of selectedPermissions) {
-            if (memberPerms.has(key)) return true;
-        }
-        return false;
-    },
-
-    _populateOpsTeamMemberFilterLists(allTeams) {
-        const dash = Context.dashboard;
-        if (!dash || typeof dash.renderMsList !== 'function') return;
-
-        const prevTeams = typeof dash.selectedMsValues === 'function'
-            ? new Set(dash.selectedMsValues('team-members-teams'))
-            : new Set();
-        const teamItems = (allTeams || []).map(([, label]) => ({ id: label, label }));
-        dash.renderMsList('team-members-teams', teamItems, 'No teams', prevTeams);
-
-        const prevPerms = typeof dash.selectedMsValues === 'function'
-            ? new Set(dash.selectedMsValues('team-members-permissions'))
-            : new Set();
-        const permItems = OPS_ALL_PERMISSIONS.map(([key, label]) => ({ id: key, label }));
-        dash.renderMsList('team-members-permissions', permItems, 'No permissions', prevPerms);
-
-        if (typeof dash.openTeamMemberMsDropdowns === 'function') {
-            dash.openTeamMemberMsDropdowns();
-        }
-    },
-
-    _opsTeamMemberMatchesTeamFilter(member, selectedTeams) {
-        if (!selectedTeams || selectedTeams.size === 0) return true;
+    _opsMemberMatchesTeamConstraints(member, constraints) {
+        const include = constraints && constraints.include ? constraints.include : new Set();
+        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
         const teamLabels = member.teamLabels || new Set();
-        for (const label of selectedTeams) {
-            if (teamLabels.has(label)) return true;
+        if (include.size > 0) {
+            let matched = false;
+            for (const label of include) {
+                if (teamLabels.has(label)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
         }
-        return false;
+        for (const label of exclude) {
+            if (teamLabels.has(label)) return false;
+        }
+        return true;
+    },
+
+    _opsMemberMatchesPermConstraints(member, constraints) {
+        const include = constraints && constraints.include ? constraints.include : new Set();
+        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
+        const memberPerms = new Set(this._opsMemberPermissionKeys(member));
+        if (include.size > 0) {
+            let matched = false;
+            for (const key of include) {
+                if (memberPerms.has(key)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
+        }
+        for (const key of exclude) {
+            if (memberPerms.has(key)) return false;
+        }
+        return true;
+    },
+
+    _opsMemberHasActiveConstraints(constraints) {
+        if (!constraints) return false;
+        return (constraints.include && constraints.include.size > 0)
+            || (constraints.exclude && constraints.exclude.size > 0);
+    },
+
+    _opsTeamSearchHasActiveFilters() {
+        const active = this._opsTeamActiveFilters;
+        if (!active) return false;
+        return !!(active.numericFilters && active.numericFilters.length > 0);
+    },
+
+    _opsTeamMemberNumericFieldValue(memberId, field) {
+        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
+        if (!entry || entry.loading || entry.error) return null;
+        if (!entry.creator && !entry.qa) return null;
+        switch (field) {
+            case 'tasks_submitted':
+                return entry.creator && entry.creator.totalSubmissions != null
+                    ? Number(entry.creator.totalSubmissions) : null;
+            case 'tasks_reviewed': {
+                if (!entry.qa) return null;
+                const reviews = entry.qa.reviewsCompleted ?? entry.qa.totalReviews
+                    ?? entry.qa.tasksReviewed ?? entry.qa.tasksCompleted;
+                return reviews != null ? Number(reviews) : null;
+            }
+            case 'submission_ar':
+                return entry.creator && entry.creator.acceptanceRate != null
+                    ? Number(entry.creator.acceptanceRate) : null;
+            case 'qa_ar':
+                return this._opsExpertQaAcceptanceRatePercent(entry.qa);
+            case 'avg_writing_time':
+                return entry.creator && entry.creator.avgCreationTimeSeconds != null
+                    ? Number(entry.creator.avgCreationTimeSeconds) / 60 : null;
+            case 'avg_qa_time': {
+                if (!entry.qa) return null;
+                const avgSec = entry.qa.avgReviewTimeSeconds ?? entry.qa.avgQaTimeSeconds
+                    ?? entry.qa.avgTimePerQaSeconds ?? entry.qa.avgReviewDurationSeconds;
+                return avgSec != null ? Number(avgSec) / 60 : null;
+            }
+            default:
+                return null;
+        }
+    },
+
+    _opsEvaluateNumericComparison(actual, comparator, expected) {
+        if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+        switch (comparator) {
+            case 'gt': return actual > expected;
+            case 'gte': return actual >= expected;
+            case 'lt': return actual < expected;
+            case 'lte': return actual <= expected;
+            case 'eq': return actual === expected;
+            case 'neq': return actual !== expected;
+            default: return true;
+        }
+    },
+
+    _opsMemberMatchesNumericFilters(member, rows, andOr) {
+        if (!rows || rows.length === 0) return true;
+        const results = rows.map((row) => {
+            const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
+            if (actual == null || !Number.isFinite(actual)) return null;
+            return this._opsEvaluateNumericComparison(actual, row.comparator, row.value);
+        });
+        if (results.some((r) => r === null)) return true;
+        if (andOr === 'or') return results.some((r) => r === true);
+        return results.every((r) => r === true);
+    },
+
+    _opsCountTeamMembersPendingNumericStats(members, numericRows) {
+        if (!numericRows || numericRows.length === 0 || !members || !members.length) return 0;
+        let pending = 0;
+        for (const member of members) {
+            let needsStats = false;
+            for (const row of numericRows) {
+                const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
+                if (actual == null || !Number.isFinite(actual)) {
+                    needsStats = true;
+                    break;
+                }
+            }
+            if (needsStats) pending++;
+        }
+        return pending;
+    },
+
+    _applyOpsTeamFilters(modal) {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache) {
+            Logger.warn('ops-tab: team filters apply skipped — no search cache');
+            return;
+        }
+        const dash = Context.dashboard;
+        const numeric = dash && typeof dash.readTeamMembersNumericFilters === 'function'
+            ? dash.readTeamMembersNumericFilters(modal)
+            : { rows: [], andOr: 'and' };
+        this._opsTeamActiveFilters = {
+            numericFilters: numeric.rows || [],
+            andOr: numeric.andOr || 'and'
+        };
+        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+        void this._hydrateOpsTeamMemberStatsForVisible(modal);
+        Logger.log('ops-tab: team filters applied — '
+            + this._opsTeamActiveFilters.numericFilters.length + ' numeric, mode '
+            + this._opsTeamActiveFilters.andOr);
     },
 
     _opsEscapeAttr(str) {
@@ -2099,6 +2680,7 @@ const plugin = {
     _opsMemberQualifiesForUiBadge(member) {
         const teamLabels = member.teamLabels;
         if (!teamLabels || teamLabels.size === 0) return false;
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
         for (const label of teamLabels) {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
@@ -2542,7 +3124,7 @@ const plugin = {
         '</span>';
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen) {
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen, teamsSearchComplete = true) {
         const memberId = member.id || '';
         const personChipsHtml = this._renderOpsTeamMemberPersonChipsHtml(member);
         const teamLabels = member.teamLabels || new Set();
@@ -2550,7 +3132,7 @@ const plugin = {
         const displayTeamLabels = session ? session.stagedTeams : teamLabels;
         const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
         const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
-        const showUiBadge = this._opsMemberQualifiesForUiBadge(member);
+        const showUiBadge = teamsSearchComplete && this._opsMemberQualifiesForUiBadge(member);
         const uiBadgeHtml = showUiBadge
             ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
             : '';
@@ -2578,6 +3160,7 @@ const plugin = {
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
             '</div>' +
+            this._renderOpsTeamMemberStatsHtml(memberId) +
             '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
                 '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
                     '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
@@ -2592,23 +3175,11 @@ const plugin = {
         '</div>';
     },
 
-    _opsTeamMemberMatchesFilter(member, allTeams, filterText) {
-        if (!filterText) return true;
-        const teamLabels = member.teamLabels || new Set();
-        const perms = this._opsMemberPermissionKeys(member);
-        const haystack = [
-            member.full_name || '',
-            member.email || '',
-            ...[...teamLabels],
-            ...perms.map((p) => this._getOpsPermissionDisplayLabel(p))
-        ].join(' ').toLowerCase();
-        return filterText.toLowerCase().split(/\s+/).filter(Boolean).every(t => haystack.includes(t));
-    },
-
     _filterOpsTeamSearchCards(modal) {
         const cache = this._opsTeamSearchMemberCache;
         if (!cache) return;
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
+        void this._hydrateOpsTeamMemberStatsForVisible(modal);
     },
 
     _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount, openMemberIds) {
@@ -2616,24 +3187,23 @@ const plugin = {
         const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsInner');
         if (!wrap || !cards) return;
 
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamSearchFilterRead');
-        const filterText = filterInput ? filterInput.value : '';
-        const openIds = openMemberIds instanceof Set
-            ? openMemberIds
-            : this._captureOpsOpenMemberDetails(modal);
-
+        const totalCount = memberMap.size;
         let members = [...memberMap.values()];
 
-        const selectedTeams = this._getOpsTeamSearchSelectedTeams();
-        const selectedPermissions = this._getOpsTeamSearchSelectedPermissions();
-        if (selectedTeams.size > 0) {
-            members = members.filter((m) => this._opsTeamMemberMatchesTeamFilter(m, selectedTeams));
-        }
-        if (selectedPermissions.size > 0) {
-            members = members.filter((m) => this._opsTeamMemberMatchesPermissionFilter(m, selectedPermissions));
-        }
-        if (filterText) {
-            members = members.filter(m => this._opsTeamMemberMatchesFilter(m, allTeams, filterText));
+        const active = this._opsTeamActiveFilters;
+        const numericRows = active && active.numericFilters ? active.numericFilters : [];
+        const andOr = active ? active.andOr : 'and';
+        members = members.filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr));
+
+        let resolvedOpenIds;
+        if (this._opsMemberDetailsOpenIds !== null) {
+            resolvedOpenIds = this._opsMemberDetailsOpenIds;
+        } else if (openMemberIds instanceof Set) {
+            resolvedOpenIds = openMemberIds;
+        } else if (pendingCount === 0 && members.length > 0) {
+            resolvedOpenIds = new Set(members.map((m) => m.id));
+        } else {
+            resolvedOpenIds = this._captureOpsOpenMemberDetails(modal);
         }
 
         if (members.length === 0) {
@@ -2642,7 +3212,7 @@ const plugin = {
             } else {
                 wrap.style.display = 'block';
                 let msg = 'No members found.';
-                const hasFilters = filterText || selectedTeams.size > 0 || selectedPermissions.size > 0;
+                const hasFilters = numericRows && numericRows.length > 0;
                 if (hasFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }
@@ -2655,8 +3225,30 @@ const plugin = {
         });
 
         wrap.style.display = 'block';
+        const teamsSearchComplete = pendingCount === 0;
         cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, true)).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id), teamsSearchComplete)).join('');
+
+        this._syncOpsExpandAllBtn(modal);
+
+        if (pendingCount === 0) {
+            if (this._opsTeamSearchHasActiveFilters()) {
+                let statusMsg = members.length + ' of ' + totalCount + ' member'
+                    + (totalCount !== 1 ? 's' : '') + ' match filters.';
+                const pendingStats = this._opsCountTeamMembersPendingNumericStats(members, numericRows);
+                if (pendingStats > 0) {
+                    statusMsg += ' Stats still loading for ' + pendingStats + ' member'
+                        + (pendingStats !== 1 ? 's' : '') + '; results will update.';
+                }
+                this._setOpsTeamSearchStatus(modal, statusMsg, false, false, true);
+            } else if (totalCount > 0) {
+                this._setOpsTeamSearchStatus(modal,
+                    totalCount + ' unique member' + (totalCount !== 1 ? 's' : '')
+                        + ' across ' + allTeams.length + ' teams.',
+                    false, false, true);
+            }
+            void this._hydrateOpsTeamMemberStatsForVisible(modal);
+        }
     },
 
     async _handleOpsTeamSearch(modal) {
@@ -2700,16 +3292,17 @@ const plugin = {
         const sessionId = Date.now();
         this._opsTeamSearchActive = sessionId;
         this._opsTeamSearchMemberCache = null;
+        this._opsTeamActiveFilters = null;
+        this._opsMemberDetailsOpenIds = null;
         this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
 
-        // Show filter panel; clear text filter only (retain ms checkbox selections)
         const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
-        const filterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputReset');
         if (filterWrap) filterWrap.style.display = 'flex';
-        if (filterInput) filterInput.value = '';
-        this._populateOpsTeamMemberFilterLists(allTeams);
+        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
+            Context.dashboard.resetTeamMemberFilters(modal);
+        }
 
         const memberMap = new Map();
         let pendingCount = allTeams.length;
@@ -2768,6 +3361,8 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
+                this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
+                void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }
             if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
             this._captureOpsTabState(modal);
@@ -3284,34 +3879,10 @@ const plugin = {
 
     _captureOpsTabState(modal) {
         if (!modal) return;
-        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
-        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
-        const fetchState = this._opsVerifierFetchState;
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
-        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
-        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
-        this._opsTabState = {
-            taskInput: taskInput ? taskInput.value : '',
-            verifierInput: verifierInput ? verifierInput.value : '',
-            verifierStatus: status ? (status.textContent || '') : '',
-            verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
-            verifierOutput: this._opsVerifierSourceText || '',
-            verifierContentSearchQuery: this._opsVerifierContentSearch.query || '',
-            verifierContentSearchIndex: this._opsVerifierContentSearch.index || 0,
-            verifierFetchState: fetchState
-                ? {
-                    resolved: fetchState.resolved,
-                    versions: fetchState.versions,
-                    selectedVersion: fetchState.selectedVersion
-                }
-                : null,
-            teamSearchQuery: teamSearchInput ? teamSearchInput.value : '',
-            teamSearchStatus: teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
-                ? (teamSearchStatus.textContent || '')
-                : '',
-            teamSearchStatusIsError: teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false
-        };
+        if (!this._opsTabState) this._opsTabState = {};
+        this._captureOpsTaskLinkState(modal);
+        this._captureOpsTeamTabState(modal);
+        this._captureOpsVerifierTabState(modal);
     },
 
     _restoreOpsTabState(modal) {
@@ -3324,49 +3895,8 @@ const plugin = {
             taskInput.value = state.taskInput;
             this._updateOpsTaskLinkUI(modal);
         }
-
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
-        if (verifierInput && state.verifierInput) {
-            verifierInput.value = state.verifierInput;
-        }
-
-        if (state.verifierStatus) {
-            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
-        }
-
-        if (state.verifierOutput) {
-            void this._setOpsVerifierOutput(modal, state.verifierOutput);
-        }
-
-        if (state.verifierContentSearchQuery != null) {
-            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
-            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
-            if (state.verifierOutput) {
-                void this._refreshVerifierOutputDisplay(modal);
-            }
-        }
-
-        if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
-            this._setOpsVerifierVersionPicker(
-                modal,
-                state.verifierFetchState.resolved,
-                state.verifierFetchState.versions,
-                state.verifierFetchState.selectedVersion
-            );
-        } else {
-            this._opsVerifierFetchState = null;
-        }
-
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
-        if (teamSearchInput && state.teamSearchQuery != null) {
-            teamSearchInput.value = state.teamSearchQuery;
-        }
-        if (state.teamSearchStatus) {
-            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
-            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
-        }
+        this._restoreOpsTeamTabState(modal);
+        this._restoreOpsVerifierTabState(modal);
     },
 
     _setOpsPasswordPanelVisible(modal, visible) {
@@ -3574,84 +4104,6 @@ const plugin = {
         `;
     },
 
-    _renderTeamMembersPanel() {
-        const dash = Context.dashboard;
-        const box = dash && typeof dash.panelBoxStyle === 'function' ? dash.panelBoxStyle() : 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
-        const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
-        const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
-        const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
-        const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
-        const msTeams = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', true)
-            : '';
-        const msPerms = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', true)
-            : '';
-
-        return `
-            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">
-                <aside style="width: min(320px, 34%); flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <div style="padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
-                            <div>
-                                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #0f172a);">
-                                    Team Member Search
-                                </h3>
-                                <p style="${hint} margin: 0; line-height: 1.45;">
-                                    Search the Computer Use team by name or email. Leave blank to list all members.
-                                </p>
-                            </div>
-                            <div style="display: flex; gap: 8px; align-items: stretch;">
-                                <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="${input} flex: 1; min-width: 0;">
-                                <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="${navBtn} flex-shrink: 0;">Search</button>
-                            </div>
-                        </div>
-                        <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
-                            <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <div>
-                                    <label style="${label} display: block; margin-bottom: 4px; font-weight: 600; color: var(--foreground, #0f172a);">Filter results</label>
-                                    <input type="text" id="wf-ops-team-filter-input" placeholder="Name, email, team, or permission…" autocomplete="off" style="${input} width: 100%; font-size: 12px; padding: 6px 12px;">
-                                </div>
-                                <div>
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
-                                    <p style="${hint} margin: 0 0 8px 0;">None selected = all.</p>
-                                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                                        ${msTeams}
-                                        ${msPerms}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </aside>
-                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
-                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                        <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
-                            <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                            <button type="button" id="wf-ops-team-search-clear-btn" style="
-                                display: none;
-                                flex-shrink: 0;
-                                padding: 2px 10px;
-                                font-size: 11px;
-                                font-weight: 500;
-                                color: var(--muted-foreground, #666);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 4px;
-                                cursor: pointer;
-                            ">Clear</button>
-                        </div>
-                        <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
-                            Results
-                            <span style="display: block; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 4px;">Run a search to list team members.</span>
-                        </div>
-                    </div>
-                    <div id="wf-ops-team-search-output-wrap" style="display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px;">
-                        <div id="wf-ops-team-search-cards"></div>
-                    </div>
-                </div>
-            </section>`;
-    },
 
     _renderTaskLinkBar() {
         return `
@@ -3705,173 +4157,12 @@ const plugin = {
             </div>`;
     },
 
+
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
             + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
     },
 
-    _renderVerifierFetcherPanel() {
-        return `
-                <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
-                    <div style="flex-shrink: 0;">
-                        <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
-                            Verifier Code Fetcher
-                        </h3>
-                        <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
-                            Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
-                        </p>
-                        <div style="display: flex; gap: 8px; align-items: stretch;">
-                            <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                                flex: 1;
-                                min-width: 0;
-                                padding: 8px 12px;
-                                font-size: 12px;
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                background: var(--background, white);
-                                color: var(--foreground, #333);
-                                box-sizing: border-box;
-                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                            ">
-                            <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
-                                flex-shrink: 0;
-                                padding: 8px 14px;
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: var(--brand, #4f46e5);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                            ">Fetch</button>
-                        </div>
-                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
-                            <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                        </div>
-                        <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
-                            display: none;
-                            width: 100%;
-                            margin-top: 8px;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--background, white);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        "></select>
-                    </div>
-                    <div id="wf-ops-verifier-content-search-wrap" style="
-                        display: none;
-                        flex-shrink: 0;
-                        align-self: flex-start;
-                        width: 30%;
-                        max-width: 30%;
-                        min-width: 12rem;
-                        margin-top: 8px;
-                        gap: 6px;
-                        align-items: center;
-                        flex-wrap: wrap;
-                        flex-direction: row;
-                        justify-content: flex-start;
-                        box-sizing: border-box;
-                    ">
-                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Search in code:</label>
-                        <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
-                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
-                                flex: 1;
-                                min-width: 0;
-                                width: 100%;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                background: var(--background, white);
-                                color: var(--foreground, #333);
-                                box-sizing: border-box;
-                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                            ">
-                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" style="
-                                display: none;
-                                flex-shrink: 0;
-                                width: 26px;
-                                height: 26px;
-                                padding: 0;
-                                font-size: 16px;
-                                line-height: 1;
-                                font-weight: 600;
-                                color: var(--muted-foreground, #64748b);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                cursor: pointer;
-                                align-items: center;
-                                justify-content: center;
-                            ">&times;</button>
-                        </span>
-                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
-                        <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Prev</button>
-                        <button type="button" id="wf-ops-verifier-content-next" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Next</button>
-                        <button type="button" id="wf-ops-copy-verifier" style="
-                            display: none;
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 500;
-                            color: var(--muted-foreground, #666);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            cursor: pointer;
-                            transition: background 0.2s, color 0.2s;
-                        ">Copy</button>
-                    </div>
-                    <div id="wf-ops-verifier-output-wrap" style="
-                        display: none;
-                        flex: 1;
-                        min-height: 0;
-                        width: 100%;
-                        margin-top: 8px;
-                        flex-direction: column;
-                    ">
-                        <pre style="
-                            flex: 1;
-                            min-height: 0;
-                            width: 100%;
-                            margin: 0;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--card, #fafafa);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            overflow: auto;
-                            white-space: pre-wrap;
-                            word-break: break-word;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
-                    </div>
-                </div>`;
-    },
 
     async _handleOpsVerifierFetch(modal) {
         const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
@@ -4051,76 +4342,186 @@ const plugin = {
         this._syncOpsSettingsSubmoduleVisibility(modal);
     },
 
-    _attachOpsDashboardListeners(dashModal, dashboardPlugin) {
+    _captureOpsTeamTabState(modal) {
+        if (!modal) return;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
+        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
+        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.teamSearchQuery = teamSearchInput ? teamSearchInput.value : '';
+        this._opsTabState.teamSearchStatus = teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
+            ? (teamSearchStatus.textContent || '')
+            : '';
+        this._opsTabState.teamSearchStatusIsError = teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false;
+    },
+
+    _restoreOpsTeamTabState(modal) {
+        if (!modal) return;
+        const state = this._opsTabState;
+        if (!state) return;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
+        if (teamSearchInput && state.teamSearchQuery != null) {
+            teamSearchInput.value = state.teamSearchQuery;
+        }
+        if (state.teamSearchStatus) {
+            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
+            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
+        }
+    },
+
+    _captureOpsVerifierTabState(modal) {
+        if (!modal) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
+        const fetchState = this._opsVerifierFetchState;
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.verifierInput = verifierInput ? verifierInput.value : '';
+        this._opsTabState.verifierStatus = status ? (status.textContent || '') : '';
+        this._opsTabState.verifierStatusIsError = status ? status.style.color === '#dc2626' : false;
+        this._opsTabState.verifierOutput = this._opsVerifierSourceText || '';
+        this._opsTabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
+        this._opsTabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
+        this._opsTabState.verifierFetchState = fetchState
+            ? {
+                resolved: fetchState.resolved,
+                versions: fetchState.versions,
+                selectedVersion: fetchState.selectedVersion
+            }
+            : null;
+    },
+
+    _restoreOpsVerifierTabState(modal) {
+        if (!modal) return;
+        const state = this._opsTabState;
+        if (!state) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
+        if (verifierInput && state.verifierInput) {
+            verifierInput.value = state.verifierInput;
+        }
+        if (state.verifierStatus) {
+            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
+        }
+        if (state.verifierOutput) {
+            void this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+        if (state.verifierContentSearchQuery != null) {
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
+            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
+            if (state.verifierOutput) {
+                void this._refreshVerifierOutputDisplay(modal);
+            }
+        }
+        if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
+            this._setOpsVerifierVersionPicker(
+                modal,
+                state.verifierFetchState.resolved,
+                state.verifierFetchState.versions,
+                state.verifierFetchState.selectedVersion
+            );
+        } else {
+            this._opsVerifierFetchState = null;
+        }
+    },
+
+    async _copyOpsVerifierCode(modal, verifierCopyBtn) {
+        const value = this._opsVerifierSourceText || '';
+        if (!value) {
+            this._showOpsCopyFailurePulse(verifierCopyBtn);
+            Logger.warn('ops-tab: verifier copy skipped (no code)');
+            return;
+        }
+        const ok = await this._copyOpsTextToClipboard(value);
+        if (ok) {
+            this._showOpsCopySuccessFlash(verifierCopyBtn);
+            Logger.log('ops-tab: verifier code copied (' + value.length + ' chars)');
+        } else {
+            this._showOpsCopyFailurePulse(verifierCopyBtn);
+            Logger.warn('ops-tab: verifier copy failed');
+        }
+    },
+
+    _toggleOpsTeamExpandAll(modal) {
+        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
+        if (!cards) return;
+        const details = [...cards.querySelectorAll('.wf-ops-member-details')];
+        const anyOpen = details.some((d) => d.open);
+        const shouldOpen = !anyOpen;
+        if (this._opsMemberDetailsOpenIds === null) {
+            this._opsMemberDetailsOpenIds = new Set();
+        }
+        details.forEach((d) => {
+            d.open = shouldOpen;
+            const memberId = d.getAttribute('data-member-id');
+            if (!memberId) return;
+            if (shouldOpen) this._opsMemberDetailsOpenIds.add(memberId);
+            else this._opsMemberDetailsOpenIds.delete(memberId);
+        });
+        this._syncOpsExpandAllBtn(modal);
+        Logger.log('ops-tab: team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
+    },
+
+    _attachOpsTeamMemberDetailsToggle(modal) {
+        if (!modal || modal.dataset.wfOpsMemberDetailsToggle === '1') return;
+        modal.dataset.wfOpsMemberDetailsToggle = '1';
+        modal.addEventListener('toggle', (e) => {
+            const detailsEl = e.target;
+            if (!detailsEl || !detailsEl.classList.contains('wf-ops-member-details')) return;
+            const memberId = detailsEl.getAttribute('data-member-id');
+            if (!memberId) return;
+            if (this._opsMemberDetailsOpenIds === null) {
+                const cache = this._opsTeamSearchMemberCache;
+                const allIds = cache ? [...cache.memberMap.keys()] : [];
+                this._opsMemberDetailsOpenIds = new Set(allIds);
+            }
+            if (detailsEl.open) this._opsMemberDetailsOpenIds.add(memberId);
+            else this._opsMemberDetailsOpenIds.delete(memberId);
+            this._syncOpsExpandAllBtn(modal);
+        }, true);
+    },
+
+    _attachOpsTeamMemberEditDelegation(modal) {
+        if (!modal || modal.dataset.wfOpsMemberEditDelegation === '1') return;
+        modal.dataset.wfOpsMemberEditDelegation = '1';
+        modal.addEventListener('click', (e) => {
+            this._handleOpsMemberEditClick(e, modal);
+        });
+    },
+
+    _revalidateOnDashboardTabActivated(dashModal) {
+        if (!dashModal) return;
+        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
+            if (this._getOpsTabEnabled()) {
+                void this._loadOpsSecrets(false);
+            }
+        });
+    },
+
+    _attachOpsTaskLinkListeners(dashModal) {
         if (!dashModal) return;
         this._injectOpsSpinnerStyle();
         const modal = dashModal;
 
-        if (modal.dataset.wfOpsDashboardListenersAttached === '1') {
-            this._restoreOpsTabState(modal);
+        if (modal.dataset.wfOpsTaskLinkListenersAttached === '1') {
             return;
         }
-        modal.dataset.wfOpsDashboardListenersAttached = '1';
-
-        const teamSearchBtn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnAttach');
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputAttach');
-
-        if (teamSearchBtn) {
-            teamSearchBtn.addEventListener('click', () => {
-                void this._handleOpsTeamSearch(modal);
-            });
-        }
-        if (teamSearchInput) {
-            teamSearchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void this._handleOpsTeamSearch(modal);
-                }
-            });
-            teamSearchInput.addEventListener('input', () => {
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        const teamFilterInput = this._opsQuery(modal, '#wf-ops-team-filter-input', 'teamFilterInputAttach');
-        if (teamFilterInput) {
-            teamFilterInput.addEventListener('input', () => {
-                this._filterOpsTeamSearchCards(modal);
-            });
-        }
-
-        const teamSearchClearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtnAttach');
-        if (teamSearchClearBtn) {
-            teamSearchClearBtn.addEventListener('click', () => {
-                this._clearOpsTeamSearchResults(modal);
-            });
-        }
-
-        if (!modal.dataset.wfOpsMemberEditDelegation) {
-            modal.dataset.wfOpsMemberEditDelegation = '1';
-            modal.addEventListener('click', (e) => {
-                this._handleOpsMemberEditClick(e, modal);
-            });
-        }
+        modal.dataset.wfOpsTaskLinkListenersAttached = '1';
 
         const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputAttach');
         const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLinkAttach');
         const openNewTabBtn = this._opsQuery(modal, '#wf-ops-open-link-new-tab', 'openLinkNewTabAttach');
         const copyBtn = this._opsQuery(modal, '#wf-ops-copy-link', 'copyLinkAttach');
-        const verifierFetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetchAttach');
-        const verifierCopyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopyAttach');
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputAttach');
-        const verifierVersionSelect = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionAttach');
 
         if (input) {
             input.addEventListener('input', () => {
                 this._updateOpsTaskLinkUI(modal);
-                this._captureOpsTabState(modal);
+                this._captureOpsTaskLinkState(modal);
             });
             input.addEventListener('paste', () => {
                 requestAnimationFrame(() => {
                     this._updateOpsTaskLinkUI(modal);
-                    this._captureOpsTabState(modal);
+                    this._captureOpsTaskLinkState(modal);
                 });
             });
         }
@@ -4156,109 +4557,18 @@ const plugin = {
             });
         }
 
-        if (verifierFetchBtn) {
-            verifierFetchBtn.addEventListener('click', () => {
-                void this._handleOpsVerifierFetch(modal);
-            });
-        }
-
-        if (verifierInput) {
-            verifierInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void this._handleOpsVerifierFetch(modal);
-                }
-            });
-            verifierInput.addEventListener('paste', () => {
-                this._setOpsVerifierStatus(modal, '');
-                this._clearOpsVerifierVersionPicker(modal);
-                requestAnimationFrame(() => this._captureOpsTabState(modal));
-            });
-            verifierInput.addEventListener('input', () => {
-                this._setOpsVerifierStatus(modal, '');
-                this._clearOpsVerifierVersionPicker(modal);
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        const verifierContentSearch = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchAttach');
-        const verifierContentClear = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClearAttach');
-        const verifierContentPrev = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrevAttach');
-        const verifierContentNext = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNextAttach');
-        if (verifierContentClear) {
-            verifierContentClear.addEventListener('click', () => {
-                this._clearVerifierContentSearch(modal);
-            });
-        }
-        if (verifierContentSearch) {
-            verifierContentSearch.addEventListener('input', () => {
-                this._applyVerifierContentSearch(modal, verifierContentSearch.value);
-                this._captureOpsTabState(modal);
-            });
-            verifierContentSearch.addEventListener('keydown', (e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                this._stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
-                this._captureOpsTabState(modal);
-            });
-        }
-        if (verifierContentPrev) {
-            verifierContentPrev.addEventListener('click', () => {
-                this._stepVerifierContentMatch(modal, -1);
-                this._captureOpsTabState(modal);
-            });
-        }
-        if (verifierContentNext) {
-            verifierContentNext.addEventListener('click', () => {
-                this._stepVerifierContentMatch(modal, 1);
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        if (verifierVersionSelect) {
-            verifierVersionSelect.addEventListener('change', () => {
-                void this._handleOpsVerifierVersionChange(modal);
-            });
-        }
-
-        if (verifierCopyBtn) {
-            verifierCopyBtn.addEventListener('click', async () => {
-                const value = this._opsVerifierSourceText || '';
-                if (!value) {
-                    this._showOpsCopyFailurePulse(verifierCopyBtn);
-                    Logger.warn('ops-tab: verifier copy skipped (no code)');
-                    return;
-                }
-                const ok = await this._copyOpsTextToClipboard(value);
-                if (ok) {
-                    this._showOpsCopySuccessFlash(verifierCopyBtn);
-                    Logger.log('ops-tab: verifier code copied (' + value.length + ' chars)');
-                } else {
-                    this._showOpsCopyFailurePulse(verifierCopyBtn);
-                    Logger.warn('ops-tab: verifier copy failed');
-                }
-            });
-        }
-
         const gradeAssessmentsLink = this._opsQuery(modal, '#wf-ops-grade-assessments', 'opsGradeAssessmentsAttach');
         if (gradeAssessmentsLink) {
             gradeAssessmentsLink.addEventListener('click', () => {
                 Logger.log('ops-tab: grade assessments opened');
             });
         }
-
-        this._restoreOpsTabState(modal);
     },
 
-    _onDashboardTabActivated(dashModal, tabId) {
-        if (!dashModal) return;
-        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
-            if (this._getOpsTabEnabled()) {
-                void this._loadOpsSecrets(false);
-            }
-        });
-        if (tabId === 'team-members') {
-            this._restoreOpsTabState(dashModal);
-        }
+    _captureOpsTaskLinkState(modal) {
+        if (!modal) return;
+        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.taskInput = taskInput ? taskInput.value : '';
     }
 };

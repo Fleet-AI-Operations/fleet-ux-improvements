@@ -252,7 +252,7 @@ Operator-only bundle (PostgREST table/query catalog, Fleet web paths) for the Op
 
 Instructions: `local/PostgREST/OPS-ENCRYPT-INSTRUCTIONS.md` (gitignored).
 
-At runtime, when the Ops dashboard is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` and decrypts it with the device-stored Ops password. Use `Context.opsTab.getSecrets()` / `getOpsBundle()`, `postgrestQuery(queryKey, overrides)`, `getFleetWebPath(key)`, and `resolveTable(tableKey)` — not literal Supabase table names in plugin source. The fullscreen dashboard UI lives in `dashboard.js` (Search Output, Team Members, Verifier Fetcher).
+At runtime, when the Ops dashboard is unlocked, `ops-tab.js` fetches `ops-secrets.enc.json` and decrypts it with the device-stored Ops password. Use `Context.opsTab.getSecrets()` / `getOpsBundle()`, `postgrestQuery(queryKey, overrides)`, `getFleetWebPath(key)`, and `resolveTable(tableKey)` — not literal Supabase table names in plugin source. The fullscreen dashboard is a loader in `dashboard.js` with tab modules `search-output.js` (Worker Output Search), `team-members.js`, and `verifier-fetcher.js`; shared helpers live in `dashboard-lib.js` and `dashboard-data.js`.
 
 `./dev/utils/encrypt-ops-bundle.sh decrypt` prints decrypted JSON for local verification.
 

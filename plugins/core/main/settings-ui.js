@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -18,7 +18,8 @@ const plugin = {
     _presenceInterval: null,
     _pulseInterval: null,
     _docPaneCache: {},
-    
+    _gearClickHandler: null,
+
     init(state, context) {
         const self = this;
         Context.settingsUi = {
@@ -40,13 +41,28 @@ const plugin = {
      */
     openModal(opts) {
         const options = opts || {};
-        if (!options.forceSettings && this._shouldOpenOpsDashboard()) {
-            if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+        const routeDashboard = !options.forceSettings && this._shouldOpenOpsDashboard();
+        Logger.log('settings-ui: openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
+        if (routeDashboard) {
+            if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
+                Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
+                this._openSettingsModal();
+                return;
+            }
+            if (typeof Context.dashboard.isReady === 'function' && !Context.dashboard.isReady()) {
+                Logger.warn('settings-ui: dashboard tab modules not ready — opening settings');
+                this._openSettingsModal();
+                return;
+            }
+            try {
                 Context.dashboard.open();
                 Logger.log('settings-ui: opened Ops dashboard from gear');
                 return;
+            } catch (err) {
+                Logger.error('settings-ui: dashboard open failed — falling back to settings', err);
+                this._openSettingsModal();
+                return;
             }
-            Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable');
         }
         this._openSettingsModal();
     },
@@ -173,28 +189,36 @@ const plugin = {
             </svg>
         `;
 
-        if (settingsBtn.dataset.wfSettingsBound === 'true') return;
-        settingsBtn.dataset.wfSettingsBound = 'true';
+        if (settingsBtn.dataset.wfSettingsBound !== 'true') {
+            settingsBtn.dataset.wfSettingsBound = 'true';
+            settingsBtn.addEventListener('mouseenter', () => {
+                settingsBtn.style.background = 'var(--background, white)';
+                settingsBtn.style.transform = 'scale(1.1)';
+                settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+            });
+            settingsBtn.addEventListener('mouseleave', () => {
+                settingsBtn.style.transform = 'scale(1)';
+                settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                const solidBg =
+                    Context.isOutdated ||
+                    (Context.isDevBranch && this._getPulseOverrideEnabled()) ||
+                    settingsBtn.classList.contains('wf-settings-outdated');
+                settingsBtn.style.background = solidBg
+                    ? 'var(--background, white)'
+                    : 'color-mix(in srgb, var(--background, white) 30%, transparent)';
+            });
+        }
 
-        settingsBtn.addEventListener('mouseenter', () => {
-            settingsBtn.style.background = 'var(--background, white)';
-            settingsBtn.style.transform = 'scale(1.1)';
-            settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
-        });
+        this._attachGearClickHandler(settingsBtn);
+    },
 
-        settingsBtn.addEventListener('mouseleave', () => {
-            settingsBtn.style.transform = 'scale(1)';
-            settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-            const solidBg =
-                Context.isOutdated ||
-                (Context.isDevBranch && this._getPulseOverrideEnabled()) ||
-                settingsBtn.classList.contains('wf-settings-outdated');
-            settingsBtn.style.background = solidBg
-                ? 'var(--background, white)'
-                : 'color-mix(in srgb, var(--background, white) 30%, transparent)';
-        });
-
-        settingsBtn.addEventListener('click', () => this.openModal());
+    _attachGearClickHandler(settingsBtn) {
+        if (!settingsBtn) return;
+        if (this._gearClickHandler) {
+            settingsBtn.removeEventListener('click', this._gearClickHandler);
+        }
+        this._gearClickHandler = () => this.openModal();
+        settingsBtn.addEventListener('click', this._gearClickHandler);
     },
     
     _startPulseAnimation(settingsBtn) {

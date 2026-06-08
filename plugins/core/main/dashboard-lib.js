@@ -291,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.14',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -372,6 +372,8 @@ const plugin = {
             applyFiltersAndSort: bind(self._applyFiltersAndSort),
             emptyFilterIrrelevance: bind(self._emptyFilterIrrelevance),
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
+            emptyFilterOptionCounts: bind(self._emptyFilterOptionCounts),
+            computeFilterOptionCounts: bind(self._computeFilterOptionCounts),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
             buildVerifierFailureDisplayFromEvent: bind(self._buildVerifierFailureDisplayFromEvent),
@@ -827,8 +829,11 @@ const plugin = {
         }
         const projects = (catalog && catalog.projects) || [];
         const environments = (catalog && catalog.environments) || [];
+        const catalogTeamIds = new Set((teamCatalog || []).map((pair) => pair && pair[0]).filter(Boolean));
         return {
-            teams: [...teamIds].map((id) => ({
+            teams: [...teamIds]
+                .filter((id) => catalogTeamIds.size === 0 || catalogTeamIds.has(id))
+                .map((id) => ({
                 id,
                 label: dashLibTeamNameFromCatalog(id, teamCatalog) || id.slice(0, 8)
             })).sort((a, b) => a.label.localeCompare(b.label)),
@@ -911,6 +916,60 @@ const plugin = {
                 && this._itemPassesPromptHistoryFilter(item, draft, listBounds, id)
             ));
             if (!hasMatch) irrelevantHistory.add(id);
+        }
+        return result;
+    },
+
+    _emptyFilterOptionCounts() {
+        const result = Object.fromEntries(
+            this._checkboxFilterDimensions.map((d) => [d.draftKey, new Map()])
+        );
+        result.promptHistory = new Map();
+        return result;
+    },
+
+    _effectiveDraftForOptionCounts(draft, listBounds) {
+        if (!draft) return draft;
+        const bounds = listBounds || {};
+        const effective = { ...draft };
+        for (const dim of this._checkboxFilterDimensions) {
+            const all = bounds[dim.draftKey] || [];
+            const selected = effective[dim.draftKey] || [];
+            if (all.length > 0 && selected.length === 0) {
+                effective[dim.draftKey] = [...all];
+            }
+        }
+        const allHistory = bounds.promptHistory || [];
+        const selectedHistory = effective.promptHistory || [];
+        if (allHistory.length > 0 && selectedHistory.length === 0) {
+            effective.promptHistory = [...allHistory];
+        }
+        return effective;
+    },
+
+    _computeFilterOptionCounts(items, draft, listBounds, options) {
+        const result = this._emptyFilterOptionCounts();
+        const effectiveDraft = this._effectiveDraftForOptionCounts(draft, listBounds);
+        for (const dim of this._checkboxFilterDimensions) {
+            const optionList = (options && options[dim.optionsKey]) || [];
+            const counts = result[dim.draftKey];
+            for (const { id } of optionList) {
+                const count = items.filter(({ task }) => (
+                    dim.getValues(task).includes(id)
+                    && this._taskPassesFilterDimensions(task, effectiveDraft, listBounds, dim.draftKey)
+                )).length;
+                counts.set(id, count);
+            }
+        }
+        const historyOptions = (options && options.promptHistory) || [];
+        const historyCounts = result.promptHistory;
+        for (const { id } of historyOptions) {
+            const count = items.filter((item) => (
+                this._itemPromptHistory(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, id)
+            )).length;
+            historyCounts.set(id, count);
         }
         return result;
     },
