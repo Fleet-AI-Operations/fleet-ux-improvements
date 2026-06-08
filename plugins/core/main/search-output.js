@@ -71,6 +71,7 @@ const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
     deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
 };
+const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
 
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
@@ -3619,6 +3620,7 @@ const searchOutputMethods = {
                                 <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
+                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
                                     <div style="position: relative; min-width: 0;">
                                         <textarea id="wf-dash-prompt" rows="1" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px; resize: none; overflow: hidden; line-height: 1.4; min-height: 36px;"></textarea>
                                         <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnStyle()} position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; font-size: 15px; display: none;">&times;</button>
@@ -6133,7 +6135,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.16',
+    _version: '1.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
