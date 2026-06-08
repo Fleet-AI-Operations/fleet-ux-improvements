@@ -89,22 +89,14 @@ const DASH_FILTER_SCOPES = [
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_char_count', label: 'Prompt Length (chars)', type: 'number' },
-    { id: 'output_kind_count', label: 'Output Kind Count', type: 'number' },
-    { id: 'dispute_count', label: 'Dispute Count', type: 'number' },
-    { id: 'open_dispute_count', label: 'Open Dispute Count', type: 'number' },
-    { id: 'selected_qa_version', label: 'Selected QA Version No.', type: 'number' },
-    { id: 'selected_qa_total_versions', label: 'Total Versions at QA', type: 'number' },
+    { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
     { id: 'rejection_issue_count', label: 'QA Issue Badge Count', type: 'number' },
     { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true },
     { id: 'qa_feedback_count', label: 'Total QA Rounds †', type: 'number', hydrateHint: true },
     { id: 'returned_feedback_count', label: 'Returned QA Count †', type: 'number', hydrateHint: true },
-    { id: 'accepted_feedback_count', label: 'Accepted QA Count †', type: 'number', hydrateHint: true },
-    { id: 'escalated_feedback_count', label: 'Escalated Count †', type: 'number', hydrateHint: true },
     { id: 'flagged_feedback_count', label: 'Flagged as Bugged Count †', type: 'number', hydrateHint: true },
-    { id: 'verifier_failure_count', label: 'Verifier Failure Count †', type: 'number', hydrateHint: true },
     { id: 'card_activity_at', label: 'Card Activity Date', type: 'date' },
     { id: 'task_created_at', label: 'Task Created Date', type: 'date' },
-    { id: 'qa_submitted_at', label: 'QA Submitted Date', type: 'date' },
     { id: 'dispute_submitted_at', label: 'Latest Dispute Date', type: 'date' },
     { id: 'first_qa_at', label: 'First QA Date †', type: 'date', hydrateHint: true },
     { id: 'last_qa_at', label: 'Last QA Date †', type: 'date', hydrateHint: true },
@@ -128,6 +120,12 @@ const DASH_OUTPUT_DATE_COMPARATORS = [
     { id: 'eq', label: 'On' },
     { id: 'neq', label: 'Not on' }
 ];
+
+function dashManualFilterWordCount(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).filter(Boolean).length;
+}
 
 function dashManualFilterFieldOptionsHtml(selectedId) {
     const sel = selectedId || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0].id;
@@ -2217,18 +2215,8 @@ const searchOutputMethods = {
         switch (fieldId) {
             case 'prompt_char_count':
                 return (task.prompt || '').length;
-            case 'output_kind_count':
-                return (item.kinds && item.kinds.length) ? item.kinds.length : (item.kind ? 1 : 0);
-            case 'dispute_count':
-                return (item.disputes || []).length;
-            case 'open_dispute_count':
-                return (item.disputes || []).filter((d) => !d.resolutionAt).length;
-            case 'selected_qa_version':
-                return item.qaFeedback && item.qaFeedback.versionNo != null
-                    ? Number(item.qaFeedback.versionNo) : null;
-            case 'selected_qa_total_versions':
-                return item.qaFeedback && item.qaFeedback.totalVersions != null
-                    ? Number(item.qaFeedback.totalVersions) : null;
+            case 'prompt_word_count':
+                return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
                 if (!item.qaFeedback) return null;
                 return (item.qaFeedback.rejectionBadges || []).length;
@@ -2241,29 +2229,15 @@ const searchOutputMethods = {
             case 'returned_feedback_count':
                 if (!item.hydrated) return null;
                 return nonSystemFeedback.filter((e) => !e.isPositive).length;
-            case 'accepted_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => e.isPositive).length;
-            case 'escalated_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => e.isEscalated).length;
             case 'flagged_feedback_count':
                 if (!item.hydrated) return null;
                 return nonSystemFeedback.filter((e) => e.isFlaggedAsBugged).length;
-            case 'verifier_failure_count':
-                if (!item.hydrated) return null;
-                return allFeedback.filter((e) => e.isVerifierFailure || (e.display && e.display.isVerifierFailure)).length;
             case 'card_activity_at': {
                 const ts = Date.parse(item.sortAt || '');
                 return Number.isFinite(ts) ? ts : null;
             }
             case 'task_created_at': {
                 const ts = Date.parse(task.createdAt || '');
-                return Number.isFinite(ts) ? ts : null;
-            }
-            case 'qa_submitted_at': {
-                if (!item.qaFeedback || !item.qaFeedback.feedbackAt) return null;
-                const ts = Date.parse(item.qaFeedback.feedbackAt);
                 return Number.isFinite(ts) ? ts : null;
             }
             case 'dispute_submitted_at': {
@@ -5778,7 +5752,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
