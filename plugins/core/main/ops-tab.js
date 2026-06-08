@@ -1,7 +1,8 @@
 // ops-tab.js
 // Core plugin for the Ops dashboard backend: secrets/password gate, PostgREST,
-// team member search, verifier fetch, and task link helpers. UI lives in
-// dashboard.js; settings-ui.js hosts enable/password toggles only.
+// team member search backend, verifier fetch backend, and task link helpers.
+// Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js;
+// settings-ui.js hosts enable/password toggles only.
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
@@ -185,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.7',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -247,15 +248,33 @@ const plugin = {
             getOpsDashboardOpenOnSettings: () => this._getOpsDashboardOpenOnSettings(),
             setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
             renderSettingsSection: () => this._renderOpsSettingsSection(),
-            renderTeamMembersPanel: () => this._renderTeamMembersPanel(),
-            renderVerifierFetcherPanel: () => this._renderVerifierFetcherPanel(),
             renderGradeAssessmentsHeaderLink: () => this._renderGradeAssessmentsHeaderLink(),
             renderTaskLinkBar: () => this._renderTaskLinkBar(),
             attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
-            attachDashboardListeners: (dashModal, dashboardPlugin) => this._attachOpsDashboardListeners(dashModal, dashboardPlugin),
-            onDashboardTabActivated: (dashModal, tabId) => this._onDashboardTabActivated(dashModal, tabId),
-            onTeamMemberMsChange: (dashModal) => this._filterOpsTeamSearchCards(dashModal),
+            attachTaskLinkListeners: (dashModal) => this._attachOpsTaskLinkListeners(dashModal),
+            injectSpinnerStyle: () => this._injectOpsSpinnerStyle(),
+            handleTeamSearch: (modal) => this._handleOpsTeamSearch(modal),
+            clearTeamSearchResults: (modal) => this._clearOpsTeamSearchResults(modal),
+            filterTeamSearchCards: (modal) => this._filterOpsTeamSearchCards(modal),
+            populateTeamMemberConstraintLists: (teams, opts) => this._populateOpsTeamMemberConstraintLists(teams, opts),
+            toggleTeamExpandAll: (modal) => this._toggleOpsTeamExpandAll(modal),
+            attachTeamMemberDetailsToggle: (modal) => this._attachOpsTeamMemberDetailsToggle(modal),
+            attachTeamMemberEditDelegation: (modal) => this._attachOpsTeamMemberEditDelegation(modal),
+            captureTeamTabState: (modal) => this._captureOpsTeamTabState(modal),
+            restoreTeamTabState: (modal) => this._restoreOpsTeamTabState(modal),
+            handleVerifierFetch: (modal) => this._handleOpsVerifierFetch(modal),
+            handleVerifierVersionChange: (modal) => this._handleOpsVerifierVersionChange(modal),
+            setVerifierStatus: (modal, msg, isError) => this._setOpsVerifierStatus(modal, msg, isError),
+            clearVerifierVersionPicker: (modal) => this._clearOpsVerifierVersionPicker(modal),
+            applyVerifierContentSearch: (modal, query) => this._applyVerifierContentSearch(modal, query),
+            clearVerifierContentSearch: (modal) => this._clearVerifierContentSearch(modal),
+            stepVerifierContentMatch: (modal, dir) => this._stepVerifierContentMatch(modal, dir),
+            captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
+            restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
+            copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
+            captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
+            revalidateOnDashboardTabActivated: (dashModal) => this._revalidateOnDashboardTabActivated(dashModal),
             onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
@@ -3907,34 +3926,10 @@ const plugin = {
 
     _captureOpsTabState(modal) {
         if (!modal) return;
-        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
-        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
-        const fetchState = this._opsVerifierFetchState;
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
-        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
-        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
-        this._opsTabState = {
-            taskInput: taskInput ? taskInput.value : '',
-            verifierInput: verifierInput ? verifierInput.value : '',
-            verifierStatus: status ? (status.textContent || '') : '',
-            verifierStatusIsError: status ? status.style.color === '#dc2626' : false,
-            verifierOutput: this._opsVerifierSourceText || '',
-            verifierContentSearchQuery: this._opsVerifierContentSearch.query || '',
-            verifierContentSearchIndex: this._opsVerifierContentSearch.index || 0,
-            verifierFetchState: fetchState
-                ? {
-                    resolved: fetchState.resolved,
-                    versions: fetchState.versions,
-                    selectedVersion: fetchState.selectedVersion
-                }
-                : null,
-            teamSearchQuery: teamSearchInput ? teamSearchInput.value : '',
-            teamSearchStatus: teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
-                ? (teamSearchStatus.textContent || '')
-                : '',
-            teamSearchStatusIsError: teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false
-        };
+        if (!this._opsTabState) this._opsTabState = {};
+        this._captureOpsTaskLinkState(modal);
+        this._captureOpsTeamTabState(modal);
+        this._captureOpsVerifierTabState(modal);
     },
 
     _restoreOpsTabState(modal) {
@@ -3947,49 +3942,8 @@ const plugin = {
             taskInput.value = state.taskInput;
             this._updateOpsTaskLinkUI(modal);
         }
-
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
-        if (verifierInput && state.verifierInput) {
-            verifierInput.value = state.verifierInput;
-        }
-
-        if (state.verifierStatus) {
-            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
-        }
-
-        if (state.verifierOutput) {
-            void this._setOpsVerifierOutput(modal, state.verifierOutput);
-        }
-
-        if (state.verifierContentSearchQuery != null) {
-            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
-            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
-            if (state.verifierOutput) {
-                void this._refreshVerifierOutputDisplay(modal);
-            }
-        }
-
-        if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
-            this._setOpsVerifierVersionPicker(
-                modal,
-                state.verifierFetchState.resolved,
-                state.verifierFetchState.versions,
-                state.verifierFetchState.selectedVersion
-            );
-        } else {
-            this._opsVerifierFetchState = null;
-        }
-
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
-        if (teamSearchInput && state.teamSearchQuery != null) {
-            teamSearchInput.value = state.teamSearchQuery;
-        }
-        if (state.teamSearchStatus) {
-            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
-            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
-        }
+        this._restoreOpsTeamTabState(modal);
+        this._restoreOpsVerifierTabState(modal);
     },
 
     _setOpsPasswordPanelVisible(modal, visible) {
@@ -4197,322 +4151,12 @@ const plugin = {
         `;
     },
 
-    _renderTeamMembersPanel() {
-        const dash = Context.dashboard;
-        const box = dash && typeof dash.panelBoxStyle === 'function' ? dash.panelBoxStyle() : 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
-        const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
-        const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
-        const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
-        const navBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--brand, #4f46e5); background: var(--background, white); border: 1px solid var(--border, #e5e5e5); border-radius: 6px; cursor: pointer;';
-        const msTeams = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-teams', 'Teams', 'Run search to load teams', false)
-            : '';
-        const msPerms = dash && typeof dash.multiSelectHtml === 'function'
-            ? dash.multiSelectHtml('team-members-permissions', 'Permissions', 'All permissions', false)
-            : '';
-        const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
-            ? dash.splitPanelSectionHtml.bind(dash)
-            : null;
-
-        const leftHtml = `
-                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <div style="padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
-                            <div>
-                                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 6px 0; color: var(--foreground, #0f172a);">
-                                    Team Member Search
-                                </h3>
-                                <p style="${hint} margin: 0; line-height: 1.45;">
-                                    Search the Computer Use team by name or email. Leave blank to list all members.
-                                </p>
-                            </div>
-                            <div style="display: flex; gap: 8px; align-items: stretch;">
-                                <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="${input} flex: 1; min-width: 0;">
-                                <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="${navBtn} flex-shrink: 0;">Search</button>
-                            </div>
-                        </div>
-                        <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
-                            <div id="wf-ops-team-left-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <div>
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Narrow results</div>
-                                    <p style="${hint} margin: 0 0 8px 0;">Use In / Not in (teams) and Has / Doesn't Have (permissions). Leave all unchecked to show everyone.</p>
-                                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                                        ${msTeams}
-                                        ${msPerms}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`;
-        const rightHtml = `
-                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
-                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                        <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
-                            <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                            <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
-                                <button type="button" id="wf-ops-team-expand-all-btn" style="
-                                    display: none;
-                                    padding: 2px 10px;
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: var(--muted-foreground, #666);
-                                    background: var(--background, white);
-                                    border: 1px solid var(--border, #e5e5e5);
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                ">Collapse All</button>
-                                <button type="button" id="wf-ops-team-search-clear-btn" style="
-                                    display: none;
-                                    padding: 2px 10px;
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: var(--muted-foreground, #666);
-                                    background: var(--background, white);
-                                    border: 1px solid var(--border, #e5e5e5);
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                ">Clear</button>
-                            </div>
-                        </div>
-                        <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
-                            Results
-                            <span style="display: block; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 4px;">Run a search to list team members.</span>
-                        </div>
-                    </div>
-                    <div id="wf-ops-team-search-output-wrap" style="display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px;">
-                        <div id="wf-ops-team-search-cards"></div>
-                    </div>
-                </div>`;
-
-        if (splitPanel) return splitPanel(leftHtml, rightHtml);
-
-        return `
-            <section style="display: flex; flex: 1; min-height: 0; gap: 16px; overflow: hidden; width: 100%;">
-                <aside style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-                    ${leftHtml}
-                </aside>
-                ${rightHtml}
-            </section>`;
-    },
-
-    _renderTaskLinkBar() {
-        return `
-            <div id="wf-ops-task-link-bar" style="display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; max-width: 100%; box-sizing: border-box;">
-                <label for="wf-ops-task-input" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Go to Task:</label>
-                <input type="text" id="wf-ops-task-input" placeholder="Task key or UUID" autocomplete="off" title="Task View Link Generator" style="
-                    flex: 0 0 auto;
-                    width: 220px;
-                    max-width: 100%;
-                    min-width: 120px;
-                    padding: 6px 10px;
-                    font-size: 12px;
-                    border: 1px solid var(--border, #e2e8f0);
-                    border-radius: 6px;
-                    background: var(--background, #fff);
-                    color: var(--foreground, #0f172a);
-                    box-sizing: border-box;
-                ">
-                <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">New Tab</button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--muted-foreground, #64748b);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Copy</button>
-                </div>
-            </div>`;
-    },
 
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
             + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
     },
 
-    _renderVerifierFetcherPanel() {
-        return `
-                <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
-                    <div style="flex-shrink: 0;">
-                        <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
-                            Verifier Code Fetcher
-                        </h3>
-                        <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
-                            Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
-                        </p>
-                        <div style="display: flex; gap: 8px; align-items: stretch;">
-                            <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                                flex: 1;
-                                min-width: 0;
-                                padding: 8px 12px;
-                                font-size: 12px;
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                background: var(--background, white);
-                                color: var(--foreground, #333);
-                                box-sizing: border-box;
-                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                            ">
-                            <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
-                                flex-shrink: 0;
-                                padding: 8px 14px;
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: var(--brand, #4f46e5);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                            ">Fetch</button>
-                        </div>
-                        <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
-                            <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
-                        </div>
-                        <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
-                            display: none;
-                            width: 100%;
-                            margin-top: 8px;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--background, white);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        "></select>
-                    </div>
-                    <div id="wf-ops-verifier-content-search-wrap" style="
-                        display: none;
-                        flex-shrink: 0;
-                        align-self: flex-start;
-                        width: 30%;
-                        max-width: 30%;
-                        min-width: 12rem;
-                        margin-top: 8px;
-                        gap: 6px;
-                        align-items: center;
-                        flex-wrap: wrap;
-                        flex-direction: row;
-                        justify-content: flex-start;
-                        box-sizing: border-box;
-                    ">
-                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Search in code:</label>
-                        <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
-                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
-                                flex: 1;
-                                min-width: 0;
-                                width: 100%;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                background: var(--background, white);
-                                color: var(--foreground, #333);
-                                box-sizing: border-box;
-                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                            ">
-                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" style="
-                                display: none;
-                                flex-shrink: 0;
-                                width: 26px;
-                                height: 26px;
-                                padding: 0;
-                                font-size: 16px;
-                                line-height: 1;
-                                font-weight: 600;
-                                color: var(--muted-foreground, #64748b);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                cursor: pointer;
-                                align-items: center;
-                                justify-content: center;
-                            ">&times;</button>
-                        </span>
-                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
-                        <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Prev</button>
-                        <button type="button" id="wf-ops-verifier-content-next" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Next</button>
-                        <button type="button" id="wf-ops-copy-verifier" style="
-                            display: none;
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 500;
-                            color: var(--muted-foreground, #666);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            cursor: pointer;
-                            transition: background 0.2s, color 0.2s;
-                        ">Copy</button>
-                    </div>
-                    <div id="wf-ops-verifier-output-wrap" style="
-                        display: none;
-                        flex: 1;
-                        min-height: 0;
-                        width: 100%;
-                        margin-top: 8px;
-                        flex-direction: column;
-                    ">
-                        <pre style="
-                            flex: 1;
-                            min-height: 0;
-                            width: 100%;
-                            margin: 0;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--card, #fafafa);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            overflow: auto;
-                            white-space: pre-wrap;
-                            word-break: break-word;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
-                    </div>
-                </div>`;
-    },
 
     async _handleOpsVerifierFetch(modal) {
         const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
@@ -4692,110 +4336,186 @@ const plugin = {
         this._syncOpsSettingsSubmoduleVisibility(modal);
     },
 
-    _attachOpsDashboardListeners(dashModal, dashboardPlugin) {
+    _captureOpsTeamTabState(modal) {
+        if (!modal) return;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
+        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
+        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.teamSearchQuery = teamSearchInput ? teamSearchInput.value : '';
+        this._opsTabState.teamSearchStatus = teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
+            ? (teamSearchStatus.textContent || '')
+            : '';
+        this._opsTabState.teamSearchStatusIsError = teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false;
+    },
+
+    _restoreOpsTeamTabState(modal) {
+        if (!modal) return;
+        const state = this._opsTabState;
+        if (!state) return;
+        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
+        if (teamSearchInput && state.teamSearchQuery != null) {
+            teamSearchInput.value = state.teamSearchQuery;
+        }
+        if (state.teamSearchStatus) {
+            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
+            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
+        }
+    },
+
+    _captureOpsVerifierTabState(modal) {
+        if (!modal) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
+        const fetchState = this._opsVerifierFetchState;
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.verifierInput = verifierInput ? verifierInput.value : '';
+        this._opsTabState.verifierStatus = status ? (status.textContent || '') : '';
+        this._opsTabState.verifierStatusIsError = status ? status.style.color === '#dc2626' : false;
+        this._opsTabState.verifierOutput = this._opsVerifierSourceText || '';
+        this._opsTabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
+        this._opsTabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
+        this._opsTabState.verifierFetchState = fetchState
+            ? {
+                resolved: fetchState.resolved,
+                versions: fetchState.versions,
+                selectedVersion: fetchState.selectedVersion
+            }
+            : null;
+    },
+
+    _restoreOpsVerifierTabState(modal) {
+        if (!modal) return;
+        const state = this._opsTabState;
+        if (!state) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
+        if (verifierInput && state.verifierInput) {
+            verifierInput.value = state.verifierInput;
+        }
+        if (state.verifierStatus) {
+            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
+        }
+        if (state.verifierOutput) {
+            void this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+        if (state.verifierContentSearchQuery != null) {
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
+            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
+            if (state.verifierOutput) {
+                void this._refreshVerifierOutputDisplay(modal);
+            }
+        }
+        if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
+            this._setOpsVerifierVersionPicker(
+                modal,
+                state.verifierFetchState.resolved,
+                state.verifierFetchState.versions,
+                state.verifierFetchState.selectedVersion
+            );
+        } else {
+            this._opsVerifierFetchState = null;
+        }
+    },
+
+    async _copyOpsVerifierCode(modal, verifierCopyBtn) {
+        const value = this._opsVerifierSourceText || '';
+        if (!value) {
+            this._showOpsCopyFailurePulse(verifierCopyBtn);
+            Logger.warn('ops-tab: verifier copy skipped (no code)');
+            return;
+        }
+        const ok = await this._copyOpsTextToClipboard(value);
+        if (ok) {
+            this._showOpsCopySuccessFlash(verifierCopyBtn);
+            Logger.log('ops-tab: verifier code copied (' + value.length + ' chars)');
+        } else {
+            this._showOpsCopyFailurePulse(verifierCopyBtn);
+            Logger.warn('ops-tab: verifier copy failed');
+        }
+    },
+
+    _toggleOpsTeamExpandAll(modal) {
+        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
+        if (!cards) return;
+        const details = [...cards.querySelectorAll('.wf-ops-member-details')];
+        const anyOpen = details.some((d) => d.open);
+        const shouldOpen = !anyOpen;
+        if (this._opsMemberDetailsOpenIds === null) {
+            this._opsMemberDetailsOpenIds = new Set();
+        }
+        details.forEach((d) => {
+            d.open = shouldOpen;
+            const memberId = d.getAttribute('data-member-id');
+            if (!memberId) return;
+            if (shouldOpen) this._opsMemberDetailsOpenIds.add(memberId);
+            else this._opsMemberDetailsOpenIds.delete(memberId);
+        });
+        this._syncOpsExpandAllBtn(modal);
+        Logger.log('ops-tab: team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
+    },
+
+    _attachOpsTeamMemberDetailsToggle(modal) {
+        if (!modal || modal.dataset.wfOpsMemberDetailsToggle === '1') return;
+        modal.dataset.wfOpsMemberDetailsToggle = '1';
+        modal.addEventListener('toggle', (e) => {
+            const detailsEl = e.target;
+            if (!detailsEl || !detailsEl.classList.contains('wf-ops-member-details')) return;
+            const memberId = detailsEl.getAttribute('data-member-id');
+            if (!memberId) return;
+            if (this._opsMemberDetailsOpenIds === null) {
+                const cache = this._opsTeamSearchMemberCache;
+                const allIds = cache ? [...cache.memberMap.keys()] : [];
+                this._opsMemberDetailsOpenIds = new Set(allIds);
+            }
+            if (detailsEl.open) this._opsMemberDetailsOpenIds.add(memberId);
+            else this._opsMemberDetailsOpenIds.delete(memberId);
+            this._syncOpsExpandAllBtn(modal);
+        }, true);
+    },
+
+    _attachOpsTeamMemberEditDelegation(modal) {
+        if (!modal || modal.dataset.wfOpsMemberEditDelegation === '1') return;
+        modal.dataset.wfOpsMemberEditDelegation = '1';
+        modal.addEventListener('click', (e) => {
+            this._handleOpsMemberEditClick(e, modal);
+        });
+    },
+
+    _revalidateOnDashboardTabActivated(dashModal) {
+        if (!dashModal) return;
+        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
+            if (this._getOpsTabEnabled()) {
+                void this._loadOpsSecrets(false);
+            }
+        });
+    },
+
+    _attachOpsTaskLinkListeners(dashModal) {
         if (!dashModal) return;
         this._injectOpsSpinnerStyle();
         const modal = dashModal;
 
-        if (modal.dataset.wfOpsDashboardListenersAttached === '1') {
-            this._restoreOpsTabState(modal);
+        if (modal.dataset.wfOpsTaskLinkListenersAttached === '1') {
             return;
         }
-        modal.dataset.wfOpsDashboardListenersAttached = '1';
-
-        const teamSearchBtn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnAttach');
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputAttach');
-
-        if (teamSearchBtn) {
-            teamSearchBtn.addEventListener('click', () => {
-                void this._handleOpsTeamSearch(modal);
-            });
-        }
-        if (teamSearchInput) {
-            teamSearchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void this._handleOpsTeamSearch(modal);
-                }
-            });
-            teamSearchInput.addEventListener('input', () => {
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        const teamSearchClearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtnAttach');
-        if (teamSearchClearBtn) {
-            teamSearchClearBtn.addEventListener('click', () => {
-                this._clearOpsTeamSearchResults(modal);
-            });
-        }
-
-        const teamExpandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtnAttach');
-        if (teamExpandAllBtn) {
-            teamExpandAllBtn.addEventListener('click', () => {
-                const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
-                if (!cards) return;
-                const details = [...cards.querySelectorAll('.wf-ops-member-details')];
-                const anyOpen = details.some((d) => d.open);
-                const shouldOpen = !anyOpen;
-                if (this._opsMemberDetailsOpenIds === null) {
-                    this._opsMemberDetailsOpenIds = new Set();
-                }
-                details.forEach((d) => {
-                    d.open = shouldOpen;
-                    const memberId = d.getAttribute('data-member-id');
-                    if (!memberId) return;
-                    if (shouldOpen) this._opsMemberDetailsOpenIds.add(memberId);
-                    else this._opsMemberDetailsOpenIds.delete(memberId);
-                });
-                this._syncOpsExpandAllBtn(modal);
-                Logger.log('ops-tab: team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
-            });
-        }
-
-        if (!modal.dataset.wfOpsMemberDetailsToggle) {
-            modal.dataset.wfOpsMemberDetailsToggle = '1';
-            modal.addEventListener('toggle', (e) => {
-                const detailsEl = e.target;
-                if (!detailsEl || !detailsEl.classList.contains('wf-ops-member-details')) return;
-                const memberId = detailsEl.getAttribute('data-member-id');
-                if (!memberId) return;
-                if (this._opsMemberDetailsOpenIds === null) {
-                    const cache = this._opsTeamSearchMemberCache;
-                    const allIds = cache ? [...cache.memberMap.keys()] : [];
-                    this._opsMemberDetailsOpenIds = new Set(allIds);
-                }
-                if (detailsEl.open) this._opsMemberDetailsOpenIds.add(memberId);
-                else this._opsMemberDetailsOpenIds.delete(memberId);
-                this._syncOpsExpandAllBtn(modal);
-            }, true);
-        }
-
-        if (!modal.dataset.wfOpsMemberEditDelegation) {
-            modal.dataset.wfOpsMemberEditDelegation = '1';
-            modal.addEventListener('click', (e) => {
-                this._handleOpsMemberEditClick(e, modal);
-            });
-        }
+        modal.dataset.wfOpsTaskLinkListenersAttached = '1';
 
         const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputAttach');
         const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLinkAttach');
         const openNewTabBtn = this._opsQuery(modal, '#wf-ops-open-link-new-tab', 'openLinkNewTabAttach');
         const copyBtn = this._opsQuery(modal, '#wf-ops-copy-link', 'copyLinkAttach');
-        const verifierFetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetchAttach');
-        const verifierCopyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopyAttach');
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputAttach');
-        const verifierVersionSelect = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionAttach');
 
         if (input) {
             input.addEventListener('input', () => {
                 this._updateOpsTaskLinkUI(modal);
-                this._captureOpsTabState(modal);
+                this._captureOpsTaskLinkState(modal);
             });
             input.addEventListener('paste', () => {
                 requestAnimationFrame(() => {
                     this._updateOpsTaskLinkUI(modal);
-                    this._captureOpsTabState(modal);
+                    this._captureOpsTaskLinkState(modal);
                 });
             });
         }
@@ -4831,109 +4551,18 @@ const plugin = {
             });
         }
 
-        if (verifierFetchBtn) {
-            verifierFetchBtn.addEventListener('click', () => {
-                void this._handleOpsVerifierFetch(modal);
-            });
-        }
-
-        if (verifierInput) {
-            verifierInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void this._handleOpsVerifierFetch(modal);
-                }
-            });
-            verifierInput.addEventListener('paste', () => {
-                this._setOpsVerifierStatus(modal, '');
-                this._clearOpsVerifierVersionPicker(modal);
-                requestAnimationFrame(() => this._captureOpsTabState(modal));
-            });
-            verifierInput.addEventListener('input', () => {
-                this._setOpsVerifierStatus(modal, '');
-                this._clearOpsVerifierVersionPicker(modal);
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        const verifierContentSearch = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchAttach');
-        const verifierContentClear = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClearAttach');
-        const verifierContentPrev = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrevAttach');
-        const verifierContentNext = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNextAttach');
-        if (verifierContentClear) {
-            verifierContentClear.addEventListener('click', () => {
-                this._clearVerifierContentSearch(modal);
-            });
-        }
-        if (verifierContentSearch) {
-            verifierContentSearch.addEventListener('input', () => {
-                this._applyVerifierContentSearch(modal, verifierContentSearch.value);
-                this._captureOpsTabState(modal);
-            });
-            verifierContentSearch.addEventListener('keydown', (e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                this._stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
-                this._captureOpsTabState(modal);
-            });
-        }
-        if (verifierContentPrev) {
-            verifierContentPrev.addEventListener('click', () => {
-                this._stepVerifierContentMatch(modal, -1);
-                this._captureOpsTabState(modal);
-            });
-        }
-        if (verifierContentNext) {
-            verifierContentNext.addEventListener('click', () => {
-                this._stepVerifierContentMatch(modal, 1);
-                this._captureOpsTabState(modal);
-            });
-        }
-
-        if (verifierVersionSelect) {
-            verifierVersionSelect.addEventListener('change', () => {
-                void this._handleOpsVerifierVersionChange(modal);
-            });
-        }
-
-        if (verifierCopyBtn) {
-            verifierCopyBtn.addEventListener('click', async () => {
-                const value = this._opsVerifierSourceText || '';
-                if (!value) {
-                    this._showOpsCopyFailurePulse(verifierCopyBtn);
-                    Logger.warn('ops-tab: verifier copy skipped (no code)');
-                    return;
-                }
-                const ok = await this._copyOpsTextToClipboard(value);
-                if (ok) {
-                    this._showOpsCopySuccessFlash(verifierCopyBtn);
-                    Logger.log('ops-tab: verifier code copied (' + value.length + ' chars)');
-                } else {
-                    this._showOpsCopyFailurePulse(verifierCopyBtn);
-                    Logger.warn('ops-tab: verifier copy failed');
-                }
-            });
-        }
-
         const gradeAssessmentsLink = this._opsQuery(modal, '#wf-ops-grade-assessments', 'opsGradeAssessmentsAttach');
         if (gradeAssessmentsLink) {
             gradeAssessmentsLink.addEventListener('click', () => {
                 Logger.log('ops-tab: grade assessments opened');
             });
         }
-
-        this._restoreOpsTabState(modal);
     },
 
-    _onDashboardTabActivated(dashModal, tabId) {
-        if (!dashModal) return;
-        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
-            if (this._getOpsTabEnabled()) {
-                void this._loadOpsSecrets(false);
-            }
-        });
-        if (tabId === 'team-members') {
-            this._restoreOpsTabState(dashModal);
-        }
+    _captureOpsTaskLinkState(modal) {
+        if (!modal) return;
+        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
+        if (!this._opsTabState) this._opsTabState = {};
+        this._opsTabState.taskInput = taskInput ? taskInput.value : '';
     }
 };

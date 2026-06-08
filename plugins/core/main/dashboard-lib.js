@@ -291,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '1.17',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
