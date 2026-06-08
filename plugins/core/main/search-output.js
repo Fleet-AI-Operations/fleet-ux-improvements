@@ -5927,7 +5927,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._syncFieldClearButtons();
             });
             prompt.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     dash._applyFiltersAndRender();
                 }
@@ -6133,7 +6133,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.15',
+    _version: '1.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
