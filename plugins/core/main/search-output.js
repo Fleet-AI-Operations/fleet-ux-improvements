@@ -5330,9 +5330,9 @@ const searchOutputMethods = {
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
                         ${promptLabel}${this._copyIconHtml(version.prompt)}
                     </div>
+                    <div style="flex-shrink: 0; margin-left: auto;">${submittedHtml}</div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                <div style="margin-top: 8px;">${submittedHtml}</div>
                 ${feedbackHtml}${fallbackHtml}${orphanHtml}
             </div>`;
     },
@@ -5357,11 +5357,13 @@ const searchOutputMethods = {
             : '—';
         let bodyHtml = `
             <div>
-                <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                    ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
+                        ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
+                    </div>
+                    <div style="flex-shrink: 0; margin-left: auto;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                <div style="margin-top: 8px;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
             </div>`;
         if (item.qaFeedback) {
             bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx);
@@ -5920,7 +5922,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
