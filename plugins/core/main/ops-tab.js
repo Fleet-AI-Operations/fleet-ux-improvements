@@ -185,7 +185,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '6.6',
+    _version: '6.7',
     phase: 'core',
     enabledByDefault: true,
 
@@ -207,9 +207,9 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
-    /** Expert profile action — body [expertId, teamUuid] → profile.timezone, etc. */
+    /** Expert profile action — body [expertId, teamUuid] → expert.created_at / last_sign_in_at */
     _opsExpertProfileActionCache: { nextAction: null, routerState: null },
-    /** memberId → { loading?, creator?, qa?, profile?, timezone?, createdAt?, lastSignInAt?, error? } */
+    /** memberId → { loading?, creator?, qa?, createdAt?, lastSignInAt?, error? } */
     _opsExpertStatsCache: null,
     _opsExpertStatsHydrateGen: 0,
     /** Set of member IDs whose card details are open; null = all-expanded default */
@@ -1670,69 +1670,40 @@ const plugin = {
 
     _parseOpsExpertProfileFlight(text, expertId) {
         if (!text) return null;
-        const result = { timezone: null, createdAt: null, lastSignInAt: null };
+        const result = { createdAt: null, lastSignInAt: null };
+        const wantId = String(expertId || '').trim().toLowerCase();
+        if (!wantId) return result;
 
-        // Parse line 1: for profile.timezone
         for (const line of text.split('\n')) {
             const t = line.trim();
-            if (t.startsWith('1:{') || t.startsWith('1:"')) {
-                try {
-                    const parsed = JSON.parse(t.slice(2));
-                    if (parsed && parsed.profile) {
-                        if (typeof parsed.profile.timezone === 'string') {
-                            result.timezone = parsed.profile.timezone;
-                        }
-                    }
-                } catch (_e) { /* try next */ }
-                break;
+            if (!t.startsWith('1:{')) continue;
+            let parsed;
+            try {
+                parsed = JSON.parse(t.slice(2));
+            } catch (_e) {
+                Logger.warn('ops-tab: expert profile line 1 parse failed for ' + wantId.slice(0, 8) + '…');
+                return result;
             }
+            const expert = parsed && parsed.expert;
+            if (!expert || typeof expert !== 'object') {
+                Logger.warn('ops-tab: expert profile line 1 missing expert for ' + wantId.slice(0, 8) + '…');
+                return result;
+            }
+            const uid = String(expert.user_id || expert.id || '').trim().toLowerCase();
+            if (uid && uid !== wantId) {
+                Logger.warn('ops-tab: expert profile user_id mismatch for ' + wantId.slice(0, 8) + '…');
+                return result;
+            }
+            if (typeof expert.created_at === 'string') result.createdAt = expert.created_at;
+            if (typeof expert.last_sign_in_at === 'string') result.lastSignInAt = expert.last_sign_in_at;
+            if (!result.createdAt && !result.lastSignInAt) {
+                Logger.warn('ops-tab: expert profile missing dates for ' + wantId.slice(0, 8) + '…');
+            }
+            return result;
         }
 
-        // Scan all flight lines for a user object whose id matches expertId
-        if (expertId) {
-            const idLower = String(expertId).toLowerCase();
-            for (const line of text.split('\n')) {
-                const colon = line.indexOf(':');
-                if (colon < 1) continue;
-                const body = line.slice(colon + 1).trim();
-                if (!body.startsWith('{') && !body.startsWith('[')) continue;
-                if (!body.includes(idLower) && !body.includes(expertId)) continue;
-                let parsed;
-                try { parsed = JSON.parse(body); } catch (_e) { continue; }
-                const found = this._opsExtractExpertUserFromParsed(parsed, expertId, 0);
-                if (found) {
-                    if (found.created_at) result.createdAt = found.created_at;
-                    if (found.last_sign_in_at) result.lastSignInAt = found.last_sign_in_at;
-                    if (result.createdAt && result.lastSignInAt) break;
-                }
-            }
-        }
-
+        Logger.warn('ops-tab: expert profile flight missing line 1 for ' + wantId.slice(0, 8) + '…');
         return result;
-    },
-
-    _opsExtractExpertUserFromParsed(node, expertId, depth) {
-        if (!node || typeof node !== 'object' || depth > 10) return null;
-        if (Array.isArray(node)) {
-            for (const item of node) {
-                const found = this._opsExtractExpertUserFromParsed(item, expertId, depth + 1);
-                if (found) return found;
-            }
-            return null;
-        }
-        // Check if this node is the user record we want
-        if (typeof node.id === 'string' &&
-            node.id.toLowerCase() === String(expertId).toLowerCase() &&
-            (node.created_at || node.last_sign_in_at)) {
-            return node;
-        }
-        for (const val of Object.values(node)) {
-            if (val && typeof val === 'object') {
-                const found = this._opsExtractExpertUserFromParsed(val, expertId, depth + 1);
-                if (found) return found;
-            }
-        }
-        return null;
     },
 
     _opsFormatDurationMinutes(seconds) {
@@ -1754,20 +1725,6 @@ const plugin = {
         const yStr = yesterday.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
         if (dStr === yStr) return 'Yesterday';
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    },
-
-    _opsTimezoneShortLabel(ianaTimezone) {
-        if (!ianaTimezone || typeof ianaTimezone !== 'string') return null;
-        try {
-            const parts = Intl.DateTimeFormat('en-US', { timeZone: ianaTimezone, timeZoneName: 'short' })
-                .formatToParts(new Date());
-            const tzPart = parts.find((p) => p.type === 'timeZoneName');
-            return tzPart ? tzPart.value : null;
-        } catch (_e) {
-            // Fallback: last segment of IANA name (e.g. "New_York")
-            const seg = ianaTimezone.split('/').pop();
-            return seg ? seg.replace(/_/g, ' ') : null;
-        }
     },
 
     _opsExpertQaAcceptanceRatePercent(data) {
@@ -1854,17 +1811,15 @@ const plugin = {
 
     _renderOpsTeamMemberMetaInnerHtml(entry) {
         if (!this._opsExpertProfileActionCache.nextAction) {
-            return '<span style="color:var(--muted-foreground,#666);">Profile unavailable (open an expert profile once)</span>';
+            return '<span style="color:var(--muted-foreground,#666);">Dates unavailable (open an expert profile once)</span>';
         }
         if (!entry || entry.loading) {
-            return '<span style="color:var(--muted-foreground,#666);">Joined … · Last active … · …</span>';
+            return '<span style="color:var(--muted-foreground,#666);">Joined … · Last active …</span>';
         }
         const joined = this._opsFormatRelativeLocalDate(entry.createdAt);
         const lastActive = this._opsFormatRelativeLocalDate(entry.lastSignInAt);
-        const tzLabel = entry.timezone ? (this._opsTimezoneShortLabel(entry.timezone) || entry.timezone) : '—';
         return '<span>Joined ' + this._opsEscapeHtml(joined) +
-            ' · Last active ' + this._opsEscapeHtml(lastActive) +
-            ' · ' + this._opsEscapeHtml(tzLabel) + '</span>';
+            ' · Last active ' + this._opsEscapeHtml(lastActive) + '</span>';
     },
 
     _renderOpsTeamMemberStatsHtml(memberId) {
@@ -1963,7 +1918,6 @@ const plugin = {
                     this._opsExpertStatsCache.set(id, {
                         creator,
                         qa,
-                        timezone: profileData ? profileData.timezone : null,
                         createdAt: profileData ? profileData.createdAt : null,
                         lastSignInAt: profileData ? profileData.lastSignInAt : null
                     });
