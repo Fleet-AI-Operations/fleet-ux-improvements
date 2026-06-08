@@ -186,7 +186,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4149,6 +4149,59 @@ const plugin = {
                 </span>
             </label>
         `;
+    },
+
+
+    _renderTaskLinkBar() {
+        return `
+            <div id="wf-ops-task-link-bar" style="display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; max-width: 100%; box-sizing: border-box;">
+                <label for="wf-ops-task-input" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Go to Task:</label>
+                <input type="text" id="wf-ops-task-input" placeholder="Task key or UUID" autocomplete="off" title="Task View Link Generator" style="
+                    flex: 0 0 auto;
+                    width: 220px;
+                    max-width: 100%;
+                    min-width: 120px;
+                    padding: 6px 10px;
+                    font-size: 12px;
+                    border: 1px solid var(--border, #e2e8f0);
+                    border-radius: 6px;
+                    background: var(--background, #fff);
+                    color: var(--foreground, #0f172a);
+                    box-sizing: border-box;
+                ">
+                <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: var(--brand, #2563eb);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e2e8f0);
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">Open</button>
+                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: var(--brand, #2563eb);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e2e8f0);
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">New Tab</button>
+                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: var(--muted-foreground, #64748b);
+                        background: var(--background, white);
+                        border: 1px solid var(--border, #e2e8f0);
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">Copy</button>
+                </div>
+            </div>`;
     },
 
 
