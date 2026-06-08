@@ -200,7 +200,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard: worker output search, team members, verifier fetch; PostgREST via Context.opsTab',
-    _version: '4.52',
+    _version: '4.53',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5223,7 +5223,10 @@ const plugin = {
             });
         }
         this._updateMsCount(scopeKey);
-        this._syncMsDropdown(scopeKey);
+        if (dashIsTeamMembersMsKey(scopeKey) && !loading && items && items.length > 0) {
+            this._state.msDropdownOpen[scopeKey] = true;
+        }
+        this._syncMsDropdown(scopeKey, { immediate: true });
         this._syncMsDropdownFilterUi(scopeKey);
     },
 
