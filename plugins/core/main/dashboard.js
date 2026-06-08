@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -114,6 +114,7 @@ const plugin = {
             close: () => self.close(),
             toggle: () => self.toggle(),
             isOpen: () => self._isOpen(),
+            isReady: () => self._isDashboardReady(),
             copyChipHtml: (text) => self._copyChipHtml(text),
             personChipsHtml: (name, email, id, linkTitle) => self._personChipsHtml(name, email, id, linkTitle),
             panelBoxStyle: () => self._panelBoxStyle(),
@@ -224,33 +225,51 @@ const plugin = {
         return Boolean(this._overlay && this._overlay.style.display !== 'none');
     },
 
+    _isDashboardReady() {
+        const required = ['search-output', 'team-members', 'verifier-fetcher'];
+        return required.every((id) => Boolean(this._tabsById && this._tabsById[id]));
+    },
+
     open() {
         try {
-            if (Context.networkObserver && typeof Context.networkObserver.refreshFromPage === 'function') {
-                Context.networkObserver.refreshFromPage(this._pageWindow());
+            try {
+                if (Context.networkObserver && typeof Context.networkObserver.refreshFromPage === 'function') {
+                    Context.networkObserver.refreshFromPage(this._pageWindow());
+                }
+            } catch (e) {
+                Logger.debug('dashboard: refreshFromPage on open failed', e);
             }
-        } catch (e) {
-            Logger.debug('dashboard: refreshFromPage on open failed', e);
-        }
-        this._ensureBuilt();
-        this._overlay.style.display = 'flex';
-        // Close the regular settings modal if it is open
-        try {
-            const doc = this._pageWindow().document;
-            const settingsModal = doc.getElementById('wf-settings-modal');
-            if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
-                settingsModal.close();
-                Logger.log('dashboard: closed settings modal on dashboard open');
+            this._ensureBuilt();
+            if (!this._overlay) {
+                throw new Error('dashboard overlay missing after build');
             }
+            this._overlay.style.display = 'flex';
+            try {
+                const doc = this._pageWindow().document;
+                const settingsModal = doc.getElementById('wf-settings-modal');
+                if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
+                    settingsModal.close();
+                    Logger.log('dashboard: closed settings modal on dashboard open');
+                }
+            } catch (e) {
+                Logger.debug('dashboard: could not close settings modal', e);
+            }
+            this._syncDashboardUpdateMode();
+            for (const tab of this._tabs) {
+                if (typeof tab.onOpen === 'function') {
+                    try {
+                        tab.onOpen(this);
+                    } catch (e) {
+                        Logger.error('dashboard: onOpen failed for tab ' + tab.id, e);
+                    }
+                }
+            }
+            requestAnimationFrame(() => this._applyAllSidePanelWidths());
+            Logger.log('dashboard: opened');
         } catch (e) {
-            Logger.debug('dashboard: could not close settings modal', e);
+            Logger.error('dashboard: open failed', e);
+            throw e;
         }
-        this._syncDashboardUpdateMode();
-        for (const tab of this._tabs) {
-            if (typeof tab.onOpen === 'function') tab.onOpen(this);
-        }
-        requestAnimationFrame(() => this._applyAllSidePanelWidths());
-        Logger.log('dashboard: opened');
     },
 
     close() {
@@ -290,60 +309,77 @@ const plugin = {
     _build() {
         this._removeKeydownListener();
         const doc = this._pageWindow().document;
-        const overlay = doc.createElement('div');
-        overlay.id = 'wf-dash-overlay';
-        overlay.style.cssText = [
-            'position: fixed', 'inset: 0', 'z-index: 2147483600',
-            'display: none', 'align-items: center', 'justify-content: center',
-            'background: rgba(0,0,0,0.5)', 'padding: 12px', 'box-sizing: border-box'
-        ].join(';');
+        let overlay = null;
+        try {
+            overlay = doc.createElement('div');
+            overlay.id = 'wf-dash-overlay';
+            overlay.style.cssText = [
+                'position: fixed', 'inset: 0', 'z-index: 2147483600',
+                'display: none', 'align-items: center', 'justify-content: center',
+                'background: rgba(0,0,0,0.5)', 'padding: 12px', 'box-sizing: border-box'
+            ].join(';');
 
-        const modal = doc.createElement('div');
-        modal.id = 'wf-dash-modal';
-        modal.style.cssText = [
-            'position: relative', 'display: flex', 'flex-direction: column',
-            'width: 100vw', 'height: 100vh', 'max-width: 100vw', 'max-height: 100vh',
-            'background: var(--background, #ffffff)', 'color: var(--foreground, #0f172a)',
-            'border: 1px solid var(--border, #e2e8f0)', 'border-radius: 12px',
-            'box-shadow: 0 20px 60px rgba(0,0,0,0.35)', 'overflow: hidden',
-            'font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif)',
-            'font-size: 13px', 'box-sizing: border-box'
-        ].join(';');
-        modal.innerHTML = this._modalHtml();
+            const modal = doc.createElement('div');
+            modal.id = 'wf-dash-modal';
+            modal.style.cssText = [
+                'position: relative', 'display: flex', 'flex-direction: column',
+                'width: 100vw', 'height: 100vh', 'max-width: 100vw', 'max-height: 100vh',
+                'background: var(--background, #ffffff)', 'color: var(--foreground, #0f172a)',
+                'border: 1px solid var(--border, #e2e8f0)', 'border-radius: 12px',
+                'box-shadow: 0 20px 60px rgba(0,0,0,0.35)', 'overflow: hidden',
+                'font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif)',
+                'font-size: 13px', 'box-sizing: border-box'
+            ].join(';');
+            modal.innerHTML = this._modalHtml();
 
-        overlay.appendChild(modal);
-        doc.body.appendChild(overlay);
+            overlay.appendChild(modal);
+            doc.body.appendChild(overlay);
 
-        overlay.addEventListener('mousedown', (e) => {
-            if (e.target === overlay) this.close();
-        });
+            overlay.addEventListener('mousedown', (e) => {
+                if (e.target === overlay) this.close();
+            });
 
-        this._keydownDoc = doc;
-        this._onKeydown = (e) => {
-            if (e.key === 'Escape' && this._isOpen()) {
-                e.stopPropagation();
-                this.close();
+            this._keydownDoc = doc;
+            this._onKeydown = (e) => {
+                if (e.key === 'Escape' && this._isOpen()) {
+                    e.stopPropagation();
+                    this.close();
+                }
+            };
+            doc.addEventListener('keydown', this._onKeydown, true);
+
+            this._overlay = overlay;
+            this._modal = modal;
+            this._built = true;
+            this._splitResizeAttached = false;
+            this._attachListeners();
+            this._ensureSpinnerKeyframes();
+            this._ensureMsOptionStyles();
+            this._ensureHeaderActionStyles();
+            this._ensureSplitPanelResizeStyles();
+            this._attachSplitPanelResize();
+            this._applyAllSidePanelWidths();
+            this._syncDashboardUpdateMode();
+            this._syncAllMsDropdowns();
+            for (const tab of this._tabs) {
+                if (typeof tab.onBuilt === 'function') {
+                    try {
+                        tab.onBuilt(this._modal, this);
+                    } catch (e) {
+                        Logger.error('dashboard: onBuilt failed for tab ' + tab.id, e);
+                    }
+                }
             }
-        };
-        doc.addEventListener('keydown', this._onKeydown, true);
-
-        this._overlay = overlay;
-        this._modal = modal;
-        this._built = true;
-        this._splitResizeAttached = false;
-        this._attachListeners();
-        this._ensureSpinnerKeyframes();
-        this._ensureMsOptionStyles();
-        this._ensureHeaderActionStyles();
-        this._ensureSplitPanelResizeStyles();
-        this._attachSplitPanelResize();
-        this._applyAllSidePanelWidths();
-        this._syncDashboardUpdateMode();
-        this._syncAllMsDropdowns();
-        for (const tab of this._tabs) {
-            if (typeof tab.onBuilt === 'function') tab.onBuilt(this._modal, this);
+            Logger.log('dashboard: popup built');
+        } catch (e) {
+            Logger.error('dashboard: build failed', e);
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            this._overlay = null;
+            this._modal = null;
+            this._built = false;
+            this._splitResizeAttached = false;
+            throw e;
         }
-        Logger.log('dashboard: popup built');
     },
 
     _loadingSpinnerHtml(sizePx) {
@@ -694,7 +730,15 @@ const plugin = {
         const activeTabId = this._state.activeTab || (tabs[0] ? tabs[0].id : 'search-output');
         const panelHtml = tabs.map((t) => {
             const def = this._tabsById[t.id];
-            const inner = def && typeof def.panelHtml === 'function' ? def.panelHtml(this) : '';
+            let inner = '';
+            if (def && typeof def.panelHtml === 'function') {
+                try {
+                    inner = def.panelHtml(this);
+                } catch (e) {
+                    Logger.error('dashboard: panelHtml failed for ' + t.id, e);
+                    inner = '<p style="padding: 12px; color: #dc2626;">Tab failed to render.</p>';
+                }
+            }
             const display = t.id === activeTabId ? 'flex' : 'none';
             return `<div data-wf-dash-panel="${t.id}" style="flex: 1; min-height: 0; display: ${display}; flex-direction: column; overflow: hidden;">${inner}</div>`;
         }).join('');
@@ -987,157 +1031,6 @@ const plugin = {
             });
         });
 
-        const depthQuick = this._q('#wf-dash-depth-quick');
-        const depthDeep = this._q('#wf-dash-depth-deep');
-        if (depthQuick) depthQuick.addEventListener('click', () => this._setSearchDepth('quick'));
-        if (depthDeep) depthDeep.addEventListener('click', () => this._setSearchDepth('deep'));
-
-        const bulkHydrate = this._q('#wf-dash-bulk-hydrate');
-        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void this._bulkHydrateVisible(); });
-
-        const pageSizeSel = this._q('#wf-dash-results-page-size');
-        if (pageSizeSel) {
-            pageSizeSel.addEventListener('change', () => {
-                const val = pageSizeSel.value;
-                this._state.resultsPageSize = val === 'all' ? 'all' : (Number(val) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
-                this._persistResultsPageSizePref(val);
-                this._state.resultsPage = 0;
-                Logger.log('dashboard: results page size — ' + val);
-                this._renderResults();
-                this._syncResultsPagerUi();
-            });
-        }
-
-        const sortSel = this._q('#wf-dash-sort');
-        if (sortSel) {
-            sortSel.addEventListener('change', () => this._applySortAndRender());
-        }
-
-        const resultsPrev = this._q('#wf-dash-results-prev');
-        const resultsNext = this._q('#wf-dash-results-next');
-        if (resultsPrev) resultsPrev.addEventListener('click', () => this._goResultsPage(-1));
-        if (resultsNext) resultsNext.addEventListener('click', () => this._goResultsPage(1));
-
-        // Author token input
-        const authorBox = this._q('#wf-dash-author-box');
-        const authorInput = this._q('#wf-dash-author-input');
-        if (authorBox && authorInput) {
-            authorBox.addEventListener('click', () => authorInput.focus());
-            authorInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const query = authorInput.value.trim();
-                    if (query) void this._resolveAuthorToken(query);
-                } else if (e.key === 'Backspace' && authorInput.value === '' && this._state.draftTokens.length > 0) {
-                    this._removeAuthorToken(this._state.draftTokens[this._state.draftTokens.length - 1].id);
-                }
-            });
-            authorInput.addEventListener('input', () => {
-                if (authorInput.value.endsWith(',')) {
-                    const query = authorInput.value.slice(0, -1).trim();
-                    authorInput.value = '';
-                    if (query) void this._resolveAuthorToken(query);
-                }
-                this._setAuthorError('');
-                this._hideAuthorCandidates();
-            });
-        }
-
-        // Inputs affecting search (only when unlocked)
-        ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => {
-            const el = this._q(sel);
-            if (el) el.addEventListener('change', () => {
-                this._validateRangeUi();
-                if (!this._applyingQuickDate) {
-                    const quick = this._q('#wf-dash-quick-range');
-                    if (quick) quick.value = '';
-                }
-            });
-        });
-
-        const clearDates = this._q('#wf-dash-clear-dates');
-        if (clearDates) clearDates.addEventListener('click', () => this._clearDateRangeFields());
-
-        const toggleTasks = this._q('#wf-dash-toggle-tasks');
-        const toggleQa = this._q('#wf-dash-toggle-qa');
-        const toggleDisputes = this._q('#wf-dash-toggle-disputes');
-        if (toggleTasks) toggleTasks.addEventListener('click', () => {
-            this._toggleOutputType('tasks');
-            this._validateRangeUi();
-        });
-        if (toggleQa) toggleQa.addEventListener('click', () => {
-            this._toggleOutputType('qa');
-            this._validateRangeUi();
-        });
-        if (toggleDisputes) toggleDisputes.addEventListener('click', () => {
-            this._toggleOutputType('disputes');
-            this._validateRangeUi();
-        });
-
-        const prompt = this._q('#wf-dash-prompt');
-        if (prompt) {
-            prompt.addEventListener('input', () => {
-                this._updateSubstringErrorUi();
-                this._syncFieldClearButtons();
-            });
-            prompt.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this._applyFiltersAndRender();
-                }
-            });
-        }
-        const clearPrompt = this._q('#wf-dash-clear-prompt');
-        if (clearPrompt) {
-            clearPrompt.addEventListener('click', () => {
-                if (prompt) prompt.value = '';
-                this._updateSubstringErrorUi();
-                this._syncFieldClearButtons();
-            });
-        }
-        const fuzzyEl = this._q('#wf-dash-fuzzy');
-        const regexEl = this._q('#wf-dash-regex');
-        if (fuzzyEl) {
-            fuzzyEl.addEventListener('change', () => {
-                if (fuzzyEl.checked && regexEl) regexEl.checked = false;
-                this._updateSubstringErrorUi();
-            });
-        }
-        if (regexEl) {
-            regexEl.addEventListener('change', () => {
-                if (regexEl.checked && fuzzyEl) fuzzyEl.checked = false;
-                this._updateSubstringErrorUi();
-            });
-        }
-        const caseEl = this._q('#wf-dash-case');
-        if (caseEl) caseEl.addEventListener('change', () => this._updateSubstringErrorUi());
-        const hiddenVersions = this._q('#wf-dash-hidden-versions');
-        if (hiddenVersions) hiddenVersions.addEventListener('change', () => this._updateApplyFiltersUi());
-        const applyFilters = this._q('#wf-dash-apply-filters');
-        if (applyFilters) applyFilters.addEventListener('click', () => this._applyFiltersAndRender());
-        const resetFilters = this._q('#wf-dash-reset-filters');
-        if (resetFilters) resetFilters.addEventListener('click', () => this._resetFiltersToDefaults());
-
-        const quickRange = this._q('#wf-dash-quick-range');
-        if (quickRange) {
-            quickRange.addEventListener('change', () => {
-                const preset = quickRange.value;
-                if (!preset) return;
-                this._applyQuickDatePreset(preset);
-            });
-        }
-
-        const search = this._q('#wf-dash-search');
-        if (search) search.addEventListener('click', () => { void this._submitSearch(); });
-        const clearParams = this._q('#wf-dash-clear-params');
-        if (clearParams) clearParams.addEventListener('click', () => this._clearParameters());
-        const clearResults = this._q('#wf-dash-clear-results');
-        if (clearResults) clearResults.addEventListener('click', () => this._clearResults());
-
-        modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => this._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
-        });
-
         modal.addEventListener('input', (e) => {
             const filterEl = e.target;
             if (filterEl && filterEl.matches('[data-wf-dash-ms-filter]') && modal.contains(filterEl)) {
@@ -1185,15 +1078,8 @@ const plugin = {
             this._scheduleMsHoverClose(scopeKey);
         });
 
-        const filtersScroll = this._q('#wf-dash-left-panel-filters > div');
-        if (filtersScroll) {
-            filtersScroll.addEventListener('scroll', () => {
-                this._repositionOpenFlyouts();
-            }, { passive: true });
-        }
-
         const win = this._pageWindow();
-        win.addEventListener('resize', () => {
+        if (win && typeof win.addEventListener === 'function') win.addEventListener('resize', () => {
             if (this._flyoutResizeTimer) clearTimeout(this._flyoutResizeTimer);
             this._flyoutResizeTimer = setTimeout(() => {
                 this._flyoutResizeTimer = null;
@@ -1224,29 +1110,10 @@ const plugin = {
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
         });
 
-        // Delegated copy, card UI, candidate selection handlers
         modal.addEventListener('click', (e) => {
             const msToggle = e.target.closest('[data-wf-dash-ms-toggle]');
             if (msToggle && modal.contains(msToggle)) {
                 this._toggleMsDropdown(msToggle.getAttribute('data-wf-dash-ms-toggle'));
-                return;
-            }
-            const copyEl = e.target.closest('[data-wf-dash-copy]');
-            if (copyEl && modal.contains(copyEl)) {
-                void this._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
-                return;
-            }
-            const candidate = e.target.closest('[data-wf-dash-candidate]');
-            if (candidate && modal.contains(candidate)) {
-                const id = candidate.getAttribute('data-wf-dash-candidate');
-                const cand = (this._state._candidates || []).find((c) => c.id === id);
-                if (cand) { this._addAuthorToken(cand); if (authorInput) authorInput.value = ''; }
-                return;
-            }
-            const removeTok = e.target.closest('[data-wf-dash-remove-token]');
-            if (removeTok && modal.contains(removeTok)) {
-                e.stopPropagation();
-                this._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
                 return;
             }
             const msAll = e.target.closest('[data-wf-dash-ms-all]');
@@ -1271,83 +1138,9 @@ const plugin = {
                 }
                 return;
             }
-            const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
-            if (reviewerBadge && modal.contains(reviewerBadge)) {
-                const itemId = reviewerBadge.getAttribute('data-item-id');
-                const taskId = reviewerBadge.getAttribute('data-task-id');
-                const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
-                const ui = this._getCardUi(taskId);
-                ui.expanded = false;
-                ui.selectedDisplayNo = displayNo;
-                this._patchTaskCard(itemId);
-                return;
-            }
-            const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
-            if (showAllBtn && modal.contains(showAllBtn)) {
-                const itemId = showAllBtn.getAttribute('data-item-id');
-                const taskId = showAllBtn.getAttribute('data-task-id');
-                const ui = this._getCardUi(taskId);
-                ui.expanded = true;
-                this._patchTaskCard(itemId);
-                return;
-            }
-            const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
-            if (collapseBtn && modal.contains(collapseBtn)) {
-                const itemId = collapseBtn.getAttribute('data-item-id');
-                const taskId = collapseBtn.getAttribute('data-task-id');
-                const ui = this._getCardUi(taskId);
-                ui.expanded = false;
-                ui.selectedDisplayNo = null;
-                this._patchTaskCard(itemId);
-                return;
-            }
-            const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
-            if (timelineToggle && modal.contains(timelineToggle)) {
-                const itemId = timelineToggle.getAttribute('data-item-id');
-                const taskId = timelineToggle.getAttribute('data-task-id');
-                const ui = this._getCardUi(taskId);
-                ui.timelineNewestFirst = !ui.timelineNewestFirst;
-                this._patchTaskCard(itemId);
-                return;
-            }
-            const openTaskBtn = e.target.closest('[data-wf-dash-open-task]');
-            if (openTaskBtn && modal.contains(openTaskBtn)) {
-                const taskId = openTaskBtn.getAttribute('data-task-id');
-                const teamId = openTaskBtn.getAttribute('data-team-id');
-                const itemId = openTaskBtn.getAttribute('data-item-id');
-                if (taskId && itemId) void this._openTaskInFleet(taskId, teamId, itemId);
-                return;
-            }
-            const disputeClaimBtn = e.target.closest('[data-wf-dash-dispute-claim]');
-            if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
-                const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
-                const itemId = disputeClaimBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void this._claimDispute(disputeId, itemId);
-                return;
-            }
-            const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
-            if (hydrateBtn && modal.contains(hydrateBtn)) {
-                e.stopPropagation();
-                e.preventDefault();
-                const itemId = hydrateBtn.getAttribute('data-item-id');
-                if (itemId) void this._hydrateCard(itemId);
-                return;
-            }
             if (!e.target.closest('[data-wf-dash-ms-wrap]')) {
                 this._closeFlyoutMsDropdowns();
             }
-        });
-
-        modal.addEventListener('change', (e) => {
-            const sel = e.target;
-            if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
-            const itemId = sel.getAttribute('data-item-id');
-            const taskId = sel.getAttribute('data-task-id');
-            const displayNo = parseInt(sel.value, 10);
-            const ui = this._getCardUi(taskId);
-            ui.expanded = false;
-            ui.selectedDisplayNo = displayNo;
-            this._patchTaskCard(itemId);
         });
     },
 

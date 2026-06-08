@@ -5090,11 +5090,267 @@ const searchOutputMethods = {
     }
 };
 
+function attachSearchOutputListeners(modal, dash) {
+    if (!modal || !dash) return;
+    if (modal.dataset.wfSearchOutputListenersAttached === '1') return;
+    modal.dataset.wfSearchOutputListenersAttached = '1';
+
+        const depthQuick = dash._q('#wf-dash-depth-quick');
+        const depthDeep = dash._q('#wf-dash-depth-deep');
+        if (depthQuick) depthQuick.addEventListener('click', () => dash._setSearchDepth('quick'));
+        if (depthDeep) depthDeep.addEventListener('click', () => dash._setSearchDepth('deep'));
+
+        const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
+        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
+
+        const pageSizeSel = dash._q('#wf-dash-results-page-size');
+        if (pageSizeSel) {
+            pageSizeSel.addEventListener('change', () => {
+                const val = pageSizeSel.value;
+                dash._state.resultsPageSize = val === 'all' ? 'all' : (Number(val) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+                dash._persistResultsPageSizePref(val);
+                dash._state.resultsPage = 0;
+                Logger.log('dashboard: results page size — ' + val);
+                dash._renderResults();
+                dash._syncResultsPagerUi();
+            });
+        }
+
+        const sortSel = dash._q('#wf-dash-sort');
+        if (sortSel) {
+            sortSel.addEventListener('change', () => dash._applySortAndRender());
+        }
+
+        const resultsPrev = dash._q('#wf-dash-results-prev');
+        const resultsNext = dash._q('#wf-dash-results-next');
+        if (resultsPrev) resultsPrev.addEventListener('click', () => dash._goResultsPage(-1));
+        if (resultsNext) resultsNext.addEventListener('click', () => dash._goResultsPage(1));
+
+        // Author token input
+        const authorBox = dash._q('#wf-dash-author-box');
+        const authorInput = dash._q('#wf-dash-author-input');
+        if (authorBox && authorInput) {
+            authorBox.addEventListener('click', () => authorInput.focus());
+            authorInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const query = authorInput.value.trim();
+                    if (query) void dash._resolveAuthorToken(query);
+                } else if (e.key === 'Backspace' && authorInput.value === '' && dash._state.draftTokens.length > 0) {
+                    dash._removeAuthorToken(dash._state.draftTokens[dash._state.draftTokens.length - 1].id);
+                }
+            });
+            authorInput.addEventListener('input', () => {
+                if (authorInput.value.endsWith(',')) {
+                    const query = authorInput.value.slice(0, -1).trim();
+                    authorInput.value = '';
+                    if (query) void dash._resolveAuthorToken(query);
+                }
+                dash._setAuthorError('');
+                dash._hideAuthorCandidates();
+            });
+        }
+
+        // Inputs affecting search (only when unlocked)
+        ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => {
+            const el = dash._q(sel);
+            if (el) el.addEventListener('change', () => {
+                dash._validateRangeUi();
+                if (!dash._applyingQuickDate) {
+                    const quick = dash._q('#wf-dash-quick-range');
+                    if (quick) quick.value = '';
+                }
+            });
+        });
+
+        const clearDates = dash._q('#wf-dash-clear-dates');
+        if (clearDates) clearDates.addEventListener('click', () => dash._clearDateRangeFields());
+
+        const toggleTasks = dash._q('#wf-dash-toggle-tasks');
+        const toggleQa = dash._q('#wf-dash-toggle-qa');
+        const toggleDisputes = dash._q('#wf-dash-toggle-disputes');
+        if (toggleTasks) toggleTasks.addEventListener('click', () => {
+            dash._toggleOutputType('tasks');
+            dash._validateRangeUi();
+        });
+        if (toggleQa) toggleQa.addEventListener('click', () => {
+            dash._toggleOutputType('qa');
+            dash._validateRangeUi();
+        });
+        if (toggleDisputes) toggleDisputes.addEventListener('click', () => {
+            dash._toggleOutputType('disputes');
+            dash._validateRangeUi();
+        });
+
+        const prompt = dash._q('#wf-dash-prompt');
+        if (prompt) {
+            prompt.addEventListener('input', () => {
+                dash._updateSubstringErrorUi();
+                dash._syncFieldClearButtons();
+            });
+            prompt.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    dash._applyFiltersAndRender();
+                }
+            });
+        }
+        const clearPrompt = dash._q('#wf-dash-clear-prompt');
+        if (clearPrompt) {
+            clearPrompt.addEventListener('click', () => {
+                if (prompt) prompt.value = '';
+                dash._updateSubstringErrorUi();
+                dash._syncFieldClearButtons();
+            });
+        }
+        const fuzzyEl = dash._q('#wf-dash-fuzzy');
+        const regexEl = dash._q('#wf-dash-regex');
+        if (fuzzyEl) {
+            fuzzyEl.addEventListener('change', () => {
+                if (fuzzyEl.checked && regexEl) regexEl.checked = false;
+                dash._updateSubstringErrorUi();
+            });
+        }
+        if (regexEl) {
+            regexEl.addEventListener('change', () => {
+                if (regexEl.checked && fuzzyEl) fuzzyEl.checked = false;
+                dash._updateSubstringErrorUi();
+            });
+        }
+        const caseEl = dash._q('#wf-dash-case');
+        if (caseEl) caseEl.addEventListener('change', () => dash._updateSubstringErrorUi());
+        const hiddenVersions = dash._q('#wf-dash-hidden-versions');
+        if (hiddenVersions) hiddenVersions.addEventListener('change', () => dash._updateApplyFiltersUi());
+        const applyFilters = dash._q('#wf-dash-apply-filters');
+        if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
+        const resetFilters = dash._q('#wf-dash-reset-filters');
+        if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
+
+        const quickRange = dash._q('#wf-dash-quick-range');
+        if (quickRange) {
+            quickRange.addEventListener('change', () => {
+                const preset = quickRange.value;
+                if (!preset) return;
+                dash._applyQuickDatePreset(preset);
+            });
+        }
+
+        const search = dash._q('#wf-dash-search');
+        if (search) search.addEventListener('click', () => { void dash._submitSearch(); });
+        const clearParams = dash._q('#wf-dash-clear-params');
+        if (clearParams) clearParams.addEventListener('click', () => dash._clearParameters());
+        const clearResults = dash._q('#wf-dash-clear-results');
+        if (clearResults) clearResults.addEventListener('click', () => dash._clearResults());
+
+        modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
+        });
+        const filtersScroll = dash._q('#wf-dash-left-panel-filters > div');
+        if (filtersScroll) {
+            filtersScroll.addEventListener('scroll', () => {
+                dash._repositionOpenFlyouts();
+            }, { passive: true });
+        }
+    modal.addEventListener('click', (e) => {
+            const copyEl = e.target.closest('[data-wf-dash-copy]');
+            if (copyEl && modal.contains(copyEl)) {
+                void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
+                return;
+            }
+            const candidate = e.target.closest('[data-wf-dash-candidate]');
+            if (candidate && modal.contains(candidate)) {
+                const id = candidate.getAttribute('data-wf-dash-candidate');
+                const cand = (dash._state._candidates || []).find((c) => c.id === id);
+                if (cand) { dash._addAuthorToken(cand); if (authorInput) authorInput.value = ''; }
+                return;
+            }
+            const removeTok = e.target.closest('[data-wf-dash-remove-token]');
+            if (removeTok && modal.contains(removeTok)) {
+                e.stopPropagation();
+                dash._removeAuthorToken(removeTok.getAttribute('data-wf-dash-remove-token'));
+                return;
+            }
+            const reviewerBadge = e.target.closest('[data-wf-dash-reviewer-badge]');
+            if (reviewerBadge && modal.contains(reviewerBadge)) {
+                const itemId = reviewerBadge.getAttribute('data-item-id');
+                const taskId = reviewerBadge.getAttribute('data-task-id');
+                const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
+                const ui = dash._getCardUi(taskId);
+                ui.expanded = false;
+                ui.selectedDisplayNo = displayNo;
+                dash._patchTaskCard(itemId);
+                return;
+            }
+            const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
+            if (showAllBtn && modal.contains(showAllBtn)) {
+                const itemId = showAllBtn.getAttribute('data-item-id');
+                const taskId = showAllBtn.getAttribute('data-task-id');
+                const ui = dash._getCardUi(taskId);
+                ui.expanded = true;
+                dash._patchTaskCard(itemId);
+                return;
+            }
+            const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
+            if (collapseBtn && modal.contains(collapseBtn)) {
+                const itemId = collapseBtn.getAttribute('data-item-id');
+                const taskId = collapseBtn.getAttribute('data-task-id');
+                const ui = dash._getCardUi(taskId);
+                ui.expanded = false;
+                ui.selectedDisplayNo = null;
+                dash._patchTaskCard(itemId);
+                return;
+            }
+            const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
+            if (timelineToggle && modal.contains(timelineToggle)) {
+                const itemId = timelineToggle.getAttribute('data-item-id');
+                const taskId = timelineToggle.getAttribute('data-task-id');
+                const ui = dash._getCardUi(taskId);
+                ui.timelineNewestFirst = !ui.timelineNewestFirst;
+                dash._patchTaskCard(itemId);
+                return;
+            }
+            const openTaskBtn = e.target.closest('[data-wf-dash-open-task]');
+            if (openTaskBtn && modal.contains(openTaskBtn)) {
+                const taskId = openTaskBtn.getAttribute('data-task-id');
+                const teamId = openTaskBtn.getAttribute('data-team-id');
+                const itemId = openTaskBtn.getAttribute('data-item-id');
+                if (taskId && itemId) void dash._openTaskInFleet(taskId, teamId, itemId);
+                return;
+            }
+            const disputeClaimBtn = e.target.closest('[data-wf-dash-dispute-claim]');
+            if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
+                const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
+                const itemId = disputeClaimBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
+                return;
+            }
+            const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
+            if (hydrateBtn && modal.contains(hydrateBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = hydrateBtn.getAttribute('data-item-id');
+                if (itemId) void dash._hydrateCard(itemId);
+                return;
+            }
+    });
+        modal.addEventListener('change', (e) => {
+            const sel = e.target;
+            if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
+            const itemId = sel.getAttribute('data-item-id');
+            const taskId = sel.getAttribute('data-task-id');
+            const displayNo = parseInt(sel.value, 10);
+            const ui = dash._getCardUi(taskId);
+            ui.expanded = false;
+            ui.selectedDisplayNo = displayNo;
+            dash._patchTaskCard(itemId);
+        });
+}
+
 const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5113,6 +5369,7 @@ const plugin = {
             id: 'search-output',
             label: 'Search Output',
             panelHtml(dash) { return dash._searchPanelHtml(); },
+            attachListeners(modal, dash) { attachSearchOutputListeners(modal, dash); },
             onOpen(dash) {
                 void dash._doBootstrap();
                 dash._refreshCatalogDependentUi();
