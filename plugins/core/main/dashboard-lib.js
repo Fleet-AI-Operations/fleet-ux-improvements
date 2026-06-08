@@ -291,7 +291,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -669,6 +669,8 @@ const plugin = {
 
     _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden, regex) {
         const lib = Context.dashboardLib;
+        const taskKey = String((item.task && item.task.key) || '').trim();
+        const taskKeyMatched = taskKey && lib.textMatchesQuery(taskKey, query, fuzzy, caseSensitive, regex);
         const versions = this._versionsForItem(item);
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
@@ -680,9 +682,10 @@ const plugin = {
         };
         if (!hidden) {
             const def = versions.find((v) => v.displayVersionNo === defaultNo) || versions[versions.length - 1];
-            return { matched: def ? versionMatches(def) : false, extraVersionNos: [] };
+            const versionMatched = def ? versionMatches(def) : false;
+            return { matched: taskKeyMatched || versionMatched, extraVersionNos: [] };
         }
-        let matched = false;
+        let matched = taskKeyMatched;
         const extraVersionNos = [];
         for (const version of versions) {
             if (versionMatches(version)) {

@@ -4695,12 +4695,15 @@ const searchOutputMethods = {
         this._scheduleAutoHydrateVisiblePage();
     },
 
-    _copyChipHtml(text) {
+    _copyChipHtml(text, highlight) {
         const value = String(text == null ? '' : text).trim();
         if (!value) {
             return `<span style="display: inline-block; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
         }
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${dashEscHtml(value)}</button>`;
+        const inner = (highlight && highlight.query)
+            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
+            : dashEscHtml(value);
+        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
     },
 
     _copyIconHtml(text) {
@@ -5213,7 +5216,7 @@ const searchOutputMethods = {
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx }))}
                         ${this._taskOpenLinkHtml(task, itemId)}
                     </div>
                 </div>
@@ -5359,7 +5362,7 @@ const searchOutputMethods = {
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex }))}
                         ${this._taskOpenLinkHtml(task, itemId)}
                     </div>
                 </div>
@@ -5752,7 +5755,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
