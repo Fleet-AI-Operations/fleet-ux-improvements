@@ -2153,7 +2153,7 @@ const searchOutputMethods = {
     _buildManualFilterRow(opts) {
         const rowsEl = this._q('#wf-dash-manual-rows');
         if (!rowsEl) return;
-        const inputStyle = this.inputStyle() + ' padding: 4px 8px; font-size: 11px;';
+        const inputStyle = this._inputStyle() + ' padding: 4px 8px; font-size: 11px;';
         const selectStyle = inputStyle;
         const row = document.createElement('div');
         row.innerHTML = dashManualFilterRowHtml({
@@ -5778,7 +5778,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
