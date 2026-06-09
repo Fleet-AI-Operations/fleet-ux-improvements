@@ -108,10 +108,6 @@ function ensureVerifierScratchpadResizeStyles(modal) {
         '#wf-ops-verifier-scratchpad-split-handle:hover,',
         '#wf-ops-verifier-scratchpad-split-handle:active {',
         '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
-        '}',
-        '#wf-ops-verifier-scratchpad-toggle[aria-pressed="true"] {',
-        '  color: var(--brand, #4f46e5) !important;',
-        '  border-color: var(--brand, #4f46e5) !important;',
         '}'
     ].join('');
     modal.appendChild(style);
@@ -255,7 +251,7 @@ function verifierFetcherPanelHtml() {
                     width: 100%;
                     margin-top: 8px;
                     flex-shrink: 0;
-                    align-items: center;
+                    align-items: flex-start;
                     justify-content: space-between;
                     gap: 8px;
                     flex-wrap: nowrap;
@@ -263,8 +259,11 @@ function verifierFetcherPanelHtml() {
                 ">
                     <div id="wf-ops-verifier-content-search-wrap" style="
                         display: flex;
-                        flex: 1 1 auto;
-                        min-width: 0;
+                        flex-shrink: 0;
+                        align-self: flex-start;
+                        width: 30%;
+                        max-width: 30%;
+                        min-width: 12rem;
                         gap: 6px;
                         align-items: center;
                         flex-wrap: wrap;
@@ -382,8 +381,9 @@ function verifierFetcherPanelHtml() {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                             overflow: auto;
-                            white-space: pre-wrap;
-                            word-break: break-word;
+                            overflow-x: auto;
+                            white-space: pre;
+                            word-break: normal;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                         "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
                     </div>
@@ -541,7 +541,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '1.2',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
