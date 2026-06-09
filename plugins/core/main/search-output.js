@@ -5353,35 +5353,54 @@ const searchOutputMethods = {
             </div>`;
     },
 
+    _feedbackActionBadgeHtml(entry, compact) {
+        if (!entry) return '';
+        const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+            || isVerifierFailure;
+        let label = 'Returned';
+        if (isSystem) label = 'System';
+        else if (entry.isPositive) label = 'Accepted';
+        else if (entry.isEscalated) label = 'Escalated';
+        else if (entry.isFlaggedAsBugged) label = 'Flagged';
+
+        if (isSystem || entry.isEscalated) {
+            let style = this._qaAlertBadgeStyle();
+            if (compact) {
+                style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+            }
+            return `<span style="${style}">${dashEscHtml(label)}</span>`;
+        }
+        if (entry.isFlaggedAsBugged) {
+            let style = this._qaFlaggedBadgeStyle();
+            if (compact) {
+                style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+            }
+            return `<span style="${style}">${dashEscHtml(label)}</span>`;
+        }
+        const pad = compact ? '1px 6px' : '2px 8px';
+        const radius = compact ? '4px' : '6px';
+        const cls = entry.isPositive
+            ? 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);'
+            : 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        return `<span style="display: inline-flex; align-items: center; padding: ${pad}; border-radius: ${radius}; font-size: 10px; font-weight: 700; ${cls}">${dashEscHtml(label)}</span>`;
+    },
+
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
         const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
         const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
             || isVerifierFailure;
         const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
-        let label = 'Returned';
-        let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
-        if (isSystem) {
-            label = 'System';
-            cls = this._qaAlertBadgeStyle() + ' padding: 2px 8px; font-size: 10px;';
-        } else if (entry.isPositive) {
-            label = 'Accepted';
-            cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
-        } else if (entry.isEscalated) {
-            label = 'Escalated';
-            cls = this._qaAlertBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
-        } else if (entry.isFlaggedAsBugged) {
-            label = 'Flagged';
-            cls = this._qaFlaggedBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
-        }
+        const actionBadge = this._feedbackActionBadgeHtml(entry, true);
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
         if (isSystem) {
             return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
-                <span style="${cls}">System</span>
+                ${actionBadge}
             </button>`;
         }
         return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
             <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
-            <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; ${cls}">${dashEscHtml(label)}</span>
+            ${actionBadge}
         </button>`;
     },
 
@@ -5523,6 +5542,10 @@ const searchOutputMethods = {
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
+        const versionActionEntry = feedbackEntries.length ? feedbackEntries[feedbackEntries.length - 1] : null;
+        const versionActionBadge = showVersionLabel
+            ? this._feedbackActionBadgeHtml(versionActionEntry)
+            : '';
         const feedbackHtml = feedbackEntries.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx);
             const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
@@ -5534,8 +5557,8 @@ const searchOutputMethods = {
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                        ${promptLabel}${this._copyIconHtml(version.prompt)}
+                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
+                        ${promptLabel}${versionActionBadge}${this._copyIconHtml(version.prompt)}
                     </div>
                     <div style="flex-shrink: 0; margin-left: auto;">${submittedHtml}</div>
                 </div>
@@ -6140,7 +6163,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.18',
+    _version: '1.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
