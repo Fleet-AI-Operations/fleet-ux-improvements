@@ -229,20 +229,92 @@ function _dvParseInput(raw) {
     return null;
 }
 
-// ── Fetch & hydrate a task (returns DvSlot-ready data) ──
+// ── Fetch & hydrate a task (direct PostgREST — never uses search-output cache gates) ──
+
+function _dvFirstEmbed(embed) {
+    if (!embed) return null;
+    if (Array.isArray(embed)) return embed[0] || null;
+    if (typeof embed === 'object') return embed;
+    return null;
+}
+
+function _dvPersonChipName(profile, personId) {
+    if (!profile) return '';
+    const rawName = String(profile.full_name || '').trim();
+    const id = String(personId || profile.id || '').trim();
+    if (rawName && id && rawName.toLowerCase() === id.toLowerCase()) return '';
+    return rawName;
+}
+
+function _dvBuildProfilesMap(profileRows) {
+    const map = new Map();
+    for (const p of profileRows) map.set(p.id, { full_name: p.full_name, email: p.email });
+    return map;
+}
+
+async function _dvPgQuery(queryKey, overrides) {
+    if (!Context.opsTab || typeof Context.opsTab.postgrestQuery !== 'function') {
+        throw new Error('Ops dashboard PostgREST client unavailable. Unlock the Ops dashboard and try again.');
+    }
+    const rows = await Context.opsTab.postgrestQuery(queryKey, overrides || {});
+    return Array.isArray(rows) ? rows : (rows ? [rows] : []);
+}
+
+async function _dvFetchProfilesByIds(profileIds) {
+    const lib = Context.dashboardLib;
+    if (!lib || typeof lib.pgInChunks !== 'function' || typeof lib.pgInFilter !== 'function') {
+        throw new Error('Dashboard lib unavailable');
+    }
+    const chunks = lib.pgInChunks(profileIds);
+    const all = [];
+    for (const chunk of chunks) {
+        const rows = await _dvPgQuery('profiles.select_person', { id: lib.pgInFilter(chunk) });
+        all.push(...rows);
+    }
+    return all;
+}
+
+async function _dvFetchTaskRowForRetrieve(parsed) {
+    if (parsed.kind === 'key') {
+        const rows = await _dvPgQuery('tasks.select_search', { key: 'eq.' + parsed.value, limit: '1' });
+        return { row: rows[0] || null, versionOverride: null };
+    }
+    let rows = await _dvPgQuery('tasks.select_search', { id: 'eq.' + parsed.value, limit: '1' });
+    if (rows.length) return { row: rows[0], versionOverride: null };
+    const versionRows = await _dvPgQuery('task_versions.select_history', { id: 'eq.' + parsed.value, limit: '1' });
+    if (!versionRows.length) return { row: null, versionOverride: null };
+    const versionRow = versionRows[0];
+    const taskId = versionRow.task_id;
+    if (!taskId) return { row: null, versionOverride: null };
+    rows = await _dvPgQuery('tasks.select_search', { id: 'eq.' + taskId, limit: '1' });
+    return { row: rows[0] || null, versionOverride: versionRow };
+}
+
+function _dvRowToTask(row, profilesMap, versionOverride) {
+    const version = versionOverride || _dvFirstEmbed(row.eval_task_versions);
+    const profile = profilesMap.get(row.created_by) || null;
+    return {
+        id: row.id,
+        key: row.key || '',
+        author: {
+            id: row.created_by || '',
+            name: profile ? _dvPersonChipName(profile, row.created_by) : '',
+            email: (profile && profile.email) || ''
+        }
+    };
+}
 
 async function _dvFetchTask(raw) {
-    const loader = Context.dashboard && Context.dashboard._loader;
-    if (!loader) throw new Error('Dashboard not ready');
-    const parsed = _dvParseInput(raw);
+    const parsed = _dvParseInput(String(raw || '').trim());
     if (!parsed) throw new Error('Not a valid task ID, key, version ID, or URL');
-    const { row, versionOverride } = await loader._fetchTaskRowForRetrieve(parsed);
+    const { row, versionOverride } = await _dvFetchTaskRowForRetrieve(parsed);
     if (!row) throw new Error('Task not found');
-    const profileRows = row.created_by
-        ? await loader._fetchProfilesByIds([row.created_by], 'diff-viewer')
-        : [];
-    const profilesMap = loader._buildProfilesMap(profileRows);
-    const task = loader._rowToTask(row, profilesMap, versionOverride, new Map());
+    const profileRows = row.created_by ? await _dvFetchProfilesByIds([row.created_by]) : [];
+    const profilesMap = _dvBuildProfilesMap(profileRows);
+    const task = _dvRowToTask(row, profilesMap, versionOverride);
+    if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+        throw new Error('Dashboard data layer unavailable');
+    }
     const enriched = await Context.dashboardData.enrichTasksWithHistory(
         [task.id], profilesMap, { skipFeedbackFetch: true }
     );
@@ -306,48 +378,49 @@ function _dvAddSlot(seed, modal) {
     const slotId = ++_dvSlotSeq;
     const slot = {
         slotId,
-        taskId: seed.taskId,
+        taskId: seed.taskId || '',
         key: seed.key || '',
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
-        promptVersions: seed.promptVersions || null,
+        promptVersions: null,
         lensIndex: 0,
-        loading: !seed.promptVersions,
+        loading: true,
         error: null
     };
-    if (seed.promptVersions) {
-        const nextIdx = _dvNextLensIndex(seed.taskId, seed.promptVersions);
-        slot.lensIndex = nextIdx !== null ? nextIdx : 0;
-    }
     _dvState.slots.push(slot);
-    _dvAddToStash({ taskId: seed.taskId, key: seed.key, authorName: seed.authorName, authorEmail: seed.authorEmail });
-    _dvRenderAll(modal);
-
-    if (!seed.promptVersions) {
-        _dvHydrateSlot(slotId, seed, modal);
+    if (seed.taskId) {
+        _dvAddToStash({
+            taskId: seed.taskId,
+            key: seed.key,
+            authorName: seed.authorName,
+            authorEmail: seed.authorEmail
+        });
     }
+    _dvRenderAll(modal);
+    void _dvHydrateSlot(slotId, seed, modal);
 }
 
 async function _dvHydrateSlot(slotId, seed, modal) {
     try {
-        const data = await _dvFetchTask(seed.key || seed.taskId);
+        const lookup = seed.raw || seed.key || seed.taskId;
+        if (!lookup) throw new Error('No task identifier to hydrate');
+        const data = await _dvFetchTask(lookup);
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return; // slot was removed before hydration completed
         const slot = _dvState.slots[slotIdx];
+        slot.taskId = data.taskId;
         slot.promptVersions = data.promptVersions;
         slot.authorName = data.authorName || slot.authorName;
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
-        slot.lensIndex = _dvNextLensIndex(slot.taskId, data.promptVersions) || 0;
+        slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions) ?? 0;
         slot.loading = false;
-        // Update stash entry with fresh author data if needed
-        const stashIdx = _dvStashFind(slot.taskId);
-        if (stashIdx >= 0 && (!_dvState.stash[stashIdx].authorName || !_dvState.stash[stashIdx].authorEmail)) {
-            _dvState.stash[stashIdx].authorName = data.authorName;
-            _dvState.stash[stashIdx].authorEmail = data.authorEmail;
-            _dvState.stash[stashIdx].key = data.key;
-            _dvSaveStash();
-        }
+        _dvAddToStash({
+            taskId: data.taskId,
+            key: data.key,
+            authorName: data.authorName,
+            authorEmail: data.authorEmail
+        });
         Logger.log('diff-viewer: slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
         _dvRenderAll(modal);
     } catch (err) {
@@ -941,21 +1014,17 @@ function _dvAttachListeners(modal, dash) {
     // ── Search bar: add task ──
     const searchBtn = _dvQ(modal, 'dv-search-btn');
     const searchInput = _dvQ(modal, 'dv-search-input');
-    const doSearch = async () => {
-        if (_dvState.searchLoading) return;
+    const doSearch = () => {
         const val = searchInput ? searchInput.value.trim() : '';
         if (!val) return;
-        _dvSetSearchLoading(modal, true, null);
-        try {
-            const data = await _dvFetchTask(val);
-            _dvSetSearchLoading(modal, false, null);
-            if (searchInput) searchInput.value = '';
-            _dvAddSlot(data, modal);
-            Logger.log('diff-viewer: search add — ' + (data.key || data.taskId));
-        } catch (err) {
-            _dvSetSearchLoading(modal, false, String(err && err.message || err));
-            Logger.error('diff-viewer: search failed', err);
+        if (!_dvParseInput(val)) {
+            _dvSetSearchLoading(modal, false, 'Not a valid task ID, key, version ID, or URL');
+            return;
         }
+        _dvSetSearchLoading(modal, false, null);
+        if (searchInput) searchInput.value = '';
+        _dvAddSlot({ raw: val }, modal);
+        Logger.log('diff-viewer: search add queued — ' + val);
     };
     if (searchBtn) searchBtn.addEventListener('click', doSearch);
     if (searchInput) {
@@ -1034,7 +1103,7 @@ function _dvInjectStyles() {
 // ── Public API: Context.diffViewer ──
 
 function _dvApiAddTask(seed) {
-    // seed: { taskId, key, authorName, authorEmail, promptVersions? }
+    // seed: { taskId, key, authorName, authorEmail } — always re-hydrated from PostgREST
     const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
     _dvAddSlot(seed, modal);
 }
@@ -1049,7 +1118,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

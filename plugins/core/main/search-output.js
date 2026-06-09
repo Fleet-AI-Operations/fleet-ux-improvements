@@ -3749,8 +3749,7 @@ const searchOutputMethods = {
             taskId: item.task.id,
             key: item.task.key || '',
             authorName: (item.task.author && item.task.author.name) || '',
-            authorEmail: (item.task.author && item.task.author.email) || '',
-            promptVersions: item.hydrated ? (item.task.promptVersions || null) : null
+            authorEmail: (item.task.author && item.task.author.email) || ''
         };
         Context.diffViewer.addTask(seed);
         Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
@@ -6710,7 +6709,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.38',
+    _version: '1.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
