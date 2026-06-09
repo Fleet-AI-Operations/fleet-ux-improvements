@@ -3822,7 +3822,10 @@ const searchOutputMethods = {
                                     </label>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
+                                    <div style="${label} margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                        <span>Narrow results</span>
+                                        <button type="button" id="wf-dash-filter-expand-all" aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
+                                    </div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
@@ -6229,6 +6232,11 @@ function attachSearchOutputListeners(modal, dash) {
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
         });
+        const filterExpandAll = dash._q('#wf-dash-filter-expand-all');
+        if (filterExpandAll) {
+            filterExpandAll.addEventListener('click', () => dash._toggleFilterExpandAll());
+            dash._applyFilterExpandAllButtonLabel();
+        }
         const filtersScroll = dash._q('#wf-dash-left-panel-filters > div');
         if (filtersScroll) {
             filtersScroll.addEventListener('scroll', () => {
@@ -6350,7 +6358,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.30',
+    _version: '1.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
