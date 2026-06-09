@@ -5383,17 +5383,29 @@ const searchOutputMethods = {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
-    _qaFlaggedChipStyle(fontWeight) {
-        const weight = fontWeight || '700';
-        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: ${weight}; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG};`;
+    _qaAlertIssueBadgeStyle() {
+        return this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600');
     },
 
-    _qaFlaggedBadgeStyle() {
-        return this._qaFlaggedChipStyle('700');
+    _qaAcceptedBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
+            background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+        };
     },
 
-    _qaFlaggedIssueBadgeStyle() {
-        return this._qaFlaggedChipStyle('600');
+    _qaReturnedBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #dc2626 40%, transparent)',
+            background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+        };
+    },
+
+    _qaOtherBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #c2410c 45%, transparent)',
+            background: 'color-mix(in srgb, #c2410c 32%, var(--card, #ffffff))'
+        };
     },
 
     _disputeBlockStyle() {
@@ -5409,46 +5421,27 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
-    _qaYellowBlockStyle() {
-        return {
-            border: '1px solid #9a3412',
-            background: 'color-mix(in srgb, #c2410c 32%, var(--card, #ffffff))'
-        };
-    },
-
-    _qaFlaggedBlockStyle() {
-        return {
-            border: `1px solid ${DASH_FLAGGED_BORDER}`,
-            background: `color-mix(in srgb, ${DASH_FLAGGED_BORDER} 18%, var(--card, #ffffff))`
-        };
-    },
-
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
         const isFlagged = Boolean(qa.isFlaggedAsBugged);
-        const isEscalatedBlock = isSystem || isVerifierFailure || qa.isEscalated;
+        const isOther = isSystem || isVerifierFailure || qa.isEscalated || isFlagged;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
-        let border;
-        let bg;
-        if (isFlagged) {
-            const flagged = this._qaFlaggedBlockStyle();
-            border = flagged.border;
-            bg = flagged.background;
-        } else if (isEscalatedBlock) {
-            const yellow = this._qaYellowBlockStyle();
-            border = yellow.border;
-            bg = yellow.background;
+        let blockStyle;
+        if (positive && !isOther) {
+            blockStyle = this._qaAcceptedBlockStyle();
+        } else if (!positive && !isOther) {
+            blockStyle = this._qaReturnedBlockStyle();
         } else {
-            border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
-            bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
+            blockStyle = this._qaOtherBlockStyle();
         }
+        const border = blockStyle.border;
+        const bg = blockStyle.background;
         const alertBadge = this._qaAlertBadgeStyle();
-        const flaggedBadge = this._qaFlaggedBadgeStyle();
         const statusLabel = isVerifierFailure
             ? `<span style="${alertBadge}">Verifier Generation Error</span>`
             : (isSystem
@@ -5458,13 +5451,11 @@ const searchOutputMethods = {
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
-                        ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
+                        ? `<span style="${alertBadge}">Flagged as Bugged</span>`
                         : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
-        const issueBadgeStyle = isFlagged
-            ? this._qaFlaggedIssueBadgeStyle()
-            : (isEscalatedBlock
-                ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
-                : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);');
+        const issueBadgeStyle = isOther
+            ? this._qaAlertIssueBadgeStyle()
+            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
         const rejectionBadges = qa.rejectionBadges || [];
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
@@ -5491,7 +5482,7 @@ const searchOutputMethods = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
             : '';
         return `
-            <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
+            <div style="margin-top: 12px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>
@@ -5517,15 +5508,8 @@ const searchOutputMethods = {
         else if (entry.isEscalated) label = 'Escalated';
         else if (entry.isFlaggedAsBugged) label = 'Flagged';
 
-        if (isSystem || entry.isEscalated) {
+        if (isSystem || entry.isEscalated || entry.isFlaggedAsBugged) {
             let style = this._qaAlertBadgeStyle();
-            if (compact) {
-                style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
-            }
-            return `<span style="${style}">${dashEscHtml(label)}</span>`;
-        }
-        if (entry.isFlaggedAsBugged) {
-            let style = this._qaFlaggedBadgeStyle();
             if (compact) {
                 style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
             }
@@ -6327,7 +6311,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.26',
+    _version: '1.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
