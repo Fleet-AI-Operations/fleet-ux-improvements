@@ -15,6 +15,7 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
+const DASH_CARD_TAB_BG = '#64748b';
 const DASH_CARD_KIND_TAB_HEIGHT = '24px';
 const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
 const DASH_CARD_KIND_TAB_GAP = '0.25rem';
@@ -3712,7 +3713,7 @@ const searchOutputMethods = {
         if (!present || !cfg) {
             return '<div style="' + shell + ' visibility: hidden;" aria-hidden="true"></div>';
         }
-        return '<div style="' + shell + ' background: ' + cfg.tabBg + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
+        return '<div style="' + shell + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
     },
 
     _cardActionAreaHtml(itemId) {
@@ -6709,7 +6710,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.39',
+    _version: '1.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

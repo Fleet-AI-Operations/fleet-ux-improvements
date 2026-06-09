@@ -1501,13 +1501,6 @@ function _dvInjectStyles() {
         document.head.appendChild(style);
     }
     style.textContent = [
-        '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
-        '  width: auto; min-width: 5.5rem; padding: 0 8px;',
-        '  background: #7c3aed; color: #fff;',
-        '}',
-        '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
-        '  background: #6d28d9;',
-        '}',
         '#wf-dash-modal .dv-seg-group {',
         '  display: inline-flex;',
         '  border-radius: 6px;',
@@ -1791,7 +1784,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.11',
+    _version: '1.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
