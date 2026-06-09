@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.7',
+    _version: '5.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -983,23 +983,25 @@ const plugin = {
     },
 
     _ensureCardActionStyles() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-card-action-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-card-action-style';
-        style.textContent = [
-            '#wf-dash-modal .wf-dash-card-tabs-row {',
+        if (!this._modal) return;
+        const css = [
+            '#wf-dash-modal .wf-dash-card-action-row {',
+            '  display: flex;',
+            '  justify-content: flex-end;',
+            '  align-items: flex-end;',
+            '  padding: 0 16px;',
+            '  height: 12px;',
             '  position: relative;',
-            '  z-index: 3;',
+            '  z-index: 1;',
             '}',
             '#wf-dash-modal .wf-dash-card-action-area {',
             '  display: flex;',
             '  align-items: flex-end;',
+            '  justify-content: flex-end;',
             '  gap: 0.25rem;',
             '  flex-shrink: 0;',
-            '  position: relative;',
-            '  z-index: 1;',
             '}',
-            '#wf-dash-modal .wf-dash-task-card-article {',
+            '#wf-dash-modal [data-wf-dash-task-card] > .wf-dash-task-card-article {',
             '  position: relative;',
             '  z-index: 2;',
             '  margin-top: -12px;',
@@ -1028,14 +1030,11 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action-inner {',
             '  display: flex;',
-            '  flex-direction: column;',
             '  align-items: center;',
             '  justify-content: center;',
             '  height: 24px;',
             '  min-height: 24px;',
-            '  gap: 1px;',
             '  box-sizing: border-box;',
-            '  padding: 2px 4px 0;',
             '}',
             '#wf-dash-modal .wf-dash-card-action-icon {',
             '  display: none;',
@@ -1045,23 +1044,16 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-icon {',
             '  display: block;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action-label {',
-            '  font-size: 9px;',
-            '  font-weight: 600;',
-            '  line-height: 1;',
-            '  letter-spacing: 0.02em;',
-            '  opacity: 0;',
-            '  max-height: 0;',
-            '  overflow: hidden;',
-            '  white-space: nowrap;',
-            '  transition: opacity 120ms ease-out 40ms;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-label {',
-            '  opacity: 1;',
-            '  max-height: 1em;',
             '}'
         ].join('\n');
+        let style = this._modal.querySelector('#wf-dash-card-action-style');
+        if (style) {
+            style.textContent = css;
+            return;
+        }
+        style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-card-action-style';
+        style.textContent = css;
         this._modal.appendChild(style);
     },
 

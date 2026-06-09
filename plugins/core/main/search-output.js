@@ -2593,8 +2593,25 @@ const searchOutputMethods = {
             const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
             if (!stillHasTask) delete this._state.cardUi[taskId];
         }
-        this._refreshResultsView({ reindexFilters: true, filterSource: 'client' });
+        this._refreshResultsView({ reindexFilters: true, filterSource: 'results-mutate' });
         Logger.log('search-output: removed result from search — ' + id);
+    },
+
+    _pruneFiltersToBounds(filters, bounds) {
+        const next = Object.assign({}, filters);
+        const b = bounds || {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const boundIds = b[draftKey] || [];
+            const sel = (filters && filters[draftKey]) || [];
+            if (boundIds.length === 0) {
+                next[draftKey] = [];
+            } else if (this._isDimensionAllSelected(sel, boundIds)) {
+                next[draftKey] = [...boundIds];
+            } else {
+                next[draftKey] = sel.filter((id) => boundIds.includes(id));
+            }
+        }
+        return next;
     },
 
     _syncResultsListDerivedUi({ reindexFilters } = {}) {
@@ -2697,6 +2714,11 @@ const searchOutputMethods = {
         let filters;
         if (filterSource === 'search-defaults' || filterSource === 'tab-reset' || filterSource === 'filter-reset') {
             filters = this._filtersAllSelectedFromBounds(bounds);
+        } else if (filterSource === 'results-mutate') {
+            const applied = this._state.appliedFilters;
+            filters = applied
+                ? this._pruneFiltersToBounds(applied, bounds)
+                : this._filtersAllSelectedFromBounds(bounds);
         } else {
             filters = this._currentClientFilters();
             const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
@@ -2712,7 +2734,9 @@ const searchOutputMethods = {
         const sortOrder = filters.sortOrder;
         const sortMetric = filters.sortMetric || 'task_submitted';
         const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, this._dashSortContext());
-        const manual = this._readSearchOutputManualFilters();
+        const manual = filterSource === 'results-mutate'
+            ? { rows: filters.manualFilters || [], andOr: filters.manualAndOr || 'and' }
+            : this._readSearchOutputManualFilters();
         const result = this._applyManualFiltersToResult(checkboxResult, manual.rows, manual.andOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, {
@@ -2742,7 +2766,9 @@ const searchOutputMethods = {
         this._renderResults();
         this._updateResultsKindTabsUi();
         this._renderFilterLists({
-            syncDraftFromApplied: filterSource !== 'client' || Boolean(this._state.appliedFilters)
+            syncDraftFromApplied: filterSource === 'results-mutate'
+                || filterSource !== 'client'
+                || Boolean(this._state.appliedFilters)
         });
         this._syncResultsToolbarDerivedUi();
         return true;
@@ -3627,7 +3653,6 @@ const searchOutputMethods = {
             <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
-                    <span class="wf-dash-card-action-label">Remove</span>
                 </span>
             </button>
         </div>`;
@@ -5769,13 +5794,15 @@ const searchOutputMethods = {
                 : 'Hydrate';
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const tabsRow = `<div class="wf-dash-card-tabs-row" style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}${this._cardActionAreaHtml(itemId)}</div>
+        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
+                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
+        const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 ${tabsRow}
+                ${actionRow}
                 ${cardHtml}
             </div>`;
     },
@@ -6298,7 +6325,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.24',
+    _version: '1.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
