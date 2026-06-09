@@ -14,11 +14,12 @@ const DV_SLOTS_AREA_PAD = 10;
 const DV_CHAR_DIFF_LIMIT = 15000;
 const DV_REEL_HALF_H = 14;
 const DV_REEL_PEER_H = 72;
-const DV_REEL_LENS_H = 220;
+const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
 const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
+let _dvLensSyncScheduled = false;
 
 // ── Module state ──
 
@@ -1067,6 +1068,7 @@ function _dvRenderAll(modal) {
     _dvRenderStash(modal);
     _dvRenderDiffs(modal);
     _dvRenderStashChipStates(modal);
+    _dvScheduleReelLensSync(modal);
 }
 
 function _dvRenderSlotsArea(modal) {
@@ -1146,6 +1148,7 @@ function _dvRenderDiffs(modal) {
         if (basePre) basePre.innerHTML = _dvEscHtml(
             (_dvState.slots[0] && _dvState.slots[0].promptVersions && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex] && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex].prompt) || ''
         );
+        _dvScheduleReelLensSync(modal);
         return;
     }
     const base = _dvState.slots[0];
@@ -1177,6 +1180,7 @@ function _dvRenderDiffs(modal) {
         const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
         if (lensPre) lensPre.innerHTML = compareHtml;
     }
+    _dvScheduleReelLensSync(modal);
 }
 
 function _dvApplyHoverDiff(slotIdx, modal) {
@@ -1198,6 +1202,81 @@ function _dvClearHoverDiff(modal) {
     const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
     if (baseLensPre) baseLensPre.innerHTML = _dvEscHtml(baseText);
+    _dvScheduleReelLensSync(modal);
+}
+
+function _dvReelMeasureGridRows() {
+    return DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px auto ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px';
+}
+
+function _dvScheduleReelLensSync(modal) {
+    if (!modal || _dvLensSyncScheduled) return;
+    _dvLensSyncScheduled = true;
+    requestAnimationFrame(() => {
+        _dvLensSyncScheduled = false;
+        _dvSyncReelLensHeights(modal);
+    });
+}
+
+function _dvSyncReelLensHeights(modal) {
+    if (!modal || _dvState.mode !== 'tasks' || _dvState.slots.length === 0) return;
+    if (_dvState.drag.pending || _dvState.drag.active) return;
+
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (!slotsArea) return;
+
+    const slots = [...modal.querySelectorAll('.dv-slot')];
+    const lenses = [...modal.querySelectorAll('.dv-reel-lens')];
+    if (lenses.length === 0) return;
+
+    let maxBudget = Infinity;
+    for (const slot of slots) {
+        const body = slot.querySelector('.dv-slot > div:last-child');
+        const reel = body && body.querySelector('.dv-reel');
+        const lens = reel && reel.querySelector('.dv-reel-lens');
+        if (!body || !reel || !lens) continue;
+        const chromeH = reel.offsetHeight - lens.offsetHeight;
+        const budget = body.clientHeight - chromeH;
+        if (Number.isFinite(budget)) maxBudget = Math.min(maxBudget, budget);
+    }
+    if (!Number.isFinite(maxBudget) || maxBudget <= 0) maxBudget = DV_REEL_LENS_H;
+
+    slotsArea.style.removeProperty('--dv-reel-lens-h');
+    const measureRows = _dvReelMeasureGridRows();
+    const savedGridRows = [];
+    let contentMax = 0;
+
+    for (const lens of lenses) {
+        const reel = lens.closest('.dv-reel');
+        if (reel) {
+            savedGridRows.push([reel, reel.style.gridTemplateRows]);
+            reel.style.gridTemplateRows = measureRows;
+        }
+        lens.style.height = 'auto';
+        contentMax = Math.max(contentMax, lens.scrollHeight);
+        lens.style.height = '';
+    }
+
+    for (const [reel, rows] of savedGridRows) {
+        reel.style.gridTemplateRows = rows;
+    }
+
+    let unified = Math.min(Math.max(contentMax, DV_REEL_LENS_H), maxBudget);
+    if (maxBudget < DV_REEL_LENS_H) {
+        unified = maxBudget;
+        Logger.debug('diff-viewer: lens height budget below floor — ' + Math.round(maxBudget) + 'px');
+    }
+
+    slotsArea.style.setProperty('--dv-reel-lens-h', Math.round(unified) + 'px');
+    Logger.debug('diff-viewer: reel lens height synced — ' + Math.round(unified) + 'px (content=' + Math.round(contentMax) + ', budget=' + Math.round(maxBudget) + ')');
+}
+
+function _dvAttachReelLensResizeObserver(modal) {
+    if (!modal || modal._dvSlotsAreaRo) return;
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (!slotsArea || typeof ResizeObserver === 'undefined') return;
+    modal._dvSlotsAreaRo = new ResizeObserver(() => _dvScheduleReelLensSync(modal));
+    modal._dvSlotsAreaRo.observe(slotsArea);
 }
 
 function _dvRenderFreeTextDiff(modal) {
@@ -1392,6 +1471,8 @@ function _dvAttachListeners(modal, dash) {
     // ── Drag & swap (ghost UX) ──
     _dvAttachDragListeners(modal);
 
+    _dvAttachReelLensResizeObserver(modal);
+
     // ── Hover diffs (>2 slots: show base removals on hover of compare) ──
     modal.addEventListener('mouseover', (e) => {
         if (_dvState.slots.length <= 2) return;
@@ -1582,7 +1663,7 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
-        '  grid-template-rows: ' + DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_LENS_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px;',
+        '  grid-template-rows: ' + DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px;',
         '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
         '  column-gap: 4px;',
         '  flex: 1;',
@@ -1629,7 +1710,8 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-lens {',
         '  grid-column: 1;',
-        '  height: ' + DV_REEL_LENS_H + 'px;',
+        '  height: 100%;',
+        '  min-height: 0;',
         '  overflow-y: auto;',
         '  overflow-x: hidden;',
         '  padding: 8px 10px;',
@@ -1709,7 +1791,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1753,11 +1835,13 @@ const plugin = {
             attachListeners(modal, dash) { _dvAttachListeners(modal, dash); },
             onBuilt(modal) {
                 _dvRenderStash(modal);
+                _dvAttachReelLensResizeObserver(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
             },
             onActivate(modal) {
                 _dvRenderAll(modal);
+                _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
                     const loader = Context.dashboard._loader;
                     if (loader && typeof loader._applyAllSidePanelWidths === 'function') {
