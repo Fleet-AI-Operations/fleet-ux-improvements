@@ -13,6 +13,7 @@ const DV_CHAR_DIFF_LIMIT = 15000;
 const DV_REEL_HALF_H = 14;
 const DV_REEL_PEER_H = 72;
 const DV_REEL_LENS_H = 220;
+const DV_REEL_ROW_GAP = 10;
 
 let _dvSlotSeq = 0;
 
@@ -1121,7 +1122,8 @@ function _dvInjectStyles() {
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
         '  grid-template-rows: ' + DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_LENS_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px;',
-        '  gap: 4px;',
+        '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
+        '  column-gap: 4px;',
         '  flex: 1;',
         '  min-height: 0;',
         '  padding: 6px 4px 6px 6px;',
@@ -1145,7 +1147,7 @@ function _dvInjectStyles() {
         '  grid-column: 1;',
         '  height: ' + DV_REEL_PEER_H + 'px;',
         '  overflow: hidden;',
-        '  padding: 4px 8px;',
+        '  padding: 6px 8px;',
         '  background: var(--muted, rgba(0,0,0,0.04));',
         '  border-radius: 4px;',
         '  box-sizing: border-box;',
@@ -1168,7 +1170,8 @@ function _dvInjectStyles() {
         '  grid-column: 1;',
         '  height: ' + DV_REEL_LENS_H + 'px;',
         '  overflow-y: auto;',
-        '  padding: 6px 8px;',
+        '  overflow-x: hidden;',
+        '  padding: 8px 10px;',
         '  background: var(--background, #fff);',
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
@@ -1246,7 +1249,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
