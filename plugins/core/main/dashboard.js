@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.16',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -225,7 +225,8 @@ const plugin = {
             msHoverDisarmed: {},
             msDropdownRefreshActive: false,
             msBulkToggleMode: {},
-            filterExpandAllIntent: 'expand'
+            filterExpandAllIntent: 'expand',
+            retrieveInput: ''
         };
     },
 
