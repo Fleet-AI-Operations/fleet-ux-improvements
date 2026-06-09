@@ -292,7 +292,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -782,11 +782,107 @@ const plugin = {
         return out;
     },
 
-    _sortWorkerOutputItems(items, sortOrder) {
+    _maxIsoTimestamp(a, b) {
+        const sa = String(a || '');
+        const sb = String(b || '');
+        if (!sa) return sb;
+        if (!sb) return sa;
+        return sa > sb ? sa : sb;
+    },
+
+    _itemTaskSubmittedAt(item) {
+        const task = item && item.task;
+        return task ? String(task.createdAt || '') : '';
+    },
+
+    _itemTaskRevisedAt(item) {
+        const task = item && item.task;
+        if (!task) return '';
+        const versions = task.promptVersions || [];
+        if (versions.length <= 1) {
+            return String(task.createdAt || (versions[0] && versions[0].createdAt) || '');
+        }
+        let latest = '';
+        for (const version of versions) {
+            latest = this._maxIsoTimestamp(latest, version.createdAt);
+        }
+        return latest || String(task.createdAt || '');
+    },
+
+    _itemFeedbackGivenAt(item) {
+        const task = item && item.task;
+        if (!task) return '';
+        let latest = '';
+        for (const entry of task.allFeedback || []) {
+            latest = this._maxIsoTimestamp(latest, entry.feedbackAt);
+        }
+        return latest;
+    },
+
+    _itemDisputeSubmittedAt(item, sortContext) {
+        let latest = '';
+        for (const dispute of (item && item.disputes) || []) {
+            latest = this._maxIsoTimestamp(latest, dispute.submittedAt);
+        }
+        const taskId = item && item.task && item.task.id;
+        if (!taskId || !sortContext) return latest;
+        for (const row of (sortContext.openDisputesByTaskId && sortContext.openDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.created_at);
+        }
+        for (const row of (sortContext.resolvedDisputesByTaskId && sortContext.resolvedDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.created_at);
+        }
+        return latest;
+    },
+
+    _itemDisputeResolvedAt(item, sortContext) {
+        let latest = '';
+        for (const dispute of (item && item.disputes) || []) {
+            latest = this._maxIsoTimestamp(latest, dispute.resolutionAt);
+        }
+        const taskId = item && item.task && item.task.id;
+        if (!taskId || !sortContext) return latest;
+        for (const row of (sortContext.openDisputesByTaskId && sortContext.openDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.resolved_at);
+        }
+        for (const row of (sortContext.resolvedDisputesByTaskId && sortContext.resolvedDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.resolved_at);
+        }
+        return latest;
+    },
+
+    _itemSortTimestamp(item, sortMetric, sortContext) {
+        const metric = String(sortMetric || 'task_submitted');
+        switch (metric) {
+            case 'task_revised':
+                return this._itemTaskRevisedAt(item);
+            case 'feedback_given':
+                return this._itemFeedbackGivenAt(item);
+            case 'dispute_submitted':
+                return this._itemDisputeSubmittedAt(item, sortContext);
+            case 'dispute_resolved':
+                return this._itemDisputeResolvedAt(item, sortContext);
+            case 'task_submitted':
+            default:
+                return this._itemTaskSubmittedAt(item);
+        }
+    },
+
+    _sortWorkerOutputItems(items, sortMetric, sortOrder, sortContext) {
+        const metric = String(sortMetric || 'task_submitted');
+        const order = sortOrder === 'asc' ? 'asc' : 'desc';
         const sorted = [...items];
         sorted.sort((a, b) => {
-            const cmp = a.sortAt < b.sortAt ? -1 : a.sortAt > b.sortAt ? 1 : 0;
-            return sortOrder === 'asc' ? cmp : -cmp;
+            const ta = this._itemSortTimestamp(a, metric, sortContext);
+            const tb = this._itemSortTimestamp(b, metric, sortContext);
+            const aEmpty = !ta;
+            const bEmpty = !tb;
+            if (aEmpty && bEmpty) return String(a.id).localeCompare(String(b.id));
+            if (aEmpty) return 1;
+            if (bEmpty) return -1;
+            const cmp = ta < tb ? -1 : ta > tb ? 1 : 0;
+            if (cmp !== 0) return order === 'asc' ? cmp : -cmp;
+            return String(a.id).localeCompare(String(b.id));
         });
         return sorted;
     },
@@ -872,9 +968,11 @@ const plugin = {
         };
     },
 
-    _applyFiltersAndSort(cachedItems, filters, listBounds, sortOrder) {
+    _applyFiltersAndSort(cachedItems, filters, listBounds, sortContext) {
         const filtered = this._applyClientWorkerOutputFilters(cachedItems, filters, listBounds);
-        return this._sortWorkerOutputItems(filtered, sortOrder);
+        const sortMetric = (filters && filters.sortMetric) || 'task_submitted';
+        const sortOrder = (filters && filters.sortOrder) === 'asc' ? 'asc' : 'desc';
+        return this._sortWorkerOutputItems(filtered, sortMetric, sortOrder, sortContext || null);
     },
 
     get _checkboxFilterDimensions() {

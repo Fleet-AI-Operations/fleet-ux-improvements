@@ -73,6 +73,19 @@ const DASH_SEARCH_DEPTH_HINTS = {
 };
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
 
+const DASH_SORT_DEFAULT = 'task_submitted:desc';
+const DASH_SORT_METRICS = [
+    { id: 'task_submitted', label: 'Task submitted' },
+    { id: 'task_revised', label: 'Task revised' },
+    { id: 'feedback_given', label: 'Feedback given' },
+    { id: 'dispute_submitted', label: 'Dispute submitted' },
+    { id: 'dispute_resolved', label: 'Dispute resolved' }
+];
+const DASH_SORT_OPTIONS = DASH_SORT_METRICS.flatMap((metric) => ([
+    { value: metric.id + ':desc', label: metric.label + ' (newest first)', sortMetric: metric.id, sortOrder: 'desc' },
+    { value: metric.id + ':asc', label: metric.label + ' (oldest first)', sortMetric: metric.id, sortOrder: 'asc' }
+]));
+
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 
@@ -1734,6 +1747,14 @@ const searchOutputMethods = {
             task.allFeedback = [];
             quickTasksById.set(taskId, task);
         }
+        for (const fb of feedbackRows || []) {
+            const task = quickTasksById.get(fb.eval_task_id);
+            if (!task || !fb.created_at) continue;
+            task.allFeedback.push({
+                id: String(fb.id || ''),
+                feedbackAt: String(fb.created_at || '')
+            });
+        }
         return { enrichedTasksById: quickTasksById, profilesMap };
     },
 
@@ -2594,6 +2615,7 @@ const searchOutputMethods = {
 
     _filtersAllSelectedFromBounds(bounds) {
         const b = bounds || {};
+        const sort = this._readDashSortFromUi();
         return {
             teamIds: [...(b.teamIds || [])],
             projectIds: [...(b.projectIds || [])],
@@ -2609,10 +2631,48 @@ const searchOutputMethods = {
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
-            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc',
+            sortMetric: sort.sortMetric,
+            sortOrder: sort.sortOrder,
             manualFilters: [],
             manualAndOr: 'and'
         };
+    },
+
+    _parseDashSortValue(raw) {
+        const value = String(raw || DASH_SORT_DEFAULT);
+        const match = DASH_SORT_OPTIONS.find((opt) => opt.value === value);
+        if (match) {
+            return { sortMetric: match.sortMetric, sortOrder: match.sortOrder, label: match.label };
+        }
+        const [metric, order] = value.split(':');
+        const known = DASH_SORT_METRICS.some((m) => m.id === metric);
+        const sortMetric = known ? metric : 'task_submitted';
+        const sortOrder = order === 'asc' ? 'asc' : 'desc';
+        const metricLabel = (DASH_SORT_METRICS.find((m) => m.id === sortMetric) || {}).label || sortMetric;
+        return {
+            sortMetric,
+            sortOrder,
+            label: metricLabel + (sortOrder === 'asc' ? ' (oldest first)' : ' (newest first)')
+        };
+    },
+
+    _readDashSortFromUi() {
+        const el = this._q('#wf-dash-sort');
+        return this._parseDashSortValue(el && el.value);
+    },
+
+    _dashSortContext() {
+        return {
+            openDisputesByTaskId: this._state.openDisputesByTaskId || null,
+            resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null
+        };
+    },
+
+    _dashSortSelectOptionsHtml(selectedValue) {
+        const selected = String(selectedValue || DASH_SORT_DEFAULT);
+        return DASH_SORT_OPTIONS.map((opt) =>
+            `<option value="${dashEscHtml(opt.value)}"${opt.value === selected ? ' selected' : ''}>${dashEscHtml(opt.label)}</option>`
+        ).join('');
     },
 
     _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client' } = {}) {
@@ -2650,11 +2710,13 @@ const searchOutputMethods = {
 
         const scopeItems = this._getFilterScopeItems();
         const sortOrder = filters.sortOrder;
-        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const sortMetric = filters.sortMetric || 'task_submitted';
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, this._dashSortContext());
         const manual = this._readSearchOutputManualFilters();
         const result = this._applyManualFiltersToResult(checkboxResult, manual.rows, manual.andOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, {
+            sortMetric,
             sortOrder,
             manualFilters: manual.rows,
             manualAndOr: manual.andOr
@@ -2664,7 +2726,7 @@ const searchOutputMethods = {
         if (filterSource === 'client') {
             Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
                 + (manual.rows.length > 0 ? ' · ' + manual.rows.length + ' manual' : '')
-                + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+                + ' · ' + this._parseDashSortValue(sortMetric + ':' + sortOrder).label);
         } else if (filterSource === 'filter-reset') {
             Logger.log('dashboard: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
         } else {
@@ -2861,7 +2923,7 @@ const searchOutputMethods = {
         if (!filterInvalid.invalid) {
             const sortOrder = filters.sortOrder;
             const scopeItems = this._getFilterScopeItems();
-            const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
+            const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, newBounds, this._dashSortContext());
             const manualRows = filters.manualFilters || [];
             const manualAndOr = filters.manualAndOr || 'and';
             const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
@@ -2879,19 +2941,19 @@ const searchOutputMethods = {
         const lib = dashLib();
         const applied = this._state.appliedFilters;
         if (this._state.cachedItems === null || !applied) return;
-        const sortOrder = ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc';
-        if (applied.sortOrder === sortOrder) return;
-        const filters = Object.assign({}, applied, { sortOrder });
+        const { sortMetric, sortOrder, label } = this._readDashSortFromUi();
+        if (applied.sortMetric === sortMetric && applied.sortOrder === sortOrder) return;
+        const filters = Object.assign({}, applied, { sortMetric, sortOrder });
         this._state.resultsPage = 0;
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const scopeItems = this._getFilterScopeItems();
-        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, this._dashSortContext());
         const manualRows = filters.manualFilters || [];
         const manualAndOr = filters.manualAndOr || 'and';
         const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = filters;
-        Logger.log('dashboard: sort applied — ' + (sortOrder === 'asc' ? 'oldest first' : 'newest first'));
+        Logger.log('dashboard: sort applied — ' + (label || (sortMetric + ' ' + sortOrder)));
         this._updateResultsStatus();
         this._syncResultsListDerivedUi();
         this._renderResults();
@@ -3747,9 +3809,8 @@ const searchOutputMethods = {
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
-                                            <option value="desc">Newest first</option>
-                                            <option value="asc">Oldest first</option>
+                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 18rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            ${this._dashSortSelectOptionsHtml(DASH_SORT_DEFAULT)}
                                         </select>
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
@@ -4699,7 +4760,7 @@ const searchOutputMethods = {
                 const regexEl = this._q('#wf-dash-regex');
                 if (regexEl) regexEl.checked = false;
                 const sortEl = this._q('#wf-dash-sort');
-                if (sortEl) sortEl.value = 'desc';
+                if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
                 this._resetManualFilters();
                 this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
@@ -4772,7 +4833,7 @@ const searchOutputMethods = {
         const hidden = this._q('#wf-dash-hidden-versions');
         if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) sortEl.value = 'desc';
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
             const el = this._q(sel);
             if (el) el.checked = false;
@@ -4821,7 +4882,7 @@ const searchOutputMethods = {
         const hidden = this._q('#wf-dash-hidden-versions');
         if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) sortEl.value = 'desc';
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
@@ -4831,13 +4892,15 @@ const searchOutputMethods = {
 
     _currentClientFilters() {
         const draft = this._getFilterDraft();
+        const sort = this._readDashSortFromUi();
         return Object.assign({}, draft, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
-            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
+            sortMetric: sort.sortMetric,
+            sortOrder: sort.sortOrder
         });
     },
 
@@ -6235,7 +6298,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.23',
+    _version: '1.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
