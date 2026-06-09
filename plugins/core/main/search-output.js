@@ -5543,9 +5543,7 @@ const searchOutputMethods = {
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
         const versionActionEntry = feedbackEntries.length ? feedbackEntries[feedbackEntries.length - 1] : null;
-        const versionActionBadge = showVersionLabel
-            ? this._feedbackActionBadgeHtml(versionActionEntry)
-            : '';
+        const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const feedbackHtml = feedbackEntries.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx);
             const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
@@ -6163,7 +6161,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.19',
+    _version: '1.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
