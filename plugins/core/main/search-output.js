@@ -3186,6 +3186,33 @@ const searchOutputMethods = {
         return true;
     },
 
+    async _getVerifierFromCard(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) {
+            Logger.warn('dashboard: get verifier — no task on card ' + id);
+            return;
+        }
+        const taskKey = String(item.task.key || '').trim();
+        const taskId = String(item.task.id || '').trim();
+        const inputValue = taskKey || taskId;
+        if (!inputValue) {
+            Logger.warn('dashboard: get verifier — missing task key/id on card ' + id);
+            return;
+        }
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.handleVerifierFetch !== 'function') {
+            Logger.warn('dashboard: get verifier unavailable — ops module missing');
+            return;
+        }
+        this._setActiveTab('verifier-fetcher');
+        const input = this._q('#wf-ops-verifier-input');
+        if (input) input.value = inputValue;
+        Logger.log('dashboard: get verifier from card — ' + (taskKey || taskId.slice(0, 8) + '…'));
+        await opsTab.handleVerifierFetch(this._modal);
+    },
+
     async _toggleUserStory(itemId) {
         const id = String(itemId || '').trim();
         if (!id) return;
@@ -3690,6 +3717,11 @@ const searchOutputMethods = {
 
     _cardActionAreaHtml(itemId) {
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--get-verifier" data-wf-dash-get-verifier="1" data-item-id="${dashEscHtml(itemId)}" title="Get verifier" aria-label="Get verifier">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">Get Verifier</span>
+                </span>
+            </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
@@ -6594,6 +6626,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const getVerifierBtn = e.target.closest('[data-wf-dash-get-verifier]');
+            if (getVerifierBtn && modal.contains(getVerifierBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = getVerifierBtn.getAttribute('data-item-id');
+                if (itemId) void dash._getVerifierFromCard(itemId);
+                return;
+            }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
             if (removeResultBtn && modal.contains(removeResultBtn)) {
                 e.stopPropagation();
@@ -6636,7 +6676,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.35',
+    _version: '1.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
