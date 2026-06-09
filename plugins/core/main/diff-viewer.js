@@ -631,9 +631,9 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
         : _dvEscHtml(slot.authorEmail || '—');
     const keyDisplay = _dvEscHtml(slot.key || (slot.taskId ? slot.taskId.slice(0, 8) + '…' : '—'));
 
-    const baseBadge = isBase
-        ? `<span style="display:inline-block;font-size:9px;font-weight:700;background:var(--brand,#2563eb);color:#fff;border-radius:3px;padding:1px 5px;margin-bottom:3px;letter-spacing:.04em;">BASE</span> `
-        : '';
+    const baseBandHtml = isBase
+        ? '<div class="dv-slot-base-band"><span class="dv-slot-base-badge">BASE</span></div>'
+        : '<div class="dv-slot-base-band dv-slot-base-band--spacer" aria-hidden="true"></div>';
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -651,9 +651,9 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
     }
 
     return `<div class="dv-slot" data-dv-slot="${slotIdx}" style="display:flex;flex-direction:column;height:100%;overflow:hidden;box-sizing:border-box;">
+        ${baseBandHtml}
         <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:${headerBg};border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
-                ${baseBadge}
                 <div style="font-size:11px;font-weight:600;color:var(--foreground,#0f172a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>
                 <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.key || slot.taskId)}">${keyDisplay}</div>
             </div>
@@ -1097,6 +1097,26 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal [data-dv-drag] { cursor: grab; }',
         '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }',
+        '#wf-dash-modal .dv-slot-base-band {',
+        '  flex-shrink: 0;',
+        '  height: 18px;',
+        '  padding: 2px 10px 0;',
+        '  box-sizing: border-box;',
+        '  display: flex;',
+        '  align-items: center;',
+        '}',
+        '#wf-dash-modal .dv-slot-base-band--spacer { visibility: hidden; }',
+        '#wf-dash-modal .dv-slot-base-badge {',
+        '  display: inline-block;',
+        '  font-size: 9px;',
+        '  font-weight: 700;',
+        '  background: var(--brand, #2563eb);',
+        '  color: #fff;',
+        '  border-radius: 3px;',
+        '  padding: 1px 5px;',
+        '  letter-spacing: 0.04em;',
+        '  line-height: 1.3;',
+        '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
@@ -1226,7 +1246,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
