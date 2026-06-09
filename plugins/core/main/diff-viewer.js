@@ -427,6 +427,7 @@ function _dvAddSlot(seed, modal) {
     }
     _dvRenderAll(modal);
     void _dvHydrateSlot(slotId, seed, modal);
+    _dvFlashTabAdded();
 }
 
 async function _dvHydrateSlot(slotId, seed, modal) {
@@ -1501,6 +1502,25 @@ function _dvInjectStyles() {
         document.head.appendChild(style);
     }
     style.textContent = [
+        '@keyframes dvDiffTabAddPulse {',
+        '  0% {',
+        '    background-color: transparent;',
+        '    box-shadow: inset 0 -2px 0 0 transparent;',
+        '  }',
+        '  45% {',
+        '    background-color: color-mix(in srgb, rgb(34, 197, 94) 30%, transparent);',
+        '    box-shadow: inset 0 -3px 0 0 rgb(34, 197, 94);',
+        '    color: rgb(34, 197, 94) !important;',
+        '    border-bottom-color: rgb(34, 197, 94) !important;',
+        '  }',
+        '  100% {',
+        '    background-color: transparent;',
+        '    box-shadow: inset 0 -2px 0 0 transparent;',
+        '  }',
+        '}',
+        '#wf-dash-modal [data-wf-dash-tab="diff-viewer"].wf-dash-tab--add-pulse {',
+        '  animation: dvDiffTabAddPulse 100ms ease-out 1;',
+        '}',
         '#wf-dash-modal .dv-seg-group {',
         '  display: inline-flex;',
         '  border-radius: 6px;',
@@ -1766,6 +1786,19 @@ function _dvInjectStyles() {
     ].join('\n');
 }
 
+function _dvFlashTabAdded() {
+    const loader = Context.dashboard && Context.dashboard._loader;
+    const modal = loader && loader._modal;
+    if (!modal) return;
+    const tab = modal.querySelector('[data-wf-dash-tab="diff-viewer"]');
+    if (!tab) return;
+    tab.classList.remove('wf-dash-tab--add-pulse');
+    void tab.offsetWidth;
+    tab.classList.add('wf-dash-tab--add-pulse');
+    tab.addEventListener('animationend', () => tab.classList.remove('wf-dash-tab--add-pulse'), { once: true });
+    Logger.debug('diff-viewer: tab add pulse');
+}
+
 // ── Public API: Context.diffViewer ──
 
 function _dvApiAddTask(seed) {
@@ -1784,7 +1817,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.12',
+    _version: '1.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
