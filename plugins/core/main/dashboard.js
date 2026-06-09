@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -553,6 +553,8 @@ const plugin = {
             '}',
             '#wf-dash-modal [data-wf-dash-ms-bulk-toggle] {',
             '  flex-shrink: 0;',
+            '  min-width: 2.75rem;',
+            '  text-align: center;',
             '  font-size: 10px;',
             '  font-weight: 600;',
             '  padding: 4px 8px;',
@@ -1060,7 +1062,6 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action-row:hover {',
             '  overflow: visible;',
-            '  z-index: 4;',
             '}',
             '#wf-dash-modal .wf-dash-card-action:hover {',
             '  margin-top: -12px;',
@@ -1312,7 +1313,7 @@ const plugin = {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
-                this._clearMsHoverTimers(msKey);
+                this._keepFilterMsDropdownOpen(msKey);
                 this._renderFilterLists();
             }
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
@@ -1327,7 +1328,7 @@ const plugin = {
             const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
             if (msBulkToggle && modal.contains(msBulkToggle)) {
                 const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
-                this._clearMsHoverTimers(key);
+                this._keepFilterMsDropdownOpen(key);
                 const selectAll = !this._msBulkToggleIsAll(key);
                 this._setMultiselectChecked(key, selectAll);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
@@ -1336,9 +1337,6 @@ const plugin = {
                     this._onTeamMemberMsChange(this._modal);
                 }
                 return;
-            }
-            if (!e.target.closest('[data-wf-dash-ms-wrap]')) {
-                this._closeFlyoutMsDropdowns();
             }
         });
     },
@@ -1639,6 +1637,21 @@ const plugin = {
         return DASH_FILTER_SCOPES.map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
     },
 
+    _isPointerOverMsDropdown(scopeKey) {
+        const wrap = this._msWrapEl(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        if (!wrap || !this._isMsDropdownOpen(scopeKey)) return false;
+        if (wrap.matches(':hover')) return true;
+        return Boolean(panel && panel.matches(':hover'));
+    },
+
+    _keepFilterMsDropdownOpen(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        this._clearMsHoverTimers(scopeKey);
+        this._state.msDropdownOpen[scopeKey] = true;
+        this._syncMsDropdown(scopeKey);
+    },
+
     _beginFilterMsDropdownRefresh() {
         const openKeys = this._filterMsOpenKeys();
         for (const key of openKeys) this._clearMsHoverTimers(key);
@@ -1651,7 +1664,17 @@ const plugin = {
             this._state.msDropdownOpen[key] = true;
             this._syncMsDropdown(key);
         }
-        this._state.msDropdownRefreshActive = false;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this._state.msDropdownRefreshActive = false;
+                for (const key of openKeys) {
+                    if (!this._isPointerOverMsDropdown(key)) continue;
+                    this._clearMsHoverTimers(key);
+                    this._state.msDropdownOpen[key] = true;
+                    this._syncMsDropdown(key);
+                }
+            });
+        });
     },
 
     _clearMsHoverTimers(scopeKey) {
@@ -1693,6 +1716,8 @@ const plugin = {
         timers.close = setTimeout(() => {
             delete timers.close;
             if (!this._isMsDropdownOpen(scopeKey)) return;
+            if (this._state.msDropdownRefreshActive) return;
+            if (this._isPointerOverMsDropdown(scopeKey)) return;
             delete this._state.msDropdownOpen[scopeKey];
             delete this._state.msDropdownPinned[scopeKey];
             this._syncMsDropdown(scopeKey);
