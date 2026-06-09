@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.9',
+    _version: '7.10',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2416,8 +2416,8 @@ const plugin = {
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
             '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
             '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
-            '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
-            '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
+            '#wf-dash-modal mark.wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:unset;border-radius:2px;padding:0 1px;}',
+            '#wf-dash-modal mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
             '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}',
             '.wf-ops-member-stats-grid{display:grid;grid-template-columns:max-content max-content max-content max-content;column-gap:10px;row-gap:2px;}',
             '.wf-ops-member-stats-grid--plain{grid-template-columns:1fr;}'
@@ -3696,23 +3696,83 @@ const plugin = {
         return starts;
     },
 
-    _buildVerifierContentSearchHtml(text, query, activeIndex) {
-        const source = String(text || '');
-        const needle = String(query || '');
-        const starts = this._findVerifierContentMatchStarts(source, needle);
-        if (!needle) return { html: '', matchCount: 0, activeIndex: 0, matchStarts: [] };
-        const safeActive = starts.length === 0 ? 0 : Math.max(0, Math.min(activeIndex, starts.length - 1));
-        let html = '';
-        let last = 0;
-        starts.forEach((start, idx) => {
-            html += this._opsEscapeHtml(source.slice(last, start));
-            const activeClass = idx === safeActive ? ' wf-ops-verifier-hit-active' : '';
-            html += '<mark class="wf-ops-verifier-hit' + activeClass + '" data-wf-ops-verifier-hit="' + idx + '">'
-                + this._opsEscapeHtml(source.slice(start, start + needle.length)) + '</mark>';
-            last = start + needle.length;
+    _getVerifierTextSegmentsInRange(codeEl, rangeStart, rangeEnd) {
+        const segments = [];
+        if (!codeEl || rangeEnd <= rangeStart) return segments;
+        const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT, null);
+        let offset = 0;
+        let node;
+        while ((node = walker.nextNode())) {
+            const nodeStart = offset;
+            const nodeEnd = offset + node.length;
+            if (nodeEnd <= rangeStart || nodeStart >= rangeEnd) {
+                offset = nodeEnd;
+                continue;
+            }
+            segments.push({
+                node,
+                segStart: Math.max(rangeStart, nodeStart) - nodeStart,
+                segEnd: Math.min(rangeEnd, nodeEnd) - nodeStart
+            });
+            offset = nodeEnd;
+        }
+        return segments;
+    },
+
+    _wrapVerifierTextNodeSegment(textNode, segStart, segEnd, hitIndex, isActive) {
+        if (!textNode || segEnd <= segStart) return;
+        const text = textNode.textContent || '';
+        const before = text.slice(0, segStart);
+        const match = text.slice(segStart, segEnd);
+        const after = text.slice(segEnd);
+        const parent = textNode.parentNode;
+        if (!parent || !match) return;
+
+        const mark = document.createElement('mark');
+        mark.className = 'wf-ops-verifier-hit' + (isActive ? ' wf-ops-verifier-hit-active' : '');
+        mark.setAttribute('data-wf-ops-verifier-hit', String(hitIndex));
+        mark.textContent = match;
+
+        if (before) parent.insertBefore(document.createTextNode(before), textNode);
+        parent.insertBefore(mark, textNode);
+        if (after) parent.insertBefore(document.createTextNode(after), textNode);
+        parent.removeChild(textNode);
+    },
+
+    _applyVerifierSearchMarksInDom(codeEl, matchStarts, needleLength, activeIndex) {
+        if (!codeEl || !matchStarts || matchStarts.length === 0 || !needleLength) {
+            return Math.max(0, activeIndex || 0);
+        }
+        const safeActive = Math.max(0, Math.min(activeIndex, matchStarts.length - 1));
+        const sorted = matchStarts
+            .map((start, idx) => ({ start, idx }))
+            .sort((a, b) => b.start - a.start);
+
+        sorted.forEach(({ start, idx }) => {
+            const rangeEnd = start + needleLength;
+            const segments = this._getVerifierTextSegmentsInRange(codeEl, start, rangeEnd);
+            for (let i = segments.length - 1; i >= 0; i--) {
+                const seg = segments[i];
+                this._wrapVerifierTextNodeSegment(
+                    seg.node,
+                    seg.segStart,
+                    seg.segEnd,
+                    idx,
+                    idx === safeActive
+                );
+            }
         });
-        html += this._opsEscapeHtml(source.slice(last));
-        return { html, matchCount: starts.length, activeIndex: safeActive, matchStarts: starts };
+        return safeActive;
+    },
+
+    _setVerifierContentMatchActive(output, activeIndex) {
+        if (!output) return;
+        output.querySelectorAll('.wf-ops-verifier-hit').forEach((el) => {
+            el.classList.remove('wf-ops-verifier-hit-active');
+        });
+        output.querySelectorAll('[data-wf-ops-verifier-hit="' + activeIndex + '"]').forEach((el) => {
+            el.classList.add('wf-ops-verifier-hit-active');
+        });
     },
 
     _updateVerifierContentSearchUi(modal) {
@@ -3782,19 +3842,6 @@ const plugin = {
             return;
         }
 
-        if (query) {
-            const built = this._buildVerifierContentSearchHtml(text, query, this._opsVerifierContentSearch.index);
-            this._opsVerifierContentSearch.matchStarts = built.matchStarts;
-            this._opsVerifierContentSearch.index = built.activeIndex;
-            output.innerHTML = built.html;
-            output.className = 'language-python';
-            this._updateVerifierContentSearchUi(modal);
-            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-            return;
-        }
-
-        this._opsVerifierContentSearch.matchStarts = [];
-        this._opsVerifierContentSearch.index = 0;
         if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
             await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
         } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
@@ -3802,6 +3849,21 @@ const plugin = {
         } else {
             output.textContent = text;
             output.className = text ? 'language-python' : 'language-plaintext';
+        }
+
+        if (query) {
+            const matchStarts = this._findVerifierContentMatchStarts(text, query);
+            this._opsVerifierContentSearch.matchStarts = matchStarts;
+            this._opsVerifierContentSearch.index = this._applyVerifierSearchMarksInDom(
+                output,
+                matchStarts,
+                query.length,
+                this._opsVerifierContentSearch.index
+            );
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+        } else {
+            this._opsVerifierContentSearch.matchStarts = [];
+            this._opsVerifierContentSearch.index = 0;
         }
         this._updateVerifierContentSearchUi(modal);
     },
@@ -3822,7 +3884,14 @@ const plugin = {
         const count = search.matchStarts ? search.matchStarts.length : 0;
         if (!count || !delta) return;
         search.index = (search.index + delta + count) % count;
-        void this._refreshVerifierOutputDisplay(modal);
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputStep');
+        if (output && output.querySelector('.wf-ops-verifier-hit')) {
+            this._setVerifierContentMatchActive(output, search.index);
+            this._updateVerifierContentSearchUi(modal);
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+        } else {
+            void this._refreshVerifierOutputDisplay(modal);
+        }
         Logger.debug('ops-tab: verifier content match ' + (search.index + 1) + '/' + count);
     },
 
