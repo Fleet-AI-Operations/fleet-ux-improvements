@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.12',
+    _version: '5.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -221,7 +221,8 @@ const plugin = {
             msDropdownFilter: {},
             msDropdownPinned: {},
             msDropdownHoverTimers: {},
-            msDropdownRefreshActive: false
+            msDropdownRefreshActive: false,
+            msBulkToggleMode: {}
         };
     },
 
@@ -1025,9 +1026,8 @@ const plugin = {
             '  justify-content: flex-end;',
             '  align-items: flex-start;',
             '  height: 12px;',
-            '  overflow: hidden;',
+            '  overflow: visible;',
             '  pointer-events: none;',
-            '  transition: overflow 0s linear 160ms;',
             '}',
             '#wf-dash-modal .wf-dash-card-action-area {',
             '  display: flex;',
@@ -1051,20 +1051,16 @@ const plugin = {
             '  overflow: hidden;',
             '  flex-shrink: 0;',
             '  font-family: inherit;',
-            '  margin-top: 0;',
-            '  transition: margin-top 160ms ease-in, background-color 160ms ease-in;',
+            '  transform: translateY(0);',
+            '  transition: transform 160ms ease-in, background-color 160ms ease-in;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove {',
             '  background: #dc2626;',
             '  color: #fff;',
             '}',
-            '#wf-dash-modal .wf-dash-card-action-row:hover {',
-            '  overflow: visible;',
-            '  transition: overflow 0s;',
-            '}',
             '#wf-dash-modal .wf-dash-card-action:hover {',
-            '  margin-top: -12px;',
-            '  transition: margin-top 160ms ease-out, background-color 160ms ease-out;',
+            '  transform: translateY(-12px);',
+            '  transition: transform 160ms ease-out, background-color 160ms ease-out;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove:hover {',
             '  background: #b91c1c;',
@@ -1334,8 +1330,7 @@ const plugin = {
             if (msBulkToggle && modal.contains(msBulkToggle)) {
                 const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
                 this._keepFilterMsDropdownOpen(key);
-                const selectAll = !this._msBulkToggleIsAll(key);
-                this._setMultiselectChecked(key, selectAll);
+                this._toggleMsBulkSelection(key);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
@@ -1541,26 +1536,32 @@ const plugin = {
         return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
     },
 
-    _msBulkToggleIsAll(scopeKey) {
-        const itemsEl = this._msItemsEl(scopeKey);
-        if (!itemsEl) return false;
-        const checkboxes = itemsEl.querySelectorAll('input[type="checkbox"]:not(:disabled)');
-        if (checkboxes.length === 0) return false;
-        for (const cb of checkboxes) {
-            if (!cb.checked) return false;
-        }
-        return true;
+    _msBulkToggleMode(scopeKey) {
+        const mode = (this._state.msBulkToggleMode || {})[scopeKey];
+        return mode === 'all' ? 'all' : 'none';
     },
 
-    _syncMsBulkToggleLabel(scopeKey) {
+    _setMsBulkToggleMode(scopeKey, mode) {
+        if (!this._state.msBulkToggleMode) this._state.msBulkToggleMode = {};
+        this._state.msBulkToggleMode[scopeKey] = mode === 'all' ? 'all' : 'none';
+    },
+
+    _applyMsBulkToggleLabel(scopeKey) {
         const btn = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
         if (!btn) return;
-        const isAll = this._msBulkToggleIsAll(scopeKey);
+        const isAll = this._msBulkToggleMode(scopeKey) === 'all';
         btn.textContent = isAll ? 'All' : 'None';
         btn.setAttribute('aria-label', isAll ? 'Clear all selections' : 'Select all');
         btn.style.color = isAll
             ? 'var(--brand, var(--primary, #2563eb))'
             : 'var(--muted-foreground, #64748b)';
+    },
+
+    _toggleMsBulkSelection(scopeKey) {
+        const nextAll = this._msBulkToggleMode(scopeKey) !== 'all';
+        this._setMsBulkToggleMode(scopeKey, nextAll ? 'all' : 'none');
+        this._setMultiselectChecked(scopeKey, nextAll);
+        this._applyMsBulkToggleLabel(scopeKey);
     },
 
     _syncMsDropdownChrome(scopeKey) {
@@ -1586,7 +1587,7 @@ const plugin = {
         }
         const bulkToggle = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
         if (bulkToggle) bulkToggle.style.display = showBulkToggle ? '' : 'none';
-        if (showBulkToggle) this._syncMsBulkToggleLabel(scopeKey);
+        if (showBulkToggle) this._applyMsBulkToggleLabel(scopeKey);
         const itemsEl = this._msItemsEl(scopeKey);
         if (itemsEl && !scopeKey.startsWith('team-members-')) {
             const singleOption = optionCount === 1;
@@ -1926,7 +1927,6 @@ const plugin = {
         if (!items) return;
         items.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = checked; });
         this._updateMsCount(scopeKey);
-        this._syncMsBulkToggleLabel(scopeKey);
     },
 
     _setActiveTab(tabId) {
