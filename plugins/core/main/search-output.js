@@ -2557,6 +2557,25 @@ const searchOutputMethods = {
             + filtered.length + ' remaining');
     },
 
+    _dropResultFromSearch(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const cached = this._state.cachedItems;
+        if (!cached) return;
+        const item = cached.find((it) => it.id === id);
+        if (!item) return;
+        this._state.cachedItems = cached.filter((it) => it.id !== id);
+        if (this._state.hydrateUi) delete this._state.hydrateUi[id];
+        if (this._state.userStoryUi) delete this._state.userStoryUi[id];
+        const taskId = item.task && item.task.id;
+        if (taskId && this._state.cardUi) {
+            const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
+            if (!stillHasTask) delete this._state.cardUi[taskId];
+        }
+        this._refreshResultsView({ reindexFilters: true, filterSource: 'client' });
+        Logger.log('search-output: removed result from search — ' + id);
+    },
+
     _syncResultsListDerivedUi({ reindexFilters } = {}) {
         if (reindexFilters && this._state.cachedItems) {
             this._reindexFilterListsFromScope(false);
@@ -3539,6 +3558,17 @@ const searchOutputMethods = {
             return '<div style="' + shell + ' visibility: hidden;" aria-hidden="true"></div>';
         }
         return '<div style="' + shell + ' background: ' + cfg.tabBg + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
+    },
+
+    _cardActionAreaHtml(itemId) {
+        return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
+                    <span class="wf-dash-card-action-label">Remove</span>
+                </span>
+            </button>
+        </div>`;
     },
 
     _leftTabStyle(active) {
@@ -5636,7 +5666,7 @@ const searchOutputMethods = {
             bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         }
         const cardHtml = `
-            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
@@ -5659,6 +5689,7 @@ const searchOutputMethods = {
     },
 
     _resultCardOuterWrap(item, cardHtml) {
+        this._ensureCardActionStyles();
         const itemId = item.id;
         const kinds = (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
         const kindSet = new Set(kinds);
@@ -5675,8 +5706,8 @@ const searchOutputMethods = {
                 : 'Hydrate';
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}</div>
+        const tabsRow = `<div class="wf-dash-card-tabs-row" style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
+                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}${this._cardActionAreaHtml(itemId)}</div>
                 ${hydrateTabHtml}
             </div>`;
         return `
@@ -5787,7 +5818,7 @@ const searchOutputMethods = {
             : '';
 
         const cardHtml = `
-            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
@@ -6162,6 +6193,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
+            if (removeResultBtn && modal.contains(removeResultBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = removeResultBtn.getAttribute('data-item-id');
+                if (itemId) dash._dropResultFromSearch(itemId);
+                return;
+            }
             const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
             if (hydrateBtn && modal.contains(hydrateBtn)) {
                 e.stopPropagation();
@@ -6196,7 +6235,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.22',
+    _version: '1.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
