@@ -25,6 +25,8 @@ const DASH_BOOTSTRAP_VERSION = 2;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
+const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
 const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
 const DASH_DISPUTES_PAGE_SIZE = 50;
@@ -3703,11 +3705,17 @@ const searchOutputMethods = {
             : base + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _searchSectionStyle() {
+        return 'background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #ffffff)); border-radius: 10px; padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box;';
+    },
+
     _searchPanelHtml() {
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const hint = this._hintStyle();
         const input = this._inputStyle();
+        const section = this._searchSectionStyle();
+        const retrieveInputVal = dashEscHtml((this._state && this._state.retrieveInput) || '');
         const leftTab = this._state ? this._state.leftTab : 'search';
         const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
@@ -3717,10 +3725,6 @@ const searchOutputMethods = {
                                 <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <div id="wf-dash-actions-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
-                                </div>
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
                                     <button type="button" id="wf-dash-reset-filters" style="${this._navBtnStyle()}">Reset</button>
                                     <button type="button" id="wf-dash-apply-filters" style="${this._navBtnPrimaryStyle()}">Apply</button>
@@ -3728,11 +3732,11 @@ const searchOutputMethods = {
                             </div>
                         </nav>
 
-                        <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
-                                <div id="wf-dash-search-fields" style="padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                        <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; gap: 12px;">
+                            <div id="wf-dash-section-contributor" style="${section}">
+                                <div style="${label} font-weight: 600;">Contributor Search</div>
+                                <div id="wf-dash-search-fields" style="display: flex; flex-direction: column; gap: 14px;">
                                     <div>
-                                        <div style="${label} margin-bottom: 8px; font-weight: 600;">Contributor search</div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                             <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
@@ -3793,6 +3797,20 @@ const searchOutputMethods = {
                                         </div>
                                     </div>
                                 </div>
+                                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
+                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
+                                </div>
+                            </div>
+                            <div id="wf-dash-section-retrieve" style="${section}">
+                                <div style="${label} font-weight: 600;">Retrieve Task</div>
+                                <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key. Full Fleet URLs are also accepted.</p>
+                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID, version ID, task key, or URL" style="${input}">
+                                <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
+                                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <button type="button" id="wf-dash-retrieve-clear" style="${this._navBtnStyle()}">Clear</button>
+                                    <button type="button" id="wf-dash-retrieve-btn" style="${this._navBtnPrimaryStyle()}">Retrieve</button>
+                                </div>
                             </div>
                         </div>
 
@@ -3822,7 +3840,10 @@ const searchOutputMethods = {
                                     </label>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600;">Narrow results</div>
+                                    <div style="${label} margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                        <span>Narrow results</span>
+                                        <button type="button" id="wf-dash-filter-expand-all" aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
+                                    </div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
@@ -4322,6 +4343,7 @@ const searchOutputMethods = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
                 });
+                if (syncDraftFromApplied) this._setMsBulkToggleMode(scopeKey, 'none');
                 this._updateMsCount(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -4421,9 +4443,7 @@ const searchOutputMethods = {
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
         if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
-        const searchActions = this._q('#wf-dash-actions-search');
         const filterActions = this._q('#wf-dash-actions-filters');
-        if (searchActions) searchActions.style.display = tab === 'search' ? 'flex' : 'none';
         if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
         this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
@@ -4446,13 +4466,15 @@ const searchOutputMethods = {
         const universal = this._q('#wf-dash-universal-hint');
         const rangeErr = this._q('#wf-dash-range-error');
         const searchErr = this._q('#wf-dash-search-error');
+        const retrieveErr = this._q('#wf-dash-retrieve-error');
         const substringErr = this._q('#wf-dash-substring-error');
         const applyHint = this._q('#wf-dash-apply-hint');
         const sharedVisible = this._isMessageElVisible(sessionBanner) || this._isMessageElVisible(bootstrapErr);
         const searchVisible = sharedVisible
             || this._isMessageElVisible(universal)
             || this._isMessageElVisible(rangeErr)
-            || this._isMessageElVisible(searchErr);
+            || this._isMessageElVisible(searchErr)
+            || this._isMessageElVisible(retrieveErr);
         const filtersVisible = sharedVisible
             || this._isMessageElVisible(substringErr)
             || this._isMessageElVisible(applyHint);
@@ -4580,6 +4602,22 @@ const searchOutputMethods = {
                 ? this._navBtnPrimaryDisabledStyle()
                 : this._navBtnPrimaryStyle();
         }
+        const retrieveBtn = this._q('#wf-dash-retrieve-btn');
+        const retrieveInputEl = this._q('#wf-dash-retrieve-input');
+        if (retrieveBtn) {
+            if (this._state.loading) {
+                retrieveBtn.disabled = true;
+                retrieveBtn.style.cssText = this._navBtnPrimaryDisabledStyle();
+            } else if (retrieveBtn.textContent === 'Retrieve') {
+                const retrieveInput = (retrieveInputEl && retrieveInputEl.value) || '';
+                const retrieveDisabled = !String(retrieveInput).trim();
+                retrieveBtn.disabled = retrieveDisabled;
+                retrieveBtn.style.cssText = retrieveDisabled
+                    ? this._navBtnPrimaryDisabledStyle()
+                    : this._navBtnPrimaryStyle();
+            }
+        }
+        if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
         return { check, isUniversal, blankBlocked };
@@ -4678,6 +4716,218 @@ const searchOutputMethods = {
 
     _updateSubstringErrorUi() {
         this._updateApplyFiltersUi();
+    },
+
+    // ── Retrieve task ──,
+
+    _parseRetrieveInput(raw) {
+        const text = String(raw || '').trim();
+        if (!text) return null;
+
+        const classifySegment = (seg) => {
+            if (!seg) return null;
+            if (DASH_UUID_RE.test(seg)) return { kind: 'id', value: seg };
+            if (DASH_TASK_KEY_RE.test(seg)) return { kind: 'key', value: seg };
+            return null;
+        };
+
+        if (/^https?:\/\//i.test(text) || text.startsWith('/')) {
+            try {
+                const url = new URL(text, DASH_FLEET_ORIGIN);
+                const segments = url.pathname.split('/').filter(Boolean).concat([...url.searchParams.values()]);
+                for (const seg of segments) {
+                    const parsed = classifySegment(seg);
+                    if (parsed) return parsed;
+                }
+            } catch (_e) { /* not a URL */ }
+        }
+
+        const direct = classifySegment(text);
+        if (direct) return direct;
+
+        const uuidMatch = text.match(DASH_UUID_RE);
+        if (uuidMatch) return { kind: 'id', value: uuidMatch[0] };
+
+        const keyMatch = text.match(/task_[A-Za-z0-9_]+/);
+        if (keyMatch) return { kind: 'key', value: keyMatch[0] };
+
+        return null;
+    },
+
+    async _fetchTaskRowForRetrieve(parsed) {
+        if (parsed.kind === 'key') {
+            const rows = await this._pgQuery('tasks.select_search', { key: 'eq.' + parsed.value, limit: '1' }, 'search');
+            return { row: rows[0] || null, versionOverride: null };
+        }
+        let rows = await this._pgQuery('tasks.select_search', { id: 'eq.' + parsed.value, limit: '1' }, 'search');
+        if (rows.length) return { row: rows[0], versionOverride: null };
+        const versionRows = await this._pgQuery('task_versions.select_history', { id: 'eq.' + parsed.value, limit: '1' }, 'search');
+        if (!versionRows.length) return { row: null, versionOverride: null };
+        const versionRow = versionRows[0];
+        const taskId = versionRow.task_id;
+        if (!taskId) return { row: null, versionOverride: null };
+        rows = await this._pgQuery('tasks.select_search', { id: 'eq.' + taskId, limit: '1' }, 'search');
+        return { row: rows[0] || null, versionOverride: versionRow };
+    },
+
+    async _buildRetrieveTaskItem(taskRow, versionOverride) {
+        const profileIds = taskRow.created_by ? [taskRow.created_by] : [];
+        const targetIds = taskRow.task_project_target_id ? [taskRow.task_project_target_id] : [];
+        const [profileRows, targetToProjectId] = await Promise.all([
+            profileIds.length > 0
+                ? this._fetchProfilesByIds(profileIds, 'search')
+                : Promise.resolve([]),
+            targetIds.length > 0
+                ? this._fetchTargetProjectMap(targetIds)
+                : Promise.resolve(new Map())
+        ]);
+        const profilesMap = this._buildProfilesMap(profileRows);
+        const task = this._rowToTask(taskRow, profilesMap, versionOverride, targetToProjectId);
+        task.promptVersions = [];
+        task.allFeedback = [];
+        const items = this._taskCreationItemsFromTasks([task]);
+        return Object.assign({}, items[0], { hydrated: false });
+    },
+
+    _setRetrieveError(text) {
+        const el = this._q('#wf-dash-retrieve-error');
+        if (el) {
+            el.textContent = text ? 'Error: ' + text : '';
+            el.style.display = text ? 'block' : 'none';
+        }
+        this._syncLeftMessagesBar();
+    },
+
+    _setRetrieveButtonLoading(loading) {
+        const btn = this._q('#wf-dash-retrieve-btn');
+        if (btn) {
+            btn.textContent = loading ? 'Loading…' : 'Retrieve';
+            btn.disabled = loading;
+            btn.style.cssText = loading ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
+        }
+        const clearBtn = this._q('#wf-dash-retrieve-clear');
+        if (clearBtn) clearBtn.disabled = loading;
+        const input = this._q('#wf-dash-retrieve-input');
+        if (input) input.disabled = loading;
+    },
+
+    _clearRetrieveInput() {
+        this._state.retrieveInput = '';
+        const input = this._q('#wf-dash-retrieve-input');
+        if (input) input.value = '';
+        this._setRetrieveError('');
+        Logger.log('search-output: retrieve task input cleared');
+    },
+
+    async _submitRetrieveTask() {
+        const inputEl = this._q('#wf-dash-retrieve-input');
+        const raw = inputEl ? inputEl.value : (this._state.retrieveInput || '');
+        this._state.retrieveInput = String(raw || '').trim();
+        const parsed = this._parseRetrieveInput(raw);
+        if (!parsed) {
+            this._setRetrieveError('Enter a valid task ID, version ID, task key, or Fleet URL.');
+            return;
+        }
+        this._setRetrieveError('');
+        this._setSearchError('');
+
+        this._state.resultsKindTab = 'all';
+        this._state.resultsPage = 0;
+        this._state.hasSearched = true;
+        this._state.loading = true;
+        this._state.cachedItems = null;
+        this._state.filteredItems = null;
+        this._state.appliedFilters = null;
+        this._state.hydrateBulkActive = false;
+        this._state.autoHydrateActive = false;
+        this._state.autoHydrateScheduled = false;
+        this._state.autoHydratePending = false;
+        this._state.autoHydratePendingLogged = false;
+        this._state.disputesBulkIncomplete = false;
+        this._state.openDisputesByTaskId = null;
+        this._state.resolvedDisputeTaskIds = null;
+        this._state.resolvedDisputeAtByTaskId = null;
+        this._state.resolverDisputeTaskIds = null;
+        this._resetSearchLoadLog();
+        this._state.searchLoadPhase = 'Retrieving task…';
+        this._state.committed = {
+            retrieveMode: true,
+            retrieveLabel: parsed.value,
+            includeTaskCreation: true,
+            includeQa: false,
+            includeDisputes: false,
+            searchDepth: 'deep',
+            authorCount: 0,
+            authorLabels: [],
+            searchKinds: ['task_creation']
+        };
+        this._setRetrieveButtonLoading(true);
+        this._setSearchButtonLoading(false);
+        this._updateResultsKindTabsUi();
+        this._syncResultsToolbarDerivedUi();
+        this._updateResultsStatus();
+        this._renderResults();
+
+        this._state.searchFetchActive = true;
+        try {
+            Logger.info('search-output: retrieve task started — ' + parsed.kind + ' ' + parsed.value);
+            const { row, versionOverride } = await this._fetchTaskRowForRetrieve(parsed);
+            if (!row) {
+                this._setRetrieveError('No task found for that identifier.');
+                this._state.cachedItems = null;
+                this._state.filteredItems = null;
+                this._state.appliedFilters = null;
+                return;
+            }
+            const item = await this._buildRetrieveTaskItem(row, versionOverride);
+            this._state.cachedItems = [item];
+            this._setSearchLoadPhase('Hydrating task…');
+            await this._hydrateAllSearchResults([item], { skipFeedbackFetch: false });
+            this._setSearchLoadPhase('Applying filters…');
+            Logger.log('search-output: retrieve task loaded — ' + row.id + ' (fully hydrated)');
+            const prompt = this._q('#wf-dash-prompt');
+            if (prompt) prompt.value = '';
+            const hidden = this._q('#wf-dash-hidden-versions');
+            if (hidden) hidden.checked = false;
+            const caseEl = this._q('#wf-dash-case');
+            if (caseEl) caseEl.checked = false;
+            const fuzzyEl = this._q('#wf-dash-fuzzy');
+            if (fuzzyEl) fuzzyEl.checked = false;
+            const regexEl = this._q('#wf-dash-regex');
+            if (regexEl) regexEl.checked = false;
+            const sortEl = this._q('#wf-dash-sort');
+            if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
+            this._resetManualFilters();
+            this._resetFilterDraftsFromResults([item]);
+            this._applyResultsPageSizeForNewSearch();
+        } catch (err) {
+            if (this._handleDashSessionRefreshError(err)) {
+                this._setRetrieveError('');
+            } else {
+                this._setRetrieveError(err.message || String(err));
+            }
+            this._state.cachedItems = null;
+            this._state.filteredItems = null;
+            this._state.appliedFilters = null;
+            Logger.warn('search-output: retrieve task failed', err);
+        } finally {
+            this._state.searchFetchActive = false;
+            this._state.loading = false;
+            this._state.searchLoadPhase = '';
+            this._resetSearchLoadLog();
+            this._setRetrieveButtonLoading(false);
+            this._validateRangeUi();
+            this._updateSubstringErrorUi();
+            this._updateApplyFiltersUi();
+            if (this._state.cachedItems !== null) {
+                this._refreshResultsView({ filterSource: 'search-defaults' });
+            } else {
+                this._updateResultsStatus();
+                this._renderResults();
+                this._updateResultsKindTabsUi();
+                this._syncResultsToolbarDerivedUi();
+            }
+        }
     },
 
     // ── Search submit / clear ──,
@@ -5007,6 +5257,7 @@ const searchOutputMethods = {
 
     _searchStatusDetail(committed) {
         if (!committed) return '';
+        if (committed.retrieveMode) return 'task: ' + (committed.retrieveLabel || '');
         const parts = [];
         if (committed.authorLabels && committed.authorLabels.length > 0) {
             parts.push('contributors: ' + committed.authorLabels.join(', '));
@@ -5162,10 +5413,15 @@ const searchOutputMethods = {
         const label = this._labelStyle();
 
         if (s.loading) {
-            const detail = this._searchStatusDetail(s.committed);
+            const committed = s.committed;
+            const retrieving = committed && committed.retrieveMode;
+            const detail = retrieving
+                ? ('task: ' + (committed.retrieveLabel || ''))
+                : this._searchStatusDetail(committed);
+            const verb = retrieving ? 'Retrieving' : 'Searching';
             el.innerHTML = detail
-                ? `<span style="${label}">Searching — ${dashEscHtml(detail)}</span>`
-                : `<span style="${label}">Searching…</span>`;
+                ? `<span style="${label}">${verb} — ${dashEscHtml(detail)}</span>`
+                : `<span style="${label}">${verb}…</span>`;
             return;
         }
         if (s.searchError && !s.cachedItems) {
@@ -5178,6 +5434,15 @@ const searchOutputMethods = {
         }
         if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
             const committed = s.committed;
+            if (committed.retrieveMode) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const countLabel = s.filteredItems.length === scopeTotal
+                    ? s.filteredItems.length + ' result(s)'
+                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
+                const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated${dashEscHtml(filterNote)}</span>`;
+                return;
+            }
             const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
                 ? committed.authorLabels.join(', ')
                 : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
@@ -6220,6 +6485,23 @@ function attachSearchOutputListeners(modal, dash) {
         if (search) search.addEventListener('click', () => { void dash._submitSearch(); });
         const clearParams = dash._q('#wf-dash-clear-params');
         if (clearParams) clearParams.addEventListener('click', () => dash._clearParameters());
+        const retrieveBtn = dash._q('#wf-dash-retrieve-btn');
+        if (retrieveBtn) retrieveBtn.addEventListener('click', () => { void dash._submitRetrieveTask(); });
+        const retrieveClear = dash._q('#wf-dash-retrieve-clear');
+        if (retrieveClear) retrieveClear.addEventListener('click', () => dash._clearRetrieveInput());
+        const retrieveInput = dash._q('#wf-dash-retrieve-input');
+        if (retrieveInput) {
+            retrieveInput.addEventListener('input', () => {
+                dash._state.retrieveInput = retrieveInput.value;
+                dash._validateRangeUi();
+            });
+            retrieveInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void dash._submitRetrieveTask();
+                }
+            });
+        }
         const dropExcluded = dash._q('#wf-dash-drop-excluded');
         if (dropExcluded) dropExcluded.addEventListener('click', () => dash._dropExcludedResults());
         const clearResults = dash._q('#wf-dash-clear-results');
@@ -6228,6 +6510,11 @@ function attachSearchOutputListeners(modal, dash) {
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
         });
+        const filterExpandAll = dash._q('#wf-dash-filter-expand-all');
+        if (filterExpandAll) {
+            filterExpandAll.addEventListener('click', () => dash._toggleFilterExpandAll());
+            dash._applyFilterExpandAllButtonLabel();
+        }
         const filtersScroll = dash._q('#wf-dash-left-panel-filters > div');
         if (filtersScroll) {
             filtersScroll.addEventListener('scroll', () => {
@@ -6349,7 +6636,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.29',
+    _version: '1.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
