@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.11',
+    _version: '7.12',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3777,6 +3777,7 @@ const plugin = {
     },
 
     _updateVerifierContentSearchUi(modal) {
+        const toolbar = this._opsQuery(modal, '#wf-ops-verifier-output-toolbar', 'verifierOutputToolbar');
         const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
         const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
         const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
@@ -3788,7 +3789,10 @@ const plugin = {
         const matchCount = search.matchStarts ? search.matchStarts.length : 0;
         const hasQuery = Boolean((search.query || '').trim());
 
-        if (searchWrap) {
+        if (toolbar) {
+            toolbar.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (searchWrap && !toolbar) {
             searchWrap.style.display = hasOutput ? 'flex' : 'none';
         }
         if (copyBtn) {
@@ -3809,6 +3813,9 @@ const plugin = {
         const navDisabled = !hasQuery || matchCount === 0;
         if (prevBtn) prevBtn.disabled = navDisabled;
         if (nextBtn) nextBtn.disabled = navDisabled;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.syncOutputToolbar === 'function') {
+            Context.verifierFetcherUi.syncOutputToolbar(modal);
+        }
     },
 
     _clearVerifierContentSearch(modal) {
@@ -3837,6 +3844,7 @@ const plugin = {
 
         if (wrap) {
             wrap.style.display = text ? 'flex' : 'none';
+            wrap.style.flexDirection = 'row';
         }
         if (!output) {
             this._updateVerifierContentSearchUi(modal);
@@ -4451,6 +4459,9 @@ const plugin = {
         this._opsTabState.verifierOutput = this._opsVerifierSourceText || '';
         this._opsTabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
         this._opsTabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.captureScratchpadTabState === 'function') {
+            this._opsTabState.verifierScratchpad = Context.verifierFetcherUi.captureScratchpadTabState(modal);
+        }
         this._opsTabState.verifierFetchState = fetchState
             ? {
                 resolved: fetchState.resolved,
@@ -4492,6 +4503,9 @@ const plugin = {
             );
         } else {
             this._opsVerifierFetchState = null;
+        }
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
+            Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);
         }
     },
 
