@@ -8,7 +8,7 @@
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_MAX_SLOTS = 6;
-const DV_SLOT_WIDTH_PX = 300;
+const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
 const DV_CHAR_DIFF_LIMIT = 15000;
@@ -626,6 +626,91 @@ function _dvPanelHtml(dash) {
 
 // ── Slot card HTML ──
 
+function _dvKeyCopyHtml(key, taskId) {
+    const value = String(key || taskId || '').trim();
+    if (!value) return '<span class="dv-slot-key-copy dv-slot-key-copy--empty">—</span>';
+    return `<button type="button" class="dv-slot-key-copy" data-dv-copy="${_dvEscHtml(value)}" title="Click to copy task key">${_dvEscHtml(value)}</button>`;
+}
+
+async function _dvCopyText(text) {
+    const value = String(text || '');
+    try {
+        await navigator.clipboard.writeText(value);
+        return true;
+    } catch (_e) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = value;
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (_e2) {
+            return false;
+        }
+    }
+}
+
+function _dvFlashCopySuccess(el) {
+    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
+    const prevBg = el.style.backgroundColor;
+    const prevColor = el.style.color;
+    const prevBorder = el.style.borderColor;
+    const prevTransition = el.style.transition;
+    el.style.transition = 'none';
+    el.style.backgroundColor = 'rgb(34, 197, 94)';
+    el.style.color = '#ffffff';
+    el.style.borderColor = 'rgb(34, 197, 94)';
+    el._dvCopyTimeout = setTimeout(() => {
+        el.style.backgroundColor = prevBg;
+        el.style.color = prevColor;
+        el.style.borderColor = prevBorder;
+        el.style.transition = prevTransition;
+        el._dvCopyTimeout = null;
+    }, 1000);
+}
+
+function _dvFlashCopyFail(el) {
+    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
+    const prevBg = el.style.backgroundColor;
+    const prevColor = el.style.color;
+    const prevBorder = el.style.borderColor;
+    const prevTransition = el.style.transition;
+    el.style.transition = 'none';
+    el.style.backgroundColor = 'rgb(239, 68, 68)';
+    el.style.color = '#ffffff';
+    el.style.borderColor = 'rgb(239, 68, 68)';
+    void el.offsetWidth;
+    el.style.transition = 'background-color 500ms ease-out, color 500ms ease-out, border-color 500ms ease-out';
+    el._dvCopyTimeout = setTimeout(() => {
+        el.style.backgroundColor = prevBg;
+        el.style.color = prevColor;
+        el.style.borderColor = prevBorder;
+        el.style.transition = prevTransition;
+        el._dvCopyTimeout = null;
+    }, 500);
+}
+
+async function _dvCopyWithFeedback(el, text) {
+    const value = String(text == null ? '' : text).trim();
+    if (!value) {
+        _dvFlashCopyFail(el);
+        Logger.warn('diff-viewer: copy skipped (empty task key)');
+        return false;
+    }
+    const ok = await _dvCopyText(value);
+    if (ok) {
+        _dvFlashCopySuccess(el);
+        Logger.log('diff-viewer: copied task key (' + value.length + ' chars)');
+    } else {
+        _dvFlashCopyFail(el);
+        Logger.warn('diff-viewer: copy task key failed');
+    }
+    return ok;
+}
+
 function _dvSlotHtml(slot, slotIdx, slotCount) {
     const isBase = slotIdx === 0;
     const headerBg = isBase
@@ -634,7 +719,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
     const authorDisplay = slot.authorName
         ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
         : _dvEscHtml(slot.authorEmail || '—');
-    const keyDisplay = _dvEscHtml(slot.key || (slot.taskId ? slot.taskId.slice(0, 8) + '…' : '—'));
+    const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
 
     const baseBandHtml = isBase
         ? '<div class="dv-slot-base-band"><span class="dv-slot-base-badge">BASE</span></div>'
@@ -660,7 +745,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
         <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:${headerBg};border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 <div style="font-size:11px;font-weight:600;color:var(--foreground,#0f172a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>
-                <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.key || slot.taskId)}">${keyDisplay}</div>
+                ${keyCopyHtml}
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">${minimizeBtn}${removeBtn}</div>
         </div>
@@ -926,6 +1011,13 @@ function _dvSetSearchLoading(modal, loading, error) {
 function _dvAttachListeners(modal, dash) {
     // ── Mode toggle ──
     modal.addEventListener('click', (e) => {
+        const copyEl = e.target.closest('[data-dv-copy]');
+        if (copyEl && modal.contains(copyEl)) {
+            e.stopPropagation();
+            void _dvCopyWithFeedback(copyEl, copyEl.getAttribute('data-dv-copy'));
+            return;
+        }
+
         const modeBtn = e.target.closest('[data-dv-mode]');
         if (modeBtn && modal.contains(modeBtn)) {
             const mode = modeBtn.getAttribute('data-dv-mode');
@@ -1198,6 +1290,34 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slot-column--base .dv-slot-wrap {',
         '  border: 2px solid var(--brand, var(--primary, #2563eb));',
         '}',
+        '#wf-dash-modal .dv-slot-key-copy {',
+        '  display: block;',
+        '  width: 100%;',
+        '  margin-top: 4px;',
+        '  padding: 3px 6px;',
+        '  border: 1px solid var(--border, #475569);',
+        '  border-radius: 5px;',
+        '  font-size: 10px;',
+        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+        '  color: var(--muted-foreground, #94a3b8);',
+        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 4%, transparent);',
+        '  text-align: left;',
+        '  overflow-wrap: anywhere;',
+        '  word-break: break-all;',
+        '  white-space: normal;',
+        '  cursor: pointer;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-slot-key-copy--empty {',
+        '  display: inline-block;',
+        '  margin-top: 4px;',
+        '  font-size: 10px;',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-slot-key-copy:hover {',
+        '  color: var(--foreground, #f8fafc);',
+        '  border-color: color-mix(in srgb, var(--brand, #2563eb) 55%, var(--border, #475569));',
+        '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
@@ -1328,7 +1448,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
