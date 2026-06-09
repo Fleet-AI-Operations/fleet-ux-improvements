@@ -3779,9 +3779,15 @@ const searchOutputMethods = {
         this._setAuthorError('');
         this._hideAuthorCandidates();
         try {
-            const results = await this._searchPersons(query);
+            const tokenIds = new Set(tokens.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+            const allResults = await this._searchPersons(query);
+            const results = allResults.filter((p) => !tokenIds.has(String(p.id || '').trim().toLowerCase()));
             const input = this._q('#wf-dash-author-input');
             if (results.length === 0) {
+                if (allResults.length > 0) {
+                    this._setAuthorError('Already added.');
+                    return 'duplicate';
+                }
                 this._setAuthorError(`No match for "${query}"`);
                 return 'none';
             }
@@ -3812,6 +3818,9 @@ const searchOutputMethods = {
         if (outcome === 'resolved' || outcome === 'empty') return null;
         if (outcome === 'multiple') {
             return 'Multiple author matches — pick one from the list below.';
+        }
+        if (outcome === 'duplicate') {
+            return 'All matches for that query are already in Contributors.';
         }
         if (outcome === 'none') {
             return `No author match for "${query}".`;
@@ -6161,7 +6170,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.20',
+    _version: '1.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
