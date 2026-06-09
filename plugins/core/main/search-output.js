@@ -5802,8 +5802,10 @@ const searchOutputMethods = {
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 ${tabsRow}
-                ${actionRow}
-                ${cardHtml}
+                <div class="wf-dash-card-shell">
+                    ${actionRow}
+                    ${cardHtml}
+                </div>
             </div>`;
     },
 
@@ -6325,7 +6327,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.25',
+    _version: '1.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
