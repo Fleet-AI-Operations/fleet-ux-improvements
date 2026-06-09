@@ -522,6 +522,11 @@ function _dvApplyAllFinal(modal) {
 
 // ── Panel HTML (built once) ──
 
+function _dvSegBtn(attrName, value, label, active, divider) {
+    const divCls = divider ? ' dv-seg-btn--divider' : '';
+    return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+}
+
 function _dvPanelHtml(dash) {
     const box = dash.panelBoxStyle ? dash.panelBoxStyle() : '';
     const label = dash.labelStyle ? dash.labelStyle() : 'font-size:11px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:.04em;';
@@ -529,26 +534,23 @@ function _dvPanelHtml(dash) {
     const navBtn = dash.navBtnStyle ? dash.navBtnStyle() : 'padding:5px 10px;font-size:12px;font-weight:500;border:1px solid var(--border,#e2e8f0);border-radius:6px;cursor:pointer;background:var(--card,#fff);color:var(--foreground,#0f172a);white-space:nowrap;';
     const navBtnPrimary = dash.navBtnPrimaryStyle ? dash.navBtnPrimaryStyle() : navBtn + 'background:var(--brand,#2563eb);color:#fff;border-color:transparent;';
 
-    const segBtnBase = 'padding:5px 12px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:background-color 0.15s,color 0.15s;line-height:1.4;';
-    const seg = (id, label, active) => `<button type="button" data-dv-seg="${id}" style="${segBtnBase}background:${active ? 'var(--primary,#4f46e5)' : 'transparent'};color:${active ? '#fff' : 'var(--muted-foreground,#888)'}">${label}</button>`;
-
     const gran = _dvState.granularity;
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
         <div style="flex-shrink:0;">
             <div style="${label}margin-bottom:6px;">Mode</div>
-            <div style="display:inline-flex;border-radius:6px;overflow:hidden;border:1px solid var(--border,#e2e8f0);background:var(--muted,rgba(0,0,0,0.04));">
-                <button type="button" data-dv-mode="tasks" style="${segBtnBase}background:${_dvState.mode==='tasks'?'var(--primary,#4f46e5)':'transparent'};color:${_dvState.mode==='tasks'?'#fff':'var(--muted-foreground,#888)'};border-right:1px solid var(--border,#e2e8f0);">Tasks</button>
-                <button type="button" data-dv-mode="free-text" style="${segBtnBase}background:${_dvState.mode==='free-text'?'var(--primary,#4f46e5)':'transparent'};color:${_dvState.mode==='free-text'?'#fff':'var(--muted-foreground,#888)'};">Free Text</button>
+            <div class="dv-seg-group">
+                ${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}
+                ${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}
             </div>
         </div>
         <div id="dv-tasks-controls" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;">
             <div style="flex-shrink:0;">
                 <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div style="display:inline-flex;border-radius:6px;overflow:hidden;border:1px solid var(--border,#e2e8f0);background:var(--muted,rgba(0,0,0,0.04));">
-                    ${seg('word', 'Word', gran==='word')}
-                    <button type="button" data-dv-seg="char" style="${segBtnBase}background:${gran==='char'?'var(--primary,#4f46e5)':'transparent'};color:${gran==='char'?'#fff':'var(--muted-foreground,#888)'};">Character</button>
+                <div class="dv-seg-group">
+                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
+                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
                 </div>
             </div>
             <div style="flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
@@ -577,9 +579,9 @@ function _dvPanelHtml(dash) {
         <div id="dv-free-controls" style="display:${_dvState.mode==='free-text'?'flex':'none'};flex-direction:column;gap:12px;flex-shrink:0;">
             <div>
                 <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div style="display:inline-flex;border-radius:6px;overflow:hidden;border:1px solid var(--border,#e2e8f0);background:var(--muted,rgba(0,0,0,0.04));">
-                    ${seg('word', 'Word', gran==='word')}
-                    <button type="button" data-dv-seg="char" style="${segBtnBase}background:${gran==='char'?'var(--primary,#4f46e5)':'transparent'};color:${gran==='char'?'#fff':'var(--muted-foreground,#888)'};">Character</button>
+                <div class="dv-seg-group">
+                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
+                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
                 </div>
             </div>
         </div>
@@ -894,16 +896,14 @@ function _dvSyncModeUi(modal) {
     if (freeArea) freeArea.style.display = isTask ? 'none' : 'flex';
     modal.querySelectorAll('[data-dv-mode]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-mode') === _dvState.mode;
-        btn.style.background = active ? 'var(--primary,#4f46e5)' : 'transparent';
-        btn.style.color = active ? '#fff' : 'var(--muted-foreground,#888)';
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 }
 
 function _dvSyncGranularityUi(modal) {
     modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-seg') === _dvState.granularity;
-        btn.style.background = active ? 'var(--primary,#4f46e5)' : 'transparent';
-        btn.style.color = active ? '#fff' : 'var(--muted-foreground,#888)';
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 }
 
@@ -1087,9 +1087,12 @@ function _dvAttachListeners(modal, dash) {
 // ── Inject styles (card action + dv-specific) ──
 
 function _dvInjectStyles() {
-    if (document.getElementById('dv-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'dv-styles';
+    let style = document.getElementById('dv-styles');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'dv-styles';
+        document.head.appendChild(style);
+    }
     style.textContent = [
         '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
         '  width: auto; min-width: 5.5rem; padding: 0 8px;',
@@ -1097,6 +1100,35 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
         '  background: #6d28d9;',
+        '}',
+        '#wf-dash-modal .dv-seg-group {',
+        '  display: inline-flex;',
+        '  border-radius: 6px;',
+        '  overflow: hidden;',
+        '  border: 1px solid var(--border, #475569);',
+        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 6%, var(--card, #1e293b));',
+        '}',
+        '#wf-dash-modal .dv-seg-btn {',
+        '  padding: 5px 12px;',
+        '  font-size: 12px;',
+        '  font-weight: 600;',
+        '  border: none;',
+        '  cursor: pointer;',
+        '  background: transparent;',
+        '  color: var(--foreground, #e2e8f0);',
+        '  transition: background-color 0.15s, color 0.15s;',
+        '  line-height: 1.4;',
+        '}',
+        '#wf-dash-modal .dv-seg-btn--divider {',
+        '  border-right: 1px solid var(--border, #475569);',
+        '}',
+        '#wf-dash-modal .dv-seg-btn[aria-pressed="true"] {',
+        '  background: var(--brand, #2563eb);',
+        '  color: #ffffff;',
+        '}',
+        '#wf-dash-modal .dv-seg-btn:not([aria-pressed="true"]):hover {',
+        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 10%, transparent);',
+        '  color: var(--foreground, #f8fafc);',
         '}',
         '#wf-dash-modal [data-dv-drag] { cursor: grab; }',
         '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }',
@@ -1276,7 +1308,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrow:disabled { opacity: 0.3; cursor: default; }'
     ].join('\n');
-    document.head.appendChild(style);
 }
 
 // ── Public API: Context.diffViewer ──
@@ -1297,7 +1328,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
