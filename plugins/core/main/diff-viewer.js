@@ -9,6 +9,8 @@ const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 300;
+const DV_SLOT_GAP = 12;
+const DV_SLOTS_AREA_PAD = 10;
 const DV_CHAR_DIFF_LIMIT = 15000;
 const DV_REEL_HALF_H = 14;
 const DV_REEL_PEER_H = 72;
@@ -585,11 +587,11 @@ function _dvPanelHtml(dash) {
 
     const rightHtml = `
     <div id="dv-right" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
-        <div id="dv-slots-area" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex:1;overflow:hidden;min-height:0;">
-            <div id="dv-base-container" style="width:${DV_SLOT_WIDTH_PX}px;min-width:${DV_SLOT_WIDTH_PX}px;flex-shrink:0;border-right:2px solid var(--brand,var(--primary,#2563eb));display:flex;flex-direction:column;overflow:hidden;">
-                <div id="dv-base-slot-inner" style="flex:1;display:flex;flex-direction:column;overflow:hidden;"></div>
+        <div id="dv-slots-area" class="dv-slots-area" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
+            <div id="dv-base-container" class="dv-slot-column dv-slot-column--base">
+                <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
             </div>
-            <div id="dv-extra-container" style="flex:1;display:flex;overflow-x:auto;overflow-y:hidden;min-width:0;"></div>
+            <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
         </div>
         <div id="dv-free-area" style="display:${_dvState.mode==='free-text'?'flex':'none'};flex:1;flex-direction:column;overflow:hidden;min-height:0;">
             <div style="flex:0 0 40%;display:flex;gap:8px;padding:8px;min-height:0;box-sizing:border-box;">
@@ -742,7 +744,7 @@ function _dvRenderSlotsArea(modal) {
     baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div style="width:${DV_SLOT_WIDTH_PX}px;min-width:${DV_SLOT_WIDTH_PX}px;flex-shrink:0;border-right:1px solid var(--border,#e2e8f0);display:flex;flex-direction:column;height:100%;overflow:hidden;">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div>`;
+        extraHtml += `<div class="dv-slot-column"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -1118,6 +1120,52 @@ function _dvInjectStyles() {
         '  letter-spacing: 0.04em;',
         '  line-height: 1.3;',
         '}',
+        '#wf-dash-modal .dv-slots-area {',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '  overflow: hidden;',
+        '  display: flex;',
+        '  gap: ' + DV_SLOT_GAP + 'px;',
+        '  padding: ' + DV_SLOTS_AREA_PAD + 'px;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-slot-column {',
+        '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
+        '  min-width: ' + DV_SLOT_WIDTH_PX + 'px;',
+        '  flex-shrink: 0;',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  min-height: 0;',
+        '  overflow: hidden;',
+        '}',
+        '#wf-dash-modal .dv-slot-column--base {',
+        '  position: sticky;',
+        '  left: 0;',
+        '  z-index: 2;',
+        '}',
+        '#wf-dash-modal .dv-slot-columns-extra {',
+        '  flex: 1;',
+        '  display: flex;',
+        '  gap: ' + DV_SLOT_GAP + 'px;',
+        '  overflow-x: auto;',
+        '  overflow-y: hidden;',
+        '  min-width: 0;',
+        '  min-height: 0;',
+        '}',
+        '#wf-dash-modal .dv-slot-wrap {',
+        '  flex: 1;',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  min-height: 0;',
+        '  overflow: hidden;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 8px;',
+        '  background: var(--card, #fff);',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-slot-column--base .dv-slot-wrap {',
+        '  border: 2px solid var(--brand, var(--primary, #2563eb));',
+        '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
@@ -1249,7 +1297,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
