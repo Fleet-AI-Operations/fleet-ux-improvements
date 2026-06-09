@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.132",
+  "archetypesVersion": "10.134",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "highlight-js.js",
-      "version": "1.0",
-      "hash": "sha256-a0865ecf28064393a3f23f19f280b8de44afbbc61f170bae484314eb7fb81b97",
+      "version": "1.1",
+      "hash": "sha256-81f6d43fde965262022b90664b5de0aac737062a663d42ec363e1fce5692889e",
       "log": false
     },
     {
@@ -64,8 +64,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "1.0",
-      "hash": "sha256-0571981347a46d97c38aefa3f1088537418ea88b736bd55ed53cf66c307d9b71",
+      "version": "1.1",
+      "hash": "sha256-b8a46825198d8cf90960d8db6f602604fce96fb7961b8f5083402c826ec73287",
       "log": false
     }
   ],
@@ -505,8 +505,8 @@
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "1.3",
-          "hash": "sha256-905f8b805953c56d5c7809373f221eef9150333509565346823af6a6506262ad",
+          "version": "1.4",
+          "hash": "sha256-951603280839738a6fc82dd83ca5ce81b81382d725749e24e00039d2a752e7d9",
           "log": false
         },
         {

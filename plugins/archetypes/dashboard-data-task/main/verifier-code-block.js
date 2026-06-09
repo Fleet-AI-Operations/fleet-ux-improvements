@@ -21,7 +21,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -321,7 +321,7 @@ const plugin = {
             wrap.className = 'fleet-wf-verifier-code-wrap';
 
             const pre = document.createElement('pre');
-            pre.className = 'bg-muted/40 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
+            pre.className = 'max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
 
             const code = document.createElement('code');
             code.className = 'language-python';

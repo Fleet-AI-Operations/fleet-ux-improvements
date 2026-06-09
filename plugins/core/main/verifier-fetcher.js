@@ -152,7 +152,7 @@ function verifierFetcherPanelHtml() {
                         font-size: 12px;
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        background: var(--card, #fafafa);
+                        background: transparent;
                         color: var(--foreground, #333);
                         box-sizing: border-box;
                         overflow: auto;
@@ -238,7 +238,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
