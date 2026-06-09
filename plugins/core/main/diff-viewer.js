@@ -16,6 +16,7 @@ const DV_REEL_HALF_H = 14;
 const DV_REEL_PEER_H = 72;
 const DV_REEL_LENS_H = 220;
 const DV_REEL_ROW_GAP = 10;
+const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
 
@@ -28,10 +29,31 @@ const _dvState = {
     stash: [],           // Array<DvStashEntry> — persisted
     freeBase: '',
     freeCompare: '',
-    dragFromIdx: null,
+    drag: _dvCreateEmptyDragState(),
     searchLoading: false,
     searchError: null
 };
+
+function _dvCreateEmptyDragState() {
+    return {
+        pending: false,
+        active: false,
+        fromIdx: null,
+        overIdx: null,
+        pointerId: null,
+        offsetX: 0,
+        offsetY: 0,
+        startClientX: 0,
+        startClientY: 0,
+        ghost: null,
+        placeholder: null,
+        targetGhost: null,
+        sourceWrap: null,
+        sourceColumn: null,
+        dimmedWrap: null,
+        handleEl: null
+    };
+}
 
 // DvSlot:   { slotId, taskId, key, authorName, authorEmail, promptVersions, lensIndex, loading, error }
 // DvStash:  { taskId, key, authorName, authorEmail }
@@ -476,6 +498,229 @@ function _dvSwapSlots(fromIdx, toIdx, modal) {
     _dvRenderAll(modal);
 }
 
+// ── Slot drag ghost UX ──
+
+function _dvGetSlotColumn(modal, idx) {
+    if (!modal || idx == null || idx < 0) return null;
+    if (idx === 0) return _dvQ(modal, 'dv-base-container');
+    const cols = modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]');
+    return cols[idx - 1] || null;
+}
+
+function _dvGetSlotWrap(modal, idx) {
+    const col = _dvGetSlotColumn(modal, idx);
+    if (!col) return null;
+    if (idx === 0) return col.querySelector('#dv-base-slot-inner') || col.querySelector('.dv-slot-wrap');
+    return col.querySelector('.dv-slot-wrap');
+}
+
+function _dvHitTestSlotIdx(modal, clientX, clientY, ghostEl) {
+    if (!modal) return null;
+    const prevVis = ghostEl ? ghostEl.style.visibility : '';
+    if (ghostEl) ghostEl.style.visibility = 'hidden';
+    const el = document.elementFromPoint(clientX, clientY);
+    if (ghostEl) ghostEl.style.visibility = prevVis || '';
+    if (!el || !modal.contains(el)) return null;
+    const baseCol = el.closest('#dv-base-container');
+    if (baseCol && modal.contains(baseCol)) return 0;
+    const extraCol = el.closest('#dv-extra-container [data-dv-slot-column]');
+    if (!extraCol || !modal.contains(extraCol)) return null;
+    const cols = [...modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]')];
+    const idx = cols.indexOf(extraCol);
+    return idx >= 0 ? idx + 1 : null;
+}
+
+function _dvClearTargetPreview(d) {
+    if (d.targetGhost && d.targetGhost.parentNode) d.targetGhost.parentNode.removeChild(d.targetGhost);
+    d.targetGhost = null;
+    if (d.dimmedWrap) {
+        d.dimmedWrap.style.opacity = '';
+        d.dimmedWrap = null;
+    }
+}
+
+function _dvUpdateTargetPreview(modal, d, overIdx) {
+    if (overIdx == null || overIdx === d.fromIdx) {
+        _dvClearTargetPreview(d);
+        d.overIdx = overIdx;
+        return;
+    }
+    if (d.overIdx === overIdx) return;
+    _dvClearTargetPreview(d);
+    d.overIdx = overIdx;
+
+    const srcWrap = d.sourceWrap || _dvGetSlotWrap(modal, d.fromIdx);
+    const tgtWrap = _dvGetSlotWrap(modal, overIdx);
+    if (!srcWrap || !tgtWrap) return;
+
+    const srcRect = srcWrap.getBoundingClientRect();
+    const tgtRect = tgtWrap.getBoundingClientRect();
+    const preview = tgtWrap.cloneNode(true);
+    preview.classList.add('dv-drag-target-preview');
+    preview.removeAttribute('id');
+    preview.style.position = 'fixed';
+    preview.style.left = tgtRect.left + 'px';
+    preview.style.top = tgtRect.top + 'px';
+    preview.style.width = tgtRect.width + 'px';
+    preview.style.height = tgtRect.height + 'px';
+    preview.style.margin = '0';
+    preview.style.pointerEvents = 'none';
+    preview.style.zIndex = '2147483646';
+    document.body.appendChild(preview);
+    d.targetGhost = preview;
+    d.dimmedWrap = tgtWrap;
+    tgtWrap.style.opacity = '0.35';
+
+    requestAnimationFrame(() => {
+        if (!d.targetGhost) return;
+        d.targetGhost.style.left = srcRect.left + 'px';
+        d.targetGhost.style.top = srcRect.top + 'px';
+    });
+
+    Logger.debug('diff-viewer: drag hover slot ' + overIdx + ' → preview at slot ' + d.fromIdx);
+}
+
+function _dvBeginDragActive(modal) {
+    const d = _dvState.drag;
+    const wrap = _dvGetSlotWrap(modal, d.fromIdx);
+    const col = _dvGetSlotColumn(modal, d.fromIdx);
+    if (!wrap || !col) {
+        _dvEndDrag(modal, false);
+        return;
+    }
+
+    const rect = wrap.getBoundingClientRect();
+    const ghost = wrap.cloneNode(true);
+    ghost.id = 'dv-drag-ghost';
+    ghost.classList.add('dv-drag-ghost');
+    ghost.querySelectorAll('[data-dv-drag]').forEach((h) => h.removeAttribute('data-dv-drag'));
+    ghost.style.position = 'fixed';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    ghost.style.width = rect.width + 'px';
+    ghost.style.height = rect.height + 'px';
+    ghost.style.margin = '0';
+    document.body.appendChild(ghost);
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'dv-drag-placeholder';
+    placeholder.style.minHeight = rect.height + 'px';
+    placeholder.style.flex = '1';
+    col.insertBefore(placeholder, wrap);
+    wrap.style.display = 'none';
+
+    d.active = true;
+    d.pending = false;
+    d.ghost = ghost;
+    d.placeholder = placeholder;
+    d.sourceWrap = wrap;
+    d.sourceColumn = col;
+    document.body.style.cursor = 'grabbing';
+    Logger.log('diff-viewer: drag started — slot ' + d.fromIdx);
+}
+
+function _dvUpdateDragMove(modal, e) {
+    const d = _dvState.drag;
+    if (!d.active || !d.ghost) return;
+    d.ghost.style.left = (e.clientX - d.offsetX) + 'px';
+    d.ghost.style.top = (e.clientY - d.offsetY) + 'px';
+    const overIdx = _dvHitTestSlotIdx(modal, e.clientX, e.clientY, d.ghost);
+    _dvUpdateTargetPreview(modal, d, overIdx);
+}
+
+function _dvEndDrag(modal, commit) {
+    const d = _dvState.drag;
+    if (!d.pending && !d.active) return;
+
+    const fromIdx = d.fromIdx;
+    const overIdx = d.overIdx;
+    const wasActive = d.active;
+    const shouldSwap = commit && wasActive && overIdx != null && overIdx !== fromIdx;
+
+    if (d.ghost && d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
+    _dvClearTargetPreview(d);
+    if (d.placeholder && d.placeholder.parentNode) d.placeholder.parentNode.removeChild(d.placeholder);
+    if (d.sourceWrap) d.sourceWrap.style.display = '';
+    if (d.handleEl) {
+        try { d.handleEl.releasePointerCapture(d.pointerId); } catch (_e) { /* no-op */ }
+        d.handleEl.style.cursor = '';
+    }
+    document.body.style.cursor = '';
+
+    _dvState.drag = _dvCreateEmptyDragState();
+
+    if (shouldSwap) _dvSwapSlots(fromIdx, overIdx, modal);
+    else if (wasActive) Logger.debug('diff-viewer: drag cancelled or dropped on same slot');
+}
+
+function _dvAttachDragListeners(modal) {
+    const onPointerDown = (e) => {
+        if (e.button !== 0) return;
+        if (_dvState.drag.pending || _dvState.drag.active) return;
+        if (e.target.closest('[data-dv-copy],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
+        const handle = e.target.closest('[data-dv-drag]');
+        if (!handle || !modal.contains(handle)) return;
+
+        const fromIdx = parseInt(handle.getAttribute('data-dv-drag'), 10);
+        const wrap = _dvGetSlotWrap(modal, fromIdx);
+        if (!wrap) return;
+        const rect = wrap.getBoundingClientRect();
+
+        _dvState.drag = Object.assign(_dvCreateEmptyDragState(), {
+            pending: true,
+            fromIdx,
+            pointerId: e.pointerId,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            handleEl: handle
+        });
+        handle.setPointerCapture(e.pointerId);
+        handle.style.cursor = 'grabbing';
+        e.preventDefault();
+    };
+
+    const onPointerMove = (e) => {
+        const d = _dvState.drag;
+        if (!d.pending && !d.active) return;
+        if (d.pointerId !== e.pointerId) return;
+        if (!d.active) {
+            const dx = e.clientX - d.startClientX;
+            const dy = e.clientY - d.startClientY;
+            if (Math.hypot(dx, dy) < DV_DRAG_THRESHOLD_PX) return;
+            _dvBeginDragActive(modal);
+        }
+        _dvUpdateDragMove(modal, e);
+    };
+
+    const onPointerUp = (e) => {
+        const d = _dvState.drag;
+        if (!d.pending && !d.active) return;
+        if (d.pointerId !== e.pointerId) return;
+        _dvEndDrag(modal, true);
+    };
+
+    const onPointerCancel = (e) => {
+        const d = _dvState.drag;
+        if (!d.pending && !d.active) return;
+        if (d.pointerId !== e.pointerId) return;
+        _dvEndDrag(modal, false);
+    };
+
+    const onKeyDown = (e) => {
+        if (e.key !== 'Escape') return;
+        if (!_dvState.drag.pending && !_dvState.drag.active) return;
+        _dvEndDrag(modal, false);
+    };
+
+    modal.addEventListener('pointerdown', onPointerDown);
+    modal.addEventListener('pointermove', onPointerMove);
+    modal.addEventListener('pointerup', onPointerUp);
+    modal.addEventListener('pointercancel', onPointerCancel);
+    document.addEventListener('keydown', onKeyDown, true);
+}
+
 // ── Bulk actions ──
 
 function _dvApplyViewProgression(modal) {
@@ -590,7 +835,7 @@ function _dvPanelHtml(dash) {
     const rightHtml = `
     <div id="dv-right" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
         <div id="dv-slots-area" class="dv-slots-area" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
-            <div id="dv-base-container" class="dv-slot-column dv-slot-column--base">
+            <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
                 <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
             </div>
             <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
@@ -831,7 +1076,7 @@ function _dvRenderSlotsArea(modal) {
     baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -1138,25 +1383,8 @@ function _dvAttachListeners(modal, dash) {
     if (freeBaseInput) freeBaseInput.addEventListener('input', onFreeInput);
     if (freeCompareInput) freeCompareInput.addEventListener('input', onFreeInput);
 
-    // ── Drag & swap (pointer-based) ──
-    modal.addEventListener('pointerdown', (e) => {
-        const handle = e.target.closest('[data-dv-drag]');
-        if (!handle || !modal.contains(handle)) return;
-        _dvState.dragFromIdx = parseInt(handle.getAttribute('data-dv-drag'), 10);
-        handle.style.cursor = 'grabbing';
-    });
-
-    modal.addEventListener('pointerup', (e) => {
-        if (_dvState.dragFromIdx === null) return;
-        const fromIdx = _dvState.dragFromIdx;
-        _dvState.dragFromIdx = null;
-        modal.querySelectorAll('[data-dv-drag]').forEach((h) => { h.style.cursor = 'grab'; });
-        const targetHandle = e.target.closest('[data-dv-drag]');
-        if (targetHandle && modal.contains(targetHandle)) {
-            const toIdx = parseInt(targetHandle.getAttribute('data-dv-drag'), 10);
-            if (toIdx !== fromIdx) _dvSwapSlots(fromIdx, toIdx, modal);
-        }
-    });
+    // ── Drag & swap (ghost UX) ──
+    _dvAttachDragListeners(modal);
 
     // ── Hover diffs (>2 slots: show base removals on hover of compare) ──
     modal.addEventListener('mouseover', (e) => {
@@ -1224,6 +1452,33 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal [data-dv-drag] { cursor: grab; }',
         '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }',
+        '#wf-dash-modal .dv-drag-placeholder {',
+        '  border: 2px dashed var(--border, #475569);',
+        '  border-radius: 8px;',
+        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 4%, transparent);',
+        '  opacity: 0.5;',
+        '  box-sizing: border-box;',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '}',
+        '#dv-drag-ghost {',
+        '  position: fixed;',
+        '  pointer-events: none;',
+        '  z-index: 2147483647;',
+        '  opacity: 0.88;',
+        '  transform: rotate(1.5deg);',
+        '  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);',
+        '  border-radius: 8px;',
+        '  overflow: hidden;',
+        '  will-change: left, top;',
+        '}',
+        '.dv-drag-target-preview {',
+        '  transition: left 200ms ease, top 200ms ease;',
+        '  opacity: 0.72;',
+        '  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);',
+        '  border-radius: 8px;',
+        '  overflow: hidden;',
+        '}',
         '#wf-dash-modal .dv-slot-base-band {',
         '  flex-shrink: 0;',
         '  height: 18px;',
@@ -1448,7 +1703,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1459,6 +1714,12 @@ const plugin = {
             Logger.error('diff-viewer: dashboard loader not registered');
             return;
         }
+
+        // Reset any orphaned drag UI from a prior session
+        const orphanGhost = document.getElementById('dv-drag-ghost');
+        if (orphanGhost) orphanGhost.remove();
+        document.querySelectorAll('.dv-drag-target-preview').forEach((el) => el.remove());
+        _dvState.drag = _dvCreateEmptyDragState();
 
         // Load persisted stash
         _dvState.stash = _dvLoadStash();
