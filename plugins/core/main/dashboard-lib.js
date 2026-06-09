@@ -24,8 +24,9 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     qa: 'QA',
     dispute: 'Disputes'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['returned', 'disputed', 'flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
+    accepted: 'Accepted',
     returned: 'Returned',
     disputed: 'Disputed',
     flagged: 'Flagged',
@@ -291,7 +292,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.0',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -547,7 +548,7 @@ const plugin = {
 
     _taskPromptRatings(task) {
         return [...new Set((task.allFeedback || [])
-            .filter((e) => !(e.display && e.display.isSystemFeedback))
+            .filter((e) => e.display && !e.display.isSystemFeedback)
             .map((e) => e.display.qualityRating)
             .filter(Boolean))];
     },
@@ -556,7 +557,9 @@ const plugin = {
         const labels = new Set();
         for (const entry of task.allFeedback || []) {
             if (entry.isPositive) continue;
-            for (const label of entry.display.rejectionBadges || []) labels.add(label);
+            const display = entry.display;
+            if (!display) continue;
+            for (const label of display.rejectionBadges || []) labels.add(label);
         }
         return [...labels];
     },
@@ -647,13 +650,15 @@ const plugin = {
         const texts = [];
         for (const entry of item.task.allFeedback || []) {
             if (entry.linkedDisplayVersionNo !== displayNo) continue;
-            if (entry.display && entry.display.isSystemFeedback) {
-                for (const block of entry.display.textBlocks || []) {
+            const display = entry.display;
+            if (!display) continue;
+            if (display.isSystemFeedback) {
+                for (const block of display.textBlocks || []) {
                     if (block.text) texts.push(block.text);
                 }
                 continue;
             }
-            for (const block of entry.display.textBlocks || []) texts.push(block.text);
+            for (const block of display.textBlocks || []) texts.push(block.text);
         }
         return texts;
     },
@@ -669,6 +674,8 @@ const plugin = {
 
     _matchItemSubstring(item, query, fuzzy, caseSensitive, hidden, regex) {
         const lib = Context.dashboardLib;
+        const taskKey = String((item.task && item.task.key) || '').trim();
+        const taskKeyMatched = taskKey && lib.textMatchesQuery(taskKey, query, fuzzy, caseSensitive, regex);
         const versions = this._versionsForItem(item);
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
@@ -680,9 +687,10 @@ const plugin = {
         };
         if (!hidden) {
             const def = versions.find((v) => v.displayVersionNo === defaultNo) || versions[versions.length - 1];
-            return { matched: def ? versionMatches(def) : false, extraVersionNos: [] };
+            const versionMatched = def ? versionMatches(def) : false;
+            return { matched: taskKeyMatched || versionMatched, extraVersionNos: [] };
         }
-        let matched = false;
+        let matched = taskKeyMatched;
         const extraVersionNos = [];
         for (const version of versions) {
             if (versionMatches(version)) {
@@ -722,7 +730,8 @@ const plugin = {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
             const rt = this._returnTypeOf(entry);
-            if (rt === 'returned') flags.add('returned');
+            if (rt === 'accepted') flags.add('accepted');
+            else if (rt === 'returned') flags.add('returned');
             else if (rt === 'escalated') flags.add('escalated');
             else if (rt === 'bugged') flags.add('flagged');
         }
@@ -777,11 +786,107 @@ const plugin = {
         return out;
     },
 
-    _sortWorkerOutputItems(items, sortOrder) {
+    _maxIsoTimestamp(a, b) {
+        const sa = String(a || '');
+        const sb = String(b || '');
+        if (!sa) return sb;
+        if (!sb) return sa;
+        return sa > sb ? sa : sb;
+    },
+
+    _itemTaskSubmittedAt(item) {
+        const task = item && item.task;
+        return task ? String(task.createdAt || '') : '';
+    },
+
+    _itemTaskRevisedAt(item) {
+        const task = item && item.task;
+        if (!task) return '';
+        const versions = task.promptVersions || [];
+        if (versions.length <= 1) {
+            return String(task.createdAt || (versions[0] && versions[0].createdAt) || '');
+        }
+        let latest = '';
+        for (const version of versions) {
+            latest = this._maxIsoTimestamp(latest, version.createdAt);
+        }
+        return latest || String(task.createdAt || '');
+    },
+
+    _itemFeedbackGivenAt(item) {
+        const task = item && item.task;
+        if (!task) return '';
+        let latest = '';
+        for (const entry of task.allFeedback || []) {
+            latest = this._maxIsoTimestamp(latest, entry.feedbackAt);
+        }
+        return latest;
+    },
+
+    _itemDisputeSubmittedAt(item, sortContext) {
+        let latest = '';
+        for (const dispute of (item && item.disputes) || []) {
+            latest = this._maxIsoTimestamp(latest, dispute.submittedAt);
+        }
+        const taskId = item && item.task && item.task.id;
+        if (!taskId || !sortContext) return latest;
+        for (const row of (sortContext.openDisputesByTaskId && sortContext.openDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.created_at);
+        }
+        for (const row of (sortContext.resolvedDisputesByTaskId && sortContext.resolvedDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.created_at);
+        }
+        return latest;
+    },
+
+    _itemDisputeResolvedAt(item, sortContext) {
+        let latest = '';
+        for (const dispute of (item && item.disputes) || []) {
+            latest = this._maxIsoTimestamp(latest, dispute.resolutionAt);
+        }
+        const taskId = item && item.task && item.task.id;
+        if (!taskId || !sortContext) return latest;
+        for (const row of (sortContext.openDisputesByTaskId && sortContext.openDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.resolved_at);
+        }
+        for (const row of (sortContext.resolvedDisputesByTaskId && sortContext.resolvedDisputesByTaskId.get(taskId)) || []) {
+            latest = this._maxIsoTimestamp(latest, row && row.resolved_at);
+        }
+        return latest;
+    },
+
+    _itemSortTimestamp(item, sortMetric, sortContext) {
+        const metric = String(sortMetric || 'task_submitted');
+        switch (metric) {
+            case 'task_revised':
+                return this._itemTaskRevisedAt(item);
+            case 'feedback_given':
+                return this._itemFeedbackGivenAt(item);
+            case 'dispute_submitted':
+                return this._itemDisputeSubmittedAt(item, sortContext);
+            case 'dispute_resolved':
+                return this._itemDisputeResolvedAt(item, sortContext);
+            case 'task_submitted':
+            default:
+                return this._itemTaskSubmittedAt(item);
+        }
+    },
+
+    _sortWorkerOutputItems(items, sortMetric, sortOrder, sortContext) {
+        const metric = String(sortMetric || 'task_submitted');
+        const order = sortOrder === 'asc' ? 'asc' : 'desc';
         const sorted = [...items];
         sorted.sort((a, b) => {
-            const cmp = a.sortAt < b.sortAt ? -1 : a.sortAt > b.sortAt ? 1 : 0;
-            return sortOrder === 'asc' ? cmp : -cmp;
+            const ta = this._itemSortTimestamp(a, metric, sortContext);
+            const tb = this._itemSortTimestamp(b, metric, sortContext);
+            const aEmpty = !ta;
+            const bEmpty = !tb;
+            if (aEmpty && bEmpty) return String(a.id).localeCompare(String(b.id));
+            if (aEmpty) return 1;
+            if (bEmpty) return -1;
+            const cmp = ta < tb ? -1 : ta > tb ? 1 : 0;
+            if (cmp !== 0) return order === 'asc' ? cmp : -cmp;
+            return String(a.id).localeCompare(String(b.id));
         });
         return sorted;
     },
@@ -823,7 +928,10 @@ const plugin = {
                 const returnType = this._returnTypeOf(entry);
                 if (returnType) returnTypes.add(returnType);
                 if (!entry.isPositive) {
-                    for (const label of entry.display.rejectionBadges || []) taskIssues.add(label);
+                    const display = entry.display;
+                    if (display) {
+                        for (const label of display.rejectionBadges || []) taskIssues.add(label);
+                    }
                 }
             }
         }
@@ -867,9 +975,11 @@ const plugin = {
         };
     },
 
-    _applyFiltersAndSort(cachedItems, filters, listBounds, sortOrder) {
+    _applyFiltersAndSort(cachedItems, filters, listBounds, sortContext) {
         const filtered = this._applyClientWorkerOutputFilters(cachedItems, filters, listBounds);
-        return this._sortWorkerOutputItems(filtered, sortOrder);
+        const sortMetric = (filters && filters.sortMetric) || 'task_submitted';
+        const sortOrder = (filters && filters.sortOrder) === 'asc' ? 'asc' : 'desc';
+        return this._sortWorkerOutputItems(filtered, sortMetric, sortOrder, sortContext || null);
     },
 
     get _checkboxFilterDimensions() {

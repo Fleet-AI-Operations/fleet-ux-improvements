@@ -30,7 +30,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 100;
+const DASH_MS_HOVER_CLOSE_MS = 150;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.3',
+    _version: '5.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -198,12 +198,19 @@ const plugin = {
             resolvedDisputeTaskIds: null,
             resolvedDisputeAtByTaskId: null,
             resolverDisputeTaskIds: null,
+            resolvedDisputesPrefetchStarted: false,
+            resolvedDisputesPrefetchStatus: 'idle',
+            resolvedDisputesPrefetchPromise: null,
+            resolvedDisputesByTaskId: null,
+            resolvedDisputesBulkIncomplete: false,
+            bootstrapRunPromise: null,
             committed: null,
             appliedFilters: null,
             filterListOptions: null,
             cardUi: {},
             taskOpenUi: {},
             disputeClaimUi: {},
+            userStoryUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
@@ -213,7 +220,9 @@ const plugin = {
             msDropdownOpen: {},
             msDropdownFilter: {},
             msDropdownPinned: {},
-            msDropdownHoverTimers: {}
+            msDropdownHoverTimers: {},
+            msDropdownRefreshActive: false,
+            msBulkToggleMode: {}
         };
     },
 
@@ -363,6 +372,7 @@ const plugin = {
             this._ensureSpinnerKeyframes();
             this._ensureMsOptionStyles();
             this._ensureHeaderActionStyles();
+            this._ensureUserStoryStyles();
             this._ensureSplitPanelResizeStyles();
             this._attachSplitPanelResize();
             this._applyAllSidePanelWidths();
@@ -533,6 +543,34 @@ const plugin = {
             '  top: 0;',
             '  z-index: 2;',
             '  background: var(--card, #ffffff);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-toolbar] {',
+            '  display: flex;',
+            '  align-items: center;',
+            '  gap: 6px;',
+            '  padding: 4px 8px;',
+            '  border-bottom: 1px solid var(--border, #e2e8f0);',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-bulk-toggle] {',
+            '  flex-shrink: 0;',
+            '  min-width: 2.75rem;',
+            '  text-align: center;',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '  padding: 4px 8px;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  border-radius: 6px;',
+            '  background: var(--card, #ffffff);',
+            '  cursor: pointer;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-filter-wrap] {',
+            '  flex: 1;',
+            '  min-width: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-ms-filter-wrap] input {',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"] {',
             '  position: relative;',
@@ -906,6 +944,158 @@ const plugin = {
         });
     },
 
+    _ensureUserStoryStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-user-story-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-user-story-style';
+        style.textContent = [
+            '#wf-dash-modal .wf-dash-user-story-btn {',
+            '  padding: 4px 10px;',
+            '  font-size: 11px;',
+            '  font-weight: 600;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--background, #fff);',
+            '  color: var(--muted-foreground, #64748b);',
+            '  font-family: inherit;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-btn:hover:not(:disabled) {',
+            '  background: var(--muted, #f1f5f9);',
+            '  border-color: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--muted-foreground, #64748b));',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-btn:disabled {',
+            '  opacity: 0.65;',
+            '  cursor: wait;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-body {',
+            '  margin: 8px 0 0;',
+            '  padding: 6px 0 2px 12px;',
+            '  border-left: 3px solid var(--border, #e2e8f0);',
+            '  white-space: pre-wrap;',
+            '  word-break: break-word;',
+            '  line-height: 1.5;',
+            '  font-size: 12px;',
+            '  font-family: inherit;',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-empty {',
+            '  margin: 0;',
+            '  line-height: 1.45;',
+            '  font-size: 12px;',
+            '  font-family: inherit;',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel] {',
+            '  display: grid;',
+            '  grid-template-rows: 0fr;',
+            '  transition: grid-template-rows 160ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] {',
+            '  grid-template-rows: 1fr;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel] > [data-wf-dash-user-story-inner] {',
+            '  overflow: hidden;',
+            '  min-height: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-inner] {',
+            '  opacity: 0;',
+            '  transition: opacity 120ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] [data-wf-dash-user-story-inner] {',
+            '  opacity: 1;',
+            '  transition: opacity 180ms ease-in 40ms;',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
+    },
+
+    _ensureCardActionStyles() {
+        if (!this._modal) return;
+        const css = [
+            '#wf-dash-modal .wf-dash-card-shell {',
+            '  position: relative;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action-row {',
+            '  position: absolute;',
+            '  top: -12px;',
+            '  right: 16px;',
+            '  z-index: 1;',
+            '  display: flex;',
+            '  justify-content: flex-end;',
+            '  align-items: flex-start;',
+            '  height: 12px;',
+            '  overflow: visible;',
+            '  pointer-events: none;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action-area {',
+            '  display: flex;',
+            '  align-items: flex-start;',
+            '  justify-content: flex-end;',
+            '  gap: 0.25rem;',
+            '  flex-shrink: 0;',
+            '  pointer-events: auto;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-task-card] > .wf-dash-card-shell > .wf-dash-task-card-article {',
+            '  position: relative;',
+            '  z-index: 2;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action {',
+            '  width: 2rem;',
+            '  height: 24px;',
+            '  padding: 0;',
+            '  border: none;',
+            '  border-radius: 6px 6px 0 0;',
+            '  cursor: pointer;',
+            '  overflow: hidden;',
+            '  flex-shrink: 0;',
+            '  font-family: inherit;',
+            '  transform: translateY(0);',
+            '  transition: transform 160ms ease-in, background-color 160ms ease-in;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--remove {',
+            '  background: #dc2626;',
+            '  color: #fff;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action:hover {',
+            '  transform: translateY(-12px);',
+            '  transition: transform 160ms ease-out, background-color 160ms ease-out;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--remove:hover {',
+            '  background: #b91c1c;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action-inner {',
+            '  display: flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  height: 24px;',
+            '  min-height: 24px;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action-icon {',
+            '  opacity: 0;',
+            '  font-size: 14px;',
+            '  font-weight: 700;',
+            '  line-height: 1;',
+            '  transition: opacity 160ms ease-in;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-icon {',
+            '  opacity: 1;',
+            '  transition: opacity 160ms ease-out;',
+            '}'
+        ].join('\n');
+        let style = this._modal.querySelector('#wf-dash-card-action-style');
+        if (style) {
+            style.textContent = css;
+            return;
+        }
+        style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-card-action-style';
+        style.textContent = css;
+        this._modal.appendChild(style);
+    },
+
     _ensureSplitPanelResizeStyles() {
         if (!this._modal || this._modal.querySelector('#wf-dash-split-resize-style')) return;
         const style = this._pageWindow().document.createElement('style');
@@ -953,15 +1143,31 @@ const plugin = {
         });
     },
 
+    _msScopeHasFilterBox(scopeKey) {
+        return scopeKey.startsWith('filter-') || scopeKey.startsWith('search-') || scopeKey.startsWith('team-members-');
+    },
+
+    _msToolbarHtml(scopeKey, bulkActions) {
+        const hasFilterBox = this._msScopeHasFilterBox(scopeKey);
+        if (!bulkActions && !hasFilterBox) return '';
+        const bulkToggle = bulkActions
+            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Select all">None</button>`
+            : '';
+        const filterInput = hasFilterBox
+            ? `<div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none;">
+                        <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
+                    </div>`
+            : '';
+        return `
+                    <div data-wf-dash-ms-toolbar="${dashEscHtml(scopeKey)}" style="display: none;">
+                        ${bulkToggle}
+                        ${filterInput}
+                    </div>`;
+    },
+
     _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
         const isFlyout = dashIsFilterMsKey(scopeKey);
-        const bulk = bulkActions ? `
-                        <button type="button" data-wf-dash-ms-all="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--brand, var(--primary, #2563eb)); cursor: pointer;">All</button>
-                        <button type="button" data-wf-dash-ms-none="${dashEscHtml(scopeKey)}" style="font-size: 10px; font-weight: 600; padding: 0 4px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">None</button>` : '';
-        const filterRow = (scopeKey.startsWith('filter-') || scopeKey.startsWith('search-') || scopeKey.startsWith('team-members-')) ? `
-                    <div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none; padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e8f0);">
-                        <input type="text" data-wf-dash-ms-filter="${dashEscHtml(scopeKey)}" placeholder="Filter options…" autocomplete="off" style="${this._inputStyle()} padding: 4px 8px; font-size: 11px;">
-                    </div>` : '';
+        const toolbar = this._msToolbarHtml(scopeKey, bulkActions);
         const flyoutAttr = isFlyout ? ' data-wf-dash-ms-flyout="1"' : '';
         const panelInitialStyle = isFlyout
             ? 'display: none;'
@@ -973,18 +1179,14 @@ const plugin = {
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
                             <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
                         </button>
-                        <span data-wf-dash-ms-bulk="${dashEscHtml(scopeKey)}" style="display: none; align-items: center; gap: 6px; flex-shrink: 0;">
-                            ${bulk}
-                        </span>
                         <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
                             <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">${isFlyout ? '▸' : '▸'}</span>
                         </button>
                     </div>
-                    ${isFlyout ? '' : filterRow}
                 </div>
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelInitialStyle}">
-                    ${isFlyout ? filterRow : ''}
+                    ${toolbar}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
                     </div>
@@ -1112,6 +1314,7 @@ const plugin = {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                this._keepFilterMsDropdownOpen(msKey);
                 this._renderFilterLists();
             }
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
@@ -1123,30 +1326,17 @@ const plugin = {
                 this._toggleMsDropdown(msToggle.getAttribute('data-wf-dash-ms-toggle'));
                 return;
             }
-            const msAll = e.target.closest('[data-wf-dash-ms-all]');
-            if (msAll && modal.contains(msAll)) {
-                const key = msAll.getAttribute('data-wf-dash-ms-all');
-                this._setMultiselectChecked(key, true);
+            const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
+            if (msBulkToggle && modal.contains(msBulkToggle)) {
+                const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
+                this._keepFilterMsDropdownOpen(key);
+                this._toggleMsBulkSelection(key);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
                     this._onTeamMemberMsChange(this._modal);
                 }
                 return;
-            }
-            const msNone = e.target.closest('[data-wf-dash-ms-none]');
-            if (msNone && modal.contains(msNone)) {
-                const key = msNone.getAttribute('data-wf-dash-ms-none');
-                this._setMultiselectChecked(key, false);
-                if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
-                if (key.startsWith('filter-')) this._updateApplyFiltersUi();
-                if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
-                    this._onTeamMemberMsChange(this._modal);
-                }
-                return;
-            }
-            if (!e.target.closest('[data-wf-dash-ms-wrap]')) {
-                this._closeFlyoutMsDropdowns();
             }
         });
     },
@@ -1346,14 +1536,46 @@ const plugin = {
         return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
     },
 
+    _msBulkToggleMode(scopeKey) {
+        const mode = (this._state.msBulkToggleMode || {})[scopeKey];
+        return mode === 'all' ? 'all' : 'none';
+    },
+
+    _setMsBulkToggleMode(scopeKey, mode) {
+        if (!this._state.msBulkToggleMode) this._state.msBulkToggleMode = {};
+        this._state.msBulkToggleMode[scopeKey] = mode === 'all' ? 'all' : 'none';
+    },
+
+    _applyMsBulkToggleLabel(scopeKey) {
+        const btn = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
+        if (!btn) return;
+        const isAll = this._msBulkToggleMode(scopeKey) === 'all';
+        btn.textContent = isAll ? 'All' : 'None';
+        btn.setAttribute('aria-label', isAll ? 'Clear all selections' : 'Select all');
+        btn.style.color = isAll
+            ? 'var(--brand, var(--primary, #2563eb))'
+            : 'var(--muted-foreground, #64748b)';
+    },
+
+    _toggleMsBulkSelection(scopeKey) {
+        const nextAll = this._msBulkToggleMode(scopeKey) !== 'all';
+        this._setMsBulkToggleMode(scopeKey, nextAll ? 'all' : 'none');
+        this._setMultiselectChecked(scopeKey, nextAll);
+        this._applyMsBulkToggleLabel(scopeKey);
+    },
+
     _syncMsDropdownChrome(scopeKey) {
         const optionCount = this._msOptionCount(scopeKey);
         const open = this._isMsDropdownOpen(scopeKey);
         const wrap = this._msWrapEl(scopeKey);
         const hasBulkActions = Boolean(wrap && wrap.getAttribute('data-wf-dash-ms-bulk-actions') === '1');
         const filterWrap = this._q('[data-wf-dash-ms-filter-wrap="' + scopeKey + '"]');
+        const showBulkToggle = open && hasBulkActions && optionCount > 1;
+        const showFilter = open && filterWrap && optionCount >= 5;
+        const showToolbar = showBulkToggle || showFilter;
+        const toolbar = this._q('[data-wf-dash-ms-toolbar="' + scopeKey + '"]');
+        if (toolbar) toolbar.style.display = showToolbar ? 'flex' : 'none';
         if (filterWrap) {
-            const showFilter = open && optionCount >= 5;
             if (!showFilter) {
                 const input = filterWrap.querySelector('[data-wf-dash-ms-filter]');
                 if (input && input.value) {
@@ -1363,11 +1585,9 @@ const plugin = {
             }
             filterWrap.style.display = showFilter ? '' : 'none';
         }
-        const bulkEl = this._q('[data-wf-dash-ms-bulk="' + scopeKey + '"]');
-        if (bulkEl) {
-            const showBulk = open && hasBulkActions && optionCount > 1;
-            bulkEl.style.display = showBulk ? 'inline-flex' : 'none';
-        }
+        const bulkToggle = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
+        if (bulkToggle) bulkToggle.style.display = showBulkToggle ? '' : 'none';
+        if (showBulkToggle) this._applyMsBulkToggleLabel(scopeKey);
         const itemsEl = this._msItemsEl(scopeKey);
         if (itemsEl && !scopeKey.startsWith('team-members-')) {
             const singleOption = optionCount === 1;
@@ -1419,6 +1639,50 @@ const plugin = {
         return Object.keys(pinned).some((key) => pinned[key]);
     },
 
+    _filterMsOpenKeys() {
+        return DASH_FILTER_SCOPES.map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
+    },
+
+    _isPointerOverMsDropdown(scopeKey) {
+        const wrap = this._msWrapEl(scopeKey);
+        const panel = this._msPanelEl(scopeKey);
+        if (!wrap || !this._isMsDropdownOpen(scopeKey)) return false;
+        if (wrap.matches(':hover')) return true;
+        return Boolean(panel && panel.matches(':hover'));
+    },
+
+    _keepFilterMsDropdownOpen(scopeKey) {
+        if (!dashIsFilterMsKey(scopeKey)) return;
+        this._clearMsHoverTimers(scopeKey);
+        this._state.msDropdownOpen[scopeKey] = true;
+        this._syncMsDropdown(scopeKey);
+    },
+
+    _beginFilterMsDropdownRefresh() {
+        const openKeys = this._filterMsOpenKeys();
+        for (const key of openKeys) this._clearMsHoverTimers(key);
+        this._state.msDropdownRefreshActive = true;
+        return openKeys;
+    },
+
+    _endFilterMsDropdownRefresh(openKeys) {
+        for (const key of openKeys) {
+            this._state.msDropdownOpen[key] = true;
+            this._syncMsDropdown(key);
+        }
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this._state.msDropdownRefreshActive = false;
+                for (const key of openKeys) {
+                    if (!this._isPointerOverMsDropdown(key)) continue;
+                    this._clearMsHoverTimers(key);
+                    this._state.msDropdownOpen[key] = true;
+                    this._syncMsDropdown(key);
+                }
+            });
+        });
+    },
+
     _clearMsHoverTimers(scopeKey) {
         const store = this._state.msDropdownHoverTimers || {};
         const timers = store[scopeKey];
@@ -1452,15 +1716,16 @@ const plugin = {
 
     _scheduleMsHoverClose(scopeKey) {
         if (!dashIsFilterMsKey(scopeKey)) return;
-        if (this._state.msDropdownPinned[scopeKey]) return;
-        if (this._anyFilterMsPinned()) return;
+        if (this._state.msDropdownRefreshActive) return;
         this._clearMsHoverTimers(scopeKey);
         const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
         timers.close = setTimeout(() => {
             delete timers.close;
-            if (this._state.msDropdownPinned[scopeKey]) return;
             if (!this._isMsDropdownOpen(scopeKey)) return;
+            if (this._state.msDropdownRefreshActive) return;
+            if (this._isPointerOverMsDropdown(scopeKey)) return;
             delete this._state.msDropdownOpen[scopeKey];
+            delete this._state.msDropdownPinned[scopeKey];
             this._syncMsDropdown(scopeKey);
         }, DASH_MS_HOVER_CLOSE_MS);
         this._state.msDropdownHoverTimers[scopeKey] = timers;

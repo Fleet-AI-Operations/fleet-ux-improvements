@@ -71,6 +71,20 @@ const DASH_SEARCH_DEPTH_HINTS = {
     quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
     deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
 };
+const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+
+const DASH_SORT_DEFAULT = 'task_submitted:desc';
+const DASH_SORT_METRICS = [
+    { id: 'task_submitted', label: 'Task submitted' },
+    { id: 'task_revised', label: 'Task revised' },
+    { id: 'feedback_given', label: 'Feedback given' },
+    { id: 'dispute_submitted', label: 'Dispute submitted' },
+    { id: 'dispute_resolved', label: 'Dispute resolved' }
+];
+const DASH_SORT_OPTIONS = DASH_SORT_METRICS.flatMap((metric) => ([
+    { value: metric.id + ':desc', label: metric.label + ' (newest first)', sortMetric: metric.id, sortOrder: 'desc' },
+    { value: metric.id + ':asc', label: metric.label + ' (oldest first)', sortMetric: metric.id, sortOrder: 'asc' }
+]));
 
 /** Tab strip order when one task matches multiple output kinds. */
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
@@ -794,6 +808,208 @@ const searchOutputMethods = {
         }));
     },
 
+    _disputeRowEvalTaskId(row) {
+        if (!row || row.eval_task_id == null || row.eval_task_id === '') return '';
+        return String(row.eval_task_id);
+    },
+
+    _disputeRowMatchesTaskId(row, taskId) {
+        const rowTaskId = this._disputeRowEvalTaskId(row);
+        const target = taskId != null ? String(taskId) : '';
+        if (!rowTaskId || !target) return false;
+        return rowTaskId === target;
+    },
+
+    _logDisputeRowMismatch(row, targetTaskId) {
+        const disputeId = row && row.id != null ? String(row.id) : '?';
+        const rowTaskId = this._disputeRowEvalTaskId(row) || '?';
+        const target = targetTaskId != null ? String(targetTaskId) : '?';
+        Logger.warn('dashboard: dropped dispute row for mismatched task — dispute '
+            + disputeId + ', row task ' + rowTaskId + ', target task ' + target);
+    },
+
+    _filterDisputeRowsForTask(rows, taskId) {
+        const out = [];
+        for (const row of rows || []) {
+            if (this._disputeRowMatchesTaskId(row, taskId)) out.push(row);
+            else if (row) this._logDisputeRowMismatch(row, taskId);
+        }
+        return out;
+    },
+
+    _stripResolvedDisputeRow(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            eval_task_id: row.eval_task_id,
+            team_id: row.team_id,
+            created_at: row.created_at,
+            dispute_status: row.dispute_status,
+            dispute_data: row.dispute_data,
+            dispute_reason: row.dispute_reason,
+            resolved_at: row.resolved_at,
+            resolved_by: row.resolved_by,
+            resolution_reason: row.resolution_reason,
+            feedback_id: row.feedback_id,
+            original_feedback_created_at: row.original_feedback_created_at
+        };
+    },
+
+    _indexResolvedDisputeRows(rows) {
+        const byTaskId = new Map();
+        for (const raw of rows || []) {
+            const stripped = this._stripResolvedDisputeRow(raw);
+            if (!stripped) continue;
+            const taskId = this._disputeRowEvalTaskId(stripped);
+            if (!taskId) continue;
+            if (!this._disputeRowMatchesTaskId(stripped, taskId)) {
+                this._logDisputeRowMismatch(stripped, taskId);
+                continue;
+            }
+            const bucket = byTaskId.get(taskId);
+            if (bucket) bucket.push(stripped);
+            else byTaskId.set(taskId, [stripped]);
+        }
+        return byTaskId;
+    },
+
+    _ensureResolvedDisputesPrefetch() {
+        if (this._state.resolvedDisputesPrefetchStatus === 'done'
+            || this._state.resolvedDisputesPrefetchStatus === 'error') {
+            return Promise.resolve();
+        }
+        if (!this._state.resolvedDisputesPrefetchPromise) {
+            this._state.resolvedDisputesPrefetchPromise = this._runResolvedDisputesPrefetch();
+        }
+        return this._state.resolvedDisputesPrefetchPromise;
+    },
+
+    _startResolvedDisputesPrefetchOnce() {
+        if (this._state.resolvedDisputesPrefetchStarted) return;
+        this._state.resolvedDisputesPrefetchStarted = true;
+        void this._ensureResolvedDisputesPrefetch();
+    },
+
+    async _awaitBootstrapForPrefetch() {
+        if (this._state.bootstrapStatus === 'done') return true;
+        if (this._state.bootstrapStatus === 'error') return false;
+        if (this._state.bootstrapRunPromise) {
+            try {
+                await this._state.bootstrapRunPromise;
+            } catch (_e) { /* logged in _doBootstrap */ }
+            return this._state.bootstrapStatus === 'done';
+        }
+        return false;
+    },
+
+    async _runResolvedDisputesPrefetch() {
+        this._state.resolvedDisputesPrefetchStatus = 'loading';
+        try {
+            const ready = await this._awaitBootstrapForPrefetch();
+            if (!ready) {
+                Logger.warn('dashboard: resolved disputes prefetch skipped — bootstrap not ready');
+                this._state.resolvedDisputesByTaskId = new Map();
+                this._state.resolvedDisputesPrefetchStatus = 'error';
+                return;
+            }
+            const teamIds = this._getSearchableTeamCatalog().map(([id]) => id);
+            if (teamIds.length === 0) {
+                Logger.debug('dashboard: resolved disputes prefetch skipped — no team scope');
+                this._state.resolvedDisputesByTaskId = new Map();
+                this._state.resolvedDisputesPrefetchStatus = 'done';
+                return;
+            }
+            Logger.log('dashboard: resolved disputes prefetch started — ' + teamIds.length + ' team(s)');
+            const { rows, capped } = await this._fetchDisputesBulkPages(teamIds, 'resolved', null, null, null);
+            this._state.resolvedDisputesByTaskId = this._indexResolvedDisputeRows(rows);
+            this._state.resolvedDisputesBulkIncomplete = capped;
+            this._state.resolvedDisputesPrefetchStatus = 'done';
+            Logger.info('dashboard: resolved disputes prefetch complete — ' + rows.length + ' row(s), '
+                + this._state.resolvedDisputesByTaskId.size + ' task(s)'
+                + (capped ? ' · pagination capped' : ''));
+            if (capped) {
+                Logger.warn('dashboard: resolved disputes prefetch incomplete — pagination capped');
+            }
+        } catch (e) {
+            Logger.warn('dashboard: resolved disputes prefetch failed', e);
+            this._state.resolvedDisputesByTaskId = new Map();
+            this._state.resolvedDisputesPrefetchStatus = 'error';
+        }
+    },
+
+    _disputeRowInTeamScope(row, teamIds) {
+        if (!row) return false;
+        const scope = teamIds || [];
+        if (scope.length === 0) return true;
+        const teamId = row.team_id ? String(row.team_id) : '';
+        return teamId && scope.includes(teamId);
+    },
+
+    _deriveResolvedDisputeMeta(scope, afterIso, beforeIso, contributorSet) {
+        const cache = this._state.resolvedDisputesByTaskId || new Map();
+        const scopeTeamIds = (scope && scope.teamIds) || [];
+        const resolvedDisputeTaskIds = new Set();
+        const resolvedDisputeAtByTaskId = new Map();
+        const filterByResolver = contributorSet && contributorSet.size > 0;
+        for (const rows of cache.values()) {
+            for (const row of rows) {
+                if (!row || !row.eval_task_id) continue;
+                if (!this._disputeRowInTeamScope(row, scopeTeamIds)) continue;
+                if (filterByResolver) {
+                    if (!this._disputeMatchesContributorFilter(row, contributorSet)) continue;
+                    if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) continue;
+                } else if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, true)) {
+                    continue;
+                }
+                const taskId = row.eval_task_id;
+                resolvedDisputeTaskIds.add(taskId);
+                const at = String(row.resolved_at || row.created_at || '');
+                if (at) {
+                    const prev = resolvedDisputeAtByTaskId.get(taskId);
+                    if (!prev || at > prev) resolvedDisputeAtByTaskId.set(taskId, at);
+                }
+            }
+        }
+        return { resolvedDisputeTaskIds, resolvedDisputeAtByTaskId };
+    },
+
+    _getCachedResolvedDisputeRows(taskId) {
+        const cache = this._state.resolvedDisputesByTaskId;
+        if (!cache) return [];
+        return cache.get(taskId) || [];
+    },
+
+    async _fetchOpenDisputesBulk(scope, afterIso, beforeIso) {
+        const teamIds = (scope && scope.teamIds) || [];
+        if (teamIds.length === 0) {
+            Logger.debug('dashboard: open disputes bootstrap skipped — no team scope');
+            return { openDisputesByTaskId: new Map(), bulkIncomplete: false };
+        }
+        const openResult = await this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null);
+        const openDisputesByTaskId = new Map();
+        let openRowCount = 0;
+        for (const row of openResult.rows) {
+            const taskId = this._disputeRowEvalTaskId(row);
+            if (!taskId) continue;
+            if (!this._disputeRowMatchesTaskId(row, taskId)) {
+                this._logDisputeRowMismatch(row, taskId);
+                continue;
+            }
+            if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, false)) continue;
+            openRowCount++;
+            const bucket = openDisputesByTaskId.get(taskId);
+            if (bucket) bucket.push(row);
+            else openDisputesByTaskId.set(taskId, [row]);
+        }
+        Logger.log('dashboard: open disputes bootstrap — ' + openRowCount + ' open row(s) across '
+            + openDisputesByTaskId.size + ' task(s)'
+            + (openResult.capped ? ' · pagination capped' : ''));
+        if (openResult.capped) {
+            Logger.warn('dashboard: open disputes bootstrap incomplete — narrow team scope or date range');
+        }
+        return { openDisputesByTaskId, bulkIncomplete: openResult.capped };
+    },
+
 
     async _fetchDisputesBootstrap(scope, afterIso, beforeIso) {
         const teamIds = (scope && scope.teamIds) || [];
@@ -806,49 +1022,28 @@ const searchOutputMethods = {
                 bulkIncomplete: false
             };
         }
-        const [openResult, resolvedResult] = await Promise.all([
+        await this._ensureResolvedDisputesPrefetch();
+        const [openPart, resolvedMeta] = await Promise.all([
             this._trackSearchLoadPromise(
                 'Open disputes (bulk pagination)',
-                this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null)
+                this._fetchOpenDisputesBulk(scope, afterIso, beforeIso)
             ),
-            this._trackSearchLoadPromise(
-                'Resolved disputes (bulk pagination)',
-                this._fetchDisputesBulkPages(teamIds, 'resolved', afterIso, beforeIso, null)
-            )
+            Promise.resolve(this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, null))
         ]);
-        const openDisputesByTaskId = new Map();
-        let openRowCount = 0;
-        for (const row of openResult.rows) {
-            if (!row || !row.eval_task_id) continue;
-            if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, false)) continue;
-            openRowCount++;
-            const taskId = row.eval_task_id;
-            const bucket = openDisputesByTaskId.get(taskId);
-            if (bucket) bucket.push(row);
-            else openDisputesByTaskId.set(taskId, [row]);
-        }
-        const resolvedDisputeTaskIds = new Set();
-        const resolvedDisputeAtByTaskId = new Map();
-        for (const row of resolvedResult.rows) {
-            if (!row || !row.eval_task_id) continue;
-            if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, true)) continue;
-            const taskId = row.eval_task_id;
-            resolvedDisputeTaskIds.add(taskId);
-            const at = String(row.resolved_at || row.created_at || '');
-            if (at) {
-                const prev = resolvedDisputeAtByTaskId.get(taskId);
-                if (!prev || at > prev) resolvedDisputeAtByTaskId.set(taskId, at);
-            }
-        }
-        const bulkIncomplete = openResult.capped || resolvedResult.capped;
-        Logger.log('dashboard: disputes bootstrap — ' + openRowCount + ' open row(s) across '
-            + openDisputesByTaskId.size + ' task(s), ' + resolvedDisputeTaskIds.size
+        const bulkIncomplete = openPart.bulkIncomplete || this._state.resolvedDisputesBulkIncomplete;
+        Logger.log('dashboard: disputes bootstrap — ' + openPart.openDisputesByTaskId.size
+            + ' open task(s), ' + resolvedMeta.resolvedDisputeTaskIds.size
             + ' resolved task id(s) in search date range'
             + (bulkIncomplete ? ' · pagination capped' : ''));
         if (bulkIncomplete) {
             Logger.warn('dashboard: disputes bootstrap incomplete — narrow team scope or date range');
         }
-        return { openDisputesByTaskId, resolvedDisputeTaskIds, resolvedDisputeAtByTaskId, bulkIncomplete };
+        return {
+            openDisputesByTaskId: openPart.openDisputesByTaskId,
+            resolvedDisputeTaskIds: resolvedMeta.resolvedDisputeTaskIds,
+            resolvedDisputeAtByTaskId: resolvedMeta.resolvedDisputeAtByTaskId,
+            bulkIncomplete
+        };
     },
 
 
@@ -859,28 +1054,15 @@ const searchOutputMethods = {
         if (teamIds.length === 0 || !authorIds || authorIds.length === 0) {
             return { resolverDisputeTaskIds: resolverIds, resolverDisputeAtByTaskId, bulkIncomplete: false };
         }
+        await this._ensureResolvedDisputesPrefetch();
         const contributorSet = this._contributorSetFromAuthorIds(authorIds);
-        const resolvedResult = await this._fetchDisputesBulkPages(
-            teamIds, 'resolved', afterIso, beforeIso, contributorSet
-        );
-        for (const row of resolvedResult.rows) {
-            if (!row || !row.eval_task_id) continue;
-            if (!this._disputeMatchesContributorFilter(row, contributorSet)) continue;
-            if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) continue;
-            const taskId = row.eval_task_id;
-            resolverIds.add(taskId);
-            const at = String(row.resolved_at || row.created_at || '');
-            if (at) {
-                const prev = resolverDisputeAtByTaskId.get(taskId);
-                if (!prev || at > prev) resolverDisputeAtByTaskId.set(taskId, at);
-            }
-        }
-        Logger.log('dashboard: dispute resolver discovery — ' + resolverIds.size + ' task id(s)'
-            + (resolvedResult.capped ? ' · pagination capped' : ''));
+        const meta = this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, contributorSet);
+        Logger.log('dashboard: dispute resolver discovery — ' + meta.resolvedDisputeTaskIds.size + ' task id(s)'
+            + (this._state.resolvedDisputesBulkIncomplete ? ' · prefetch pagination capped' : ''));
         return {
-            resolverDisputeTaskIds: resolverIds,
-            resolverDisputeAtByTaskId,
-            bulkIncomplete: resolvedResult.capped
+            resolverDisputeTaskIds: meta.resolvedDisputeTaskIds,
+            resolverDisputeAtByTaskId: meta.resolvedDisputeAtByTaskId,
+            bulkIncomplete: this._state.resolvedDisputesBulkIncomplete
         };
     },
 
@@ -934,7 +1116,8 @@ const searchOutputMethods = {
                 const taskId = ids[idx++];
                 try {
                     const rows = await this._fetchTaskDisputesForTask(taskId);
-                    if (rows.length > 0) byTaskId.set(taskId, rows);
+                    const validRows = this._filterDisputeRowsForTask(rows, taskId);
+                    if (validRows.length > 0) byTaskId.set(String(taskId), validRows);
                 } catch (e) {
                     Logger.warn('dashboard: task-disputes failed — task ' + String(taskId).slice(0, 8), e);
                 }
@@ -960,26 +1143,46 @@ const searchOutputMethods = {
             resolvedIds.has(taskId) || resolverIds.has(taskId)
         ));
 
-        let resolvedByTaskId = new Map();
-        if (needResolvedFetch.length > 0) {
-            resolvedByTaskId = await this._fetchTaskDisputesBatch(needResolvedFetch);
-            const resolverProfileIds = [];
-            for (const rows of resolvedByTaskId.values()) {
-                for (const row of rows) {
-                    if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+        const resolvedByTaskId = new Map();
+        const prefetchFailed = this._state.resolvedDisputesPrefetchStatus === 'error';
+        const cacheIncomplete = this._state.resolvedDisputesBulkIncomplete;
+        const fallbackTaskIds = [];
+        for (const taskId of needResolvedFetch) {
+            if (!prefetchFailed) {
+                const cached = this._getCachedResolvedDisputeRows(taskId);
+                if (cached.length > 0) {
+                    resolvedByTaskId.set(taskId, cached);
+                    Logger.debug('dashboard: resolved disputes cache hit — task ' + String(taskId).slice(0, 8));
+                    continue;
                 }
             }
-            if (resolverProfileIds.length > 0) {
-                await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+            if (prefetchFailed || cacheIncomplete) {
+                fallbackTaskIds.push(taskId);
             }
+        }
+        if (fallbackTaskIds.length > 0) {
+            const fetched = await this._fetchTaskDisputesBatch(fallbackTaskIds);
+            for (const [taskId, rows] of fetched) {
+                resolvedByTaskId.set(taskId, rows);
+            }
+        }
+
+        const resolverProfileIds = [];
+        for (const rows of resolvedByTaskId.values()) {
+            for (const row of rows) {
+                if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+            }
+        }
+        if (resolverProfileIds.length > 0) {
+            await this._supplementProfilesMap(profilesMap, resolverProfileIds);
         }
 
         let attached = 0;
         for (const item of list) {
             const taskId = item.task.id;
             if (!allDisputeIds.has(taskId)) continue;
-            const openRows = openMap.get(taskId) || [];
-            const resolvedRows = resolvedByTaskId.get(taskId) || [];
+            const openRows = this._filterDisputeRowsForTask(openMap.get(taskId) || [], taskId);
+            const resolvedRows = this._filterDisputeRowsForTask(resolvedByTaskId.get(taskId) || [], taskId);
             const combined = [...openRows, ...resolvedRows];
             if (combined.length === 0) continue;
             this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
@@ -1263,6 +1466,12 @@ const searchOutputMethods = {
     },
 
     async _doBootstrap() {
+        if (this._state.bootstrapRunPromise) return this._state.bootstrapRunPromise;
+        this._state.bootstrapRunPromise = this._runBootstrapSession();
+        return this._state.bootstrapRunPromise;
+    },
+
+    async _runBootstrapSession() {
         this._state.bootstrapStatus = 'loading';
         this._state.bootstrapError = null;
         this._refreshCatalogDependentUi();
@@ -1273,6 +1482,7 @@ const searchOutputMethods = {
             this._state.sessionRefreshRequired = false;
             Logger.log('dashboard: bootstrap complete (' + (result.teams ? result.teams.length : 0) + ' teams, '
                 + result.projects.length + ' projects, ' + result.environments.length + ' environments)');
+            this._startResolvedDisputesPrefetchOnce();
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
                 this._state.bootstrapError = null;
@@ -1576,6 +1786,14 @@ const searchOutputMethods = {
             task.allFeedback = [];
             quickTasksById.set(taskId, task);
         }
+        for (const fb of feedbackRows || []) {
+            const task = quickTasksById.get(fb.eval_task_id);
+            if (!task || !fb.created_at) continue;
+            task.allFeedback.push({
+                id: String(fb.id || ''),
+                feedbackAt: String(fb.created_at || '')
+            });
+        }
         return { enrichedTasksById: quickTasksById, profilesMap };
     },
 
@@ -1694,6 +1912,10 @@ const searchOutputMethods = {
             includeQa,
             includeDisputes
         }));
+        const resolvedPrefetchPromise = this._trackSearchLoadPromise(
+            'Resolved disputes (prefetch cache)',
+            this._ensureResolvedDisputesPrefetch()
+        );
         const bootstrapPromise = this._fetchDisputesBootstrap(scope, afterIso, beforeIso);
         const tasksPromise = includeTaskCreation
             ? this._trackSearchLoadPromise(
@@ -1719,7 +1941,7 @@ const searchOutputMethods = {
             });
 
         const [bootstrap, creationRows, feedbackRows, resolverResult] = await Promise.all([
-            bootstrapPromise,
+            Promise.all([resolvedPrefetchPromise, bootstrapPromise]).then(([, result]) => result),
             tasksPromise,
             qaPromise,
             resolverPromise
@@ -2218,8 +2440,7 @@ const searchOutputMethods = {
             case 'prompt_word_count':
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
-                if (!item.qaFeedback) return null;
-                return (item.qaFeedback.rejectionBadges || []).length;
+                return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
             case 'prompt_version_count':
                 if (!item.hydrated) return null;
                 return (task.promptVersions || []).length;
@@ -2385,9 +2606,50 @@ const searchOutputMethods = {
             if (keptIds.has(id)) newHydrateUi[id] = this._state.hydrateUi[id];
         }
         this._state.hydrateUi = newHydrateUi;
+        const newUserStoryUi = {};
+        for (const id of Object.keys(this._state.userStoryUi || {})) {
+            if (keptIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
+        }
+        this._state.userStoryUi = newUserStoryUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
             + filtered.length + ' remaining');
+    },
+
+    _dropResultFromSearch(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const cached = this._state.cachedItems;
+        if (!cached) return;
+        const item = cached.find((it) => it.id === id);
+        if (!item) return;
+        this._state.cachedItems = cached.filter((it) => it.id !== id);
+        if (this._state.hydrateUi) delete this._state.hydrateUi[id];
+        if (this._state.userStoryUi) delete this._state.userStoryUi[id];
+        const taskId = item.task && item.task.id;
+        if (taskId && this._state.cardUi) {
+            const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
+            if (!stillHasTask) delete this._state.cardUi[taskId];
+        }
+        this._refreshResultsView({ reindexFilters: true, filterSource: 'results-mutate' });
+        Logger.log('search-output: removed result from search — ' + id);
+    },
+
+    _pruneFiltersToBounds(filters, bounds) {
+        const next = Object.assign({}, filters);
+        const b = bounds || {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const boundIds = b[draftKey] || [];
+            const sel = (filters && filters[draftKey]) || [];
+            if (boundIds.length === 0) {
+                next[draftKey] = [];
+            } else if (this._isDimensionAllSelected(sel, boundIds)) {
+                next[draftKey] = [...boundIds];
+            } else {
+                next[draftKey] = sel.filter((id) => boundIds.includes(id));
+            }
+        }
+        return next;
     },
 
     _syncResultsListDerivedUi({ reindexFilters } = {}) {
@@ -2408,6 +2670,7 @@ const searchOutputMethods = {
 
     _filtersAllSelectedFromBounds(bounds) {
         const b = bounds || {};
+        const sort = this._readDashSortFromUi();
         return {
             teamIds: [...(b.teamIds || [])],
             projectIds: [...(b.projectIds || [])],
@@ -2423,10 +2686,48 @@ const searchOutputMethods = {
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
-            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc',
+            sortMetric: sort.sortMetric,
+            sortOrder: sort.sortOrder,
             manualFilters: [],
             manualAndOr: 'and'
         };
+    },
+
+    _parseDashSortValue(raw) {
+        const value = String(raw || DASH_SORT_DEFAULT);
+        const match = DASH_SORT_OPTIONS.find((opt) => opt.value === value);
+        if (match) {
+            return { sortMetric: match.sortMetric, sortOrder: match.sortOrder, label: match.label };
+        }
+        const [metric, order] = value.split(':');
+        const known = DASH_SORT_METRICS.some((m) => m.id === metric);
+        const sortMetric = known ? metric : 'task_submitted';
+        const sortOrder = order === 'asc' ? 'asc' : 'desc';
+        const metricLabel = (DASH_SORT_METRICS.find((m) => m.id === sortMetric) || {}).label || sortMetric;
+        return {
+            sortMetric,
+            sortOrder,
+            label: metricLabel + (sortOrder === 'asc' ? ' (oldest first)' : ' (newest first)')
+        };
+    },
+
+    _readDashSortFromUi() {
+        const el = this._q('#wf-dash-sort');
+        return this._parseDashSortValue(el && el.value);
+    },
+
+    _dashSortContext() {
+        return {
+            openDisputesByTaskId: this._state.openDisputesByTaskId || null,
+            resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null
+        };
+    },
+
+    _dashSortSelectOptionsHtml(selectedValue) {
+        const selected = String(selectedValue || DASH_SORT_DEFAULT);
+        return DASH_SORT_OPTIONS.map((opt) =>
+            `<option value="${dashEscHtml(opt.value)}"${opt.value === selected ? ' selected' : ''}>${dashEscHtml(opt.label)}</option>`
+        ).join('');
     },
 
     _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client' } = {}) {
@@ -2451,6 +2752,11 @@ const searchOutputMethods = {
         let filters;
         if (filterSource === 'search-defaults' || filterSource === 'tab-reset' || filterSource === 'filter-reset') {
             filters = this._filtersAllSelectedFromBounds(bounds);
+        } else if (filterSource === 'results-mutate') {
+            const applied = this._state.appliedFilters;
+            filters = applied
+                ? this._pruneFiltersToBounds(applied, bounds)
+                : this._filtersAllSelectedFromBounds(bounds);
         } else {
             filters = this._currentClientFilters();
             const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
@@ -2464,11 +2770,15 @@ const searchOutputMethods = {
 
         const scopeItems = this._getFilterScopeItems();
         const sortOrder = filters.sortOrder;
-        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
-        const manual = this._readSearchOutputManualFilters();
+        const sortMetric = filters.sortMetric || 'task_submitted';
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, this._dashSortContext());
+        const manual = filterSource === 'results-mutate'
+            ? { rows: filters.manualFilters || [], andOr: filters.manualAndOr || 'and' }
+            : this._readSearchOutputManualFilters();
         const result = this._applyManualFiltersToResult(checkboxResult, manual.rows, manual.andOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = Object.assign({}, filters, {
+            sortMetric,
             sortOrder,
             manualFilters: manual.rows,
             manualAndOr: manual.andOr
@@ -2478,7 +2788,7 @@ const searchOutputMethods = {
         if (filterSource === 'client') {
             Logger.log('dashboard: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
                 + (manual.rows.length > 0 ? ' · ' + manual.rows.length + ' manual' : '')
-                + (sortOrder === 'asc' ? ' · sort asc' : ' · sort desc'));
+                + ' · ' + this._parseDashSortValue(sortMetric + ':' + sortOrder).label);
         } else if (filterSource === 'filter-reset') {
             Logger.log('dashboard: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
         } else {
@@ -2494,7 +2804,9 @@ const searchOutputMethods = {
         this._renderResults();
         this._updateResultsKindTabsUi();
         this._renderFilterLists({
-            syncDraftFromApplied: filterSource !== 'client' || Boolean(this._state.appliedFilters)
+            syncDraftFromApplied: filterSource === 'results-mutate'
+                || filterSource !== 'client'
+                || Boolean(this._state.appliedFilters)
         });
         this._syncResultsToolbarDerivedUi();
         return true;
@@ -2675,7 +2987,7 @@ const searchOutputMethods = {
         if (!filterInvalid.invalid) {
             const sortOrder = filters.sortOrder;
             const scopeItems = this._getFilterScopeItems();
-            const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, newBounds, sortOrder);
+            const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, newBounds, this._dashSortContext());
             const manualRows = filters.manualFilters || [];
             const manualAndOr = filters.manualAndOr || 'and';
             const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
@@ -2693,19 +3005,19 @@ const searchOutputMethods = {
         const lib = dashLib();
         const applied = this._state.appliedFilters;
         if (this._state.cachedItems === null || !applied) return;
-        const sortOrder = ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc';
-        if (applied.sortOrder === sortOrder) return;
-        const filters = Object.assign({}, applied, { sortOrder });
+        const { sortMetric, sortOrder, label } = this._readDashSortFromUi();
+        if (applied.sortMetric === sortMetric && applied.sortOrder === sortOrder) return;
+        const filters = Object.assign({}, applied, { sortMetric, sortOrder });
         this._state.resultsPage = 0;
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const scopeItems = this._getFilterScopeItems();
-        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, sortOrder);
+        const checkboxResult = lib.applyFiltersAndSort(scopeItems, filters, bounds, this._dashSortContext());
         const manualRows = filters.manualFilters || [];
         const manualAndOr = filters.manualAndOr || 'and';
         const result = this._applyManualFiltersToResult(checkboxResult, manualRows, manualAndOr);
         this._state.filteredItems = result;
         this._state.appliedFilters = filters;
-        Logger.log('dashboard: sort applied — ' + (sortOrder === 'asc' ? 'oldest first' : 'newest first'));
+        Logger.log('dashboard: sort applied — ' + (label || (sortMetric + ' ' + sortOrder)));
         this._updateResultsStatus();
         this._syncResultsListDerivedUi();
         this._renderResults();
@@ -2723,6 +3035,217 @@ const searchOutputMethods = {
             this._state.hydrateUi[id] = { status: 'idle' };
         }
         return this._state.hydrateUi[id];
+    },
+
+    _getUserStoryUi(itemId) {
+        const id = String(itemId || '');
+        if (!id) return { status: 'idle', visible: false, userStory: null, message: null };
+        if (!this._state.userStoryUi[id]) {
+            this._state.userStoryUi[id] = {
+                status: 'idle',
+                visible: false,
+                userStory: null,
+                message: null
+            };
+        }
+        return this._state.userStoryUi[id];
+    },
+
+    _userStoryEmptyMessage(reason) {
+        if (reason === 'no_scenario_id') return 'No scenario linked to this task.';
+        if (reason === 'scenario_not_found') return 'Scenario not found.';
+        if (reason === 'task_not_found') return 'Task not found.';
+        return 'No user story for this task.';
+    },
+
+    _userStoryHasContent(ui) {
+        return ui.userStory != null && String(ui.userStory).trim().length > 0;
+    },
+
+    _userStoryIsAbsent(ui) {
+        return (ui.status === 'loaded' || ui.status === 'error') && !this._userStoryHasContent(ui);
+    },
+
+    _userStoryEmptyHtml(ui) {
+        const text = ui.message || 'No user story for this task.';
+        return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
+    },
+
+    _userStoryBodyText(ui) {
+        return ui.userStory != null && String(ui.userStory).trim()
+            ? dashEscHtml(String(ui.userStory))
+            : dashEscHtml(ui.message || 'No user story for this task.');
+    },
+
+    _userStoryBtnLabel(ui) {
+        if (ui.status === 'loading') return 'Fetching user story…';
+        if (ui.status === 'loaded' || ui.status === 'error') {
+            return ui.visible ? 'Hide User Story' : 'Show User Story';
+        }
+        return 'Fetch User Story';
+    },
+
+    _userStorySectionHtml(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryIsAbsent(ui)) {
+            return `
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-wf-dash-user-story-absent="1" data-item-id="${dashEscHtml(itemId)}">
+                ${this._userStoryEmptyHtml(ui)}
+            </div>`;
+        }
+        const btnLabel = this._userStoryBtnLabel(ui);
+        const btnDisabled = ui.status === 'loading';
+        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        const panelOpen = ui.visible && !ui.animateOpen;
+        const panelHtml = hasPanel
+            ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
+                + `<div data-wf-dash-user-story-inner><p class="wf-dash-user-story-body">${this._userStoryBodyText(ui)}</p></div>`
+                + '</div>'
+            : '';
+        return `
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
+                <button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                ${panelHtml}
+            </div>`;
+    },
+
+    _findUserStorySection(itemId) {
+        const wrap = this._q('#wf-dash-results');
+        if (!wrap || !itemId) return null;
+        for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            if (card.getAttribute('data-item-id') !== itemId) continue;
+            return card.querySelector('[data-wf-dash-user-story-section]');
+        }
+        return null;
+    },
+
+    _animateUserStoryOpen(itemId) {
+        const section = this._findUserStorySection(itemId);
+        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+        if (!panel) return;
+        panel.setAttribute('data-open', '0');
+        panel.setAttribute('aria-hidden', 'true');
+        const win = this._pageWindow();
+        win.requestAnimationFrame(() => {
+            win.requestAnimationFrame(() => {
+                panel.setAttribute('data-open', '1');
+                panel.setAttribute('aria-hidden', 'false');
+            });
+        });
+    },
+
+    _patchUserStorySection(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findUserStorySection(itemId);
+        if (!section) return false;
+        const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryIsAbsent(ui)) {
+            section.setAttribute('data-wf-dash-user-story-absent', '1');
+            section.innerHTML = this._userStoryEmptyHtml(ui);
+            return true;
+        }
+        section.removeAttribute('data-wf-dash-user-story-absent');
+        let btn = section.querySelector('[data-wf-dash-user-story]');
+        if (!btn) {
+            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            btn = section.querySelector('[data-wf-dash-user-story]');
+        }
+        if (btn) {
+            btn.textContent = this._userStoryBtnLabel(ui);
+            if (ui.status === 'loading') {
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+            } else {
+                btn.disabled = false;
+                btn.removeAttribute('aria-busy');
+            }
+        }
+        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        let panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        if (!hasPanel) {
+            if (panel) panel.remove();
+            return true;
+        }
+        const bodyText = this._userStoryBodyText(ui);
+        if (!panel) {
+            section.insertAdjacentHTML('beforeend',
+                `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
+                + `<div data-wf-dash-user-story-inner"><p class="wf-dash-user-story-body">${bodyText}</p></div>`
+                + '</div>');
+            panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        } else {
+            const body = panel.querySelector('.wf-dash-user-story-body');
+            if (body) body.innerHTML = bodyText;
+        }
+        if (panel) {
+            panel.setAttribute('data-open', ui.visible ? '1' : '0');
+            panel.setAttribute('aria-hidden', ui.visible ? 'false' : 'true');
+        }
+        return true;
+    },
+
+    async _toggleUserStory(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) return;
+        const ui = this._getUserStoryUi(id);
+
+        if (ui.status === 'loaded' || ui.status === 'error') {
+            if (!this._userStoryHasContent(ui)) return;
+            ui.visible = !ui.visible;
+            Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
+            if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
+            return;
+        }
+        if (ui.status === 'loading') return;
+
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
+            ui.status = 'error';
+            ui.message = 'User story unavailable (ops module not loaded).';
+            ui.visible = false;
+            Logger.warn('dashboard: user story fetch unavailable — ops module missing');
+            this._patchTaskCard(id);
+            return;
+        }
+
+        ui.status = 'loading';
+        if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
+
+        const taskKey = String(item.task.key || '').trim();
+        const taskId = String(item.task.id || '').trim();
+        Logger.log('dashboard: fetching user story — ' + (taskKey || taskId.slice(0, 8) + '…'));
+        try {
+            const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
+            const userStory = result && result.userStory != null ? String(result.userStory) : '';
+            if (!userStory.trim()) {
+                const reason = result && result.reason ? result.reason : 'empty';
+                ui.userStory = null;
+                ui.message = this._userStoryEmptyMessage(reason);
+                Logger.warn('dashboard: user story empty — ' + id + ' (' + reason + ')');
+            } else {
+                ui.userStory = userStory;
+                ui.message = null;
+                Logger.log('dashboard: user story fetched — ' + id + ' (' + userStory.length + ' chars)');
+            }
+            ui.status = 'loaded';
+            ui.visible = Boolean(userStory.trim());
+            if (ui.visible) ui.animateOpen = true;
+        } catch (err) {
+            ui.status = 'error';
+            ui.userStory = null;
+            ui.message = this._isDashSessionRefreshError(err)
+                ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
+                : 'Could not load user story.';
+            ui.visible = false;
+            Logger.warn('dashboard: user story fetch failed — ' + id, err);
+        }
+        this._patchTaskCard(id);
+        if (ui.animateOpen) {
+            delete ui.animateOpen;
+            this._animateUserStoryOpen(id);
+        }
     },
 
     _profilesMapFromHydrateItems(items) {
@@ -3163,6 +3686,16 @@ const searchOutputMethods = {
         return '<div style="' + shell + ' background: ' + cfg.tabBg + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
     },
 
+    _cardActionAreaHtml(itemId) {
+        return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
+                </span>
+            </button>
+        </div>`;
+    },
+
     _leftTabStyle(active) {
         const base = 'padding: 8px 12px; font-size: 12px; font-weight: 600; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: transparent;';
         return active
@@ -3194,15 +3727,6 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </nav>
-                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
-                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
-                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
-                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
-                        </div>
 
                         <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">
@@ -3277,9 +3801,10 @@ const searchOutputMethods = {
                                 <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
+                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
                                     <div style="position: relative; min-width: 0;">
-                                        <input type="text" id="wf-dash-prompt" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px;">
-                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnOverlayStyle()} display: none;">&times;</button>
+                                        <textarea id="wf-dash-prompt" rows="1" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px; resize: none; overflow: hidden; line-height: 1.4; min-height: 36px;"></textarea>
+                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnStyle()} position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; font-size: 15px; display: none;">&times;</button>
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
@@ -3317,6 +3842,15 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </div>
+                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
+                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
+                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
+                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
+                        </div>
                     </div>`;
         const rightHtml = `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
@@ -3338,9 +3872,8 @@ const searchOutputMethods = {
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
-                                            <option value="desc">Newest first</option>
-                                            <option value="asc">Oldest first</option>
+                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 18rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            ${this._dashSortSelectOptionsHtml(DASH_SORT_DEFAULT)}
                                         </select>
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
@@ -3426,9 +3959,15 @@ const searchOutputMethods = {
         this._setAuthorError('');
         this._hideAuthorCandidates();
         try {
-            const results = await this._searchPersons(query);
+            const tokenIds = new Set(tokens.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+            const allResults = await this._searchPersons(query);
+            const results = allResults.filter((p) => !tokenIds.has(String(p.id || '').trim().toLowerCase()));
             const input = this._q('#wf-dash-author-input');
             if (results.length === 0) {
+                if (allResults.length > 0) {
+                    this._setAuthorError('Already added.');
+                    return 'duplicate';
+                }
                 this._setAuthorError(`No match for "${query}"`);
                 return 'none';
             }
@@ -3459,6 +3998,9 @@ const searchOutputMethods = {
         if (outcome === 'resolved' || outcome === 'empty') return null;
         if (outcome === 'multiple') {
             return 'Multiple author matches — pick one from the list below.';
+        }
+        if (outcome === 'duplicate') {
+            return 'All matches for that query are already in Contributors.';
         }
         if (outcome === 'none') {
             return `No author match for "${query}".`;
@@ -3746,41 +4288,46 @@ const searchOutputMethods = {
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, options)
             : lib.emptyFilterOptionCounts();
 
-        for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
-            const itemsEl = this._msItemsEl(scopeKey);
-            const wrap = this._filterScopeWrapEl(scopeKey);
-            if (!itemsEl) continue;
-            const optionItems = options[optionsKey] || [];
-            if (optionItems.length === 0) {
-                if (wrap) wrap.style.display = 'none';
-                continue;
+        const openFilterKeys = this._beginFilterMsDropdownRefresh();
+        try {
+            for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
+                const itemsEl = this._msItemsEl(scopeKey);
+                const wrap = this._filterScopeWrapEl(scopeKey);
+                if (!itemsEl) continue;
+                const optionItems = options[optionsKey] || [];
+                if (optionItems.length === 0) {
+                    if (wrap) wrap.style.display = 'none';
+                    continue;
+                }
+                if (wrap) wrap.style.display = '';
+                const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
+                const irrelevantSet = irrelevance[draftKey] || new Set();
+                const countsForScope = optionCounts[draftKey] || new Map();
+                const optionIds = optionItems.map((it) => it.id);
+                const prevSelected = syncDraftFromApplied
+                    ? null
+                    : new Set(this._selectedFromList(scopeKey));
+                const checkedIds = this._checkedIdsForFilterScope(
+                    draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
+                );
+                itemsEl.innerHTML = this._multiSelectItemsHtml(
+                    scopeKey,
+                    optionItems,
+                    emptyHint,
+                    false,
+                    false,
+                    irrelevantSet,
+                    countsForScope
+                );
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = checkedIds.has(cb.value);
+                });
+                this._updateMsCount(scopeKey);
+                this._syncMsDropdown(scopeKey);
+                if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
             }
-            if (wrap) wrap.style.display = '';
-            const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
-            const irrelevantSet = irrelevance[draftKey] || new Set();
-            const countsForScope = optionCounts[draftKey] || new Map();
-            const optionIds = optionItems.map((it) => it.id);
-            const prevSelected = syncDraftFromApplied
-                ? null
-                : new Set(this._selectedFromList(scopeKey));
-            const checkedIds = this._checkedIdsForFilterScope(
-                draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
-            );
-            itemsEl.innerHTML = this._multiSelectItemsHtml(
-                scopeKey,
-                optionItems,
-                emptyHint,
-                false,
-                false,
-                irrelevantSet,
-                countsForScope
-            );
-            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                cb.checked = checkedIds.has(cb.value);
-            });
-            this._updateMsCount(scopeKey);
-            this._syncMsDropdown(scopeKey);
-            if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
+        } finally {
+            this._endFilterMsDropdownRefresh(openFilterKeys);
         }
         this._state.filterListBoundsPrev = listBounds;
         this._updateApplyFiltersUi();
@@ -3966,12 +4513,21 @@ const searchOutputMethods = {
         if (clearPrompt) {
             clearPrompt.style.display = (prompt && prompt.value.trim()) ? '' : 'none';
         }
+        this._syncPromptFilterHeight(prompt);
         const after = (this._q('#wf-dash-after') || {}).value || '';
         const before = (this._q('#wf-dash-before') || {}).value || '';
         const clearDates = this._q('#wf-dash-clear-dates');
         if (clearDates) {
             clearDates.style.display = (after || before) ? '' : 'none';
         }
+    },
+
+    _syncPromptFilterHeight(el) {
+        const prompt = el || this._q('#wf-dash-prompt');
+        if (!prompt || String(prompt.tagName || '').toUpperCase() !== 'TEXTAREA') return;
+        prompt.style.height = 'auto';
+        const minHeight = 36;
+        prompt.style.height = Math.max(minHeight, prompt.scrollHeight) + 'px';
     },
 
     _validateRangeUi() {
@@ -4267,7 +4823,7 @@ const searchOutputMethods = {
                 const regexEl = this._q('#wf-dash-regex');
                 if (regexEl) regexEl.checked = false;
                 const sortEl = this._q('#wf-dash-sort');
-                if (sortEl) sortEl.value = 'desc';
+                if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
                 this._resetManualFilters();
                 this._resetFilterDraftsFromResults(items);
                 this._applyResultsPageSizeForNewSearch();
@@ -4340,7 +4896,7 @@ const searchOutputMethods = {
         const hidden = this._q('#wf-dash-hidden-versions');
         if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) sortEl.value = 'desc';
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
             const el = this._q(sel);
             if (el) el.checked = false;
@@ -4371,6 +4927,7 @@ const searchOutputMethods = {
         this._state.cardUi = {};
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
+        this._state.userStoryUi = {};
         this._state.resultsKindTab = 'all';
         this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
@@ -4388,7 +4945,7 @@ const searchOutputMethods = {
         const hidden = this._q('#wf-dash-hidden-versions');
         if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
-        if (sortEl) sortEl.value = 'desc';
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
@@ -4398,13 +4955,15 @@ const searchOutputMethods = {
 
     _currentClientFilters() {
         const draft = this._getFilterDraft();
+        const sort = this._readDashSortFromUi();
         return Object.assign({}, draft, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
             searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
-            sortOrder: ((this._q('#wf-dash-sort') || {}).value || 'desc') === 'asc' ? 'asc' : 'desc'
+            sortMetric: sort.sortMetric,
+            sortOrder: sort.sortOrder
         });
     },
 
@@ -4695,12 +5254,15 @@ const searchOutputMethods = {
         this._scheduleAutoHydrateVisiblePage();
     },
 
-    _copyChipHtml(text) {
+    _copyChipHtml(text, highlight) {
         const value = String(text == null ? '' : text).trim();
         if (!value) {
             return `<span style="display: inline-block; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
         }
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${dashEscHtml(value)}</button>`;
+        const inner = (highlight && highlight.query)
+            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
+            : dashEscHtml(value);
+        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
     },
 
     _copyIconHtml(text) {
@@ -4859,17 +5421,29 @@ const searchOutputMethods = {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
-    _qaFlaggedChipStyle(fontWeight) {
-        const weight = fontWeight || '700';
-        return `display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: ${weight}; color: ${DASH_FLAGGED_COLOR}; background: ${DASH_FLAGGED_BG};`;
+    _qaAlertIssueBadgeStyle() {
+        return this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600');
     },
 
-    _qaFlaggedBadgeStyle() {
-        return this._qaFlaggedChipStyle('700');
+    _qaAcceptedBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
+            background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+        };
     },
 
-    _qaFlaggedIssueBadgeStyle() {
-        return this._qaFlaggedChipStyle('600');
+    _qaReturnedBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #dc2626 40%, transparent)',
+            background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+        };
+    },
+
+    _qaOtherBlockStyle() {
+        return {
+            border: '1px solid color-mix(in srgb, #c2410c 45%, transparent)',
+            background: 'color-mix(in srgb, #c2410c 32%, var(--card, #ffffff))'
+        };
     },
 
     _disputeBlockStyle() {
@@ -4885,46 +5459,27 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
-    _qaYellowBlockStyle() {
-        return {
-            border: '1px solid #9a3412',
-            background: 'color-mix(in srgb, #c2410c 32%, var(--card, #ffffff))'
-        };
-    },
-
-    _qaFlaggedBlockStyle() {
-        return {
-            border: `1px solid ${DASH_FLAGGED_BORDER}`,
-            background: `color-mix(in srgb, ${DASH_FLAGGED_BORDER} 18%, var(--card, #ffffff))`
-        };
-    },
-
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
         const isFlagged = Boolean(qa.isFlaggedAsBugged);
-        const isEscalatedBlock = isSystem || isVerifierFailure || qa.isEscalated;
+        const isOther = isSystem || isVerifierFailure || qa.isEscalated || isFlagged;
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
-        let border;
-        let bg;
-        if (isFlagged) {
-            const flagged = this._qaFlaggedBlockStyle();
-            border = flagged.border;
-            bg = flagged.background;
-        } else if (isEscalatedBlock) {
-            const yellow = this._qaYellowBlockStyle();
-            border = yellow.border;
-            bg = yellow.background;
+        let blockStyle;
+        if (positive && !isOther) {
+            blockStyle = this._qaAcceptedBlockStyle();
+        } else if (!positive && !isOther) {
+            blockStyle = this._qaReturnedBlockStyle();
         } else {
-            border = positive ? 'color-mix(in srgb, #16a34a 35%, transparent)' : 'color-mix(in srgb, #dc2626 40%, transparent)';
-            bg = positive ? 'color-mix(in srgb, #16a34a 8%, transparent)' : 'color-mix(in srgb, #dc2626 8%, transparent)';
+            blockStyle = this._qaOtherBlockStyle();
         }
+        const border = blockStyle.border;
+        const bg = blockStyle.background;
         const alertBadge = this._qaAlertBadgeStyle();
-        const flaggedBadge = this._qaFlaggedBadgeStyle();
         const statusLabel = isVerifierFailure
             ? `<span style="${alertBadge}">Verifier Generation Error</span>`
             : (isSystem
@@ -4934,13 +5489,11 @@ const searchOutputMethods = {
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
-                        ? `<span style="${flaggedBadge}">Flagged as Bugged</span>`
+                        ? `<span style="${alertBadge}">Flagged as Bugged</span>`
                         : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
-        const issueBadgeStyle = isFlagged
-            ? this._qaFlaggedIssueBadgeStyle()
-            : (isEscalatedBlock
-                ? this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600')
-                : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);');
+        const issueBadgeStyle = isOther
+            ? this._qaAlertIssueBadgeStyle()
+            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
         const rejectionBadges = qa.rejectionBadges || [];
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
@@ -4967,7 +5520,7 @@ const searchOutputMethods = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
             : '';
         return `
-            <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
+            <div style="margin-top: 12px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>
@@ -4982,35 +5535,47 @@ const searchOutputMethods = {
             </div>`;
     },
 
+    _feedbackActionBadgeHtml(entry, compact) {
+        if (!entry) return '';
+        const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+            || isVerifierFailure;
+        let label = 'Returned';
+        if (isSystem) label = 'System';
+        else if (entry.isPositive) label = 'Accepted';
+        else if (entry.isEscalated) label = 'Escalated';
+        else if (entry.isFlaggedAsBugged) label = 'Flagged';
+
+        if (isSystem || entry.isEscalated || entry.isFlaggedAsBugged) {
+            let style = this._qaAlertBadgeStyle();
+            if (compact) {
+                style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+            }
+            return `<span style="${style}">${dashEscHtml(label)}</span>`;
+        }
+        const pad = compact ? '1px 6px' : '2px 8px';
+        const radius = compact ? '4px' : '6px';
+        const cls = entry.isPositive
+            ? 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);'
+            : 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        return `<span style="display: inline-flex; align-items: center; padding: ${pad}; border-radius: ${radius}; font-size: 10px; font-weight: 700; ${cls}">${dashEscHtml(label)}</span>`;
+    },
+
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
         const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
         const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
             || isVerifierFailure;
         const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
-        let label = 'Returned';
-        let cls = 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
-        if (isSystem) {
-            label = 'System';
-            cls = this._qaAlertBadgeStyle() + ' padding: 2px 8px; font-size: 10px;';
-        } else if (entry.isPositive) {
-            label = 'Accepted';
-            cls = 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
-        } else if (entry.isEscalated) {
-            label = 'Escalated';
-            cls = this._qaAlertBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
-        } else if (entry.isFlaggedAsBugged) {
-            label = 'Flagged';
-            cls = this._qaFlaggedBadgeStyle() + ' padding: 1px 6px; font-size: 10px;';
-        }
+        const actionBadge = this._feedbackActionBadgeHtml(entry, true);
         const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
         if (isSystem) {
             return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
-                <span style="${cls}">System</span>
+                ${actionBadge}
             </button>`;
         }
         return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
             <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
-            <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; ${cls}">${dashEscHtml(label)}</span>
+            ${actionBadge}
         </button>`;
     },
 
@@ -5152,6 +5717,8 @@ const searchOutputMethods = {
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
+        const versionActionEntry = feedbackEntries.length ? feedbackEntries[feedbackEntries.length - 1] : null;
+        const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const feedbackHtml = feedbackEntries.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx);
             const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
@@ -5159,12 +5726,14 @@ const searchOutputMethods = {
         }).join('');
         const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx) : '';
         const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
+        const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                        ${promptLabel}${this._copyIconHtml(version.prompt)}
+                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
+                        ${promptLabel}${versionActionBadge}${this._copyIconHtml(version.prompt)}
                     </div>
+                    <div style="flex-shrink: 0; margin-left: auto;">${submittedHtml}</div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
                 ${feedbackHtml}${fallbackHtml}${orphanHtml}
@@ -5191,8 +5760,11 @@ const searchOutputMethods = {
             : '—';
         let bodyHtml = `
             <div>
-                <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                    ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
+                        ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
+                    </div>
+                    <div style="flex-shrink: 0; margin-left: auto;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
             </div>`;
@@ -5204,7 +5776,7 @@ const searchOutputMethods = {
             bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         }
         const cardHtml = `
-            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
@@ -5213,19 +5785,21 @@ const searchOutputMethods = {
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx }))}
                         ${this._taskOpenLinkHtml(task, itemId)}
                     </div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                 </div>
+                ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
         return this._resultCardOuterWrap(item, cardHtml);
     },
 
     _resultCardOuterWrap(item, cardHtml) {
+        this._ensureCardActionStyles();
         const itemId = item.id;
         const kinds = (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
         const kindSet = new Set(kinds);
@@ -5246,10 +5820,14 @@ const searchOutputMethods = {
                 <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
+        const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 ${tabsRow}
-                ${cardHtml}
+                <div class="wf-dash-card-shell">
+                    ${actionRow}
+                    ${cardHtml}
+                </div>
             </div>`;
     },
 
@@ -5311,18 +5889,15 @@ const searchOutputMethods = {
             renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
         }
 
-        const selectedVersion = versionByDisplayNo.get(selectedDisplayNo) || versions[versions.length - 1];
         const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
 
         const reviewerBadges = allFeedback.length > 0
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
-        let row3Left;
+        let row3Left = '';
         if (expanded) {
             row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
-        } else {
-            row3Left = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(selectedVersion && selectedVersion.createdAt));
         }
 
         let versionControls = '';
@@ -5349,8 +5924,15 @@ const searchOutputMethods = {
             );
         }).join('');
 
+        const row3Html = (row3Left || versionControls)
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
+                    ${row3Left}
+                    ${versionControls}
+                </div>`
+            : '';
+
         const cardHtml = `
-            <article style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${this._statusBadgeHtml(task.status)}
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
@@ -5359,7 +5941,7 @@ const searchOutputMethods = {
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key))}
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex }))}
                         ${this._taskOpenLinkHtml(task, itemId)}
                     </div>
                 </div>
@@ -5367,10 +5949,8 @@ const searchOutputMethods = {
                     ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     ${reviewerBadges}
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
-                    ${row3Left}
-                    ${versionControls}
-                </div>
+                ${this._userStorySectionHtml(itemId)}
+                ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionSections}
                 </div>
@@ -5550,11 +6130,12 @@ function attachSearchOutputListeners(modal, dash) {
         const prompt = dash._q('#wf-dash-prompt');
         if (prompt) {
             prompt.addEventListener('input', () => {
+                dash._syncPromptFilterHeight(prompt);
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
             });
             prompt.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     dash._applyFiltersAndRender();
                 }
@@ -5726,12 +6307,28 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
+            if (removeResultBtn && modal.contains(removeResultBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = removeResultBtn.getAttribute('data-item-id');
+                if (itemId) dash._dropResultFromSearch(itemId);
+                return;
+            }
             const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
             if (hydrateBtn && modal.contains(hydrateBtn)) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = hydrateBtn.getAttribute('data-item-id');
                 if (itemId) void dash._hydrateCard(itemId);
+                return;
+            }
+            const userStoryBtn = e.target.closest('[data-wf-dash-user-story]');
+            if (userStoryBtn && modal.contains(userStoryBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = userStoryBtn.getAttribute('data-item-id');
+                if (itemId) void dash._toggleUserStory(itemId);
                 return;
             }
     });
@@ -5752,7 +6349,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.6',
+    _version: '1.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5796,6 +6393,7 @@ const plugin = {
                 dash._syncResultsPagerUi();
             },
             onActivate(modal, dash) {
+                dash._startResolvedDisputesPrefetchOnce();
                 requestAnimationFrame(() => dash._applyAllSidePanelWidths());
             }
         });
