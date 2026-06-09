@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.15',
+    _version: '5.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -222,6 +222,7 @@ const plugin = {
             msDropdownPinned: {},
             msDropdownToggled: {},
             msDropdownHoverTimers: {},
+            msHoverDisarmed: {},
             msDropdownRefreshActive: false,
             msBulkToggleMode: {},
             filterExpandAllIntent: 'expand'
@@ -658,6 +659,11 @@ const plugin = {
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
             '  box-shadow: 0 1px 0 var(--border, #e2e8f0);',
+            '}',
+            '#wf-dash-left-panel-filters > div [data-wf-dash-ms-wrap][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
+            '  top: -14px;',
+            '  margin: -14px -14px 0 -14px;',
+            '  padding: 14px 14px 0 14px;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
@@ -1324,6 +1330,9 @@ const plugin = {
             if (wrap.contains(e.relatedTarget)) return;
             const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
             if (!dashIsFilterMsKey(scopeKey)) return;
+            if (!wrap.contains(e.relatedTarget)) {
+                if (this._state.msHoverDisarmed) delete this._state.msHoverDisarmed[scopeKey];
+            }
             this._scheduleMsHoverClose(scopeKey);
         });
 
@@ -1750,8 +1759,15 @@ const plugin = {
         }
     },
 
+    _disarmMsHover(scopeKey) {
+        if (!this._state.msHoverDisarmed) this._state.msHoverDisarmed = {};
+        this._state.msHoverDisarmed[scopeKey] = true;
+        this._clearMsHoverTimers(scopeKey);
+    },
+
     _scheduleMsHoverOpen(scopeKey) {
         if (!dashIsFilterMsKey(scopeKey)) return;
+        if (this._state.msHoverDisarmed && this._state.msHoverDisarmed[scopeKey]) return;
         if (this._state.msDropdownToggled[scopeKey]) return;
         this._clearMsHoverTimers(scopeKey);
         const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
@@ -1929,6 +1945,7 @@ const plugin = {
                 delete this._state.msDropdownOpen[scopeKey];
                 delete this._state.msDropdownToggled[scopeKey];
                 this._setMsDropdownToggledAttr(scopeKey, false);
+                this._disarmMsHover(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 return;
             }
