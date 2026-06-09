@@ -16,12 +16,13 @@ const COPY_ICON_SVG =
     '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>' +
     '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>' +
     '</svg>';
+const VERIFIER_CODE_STYLE_ID = 'wf-fleet-verifier-code-block-styles';
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -62,6 +63,21 @@ const plugin = {
         state.fetchStarted = true;
         state.taskKey = taskKey;
         void this._fetchAndRender(state, slot, taskKey);
+    },
+
+    _ensureVerifierCodeStyles() {
+        if (document.getElementById(VERIFIER_CODE_STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = VERIFIER_CODE_STYLE_ID;
+        style.textContent = [
+            '.fleet-wf-verifier-code-wrap,',
+            '.fleet-wf-verifier-code-wrap pre,',
+            '.fleet-wf-verifier-code-wrap pre code.hljs{background:transparent!important;}',
+            '.fleet-wf-verifier-code-wrap mark.wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:unset;border-radius:2px;padding:0 1px;}',
+            '.fleet-wf-verifier-code-wrap mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}'
+        ].join('');
+        document.head.appendChild(style);
+        CleanupRegistry.registerElement(style);
     },
 
     _extractTaskKeyFromPath() {
@@ -316,12 +332,16 @@ const plugin = {
 
             this._attachCopyButtonToVerifierHeader(slot, source);
 
+            this._ensureVerifierCodeStyles();
+
             const wrap = document.createElement('div');
             wrap.setAttribute('data-fleet-plugin', PLUGIN_ID);
             wrap.className = 'fleet-wf-verifier-code-wrap';
+            wrap.style.background = 'transparent';
 
             const pre = document.createElement('pre');
-            pre.className = 'max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
+            pre.className = 'fleet-wf-verifier-code-pre max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
+            pre.style.background = 'transparent';
 
             const code = document.createElement('code');
             code.className = 'language-python';
