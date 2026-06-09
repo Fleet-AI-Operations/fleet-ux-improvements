@@ -3717,6 +3717,11 @@ const searchOutputMethods = {
 
     _cardActionAreaHtml(itemId) {
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">Add to Diff</span>
+                </span>
+            </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--get-verifier" data-wf-dash-get-verifier="1" data-item-id="${dashEscHtml(itemId)}" title="Get verifier" aria-label="Get verifier">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-label">Get Verifier</span>
@@ -3728,6 +3733,27 @@ const searchOutputMethods = {
                 </span>
             </button>
         </div>`;
+    },
+
+    _addToDiffFromCard(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || !item.task) {
+            Logger.warn('search-output: Add to Diff — item not found: ' + itemId);
+            return;
+        }
+        if (!Context.diffViewer || typeof Context.diffViewer.addTask !== 'function') {
+            Logger.warn('search-output: Add to Diff — Context.diffViewer not ready');
+            return;
+        }
+        const seed = {
+            taskId: item.task.id,
+            key: item.task.key || '',
+            authorName: (item.task.author && item.task.author.name) || '',
+            authorEmail: (item.task.author && item.task.author.email) || '',
+            promptVersions: item.hydrated ? (item.task.promptVersions || null) : null
+        };
+        Context.diffViewer.addTask(seed);
+        Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
     },
 
     _leftTabStyle(active) {
@@ -6626,6 +6652,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const addToDiffBtn = e.target.closest('[data-wf-dash-add-to-diff]');
+            if (addToDiffBtn && modal.contains(addToDiffBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = addToDiffBtn.getAttribute('data-item-id');
+                if (itemId) dash._addToDiffFromCard(itemId);
+                return;
+            }
             const getVerifierBtn = e.target.closest('[data-wf-dash-get-verifier]');
             if (getVerifierBtn && modal.contains(getVerifierBtn)) {
                 e.stopPropagation();
@@ -6676,7 +6710,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.37',
+    _version: '1.38',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
