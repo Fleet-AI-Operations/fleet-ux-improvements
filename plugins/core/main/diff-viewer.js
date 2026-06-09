@@ -10,6 +10,9 @@ const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 300;
 const DV_CHAR_DIFF_LIMIT = 15000;
+const DV_REEL_HALF_H = 14;
+const DV_REEL_PEER_H = 72;
+const DV_REEL_LENS_H = 220;
 
 let _dvSlotSeq = 0;
 
@@ -671,37 +674,35 @@ function _dvReelHtml(slot, slotIdx) {
     const canUp = lensIdx > 0;
     const canDown = lensIdx < versions.length - 1;
 
-    const halfBar = `<div style="height:14px;flex-shrink:0;background:var(--muted,rgba(0,0,0,0.06));border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted-foreground,#64748b);">···</div>`;
+    const halfBar = (visible) =>
+        `<div class="dv-reel-half${visible ? '' : ' dv-reel-half--hidden'}" aria-hidden="${visible ? 'false' : 'true'}">···</div>`;
 
-    const versionBox = (v, isLens) => {
+    const versionBox = (v, role) => {
+        const isLens = role === 'lens';
         const label = v ? 'v' + v.displayVersionNo : '';
-        const dimStyle = isLens
-            ? 'flex:2;min-height:0;overflow-y:auto;padding:6px 8px;background:var(--background,#fff);border-radius:6px;border:1px solid var(--border,#e2e8f0);box-sizing:border-box;white-space:pre-wrap;font-family:monospace;font-size:11px;line-height:1.5;word-break:break-word;position:relative;'
-            : 'flex:1;min-height:0;overflow-y:auto;padding:4px 8px;background:var(--muted,rgba(0,0,0,0.04));border-radius:4px;box-sizing:border-box;white-space:pre-wrap;font-family:monospace;font-size:10px;line-height:1.4;word-break:break-word;opacity:0.6;position:relative;';
+        const cls = isLens ? 'dv-reel-lens' : ('dv-reel-peer' + (v ? '' : ' dv-reel-peer--empty'));
         if (!v) {
-            return `<div style="${dimStyle}display:flex;align-items:center;justify-content:center;opacity:0.25;flex:${isLens?2:1};"><span style="font-size:11px;color:var(--muted-foreground,#64748b);">—</span></div>`;
+            return `<div class="${cls}"><span class="dv-reel-empty-mark">—</span></div>`;
         }
         const dataAttr = isLens ? ` data-dv-lens-pre="${slotIdx}"` : '';
-        return `<div style="${dimStyle}">
-            <span style="position:absolute;top:3px;right:5px;font-size:9px;font-weight:700;color:var(--muted-foreground,#64748b);pointer-events:none;font-family:inherit;">${label}</span>
-            <pre${dataAttr} style="margin:0;padding:0;white-space:pre-wrap;font-family:inherit;font-size:inherit;line-height:inherit;word-break:break-word;">${_dvEscHtml(v.prompt || '')}</pre>
+        return `<div class="${cls}">
+            <span class="dv-reel-version-label">${label}</span>
+            <pre${dataAttr}>${_dvEscHtml(v.prompt || '')}</pre>
         </div>`;
     };
 
-    const arrowStyle = (enabled) =>
-        `width:26px;height:26px;padding:0;border:1px solid var(--border,#e2e8f0);border-radius:4px;cursor:${enabled?'pointer':'default'};opacity:${enabled?1:0.3};background:var(--card,#fff);color:var(--foreground,#0f172a);font-size:13px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;`;
+    const arrowBtn = (dir, enabled) =>
+        `<button type="button" data-dv-lens-${dir}="${slotIdx}" ${enabled ? '' : 'disabled'} title="${dir === 'up' ? 'Previous' : 'Next'} version" class="dv-reel-arrow"${enabled ? '' : ' disabled'}>${dir === 'up' ? '↑' : '↓'}</button>`;
 
-    return `<div style="display:flex;flex:1;gap:4px;padding:6px 4px 6px 6px;min-height:0;overflow:hidden;box-sizing:border-box;">
-        <div style="display:flex;flex-direction:column;flex:1;gap:4px;min-height:0;overflow:hidden;">
-            ${hasMoreAbove ? halfBar : ''}
-            ${versionBox(prevV, false)}
-            ${versionBox(lensV, true)}
-            ${versionBox(nextV, false)}
-            ${hasMoreBelow ? halfBar : ''}
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:2px 0;flex-shrink:0;">
-            <button type="button" data-dv-lens-up="${slotIdx}" ${canUp?'':'disabled'} title="Previous version" style="${arrowStyle(canUp)}">↑</button>
-            <button type="button" data-dv-lens-down="${slotIdx}" ${canDown?'':'disabled'} title="Next version" style="${arrowStyle(canDown)}">↓</button>
+    return `<div class="dv-reel">
+        ${halfBar(hasMoreAbove)}
+        ${versionBox(prevV, 'peer')}
+        ${versionBox(lensV, 'lens')}
+        ${versionBox(nextV, 'peer')}
+        ${halfBar(hasMoreBelow)}
+        <div class="dv-reel-arrows">
+            ${arrowBtn('up', canUp)}
+            ${arrowBtn('down', canDown)}
         </div>
     </div>`;
 }
@@ -1095,7 +1096,114 @@ function _dvInjectStyles() {
         '  background: #6d28d9;',
         '}',
         '#wf-dash-modal [data-dv-drag] { cursor: grab; }',
-        '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }'
+        '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }',
+        '#wf-dash-modal .dv-reel {',
+        '  display: grid;',
+        '  grid-template-columns: 1fr 26px;',
+        '  grid-template-rows: ' + DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_LENS_H + 'px ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px;',
+        '  gap: 4px;',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '  padding: 6px 4px 6px 6px;',
+        '  box-sizing: border-box;',
+        '  align-content: start;',
+        '}',
+        '#wf-dash-modal .dv-reel-half {',
+        '  grid-column: 1;',
+        '  height: ' + DV_REEL_HALF_H + 'px;',
+        '  flex-shrink: 0;',
+        '  background: var(--muted, rgba(0,0,0,0.06));',
+        '  border-radius: 4px;',
+        '  display: flex;',
+        '  align-items: center;',
+        '  justify-content: center;',
+        '  font-size: 9px;',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-reel-half--hidden { visibility: hidden; }',
+        '#wf-dash-modal .dv-reel-peer {',
+        '  grid-column: 1;',
+        '  height: ' + DV_REEL_PEER_H + 'px;',
+        '  overflow: hidden;',
+        '  padding: 4px 8px;',
+        '  background: var(--muted, rgba(0,0,0,0.04));',
+        '  border-radius: 4px;',
+        '  box-sizing: border-box;',
+        '  position: relative;',
+        '  opacity: 0.6;',
+        '}',
+        '#wf-dash-modal .dv-reel-peer--empty { opacity: 0.25; }',
+        '#wf-dash-modal .dv-reel-peer pre {',
+        '  margin: 0;',
+        '  padding: 0;',
+        '  white-space: pre-wrap;',
+        '  font-family: monospace;',
+        '  font-size: 10px;',
+        '  line-height: 1.4;',
+        '  word-break: break-word;',
+        '  overflow: hidden;',
+        '  max-height: 100%;',
+        '}',
+        '#wf-dash-modal .dv-reel-lens {',
+        '  grid-column: 1;',
+        '  height: ' + DV_REEL_LENS_H + 'px;',
+        '  overflow-y: auto;',
+        '  padding: 6px 8px;',
+        '  background: var(--background, #fff);',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  box-sizing: border-box;',
+        '  position: relative;',
+        '}',
+        '#wf-dash-modal .dv-reel-lens pre {',
+        '  margin: 0;',
+        '  padding: 0;',
+        '  white-space: pre-wrap;',
+        '  font-family: monospace;',
+        '  font-size: 11px;',
+        '  line-height: 1.5;',
+        '  word-break: break-word;',
+        '}',
+        '#wf-dash-modal .dv-reel-version-label {',
+        '  position: absolute;',
+        '  top: 3px;',
+        '  right: 5px;',
+        '  font-size: 9px;',
+        '  font-weight: 700;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  pointer-events: none;',
+        '  font-family: inherit;',
+        '}',
+        '#wf-dash-modal .dv-reel-empty-mark {',
+        '  font-size: 11px;',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-reel-arrows {',
+        '  grid-column: 2;',
+        '  grid-row: 3;',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  align-items: center;',
+        '  justify-content: center;',
+        '  gap: 8px;',
+        '  align-self: center;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrow {',
+        '  width: 26px;',
+        '  height: 26px;',
+        '  padding: 0;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 4px;',
+        '  cursor: pointer;',
+        '  background: var(--card, #fff);',
+        '  color: var(--foreground, #0f172a);',
+        '  font-size: 13px;',
+        '  display: inline-flex;',
+        '  align-items: center;',
+        '  justify-content: center;',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrow:disabled { opacity: 0.3; cursor: default; }'
     ].join('\n');
     document.head.appendChild(style);
 }
@@ -1118,7 +1226,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
