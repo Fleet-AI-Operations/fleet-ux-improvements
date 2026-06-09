@@ -30,7 +30,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 100;
+const DASH_MS_HOVER_CLOSE_MS = 150;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -220,7 +220,8 @@ const plugin = {
             msDropdownOpen: {},
             msDropdownFilter: {},
             msDropdownPinned: {},
-            msDropdownHoverTimers: {}
+            msDropdownHoverTimers: {},
+            msDropdownRefreshActive: false
         };
     },
 
@@ -1180,6 +1181,7 @@ const plugin = {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                this._clearMsHoverTimers(msKey);
                 this._renderFilterLists();
             }
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
@@ -1194,6 +1196,7 @@ const plugin = {
             const msAll = e.target.closest('[data-wf-dash-ms-all]');
             if (msAll && modal.contains(msAll)) {
                 const key = msAll.getAttribute('data-wf-dash-ms-all');
+                this._clearMsHoverTimers(key);
                 this._setMultiselectChecked(key, true);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
@@ -1205,6 +1208,7 @@ const plugin = {
             const msNone = e.target.closest('[data-wf-dash-ms-none]');
             if (msNone && modal.contains(msNone)) {
                 const key = msNone.getAttribute('data-wf-dash-ms-none');
+                this._clearMsHoverTimers(key);
                 this._setMultiselectChecked(key, false);
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
@@ -1487,6 +1491,25 @@ const plugin = {
         return Object.keys(pinned).some((key) => pinned[key]);
     },
 
+    _filterMsOpenKeys() {
+        return DASH_FILTER_SCOPES.map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
+    },
+
+    _beginFilterMsDropdownRefresh() {
+        const openKeys = this._filterMsOpenKeys();
+        for (const key of openKeys) this._clearMsHoverTimers(key);
+        this._state.msDropdownRefreshActive = true;
+        return openKeys;
+    },
+
+    _endFilterMsDropdownRefresh(openKeys) {
+        for (const key of openKeys) {
+            this._state.msDropdownOpen[key] = true;
+            this._syncMsDropdown(key);
+        }
+        this._state.msDropdownRefreshActive = false;
+    },
+
     _clearMsHoverTimers(scopeKey) {
         const store = this._state.msDropdownHoverTimers || {};
         const timers = store[scopeKey];
@@ -1520,15 +1543,14 @@ const plugin = {
 
     _scheduleMsHoverClose(scopeKey) {
         if (!dashIsFilterMsKey(scopeKey)) return;
-        if (this._state.msDropdownPinned[scopeKey]) return;
-        if (this._anyFilterMsPinned()) return;
+        if (this._state.msDropdownRefreshActive) return;
         this._clearMsHoverTimers(scopeKey);
         const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
         timers.close = setTimeout(() => {
             delete timers.close;
-            if (this._state.msDropdownPinned[scopeKey]) return;
             if (!this._isMsDropdownOpen(scopeKey)) return;
             delete this._state.msDropdownOpen[scopeKey];
+            delete this._state.msDropdownPinned[scopeKey];
             this._syncMsDropdown(scopeKey);
         }, DASH_MS_HOVER_CLOSE_MS);
         this._state.msDropdownHoverTimers[scopeKey] = timers;

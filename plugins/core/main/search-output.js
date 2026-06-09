@@ -4099,41 +4099,46 @@ const searchOutputMethods = {
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, options)
             : lib.emptyFilterOptionCounts();
 
-        for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
-            const itemsEl = this._msItemsEl(scopeKey);
-            const wrap = this._filterScopeWrapEl(scopeKey);
-            if (!itemsEl) continue;
-            const optionItems = options[optionsKey] || [];
-            if (optionItems.length === 0) {
-                if (wrap) wrap.style.display = 'none';
-                continue;
+        const openFilterKeys = this._beginFilterMsDropdownRefresh();
+        try {
+            for (const { scopeKey, optionsKey, draftKey } of DASH_FILTER_SCOPES) {
+                const itemsEl = this._msItemsEl(scopeKey);
+                const wrap = this._filterScopeWrapEl(scopeKey);
+                if (!itemsEl) continue;
+                const optionItems = options[optionsKey] || [];
+                if (optionItems.length === 0) {
+                    if (wrap) wrap.style.display = 'none';
+                    continue;
+                }
+                if (wrap) wrap.style.display = '';
+                const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
+                const irrelevantSet = irrelevance[draftKey] || new Set();
+                const countsForScope = optionCounts[draftKey] || new Map();
+                const optionIds = optionItems.map((it) => it.id);
+                const prevSelected = syncDraftFromApplied
+                    ? null
+                    : new Set(this._selectedFromList(scopeKey));
+                const checkedIds = this._checkedIdsForFilterScope(
+                    draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
+                );
+                itemsEl.innerHTML = this._multiSelectItemsHtml(
+                    scopeKey,
+                    optionItems,
+                    emptyHint,
+                    false,
+                    false,
+                    irrelevantSet,
+                    countsForScope
+                );
+                itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                    cb.checked = checkedIds.has(cb.value);
+                });
+                this._updateMsCount(scopeKey);
+                this._syncMsDropdown(scopeKey);
+                if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
             }
-            if (wrap) wrap.style.display = '';
-            const emptyHint = optionItems.length === 0 ? 'No ' + this._filterScopeLabel(scopeKey).toLowerCase() + ' in results' : 'Run a search to enable';
-            const irrelevantSet = irrelevance[draftKey] || new Set();
-            const countsForScope = optionCounts[draftKey] || new Map();
-            const optionIds = optionItems.map((it) => it.id);
-            const prevSelected = syncDraftFromApplied
-                ? null
-                : new Set(this._selectedFromList(scopeKey));
-            const checkedIds = this._checkedIdsForFilterScope(
-                draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncDraftFromApplied
-            );
-            itemsEl.innerHTML = this._multiSelectItemsHtml(
-                scopeKey,
-                optionItems,
-                emptyHint,
-                false,
-                false,
-                irrelevantSet,
-                countsForScope
-            );
-            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-                cb.checked = checkedIds.has(cb.value);
-            });
-            this._updateMsCount(scopeKey);
-            this._syncMsDropdown(scopeKey);
-            if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
+        } finally {
+            this._endFilterMsDropdownRefresh(openFilterKeys);
         }
         this._state.filterListBoundsPrev = listBounds;
         this._updateApplyFiltersUi();
@@ -6135,7 +6140,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.17',
+    _version: '1.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
