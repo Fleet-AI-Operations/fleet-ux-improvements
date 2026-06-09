@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.135",
+  "archetypesVersion": "10.136",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,14 +16,14 @@
   "corePlugins": [
     {
       "name": "highlight-js.js",
-      "version": "1.1",
-      "hash": "sha256-81f6d43fde965262022b90664b5de0aac737062a663d42ec363e1fce5692889e",
+      "version": "1.2",
+      "hash": "sha256-5cbdba20129400ac15634e59d06390b872fe9781bcc5a0c30b398ba97f00f111",
       "log": false
     },
     {
       "name": "ops-tab.js",
-      "version": "7.10",
-      "hash": "sha256-67a1a1883c1d65140b22dc76ff66fa8d6ae8f518310259aad631352c29611720",
+      "version": "7.11",
+      "hash": "sha256-6a470956dcd9bc95865ee6f27890ae933ec04a62c64fdeca6e7329cf1ecfc016",
       "log": false
     },
     {

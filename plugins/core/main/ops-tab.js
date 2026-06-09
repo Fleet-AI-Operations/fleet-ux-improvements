@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.10',
+    _version: '7.11',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2416,6 +2416,7 @@ const plugin = {
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
             '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
             '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
+            '#wf-dash-modal #wf-ops-verifier-output-wrap,#wf-dash-modal #wf-ops-verifier-output-wrap pre,#wf-dash-modal #wf-ops-verifier-output.hljs{background:transparent!important;}',
             '#wf-dash-modal mark.wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:unset;border-radius:2px;padding:0 1px;}',
             '#wf-dash-modal mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
             '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}',

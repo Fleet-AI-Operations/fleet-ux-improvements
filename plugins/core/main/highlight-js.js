@@ -8,7 +8,9 @@ const HLJS_PYTHON_URL = HLJS_BASE + '/languages/python.min.js';
 const HLJS_THEME_URL = HLJS_BASE + '/styles/github.min.css';
 const HLJS_STYLE_ID = 'wf-fleet-hljs-theme';
 /** Appended after theme CSS so code blocks inherit the host surface background. */
-const HLJS_THEME_OVERRIDES = '\n.hljs{background:transparent}';
+const HLJS_THEME_OVERRIDES =
+    '\n.hljs{background:transparent!important}' +
+    '\npre code.hljs{padding:0;background:transparent!important}';
 
 function gmFetchText(url) {
     return new Promise((resolve, reject) => {
@@ -33,7 +35,7 @@ const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
 
