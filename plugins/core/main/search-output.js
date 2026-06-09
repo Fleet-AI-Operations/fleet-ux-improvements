@@ -25,7 +25,8 @@ const DASH_BOOTSTRAP_VERSION = 2;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DASH_TASK_KEY_RE = /^[A-Za-z0-9]+-\d+$/;
+/** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
+const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
 const DASH_TASKS_PAGE_SIZE = 100;
 const DASH_QA_PAGE_SIZE = 50;
 const DASH_DISPUTES_PAGE_SIZE = 50;
@@ -4747,8 +4748,8 @@ const searchOutputMethods = {
         const uuidMatch = text.match(DASH_UUID_RE);
         if (uuidMatch) return { kind: 'id', value: uuidMatch[0] };
 
-        const keyMatch = text.match(/[A-Za-z0-9]+-\d+/);
-        if (keyMatch && DASH_TASK_KEY_RE.test(keyMatch[0])) return { kind: 'key', value: keyMatch[0] };
+        const keyMatch = text.match(/task_[A-Za-z0-9_]+/);
+        if (keyMatch) return { kind: 'key', value: keyMatch[0] };
 
         return null;
     },
@@ -6635,7 +6636,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.33',
+    _version: '1.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
