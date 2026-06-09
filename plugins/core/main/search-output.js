@@ -2913,6 +2913,19 @@ const searchOutputMethods = {
         return 'No user story for this task.';
     },
 
+    _userStoryHasContent(ui) {
+        return ui.userStory != null && String(ui.userStory).trim().length > 0;
+    },
+
+    _userStoryIsAbsent(ui) {
+        return (ui.status === 'loaded' || ui.status === 'error') && !this._userStoryHasContent(ui);
+    },
+
+    _userStoryEmptyHtml(ui) {
+        const text = ui.message || 'No user story for this task.';
+        return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
+    },
+
     _userStoryBodyText(ui) {
         return ui.userStory != null && String(ui.userStory).trim()
             ? dashEscHtml(String(ui.userStory))
@@ -2929,9 +2942,15 @@ const searchOutputMethods = {
 
     _userStorySectionHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryIsAbsent(ui)) {
+            return `
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-wf-dash-user-story-absent="1" data-item-id="${dashEscHtml(itemId)}">
+                ${this._userStoryEmptyHtml(ui)}
+            </div>`;
+        }
         const btnLabel = this._userStoryBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
-        const hasPanel = ui.status === 'loaded' || ui.status === 'error';
+        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
         const panelOpen = ui.visible && !ui.animateOpen;
         const panelHtml = hasPanel
             ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
@@ -2975,7 +2994,17 @@ const searchOutputMethods = {
         const section = this._findUserStorySection(itemId);
         if (!section) return false;
         const ui = this._getUserStoryUi(itemId);
-        const btn = section.querySelector('[data-wf-dash-user-story]');
+        if (this._userStoryIsAbsent(ui)) {
+            section.setAttribute('data-wf-dash-user-story-absent', '1');
+            section.innerHTML = this._userStoryEmptyHtml(ui);
+            return true;
+        }
+        section.removeAttribute('data-wf-dash-user-story-absent');
+        let btn = section.querySelector('[data-wf-dash-user-story]');
+        if (!btn) {
+            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            btn = section.querySelector('[data-wf-dash-user-story]');
+        }
         if (btn) {
             btn.textContent = this._userStoryBtnLabel(ui);
             if (ui.status === 'loading') {
@@ -2986,7 +3015,7 @@ const searchOutputMethods = {
                 btn.removeAttribute('aria-busy');
             }
         }
-        const hasPanel = ui.status === 'loaded' || ui.status === 'error';
+        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
         let panel = section.querySelector('[data-wf-dash-user-story-panel]');
         if (!hasPanel) {
             if (panel) panel.remove();
@@ -3018,6 +3047,7 @@ const searchOutputMethods = {
         const ui = this._getUserStoryUi(id);
 
         if (ui.status === 'loaded' || ui.status === 'error') {
+            if (!this._userStoryHasContent(ui)) return;
             ui.visible = !ui.visible;
             Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
             if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
@@ -3029,12 +3059,9 @@ const searchOutputMethods = {
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
             ui.status = 'error';
             ui.message = 'User story unavailable (ops module not loaded).';
-            ui.visible = true;
-            ui.animateOpen = true;
+            ui.visible = false;
             Logger.warn('dashboard: user story fetch unavailable — ops module missing');
             this._patchTaskCard(id);
-            delete ui.animateOpen;
-            this._animateUserStoryOpen(id);
             return;
         }
 
@@ -3058,16 +3085,15 @@ const searchOutputMethods = {
                 Logger.log('dashboard: user story fetched — ' + id + ' (' + userStory.length + ' chars)');
             }
             ui.status = 'loaded';
-            ui.visible = true;
-            ui.animateOpen = true;
+            ui.visible = Boolean(userStory.trim());
+            if (ui.visible) ui.animateOpen = true;
         } catch (err) {
             ui.status = 'error';
             ui.userStory = null;
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
                 : 'Could not load user story.';
-            ui.visible = true;
-            ui.animateOpen = true;
+            ui.visible = false;
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         this._patchTaskCard(id);
@@ -6170,7 +6196,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.21',
+    _version: '1.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
