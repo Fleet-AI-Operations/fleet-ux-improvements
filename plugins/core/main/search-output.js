@@ -808,6 +808,35 @@ const searchOutputMethods = {
         }));
     },
 
+    _disputeRowEvalTaskId(row) {
+        if (!row || row.eval_task_id == null || row.eval_task_id === '') return '';
+        return String(row.eval_task_id);
+    },
+
+    _disputeRowMatchesTaskId(row, taskId) {
+        const rowTaskId = this._disputeRowEvalTaskId(row);
+        const target = taskId != null ? String(taskId) : '';
+        if (!rowTaskId || !target) return false;
+        return rowTaskId === target;
+    },
+
+    _logDisputeRowMismatch(row, targetTaskId) {
+        const disputeId = row && row.id != null ? String(row.id) : '?';
+        const rowTaskId = this._disputeRowEvalTaskId(row) || '?';
+        const target = targetTaskId != null ? String(targetTaskId) : '?';
+        Logger.warn('dashboard: dropped dispute row for mismatched task — dispute '
+            + disputeId + ', row task ' + rowTaskId + ', target task ' + target);
+    },
+
+    _filterDisputeRowsForTask(rows, taskId) {
+        const out = [];
+        for (const row of rows || []) {
+            if (this._disputeRowMatchesTaskId(row, taskId)) out.push(row);
+            else if (row) this._logDisputeRowMismatch(row, taskId);
+        }
+        return out;
+    },
+
     _stripResolvedDisputeRow(row) {
         if (!row) return null;
         return {
@@ -830,8 +859,13 @@ const searchOutputMethods = {
         const byTaskId = new Map();
         for (const raw of rows || []) {
             const stripped = this._stripResolvedDisputeRow(raw);
-            if (!stripped || !stripped.eval_task_id) continue;
-            const taskId = stripped.eval_task_id;
+            if (!stripped) continue;
+            const taskId = this._disputeRowEvalTaskId(stripped);
+            if (!taskId) continue;
+            if (!this._disputeRowMatchesTaskId(stripped, taskId)) {
+                this._logDisputeRowMismatch(stripped, taskId);
+                continue;
+            }
             const bucket = byTaskId.get(taskId);
             if (bucket) bucket.push(stripped);
             else byTaskId.set(taskId, [stripped]);
@@ -955,10 +989,14 @@ const searchOutputMethods = {
         const openDisputesByTaskId = new Map();
         let openRowCount = 0;
         for (const row of openResult.rows) {
-            if (!row || !row.eval_task_id) continue;
+            const taskId = this._disputeRowEvalTaskId(row);
+            if (!taskId) continue;
+            if (!this._disputeRowMatchesTaskId(row, taskId)) {
+                this._logDisputeRowMismatch(row, taskId);
+                continue;
+            }
             if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, false)) continue;
             openRowCount++;
-            const taskId = row.eval_task_id;
             const bucket = openDisputesByTaskId.get(taskId);
             if (bucket) bucket.push(row);
             else openDisputesByTaskId.set(taskId, [row]);
@@ -1078,7 +1116,8 @@ const searchOutputMethods = {
                 const taskId = ids[idx++];
                 try {
                     const rows = await this._fetchTaskDisputesForTask(taskId);
-                    if (rows.length > 0) byTaskId.set(taskId, rows);
+                    const validRows = this._filterDisputeRowsForTask(rows, taskId);
+                    if (validRows.length > 0) byTaskId.set(String(taskId), validRows);
                 } catch (e) {
                     Logger.warn('dashboard: task-disputes failed — task ' + String(taskId).slice(0, 8), e);
                 }
@@ -1142,8 +1181,8 @@ const searchOutputMethods = {
         for (const item of list) {
             const taskId = item.task.id;
             if (!allDisputeIds.has(taskId)) continue;
-            const openRows = openMap.get(taskId) || [];
-            const resolvedRows = resolvedByTaskId.get(taskId) || [];
+            const openRows = this._filterDisputeRowsForTask(openMap.get(taskId) || [], taskId);
+            const resolvedRows = this._filterDisputeRowsForTask(resolvedByTaskId.get(taskId) || [], taskId);
             const combined = [...openRows, ...resolvedRows];
             if (combined.length === 0) continue;
             this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
@@ -6310,7 +6349,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.28',
+    _version: '1.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
