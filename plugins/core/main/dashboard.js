@@ -13,6 +13,8 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
+const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
+const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
@@ -76,7 +78,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.22',
+    _version: '5.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -127,7 +129,7 @@ const plugin = {
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
-            splitPanelSectionHtml: (leftHtml, rightHtml) => self._splitPanelSectionHtml(leftHtml, rightHtml),
+            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
@@ -904,23 +906,37 @@ const plugin = {
         return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
     },
 
-    _readSidePanelWidthPref() {
-        try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY);
-            const n = parseInt(raw, 10);
-            if (!Number.isFinite(n) || n < DASH_SIDE_PANEL_MIN_WIDTH) return DASH_SIDE_PANEL_MIN_WIDTH;
-            return n;
-        } catch (_e) {
-            return DASH_SIDE_PANEL_MIN_WIDTH;
-        }
+    _sidePanelWidthStorageKey(scopeKey) {
+        return scopeKey === 'diff-viewer' ? DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY : DASH_SIDE_PANEL_WIDTH_STORAGE_KEY;
     },
 
-    _writeSidePanelWidthPref(widthPx) {
+    _defaultSidePanelWidthForScope(scopeKey) {
+        if (scopeKey === 'diff-viewer') {
+            const viewportW = this._pageWindow().innerWidth || 1200;
+            const basis = this._modal ? this._modal.getBoundingClientRect().width : viewportW;
+            const target = Math.round(basis * DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO);
+            return Math.max(DASH_SIDE_PANEL_MIN_WIDTH, target);
+        }
+        return DASH_SIDE_PANEL_MIN_WIDTH;
+    },
+
+    _readSidePanelWidthPref(scopeKey) {
+        const scope = scopeKey || 'dashboard';
+        try {
+            const raw = this._pageWindow().localStorage.getItem(this._sidePanelWidthStorageKey(scope));
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_WIDTH) return n;
+        } catch (_e) { /* fall through */ }
+        return this._defaultSidePanelWidthForScope(scope);
+    },
+
+    _writeSidePanelWidthPref(widthPx, scopeKey) {
+        const scope = scopeKey || 'dashboard';
         try {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+            this._pageWindow().localStorage.setItem(this._sidePanelWidthStorageKey(scope), String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write side panel width pref', e);
+            Logger.warn('dashboard: failed to write side panel width pref (' + scope + ')', e);
         }
     },
 
@@ -941,9 +957,10 @@ const plugin = {
             + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
     },
 
-    _splitPanelSectionHtml(leftHtml, rightHtml) {
-        const width = this._readSidePanelWidthPref();
-        return '<section data-wf-dash-split-root style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
+    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+        const scope = scopeKey || 'dashboard';
+        const width = this._readSidePanelWidthPref(scope);
+        return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
             + '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
@@ -977,10 +994,11 @@ const plugin = {
         left.style.maxWidth = clamped + 'px';
     },
 
-    _applyAllSidePanelWidths(widthPx) {
+    _applyAllSidePanelWidths() {
         if (!this._modal) return;
-        const pref = widthPx != null ? widthPx : this._readSidePanelWidthPref();
         this._modal.querySelectorAll('[data-wf-dash-split-root]').forEach((root) => {
+            const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+            const pref = this._readSidePanelWidthPref(scope);
             this._applySidePanelWidth(root, pref);
         });
     },
@@ -1191,10 +1209,11 @@ const plugin = {
                 doc.removeEventListener('mouseup', onUp);
                 doc.body.style.cursor = '';
                 doc.body.style.userSelect = '';
+                const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
                 const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
-                this._writeSidePanelWidthPref(finalWidth);
-                this._applyAllSidePanelWidths(finalWidth);
-                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px');
+                this._writeSidePanelWidthPref(finalWidth, scope);
+                this._applySidePanelWidth(root, finalWidth);
+                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
             };
             doc.body.style.cursor = 'col-resize';
             doc.body.style.userSelect = 'none';
@@ -2105,7 +2124,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.revalidateOnDashboardTabActivated === 'function') {
             Context.opsTab.revalidateOnDashboardTabActivated(this._modal);
         }
-        if (tabId === 'search-output' || tabId === 'team-members') {
+        if (tabId === 'search-output' || tabId === 'team-members' || tabId === 'diff-viewer') {
             requestAnimationFrame(() => this._applyAllSidePanelWidths());
         }
     },

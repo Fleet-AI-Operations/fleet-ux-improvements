@@ -612,7 +612,7 @@ function _dvPanelHtml(dash) {
     </div>`;
 
     return dash.splitPanelSectionHtml
-        ? dash.splitPanelSectionHtml(leftHtml, rightHtml)
+        ? dash.splitPanelSectionHtml(leftHtml, rightHtml, 'diff-viewer')
         : `<div style="display:flex;flex:1;min-height:0;overflow:hidden;">${leftHtml}${rightHtml}</div>`;
 }
 
@@ -1118,7 +1118,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
