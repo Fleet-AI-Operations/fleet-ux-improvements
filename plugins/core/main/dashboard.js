@@ -76,7 +76,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.13',
+    _version: '5.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1151,7 +1151,7 @@ const plugin = {
         const hasFilterBox = this._msScopeHasFilterBox(scopeKey);
         if (!bulkActions && !hasFilterBox) return '';
         const bulkToggle = bulkActions
-            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Select all">None</button>`
+            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Deselect all">None</button>`
             : '';
         const filterInput = hasFilterBox
             ? `<div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none;">
@@ -1549,18 +1549,18 @@ const plugin = {
     _applyMsBulkToggleLabel(scopeKey) {
         const btn = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
         if (!btn) return;
-        const isAll = this._msBulkToggleMode(scopeKey) === 'all';
-        btn.textContent = isAll ? 'All' : 'None';
-        btn.setAttribute('aria-label', isAll ? 'Clear all selections' : 'Select all');
-        btn.style.color = isAll
+        const intentAll = this._msBulkToggleMode(scopeKey) === 'all';
+        btn.textContent = intentAll ? 'All' : 'None';
+        btn.setAttribute('aria-label', intentAll ? 'Select all' : 'Deselect all');
+        btn.style.color = intentAll
             ? 'var(--brand, var(--primary, #2563eb))'
             : 'var(--muted-foreground, #64748b)';
     },
 
     _toggleMsBulkSelection(scopeKey) {
-        const nextAll = this._msBulkToggleMode(scopeKey) !== 'all';
-        this._setMsBulkToggleMode(scopeKey, nextAll ? 'all' : 'none');
-        this._setMultiselectChecked(scopeKey, nextAll);
+        const intentAll = this._msBulkToggleMode(scopeKey) === 'all';
+        this._setMultiselectChecked(scopeKey, intentAll);
+        this._setMsBulkToggleMode(scopeKey, intentAll ? 'none' : 'all');
         this._applyMsBulkToggleLabel(scopeKey);
     },
 

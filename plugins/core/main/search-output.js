@@ -4322,6 +4322,7 @@ const searchOutputMethods = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
                 });
+                this._setMsBulkToggleMode(scopeKey, 'none');
                 this._updateMsCount(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -6349,7 +6350,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.29',
+    _version: '1.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
