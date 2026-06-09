@@ -292,7 +292,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -548,7 +548,7 @@ const plugin = {
 
     _taskPromptRatings(task) {
         return [...new Set((task.allFeedback || [])
-            .filter((e) => !(e.display && e.display.isSystemFeedback))
+            .filter((e) => e.display && !e.display.isSystemFeedback)
             .map((e) => e.display.qualityRating)
             .filter(Boolean))];
     },
@@ -557,7 +557,9 @@ const plugin = {
         const labels = new Set();
         for (const entry of task.allFeedback || []) {
             if (entry.isPositive) continue;
-            for (const label of entry.display.rejectionBadges || []) labels.add(label);
+            const display = entry.display;
+            if (!display) continue;
+            for (const label of display.rejectionBadges || []) labels.add(label);
         }
         return [...labels];
     },
@@ -648,13 +650,15 @@ const plugin = {
         const texts = [];
         for (const entry of item.task.allFeedback || []) {
             if (entry.linkedDisplayVersionNo !== displayNo) continue;
-            if (entry.display && entry.display.isSystemFeedback) {
-                for (const block of entry.display.textBlocks || []) {
+            const display = entry.display;
+            if (!display) continue;
+            if (display.isSystemFeedback) {
+                for (const block of display.textBlocks || []) {
                     if (block.text) texts.push(block.text);
                 }
                 continue;
             }
-            for (const block of entry.display.textBlocks || []) texts.push(block.text);
+            for (const block of display.textBlocks || []) texts.push(block.text);
         }
         return texts;
     },
@@ -924,7 +928,10 @@ const plugin = {
                 const returnType = this._returnTypeOf(entry);
                 if (returnType) returnTypes.add(returnType);
                 if (!entry.isPositive) {
-                    for (const label of entry.display.rejectionBadges || []) taskIssues.add(label);
+                    const display = entry.display;
+                    if (display) {
+                        for (const label of display.rejectionBadges || []) taskIssues.add(label);
+                    }
                 }
             }
         }

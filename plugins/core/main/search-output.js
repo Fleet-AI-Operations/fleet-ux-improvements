@@ -2401,8 +2401,7 @@ const searchOutputMethods = {
             case 'prompt_word_count':
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
-                if (!item.qaFeedback) return null;
-                return (item.qaFeedback.rejectionBadges || []).length;
+                return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
             case 'prompt_version_count':
                 if (!item.hydrated) return null;
                 return (task.promptVersions || []).length;
@@ -6311,7 +6310,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.27',
+    _version: '1.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
