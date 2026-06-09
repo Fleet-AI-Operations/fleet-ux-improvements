@@ -864,9 +864,15 @@ function _dvPanelHtml(dash) {
         </div>
     </div>`;
 
-    return dash.splitPanelSectionHtml
-        ? dash.splitPanelSectionHtml(leftHtml, rightHtml, 'diff-viewer')
-        : `<div style="display:flex;flex:1;min-height:0;overflow:hidden;">${leftHtml}${rightHtml}</div>`;
+    return _dvSplitPanelSection(dash, leftHtml, rightHtml);
+}
+
+function _dvSplitPanelSection(dash, leftHtml, rightHtml) {
+    if (dash && typeof dash._splitPanelSectionHtml === 'function') {
+        return dash._splitPanelSectionHtml(leftHtml, rightHtml, 'diff-viewer');
+    }
+    Logger.warn('diff-viewer: split panel unavailable — side panel will not be resizable');
+    return `<div style="display:flex;flex:1;min-height:0;overflow:hidden;width:100%;">${leftHtml}${rightHtml}</div>`;
 }
 
 // ── Slot card HTML ──
@@ -1703,7 +1709,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.9',
+    _version: '1.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

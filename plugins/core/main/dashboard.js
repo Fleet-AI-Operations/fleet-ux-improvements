@@ -78,7 +78,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.23',
+    _version: '5.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -965,6 +965,10 @@ const plugin = {
             + this._splitPanelHandleHtml()
             + '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
             + rightHtml + '</div></section>';
+    },
+
+    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey);
     },
 
     _clampSidePanelWidth(root, widthPx) {

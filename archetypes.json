@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.151",
+  "archetypesVersion": "10.152",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -46,8 +46,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "5.23",
-      "hash": "sha256-57cf7c6359fb6c538a718befc88832534ef68f2a5ae3ed050403a64c2eb0d612",
+      "version": "5.24",
+      "hash": "sha256-335014ffac9526f378e60cb6b33c4e8265419c2e7c2234f517e2df01390fc3ac",
       "log": false
     },
     {
@@ -70,8 +70,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.9",
-      "hash": "sha256-360f4ebc5cdc0482b645e94ec0cfc7c236406f61c65f11358645bb8b8043eb8e",
+      "version": "1.10",
+      "hash": "sha256-ee0c9693a6cde5b1e48caf4c2569c2b3f963fe9531b9bfb67eda8abded9d29b1",
       "log": false
     }
   ],
