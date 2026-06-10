@@ -213,6 +213,31 @@ function _dvRenderCompareHtml(diff, addStyle) {
     return html;
 }
 
+function _dvDiffUnits(baseText, compareText, granularity) {
+    const isChar = granularity === 'char';
+    if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
+        return { a: _dvTokenize(baseText), b: _dvTokenize(compareText), effectiveGranularity: 'word' };
+    }
+    if (isChar) {
+        return { a: baseText.split(''), b: compareText.split(''), effectiveGranularity: 'char' };
+    }
+    return { a: _dvTokenize(baseText), b: _dvTokenize(compareText), effectiveGranularity: 'word' };
+}
+
+function _dvSimilarityPercent(baseText, compareText, granularity) {
+    const { a, b, effectiveGranularity } = _dvDiffUnits(baseText, compareText, granularity);
+    if (baseText === compareText) {
+        return { percent: 100, noDifference: true, effectiveGranularity };
+    }
+    if (a.length === 0 && b.length === 0) {
+        return { percent: 100, noDifference: true, effectiveGranularity };
+    }
+    const dp = _dvComputeLCS(a, b);
+    const lcs = dp[a.length][b.length];
+    const percent = Math.round((2 * lcs / (a.length + b.length)) * 100);
+    return { percent, noDifference: false, effectiveGranularity };
+}
+
 function _dvDiffPair(baseText, compareText, granularity) {
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
@@ -1069,9 +1094,59 @@ function _dvSlotAboveLabelText() {
     return _dvState.compMode === 'rolling' ? 'ROLLING COMPARISON' : 'BASE COMPARISON';
 }
 
+function _dvActiveCompareTexts() {
+    if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) return null;
+    if (_dvState.compMode === 'rolling') {
+        _dvClampRollingLeft();
+        const left = _dvState.slots[_dvState.rollingLeft];
+        const right = _dvState.slots[_dvState.rollingLeft + 1];
+        if (!left || !right) return null;
+        return { leftText: _dvSlotPromptText(left), rightText: _dvSlotPromptText(right) };
+    }
+    if (_dvState.slots.length === 2) {
+        return { leftText: _dvSlotPromptText(_dvState.slots[0]), rightText: _dvSlotPromptText(_dvState.slots[1]) };
+    }
+    if (_dvState.hoverSlotIdx != null && _dvState.hoverSlotIdx > 0) {
+        return {
+            leftText: _dvSlotPromptText(_dvState.slots[0]),
+            rightText: _dvSlotPromptText(_dvState.slots[_dvState.hoverSlotIdx])
+        };
+    }
+    return null;
+}
+
+function _dvAboveLabelInnerHtml() {
+    const mode = _dvSlotAboveLabelText();
+    const pair = _dvActiveCompareTexts();
+    if (!pair) {
+        return '<span class="dv-slot-above-label-mode">' + mode + '</span>';
+    }
+    const { leftText, rightText } = pair;
+    const { percent, noDifference, effectiveGranularity } = _dvSimilarityPercent(leftText, rightText, _dvState.granularity);
+    const granLabel = effectiveGranularity === 'char' ? 'char' : 'word';
+    if (noDifference) {
+        return '<span class="dv-slot-above-label-mode">' + mode + '</span>'
+            + '<span class="dv-slot-above-label-sep" aria-hidden="true">·</span>'
+            + '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
+    }
+    return '<span class="dv-slot-above-label-mode">' + mode + '</span>'
+        + '<span class="dv-slot-above-label-sep" aria-hidden="true">·</span>'
+        + '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' diff similarity</span>';
+}
+
+function _dvUpdateAboveLabels(modal) {
+    if (!modal) return;
+    const inner = _dvAboveLabelInnerHtml();
+    const baseLabel = _dvQ(modal, 'dv-base-above-label');
+    if (baseLabel) baseLabel.innerHTML = inner;
+    modal.querySelectorAll('.dv-slot-above-label:not(.dv-slot-above-label--spacer)').forEach((el) => {
+        el.innerHTML = inner;
+    });
+}
+
 function _dvSlotAboveLabelHtml(slotIdx) {
     if (slotIdx === 0) {
-        return '<div class="dv-slot-above-label">' + _dvSlotAboveLabelText() + '</div>';
+        return '<div class="dv-slot-above-label">' + _dvAboveLabelInnerHtml() + '</div>';
     }
     return '<div class="dv-slot-above-label dv-slot-above-label--spacer" aria-hidden="true"></div>';
 }
@@ -1293,6 +1368,7 @@ function _dvRenderDiffs(modal) {
         _dvRemoveRollingOverlay(modal);
         const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
         if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(_dvSlotPromptText(_dvState.slots[0])), null);
+        _dvUpdateAboveLabels(modal);
         _dvScheduleReelLensSync(modal);
         return;
     }
@@ -1321,6 +1397,7 @@ function _dvRenderDiffs(modal) {
                 lensPre.innerHTML = _dvPlainPromptHtml(_dvSlotPromptText(slot));
             }
         }
+        _dvUpdateAboveLabels(modal);
         _dvScheduleReelLensSync(modal);
         return;
     }
@@ -1352,6 +1429,7 @@ function _dvRenderDiffs(modal) {
         const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
         if (lensPre) lensPre.innerHTML = compareHtml;
     }
+    _dvUpdateAboveLabels(modal);
     _dvScheduleReelLensSync(modal);
 }
 
@@ -1566,12 +1644,7 @@ function _dvSyncCompModeUi(modal) {
     if (slotsArea) {
         slotsArea.classList.toggle('dv-slots-area--rolling', _dvState.compMode === 'rolling');
     }
-    const labelText = _dvSlotAboveLabelText();
-    const baseLabel = _dvQ(modal, 'dv-base-above-label');
-    if (baseLabel) baseLabel.textContent = labelText;
-    modal.querySelectorAll('.dv-slot-above-label:not(.dv-slot-above-label--spacer)').forEach((el) => {
-        el.textContent = labelText;
-    });
+    _dvUpdateAboveLabels(modal);
     modal.querySelectorAll('[data-dv-comp-mode]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-comp-mode') === _dvState.compMode;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -1779,6 +1852,7 @@ function _dvAttachListeners(modal, dash) {
         _dvState.hoverSlotIdx = idx;
         _dvApplyCompareHoverRing(idx, modal);
         if (_dvState.slots.length > 2) _dvApplyHoverDiff(idx, modal);
+        _dvUpdateAboveLabels(modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
@@ -1791,6 +1865,7 @@ function _dvAttachListeners(modal, dash) {
         if (related instanceof Node && slot.contains(related)) return;
         _dvState.hoverSlotIdx = null;
         _dvClearHoverDiff(modal);
+        _dvUpdateAboveLabels(modal);
     });
 }
 
@@ -1882,11 +1957,17 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-slot-above-label {',
         '  flex-shrink: 0;',
-        '  height: 18px;',
+        '  min-height: 18px;',
         '  margin-bottom: 4px;',
         '  box-sizing: border-box;',
         '  display: flex;',
         '  align-items: center;',
+        '  gap: 6px;',
+        '  flex-wrap: wrap;',
+        '  width: fit-content;',
+        '  max-width: 100%;',
+        '}',
+        '#wf-dash-modal .dv-slot-above-label-mode {',
         '  font-size: 9px;',
         '  font-weight: 700;',
         '  background: var(--brand, #2563eb);',
@@ -1895,8 +1976,28 @@ function _dvInjectStyles() {
         '  padding: 1px 5px;',
         '  letter-spacing: 0.04em;',
         '  line-height: 1.3;',
-        '  width: fit-content;',
-        '  max-width: 100%;',
+        '}',
+        '#wf-dash-modal .dv-slot-above-label-sep {',
+        '  font-size: 9px;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  line-height: 1;',
+        '}',
+        '#wf-dash-modal .dv-slot-above-label-sim {',
+        '  font-size: 9px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #94a3b8);',
+        '  letter-spacing: 0.02em;',
+        '  line-height: 1.3;',
+        '}',
+        '#wf-dash-modal .dv-slot-above-label-nodiff {',
+        '  font-size: 9px;',
+        '  font-weight: 700;',
+        '  color: var(--muted-foreground, #94a3b8);',
+        '  border: 1px solid var(--border, #475569);',
+        '  border-radius: 3px;',
+        '  padding: 1px 5px;',
+        '  letter-spacing: 0.04em;',
+        '  line-height: 1.3;',
         '}',
         '#wf-dash-modal .dv-slot-above-label--spacer {',
         '  visibility: hidden;',
@@ -2142,7 +2243,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.26',
+    _version: '1.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
