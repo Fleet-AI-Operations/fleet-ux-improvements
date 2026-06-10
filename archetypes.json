@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.128",
+  "archetypesVersion": "10.178",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,14 +16,14 @@
   "corePlugins": [
     {
       "name": "highlight-js.js",
-      "version": "1.0",
-      "hash": "sha256-a0865ecf28064393a3f23f19f280b8de44afbbc61f170bae484314eb7fb81b97",
+      "version": "1.2",
+      "hash": "sha256-5cbdba20129400ac15634e59d06390b872fe9781bcc5a0c30b398ba97f00f111",
       "log": false
     },
     {
       "name": "ops-tab.js",
-      "version": "7.9",
-      "hash": "sha256-a82a4d8bcde2be5c0ee6d1451a0502d6ddc4da2f0964c126ca161881896b57ef",
+      "version": "7.14",
+      "hash": "sha256-a0a43b4b0751d40d60df8a61ffb386f2dc65bec1dbab6c659622a505a128a638",
       "log": false
     },
     {
@@ -46,26 +46,32 @@
     },
     {
       "name": "dashboard.js",
-      "version": "5.17",
-      "hash": "sha256-bca5f7108615b79c7840ed9a320dbe915f8965762f48b51c8d7d12cb3a73e977",
+      "version": "5.27",
+      "hash": "sha256-d3cbe77ef8f61358d88475eb29ff9e8a89db7a093bc61b07ea87675fad7a8a7d",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "1.34",
-      "hash": "sha256-fd84c55ab68c56725ce925e1b7697706af331a8cbde9958bbe88024871278bd8",
+      "version": "1.45",
+      "hash": "sha256-3b78a981006f1aae592d31768e82c12937025495131cb412e1258be0ae337a08",
       "log": false
     },
     {
       "name": "team-members.js",
-      "version": "2.2",
-      "hash": "sha256-1fe71abba61996f75a1c846d8015eced56ec958cf6f064ac532b832aab95db86",
+      "version": "2.3",
+      "hash": "sha256-92d125b61cf3a81020082cbc7e73e21ec484d002806762960ae3fc3cf0609b52",
       "log": false
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "1.0",
-      "hash": "sha256-0571981347a46d97c38aefa3f1088537418ea88b736bd55ed53cf66c307d9b71",
+      "version": "1.6",
+      "hash": "sha256-8ef4909d467001e766c36ff6d3a93d18baf1ecc8648bf03b419ccaa2392c9852",
+      "log": false
+    },
+    {
+      "name": "diff-viewer.js",
+      "version": "1.30",
+      "hash": "sha256-751b99a4ed3f5670f168af75fd4ad4b1afac112d56027e574bd45882ea5ea647",
       "log": false
     }
   ],
@@ -505,8 +511,8 @@
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "1.3",
-          "hash": "sha256-905f8b805953c56d5c7809373f221eef9150333509565346823af6a6506262ad",
+          "version": "1.5",
+          "hash": "sha256-1c52f0d53031ee33897fdbbc8d236b6204900f863075736776d764f7d97f0ab3",
           "log": false
         },
         {

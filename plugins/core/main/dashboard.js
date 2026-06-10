@@ -13,6 +13,8 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
+const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
+const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
@@ -76,7 +78,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.17',
+    _version: '5.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -123,11 +125,12 @@ const plugin = {
             inputStyle: () => self._inputStyle(),
             navBtnStyle: () => self._navBtnStyle(),
             navBtnPrimaryStyle: () => self._navBtnPrimaryStyle(),
+            dashBtnClass: (variant, size) => self._dashBtnClass(variant, size),
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => self._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
-            splitPanelSectionHtml: (leftHtml, rightHtml) => self._splitPanelSectionHtml(leftHtml, rightHtml),
+            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
@@ -246,7 +249,7 @@ const plugin = {
     },
 
     _isDashboardReady() {
-        const required = ['search-output', 'team-members', 'verifier-fetcher'];
+        const required = ['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer'];
         return required.every((id) => Boolean(this._tabsById && this._tabsById[id]));
     },
 
@@ -376,6 +379,7 @@ const plugin = {
             this._ensureSpinnerKeyframes();
             this._ensureMsOptionStyles();
             this._ensureHeaderActionStyles();
+            this._ensureDashButtonStyles();
             this._ensureUserStoryStyles();
             this._ensureSplitPanelResizeStyles();
             this._attachSplitPanelResize();
@@ -455,8 +459,6 @@ const plugin = {
             '  padding: 0 12px !important;',
             '  font-size: 11px !important;',
             '  font-weight: 600 !important;',
-            '  color: var(--foreground, #0f172a);',
-            '  background: var(--background, #fff);',
             '}',
             '#wf-dash-modal #wf-dash-close.wf-dash-header-btn {',
             '  width: 32px !important;',
@@ -625,6 +627,7 @@ const plugin = {
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"] {',
             '  z-index: 1;',
+            '  overflow: hidden;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"] [data-wf-dash-ms-panel] {',
             '  position: static !important;',
@@ -640,16 +643,14 @@ const plugin = {
             '  opacity: 0;',
             '  max-height: 0;',
             '  overflow: hidden;',
-            '  border-top: 1px solid transparent;',
+            '  background: transparent;',
             '  transition:',
             '    max-height ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
-            '    opacity ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease,',
-            '    border-color ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease;',
+            '    opacity ' + DASH_MS_FLYOUT_ANIM_MS + 'ms ease;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-panel] {',
             '  max-height: min(480px, 55vh);',
             '  opacity: 1;',
-            '  border-top-color: var(--border, #e2e8f0);',
             '  pointer-events: auto;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-items] {',
@@ -658,13 +659,8 @@ const plugin = {
             '  overflow-x: hidden;',
             '  -webkit-overflow-scrolling: touch;',
             '}',
-            '#wf-dash-modal [data-wf-dash-ms-wrap][data-wf-dash-ms-flyout="1"][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
-            '  box-shadow: 0 1px 0 var(--border, #e2e8f0);',
-            '}',
-            '#wf-dash-left-panel-filters > div [data-wf-dash-ms-wrap][data-wf-dash-ms-toggled="1"][data-wf-dash-ms-open="1"] [data-wf-dash-ms-sticky] {',
-            '  top: -14px;',
-            '  margin: -14px -14px 0 -14px;',
-            '  padding: 14px 14px 0 14px;',
+            '#wf-dash-left-panel-filters > div > :first-child {',
+            '  margin-top: 14px;',
             '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
@@ -849,7 +845,7 @@ const plugin = {
                 </div>
                 <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
                     ${gradeAssessmentsLink}
-                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn">Open Settings</button>
+                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn wf-dash-btn wf-dash-btn--basic wf-dash-btn--nav">Open Settings</button>
                     <button type="button" id="wf-dash-close" class="wf-dash-header-btn" aria-label="Close dashboard" title="Close">${this._dashCloseIconSvg()}</button>
                 </div>
             </div>
@@ -910,23 +906,159 @@ const plugin = {
         return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
     },
 
-    _readSidePanelWidthPref() {
-        try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY);
-            const n = parseInt(raw, 10);
-            if (!Number.isFinite(n) || n < DASH_SIDE_PANEL_MIN_WIDTH) return DASH_SIDE_PANEL_MIN_WIDTH;
-            return n;
-        } catch (_e) {
-            return DASH_SIDE_PANEL_MIN_WIDTH;
-        }
+    _dashBtnClass(variant, size) {
+        const variants = {
+            primary: 'wf-dash-btn--primary',
+            secondary: 'wf-dash-btn--secondary',
+            basic: 'wf-dash-btn--basic'
+        };
+        const sizes = {
+            nav: 'wf-dash-btn--nav',
+            regular: 'wf-dash-btn--regular',
+            icon: 'wf-dash-btn--icon',
+            compact: 'wf-dash-btn--compact'
+        };
+        const v = variants[variant] || variants.basic;
+        const s = sizes[size] || sizes.nav;
+        return 'wf-dash-btn ' + v + ' ' + s;
     },
 
-    _writeSidePanelWidthPref(widthPx) {
+    _ensureDashButtonStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-btn-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-btn-style';
+        style.textContent = [
+            '#wf-dash-modal .wf-dash-btn {',
+            '  appearance: none;',
+            '  -webkit-appearance: none;',
+            '  box-sizing: border-box;',
+            '  margin: 0;',
+            '  font-family: inherit;',
+            '  font-weight: 600;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
+            '  white-space: nowrap;',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  line-height: 1.4;',
+            '  text-decoration: none;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--nav {',
+            '  padding: 4px 10px;',
+            '  font-size: 11px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--regular {',
+            '  padding: 7px 14px;',
+            '  font-size: 12px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--compact {',
+            '  padding: 2px 10px;',
+            '  font-size: 11px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--icon {',
+            '  width: 26px;',
+            '  height: 26px;',
+            '  padding: 0;',
+            '  font-size: 13px;',
+            '  flex-shrink: 0;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--full {',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--secondary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: var(--background, #fff);',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic {',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--background, #fff);',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic:hover:not(:disabled) {',
+            '  background: var(--muted, #f1f5f9);',
+            '  border-color: var(--foreground, #0f172a);',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary:disabled,',
+            '#wf-dash-modal .wf-dash-btn--secondary:disabled {',
+            '  cursor: not-allowed;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #94a3b8);',
+            '  opacity: 0.85;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic:disabled {',
+            '  cursor: not-allowed;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #94a3b8);',
+            '  opacity: 0.85;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn:disabled[aria-busy="true"] {',
+            '  opacity: 0.65;',
+            '  cursor: wait;',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic {',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic:hover:not(:disabled) {',
+            '  color: var(--foreground, #0f172a);',
+            '  border-color: var(--foreground, #0f172a);',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
+    },
+
+    _sidePanelWidthStorageKey(scopeKey) {
+        return scopeKey === 'diff-viewer' ? DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY : DASH_SIDE_PANEL_WIDTH_STORAGE_KEY;
+    },
+
+    _defaultSidePanelWidthForScope(scopeKey) {
+        if (scopeKey === 'diff-viewer') {
+            const viewportW = this._pageWindow().innerWidth || 1200;
+            const basis = this._modal ? this._modal.getBoundingClientRect().width : viewportW;
+            const target = Math.round(basis * DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO);
+            return Math.max(DASH_SIDE_PANEL_MIN_WIDTH, target);
+        }
+        return DASH_SIDE_PANEL_MIN_WIDTH;
+    },
+
+    _readSidePanelWidthPref(scopeKey) {
+        const scope = scopeKey || 'dashboard';
+        try {
+            const raw = this._pageWindow().localStorage.getItem(this._sidePanelWidthStorageKey(scope));
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_WIDTH) return n;
+        } catch (_e) { /* fall through */ }
+        return this._defaultSidePanelWidthForScope(scope);
+    },
+
+    _writeSidePanelWidthPref(widthPx, scopeKey) {
+        const scope = scopeKey || 'dashboard';
         try {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(DASH_SIDE_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+            this._pageWindow().localStorage.setItem(this._sidePanelWidthStorageKey(scope), String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write side panel width pref', e);
+            Logger.warn('dashboard: failed to write side panel width pref (' + scope + ')', e);
         }
     },
 
@@ -947,13 +1079,18 @@ const plugin = {
             + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
     },
 
-    _splitPanelSectionHtml(leftHtml, rightHtml) {
-        const width = this._readSidePanelWidthPref();
-        return '<section data-wf-dash-split-root style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
+    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+        const scope = scopeKey || 'dashboard';
+        const width = this._readSidePanelWidthPref(scope);
+        return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
             + '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
             + rightHtml + '</div></section>';
+    },
+
+    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey);
     },
 
     _clampSidePanelWidth(root, widthPx) {
@@ -983,10 +1120,11 @@ const plugin = {
         left.style.maxWidth = clamped + 'px';
     },
 
-    _applyAllSidePanelWidths(widthPx) {
+    _applyAllSidePanelWidths() {
         if (!this._modal) return;
-        const pref = widthPx != null ? widthPx : this._readSidePanelWidthPref();
         this._modal.querySelectorAll('[data-wf-dash-split-root]').forEach((root) => {
+            const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+            const pref = this._readSidePanelWidthPref(scope);
             this._applySidePanelWidth(root, pref);
         });
     },
@@ -996,26 +1134,6 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-user-story-style';
         style.textContent = [
-            '#wf-dash-modal .wf-dash-user-story-btn {',
-            '  padding: 4px 10px;',
-            '  font-size: 11px;',
-            '  font-weight: 600;',
-            '  border-radius: 6px;',
-            '  cursor: pointer;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--background, #fff);',
-            '  color: var(--muted-foreground, #64748b);',
-            '  font-family: inherit;',
-            '}',
-            '#wf-dash-modal .wf-dash-user-story-btn:hover:not(:disabled) {',
-            '  background: var(--muted, #f1f5f9);',
-            '  border-color: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--muted-foreground, #64748b));',
-            '  color: var(--foreground, #0f172a);',
-            '}',
-            '#wf-dash-modal .wf-dash-user-story-btn:disabled {',
-            '  opacity: 0.65;',
-            '  cursor: wait;',
-            '}',
             '#wf-dash-modal .wf-dash-user-story-body {',
             '  margin: 8px 0 0;',
             '  padding: 6px 0 2px 12px;',
@@ -1105,6 +1223,26 @@ const plugin = {
             '  background: #dc2626;',
             '  color: #fff;',
             '}',
+            '#wf-dash-modal .wf-dash-card-action--get-verifier {',
+            '  width: auto;',
+            '  min-width: 5.5rem;',
+            '  padding: 0 8px;',
+            '  background: #64748b;',
+            '  color: #fff;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--get-verifier:hover {',
+            '  background: #475569;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
+            '  width: auto;',
+            '  min-width: 5.5rem;',
+            '  padding: 0 8px;',
+            '  background: #64748b;',
+            '  color: #fff;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
+            '  background: #475569;',
+            '}',
             '#wf-dash-modal .wf-dash-card-action:hover {',
             '  transform: translateY(-12px);',
             '  transition: transform 160ms ease-out, background-color 160ms ease-out;',
@@ -1120,14 +1258,23 @@ const plugin = {
             '  min-height: 24px;',
             '  box-sizing: border-box;',
             '}',
-            '#wf-dash-modal .wf-dash-card-action-icon {',
+            '#wf-dash-modal .wf-dash-card-action-icon,',
+            '#wf-dash-modal .wf-dash-card-action-label {',
             '  opacity: 0;',
-            '  font-size: 14px;',
-            '  font-weight: 700;',
             '  line-height: 1;',
+            '  white-space: nowrap;',
             '  transition: opacity 160ms ease-in;',
             '}',
-            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-icon {',
+            '#wf-dash-modal .wf-dash-card-action-icon {',
+            '  font-size: 14px;',
+            '  font-weight: 700;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action-label {',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-icon,',
+            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-label {',
             '  opacity: 1;',
             '  transition: opacity 160ms ease-out;',
             '}'
@@ -1178,10 +1325,11 @@ const plugin = {
                 doc.removeEventListener('mouseup', onUp);
                 doc.body.style.cursor = '';
                 doc.body.style.userSelect = '';
+                const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
                 const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
-                this._writeSidePanelWidthPref(finalWidth);
-                this._applyAllSidePanelWidths(finalWidth);
-                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px');
+                this._writeSidePanelWidthPref(finalWidth, scope);
+                this._applySidePanelWidth(root, finalWidth);
+                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
             };
             doc.body.style.cursor = 'col-resize';
             doc.body.style.userSelect = 'none';
@@ -2076,7 +2224,7 @@ const plugin = {
                 btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
             }
         });
-        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'update']);
+        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer', 'update']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
             if (flexPanels.has(tabId)) {
@@ -2092,7 +2240,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.revalidateOnDashboardTabActivated === 'function') {
             Context.opsTab.revalidateOnDashboardTabActivated(this._modal);
         }
-        if (tabId === 'search-output' || tabId === 'team-members') {
+        if (tabId === 'search-output' || tabId === 'team-members' || tabId === 'diff-viewer') {
             requestAnimationFrame(() => this._applyAllSidePanelWidths());
         }
     },

@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.9',
+    _version: '7.14',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2384,6 +2384,12 @@ const plugin = {
         return OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
     },
 
+    _opsDashBtnClass(variant, size) {
+        const dash = Context.dashboard;
+        if (dash && typeof dash.dashBtnClass === 'function') return dash.dashBtnClass(variant, size);
+        return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+    },
+
     _opsEscapeHtml(str) {
         return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     },
@@ -2394,16 +2400,11 @@ const plugin = {
         style.id = 'wf-ops-spinner-style';
         style.textContent = [
             '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
-            '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
-            '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
-            '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
-            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
             '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
             '.wf-ops-edit-btn:hover{background:#ca8a04!important;color:#fff!important;border-color:#ca8a04!important;}',
-            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex-shrink:0;border-radius:6px;color:var(--muted-foreground,#64748b);border:1px solid var(--border,#e5e5e5);background:var(--background,white);text-decoration:none;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
-            '.wf-ops-profile-link-btn:hover{background:var(--foreground,#0f172a)!important;color:var(--background,#fff)!important;border-color:var(--foreground,#0f172a)!important;}',
+            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;}',
             '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
             '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
             '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
@@ -2416,8 +2417,9 @@ const plugin = {
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
             '.wf-ops-edit-item-btn:not(:disabled):hover{background:rgba(79,70,229,0.08)!important;}',
             '.wf-ops-edit-item-btn:disabled{cursor:default!important;}',
-            '#wf-dash-modal .wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;border-radius:2px;padding:0 1px;}',
-            '#wf-dash-modal .wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
+            '#wf-dash-modal #wf-ops-verifier-output-wrap,#wf-dash-modal #wf-ops-verifier-output-wrap pre,#wf-dash-modal #wf-ops-verifier-output.hljs{background:transparent!important;}',
+            '#wf-dash-modal mark.wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:unset;border-radius:2px;padding:0 1px;}',
+            '#wf-dash-modal mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
             '#wf-dash-modal a.wf-dash-header-btn.wf-ops-grade-header-link{text-decoration:none!important;}',
             '.wf-ops-member-stats-grid{display:grid;grid-template-columns:max-content max-content max-content max-content;column-gap:10px;row-gap:2px;}',
             '.wf-ops-member-stats-grid--plain{grid-template-columns:1fr;}'
@@ -3001,16 +3003,15 @@ const plugin = {
         const url = String(profileUrl || '').trim();
         if (!url) return '';
         const label = title || 'Open profile in Fleet';
-        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn" ' +
+        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
             'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
             this._opsProfileLinkIconSvg() + '</a>';
     },
 
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
-        return '<button type="button" class="wf-ops-action-btn wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);padding:4px 8px;border:1px solid var(--border,#e5e5e5);' +
-            'border-radius:4px;background:var(--background,white);white-space:nowrap;cursor:pointer;">Search Worker Output</button>';
+        return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
+            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
@@ -3696,26 +3697,87 @@ const plugin = {
         return starts;
     },
 
-    _buildVerifierContentSearchHtml(text, query, activeIndex) {
-        const source = String(text || '');
-        const needle = String(query || '');
-        const starts = this._findVerifierContentMatchStarts(source, needle);
-        if (!needle) return { html: '', matchCount: 0, activeIndex: 0, matchStarts: [] };
-        const safeActive = starts.length === 0 ? 0 : Math.max(0, Math.min(activeIndex, starts.length - 1));
-        let html = '';
-        let last = 0;
-        starts.forEach((start, idx) => {
-            html += this._opsEscapeHtml(source.slice(last, start));
-            const activeClass = idx === safeActive ? ' wf-ops-verifier-hit-active' : '';
-            html += '<mark class="wf-ops-verifier-hit' + activeClass + '" data-wf-ops-verifier-hit="' + idx + '">'
-                + this._opsEscapeHtml(source.slice(start, start + needle.length)) + '</mark>';
-            last = start + needle.length;
+    _getVerifierTextSegmentsInRange(codeEl, rangeStart, rangeEnd) {
+        const segments = [];
+        if (!codeEl || rangeEnd <= rangeStart) return segments;
+        const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT, null);
+        let offset = 0;
+        let node;
+        while ((node = walker.nextNode())) {
+            const nodeStart = offset;
+            const nodeEnd = offset + node.length;
+            if (nodeEnd <= rangeStart || nodeStart >= rangeEnd) {
+                offset = nodeEnd;
+                continue;
+            }
+            segments.push({
+                node,
+                segStart: Math.max(rangeStart, nodeStart) - nodeStart,
+                segEnd: Math.min(rangeEnd, nodeEnd) - nodeStart
+            });
+            offset = nodeEnd;
+        }
+        return segments;
+    },
+
+    _wrapVerifierTextNodeSegment(textNode, segStart, segEnd, hitIndex, isActive) {
+        if (!textNode || segEnd <= segStart) return;
+        const text = textNode.textContent || '';
+        const before = text.slice(0, segStart);
+        const match = text.slice(segStart, segEnd);
+        const after = text.slice(segEnd);
+        const parent = textNode.parentNode;
+        if (!parent || !match) return;
+
+        const mark = document.createElement('mark');
+        mark.className = 'wf-ops-verifier-hit' + (isActive ? ' wf-ops-verifier-hit-active' : '');
+        mark.setAttribute('data-wf-ops-verifier-hit', String(hitIndex));
+        mark.textContent = match;
+
+        if (before) parent.insertBefore(document.createTextNode(before), textNode);
+        parent.insertBefore(mark, textNode);
+        if (after) parent.insertBefore(document.createTextNode(after), textNode);
+        parent.removeChild(textNode);
+    },
+
+    _applyVerifierSearchMarksInDom(codeEl, matchStarts, needleLength, activeIndex) {
+        if (!codeEl || !matchStarts || matchStarts.length === 0 || !needleLength) {
+            return Math.max(0, activeIndex || 0);
+        }
+        const safeActive = Math.max(0, Math.min(activeIndex, matchStarts.length - 1));
+        const sorted = matchStarts
+            .map((start, idx) => ({ start, idx }))
+            .sort((a, b) => b.start - a.start);
+
+        sorted.forEach(({ start, idx }) => {
+            const rangeEnd = start + needleLength;
+            const segments = this._getVerifierTextSegmentsInRange(codeEl, start, rangeEnd);
+            for (let i = segments.length - 1; i >= 0; i--) {
+                const seg = segments[i];
+                this._wrapVerifierTextNodeSegment(
+                    seg.node,
+                    seg.segStart,
+                    seg.segEnd,
+                    idx,
+                    idx === safeActive
+                );
+            }
         });
-        html += this._opsEscapeHtml(source.slice(last));
-        return { html, matchCount: starts.length, activeIndex: safeActive, matchStarts: starts };
+        return safeActive;
+    },
+
+    _setVerifierContentMatchActive(output, activeIndex) {
+        if (!output) return;
+        output.querySelectorAll('.wf-ops-verifier-hit').forEach((el) => {
+            el.classList.remove('wf-ops-verifier-hit-active');
+        });
+        output.querySelectorAll('[data-wf-ops-verifier-hit="' + activeIndex + '"]').forEach((el) => {
+            el.classList.add('wf-ops-verifier-hit-active');
+        });
     },
 
     _updateVerifierContentSearchUi(modal) {
+        const toolbar = this._opsQuery(modal, '#wf-ops-verifier-output-toolbar', 'verifierOutputToolbar');
         const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
         const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
         const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
@@ -3727,7 +3789,10 @@ const plugin = {
         const matchCount = search.matchStarts ? search.matchStarts.length : 0;
         const hasQuery = Boolean((search.query || '').trim());
 
-        if (searchWrap) {
+        if (toolbar) {
+            toolbar.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (searchWrap && !toolbar) {
             searchWrap.style.display = hasOutput ? 'flex' : 'none';
         }
         if (copyBtn) {
@@ -3748,6 +3813,9 @@ const plugin = {
         const navDisabled = !hasQuery || matchCount === 0;
         if (prevBtn) prevBtn.disabled = navDisabled;
         if (nextBtn) nextBtn.disabled = navDisabled;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.syncOutputToolbar === 'function') {
+            Context.verifierFetcherUi.syncOutputToolbar(modal);
+        }
     },
 
     _clearVerifierContentSearch(modal) {
@@ -3776,25 +3844,13 @@ const plugin = {
 
         if (wrap) {
             wrap.style.display = text ? 'flex' : 'none';
+            wrap.style.flexDirection = 'row';
         }
         if (!output) {
             this._updateVerifierContentSearchUi(modal);
             return;
         }
 
-        if (query) {
-            const built = this._buildVerifierContentSearchHtml(text, query, this._opsVerifierContentSearch.index);
-            this._opsVerifierContentSearch.matchStarts = built.matchStarts;
-            this._opsVerifierContentSearch.index = built.activeIndex;
-            output.innerHTML = built.html;
-            output.className = 'language-python';
-            this._updateVerifierContentSearchUi(modal);
-            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-            return;
-        }
-
-        this._opsVerifierContentSearch.matchStarts = [];
-        this._opsVerifierContentSearch.index = 0;
         if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
             await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
         } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
@@ -3802,6 +3858,21 @@ const plugin = {
         } else {
             output.textContent = text;
             output.className = text ? 'language-python' : 'language-plaintext';
+        }
+
+        if (query) {
+            const matchStarts = this._findVerifierContentMatchStarts(text, query);
+            this._opsVerifierContentSearch.matchStarts = matchStarts;
+            this._opsVerifierContentSearch.index = this._applyVerifierSearchMarksInDom(
+                output,
+                matchStarts,
+                query.length,
+                this._opsVerifierContentSearch.index
+            );
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+        } else {
+            this._opsVerifierContentSearch.matchStarts = [];
+            this._opsVerifierContentSearch.index = 0;
         }
         this._updateVerifierContentSearchUi(modal);
     },
@@ -3822,7 +3893,14 @@ const plugin = {
         const count = search.matchStarts ? search.matchStarts.length : 0;
         if (!count || !delta) return;
         search.index = (search.index + delta + count) % count;
-        void this._refreshVerifierOutputDisplay(modal);
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputStep');
+        if (output && output.querySelector('.wf-ops-verifier-hit')) {
+            this._setVerifierContentMatchActive(output, search.index);
+            this._updateVerifierContentSearchUi(modal);
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+        } else {
+            void this._refreshVerifierOutputDisplay(modal);
+        }
         Logger.debug('ops-tab: verifier content match ' + (search.index + 1) + '/' + count);
     },
 
@@ -3994,18 +4072,9 @@ const plugin = {
                             </label>
                             ${submoduleSwitchHTML}
                         </div>
-                        <button type="button" id="wf-ops-open-dashboard-btn" class="wf-ops-action-btn" style="
+                        <button type="button" id="wf-ops-open-dashboard-btn" class="${this._opsDashBtnClass('secondary', 'regular')} wf-dash-btn--full" style="
                             display: ${openDashboardBtnDisplay};
-                            width: 100%;
                             margin-top: 10px;
-                            padding: 8px 14px;
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: var(--brand, #4f46e5);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            cursor: pointer;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
                     </div>
@@ -4024,15 +4093,8 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">
-                        <button type="button" id="wf-ops-password-submit" class="wf-ops-action-btn" style="
+                        <button type="button" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
                             flex-shrink: 0;
-                            padding: 8px 14px;
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: var(--brand, #4f46e5);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
                         ">Unlock</button>
                     </div>
                     <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
@@ -4123,36 +4185,9 @@ const plugin = {
                     box-sizing: border-box;
                 ">
                 <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">New Tab</button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--muted-foreground, #64748b);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Copy</button>
+                    <button type="button" id="wf-ops-open-link" class="${this._opsDashBtnClass('secondary', 'nav')}">Open</button>
+                    <button type="button" id="wf-ops-open-link-new-tab" class="${this._opsDashBtnClass('secondary', 'nav')}">New Tab</button>
+                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" class="${this._opsDashBtnClass('basic', 'nav')}">Copy</button>
                 </div>
             </div>`;
     },
@@ -4160,7 +4195,7 @@ const plugin = {
 
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
-            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
+            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('basic', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
     },
 
 
@@ -4381,6 +4416,9 @@ const plugin = {
         this._opsTabState.verifierOutput = this._opsVerifierSourceText || '';
         this._opsTabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
         this._opsTabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.captureScratchpadTabState === 'function') {
+            this._opsTabState.verifierScratchpad = Context.verifierFetcherUi.captureScratchpadTabState(modal);
+        }
         this._opsTabState.verifierFetchState = fetchState
             ? {
                 resolved: fetchState.resolved,
@@ -4422,6 +4460,9 @@ const plugin = {
             );
         } else {
             this._opsVerifierFetchState = null;
+        }
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
+            Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);
         }
     },
 

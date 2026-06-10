@@ -15,6 +15,7 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
+const DASH_CARD_TAB_BG = '#64748b';
 const DASH_CARD_KIND_TAB_HEIGHT = '24px';
 const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
 const DASH_CARD_KIND_TAB_GAP = '0.25rem';
@@ -104,19 +105,9 @@ const DASH_FILTER_SCOPES = [
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
-    { id: 'prompt_char_count', label: 'Prompt Length (chars)', type: 'number' },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
-    { id: 'rejection_issue_count', label: 'QA Issue Badge Count', type: 'number' },
-    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true },
-    { id: 'qa_feedback_count', label: 'Total QA Rounds †', type: 'number', hydrateHint: true },
-    { id: 'returned_feedback_count', label: 'Returned QA Count †', type: 'number', hydrateHint: true },
-    { id: 'flagged_feedback_count', label: 'Flagged as Bugged Count †', type: 'number', hydrateHint: true },
-    { id: 'card_activity_at', label: 'Card Activity Date', type: 'date' },
-    { id: 'task_created_at', label: 'Task Created Date', type: 'date' },
-    { id: 'dispute_submitted_at', label: 'Latest Dispute Date', type: 'date' },
-    { id: 'first_qa_at', label: 'First QA Date †', type: 'date', hydrateHint: true },
-    { id: 'last_qa_at', label: 'Last QA Date †', type: 'date', hydrateHint: true },
-    { id: 'latest_version_at', label: 'Latest Prompt Version Date †', type: 'date', hydrateHint: true }
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true }
 ];
 
 const DASH_OUTPUT_NUM_COMPARATORS = [
@@ -2431,77 +2422,34 @@ const searchOutputMethods = {
         return { rows, andOr };
     },
 
+    _displayPromptVersionCount(task) {
+        const versions = (task && task.promptVersions) || [];
+        if (versions.length === 0) return 1;
+        const lib = dashLib();
+        if (versions[0].displayVersionNo != null) {
+            return versions.length;
+        }
+        const rawLike = versions.map((v) => ({
+            id: v.id,
+            version_no: v.version_no != null ? v.version_no : v.versionNo,
+            created_at: v.created_at != null ? v.created_at : v.createdAt,
+            prompt: v.prompt,
+            env_key: v.env_key != null ? v.env_key : v.envKey
+        }));
+        return lib.computeDisplayVersions(rawLike).length;
+    },
+
     _searchOutputManualFilterValue(item, fieldId) {
         const task = item && item.task;
         if (!task) return null;
-        const allFeedback = task.allFeedback || [];
-        const nonSystemFeedback = allFeedback.filter((e) => !e.isSystemFeedback && !(e.display && e.display.isSystemFeedback));
         switch (fieldId) {
-            case 'prompt_char_count':
-                return (task.prompt || '').length;
             case 'prompt_word_count':
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
                 return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
             case 'prompt_version_count':
-                if (!item.hydrated) return null;
-                return (task.promptVersions || []).length;
-            case 'qa_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.length;
-            case 'returned_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => !e.isPositive).length;
-            case 'flagged_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => e.isFlaggedAsBugged).length;
-            case 'card_activity_at': {
-                const ts = Date.parse(item.sortAt || '');
-                return Number.isFinite(ts) ? ts : null;
-            }
-            case 'task_created_at': {
-                const ts = Date.parse(task.createdAt || '');
-                return Number.isFinite(ts) ? ts : null;
-            }
-            case 'dispute_submitted_at': {
-                const disputes = item.disputes || [];
-                if (disputes.length === 0) return null;
-                let maxTs = null;
-                for (const d of disputes) {
-                    const ts = Date.parse(d.submittedAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
-            case 'first_qa_at': {
-                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
-                let minTs = null;
-                for (const e of nonSystemFeedback) {
-                    const ts = Date.parse(e.feedbackAt || '');
-                    if (Number.isFinite(ts) && (minTs == null || ts < minTs)) minTs = ts;
-                }
-                return minTs;
-            }
-            case 'last_qa_at': {
-                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
-                let maxTs = null;
-                for (const e of nonSystemFeedback) {
-                    const ts = Date.parse(e.feedbackAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
-            case 'latest_version_at': {
-                if (!item.hydrated) return null;
-                const versions = task.promptVersions || [];
-                if (versions.length === 0) return null;
-                let maxTs = null;
-                for (const v of versions) {
-                    const ts = Date.parse(v.createdAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
+                if (!item.hydrated) return 1;
+                return this._displayPromptVersionCount(task);
             default:
                 return null;
         }
@@ -2963,11 +2911,9 @@ const searchOutputMethods = {
         const nextBtn = this._q('#wf-dash-results-next');
         if (prevBtn) {
             prevBtn.disabled = !meta || !meta.canPrev;
-            prevBtn.style.cssText = this._pagerNavBtnStyle(prevBtn.disabled);
         }
         if (nextBtn) {
             nextBtn.disabled = !meta || !meta.canNext;
-            nextBtn.style.cssText = this._pagerNavBtnStyle(nextBtn.disabled);
         }
     },
 
@@ -3106,7 +3052,7 @@ const searchOutputMethods = {
             : '';
         return `
             <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
-                <button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                <button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
                 ${panelHtml}
             </div>`;
     },
@@ -3149,7 +3095,7 @@ const searchOutputMethods = {
         section.removeAttribute('data-wf-dash-user-story-absent');
         let btn = section.querySelector('[data-wf-dash-user-story]');
         if (!btn) {
-            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
             btn = section.querySelector('[data-wf-dash-user-story]');
         }
         if (btn) {
@@ -3184,6 +3130,33 @@ const searchOutputMethods = {
             panel.setAttribute('aria-hidden', ui.visible ? 'false' : 'true');
         }
         return true;
+    },
+
+    async _getVerifierFromCard(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) {
+            Logger.warn('dashboard: get verifier — no task on card ' + id);
+            return;
+        }
+        const taskKey = String(item.task.key || '').trim();
+        const taskId = String(item.task.id || '').trim();
+        const inputValue = taskKey || taskId;
+        if (!inputValue) {
+            Logger.warn('dashboard: get verifier — missing task key/id on card ' + id);
+            return;
+        }
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.handleVerifierFetch !== 'function') {
+            Logger.warn('dashboard: get verifier unavailable — ops module missing');
+            return;
+        }
+        this._setActiveTab('verifier-fetcher');
+        const input = this._q('#wf-ops-verifier-input');
+        if (input) input.value = inputValue;
+        Logger.log('dashboard: get verifier from card — ' + (taskKey || taskId.slice(0, 8) + '…'));
+        await opsTab.handleVerifierFetch(this._modal);
     },
 
     async _toggleUserStory(itemId) {
@@ -3685,17 +3658,47 @@ const searchOutputMethods = {
         if (!present || !cfg) {
             return '<div style="' + shell + ' visibility: hidden;" aria-hidden="true"></div>';
         }
-        return '<div style="' + shell + ' background: ' + cfg.tabBg + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
+        return '<div style="' + shell + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
     },
 
     _cardActionAreaHtml(itemId) {
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">Add to Diff</span>
+                </span>
+            </button>
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--get-verifier" data-wf-dash-get-verifier="1" data-item-id="${dashEscHtml(itemId)}" title="Get verifier" aria-label="Get verifier">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">Get Verifier</span>
+                </span>
+            </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
                 </span>
             </button>
         </div>`;
+    },
+
+    _addToDiffFromCard(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || !item.task) {
+            Logger.warn('search-output: Add to Diff — item not found: ' + itemId);
+            return;
+        }
+        if (!Context.diffViewer || typeof Context.diffViewer.addTask !== 'function') {
+            Logger.warn('search-output: Add to Diff — Context.diffViewer not ready');
+            return;
+        }
+        const seed = {
+            taskId: item.task.id,
+            key: item.task.key || '',
+            authorName: (item.task.author && item.task.author.name) || '',
+            authorEmail: (item.task.author && item.task.author.email) || ''
+        };
+        Context.diffViewer.addTask(seed);
+        Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
     },
 
     _leftTabStyle(active) {
@@ -3726,8 +3729,8 @@ const searchOutputMethods = {
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-reset-filters" style="${this._navBtnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-apply-filters" style="${this._navBtnPrimaryStyle()}">Apply</button>
+                                    <button type="button" id="wf-dash-reset-filters" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" id="wf-dash-apply-filters" class="${this._dashBtnClass('primary', 'nav')}">Apply</button>
                                 </div>
                             </div>
                         </nav>
@@ -3798,8 +3801,8 @@ const searchOutputMethods = {
                                     </div>
                                 </div>
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
+                                    <button type="button" id="wf-dash-clear-params" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" id="wf-dash-search" class="${this._dashBtnClass('primary', 'nav')}">Search</button>
                                 </div>
                             </div>
                             <div id="wf-dash-section-retrieve" style="${section}">
@@ -3808,14 +3811,14 @@ const searchOutputMethods = {
                                 <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID, version ID, task key, or URL" style="${input}">
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-retrieve-clear" style="${this._navBtnStyle()}">Clear</button>
-                                    <button type="button" id="wf-dash-retrieve-btn" style="${this._navBtnPrimaryStyle()}">Retrieve</button>
+                                    <button type="button" id="wf-dash-retrieve-clear" class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
+                                    <button type="button" id="wf-dash-retrieve-btn" class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
                                 </div>
                             </div>
                         </div>
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
                                 <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
@@ -3850,7 +3853,7 @@ const searchOutputMethods = {
                                 </div>
                                 <div id="wf-dash-manual-filter-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
-                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Filters work best with hydrated results; unhydrated cards are not excluded for fields marked †.</p>
+                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Distinct Prompt Versions † counts one visible prompt until a card is hydrated, then uses display versions (v1, v2, …).</p>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
@@ -3859,7 +3862,7 @@ const searchOutputMethods = {
                                         </label>
                                     </div>
                                     <div id="wf-dash-manual-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
-                                    <button type="button" id="wf-dash-manual-add" style="${this._navBtnStyle()} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                    <button type="button" id="wf-dash-manual-add" class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
                             </div>
                         </div>
@@ -3882,9 +3885,9 @@ const searchOutputMethods = {
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
-                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" style="${this._btnStyle()} display: none; font-size: 11px;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
+                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
+                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
+                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
@@ -3908,8 +3911,8 @@ const searchOutputMethods = {
                                         </select>
                                     </label>
                                     <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" style="${this._pagerNavBtnStyle(true)}">&lt;</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" style="${this._pagerNavBtnStyle(true)}">&gt;</button>
+                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('prev')}</button>
+                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('next')}</button>
                                 </div>
                             </div>
                         </div>
@@ -4598,23 +4601,16 @@ const searchOutputMethods = {
                 || noOutputTypes
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
-            searchBtn.style.cssText = searchDisabled
-                ? this._navBtnPrimaryDisabledStyle()
-                : this._navBtnPrimaryStyle();
         }
         const retrieveBtn = this._q('#wf-dash-retrieve-btn');
         const retrieveInputEl = this._q('#wf-dash-retrieve-input');
         if (retrieveBtn) {
             if (this._state.loading) {
                 retrieveBtn.disabled = true;
-                retrieveBtn.style.cssText = this._navBtnPrimaryDisabledStyle();
             } else if (retrieveBtn.textContent === 'Retrieve') {
                 const retrieveInput = (retrieveInputEl && retrieveInputEl.value) || '';
                 const retrieveDisabled = !String(retrieveInput).trim();
                 retrieveBtn.disabled = retrieveDisabled;
-                retrieveBtn.style.cssText = retrieveDisabled
-                    ? this._navBtnPrimaryDisabledStyle()
-                    : this._navBtnPrimaryStyle();
             }
         }
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
@@ -4696,7 +4692,6 @@ const searchOutputMethods = {
         const disabled = noResults || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
             applyBtn.disabled = disabled;
-            applyBtn.style.cssText = disabled ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
         }
         if (resetFiltersBtn) {
             resetFiltersBtn.disabled = noResults || Boolean(this._state.loading);
@@ -4803,7 +4798,6 @@ const searchOutputMethods = {
         if (btn) {
             btn.textContent = loading ? 'Loading…' : 'Retrieve';
             btn.disabled = loading;
-            btn.style.cssText = loading ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
         }
         const clearBtn = this._q('#wf-dash-retrieve-clear');
         if (clearBtn) clearBtn.disabled = loading;
@@ -5537,6 +5531,11 @@ const searchOutputMethods = {
         </button>`;
     },
 
+    _pagerChevronSvg(dir) {
+        const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+    },
+
     _extLinkIconSvg(active) {
         const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
         const opacity = active ? '1' : '0.45';
@@ -5568,7 +5567,7 @@ const searchOutputMethods = {
                 + `<span style="font-size: 11px; font-weight: 500; white-space: nowrap;">Switching to ${dashEscHtml(teamLabel)}</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} width: 26px; height: 26px; flex-shrink: 0;">`
+        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">`
             + `${this._extLinkIconSvg(true)}`
             + `</button>`;
     },
@@ -5850,19 +5849,19 @@ const searchOutputMethods = {
         if (!disputeId) return '';
         const ui = this._getDisputeClaimUi(disputeId);
         const url = dashFleetDisputeUrl(disputeId);
-        const baseStyle = this._btnStyle()
-            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;';
+        const baseClass = this._dashBtnClass('secondary', 'nav');
+        const baseStyle = ' padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;';
         if (ui.status === 'claimed' && url) {
-            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" style="${baseStyle} text-decoration: none;">`
+            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" class="${baseClass}" style="${baseStyle} text-decoration: none;">`
                 + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
         }
         if (ui.status === 'claiming') {
-            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">`
+            return `<button type="button" disabled aria-busy="true" class="${baseClass}" style="${baseStyle} cursor: wait;">`
                 + `${this._loadingSpinnerHtml(14)}`
                 + `<span>Leasing dispute...</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" style="${baseStyle}">`
+        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" class="${baseClass}" style="${baseStyle}">`
             + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
     },
 
@@ -6162,7 +6161,7 @@ const searchOutputMethods = {
 
         let row3Left = '';
         if (expanded) {
-            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
+            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
         }
 
         let versionControls = '';
@@ -6173,7 +6172,7 @@ const searchOutputMethods = {
                 .join('');
             versionControls = `
                 <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${expanded ? 'Collapse' : 'Show All'}</button>
+                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${expanded ? 'Collapse' : 'Show All'}</button>
                     ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
                 </div>`;
         }
@@ -6594,6 +6593,22 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const addToDiffBtn = e.target.closest('[data-wf-dash-add-to-diff]');
+            if (addToDiffBtn && modal.contains(addToDiffBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = addToDiffBtn.getAttribute('data-item-id');
+                if (itemId) dash._addToDiffFromCard(itemId);
+                return;
+            }
+            const getVerifierBtn = e.target.closest('[data-wf-dash-get-verifier]');
+            if (getVerifierBtn && modal.contains(getVerifierBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = getVerifierBtn.getAttribute('data-item-id');
+                if (itemId) void dash._getVerifierFromCard(itemId);
+                return;
+            }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
             if (removeResultBtn && modal.contains(removeResultBtn)) {
                 e.stopPropagation();
@@ -6636,7 +6651,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.34',
+    _version: '1.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
