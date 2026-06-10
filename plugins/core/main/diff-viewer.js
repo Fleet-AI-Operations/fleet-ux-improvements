@@ -31,6 +31,7 @@ const _dvState = {
     freeBase: '',
     freeCompare: '',
     drag: _dvCreateEmptyDragState(),
+    hoverSlotIdx: null,
     searchLoading: false,
     searchError: null
 };
@@ -1096,6 +1097,8 @@ function _dvRenderSlotsArea(modal) {
     const extraContainer = _dvQ(modal, 'dv-extra-container');
     if (!baseInner || !extraContainer) return;
 
+    _dvState.hoverSlotIdx = null;
+
     if (_dvState.slots.length === 0) {
         baseInner.innerHTML = _dvEmptySlotPlaceholder();
         extraContainer.innerHTML = '';
@@ -1165,9 +1168,9 @@ function _dvRenderDiffs(modal) {
     if (_dvState.slots.length < 2) {
         // Clear any existing diff highlights on base
         const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
-        if (basePre) basePre.innerHTML = _dvPlainPromptHtml(
+        if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(
             (_dvState.slots[0] && _dvState.slots[0].promptVersions && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex] && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex].prompt) || ''
-        );
+        ), null);
         _dvScheduleReelLensSync(modal);
         return;
     }
@@ -1183,12 +1186,12 @@ function _dvRenderDiffs(modal) {
         if (compare && compare.promptVersions && !compare.loading) {
             const compareText = (compare.promptVersions[compare.lensIndex] && compare.promptVersions[compare.lensIndex].prompt) || '';
             const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-            if (baseLensPre) baseLensPre.innerHTML = baseHtml;
+            if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, baseHtml, null);
         } else if (baseLensPre) {
-            baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
+            _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
         }
     } else {
-        if (baseLensPre) baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
+        if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
     }
 
     // Render compare slots (green additions)
@@ -1203,16 +1206,24 @@ function _dvRenderDiffs(modal) {
     _dvScheduleReelLensSync(modal);
 }
 
+function _dvSetBaseLensHtml(baseLensPre, html, hoverSrc) {
+    if (!baseLensPre) return;
+    baseLensPre.innerHTML = html;
+    if (hoverSrc == null) baseLensPre.removeAttribute('data-dv-hover-src');
+    else baseLensPre.setAttribute('data-dv-hover-src', String(hoverSrc));
+}
+
 function _dvApplyHoverDiff(slotIdx, modal) {
     if (_dvState.slots.length <= 2 || slotIdx === 0) return;
     const base = _dvState.slots[0];
     const compare = _dvState.slots[slotIdx];
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
+    const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
+    if (baseLensPre && baseLensPre.getAttribute('data-dv-hover-src') === String(slotIdx)) return;
     const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
     const compareText = (compare.promptVersions[compare.lensIndex] && compare.promptVersions[compare.lensIndex].prompt) || '';
     const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-    const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
-    if (baseLensPre) baseLensPre.innerHTML = baseHtml;
+    _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
 }
 
 function _dvClearHoverDiff(modal) {
@@ -1221,8 +1232,8 @@ function _dvClearHoverDiff(modal) {
     if (!base || !base.promptVersions) return;
     const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
-    if (baseLensPre) baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
-    _dvScheduleReelLensSync(modal);
+    if (baseLensPre && !baseLensPre.hasAttribute('data-dv-hover-src')) return;
+    _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
 }
 
 function _dvReelMeasureGridRows() {
@@ -1248,6 +1259,8 @@ function _dvSyncReelLensHeights(modal) {
     const slots = [...modal.querySelectorAll('.dv-slot')];
     const lenses = [...modal.querySelectorAll('.dv-reel-lens')];
     if (lenses.length === 0) return;
+
+    const scrollTops = lenses.map((lens) => lens.scrollTop);
 
     let maxBudget = Infinity;
     for (const slot of slots) {
@@ -1288,6 +1301,7 @@ function _dvSyncReelLensHeights(modal) {
     }
 
     slotsArea.style.setProperty('--dv-reel-lens-h', Math.round(unified) + 'px');
+    lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
     Logger.debug('diff-viewer: reel lens height synced — ' + Math.round(unified) + 'px (content=' + Math.round(contentMax) + ', budget=' + Math.round(maxBudget) + ')');
 }
 
@@ -1499,7 +1513,12 @@ function _dvAttachListeners(modal, dash) {
         const slot = e.target.closest('[data-dv-slot]');
         if (!slot || !modal.contains(slot)) return;
         const idx = parseInt(slot.getAttribute('data-dv-slot'), 10);
-        if (idx > 0) _dvApplyHoverDiff(idx, modal);
+        if (idx <= 0) return;
+        const related = e.relatedTarget;
+        if (related instanceof Node && slot.contains(related)) return;
+        if (_dvState.hoverSlotIdx === idx) return;
+        _dvState.hoverSlotIdx = idx;
+        _dvApplyHoverDiff(idx, modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
@@ -1507,7 +1526,11 @@ function _dvAttachListeners(modal, dash) {
         const slot = e.target.closest('[data-dv-slot]');
         if (!slot || !modal.contains(slot)) return;
         const idx = parseInt(slot.getAttribute('data-dv-slot'), 10);
-        if (idx > 0) _dvClearHoverDiff(modal);
+        if (idx <= 0) return;
+        const related = e.relatedTarget;
+        if (related instanceof Node && slot.contains(related)) return;
+        _dvState.hoverSlotIdx = null;
+        _dvClearHoverDiff(modal);
     });
 }
 
@@ -1857,7 +1880,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.16',
+    _version: '1.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
