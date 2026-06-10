@@ -1236,8 +1236,8 @@ function _dvClearHoverDiff(modal) {
     _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
 }
 
-function _dvReelMeasureGridRows() {
-    return DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px auto ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px';
+function _dvReelFixedChromeH() {
+    return 12 + (DV_REEL_HALF_H * 2) + (DV_REEL_PEER_H * 2) + (DV_REEL_ROW_GAP * 4);
 }
 
 function _dvScheduleReelLensSync(modal) {
@@ -1262,47 +1262,24 @@ function _dvSyncReelLensHeights(modal) {
 
     const scrollTops = lenses.map((lens) => lens.scrollTop);
 
+    const fixedChrome = _dvReelFixedChromeH();
     let maxBudget = Infinity;
     for (const slot of slots) {
         const body = slot.querySelector('.dv-slot > div:last-child');
-        const reel = body && body.querySelector('.dv-reel');
-        const lens = reel && reel.querySelector('.dv-reel-lens');
-        if (!body || !reel || !lens) continue;
-        const chromeH = reel.offsetHeight - lens.offsetHeight;
-        const budget = body.clientHeight - chromeH;
+        if (!body) continue;
+        const budget = body.clientHeight - fixedChrome;
         if (Number.isFinite(budget)) maxBudget = Math.min(maxBudget, budget);
     }
     if (!Number.isFinite(maxBudget) || maxBudget <= 0) maxBudget = DV_REEL_LENS_H;
 
-    slotsArea.style.removeProperty('--dv-reel-lens-h');
-    const measureRows = _dvReelMeasureGridRows();
-    const savedGridRows = [];
-    let contentMax = 0;
-
-    for (const lens of lenses) {
-        const reel = lens.closest('.dv-reel');
-        if (reel) {
-            savedGridRows.push([reel, reel.style.gridTemplateRows]);
-            reel.style.gridTemplateRows = measureRows;
-        }
-        lens.style.height = 'auto';
-        contentMax = Math.max(contentMax, lens.scrollHeight);
-        lens.style.height = '';
-    }
-
-    for (const [reel, rows] of savedGridRows) {
-        reel.style.gridTemplateRows = rows;
-    }
-
-    let unified = Math.min(Math.max(contentMax, DV_REEL_LENS_H), maxBudget);
-    if (maxBudget < DV_REEL_LENS_H) {
-        unified = maxBudget;
+    let unified = Math.max(0, Math.floor(maxBudget));
+    if (unified < DV_REEL_LENS_H && maxBudget < DV_REEL_LENS_H) {
         Logger.debug('diff-viewer: lens height budget below floor — ' + Math.round(maxBudget) + 'px');
     }
 
-    slotsArea.style.setProperty('--dv-reel-lens-h', Math.round(unified) + 'px');
+    slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
     lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
-    Logger.debug('diff-viewer: reel lens height synced — ' + Math.round(unified) + 'px (content=' + Math.round(contentMax) + ', budget=' + Math.round(maxBudget) + ')');
+    Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome=' + fixedChrome + ')');
 }
 
 function _dvAttachReelLensResizeObserver(modal) {
@@ -1722,10 +1699,10 @@ function _dvInjectStyles() {
         '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
         '  column-gap: 4px;',
         '  flex: 1;',
+        '  height: 100%;',
         '  min-height: 0;',
         '  padding: 6px 4px 6px 6px;',
         '  box-sizing: border-box;',
-        '  align-content: start;',
         '}',
         '#wf-dash-modal .dv-reel-half {',
         '  grid-column: 1;',
@@ -1880,7 +1857,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.17',
+    _version: '1.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
