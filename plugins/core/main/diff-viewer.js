@@ -942,6 +942,7 @@ function _dvPanelHtml(dash) {
     const rightHtml = `
     <div id="dv-right" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
         <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
+            <div id="dv-rolling-above-label" class="dv-slot-above-label dv-rolling-above-label" aria-hidden="true"></div>
             <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
                 <div id="dv-base-above-label" class="dv-slot-above-label">BASE COMPARISON</div>
                 <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
@@ -1137,11 +1138,20 @@ function _dvAboveLabelInnerHtml() {
 function _dvUpdateAboveLabels(modal) {
     if (!modal) return;
     const inner = _dvAboveLabelInnerHtml();
+    const rollingLabel = _dvQ(modal, 'dv-rolling-above-label');
+    if (_dvState.compMode === 'rolling') {
+        if (rollingLabel) {
+            rollingLabel.innerHTML = inner;
+            rollingLabel.removeAttribute('aria-hidden');
+        }
+        return;
+    }
+    if (rollingLabel) {
+        rollingLabel.innerHTML = '';
+        rollingLabel.setAttribute('aria-hidden', 'true');
+    }
     const baseLabel = _dvQ(modal, 'dv-base-above-label');
     if (baseLabel) baseLabel.innerHTML = inner;
-    modal.querySelectorAll('.dv-slot-above-label:not(.dv-slot-above-label--spacer)').forEach((el) => {
-        el.innerHTML = inner;
-    });
 }
 
 function _dvSlotAboveLabelHtml(slotIdx) {
@@ -1285,9 +1295,10 @@ function _dvRenderSlotsArea(modal) {
         if (baseContainer) baseContainer.style.display = 'none';
         let allHtml = '';
         for (let i = 0; i < _dvState.slots.length; i++) {
-            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}">${_dvSlotAboveLabelHtml(i)}<div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
         }
         extraContainer.innerHTML = allHtml;
+        _dvUpdateAboveLabels(modal);
         return;
     }
 
@@ -2023,6 +2034,17 @@ function _dvInjectStyles() {
         '  padding: ' + DV_SLOTS_AREA_PAD + 'px;',
         '  box-sizing: border-box;',
         '}',
+        '#wf-dash-modal .dv-slots-area--rolling {',
+        '  flex-direction: column;',
+        '  gap: 4px;',
+        '}',
+        '#wf-dash-modal .dv-rolling-above-label {',
+        '  display: none;',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-rolling-above-label {',
+        '  display: flex;',
+        '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
         '  position: static;',
         '  z-index: auto;',
@@ -2031,12 +2053,16 @@ function _dvInjectStyles() {
         '  border: 1px solid var(--border, #e2e8f0);',
         '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
+        '  flex: 1;',
         '  align-self: stretch;',
-        '  height: 100%;',
+        '  min-height: 0;',
         '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column {',
         '  height: 100%;',
         '  align-self: stretch;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column .dv-slot-wrap {',
+        '  height: 100%;',
         '}',
         '#wf-dash-modal .dv-rolling-overlay {',
         '  position: absolute;',
@@ -2262,7 +2288,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.29',
+    _version: '1.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
