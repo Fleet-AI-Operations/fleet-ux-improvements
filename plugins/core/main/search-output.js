@@ -2448,7 +2448,7 @@ const searchOutputMethods = {
             case 'rejection_issue_count':
                 return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
             case 'prompt_version_count':
-                if (!item.hydrated) return null;
+                if (!item.hydrated) return 1;
                 return this._displayPromptVersionCount(task);
             default:
                 return null;
@@ -3853,7 +3853,7 @@ const searchOutputMethods = {
                                 </div>
                                 <div id="wf-dash-manual-filter-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
-                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Filters work best with hydrated results; unhydrated cards are not excluded for fields marked †.</p>
+                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Distinct Prompt Versions † counts one visible prompt until a card is hydrated, then uses display versions (v1, v2, …).</p>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
@@ -6651,7 +6651,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.44',
+    _version: '1.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
