@@ -7,6 +7,7 @@
 
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
+const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -25,6 +26,8 @@ let _dvLensSyncScheduled = false;
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
     granularity: 'word', // 'word' | 'char'
+    compMode: 'base',    // 'base' | 'rolling'
+    rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
     freeBase: '',
@@ -802,7 +805,12 @@ function _dvApplyViewProgression(modal) {
         });
     }
     Logger.log('diff-viewer: View Complete Task Progression — ' + _dvState.slots.length + ' slots');
+    _dvState.compMode = 'rolling';
+    _dvState.rollingLeft = 0;
+    try { localStorage.setItem(DV_COMP_MODE_KEY, 'rolling'); } catch (_e) { /* no-op */ }
     _dvRenderAll(modal);
+    _dvSyncCompModeUi(modal);
+    _dvUpdateRollingOverlay(modal);
 }
 
 function _dvApplyAllV1(modal) {
@@ -835,11 +843,12 @@ function _dvPanelHtml(dash) {
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
     const gran = _dvState.granularity;
+    const compMode = _dvState.compMode;
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
         <div style="flex-shrink:0;">
-            <div style="${label}margin-bottom:6px;">Mode</div>
+            <div style="${label}margin-bottom:6px;">Diff Modality</div>
             <div class="dv-seg-group">
                 ${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}
                 ${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}
@@ -851,6 +860,13 @@ function _dvPanelHtml(dash) {
                 <div class="dv-seg-group">
                     ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
                     ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
+                </div>
+            </div>
+            <div id="dv-comp-mode-section" style="flex-shrink:0;">
+                <div style="${label}margin-bottom:6px;">Mode</div>
+                <div class="dv-seg-group">
+                    ${_dvSegBtn('data-dv-comp-mode', 'base', 'Base Comparison', compMode === 'base', true)}
+                    ${_dvSegBtn('data-dv-comp-mode', 'rolling', 'Rolling Comparison', compMode === 'rolling', false)}
                 </div>
             </div>
             <div style="flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
@@ -889,8 +905,9 @@ function _dvPanelHtml(dash) {
 
     const rightHtml = `
     <div id="dv-right" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
-        <div id="dv-slots-area" class="dv-slots-area" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
+        <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
             <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
+                <div id="dv-base-above-label" class="dv-slot-above-label">BASE COMPARISON</div>
                 <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
             </div>
             <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
@@ -1037,6 +1054,13 @@ function _dvReelUnifiedChromeH(unifiedPeek) {
     return chrome;
 }
 
+function _dvSlotAboveLabelHtml(slotIdx) {
+    if (slotIdx === 0) {
+        return '<div class="dv-slot-above-label">BASE COMPARISON</div>';
+    }
+    return '<div class="dv-slot-above-label dv-slot-above-label--spacer" aria-hidden="true"></div>';
+}
+
 function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     const isBase = slotIdx === 0;
     const headerBg = isBase
@@ -1046,10 +1070,6 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
         ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
         : _dvEscHtml(slot.authorEmail || '—');
     const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
-
-    const baseBandHtml = isBase
-        ? '<div class="dv-slot-base-band"><span class="dv-slot-base-badge">BASE</span></div>'
-        : '<div class="dv-slot-base-band dv-slot-base-band--spacer" aria-hidden="true"></div>';
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -1067,7 +1087,6 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     }
 
     return `<div class="dv-slot" data-dv-slot="${slotIdx}" style="display:flex;flex-direction:column;height:100%;overflow:hidden;box-sizing:border-box;">
-        ${baseBandHtml}
         <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:${headerBg};border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 <div style="font-size:11px;font-weight:600;color:var(--foreground,#0f172a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>
@@ -1151,6 +1170,8 @@ function _dvRenderAll(modal) {
     _dvRenderDiffs(modal);
     _dvRenderStashChipStates(modal);
     _dvScheduleReelLensSync(modal);
+    _dvSyncCompModeUi(modal);
+    _dvUpdateRollingOverlay(modal);
 }
 
 function _dvRenderSlotsArea(modal) {
@@ -1169,7 +1190,7 @@ function _dvRenderSlotsArea(modal) {
     baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length, unifiedPeek);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}">${_dvSlotAboveLabelHtml(i)}<div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -1225,42 +1246,78 @@ function _dvRenderStashChipStates(modal) {
 
 // ── Diff rendering ──
 
+function _dvClampRollingLeft() {
+    const max = Math.max(0, _dvState.slots.length - 2);
+    _dvState.rollingLeft = Math.max(0, Math.min(_dvState.rollingLeft, max));
+}
+
+function _dvSlotPromptText(slot) {
+    if (!slot || !slot.promptVersions || slot.loading) return '';
+    const v = slot.promptVersions[slot.lensIndex];
+    return (v && v.prompt) || '';
+}
+
 function _dvRenderDiffs(modal) {
     if (_dvState.mode !== 'tasks') return;
     if (_dvState.slots.length < 2) {
-        // Clear any existing diff highlights on base
+        _dvRemoveRollingOverlay(modal);
         const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
-        if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(
-            (_dvState.slots[0] && _dvState.slots[0].promptVersions && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex] && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex].prompt) || ''
-        ), null);
+        if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(_dvSlotPromptText(_dvState.slots[0])), null);
         _dvScheduleReelLensSync(modal);
         return;
     }
+
+    if (_dvState.compMode === 'rolling') {
+        _dvClampRollingLeft();
+        const leftIdx = _dvState.rollingLeft;
+        const rightIdx = leftIdx + 1;
+        const leftSlot = _dvState.slots[leftIdx];
+        const rightSlot = _dvState.slots[rightIdx];
+        const leftText = _dvSlotPromptText(leftSlot);
+        const rightText = _dvSlotPromptText(rightSlot);
+        const { baseHtml, compareHtml } = _dvDiffPair(leftText, rightText, _dvState.granularity);
+
+        for (let i = 0; i < _dvState.slots.length; i++) {
+            const slot = _dvState.slots[i];
+            if (!slot.promptVersions || slot.loading) continue;
+            const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
+            if (!lensPre) continue;
+            if (i === leftIdx) {
+                if (leftIdx === 0) _dvSetBaseLensHtml(lensPre, baseHtml, null);
+                else lensPre.innerHTML = baseHtml;
+            } else if (i === rightIdx) {
+                lensPre.innerHTML = compareHtml;
+            } else {
+                lensPre.innerHTML = _dvPlainPromptHtml(_dvSlotPromptText(slot));
+            }
+        }
+        _dvScheduleReelLensSync(modal);
+        return;
+    }
+
     const base = _dvState.slots[0];
     if (!base || !base.promptVersions) return;
-    const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
+    const baseText = _dvSlotPromptText(base);
     const twoSlots = _dvState.slots.length === 2;
 
-    // Render base slot
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
     if (twoSlots) {
         const compare = _dvState.slots[1];
         if (compare && compare.promptVersions && !compare.loading) {
-            const compareText = (compare.promptVersions[compare.lensIndex] && compare.promptVersions[compare.lensIndex].prompt) || '';
+            const compareText = _dvSlotPromptText(compare);
             const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
             if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, baseHtml, null);
         } else if (baseLensPre) {
             _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
         }
-    } else {
-        if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
+    } else if (baseLensPre) {
+        _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
     }
 
-    // Render compare slots (green additions)
     for (let i = 1; i < _dvState.slots.length; i++) {
         const slot = _dvState.slots[i];
         if (!slot.promptVersions || slot.loading) continue;
-        const compareText = (slot.promptVersions[slot.lensIndex] && slot.promptVersions[slot.lensIndex].prompt) || '';
+        const compareText = _dvSlotPromptText(slot);
         const { compareHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
         const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
         if (lensPre) lensPre.innerHTML = compareHtml;
@@ -1275,27 +1332,87 @@ function _dvSetBaseLensHtml(baseLensPre, html, hoverSrc) {
     else baseLensPre.setAttribute('data-dv-hover-src', String(hoverSrc));
 }
 
+function _dvClearCompareHoverRing(modal) {
+    if (!modal) return;
+    modal.querySelectorAll('.dv-slot-wrap--compare-hover').forEach((el) => {
+        el.classList.remove('dv-slot-wrap--compare-hover');
+    });
+}
+
 function _dvApplyHoverDiff(slotIdx, modal) {
-    if (_dvState.slots.length <= 2 || slotIdx === 0) return;
+    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2 || slotIdx === 0) return;
     const base = _dvState.slots[0];
     const compare = _dvState.slots[slotIdx];
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
     if (baseLensPre && baseLensPre.getAttribute('data-dv-hover-src') === String(slotIdx)) return;
-    const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
-    const compareText = (compare.promptVersions[compare.lensIndex] && compare.promptVersions[compare.lensIndex].prompt) || '';
+    const baseText = _dvSlotPromptText(base);
+    const compareText = _dvSlotPromptText(compare);
     const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
     _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
+    _dvClearCompareHoverRing(modal);
+    const wrap = _dvGetSlotWrap(modal, slotIdx);
+    if (wrap) wrap.classList.add('dv-slot-wrap--compare-hover');
 }
 
 function _dvClearHoverDiff(modal) {
-    if (_dvState.slots.length <= 2) return;
+    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) return;
     const base = _dvState.slots[0];
     if (!base || !base.promptVersions) return;
-    const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
+    const baseText = _dvSlotPromptText(base);
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
-    if (baseLensPre && !baseLensPre.hasAttribute('data-dv-hover-src')) return;
+    if (baseLensPre && !baseLensPre.hasAttribute('data-dv-hover-src')) {
+        _dvClearCompareHoverRing(modal);
+        return;
+    }
     _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
+    _dvClearCompareHoverRing(modal);
+}
+
+function _dvRemoveRollingOverlay(modal) {
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (!slotsArea) return;
+    const overlay = slotsArea.querySelector('.dv-rolling-overlay');
+    if (overlay) overlay.remove();
+}
+
+function _dvUpdateRollingOverlay(modal) {
+    if (!modal || _dvState.mode !== 'tasks' || _dvState.compMode !== 'rolling' || _dvState.slots.length < 2) {
+        _dvRemoveRollingOverlay(modal);
+        return;
+    }
+
+    _dvClampRollingLeft();
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (!slotsArea) return;
+
+    const leftWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft);
+    const rightWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft + 1);
+    if (!leftWrap || !rightWrap) {
+        _dvRemoveRollingOverlay(modal);
+        return;
+    }
+
+    const areaRect = slotsArea.getBoundingClientRect();
+    const leftRect = leftWrap.getBoundingClientRect();
+    const rightRect = rightWrap.getBoundingClientRect();
+    const left = Math.min(leftRect.left, rightRect.left) - areaRect.left;
+    const top = Math.min(leftRect.top, rightRect.top) - areaRect.top;
+    const right = Math.max(leftRect.right, rightRect.right) - areaRect.left;
+    const bottom = Math.max(leftRect.bottom, rightRect.bottom) - areaRect.top;
+
+    let overlay = slotsArea.querySelector('.dv-rolling-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'dv-rolling-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+        slotsArea.appendChild(overlay);
+    }
+
+    overlay.style.left = left + 'px';
+    overlay.style.top = top + 'px';
+    overlay.style.width = Math.max(0, right - left) + 'px';
+    overlay.style.height = Math.max(0, bottom - top) + 'px';
 }
 
 function _dvScheduleReelLensSync(modal) {
@@ -1338,6 +1455,7 @@ function _dvSyncReelLensHeights(modal) {
 
     slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
     lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
+    if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
     Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome=' + unifiedChrome + ')');
 }
 
@@ -1345,8 +1463,21 @@ function _dvAttachReelLensResizeObserver(modal) {
     if (!modal || modal._dvSlotsAreaRo) return;
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     if (!slotsArea || typeof ResizeObserver === 'undefined') return;
-    modal._dvSlotsAreaRo = new ResizeObserver(() => _dvScheduleReelLensSync(modal));
+    modal._dvSlotsAreaRo = new ResizeObserver(() => {
+        _dvScheduleReelLensSync(modal);
+        if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
+    });
     modal._dvSlotsAreaRo.observe(slotsArea);
+}
+
+function _dvAttachRollingOverlayListeners(modal) {
+    if (!modal || modal._dvRollingListenersAttached) return;
+    const extra = _dvQ(modal, 'dv-extra-container');
+    if (!extra) return;
+    modal._dvRollingListenersAttached = true;
+    extra.addEventListener('scroll', () => {
+        if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
+    }, { passive: true });
 }
 
 function _dvRenderFreeTextDiff(modal) {
@@ -1390,6 +1521,19 @@ function _dvSyncGranularityUi(modal) {
         const active = btn.getAttribute('data-dv-seg') === _dvState.granularity;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+}
+
+function _dvSyncCompModeUi(modal) {
+    if (!modal) return;
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (slotsArea) {
+        slotsArea.classList.toggle('dv-slots-area--rolling', _dvState.compMode === 'rolling');
+    }
+    modal.querySelectorAll('[data-dv-comp-mode]').forEach((btn) => {
+        const active = btn.getAttribute('data-dv-comp-mode') === _dvState.compMode;
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (_dvState.compMode !== 'rolling') _dvRemoveRollingOverlay(modal);
 }
 
 function _dvSetSearchLoading(modal, loading, error) {
@@ -1441,6 +1585,24 @@ function _dvAttachListeners(modal, dash) {
                 _dvRenderDiffs(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
                 Logger.log('diff-viewer: granularity → ' + gran);
+            }
+            return;
+        }
+
+        // ── Comparison mode toggle ──
+        const compBtn = e.target.closest('[data-dv-comp-mode]');
+        if (compBtn && modal.contains(compBtn)) {
+            const compMode = compBtn.getAttribute('data-dv-comp-mode');
+            if (compMode !== _dvState.compMode) {
+                _dvState.compMode = compMode;
+                if (compMode === 'rolling') _dvClampRollingLeft();
+                try { localStorage.setItem(DV_COMP_MODE_KEY, compMode); } catch (_e) { /* no-op */ }
+                _dvClearHoverDiff(modal);
+                _dvState.hoverSlotIdx = null;
+                _dvSyncCompModeUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateRollingOverlay(modal);
+                Logger.log('diff-viewer: comp mode → ' + compMode);
             }
             return;
         }
@@ -1542,23 +1704,39 @@ function _dvAttachListeners(modal, dash) {
     _dvAttachDragListeners(modal);
 
     _dvAttachReelLensResizeObserver(modal);
+    _dvAttachRollingOverlayListeners(modal);
 
-    // ── Hover diffs (>2 slots: show base removals on hover of compare) ──
+    // ── Hover diffs (base mode) / rolling pair shift (rolling mode) ──
     modal.addEventListener('mouseover', (e) => {
-        if (_dvState.slots.length <= 2) return;
+        if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) return;
         const slot = e.target.closest('[data-dv-slot]');
         if (!slot || !modal.contains(slot)) return;
         const idx = parseInt(slot.getAttribute('data-dv-slot'), 10);
-        if (idx <= 0) return;
         const related = e.relatedTarget;
         if (related instanceof Node && slot.contains(related)) return;
+
+        if (_dvState.compMode === 'rolling') {
+            const rollingRight = _dvState.rollingLeft + 1;
+            if (idx >= _dvState.rollingLeft && idx <= rollingRight) return;
+            const prevLeft = _dvState.rollingLeft;
+            if (idx < _dvState.rollingLeft) _dvState.rollingLeft = idx;
+            else if (idx > rollingRight) _dvState.rollingLeft = idx - 1;
+            _dvClampRollingLeft();
+            if (_dvState.rollingLeft === prevLeft) return;
+            _dvRenderDiffs(modal);
+            _dvUpdateRollingOverlay(modal);
+            Logger.debug('diff-viewer: rolling pair → slots ' + _dvState.rollingLeft + '–' + (_dvState.rollingLeft + 1));
+            return;
+        }
+
+        if (_dvState.slots.length <= 2 || idx <= 0) return;
         if (_dvState.hoverSlotIdx === idx) return;
         _dvState.hoverSlotIdx = idx;
         _dvApplyHoverDiff(idx, modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
-        if (_dvState.slots.length <= 2) return;
+        if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) return;
         const slot = e.target.closest('[data-dv-slot]');
         if (!slot || !modal.contains(slot)) return;
         const idx = parseInt(slot.getAttribute('data-dv-slot'), 10);
@@ -1656,17 +1834,13 @@ function _dvInjectStyles() {
         '  border-radius: 8px;',
         '  overflow: hidden;',
         '}',
-        '#wf-dash-modal .dv-slot-base-band {',
+        '#wf-dash-modal .dv-slot-above-label {',
         '  flex-shrink: 0;',
         '  height: 18px;',
-        '  padding: 2px 10px 0;',
+        '  margin-bottom: 4px;',
         '  box-sizing: border-box;',
         '  display: flex;',
         '  align-items: center;',
-        '}',
-        '#wf-dash-modal .dv-slot-base-band--spacer { visibility: hidden; }',
-        '#wf-dash-modal .dv-slot-base-badge {',
-        '  display: inline-block;',
         '  font-size: 9px;',
         '  font-weight: 700;',
         '  background: var(--brand, #2563eb);',
@@ -1675,8 +1849,14 @@ function _dvInjectStyles() {
         '  padding: 1px 5px;',
         '  letter-spacing: 0.04em;',
         '  line-height: 1.3;',
+        '  width: fit-content;',
+        '  max-width: 100%;',
+        '}',
+        '#wf-dash-modal .dv-slot-above-label--spacer {',
+        '  visibility: hidden;',
         '}',
         '#wf-dash-modal .dv-slots-area {',
+        '  position: relative;',
         '  flex: 1;',
         '  min-height: 0;',
         '  overflow: hidden;',
@@ -1684,6 +1864,30 @@ function _dvInjectStyles() {
         '  gap: ' + DV_SLOT_GAP + 'px;',
         '  padding: ' + DV_SLOTS_AREA_PAD + 'px;',
         '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
+        '  position: static;',
+        '  z-index: auto;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-above-label {',
+        '  visibility: hidden;',
+        '}',
+        '#wf-dash-modal .dv-rolling-overlay {',
+        '  position: absolute;',
+        '  pointer-events: none;',
+        '  border: 2px solid var(--brand, #2563eb);',
+        '  border-radius: 10px;',
+        '  z-index: 3;',
+        '  box-sizing: border-box;',
+        '  transition: left 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+        '              width 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
+        '}',
+        '#wf-dash-modal .dv-slot-wrap--compare-hover {',
+        '  border-color: var(--brand, #2563eb);',
+        '  border-width: 1px;',
         '}',
         '#wf-dash-modal .dv-slot-column {',
         '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
@@ -1887,7 +2091,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.23',
+    _version: '1.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1914,6 +2118,12 @@ const plugin = {
             if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
         } catch (_e) { /* no-op */ }
 
+        // Restore persisted comparison mode
+        try {
+            const storedComp = localStorage.getItem(DV_COMP_MODE_KEY);
+            if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
+        } catch (_e) { /* no-op */ }
+
         // Inject styles
         _dvInjectStyles();
 
@@ -1932,11 +2142,14 @@ const plugin = {
             onBuilt(modal) {
                 _dvRenderStash(modal);
                 _dvAttachReelLensResizeObserver(modal);
+                _dvAttachRollingOverlayListeners(modal);
+                _dvSyncCompModeUi(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
             },
             onActivate(modal) {
                 _dvRenderAll(modal);
+                _dvSyncCompModeUi(modal);
                 _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
                     const loader = Context.dashboard._loader;
