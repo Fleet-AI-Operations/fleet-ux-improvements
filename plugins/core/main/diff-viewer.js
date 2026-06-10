@@ -588,6 +588,7 @@ function _dvClearTargetPreview(d) {
     d.targetGhost = null;
     if (d.dimmedWrap) {
         d.dimmedWrap.style.opacity = '';
+        d.dimmedWrap.style.visibility = '';
         d.dimmedWrap = null;
     }
 }
@@ -630,7 +631,7 @@ function _dvUpdateTargetPreview(modal, d, overIdx) {
     preview.style.top = srcRect.top + 'px';
     d.targetGhost = preview;
     d.dimmedWrap = tgtWrap;
-    tgtWrap.style.opacity = '0.35';
+    tgtWrap.style.visibility = 'hidden';
 
     Logger.debug('diff-viewer: drag hover slot ' + overIdx + ' → preview at slot ' + d.fromIdx);
 }
@@ -1781,8 +1782,8 @@ function _dvInjectStyles() {
         '  flex-shrink: 0;',
         '}',
         '#wf-dash-modal .dv-reel-peek--above {',
-        '  border-bottom-left-radius: 0;',
-        '  border-bottom-right-radius: 0;',
+        '  border-top-left-radius: 0;',
+        '  border-top-right-radius: 0;',
         '}',
         '#wf-dash-modal .dv-reel-peek--below {',
         '  border-bottom-left-radius: 0;',
@@ -1886,7 +1887,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.22',
+    _version: '1.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
