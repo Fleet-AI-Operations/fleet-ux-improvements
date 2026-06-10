@@ -20,6 +20,11 @@
   ],
   "archetypes/comp-use-revision/main": [
     {
+      "file": "action-counter.js",
+      "name": "Action Counter",
+      "description": "Persistent +/- counter beside the Verifier tab; click the number to type a value"
+    },
+    {
       "file": "auto-toggle-fullscreen-mode.js",
       "name": "Auto Toggle Fullscreen Mode",
       "description": "Clicks the fullscreen (monitor) toggle button once when the page loads to enter fullscreen mode"
@@ -46,6 +51,11 @@
     }
   ],
   "archetypes/comp-use-task-creation/main": [
+    {
+      "file": "action-counter.js",
+      "name": "Action Counter",
+      "description": "Persistent +/- counter beside the Verifier tab; click the number to type a value"
+    },
     {
       "file": "auto-toggle-fullscreen-mode.js",
       "name": "Auto Toggle Fullscreen Mode",
@@ -91,6 +101,11 @@
       "file": "accept-task-modal-improvements.js",
       "name": "\"Accept Task\" Modal Improvements",
       "description": "Add a button above the optional comments box to paste a positive blurb"
+    },
+    {
+      "file": "action-counter.js",
+      "name": "Action Counter",
+      "description": "Persistent +/- counter beside the Verifier tab; click the number to type a value"
     },
     {
       "file": "auto-toggle-fullscreen-mode.js",

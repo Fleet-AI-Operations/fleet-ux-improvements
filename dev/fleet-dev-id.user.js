@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DEV-ID - Fleet UX Enhancer - (dev identifier)
+// @name         [feat/clicker] DEV-ID - Fleet UX Enhancer - (dev identifier)
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Dev-only branch identifier for Fleet UX Enhancer dev builds.
@@ -9,8 +9,8 @@
 // @match        https://fleetai.com/*
 // @include      /^https:\/\/[^/]+\.env\.[^/]+\.fleetai\.com/
 // @connect      raw.githubusercontent.com
-// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/dev/fleet-dev-id.user.js
-// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/dev/fleet-dev-id.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/clicker/dev/fleet-dev-id.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/clicker/dev/fleet-dev-id.user.js
 // @run-at       document-start
 // ==/UserScript==
 
@@ -22,7 +22,7 @@
     }
 
     const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
-    const BRANCH_NAME = 'main';
+    const BRANCH_NAME = 'feat/clicker';
 
     try {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
