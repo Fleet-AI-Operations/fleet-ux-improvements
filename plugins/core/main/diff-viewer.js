@@ -151,6 +151,14 @@ function _dvEscHtml(value) {
 
 function _dvTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
 
+function _dvEqualSpanHtml(text) {
+    return `<span class="dv-diff-equal">${_dvEscHtml(text)}</span>`;
+}
+
+function _dvPlainPromptHtml(text) {
+    return _dvEqualSpanHtml(text || '');
+}
+
 function _dvHighlightStyles() {
     const dark = document.documentElement.classList.contains('dark');
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
@@ -173,10 +181,10 @@ function _dvRenderBaseHtml(diff, removeStyle) {
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${removeStyle}">${_dvEscHtml(trimmed)}</span>${_dvEscHtml(trail)}`;
+                html += `<span style="${removeStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
-            html += _dvEscHtml(text);
+            html += _dvEqualSpanHtml(text);
         }
     });
     return html;
@@ -193,10 +201,10 @@ function _dvRenderCompareHtml(diff, addStyle) {
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${addStyle}">${_dvEscHtml(trimmed)}</span>${_dvEscHtml(trail)}`;
+                html += `<span style="${addStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
-            html += _dvEscHtml(text);
+            html += _dvEqualSpanHtml(text);
         }
     });
     return html;
@@ -1157,7 +1165,7 @@ function _dvRenderDiffs(modal) {
     if (_dvState.slots.length < 2) {
         // Clear any existing diff highlights on base
         const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
-        if (basePre) basePre.innerHTML = _dvEscHtml(
+        if (basePre) basePre.innerHTML = _dvPlainPromptHtml(
             (_dvState.slots[0] && _dvState.slots[0].promptVersions && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex] && _dvState.slots[0].promptVersions[_dvState.slots[0].lensIndex].prompt) || ''
         );
         _dvScheduleReelLensSync(modal);
@@ -1177,10 +1185,10 @@ function _dvRenderDiffs(modal) {
             const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
             if (baseLensPre) baseLensPre.innerHTML = baseHtml;
         } else if (baseLensPre) {
-            baseLensPre.innerHTML = _dvEscHtml(baseText);
+            baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
         }
     } else {
-        if (baseLensPre) baseLensPre.innerHTML = _dvEscHtml(baseText);
+        if (baseLensPre) baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
     }
 
     // Render compare slots (green additions)
@@ -1213,7 +1221,7 @@ function _dvClearHoverDiff(modal) {
     if (!base || !base.promptVersions) return;
     const baseText = (base.promptVersions[base.lensIndex] && base.promptVersions[base.lensIndex].prompt) || '';
     const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
-    if (baseLensPre) baseLensPre.innerHTML = _dvEscHtml(baseText);
+    if (baseLensPre) baseLensPre.innerHTML = _dvPlainPromptHtml(baseText);
     _dvScheduleReelLensSync(modal);
 }
 
@@ -1721,6 +1729,9 @@ function _dvInjectStyles() {
         '  opacity: 0.6;',
         '}',
         '#wf-dash-modal .dv-reel-peer--empty { opacity: 0.25; }',
+        '#wf-dash-modal .dv-diff-equal {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
         '#wf-dash-modal .dv-reel-peer pre {',
         '  margin: 0;',
         '  padding: 0;',
@@ -1731,6 +1742,7 @@ function _dvInjectStyles() {
         '  word-break: break-word;',
         '  overflow: hidden;',
         '  max-height: 100%;',
+        '  color: var(--muted-foreground, #64748b);',
         '}',
         '#wf-dash-modal .dv-reel-lens {',
         '  grid-column: 1;',
@@ -1845,7 +1857,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.15',
+    _version: '1.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
