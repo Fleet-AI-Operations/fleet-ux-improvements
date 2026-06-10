@@ -20,6 +20,7 @@ const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
 let _dvLensSyncScheduled = false;
+let _dvLensSyncAfterLayout = false;
 
 // ── Module state ──
 
@@ -1541,13 +1542,30 @@ function _dvUpdateRollingOverlay(modal) {
     overlay.style.height = Math.max(0, bottom - top) + 'px';
 }
 
-function _dvScheduleReelLensSync(modal) {
-    if (!modal || _dvLensSyncScheduled) return;
+function _dvScheduleReelLensSync(modal, opts) {
+    const afterLayout = Boolean(opts && opts.afterLayout);
+    if (!modal) return;
+    if (_dvLensSyncScheduled) {
+        if (afterLayout) _dvLensSyncAfterLayout = true;
+        return;
+    }
     _dvLensSyncScheduled = true;
-    requestAnimationFrame(() => {
+
+    const finish = () => {
         _dvLensSyncScheduled = false;
         _dvSyncReelLensHeights(modal);
-    });
+    };
+
+    const useDoubleRaf = afterLayout || _dvLensSyncAfterLayout;
+    _dvLensSyncAfterLayout = false;
+
+    if (useDoubleRaf) {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(finish);
+        });
+    } else {
+        requestAnimationFrame(finish);
+    }
 }
 
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
@@ -1555,7 +1573,19 @@ function _dvSlotLensBudget(slotEl, unifiedChrome) {
     const header = slotEl.querySelector('.dv-slot-header');
     if (!wrap) return null;
     const headerH = header ? header.offsetHeight : 0;
-    return wrap.clientHeight - headerH - unifiedChrome;
+
+    const column = wrap.parentElement;
+    if (!column) return null;
+
+    let siblingsH = 0;
+    for (const child of column.children) {
+        if (child === wrap) continue;
+        if (child instanceof HTMLElement && child.offsetParent !== null) {
+            siblingsH += child.offsetHeight;
+        }
+    }
+
+    return column.clientHeight - siblingsH - headerH - unifiedChrome;
 }
 
 function _dvSyncReelLensHeights(modal) {
@@ -1564,6 +1594,9 @@ function _dvSyncReelLensHeights(modal) {
 
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     if (!slotsArea) return;
+
+    slotsArea.style.removeProperty('--dv-reel-lens-h');
+    void slotsArea.offsetHeight;
 
     const slots = [...modal.querySelectorAll('.dv-slot')];
     const lenses = [...modal.querySelectorAll('.dv-reel-lens')];
@@ -1737,7 +1770,8 @@ function _dvAttachListeners(modal, dash) {
                 _dvRenderSlotsArea(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateRollingOverlay(modal);
-                _dvScheduleReelLensSync(modal);
+                _dvLensSyncScheduled = false;
+                _dvScheduleReelLensSync(modal, { afterLayout: true });
                 Logger.log('diff-viewer: comp mode → ' + compMode);
             }
             return;
@@ -2288,7 +2322,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.30',
+    _version: '1.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
