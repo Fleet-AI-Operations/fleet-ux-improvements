@@ -487,14 +487,57 @@ function _dvMinimizeSlot(slotIdx, modal) {
     _dvRenderAll(modal);
 }
 
+const DV_ANIM_MS = 300;
+const DV_ANIM_EASE = 'cubic-bezier(0.37, 0, 0.63, 1)';
+
 function _dvShiftLens(slotIdx, delta, modal) {
     const slot = _dvState.slots[slotIdx];
-    if (!slot || !slot.promptVersions) return;
+    if (!slot || !slot.promptVersions || slot._lensAnimating) return;
     const newIdx = slot.lensIndex + delta;
     if (newIdx < 0 || newIdx >= slot.promptVersions.length) return;
+
+    const lensPre = modal && modal.querySelector('.dv-reel-lens [data-dv-lens-pre="' + slotIdx + '"]');
+    const lens = lensPre && lensPre.closest('.dv-reel-lens');
+
+    if (!lens || typeof lens.animate !== 'function') {
+        slot.lensIndex = newIdx;
+        Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
+        _dvRenderAll(modal);
+        return;
+    }
+
+    const oldHtml = lens.innerHTML;
     slot.lensIndex = newIdx;
-    Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
-    _dvRenderAll(modal);
+    const newHtml = '<pre data-dv-lens-pre="' + slotIdx + '">' + _dvEscHtml(slot.promptVersions[newIdx].prompt || '') + '</pre>';
+
+    const outY = delta > 0 ? '-100%' : '100%';
+    const inY = delta > 0 ? '100%' : '-100%';
+
+    lens.style.overflow = 'hidden';
+    lens.style.position = 'relative';
+
+    const layerStyle = 'position:absolute;inset:0;overflow-y:auto;padding:8px 10px;box-sizing:border-box;';
+    const outEl = document.createElement('div');
+    outEl.style.cssText = layerStyle;
+    outEl.innerHTML = oldHtml;
+    lens.innerHTML = '';
+    lens.appendChild(outEl);
+
+    const inEl = document.createElement('div');
+    inEl.style.cssText = layerStyle + 'transform:translateY(' + inY + ')';
+    inEl.innerHTML = newHtml;
+    lens.appendChild(inEl);
+
+    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
+    slot._lensAnimating = true;
+    outEl.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + outY + ')' }], animOpts);
+    inEl.animate([{ transform: 'translateY(' + inY + ')' }, { transform: 'translateY(0)' }], animOpts)
+        .addEventListener('finish', () => {
+            slot._lensAnimating = false;
+            _dvRenderAll(modal);
+        });
+
+    Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
 }
 
 function _dvSwapSlots(fromIdx, toIdx, modal) {
@@ -563,12 +606,16 @@ function _dvUpdateTargetPreview(modal, d, overIdx) {
     const tgtWrap = _dvGetSlotWrap(modal, overIdx);
     if (!srcWrap || !tgtWrap) return;
 
-    const srcRect = srcWrap.getBoundingClientRect();
+    const placeholderRect = d.placeholder && d.placeholder.getBoundingClientRect();
+    const srcRect = (placeholderRect && placeholderRect.width > 0)
+        ? placeholderRect
+        : srcWrap.getBoundingClientRect();
     const tgtRect = tgtWrap.getBoundingClientRect();
     const preview = tgtWrap.cloneNode(true);
     preview.classList.add('dv-drag-target-preview');
     preview.removeAttribute('id');
     preview.style.position = 'fixed';
+    preview.style.transition = 'none';
     preview.style.left = tgtRect.left + 'px';
     preview.style.top = tgtRect.top + 'px';
     preview.style.width = tgtRect.width + 'px';
@@ -577,15 +624,13 @@ function _dvUpdateTargetPreview(modal, d, overIdx) {
     preview.style.pointerEvents = 'none';
     preview.style.zIndex = '2147483646';
     document.body.appendChild(preview);
+    preview.getBoundingClientRect();
+    preview.style.transition = 'left ' + DV_ANIM_MS + 'ms ' + DV_ANIM_EASE + ', top ' + DV_ANIM_MS + 'ms ' + DV_ANIM_EASE;
+    preview.style.left = srcRect.left + 'px';
+    preview.style.top = srcRect.top + 'px';
     d.targetGhost = preview;
     d.dimmedWrap = tgtWrap;
     tgtWrap.style.opacity = '0.35';
-
-    requestAnimationFrame(() => {
-        if (!d.targetGhost) return;
-        d.targetGhost.style.left = srcRect.left + 'px';
-        d.targetGhost.style.top = srcRect.top + 'px';
-    });
 
     Logger.debug('diff-viewer: drag hover slot ' + overIdx + ' → preview at slot ' + d.fromIdx);
 }
@@ -1605,7 +1650,6 @@ function _dvInjectStyles() {
         '  will-change: left, top;',
         '}',
         '.dv-drag-target-preview {',
-        '  transition: left 200ms ease, top 200ms ease;',
         '  opacity: 0.72;',
         '  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);',
         '  border-radius: 8px;',
@@ -1842,7 +1886,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.21',
+    _version: '1.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
