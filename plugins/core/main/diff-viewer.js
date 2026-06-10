@@ -1028,14 +1028,22 @@ function _dvReelHtml(slot, slotIdx) {
             return `<div class="${cls}"><span class="dv-reel-empty-mark">—</span></div>`;
         }
         const dataAttr = isLens ? ` data-dv-lens-pre="${slotIdx}"` : '';
+        const labelHtml = isLens ? '' : `<span class="dv-reel-version-label">${label}</span>`;
         return `<div class="${cls}">
-            <span class="dv-reel-version-label">${label}</span>
+            ${labelHtml}
             <pre${dataAttr}>${_dvEscHtml(v.prompt || '')}</pre>
         </div>`;
     };
 
     const arrowBtn = (dir, enabled) =>
         `<button type="button" data-dv-lens-${dir}="${slotIdx}" ${enabled ? '' : 'disabled'} title="${dir === 'up' ? 'Previous' : 'Next'} version" class="dv-reel-arrow"${enabled ? '' : ' disabled'}>${dir === 'up' ? '↑' : '↓'}</button>`;
+
+    const curLabel = lensV ? 'v' + lensV.displayVersionNo : '—';
+    const upTargetLabel = canUp && prevV ? 'v' + prevV.displayVersionNo : '';
+    const downTargetLabel = canDown && nextV ? 'v' + nextV.displayVersionNo : '';
+    const arrowTarget = (text) => text
+        ? `<span class="dv-reel-arrow-target">${_dvEscHtml(text)}</span>`
+        : '';
 
     return `<div class="dv-reel">
         ${halfBar(hasMoreAbove)}
@@ -1044,8 +1052,11 @@ function _dvReelHtml(slot, slotIdx) {
         ${versionBox(nextV, 'peer')}
         ${halfBar(hasMoreBelow)}
         <div class="dv-reel-arrows">
+            ${arrowTarget(upTargetLabel)}
             ${arrowBtn('up', canUp)}
+            <span class="dv-reel-arrow-current">${_dvEscHtml(curLabel)}</span>
             ${arrowBtn('down', canDown)}
+            ${arrowTarget(downTargetLabel)}
         </div>
     </div>`;
 }
@@ -1759,13 +1770,30 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows {',
         '  grid-column: 2;',
-        '  grid-row: 3;',
+        '  grid-row: 2 / 5;',
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
         '  justify-content: center;',
-        '  gap: 8px;',
+        '  gap: 3px;',
         '  align-self: center;',
+        '  min-height: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrow-current {',
+        '  font-size: 9px;',
+        '  font-weight: 700;',
+        '  color: var(--foreground, #f8fafc);',
+        '  line-height: 1;',
+        '  font-family: inherit;',
+        '  user-select: none;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrow-target {',
+        '  font-size: 8px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  line-height: 1;',
+        '  font-family: inherit;',
+        '  user-select: none;',
         '}',
         '#wf-dash-modal .dv-reel-arrow {',
         '  width: 26px;',
@@ -1817,7 +1845,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.14',
+    _version: '1.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
