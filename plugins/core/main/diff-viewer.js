@@ -558,6 +558,9 @@ function _dvSwapSlots(fromIdx, toIdx, modal) {
 
 function _dvGetSlotColumn(modal, idx) {
     if (!modal || idx == null || idx < 0) return null;
+    if (_dvState.compMode === 'rolling') {
+        return modal.querySelector('#dv-extra-container [data-dv-slot-column="' + idx + '"]');
+    }
     if (idx === 0) return _dvQ(modal, 'dv-base-container');
     const cols = modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]');
     return cols[idx - 1] || null;
@@ -566,7 +569,9 @@ function _dvGetSlotColumn(modal, idx) {
 function _dvGetSlotWrap(modal, idx) {
     const col = _dvGetSlotColumn(modal, idx);
     if (!col) return null;
-    if (idx === 0) return col.querySelector('#dv-base-slot-inner') || col.querySelector('.dv-slot-wrap');
+    if (idx === 0 && _dvState.compMode !== 'rolling') {
+        return col.querySelector('#dv-base-slot-inner') || col.querySelector('.dv-slot-wrap');
+    }
     return col.querySelector('.dv-slot-wrap');
 }
 
@@ -577,10 +582,16 @@ function _dvHitTestSlotIdx(modal, clientX, clientY, ghostEl) {
     const el = document.elementFromPoint(clientX, clientY);
     if (ghostEl) ghostEl.style.visibility = prevVis || '';
     if (!el || !modal.contains(el)) return null;
-    const baseCol = el.closest('#dv-base-container');
-    if (baseCol && modal.contains(baseCol)) return 0;
+    if (_dvState.compMode !== 'rolling') {
+        const baseCol = el.closest('#dv-base-container');
+        if (baseCol && modal.contains(baseCol)) return 0;
+    }
     const extraCol = el.closest('#dv-extra-container [data-dv-slot-column]');
     if (!extraCol || !modal.contains(extraCol)) return null;
+    if (_dvState.compMode === 'rolling') {
+        const attrIdx = parseInt(extraCol.getAttribute('data-dv-slot-column'), 10);
+        return Number.isFinite(attrIdx) ? attrIdx : null;
+    }
     const cols = [...modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]')];
     const idx = cols.indexOf(extraCol);
     return idx >= 0 ? idx + 1 : null;
@@ -952,7 +963,7 @@ function _dvSplitPanelSection(dash, leftHtml, rightHtml) {
 function _dvKeyCopyHtml(key, taskId) {
     const value = String(key || taskId || '').trim();
     if (!value) return '<span class="dv-slot-key-copy dv-slot-key-copy--empty">—</span>';
-    return `<button type="button" class="dv-slot-key-copy" data-dv-copy="${_dvEscHtml(value)}" title="Click to copy task key">${_dvEscHtml(value)}</button>`;
+    return `<button type="button" class="dv-slot-key-copy dv-slot-key-copy--primary" data-dv-copy="${_dvEscHtml(value)}" title="Click to copy task key">${_dvEscHtml(value)}</button>`;
 }
 
 async function _dvCopyText(text) {
@@ -1054,22 +1065,25 @@ function _dvReelUnifiedChromeH(unifiedPeek) {
     return chrome;
 }
 
+function _dvSlotAboveLabelText() {
+    return _dvState.compMode === 'rolling' ? 'ROLLING COMPARISON' : 'BASE COMPARISON';
+}
+
 function _dvSlotAboveLabelHtml(slotIdx) {
     if (slotIdx === 0) {
-        return '<div class="dv-slot-above-label">BASE COMPARISON</div>';
+        return '<div class="dv-slot-above-label">' + _dvSlotAboveLabelText() + '</div>';
     }
     return '<div class="dv-slot-above-label dv-slot-above-label--spacer" aria-hidden="true"></div>';
 }
 
 function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
-    const isBase = slotIdx === 0;
-    const headerBg = isBase
-        ? 'color-mix(in srgb,var(--brand,#2563eb) 8%,var(--card,#fff))'
-        : 'var(--card,#fff)';
     const authorDisplay = slot.authorName
         ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
         : _dvEscHtml(slot.authorEmail || '—');
     const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
+    const authorHtml = authorDisplay
+        ? `<div class="dv-slot-author" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>`
+        : '';
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -1087,10 +1101,10 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     }
 
     return `<div class="dv-slot" data-dv-slot="${slotIdx}" style="display:flex;flex-direction:column;height:100%;overflow:hidden;box-sizing:border-box;">
-        <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:${headerBg};border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
+        <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:var(--card,#fff);border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
-                <div style="font-size:11px;font-weight:600;color:var(--foreground,#0f172a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>
                 ${keyCopyHtml}
+                ${authorHtml}
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">${minimizeBtn}${removeBtn}</div>
         </div>
@@ -1175,18 +1189,34 @@ function _dvRenderAll(modal) {
 }
 
 function _dvRenderSlotsArea(modal) {
+    const baseContainer = _dvQ(modal, 'dv-base-container');
     const baseInner = _dvQ(modal, 'dv-base-slot-inner');
     const extraContainer = _dvQ(modal, 'dv-extra-container');
     if (!baseInner || !extraContainer) return;
 
     _dvState.hoverSlotIdx = null;
+    const isRolling = _dvState.compMode === 'rolling';
 
     if (_dvState.slots.length === 0) {
+        if (baseContainer) baseContainer.style.display = '';
         baseInner.innerHTML = _dvEmptySlotPlaceholder();
         extraContainer.innerHTML = '';
         return;
     }
+
     const unifiedPeek = _dvReelUnifiedPeekFlags();
+
+    if (isRolling) {
+        if (baseContainer) baseContainer.style.display = 'none';
+        let allHtml = '';
+        for (let i = 0; i < _dvState.slots.length; i++) {
+            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}">${_dvSlotAboveLabelHtml(i)}<div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+        }
+        extraContainer.innerHTML = allHtml;
+        return;
+    }
+
+    if (baseContainer) baseContainer.style.display = '';
     baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length, unifiedPeek);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
@@ -1214,13 +1244,13 @@ function _dvRenderStash(modal) {
             ? _dvEscHtml(entry.authorName) + (entry.authorEmail ? ' · ' + _dvEscHtml(entry.authorEmail) : '')
             : _dvEscHtml(entry.authorEmail || '—');
         const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
-        const chipBg = active ? 'var(--green-50,#f0fdf4)' : 'var(--card,#fff)';
+        const chipBg = 'var(--card,#fff)';
         const chipBorder = active ? '#22c55e' : 'var(--border,#e2e8f0)';
-        const chipColor = active ? '#15803d' : 'var(--foreground,#0f172a)';
-        html += `<div data-dv-stash-chip="${idx}" style="display:flex;align-items:flex-start;gap:6px;padding:7px 8px;background:${chipBg};border:1px solid ${chipBorder};border-radius:7px;cursor:pointer;transition:border-color 0.15s,background 0.15s;" title="Click to add slot">
+        const keyColor = active ? '#22c55e' : 'var(--foreground,#0f172a)';
+        html += `<div data-dv-stash-chip="${idx}" style="display:flex;align-items:flex-start;gap:6px;padding:7px 8px;background:${chipBg};border:1px solid ${chipBorder};border-radius:7px;cursor:pointer;transition:border-color 0.15s,color 0.15s;" title="Click to add slot">
             <div style="flex:1;min-width:0;overflow:hidden;">
-                <div style="font-size:11px;font-weight:600;color:${chipColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
-                <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${keyLine}</div>
+                <div style="font-size:11px;font-weight:600;color:${keyColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${keyLine}</div>
+                <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
             </div>
             <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
         </div>`;
@@ -1237,10 +1267,10 @@ function _dvRenderStashChipStates(modal) {
         const entry = _dvState.stash[idx];
         if (!entry) return;
         const active = slotTaskIds.has(entry.taskId);
-        chip.style.background = active ? 'var(--green-50,#f0fdf4)' : 'var(--card,#fff)';
+        chip.style.background = 'var(--card,#fff)';
         chip.style.borderColor = active ? '#22c55e' : 'var(--border,#e2e8f0)';
-        const authorEl = chip.querySelector('div > div:first-child');
-        if (authorEl) authorEl.style.color = active ? '#15803d' : 'var(--foreground,#0f172a)';
+        const keyEl = chip.querySelector('div > div:first-child');
+        if (keyEl) keyEl.style.color = active ? '#22c55e' : 'var(--foreground,#0f172a)';
     });
 }
 
@@ -1339,6 +1369,13 @@ function _dvClearCompareHoverRing(modal) {
     });
 }
 
+function _dvApplyCompareHoverRing(slotIdx, modal) {
+    if (_dvState.compMode !== 'base' || slotIdx === 0) return;
+    _dvClearCompareHoverRing(modal);
+    const wrap = _dvGetSlotWrap(modal, slotIdx);
+    if (wrap) wrap.classList.add('dv-slot-wrap--compare-hover');
+}
+
 function _dvApplyHoverDiff(slotIdx, modal) {
     if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2 || slotIdx === 0) return;
     const base = _dvState.slots[0];
@@ -1350,13 +1387,13 @@ function _dvApplyHoverDiff(slotIdx, modal) {
     const compareText = _dvSlotPromptText(compare);
     const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
     _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
-    _dvClearCompareHoverRing(modal);
-    const wrap = _dvGetSlotWrap(modal, slotIdx);
-    if (wrap) wrap.classList.add('dv-slot-wrap--compare-hover');
 }
 
 function _dvClearHoverDiff(modal) {
-    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) return;
+    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) {
+        _dvClearCompareHoverRing(modal);
+        return;
+    }
     const base = _dvState.slots[0];
     if (!base || !base.promptVersions) return;
     const baseText = _dvSlotPromptText(base);
@@ -1529,6 +1566,12 @@ function _dvSyncCompModeUi(modal) {
     if (slotsArea) {
         slotsArea.classList.toggle('dv-slots-area--rolling', _dvState.compMode === 'rolling');
     }
+    const labelText = _dvSlotAboveLabelText();
+    const baseLabel = _dvQ(modal, 'dv-base-above-label');
+    if (baseLabel) baseLabel.textContent = labelText;
+    modal.querySelectorAll('.dv-slot-above-label:not(.dv-slot-above-label--spacer)').forEach((el) => {
+        el.textContent = labelText;
+    });
     modal.querySelectorAll('[data-dv-comp-mode]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-comp-mode') === _dvState.compMode;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -1600,8 +1643,10 @@ function _dvAttachListeners(modal, dash) {
                 _dvClearHoverDiff(modal);
                 _dvState.hoverSlotIdx = null;
                 _dvSyncCompModeUi(modal);
+                _dvRenderSlotsArea(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateRollingOverlay(modal);
+                _dvScheduleReelLensSync(modal);
                 Logger.log('diff-viewer: comp mode → ' + compMode);
             }
             return;
@@ -1729,14 +1774,15 @@ function _dvAttachListeners(modal, dash) {
             return;
         }
 
-        if (_dvState.slots.length <= 2 || idx <= 0) return;
+        if (idx <= 0) return;
         if (_dvState.hoverSlotIdx === idx) return;
         _dvState.hoverSlotIdx = idx;
-        _dvApplyHoverDiff(idx, modal);
+        _dvApplyCompareHoverRing(idx, modal);
+        if (_dvState.slots.length > 2) _dvApplyHoverDiff(idx, modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
-        if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) return;
+        if (_dvState.compMode !== 'base' || _dvState.slots.length < 2) return;
         const slot = e.target.closest('[data-dv-slot]');
         if (!slot || !modal.contains(slot)) return;
         const idx = parseInt(slot.getAttribute('data-dv-slot'), 10);
@@ -1872,9 +1918,6 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
         '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-above-label {',
-        '  visibility: hidden;',
-        '}',
         '#wf-dash-modal .dv-rolling-overlay {',
         '  position: absolute;',
         '  pointer-events: none;',
@@ -1885,9 +1928,16 @@ function _dvInjectStyles() {
         '  transition: left 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
         '              width 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
         '}',
-        '#wf-dash-modal .dv-slot-wrap--compare-hover {',
-        '  border-color: var(--brand, #2563eb);',
-        '  border-width: 1px;',
+        '#wf-dash-modal .dv-slot-wrap.dv-slot-wrap--compare-hover {',
+        '  border: 1px solid var(--brand, #2563eb) !important;',
+        '}',
+        '#wf-dash-modal .dv-slot-author {',
+        '  margin-top: 3px;',
+        '  font-size: 10px;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  white-space: nowrap;',
+        '  overflow: hidden;',
+        '  text-overflow: ellipsis;',
         '}',
         '#wf-dash-modal .dv-slot-column {',
         '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
@@ -1929,30 +1979,31 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slot-key-copy {',
         '  display: block;',
         '  width: 100%;',
-        '  margin-top: 4px;',
-        '  padding: 3px 6px;',
-        '  border: 1px solid var(--border, #475569);',
-        '  border-radius: 5px;',
-        '  font-size: 10px;',
+        '  padding: 0;',
+        '  border: none;',
+        '  border-radius: 0;',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
         '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
-        '  color: var(--muted-foreground, #94a3b8);',
-        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 4%, transparent);',
+        '  color: var(--foreground, #f8fafc);',
+        '  background: transparent;',
         '  text-align: left;',
         '  overflow-wrap: anywhere;',
         '  word-break: break-all;',
-        '  white-space: normal;',
+        '  white-space: nowrap;',
+        '  overflow: hidden;',
+        '  text-overflow: ellipsis;',
         '  cursor: pointer;',
         '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-slot-key-copy--empty {',
         '  display: inline-block;',
-        '  margin-top: 4px;',
-        '  font-size: 10px;',
-        '  color: var(--muted-foreground, #64748b);',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
+        '  color: var(--foreground, #f8fafc);',
         '}',
         '#wf-dash-modal .dv-slot-key-copy:hover {',
-        '  color: var(--foreground, #f8fafc);',
-        '  border-color: color-mix(in srgb, var(--brand, #2563eb) 55%, var(--border, #475569));',
+        '  color: var(--brand, #2563eb);',
         '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
@@ -2091,7 +2142,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.24',
+    _version: '1.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
