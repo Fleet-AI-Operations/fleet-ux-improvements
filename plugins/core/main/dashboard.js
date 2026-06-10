@@ -78,7 +78,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.26',
+    _version: '5.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -995,8 +995,8 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-btn--basic:hover:not(:disabled) {',
             '  background: var(--muted, #f1f5f9);',
-            '  border-color: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--brand, var(--primary, #2563eb));',
+            '  border-color: var(--foreground, #0f172a);',
+            '  color: var(--foreground, #0f172a);',
             '}',
             '#wf-dash-modal .wf-dash-btn--primary:disabled,',
             '#wf-dash-modal .wf-dash-btn--secondary:disabled {',
@@ -1021,7 +1021,8 @@ const plugin = {
             '  color: var(--muted-foreground, #64748b);',
             '}',
             '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic:hover:not(:disabled) {',
-            '  color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--foreground, #0f172a);',
+            '  border-color: var(--foreground, #0f172a);',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
