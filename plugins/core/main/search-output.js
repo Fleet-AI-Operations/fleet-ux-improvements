@@ -105,19 +105,9 @@ const DASH_FILTER_SCOPES = [
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
-    { id: 'prompt_char_count', label: 'Prompt Length (chars)', type: 'number' },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
-    { id: 'rejection_issue_count', label: 'QA Issue Badge Count', type: 'number' },
-    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true },
-    { id: 'qa_feedback_count', label: 'Total QA Rounds †', type: 'number', hydrateHint: true },
-    { id: 'returned_feedback_count', label: 'Returned QA Count †', type: 'number', hydrateHint: true },
-    { id: 'flagged_feedback_count', label: 'Flagged as Bugged Count †', type: 'number', hydrateHint: true },
-    { id: 'card_activity_at', label: 'Card Activity Date', type: 'date' },
-    { id: 'task_created_at', label: 'Task Created Date', type: 'date' },
-    { id: 'dispute_submitted_at', label: 'Latest Dispute Date', type: 'date' },
-    { id: 'first_qa_at', label: 'First QA Date †', type: 'date', hydrateHint: true },
-    { id: 'last_qa_at', label: 'Last QA Date †', type: 'date', hydrateHint: true },
-    { id: 'latest_version_at', label: 'Latest Prompt Version Date †', type: 'date', hydrateHint: true }
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true }
 ];
 
 const DASH_OUTPUT_NUM_COMPARATORS = [
@@ -2432,77 +2422,34 @@ const searchOutputMethods = {
         return { rows, andOr };
     },
 
+    _displayPromptVersionCount(task) {
+        const versions = (task && task.promptVersions) || [];
+        if (versions.length === 0) return 1;
+        const lib = dashLib();
+        if (versions[0].displayVersionNo != null) {
+            return versions.length;
+        }
+        const rawLike = versions.map((v) => ({
+            id: v.id,
+            version_no: v.version_no != null ? v.version_no : v.versionNo,
+            created_at: v.created_at != null ? v.created_at : v.createdAt,
+            prompt: v.prompt,
+            env_key: v.env_key != null ? v.env_key : v.envKey
+        }));
+        return lib.computeDisplayVersions(rawLike).length;
+    },
+
     _searchOutputManualFilterValue(item, fieldId) {
         const task = item && item.task;
         if (!task) return null;
-        const allFeedback = task.allFeedback || [];
-        const nonSystemFeedback = allFeedback.filter((e) => !e.isSystemFeedback && !(e.display && e.display.isSystemFeedback));
         switch (fieldId) {
-            case 'prompt_char_count':
-                return (task.prompt || '').length;
             case 'prompt_word_count':
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
                 return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
             case 'prompt_version_count':
                 if (!item.hydrated) return null;
-                return (task.promptVersions || []).length;
-            case 'qa_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.length;
-            case 'returned_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => !e.isPositive).length;
-            case 'flagged_feedback_count':
-                if (!item.hydrated) return null;
-                return nonSystemFeedback.filter((e) => e.isFlaggedAsBugged).length;
-            case 'card_activity_at': {
-                const ts = Date.parse(item.sortAt || '');
-                return Number.isFinite(ts) ? ts : null;
-            }
-            case 'task_created_at': {
-                const ts = Date.parse(task.createdAt || '');
-                return Number.isFinite(ts) ? ts : null;
-            }
-            case 'dispute_submitted_at': {
-                const disputes = item.disputes || [];
-                if (disputes.length === 0) return null;
-                let maxTs = null;
-                for (const d of disputes) {
-                    const ts = Date.parse(d.submittedAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
-            case 'first_qa_at': {
-                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
-                let minTs = null;
-                for (const e of nonSystemFeedback) {
-                    const ts = Date.parse(e.feedbackAt || '');
-                    if (Number.isFinite(ts) && (minTs == null || ts < minTs)) minTs = ts;
-                }
-                return minTs;
-            }
-            case 'last_qa_at': {
-                if (!item.hydrated || nonSystemFeedback.length === 0) return null;
-                let maxTs = null;
-                for (const e of nonSystemFeedback) {
-                    const ts = Date.parse(e.feedbackAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
-            case 'latest_version_at': {
-                if (!item.hydrated) return null;
-                const versions = task.promptVersions || [];
-                if (versions.length === 0) return null;
-                let maxTs = null;
-                for (const v of versions) {
-                    const ts = Date.parse(v.createdAt || '');
-                    if (Number.isFinite(ts) && (maxTs == null || ts > maxTs)) maxTs = ts;
-                }
-                return maxTs;
-            }
+                return this._displayPromptVersionCount(task);
             default:
                 return null;
         }
@@ -6704,7 +6651,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.43',
+    _version: '1.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
