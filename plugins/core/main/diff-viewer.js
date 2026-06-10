@@ -12,8 +12,7 @@ const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
 const DV_CHAR_DIFF_LIMIT = 15000;
-const DV_REEL_HALF_H = 14;
-const DV_REEL_PEER_H = 72;
+const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
 const DV_DRAG_THRESHOLD_PX = 4;
@@ -1020,28 +1019,21 @@ function _dvReelHtml(slot, slotIdx) {
     const prevV = lensIdx > 0 ? versions[lensIdx - 1] : null;
     const lensV = versions[lensIdx];
     const nextV = lensIdx < versions.length - 1 ? versions[lensIdx + 1] : null;
-    const hasMoreAbove = lensIdx > 1;
-    const hasMoreBelow = lensIdx < versions.length - 2;
     const canUp = lensIdx > 0;
     const canDown = lensIdx < versions.length - 1;
 
-    const halfBar = (visible) =>
-        `<div class="dv-reel-half${visible ? '' : ' dv-reel-half--hidden'}" aria-hidden="${visible ? 'false' : 'true'}">···</div>`;
+    const peekAbove = prevV
+        ? '<div class="dv-reel-peek dv-reel-peek--above" aria-hidden="true"></div>'
+        : '';
+    const peekBelow = nextV
+        ? '<div class="dv-reel-peek dv-reel-peek--below" aria-hidden="true"></div>'
+        : '';
 
-    const versionBox = (v, role) => {
-        const isLens = role === 'lens';
-        const label = v ? 'v' + v.displayVersionNo : '';
-        const cls = isLens ? 'dv-reel-lens' : ('dv-reel-peer' + (v ? '' : ' dv-reel-peer--empty'));
-        if (!v) {
-            return `<div class="${cls}"><span class="dv-reel-empty-mark">—</span></div>`;
-        }
-        const dataAttr = isLens ? ` data-dv-lens-pre="${slotIdx}"` : '';
-        const labelHtml = isLens ? '' : `<span class="dv-reel-version-label">${label}</span>`;
-        return `<div class="${cls}">
-            ${labelHtml}
-            <pre${dataAttr}>${_dvEscHtml(v.prompt || '')}</pre>
-        </div>`;
-    };
+    const reelMods = (prevV ? ' dv-reel--has-above' : '') + (nextV ? ' dv-reel--has-below' : '');
+
+    const lensHtml = lensV
+        ? `<div class="dv-reel-lens"><pre data-dv-lens-pre="${slotIdx}">${_dvEscHtml(lensV.prompt || '')}</pre></div>`
+        : '<div class="dv-reel-lens"><span class="dv-reel-empty-mark">—</span></div>';
 
     const arrowBtn = (dir, enabled) =>
         `<button type="button" data-dv-lens-${dir}="${slotIdx}" ${enabled ? '' : 'disabled'} title="${dir === 'up' ? 'Previous' : 'Next'} version" class="dv-reel-arrow wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon"${enabled ? '' : ' disabled'}>${dir === 'up' ? '↑' : '↓'}</button>`;
@@ -1053,12 +1045,10 @@ function _dvReelHtml(slot, slotIdx) {
         ? `<span class="dv-reel-arrow-target">${_dvEscHtml(text)}</span>`
         : '';
 
-    return `<div class="dv-reel">
-        ${halfBar(hasMoreAbove)}
-        ${versionBox(prevV, 'peer')}
-        ${versionBox(lensV, 'lens')}
-        ${versionBox(nextV, 'peer')}
-        ${halfBar(hasMoreBelow)}
+    return `<div class="dv-reel${reelMods}">
+        ${peekAbove}
+        ${lensHtml}
+        ${peekBelow}
         <div class="dv-reel-arrows">
             ${arrowTarget(upTargetLabel)}
             ${arrowBtn('up', canUp)}
@@ -1235,8 +1225,13 @@ function _dvClearHoverDiff(modal) {
     _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
 }
 
-function _dvReelFixedChromeH() {
-    return 12 + (DV_REEL_HALF_H * 2) + (DV_REEL_PEER_H * 2) + (DV_REEL_ROW_GAP * 4);
+function _dvReelChromeHForSlot(slot) {
+    if (!slot || !slot.promptVersions || slot.promptVersions.length === 0) return 12;
+    const lensIdx = slot.lensIndex;
+    let chrome = 12;
+    if (lensIdx > 0) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+    if (lensIdx < slot.promptVersions.length - 1) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+    return chrome;
 }
 
 function _dvScheduleReelLensSync(modal) {
@@ -1261,12 +1256,16 @@ function _dvSyncReelLensHeights(modal) {
 
     const scrollTops = lenses.map((lens) => lens.scrollTop);
 
-    const fixedChrome = _dvReelFixedChromeH();
     let maxBudget = Infinity;
-    for (const slot of slots) {
-        const body = slot.querySelector('.dv-slot > div:last-child');
+    let tightestChrome = 12;
+    for (const slotEl of slots) {
+        const body = slotEl.querySelector('.dv-slot > div:last-child');
         if (!body) continue;
-        const budget = body.clientHeight - fixedChrome;
+        const slotIdx = parseInt(slotEl.getAttribute('data-dv-slot'), 10);
+        const slot = _dvState.slots[slotIdx];
+        const chrome = _dvReelChromeHForSlot(slot);
+        tightestChrome = Math.max(tightestChrome, chrome);
+        const budget = body.clientHeight - chrome;
         if (Number.isFinite(budget)) maxBudget = Math.min(maxBudget, budget);
     }
     if (!Number.isFinite(maxBudget) || maxBudget <= 0) maxBudget = DV_REEL_LENS_H;
@@ -1278,7 +1277,7 @@ function _dvSyncReelLensHeights(modal) {
 
     slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
     lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
-    Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome=' + fixedChrome + ')');
+    Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome≤' + tightestChrome + ')');
 }
 
 function _dvAttachReelLensResizeObserver(modal) {
@@ -1694,7 +1693,7 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
-        '  grid-template-rows: ' + DV_REEL_HALF_H + 'px ' + DV_REEL_PEER_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEER_H + 'px ' + DV_REEL_HALF_H + 'px;',
+        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
         '  column-gap: 4px;',
         '  flex: 1;',
@@ -1703,44 +1702,34 @@ function _dvInjectStyles() {
         '  padding: 6px 4px 6px 6px;',
         '  box-sizing: border-box;',
         '}',
-        '#wf-dash-modal .dv-reel-half {',
-        '  grid-column: 1;',
-        '  height: ' + DV_REEL_HALF_H + 'px;',
-        '  flex-shrink: 0;',
-        '  background: var(--muted, rgba(0,0,0,0.06));',
-        '  border-radius: 4px;',
-        '  display: flex;',
-        '  align-items: center;',
-        '  justify-content: center;',
-        '  font-size: 9px;',
-        '  color: var(--muted-foreground, #64748b);',
+        '#wf-dash-modal .dv-reel--has-above {',
+        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '}',
-        '#wf-dash-modal .dv-reel-half--hidden { visibility: hidden; }',
-        '#wf-dash-modal .dv-reel-peer {',
+        '#wf-dash-modal .dv-reel--has-below {',
+        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
+        '}',
+        '#wf-dash-modal .dv-reel--has-above.dv-reel--has-below {',
+        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
+        '}',
+        '#wf-dash-modal .dv-reel-peek {',
         '  grid-column: 1;',
-        '  height: ' + DV_REEL_PEER_H + 'px;',
+        '  height: ' + DV_REEL_PEEK_H + 'px;',
         '  overflow: hidden;',
-        '  padding: 6px 8px;',
-        '  background: var(--muted, rgba(0,0,0,0.04));',
-        '  border-radius: 4px;',
+        '  background: var(--background, #fff);',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 6px;',
         '  box-sizing: border-box;',
-        '  position: relative;',
-        '  opacity: 0.6;',
+        '  flex-shrink: 0;',
         '}',
-        '#wf-dash-modal .dv-reel-peer--empty { opacity: 0.25; }',
+        '#wf-dash-modal .dv-reel-peek--above {',
+        '  border-bottom-left-radius: 0;',
+        '  border-bottom-right-radius: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel-peek--below {',
+        '  border-top-left-radius: 0;',
+        '  border-top-right-radius: 0;',
+        '}',
         '#wf-dash-modal .dv-diff-equal {',
-        '  color: var(--muted-foreground, #64748b);',
-        '}',
-        '#wf-dash-modal .dv-reel-peer pre {',
-        '  margin: 0;',
-        '  padding: 0;',
-        '  white-space: pre-wrap;',
-        '  font-family: monospace;',
-        '  font-size: 10px;',
-        '  line-height: 1.4;',
-        '  word-break: break-word;',
-        '  overflow: hidden;',
-        '  max-height: 100%;',
         '  color: var(--muted-foreground, #64748b);',
         '}',
         '#wf-dash-modal .dv-reel-lens {',
@@ -1765,23 +1754,13 @@ function _dvInjectStyles() {
         '  line-height: 1.5;',
         '  word-break: break-word;',
         '}',
-        '#wf-dash-modal .dv-reel-version-label {',
-        '  position: absolute;',
-        '  top: 3px;',
-        '  right: 5px;',
-        '  font-size: 9px;',
-        '  font-weight: 700;',
-        '  color: var(--muted-foreground, #64748b);',
-        '  pointer-events: none;',
-        '  font-family: inherit;',
-        '}',
         '#wf-dash-modal .dv-reel-empty-mark {',
         '  font-size: 11px;',
         '  color: var(--muted-foreground, #64748b);',
         '}',
         '#wf-dash-modal .dv-reel-arrows {',
         '  grid-column: 2;',
-        '  grid-row: 2 / 5;',
+        '  grid-row: 1 / -1;',
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
@@ -1843,7 +1822,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.19',
+    _version: '1.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
