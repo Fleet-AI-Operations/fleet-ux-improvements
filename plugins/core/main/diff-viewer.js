@@ -787,8 +787,7 @@ function _dvPanelHtml(dash) {
     const box = dash.panelBoxStyle ? dash.panelBoxStyle() : '';
     const label = dash.labelStyle ? dash.labelStyle() : 'font-size:11px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:.04em;';
     const input = dash.inputStyle ? dash.inputStyle() : 'border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:6px 9px;font-size:13px;width:100%;box-sizing:border-box;background:var(--background,#fff);color:var(--foreground,#0f172a);';
-    const navBtn = dash.navBtnStyle ? dash.navBtnStyle() : 'padding:5px 10px;font-size:12px;font-weight:500;border:1px solid var(--border,#e2e8f0);border-radius:6px;cursor:pointer;background:var(--card,#fff);color:var(--foreground,#0f172a);white-space:nowrap;';
-    const navBtnPrimary = dash.navBtnPrimaryStyle ? dash.navBtnPrimaryStyle() : navBtn + 'background:var(--brand,#2563eb);color:#fff;border-color:transparent;';
+    const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
     const gran = _dvState.granularity;
 
@@ -811,17 +810,17 @@ function _dvPanelHtml(dash) {
             </div>
             <div style="flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
                 <div style="${label}">Actions</div>
-                <button type="button" data-dv-action="progression" style="${navBtn}width:100%;text-align:left;font-size:11px;" title="Set each slot to a successive version of the base task">View Complete Task Progression</button>
+                <button type="button" data-dv-action="progression" class="${btnClass('basic', 'nav')} wf-dash-btn--full" style="text-align:left;" title="Set each slot to a successive version of the base task">View Complete Task Progression</button>
                 <div style="display:flex;gap:6px;">
-                    <button type="button" data-dv-action="all-v1" style="${navBtn}flex:1;font-size:11px;">All v1s</button>
-                    <button type="button" data-dv-action="all-final" style="${navBtn}flex:1;font-size:11px;">All final versions</button>
+                    <button type="button" data-dv-action="all-v1" class="${btnClass('basic', 'nav')}" style="flex:1;">All v1s</button>
+                    <button type="button" data-dv-action="all-final" class="${btnClass('basic', 'nav')}" style="flex:1;">All final versions</button>
                 </div>
             </div>
             <div style="flex-shrink:0;">
                 <div style="${label}margin-bottom:6px;">Add task</div>
                 <div style="display:flex;gap:6px;align-items:center;">
                     <input id="dv-search-input" type="text" placeholder="Task ID, key, URL, version ID…" style="${input}flex:1;"/>
-                    <button id="dv-search-btn" type="button" style="${navBtnPrimary}flex-shrink:0;">Add</button>
+                    <button id="dv-search-btn" type="button" class="${btnClass('primary', 'nav')}" style="flex-shrink:0;">Add</button>
                 </div>
                 <div id="dv-search-error" style="display:none;font-size:11px;color:#dc2626;margin-top:4px;"></div>
             </div>
@@ -1045,7 +1044,7 @@ function _dvReelHtml(slot, slotIdx) {
     };
 
     const arrowBtn = (dir, enabled) =>
-        `<button type="button" data-dv-lens-${dir}="${slotIdx}" ${enabled ? '' : 'disabled'} title="${dir === 'up' ? 'Previous' : 'Next'} version" class="dv-reel-arrow"${enabled ? '' : ' disabled'}>${dir === 'up' ? '↑' : '↓'}</button>`;
+        `<button type="button" data-dv-lens-${dir}="${slotIdx}" ${enabled ? '' : 'disabled'} title="${dir === 'up' ? 'Previous' : 'Next'} version" class="dv-reel-arrow wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon"${enabled ? '' : ' disabled'}>${dir === 'up' ? '↑' : '↓'}</button>`;
 
     const curLabel = lensV ? 'v' + lensV.displayVersionNo : '—';
     const upTargetLabel = canUp && prevV ? 'v' + prevV.displayVersionNo : '';
@@ -1808,21 +1807,8 @@ function _dvInjectStyles() {
         '  user-select: none;',
         '}',
         '#wf-dash-modal .dv-reel-arrow {',
-        '  width: 26px;',
-        '  height: 26px;',
-        '  padding: 0;',
-        '  border: 1px solid var(--border, #e2e8f0);',
-        '  border-radius: 4px;',
-        '  cursor: pointer;',
-        '  background: var(--card, #fff);',
-        '  color: var(--foreground, #0f172a);',
-        '  font-size: 13px;',
-        '  display: inline-flex;',
-        '  align-items: center;',
-        '  justify-content: center;',
-        '  flex-shrink: 0;',
+        '  grid-column: 2;',
         '}',
-        '#wf-dash-modal .dv-reel-arrow:disabled { opacity: 0.3; cursor: default; }'
     ].join('\n');
 }
 
@@ -1857,7 +1843,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.18',
+    _version: '1.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

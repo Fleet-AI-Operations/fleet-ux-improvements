@@ -2964,11 +2964,9 @@ const searchOutputMethods = {
         const nextBtn = this._q('#wf-dash-results-next');
         if (prevBtn) {
             prevBtn.disabled = !meta || !meta.canPrev;
-            prevBtn.style.cssText = this._pagerNavBtnStyle(prevBtn.disabled);
         }
         if (nextBtn) {
             nextBtn.disabled = !meta || !meta.canNext;
-            nextBtn.style.cssText = this._pagerNavBtnStyle(nextBtn.disabled);
         }
     },
 
@@ -3107,7 +3105,7 @@ const searchOutputMethods = {
             : '';
         return `
             <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
-                <button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                <button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('secondary', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
                 ${panelHtml}
             </div>`;
     },
@@ -3150,7 +3148,7 @@ const searchOutputMethods = {
         section.removeAttribute('data-wf-dash-user-story-absent');
         let btn = section.querySelector('[data-wf-dash-user-story]');
         if (!btn) {
-            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('secondary', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
             btn = section.querySelector('[data-wf-dash-user-story]');
         }
         if (btn) {
@@ -3784,8 +3782,8 @@ const searchOutputMethods = {
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-reset-filters" style="${this._navBtnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-apply-filters" style="${this._navBtnPrimaryStyle()}">Apply</button>
+                                    <button type="button" id="wf-dash-reset-filters" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" id="wf-dash-apply-filters" class="${this._dashBtnClass('primary', 'nav')}">Apply</button>
                                 </div>
                             </div>
                         </nav>
@@ -3856,8 +3854,8 @@ const searchOutputMethods = {
                                     </div>
                                 </div>
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-clear-params" style="${this._navBtnStyle()}">Reset</button>
-                                    <button type="button" id="wf-dash-search" style="${this._navBtnPrimaryStyle()}">Search</button>
+                                    <button type="button" id="wf-dash-clear-params" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" id="wf-dash-search" class="${this._dashBtnClass('primary', 'nav')}">Search</button>
                                 </div>
                             </div>
                             <div id="wf-dash-section-retrieve" style="${section}">
@@ -3866,8 +3864,8 @@ const searchOutputMethods = {
                                 <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID, version ID, task key, or URL" style="${input}">
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-retrieve-clear" style="${this._navBtnStyle()}">Clear</button>
-                                    <button type="button" id="wf-dash-retrieve-btn" style="${this._navBtnPrimaryStyle()}">Retrieve</button>
+                                    <button type="button" id="wf-dash-retrieve-clear" class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
+                                    <button type="button" id="wf-dash-retrieve-btn" class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
                                 </div>
                             </div>
                         </div>
@@ -3917,7 +3915,7 @@ const searchOutputMethods = {
                                         </label>
                                     </div>
                                     <div id="wf-dash-manual-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
-                                    <button type="button" id="wf-dash-manual-add" style="${this._navBtnStyle()} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                    <button type="button" id="wf-dash-manual-add" class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
                             </div>
                         </div>
@@ -3940,9 +3938,9 @@ const searchOutputMethods = {
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                <button type="button" id="wf-dash-bulk-hydrate" style="${this._btnStyle()} display: none; font-size: 11px;">Hydrate results</button>
-                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" style="${this._btnStyle()} display: none; font-size: 11px;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-clear-results" style="${this._btnStyle()} font-size: 11px;">Clear Results</button>
+                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
+                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
+                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
@@ -3966,8 +3964,8 @@ const searchOutputMethods = {
                                         </select>
                                     </label>
                                     <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" style="${this._pagerNavBtnStyle(true)}">&lt;</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" style="${this._pagerNavBtnStyle(true)}">&gt;</button>
+                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}">&lt;</button>
+                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}">&gt;</button>
                                 </div>
                             </div>
                         </div>
@@ -4656,23 +4654,16 @@ const searchOutputMethods = {
                 || noOutputTypes
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
-            searchBtn.style.cssText = searchDisabled
-                ? this._navBtnPrimaryDisabledStyle()
-                : this._navBtnPrimaryStyle();
         }
         const retrieveBtn = this._q('#wf-dash-retrieve-btn');
         const retrieveInputEl = this._q('#wf-dash-retrieve-input');
         if (retrieveBtn) {
             if (this._state.loading) {
                 retrieveBtn.disabled = true;
-                retrieveBtn.style.cssText = this._navBtnPrimaryDisabledStyle();
             } else if (retrieveBtn.textContent === 'Retrieve') {
                 const retrieveInput = (retrieveInputEl && retrieveInputEl.value) || '';
                 const retrieveDisabled = !String(retrieveInput).trim();
                 retrieveBtn.disabled = retrieveDisabled;
-                retrieveBtn.style.cssText = retrieveDisabled
-                    ? this._navBtnPrimaryDisabledStyle()
-                    : this._navBtnPrimaryStyle();
             }
         }
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
@@ -4754,7 +4745,6 @@ const searchOutputMethods = {
         const disabled = noResults || filterInvalid.invalid || !selectionValid || !hasPendingChanges;
         if (applyBtn) {
             applyBtn.disabled = disabled;
-            applyBtn.style.cssText = disabled ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
         }
         if (resetFiltersBtn) {
             resetFiltersBtn.disabled = noResults || Boolean(this._state.loading);
@@ -4861,7 +4851,6 @@ const searchOutputMethods = {
         if (btn) {
             btn.textContent = loading ? 'Loading…' : 'Retrieve';
             btn.disabled = loading;
-            btn.style.cssText = loading ? this._navBtnPrimaryDisabledStyle() : this._navBtnPrimaryStyle();
         }
         const clearBtn = this._q('#wf-dash-retrieve-clear');
         if (clearBtn) clearBtn.disabled = loading;
@@ -5626,7 +5615,7 @@ const searchOutputMethods = {
                 + `<span style="font-size: 11px; font-weight: 500; white-space: nowrap;">Switching to ${dashEscHtml(teamLabel)}</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} width: 26px; height: 26px; flex-shrink: 0;">`
+        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">`
             + `${this._extLinkIconSvg(true)}`
             + `</button>`;
     },
@@ -5908,19 +5897,19 @@ const searchOutputMethods = {
         if (!disputeId) return '';
         const ui = this._getDisputeClaimUi(disputeId);
         const url = dashFleetDisputeUrl(disputeId);
-        const baseStyle = this._btnStyle()
-            + ' padding: 4px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;';
+        const baseClass = this._dashBtnClass('secondary', 'nav');
+        const baseStyle = ' padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;';
         if (ui.status === 'claimed' && url) {
-            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" style="${baseStyle} text-decoration: none;">`
+            return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open dispute in Fleet" aria-label="Open dispute in Fleet" class="${baseClass}" style="${baseStyle} text-decoration: none;">`
                 + `<span>Claim and Resolve</span>${this._extLinkIconSvg(true)}</a>`;
         }
         if (ui.status === 'claiming') {
-            return `<button type="button" disabled aria-busy="true" style="${baseStyle} opacity: 0.85; cursor: wait;">`
+            return `<button type="button" disabled aria-busy="true" class="${baseClass}" style="${baseStyle} cursor: wait;">`
                 + `${this._loadingSpinnerHtml(14)}`
                 + `<span>Leasing dispute...</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" style="${baseStyle}">`
+        return `<button type="button" data-wf-dash-dispute-claim="1" data-dispute-id="${dashEscHtml(disputeId)}" data-item-id="${dashEscHtml(itemId)}" title="Claim this dispute" class="${baseClass}" style="${baseStyle}">`
             + `<span>Claim and Resolve</span>${this._extLinkIconSvg(false)}</button>`;
     },
 
@@ -6220,7 +6209,7 @@ const searchOutputMethods = {
 
         let row3Left = '';
         if (expanded) {
-            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
+            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
         }
 
         let versionControls = '';
@@ -6231,7 +6220,7 @@ const searchOutputMethods = {
                 .join('');
             versionControls = `
                 <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._btnStyle()} padding: 2px 8px; font-size: 11px;">${expanded ? 'Collapse' : 'Show All'}</button>
+                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${expanded ? 'Collapse' : 'Show All'}</button>
                     ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
                 </div>`;
         }
@@ -6710,7 +6699,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.40',
+    _version: '1.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

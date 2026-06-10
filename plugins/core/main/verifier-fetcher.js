@@ -196,6 +196,10 @@ function restoreVerifierScratchpadTabState(modal, state) {
 }
 
 function verifierFetcherPanelHtml() {
+    const dash = Context.dashboard;
+    const btnClass = (variant, size) => (dash && typeof dash.dashBtnClass === 'function'
+        ? dash.dashBtnClass(variant, size)
+        : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
     return `
             <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
                 <div style="flex-shrink: 0;">
@@ -218,16 +222,7 @@ function verifierFetcherPanelHtml() {
                             box-sizing: border-box;
                             font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                         ">
-                        <button type="button" id="wf-ops-fetch-verifier" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 8px 14px;
-                            font-size: 12px;
-                            font-weight: 600;
-                            color: var(--brand, #4f46e5);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Fetch</button>
+                        <button type="button" id="wf-ops-fetch-verifier" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
                     </div>
                     <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
                         <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
@@ -286,69 +281,14 @@ function verifierFetcherPanelHtml() {
                                 box-sizing: border-box;
                                 font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
                             ">
-                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" style="
-                                display: none;
-                                flex-shrink: 0;
-                                width: 26px;
-                                height: 26px;
-                                padding: 0;
-                                font-size: 16px;
-                                line-height: 1;
-                                font-weight: 600;
-                                color: var(--muted-foreground, #64748b);
-                                background: var(--background, white);
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                cursor: pointer;
-                                align-items: center;
-                                justify-content: center;
-                            ">&times;</button>
+                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" class="${btnClass('basic', 'icon')}" style="display: none;">&times;</button>
                         </span>
                         <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
-                        <button type="button" id="wf-ops-verifier-content-prev" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Prev</button>
-                        <button type="button" id="wf-ops-verifier-content-next" class="wf-ops-action-btn" style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--foreground, #333);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                        ">Next</button>
-                        <button type="button" id="wf-ops-copy-verifier" style="
-                            display: none;
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 500;
-                            color: var(--muted-foreground, #666);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            cursor: pointer;
-                            transition: background 0.2s, color 0.2s;
-                        ">Copy</button>
+                        <button type="button" id="wf-ops-verifier-content-prev" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Prev</button>
+                        <button type="button" id="wf-ops-verifier-content-next" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Next</button>
+                        <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
                     </div>
-                    <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="wf-ops-action-btn" aria-pressed="false" style="
-                        flex-shrink: 0;
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--foreground, #333);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                    ">Scratchpad</button>
+                    <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Scratchpad</button>
                 </div>
                 <div id="wf-ops-verifier-output-wrap" style="
                     display: none;
@@ -541,7 +481,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

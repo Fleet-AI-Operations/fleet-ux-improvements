@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.12',
+    _version: '7.13',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2384,6 +2384,12 @@ const plugin = {
         return OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
     },
 
+    _opsDashBtnClass(variant, size) {
+        const dash = Context.dashboard;
+        if (dash && typeof dash.dashBtnClass === 'function') return dash.dashBtnClass(variant, size);
+        return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+    },
+
     _opsEscapeHtml(str) {
         return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     },
@@ -2394,16 +2400,11 @@ const plugin = {
         style.id = 'wf-ops-spinner-style';
         style.textContent = [
             '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
-            '.wf-ops-action-btn,.wf-ops-profile-btn{cursor:pointer!important;transition:background 0.15s,border-color 0.15s,color 0.15s!important;}',
-            '.wf-ops-action-btn:hover,.wf-ops-profile-btn:hover{background:var(--brand,#4f46e5)!important;color:#fff!important;border-color:var(--brand,#4f46e5)!important;}',
-            '.wf-ops-action-btn:disabled,.wf-ops-profile-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
-            '.wf-ops-action-btn:disabled:hover,.wf-ops-profile-btn:disabled:hover{background:var(--background,white)!important;color:var(--brand,#4f46e5)!important;border-color:var(--border,#e5e5e5)!important;}',
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
             '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
             '.wf-ops-edit-btn:hover{background:#ca8a04!important;color:#fff!important;border-color:#ca8a04!important;}',
-            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex-shrink:0;border-radius:6px;color:var(--muted-foreground,#64748b);border:1px solid var(--border,#e5e5e5);background:var(--background,white);text-decoration:none;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
-            '.wf-ops-profile-link-btn:hover{background:var(--foreground,#0f172a)!important;color:var(--background,#fff)!important;border-color:var(--foreground,#0f172a)!important;}',
+            '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;}',
             '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
             '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
             '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
@@ -3002,16 +3003,15 @@ const plugin = {
         const url = String(profileUrl || '').trim();
         if (!url) return '';
         const label = title || 'Open profile in Fleet';
-        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn" ' +
+        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
             'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
             this._opsProfileLinkIconSvg() + '</a>';
     },
 
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
-        return '<button type="button" class="wf-ops-action-btn wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;font-size:11px;font-weight:500;color:var(--brand,#4f46e5);padding:4px 8px;border:1px solid var(--border,#e5e5e5);' +
-            'border-radius:4px;background:var(--background,white);white-space:nowrap;cursor:pointer;">Search Worker Output</button>';
+        return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
+            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
@@ -4072,18 +4072,9 @@ const plugin = {
                             </label>
                             ${submoduleSwitchHTML}
                         </div>
-                        <button type="button" id="wf-ops-open-dashboard-btn" class="wf-ops-action-btn" style="
+                        <button type="button" id="wf-ops-open-dashboard-btn" class="${this._opsDashBtnClass('secondary', 'regular')} wf-dash-btn--full" style="
                             display: ${openDashboardBtnDisplay};
-                            width: 100%;
                             margin-top: 10px;
-                            padding: 8px 14px;
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: var(--brand, #4f46e5);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            cursor: pointer;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
                     </div>
@@ -4102,15 +4093,8 @@ const plugin = {
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">
-                        <button type="button" id="wf-ops-password-submit" class="wf-ops-action-btn" style="
+                        <button type="button" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
                             flex-shrink: 0;
-                            padding: 8px 14px;
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: var(--brand, #4f46e5);
-                            background: var(--background, white);
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
                         ">Unlock</button>
                     </div>
                     <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
@@ -4201,36 +4185,9 @@ const plugin = {
                     box-sizing: border-box;
                 ">
                 <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" id="wf-ops-open-link" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" class="wf-ops-action-btn" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--brand, #2563eb);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">New Tab</button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" style="
-                        padding: 6px 10px;
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: var(--muted-foreground, #64748b);
-                        background: var(--background, white);
-                        border: 1px solid var(--border, #e2e8f0);
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Copy</button>
+                    <button type="button" id="wf-ops-open-link" class="${this._opsDashBtnClass('secondary', 'nav')}">Open</button>
+                    <button type="button" id="wf-ops-open-link-new-tab" class="${this._opsDashBtnClass('secondary', 'nav')}">New Tab</button>
+                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" class="${this._opsDashBtnClass('basic', 'nav')}">Copy</button>
                 </div>
             </div>`;
     },
@@ -4238,7 +4195,7 @@ const plugin = {
 
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
-            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn wf-ops-grade-header-link">Grade Assessments</a>';
+            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
     },
 
 

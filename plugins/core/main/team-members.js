@@ -154,8 +154,9 @@ function teamMembersPanelHtml(_loader) {
     const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
     const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
     const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
-    const searchBtn = dash && typeof dash.navBtnPrimaryStyle === 'function' ? dash.navBtnPrimaryStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--primary-foreground, #ffffff); background: var(--brand, var(--primary, #2563eb)); border: 1px solid var(--brand, var(--primary, #2563eb)); border-radius: 6px; cursor: pointer;';
-    const hollowBtn = dash && typeof dash.navBtnStyle === 'function' ? dash.navBtnStyle() : 'padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); background: var(--background, white); border: 1px solid var(--border, #e2e8f0); border-radius: 6px; cursor: pointer;';
+    const btnClass = (variant, size) => (dash && typeof dash.dashBtnClass === 'function'
+        ? dash.dashBtnClass(variant, size)
+        : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
     const splitPanel = dash && typeof dash.splitPanelSectionHtml === 'function'
         ? dash.splitPanelSectionHtml.bind(dash)
         : null;
@@ -173,7 +174,7 @@ function teamMembersPanelHtml(_loader) {
                             </div>
                             <div style="display: flex; gap: 8px; align-items: stretch;">
                                 <input type="text" id="wf-ops-team-search-input" placeholder="Name or email…" autocomplete="off" style="${input} flex: 1; min-width: 0;">
-                                <button type="button" id="wf-ops-team-search-btn" class="wf-ops-action-btn" style="${searchBtn} flex-shrink: 0;">Search</button>
+                                <button type="button" id="wf-ops-team-search-btn" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Search</button>
                             </div>
                         </div>
                         <div id="wf-ops-team-filter-wrap" style="display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column;">
@@ -188,9 +189,9 @@ function teamMembersPanelHtml(_loader) {
                                     </div>
                                     <p style="${hint} margin: 0 0 8px 0;">Stage filters below, then press Apply. Stats load after search. Default matches all conditions (AND).</p>
                                     <div id="wf-ops-team-numeric-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
-                                    <button type="button" id="wf-ops-team-numeric-add" style="${hollowBtn} width: 100%; font-size: 11px; padding: 6px 10px;">+ Add filter</button>
+                                    <button type="button" id="wf-ops-team-numeric-add" class="${btnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
-                                <button type="button" id="wf-ops-team-apply-filters" style="${hollowBtn} width: 100%; font-weight: 600;">Apply</button>
+                                <button type="button" id="wf-ops-team-apply-filters" class="${btnClass('primary', 'nav')} wf-dash-btn--full">Apply</button>
                             </div>
                         </div>
                     </div>`;
@@ -200,28 +201,8 @@ function teamMembersPanelHtml(_loader) {
                         <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
                             <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
-                                <button type="button" id="wf-ops-team-expand-all-btn" style="
-                                    display: none;
-                                    padding: 2px 10px;
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: var(--muted-foreground, #666);
-                                    background: var(--background, white);
-                                    border: 1px solid var(--border, #e5e5e5);
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                ">Collapse All</button>
-                                <button type="button" id="wf-ops-team-search-clear-btn" style="
-                                    display: none;
-                                    padding: 2px 10px;
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: var(--muted-foreground, #666);
-                                    background: var(--background, white);
-                                    border: 1px solid var(--border, #e5e5e5);
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                ">Clear</button>
+                                <button type="button" id="wf-ops-team-expand-all-btn" class="${btnClass('basic', 'compact')}" style="display: none;">Collapse All</button>
+                                <button type="button" id="wf-ops-team-search-clear-btn" class="${btnClass('basic', 'compact')}" style="display: none;">Clear</button>
                             </div>
                         </div>
                         <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
@@ -309,7 +290,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

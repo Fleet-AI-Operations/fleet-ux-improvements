@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.160",
+  "archetypesVersion": "10.161",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.12",
-      "hash": "sha256-d49482d65e584c80e10acbd6d2c0e76cc5650ad81b47696cad5466ba353062b9",
+      "version": "7.13",
+      "hash": "sha256-9b31420acebb03b71f2e3caef68a61e71a40c571d0bf22b2820e4f09d109b639",
       "log": false
     },
     {
@@ -46,32 +46,32 @@
     },
     {
       "name": "dashboard.js",
-      "version": "5.25",
-      "hash": "sha256-0baf8112a12b0358b3e57519b0e63a813b3ae69c9745552ed938d4ef80c772ea",
+      "version": "5.26",
+      "hash": "sha256-119661917730f601cb15df534fab649fa06b485d932ef7b75a27ceef8478b9d3",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "1.40",
-      "hash": "sha256-0e64b395c0f573378caa7f3bfd4cb7cdeb58b6995ef2b87efcd536584113eb22",
+      "version": "1.41",
+      "hash": "sha256-fead3f5b3c1302c30d08f49426116f8529f6fe4a18f55a2b9aac68b3e038aae2",
       "log": false
     },
     {
       "name": "team-members.js",
-      "version": "2.2",
-      "hash": "sha256-1fe71abba61996f75a1c846d8015eced56ec958cf6f064ac532b832aab95db86",
+      "version": "2.3",
+      "hash": "sha256-92d125b61cf3a81020082cbc7e73e21ec484d002806762960ae3fc3cf0609b52",
       "log": false
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "1.5",
-      "hash": "sha256-fad56d12e82f6b0e41315bc4bbe65d3c5c244a8aa5c38d6490a71ef4268f2c7a",
+      "version": "1.6",
+      "hash": "sha256-8ef4909d467001e766c36ff6d3a93d18baf1ecc8648bf03b419ccaa2392c9852",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.18",
-      "hash": "sha256-76d681a5ae08a8026c2b1138c2e17fb0d0f844c37df02e72037b9ef3c80f9e7d",
+      "version": "1.19",
+      "hash": "sha256-46da1e597c3db417306171561a6ca34be693d4770742bd16f74282d885c86664",
       "log": false
     }
   ],

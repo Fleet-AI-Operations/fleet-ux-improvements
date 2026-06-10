@@ -78,7 +78,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.25',
+    _version: '5.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -125,6 +125,7 @@ const plugin = {
             inputStyle: () => self._inputStyle(),
             navBtnStyle: () => self._navBtnStyle(),
             navBtnPrimaryStyle: () => self._navBtnPrimaryStyle(),
+            dashBtnClass: (variant, size) => self._dashBtnClass(variant, size),
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => self._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
@@ -378,6 +379,7 @@ const plugin = {
             this._ensureSpinnerKeyframes();
             this._ensureMsOptionStyles();
             this._ensureHeaderActionStyles();
+            this._ensureDashButtonStyles();
             this._ensureUserStoryStyles();
             this._ensureSplitPanelResizeStyles();
             this._attachSplitPanelResize();
@@ -457,8 +459,6 @@ const plugin = {
             '  padding: 0 12px !important;',
             '  font-size: 11px !important;',
             '  font-weight: 600 !important;',
-            '  color: var(--foreground, #0f172a);',
-            '  background: var(--background, #fff);',
             '}',
             '#wf-dash-modal #wf-dash-close.wf-dash-header-btn {',
             '  width: 32px !important;',
@@ -845,7 +845,7 @@ const plugin = {
                 </div>
                 <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
                     ${gradeAssessmentsLink}
-                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn">Open Settings</button>
+                    <button type="button" id="wf-dash-open-settings" class="wf-dash-header-btn wf-dash-btn wf-dash-btn--basic wf-dash-btn--nav">Open Settings</button>
                     <button type="button" id="wf-dash-close" class="wf-dash-header-btn" aria-label="Close dashboard" title="Close">${this._dashCloseIconSvg()}</button>
                 </div>
             </div>
@@ -904,6 +904,127 @@ const plugin = {
 
     _navBtnPrimaryDisabledStyle() {
         return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    },
+
+    _dashBtnClass(variant, size) {
+        const variants = {
+            primary: 'wf-dash-btn--primary',
+            secondary: 'wf-dash-btn--secondary',
+            basic: 'wf-dash-btn--basic'
+        };
+        const sizes = {
+            nav: 'wf-dash-btn--nav',
+            regular: 'wf-dash-btn--regular',
+            icon: 'wf-dash-btn--icon',
+            compact: 'wf-dash-btn--compact'
+        };
+        const v = variants[variant] || variants.basic;
+        const s = sizes[size] || sizes.nav;
+        return 'wf-dash-btn ' + v + ' ' + s;
+    },
+
+    _ensureDashButtonStyles() {
+        if (!this._modal || this._modal.querySelector('#wf-dash-btn-style')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-btn-style';
+        style.textContent = [
+            '#wf-dash-modal .wf-dash-btn {',
+            '  appearance: none;',
+            '  -webkit-appearance: none;',
+            '  box-sizing: border-box;',
+            '  margin: 0;',
+            '  font-family: inherit;',
+            '  font-weight: 600;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
+            '  white-space: nowrap;',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  line-height: 1.4;',
+            '  text-decoration: none;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--nav {',
+            '  padding: 4px 10px;',
+            '  font-size: 11px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--regular {',
+            '  padding: 7px 14px;',
+            '  font-size: 12px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--compact {',
+            '  padding: 2px 10px;',
+            '  font-size: 11px;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--icon {',
+            '  width: 26px;',
+            '  height: 26px;',
+            '  padding: 0;',
+            '  font-size: 13px;',
+            '  flex-shrink: 0;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--full {',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--secondary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: var(--background, #fff);',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic {',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--background, #fff);',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic:hover:not(:disabled) {',
+            '  background: var(--muted, #f1f5f9);',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--primary:disabled,',
+            '#wf-dash-modal .wf-dash-btn--secondary:disabled {',
+            '  cursor: not-allowed;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #94a3b8);',
+            '  opacity: 0.85;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn--basic:disabled {',
+            '  cursor: not-allowed;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #94a3b8);',
+            '  opacity: 0.85;',
+            '}',
+            '#wf-dash-modal .wf-dash-btn:disabled[aria-busy="true"] {',
+            '  opacity: 0.65;',
+            '  cursor: wait;',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic {',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
+            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic:hover:not(:disabled) {',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
     },
 
     _sidePanelWidthStorageKey(scopeKey) {
@@ -1012,26 +1133,6 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-user-story-style';
         style.textContent = [
-            '#wf-dash-modal .wf-dash-user-story-btn {',
-            '  padding: 4px 10px;',
-            '  font-size: 11px;',
-            '  font-weight: 600;',
-            '  border-radius: 6px;',
-            '  cursor: pointer;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--background, #fff);',
-            '  color: var(--muted-foreground, #64748b);',
-            '  font-family: inherit;',
-            '}',
-            '#wf-dash-modal .wf-dash-user-story-btn:hover:not(:disabled) {',
-            '  background: var(--muted, #f1f5f9);',
-            '  border-color: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--muted-foreground, #64748b));',
-            '  color: var(--foreground, #0f172a);',
-            '}',
-            '#wf-dash-modal .wf-dash-user-story-btn:disabled {',
-            '  opacity: 0.65;',
-            '  cursor: wait;',
-            '}',
             '#wf-dash-modal .wf-dash-user-story-body {',
             '  margin: 8px 0 0;',
             '  padding: 6px 0 2px 12px;',
