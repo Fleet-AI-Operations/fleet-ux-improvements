@@ -1539,6 +1539,14 @@ function _dvScheduleReelLensSync(modal) {
     });
 }
 
+function _dvSlotLensBudget(slotEl, unifiedChrome) {
+    const wrap = slotEl.closest('.dv-slot-wrap');
+    const header = slotEl.querySelector('.dv-slot-header');
+    if (!wrap) return null;
+    const headerH = header ? header.offsetHeight : 0;
+    return wrap.clientHeight - headerH - unifiedChrome;
+}
+
 function _dvSyncReelLensHeights(modal) {
     if (!modal || _dvState.mode !== 'tasks' || _dvState.slots.length === 0) return;
     if (_dvState.drag.pending || _dvState.drag.active) return;
@@ -1556,9 +1564,8 @@ function _dvSyncReelLensHeights(modal) {
 
     let maxBudget = Infinity;
     for (const slotEl of slots) {
-        const body = slotEl.querySelector('.dv-slot > div:last-child');
-        if (!body) continue;
-        const budget = body.clientHeight - unifiedChrome;
+        const budget = _dvSlotLensBudget(slotEl, unifiedChrome);
+        if (budget == null) continue;
         if (Number.isFinite(budget)) maxBudget = Math.min(maxBudget, budget);
     }
     if (!Number.isFinite(maxBudget) || maxBudget <= 0) maxBudget = DV_REEL_LENS_H;
@@ -2019,6 +2026,14 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
         '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
+        '  align-self: stretch;',
+        '  height: 100%;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column {',
+        '  height: 100%;',
+        '  align-self: stretch;',
+        '}',
         '#wf-dash-modal .dv-rolling-overlay {',
         '  position: absolute;',
         '  pointer-events: none;',
@@ -2243,7 +2258,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.27',
+    _version: '1.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
