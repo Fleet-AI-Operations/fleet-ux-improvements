@@ -3105,7 +3105,7 @@ const searchOutputMethods = {
             : '';
         return `
             <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
-                <button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('secondary', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
+                <button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
                 ${panelHtml}
             </div>`;
     },
@@ -3148,7 +3148,7 @@ const searchOutputMethods = {
         section.removeAttribute('data-wf-dash-user-story-absent');
         let btn = section.querySelector('[data-wf-dash-user-story]');
         if (!btn) {
-            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('secondary', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
             btn = section.querySelector('[data-wf-dash-user-story]');
         }
         if (btn) {
@@ -3964,8 +3964,8 @@ const searchOutputMethods = {
                                         </select>
                                     </label>
                                     <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}">&lt;</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}">&gt;</button>
+                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('prev')}</button>
+                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('next')}</button>
                                 </div>
                             </div>
                         </div>
@@ -5584,6 +5584,11 @@ const searchOutputMethods = {
         </button>`;
     },
 
+    _pagerChevronSvg(dir) {
+        const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+    },
+
     _extLinkIconSvg(active) {
         const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
         const opacity = active ? '1' : '0.45';
@@ -6699,7 +6704,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.41',
+    _version: '1.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

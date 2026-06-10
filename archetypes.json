@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.171",
+  "archetypesVersion": "10.175",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.13",
-      "hash": "sha256-9b31420acebb03b71f2e3caef68a61e71a40c571d0bf22b2820e4f09d109b639",
+      "version": "7.14",
+      "hash": "sha256-a0a43b4b0751d40d60df8a61ffb386f2dc65bec1dbab6c659622a505a128a638",
       "log": false
     },
     {
@@ -52,8 +52,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "1.41",
-      "hash": "sha256-fead3f5b3c1302c30d08f49426116f8529f6fe4a18f55a2b9aac68b3e038aae2",
+      "version": "1.43",
+      "hash": "sha256-803ab8be27bfd97dc58daaff8586217f9685a3a59080f49ae63a354d868edbaa",
       "log": false
     },
     {
@@ -70,8 +70,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.28",
-      "hash": "sha256-5e249abaa3fdd39f8f0b40acdcff0d3b40f2d087b93bbae22c7bbd117e02e7fb",
+      "version": "1.29",
+      "hash": "sha256-053e2f630c880b1d8e9521c3f25b34be0b9ce0175dde572d74df98cfe7325b7d",
       "log": false
     }
   ],

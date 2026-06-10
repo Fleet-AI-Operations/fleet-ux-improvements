@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.13',
+    _version: '7.14',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4195,7 +4195,7 @@ const plugin = {
 
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
-            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
+            + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('basic', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
     },
 
 
