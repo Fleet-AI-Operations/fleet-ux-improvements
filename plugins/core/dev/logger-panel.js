@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.11',
+    _version: '2.12',
     enabledByDefault: true,
     phase: 'core',
 
@@ -256,7 +256,7 @@ const plugin = {
         const toggleButton = document.createElement('button');
         toggleButton.id = 'wf-dev-log-toggle';
         toggleButton.type = 'button';
-        toggleButton.textContent = 'Hide Logs';
+        toggleButton.textContent = this._toggleButtonLabel(state.isVisible);
         toggleButton.style.position = 'fixed';
         toggleButton.style.left = '20px';
         toggleButton.style.bottom = '78px';
@@ -459,13 +459,18 @@ const plugin = {
         state.ui = null;
     },
 
+    _toggleButtonLabel(visible) {
+        const archetypesVersion = (typeof Context !== 'undefined' && Context.archetypesVersion) ? Context.archetypesVersion : '?';
+        return visible ? `Hide • a${archetypesVersion}` : `Logs • a${archetypesVersion}`;
+    },
+
     _updateVisibility(state, visible) {
         state.isVisible = visible;
         Storage.set(this.storageKeys.isVisible, visible);
         const ui = state.ui;
         if (!ui) return;
         ui.root.style.display = visible ? 'flex' : 'none';
-        ui.toggleButton.textContent = visible ? 'Hide Logs' : 'Show Logs';
+        ui.toggleButton.textContent = this._toggleButtonLabel(visible);
         Logger.log(`✓ Dev logger visibility ${visible ? 'shown' : 'hidden'}`);
     },
 
