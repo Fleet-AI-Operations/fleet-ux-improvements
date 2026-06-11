@@ -8,6 +8,7 @@
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
+const DV_HIGHLIGHTS_KEY = 'fleet-ux:diff-viewer-highlights';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -28,6 +29,7 @@ const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
     granularity: 'word', // 'word' | 'char'
     compMode: 'base',    // 'base' | 'rolling'
+    showHighlights: true,
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -240,6 +242,12 @@ function _dvSimilarityPercent(baseText, compareText, granularity) {
 }
 
 function _dvDiffPair(baseText, compareText, granularity) {
+    if (!_dvState.showHighlights) {
+        return {
+            baseHtml: _dvPlainPromptHtml(baseText),
+            compareHtml: _dvPlainPromptHtml(compareText)
+        };
+    }
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
         Logger.warn('diff-viewer: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
@@ -881,6 +889,7 @@ function _dvPanelHtml(dash) {
 
     const gran = _dvState.granularity;
     const compMode = _dvState.compMode;
+    const showHighlights = _dvState.showHighlights;
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
@@ -941,7 +950,14 @@ function _dvPanelHtml(dash) {
     </div>`;
 
     const rightHtml = `
-    <div id="dv-right" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+    <div id="dv-right" class="${showHighlights ? '' : 'dv-highlights-off'}" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+        <div id="dv-highlights-bar" style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border,#e2e8f0);background:var(--card,#fff);">
+            <span style="${label.replace('text-transform:uppercase;', '')}margin:0;">Diff highlights</span>
+            <div class="dv-seg-group">
+                ${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}
+                ${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}
+            </div>
+        </div>
         <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
             <div id="dv-rolling-above-label" class="dv-slot-above-label dv-rolling-above-label" aria-hidden="true"></div>
             <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
@@ -1119,6 +1135,9 @@ function _dvActiveCompareTexts() {
 
 function _dvAboveLabelInnerHtml() {
     const mode = _dvSlotAboveLabelText();
+    if (!_dvState.showHighlights) {
+        return '<span class="dv-slot-above-label-mode">' + mode + '</span>';
+    }
     const pair = _dvActiveCompareTexts();
     if (!pair) {
         return '<span class="dv-slot-above-label-mode">' + mode + '</span>';
@@ -1460,14 +1479,14 @@ function _dvClearCompareHoverRing(modal) {
 }
 
 function _dvApplyCompareHoverRing(slotIdx, modal) {
-    if (_dvState.compMode !== 'base' || slotIdx === 0) return;
+    if (!_dvState.showHighlights || _dvState.compMode !== 'base' || slotIdx === 0) return;
     _dvClearCompareHoverRing(modal);
     const wrap = _dvGetSlotWrap(modal, slotIdx);
     if (wrap) wrap.classList.add('dv-slot-wrap--compare-hover');
 }
 
 function _dvApplyHoverDiff(slotIdx, modal) {
-    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2 || slotIdx === 0) return;
+    if (!_dvState.showHighlights || _dvState.compMode !== 'base' || _dvState.slots.length <= 2 || slotIdx === 0) return;
     const base = _dvState.slots[0];
     const compare = _dvState.slots[slotIdx];
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
@@ -1504,7 +1523,7 @@ function _dvRemoveRollingOverlay(modal) {
 }
 
 function _dvUpdateRollingOverlay(modal) {
-    if (!modal || _dvState.mode !== 'tasks' || _dvState.compMode !== 'rolling' || _dvState.slots.length < 2) {
+    if (!modal || !_dvState.showHighlights || _dvState.mode !== 'tasks' || _dvState.compMode !== 'rolling' || _dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
         return;
     }
@@ -1703,6 +1722,17 @@ function _dvSyncCompModeUi(modal) {
     if (_dvState.compMode !== 'rolling') _dvRemoveRollingOverlay(modal);
 }
 
+function _dvSyncHighlightsUi(modal) {
+    if (!modal) return;
+    const right = _dvQ(modal, 'dv-right');
+    if (right) right.classList.toggle('dv-highlights-off', !_dvState.showHighlights);
+    modal.querySelectorAll('[data-dv-highlights]').forEach((btn) => {
+        const on = btn.getAttribute('data-dv-highlights') === 'on';
+        btn.setAttribute('aria-pressed', on === _dvState.showHighlights ? 'true' : 'false');
+    });
+    if (!_dvState.showHighlights) _dvRemoveRollingOverlay(modal);
+}
+
 function _dvSetSearchLoading(modal, loading, error) {
     _dvState.searchLoading = loading;
     _dvState.searchError = error || null;
@@ -1773,6 +1803,23 @@ function _dvAttachListeners(modal, dash) {
                 _dvLensSyncScheduled = false;
                 _dvScheduleReelLensSync(modal, { afterLayout: true });
                 Logger.log('diff-viewer: comp mode → ' + compMode);
+            }
+            return;
+        }
+
+        // ── Diff highlights toggle ──
+        const highlightsBtn = e.target.closest('[data-dv-highlights]');
+        if (highlightsBtn && modal.contains(highlightsBtn)) {
+            const enabled = highlightsBtn.getAttribute('data-dv-highlights') === 'on';
+            if (enabled !== _dvState.showHighlights) {
+                _dvState.showHighlights = enabled;
+                try { localStorage.setItem(DV_HIGHLIGHTS_KEY, enabled ? '1' : '0'); } catch (_e) { /* no-op */ }
+                _dvState.hoverSlotIdx = null;
+                _dvClearHoverDiff(modal);
+                _dvSyncHighlightsUi(modal);
+                _dvRenderDiffs(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: diff highlights → ' + (enabled ? 'on' : 'off'));
             }
             return;
         }
@@ -2156,6 +2203,15 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slot-column--base .dv-slot-wrap {',
         '  border: 2px solid var(--brand, var(--primary, #2563eb));',
         '}',
+        '#wf-dash-modal #dv-right.dv-highlights-off .dv-slot-column--base .dv-slot-wrap {',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '}',
+        '#wf-dash-modal #dv-right.dv-highlights-off .dv-slot-wrap.dv-slot-wrap--compare-hover {',
+        '  border: 1px solid var(--border, #e2e8f0) !important;',
+        '}',
+        '#wf-dash-modal #dv-right.dv-highlights-off .dv-rolling-overlay {',
+        '  display: none !important;',
+        '}',
         '#wf-dash-modal .dv-slot-key-copy {',
         '  display: block;',
         '  width: 100%;',
@@ -2322,7 +2378,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.31',
+    _version: '1.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2355,6 +2411,12 @@ const plugin = {
             if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
         } catch (_e) { /* no-op */ }
 
+        // Restore persisted diff highlights preference
+        try {
+            const storedHighlights = localStorage.getItem(DV_HIGHLIGHTS_KEY);
+            if (storedHighlights === '0') _dvState.showHighlights = false;
+        } catch (_e) { /* no-op */ }
+
         // Inject styles
         _dvInjectStyles();
 
@@ -2374,12 +2436,14 @@ const plugin = {
                 _dvRenderStash(modal);
                 _dvAttachReelLensResizeObserver(modal);
                 _dvAttachRollingOverlayListeners(modal);
+                _dvSyncHighlightsUi(modal);
                 _dvSyncCompModeUi(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
             },
             onActivate(modal) {
                 _dvRenderAll(modal);
+                _dvSyncHighlightsUi(modal);
                 _dvSyncCompModeUi(modal);
                 _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
