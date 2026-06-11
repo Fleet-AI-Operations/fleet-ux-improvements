@@ -760,7 +760,7 @@ function _dvAttachDragListeners(modal) {
     const onPointerDown = (e) => {
         if (e.button !== 0) return;
         if (_dvState.drag.pending || _dvState.drag.active) return;
-        if (e.target.closest('[data-dv-copy],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
+        if (e.target.closest('[data-dv-copy],[data-dv-copy-prompt],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
         const handle = e.target.closest('[data-dv-drag]');
         if (!handle || !modal.contains(handle)) return;
 
@@ -1069,22 +1069,27 @@ function _dvFlashCopyFail(el) {
     }, 500);
 }
 
-async function _dvCopyWithFeedback(el, text) {
+async function _dvCopyWithFeedback(el, text, logLabel) {
+    const label = logLabel || 'task key';
     const value = String(text == null ? '' : text).trim();
     if (!value) {
         _dvFlashCopyFail(el);
-        Logger.warn('diff-viewer: copy skipped (empty task key)');
+        Logger.warn('diff-viewer: copy skipped (empty ' + label + ')');
         return false;
     }
     const ok = await _dvCopyText(value);
     if (ok) {
         _dvFlashCopySuccess(el);
-        Logger.log('diff-viewer: copied task key (' + value.length + ' chars)');
+        Logger.log('diff-viewer: copied ' + label + ' (' + value.length + ' chars)');
     } else {
         _dvFlashCopyFail(el);
-        Logger.warn('diff-viewer: copy task key failed');
+        Logger.warn('diff-viewer: copy ' + label + ' failed');
     }
     return ok;
+}
+
+function _dvCopyIconSvg() {
+    return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
 }
 
 function _dvReelUnifiedPeekFlags() {
@@ -1239,17 +1244,21 @@ function _dvReelHtml(slot, slotIdx, unifiedPeek) {
     const arrowTarget = (text) => text
         ? `<span class="dv-reel-arrow-target">${_dvEscHtml(text)}</span>`
         : '';
+    const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
     return `<div class="dv-reel${reelMods}">
         ${peekRow(anyAbove, 'above')}
         ${lensHtml}
         ${peekRow(anyBelow, 'below')}
         <div class="dv-reel-arrows">
-            ${arrowTarget(upTargetLabel)}
-            ${arrowBtn('up', canUp)}
-            <span class="dv-reel-arrow-current">${_dvEscHtml(curLabel)}</span>
-            ${arrowBtn('down', canDown)}
-            ${arrowTarget(downTargetLabel)}
+            ${copyPromptBtn}
+            <div class="dv-reel-arrows-nav">
+                ${arrowTarget(upTargetLabel)}
+                ${arrowBtn('up', canUp)}
+                <span class="dv-reel-arrow-current">${_dvEscHtml(curLabel)}</span>
+                ${arrowBtn('down', canDown)}
+                ${arrowTarget(downTargetLabel)}
+            </div>
         </div>
     </div>`;
 }
@@ -1741,6 +1750,15 @@ function _dvAttachListeners(modal, dash) {
         if (copyEl && modal.contains(copyEl)) {
             e.stopPropagation();
             void _dvCopyWithFeedback(copyEl, copyEl.getAttribute('data-dv-copy'));
+            return;
+        }
+
+        const copyPromptEl = e.target.closest('[data-dv-copy-prompt]');
+        if (copyPromptEl && modal.contains(copyPromptEl)) {
+            e.stopPropagation();
+            const slotIdx = parseInt(copyPromptEl.getAttribute('data-dv-copy-prompt'), 10);
+            const slot = Number.isFinite(slotIdx) ? _dvState.slots[slotIdx] : null;
+            void _dvCopyWithFeedback(copyPromptEl, _dvSlotPromptText(slot), 'prompt');
             return;
         }
 
@@ -2286,10 +2304,24 @@ function _dvInjectStyles() {
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
+        '  justify-content: flex-start;',
+        '  gap: 6px;',
+        '  align-self: stretch;',
+        '  min-height: 0;',
+        '  padding-top: 2px;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrows-nav {',
+        '  flex: 1;',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  align-items: center;',
         '  justify-content: center;',
         '  gap: 3px;',
-        '  align-self: center;',
         '  min-height: 0;',
+        '  width: 100%;',
+        '}',
+        '#wf-dash-modal .dv-reel-copy {',
+        '  flex-shrink: 0;',
         '}',
         '#wf-dash-modal .dv-reel-arrow-current {',
         '  font-size: 9px;',
@@ -2344,7 +2376,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.34',
+    _version: '1.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
