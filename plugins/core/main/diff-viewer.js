@@ -961,7 +961,7 @@ function _dvPanelHtml(dash) {
         <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
             <div id="dv-rolling-above-label" class="dv-slot-above-label dv-rolling-above-label" aria-hidden="true"></div>
             <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
-                <div id="dv-base-above-label" class="dv-slot-above-label">BASE COMPARISON</div>
+                <div id="dv-base-above-label" class="dv-slot-above-label" aria-hidden="true"></div>
                 <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
             </div>
             <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
@@ -1108,8 +1108,42 @@ function _dvReelUnifiedChromeH(unifiedPeek) {
     return chrome;
 }
 
-function _dvSlotAboveLabelText() {
-    return _dvState.compMode === 'rolling' ? 'ROLLING COMPARISON' : 'BASE COMPARISON';
+function _dvAboveLabelInnerHtml() {
+    if (!_dvState.showHighlights) return '';
+    const pair = _dvActiveCompareTexts();
+    if (!pair) return '';
+    const { leftText, rightText } = pair;
+    const { percent, noDifference, effectiveGranularity } = _dvSimilarityPercent(leftText, rightText, _dvState.granularity);
+    const granLabel = effectiveGranularity === 'char' ? 'char' : 'word';
+    if (noDifference) {
+        return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
+    }
+    return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' diff similarity</span>';
+}
+
+function _dvSetAboveLabelEl(el, inner) {
+    if (!el) return;
+    el.innerHTML = inner;
+    if (inner) {
+        el.style.display = 'flex';
+        el.removeAttribute('aria-hidden');
+    } else {
+        el.style.display = 'none';
+        el.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function _dvUpdateAboveLabels(modal) {
+    if (!modal) return;
+    const inner = _dvAboveLabelInnerHtml();
+    const rollingLabel = _dvQ(modal, 'dv-rolling-above-label');
+    if (_dvState.compMode === 'rolling') {
+        _dvSetAboveLabelEl(rollingLabel, inner);
+        _dvSetAboveLabelEl(_dvQ(modal, 'dv-base-above-label'), '');
+        return;
+    }
+    _dvSetAboveLabelEl(rollingLabel, '');
+    _dvSetAboveLabelEl(_dvQ(modal, 'dv-base-above-label'), inner);
 }
 
 function _dvActiveCompareTexts() {
@@ -1131,54 +1165,6 @@ function _dvActiveCompareTexts() {
         };
     }
     return null;
-}
-
-function _dvAboveLabelInnerHtml() {
-    const mode = _dvSlotAboveLabelText();
-    if (!_dvState.showHighlights) {
-        return '<span class="dv-slot-above-label-mode">' + mode + '</span>';
-    }
-    const pair = _dvActiveCompareTexts();
-    if (!pair) {
-        return '<span class="dv-slot-above-label-mode">' + mode + '</span>';
-    }
-    const { leftText, rightText } = pair;
-    const { percent, noDifference, effectiveGranularity } = _dvSimilarityPercent(leftText, rightText, _dvState.granularity);
-    const granLabel = effectiveGranularity === 'char' ? 'char' : 'word';
-    if (noDifference) {
-        return '<span class="dv-slot-above-label-mode">' + mode + '</span>'
-            + '<span class="dv-slot-above-label-sep" aria-hidden="true">·</span>'
-            + '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
-    }
-    return '<span class="dv-slot-above-label-mode">' + mode + '</span>'
-        + '<span class="dv-slot-above-label-sep" aria-hidden="true">·</span>'
-        + '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' diff similarity</span>';
-}
-
-function _dvUpdateAboveLabels(modal) {
-    if (!modal) return;
-    const inner = _dvAboveLabelInnerHtml();
-    const rollingLabel = _dvQ(modal, 'dv-rolling-above-label');
-    if (_dvState.compMode === 'rolling') {
-        if (rollingLabel) {
-            rollingLabel.innerHTML = inner;
-            rollingLabel.removeAttribute('aria-hidden');
-        }
-        return;
-    }
-    if (rollingLabel) {
-        rollingLabel.innerHTML = '';
-        rollingLabel.setAttribute('aria-hidden', 'true');
-    }
-    const baseLabel = _dvQ(modal, 'dv-base-above-label');
-    if (baseLabel) baseLabel.innerHTML = inner;
-}
-
-function _dvSlotAboveLabelHtml(slotIdx) {
-    if (slotIdx === 0) {
-        return '<div class="dv-slot-above-label">' + _dvAboveLabelInnerHtml() + '</div>';
-    }
-    return '<div class="dv-slot-above-label dv-slot-above-label--spacer" aria-hidden="true"></div>';
 }
 
 function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
@@ -1326,7 +1312,7 @@ function _dvRenderSlotsArea(modal) {
     baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length, unifiedPeek);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}">${_dvSlotAboveLabelHtml(i)}<div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -2070,21 +2056,6 @@ function _dvInjectStyles() {
         '  width: fit-content;',
         '  max-width: 100%;',
         '}',
-        '#wf-dash-modal .dv-slot-above-label-mode {',
-        '  font-size: 9px;',
-        '  font-weight: 700;',
-        '  background: var(--brand, #2563eb);',
-        '  color: #fff;',
-        '  border-radius: 3px;',
-        '  padding: 1px 5px;',
-        '  letter-spacing: 0.04em;',
-        '  line-height: 1.3;',
-        '}',
-        '#wf-dash-modal .dv-slot-above-label-sep {',
-        '  font-size: 9px;',
-        '  color: var(--muted-foreground, #64748b);',
-        '  line-height: 1;',
-        '}',
         '#wf-dash-modal .dv-slot-above-label-sim {',
         '  font-size: 9px;',
         '  font-weight: 600;',
@@ -2101,9 +2072,6 @@ function _dvInjectStyles() {
         '  padding: 1px 5px;',
         '  letter-spacing: 0.04em;',
         '  line-height: 1.3;',
-        '}',
-        '#wf-dash-modal .dv-slot-above-label--spacer {',
-        '  visibility: hidden;',
         '}',
         '#wf-dash-modal .dv-slots-area {',
         '  position: relative;',
@@ -2378,7 +2346,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.32',
+    _version: '1.33',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
