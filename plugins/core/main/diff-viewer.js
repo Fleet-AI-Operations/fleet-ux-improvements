@@ -919,6 +919,13 @@ function _dvPanelHtml(dash) {
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
+        <div id="dv-highlights-section" style="flex-shrink:0;">
+            <div style="${label}margin-bottom:6px;">Diff Highlights</div>
+            <div class="dv-seg-group">
+                ${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}
+                ${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}
+            </div>
+        </div>
         <div style="flex-shrink:0;">
             <div style="${label}margin-bottom:6px;">Diff Modality</div>
             <div class="dv-seg-group">
@@ -977,20 +984,16 @@ function _dvPanelHtml(dash) {
 
     const rightHtml = `
     <div id="dv-right" class="${showHighlights ? '' : 'dv-highlights-off'}" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
-        <div id="dv-highlights-bar" style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border,#e2e8f0);background:var(--card,#fff);">
-            <span style="${label.replace('text-transform:uppercase;', '')}margin:0;">Diff highlights</span>
-            <div class="dv-seg-group">
-                ${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}
-                ${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}
-            </div>
-        </div>
         <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
-            <div id="dv-rolling-above-label" class="dv-slot-above-label dv-rolling-above-label" aria-hidden="true"></div>
-            <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
-                <div id="dv-base-above-label" class="dv-slot-above-label" aria-hidden="true"></div>
-                <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
+            <div class="dv-slots-stack">
+                <div id="dv-slots-above-label" class="dv-slot-above-label" aria-hidden="true"></div>
+                <div id="dv-slots-columns-row" class="dv-slots-columns-row">
+                    <div id="dv-base-container" class="dv-slot-column dv-slot-column--base" data-dv-slot-column="0">
+                        <div id="dv-base-slot-inner" class="dv-slot-wrap"></div>
+                    </div>
+                    <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
+                </div>
             </div>
-            <div id="dv-extra-container" class="dv-slot-columns-extra"></div>
         </div>
         <div id="dv-free-area" style="display:${_dvState.mode==='free-text'?'flex':'none'};flex:1;flex-direction:column;overflow:hidden;min-height:0;">
             <div style="flex:0 0 40%;display:flex;gap:8px;padding:8px;min-height:0;box-sizing:border-box;">
@@ -1166,15 +1169,7 @@ function _dvSetAboveLabelEl(el, inner) {
 
 function _dvUpdateAboveLabels(modal) {
     if (!modal) return;
-    const inner = _dvAboveLabelInnerHtml();
-    const rollingLabel = _dvQ(modal, 'dv-rolling-above-label');
-    if (_dvState.compMode === 'rolling') {
-        _dvSetAboveLabelEl(rollingLabel, inner);
-        _dvSetAboveLabelEl(_dvQ(modal, 'dv-base-above-label'), '');
-        return;
-    }
-    _dvSetAboveLabelEl(rollingLabel, '');
-    _dvSetAboveLabelEl(_dvQ(modal, 'dv-base-above-label'), inner);
+    _dvSetAboveLabelEl(_dvQ(modal, 'dv-slots-above-label'), _dvAboveLabelInnerHtml());
 }
 
 function _dvActiveCompareTexts() {
@@ -2143,20 +2138,27 @@ function _dvInjectStyles() {
         '  min-height: 0;',
         '  overflow: hidden;',
         '  display: flex;',
-        '  gap: ' + DV_SLOT_GAP + 'px;',
+        '  flex-direction: column;',
         '  padding: ' + DV_SLOTS_AREA_PAD + 'px;',
         '  box-sizing: border-box;',
         '}',
-        '#wf-dash-modal .dv-slots-area--rolling {',
+        '#wf-dash-modal .dv-slots-stack {',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '  display: flex;',
         '  flex-direction: column;',
         '  gap: 4px;',
+        '  overflow: hidden;',
         '}',
-        '#wf-dash-modal .dv-rolling-above-label {',
-        '  display: none;',
-        '  flex-shrink: 0;',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-rolling-above-label {',
+        '#wf-dash-modal .dv-slots-columns-row {',
+        '  flex: 1;',
+        '  min-height: 0;',
         '  display: flex;',
+        '  gap: ' + DV_SLOT_GAP + 'px;',
+        '  overflow: hidden;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling {',
+        '  gap: 0;',
         '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
         '  position: static;',
@@ -2168,6 +2170,10 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
         '  flex: 1;',
         '  align-self: stretch;',
+        '  min-height: 0;',
+        '  min-width: 0;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slots-columns-row {',
         '  min-height: 0;',
         '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column {',
@@ -2441,7 +2447,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.38',
+    _version: '1.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
