@@ -510,7 +510,14 @@ async function _dvHydrateSlot(slotId, seed, modal) {
 function _dvRemoveSlot(slotIdx, modal) {
     if (slotIdx < 0 || slotIdx >= _dvState.slots.length) return;
     const removed = _dvState.slots.splice(slotIdx, 1)[0];
-    Logger.log('diff-viewer: slot removed — ' + (removed.key || removed.taskId));
+    const taskId = removed && removed.taskId;
+    const stillInComparison = taskId && _dvState.slots.some((s) => s.taskId === taskId);
+    if (taskId && !stillInComparison) {
+        _dvRemoveFromStash(taskId, modal);
+    }
+    Logger.log('diff-viewer: slot removed from comparison'
+        + (taskId && !stillInComparison ? ' and stash' : '')
+        + ' — ' + (removed.key || removed.taskId));
     _dvRenderAll(modal);
 }
 
@@ -1182,7 +1189,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
-    const removeBtn = `<button type="button" data-dv-remove="${slotIdx}" title="Remove slot" style="${btnStyle}background:#fee2e2;color:#dc2626;">×</button>`;
+    const removeBtn = `<button type="button" data-dv-remove="${slotIdx}" title="Remove from comparison and stash" aria-label="Remove from comparison and stash" style="${btnStyle}background:#fee2e2;color:#dc2626;">×</button>`;
 
     let bodyHtml = '';
     if (slot.loading) {
@@ -2376,7 +2383,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.35',
+    _version: '1.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
