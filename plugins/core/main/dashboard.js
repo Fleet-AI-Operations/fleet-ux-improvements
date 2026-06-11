@@ -1,6 +1,6 @@
 // ============= dashboard.js =============
 // Ops dashboard loader: modal shell, tab registry, shared multi-select UI.
-// Tab modules: search-output.js, team-members.js, verifier-fetcher.js
+// Tab modules: search-output.js, diff-viewer.js, team-members.js, verifier-fetcher.js
 
 // ============= dashboard.js =============
 // Worker Output Search (Ops dashboard): search output, team members, verifier fetch.
@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.28',
+    _version: '5.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -809,6 +809,7 @@ const plugin = {
             ? this._tabs.map((t) => ({ id: t.id, label: t.label || t.id }))
             : [
                 { id: 'search-output', label: 'Search Output' },
+                { id: 'diff-viewer', label: 'Diff Viewer' },
                 { id: 'team-members', label: 'Team Members' },
                 { id: 'verifier-fetcher', label: 'Verifier Fetcher' }
             ];
