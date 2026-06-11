@@ -1,7 +1,7 @@
 {
   "version": "9.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.179",
+  "archetypesVersion": "10.185",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.14",
-      "hash": "sha256-a0a43b4b0751d40d60df8a61ffb386f2dc65bec1dbab6c659622a505a128a638",
+      "version": "7.15",
+      "hash": "sha256-4b138bf262e7ff1efb121aa58e43a6b10507161c676be79b75040193d8fc28be",
       "log": false
     },
     {
@@ -46,14 +46,20 @@
     },
     {
       "name": "dashboard.js",
-      "version": "5.27",
-      "hash": "sha256-d3cbe77ef8f61358d88475eb29ff9e8a89db7a093bc61b07ea87675fad7a8a7d",
+      "version": "5.29",
+      "hash": "sha256-e370356ec78591768eb3a22f58d57ee2b1ead44a66c96460bf3f7d9070d79e78",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "1.45",
-      "hash": "sha256-3b78a981006f1aae592d31768e82c12937025495131cb412e1258be0ae337a08",
+      "version": "1.47",
+      "hash": "sha256-c8fb0cc1d4b3aaf95e471b1721e3f7b35eb9e3c6955041c32c4b3e25eba97c97",
+      "log": false
+    },
+    {
+      "name": "diff-viewer.js",
+      "version": "1.31",
+      "hash": "sha256-b2b36f821970e9f817b8b844fb295d83d5231e918ef74aacbd1ba5678047b6b2",
       "log": false
     },
     {
@@ -66,12 +72,6 @@
       "name": "verifier-fetcher.js",
       "version": "1.6",
       "hash": "sha256-8ef4909d467001e766c36ff6d3a93d18baf1ecc8648bf03b419ccaa2392c9852",
-      "log": false
-    },
-    {
-      "name": "diff-viewer.js",
-      "version": "1.30",
-      "hash": "sha256-751b99a4ed3f5670f168af75fd4ad4b1afac112d56027e574bd45882ea5ea647",
       "log": false
     }
   ],
@@ -248,9 +248,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.0",
+          "version": "1.1",
           "log": false,
-          "hash": "sha256-6c45e00771749c6497e4a89fa961547a7d15efd233dfb6be5624525b224f5af9"
+          "hash": "sha256-aeb8a305db1428e6914387304914c95990534f350b2d5361b503d464943586c0"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -281,9 +281,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.0",
+          "version": "1.1",
           "log": false,
-          "hash": "sha256-6c45e00771749c6497e4a89fa961547a7d15efd233dfb6be5624525b224f5af9"
+          "hash": "sha256-aeb8a305db1428e6914387304914c95990534f350b2d5361b503d464943586c0"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -392,9 +392,9 @@
         },
         {
           "name": "action-counter.js",
-          "version": "1.0",
+          "version": "1.1",
           "log": false,
-          "hash": "sha256-6c45e00771749c6497e4a89fa961547a7d15efd233dfb6be5624525b224f5af9"
+          "hash": "sha256-aeb8a305db1428e6914387304914c95990534f350b2d5361b503d464943586c0"
         },
         {
           "name": "auto-start-recording.js",

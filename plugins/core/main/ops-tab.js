@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.14',
+    _version: '7.15',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1073,7 +1073,7 @@ const plugin = {
             return cache.teams;
         }
         const rows = await this._opsPostgrestGet('team_member', {
-            select: '*,team:team(*)',
+            select: 'role,team(id,name,logo_url)',
             profile_id: 'eq.' + id,
             status: 'eq.ACTIVE'
         });

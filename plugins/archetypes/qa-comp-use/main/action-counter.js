@@ -8,7 +8,7 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description: 'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -249,11 +249,7 @@ const plugin = {
             'width: 20px; height: 20px; font-size: 13px; color: #888;'
         );
 
-        const sep = document.createElement('span');
-        sep.style.cssText =
-            'width:1px; height:16px; background:var(--border,#e2e8f0); margin: 0 1px;';
-
-        counter.append(btnPlus, input, btnMinus, sep, btnReset);
+        counter.append(btnReset, input, btnMinus, btnPlus);
         return counter;
     }
 };

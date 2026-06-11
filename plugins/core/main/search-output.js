@@ -22,7 +22,7 @@ const DASH_CARD_KIND_TAB_GAP = '0.25rem';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
-const DASH_BOOTSTRAP_VERSION = 2;
+const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -370,13 +370,12 @@ const searchOutputMethods = {
             : null;
         if (fromCatalog && fromCatalog.length > 0) {
             return fromCatalog
-                .filter((t) => this._dashIsTaskDesignersTeam(t.name))
                 .map((t) => [t.id, t.displayName || this._dashFormatTeamDisplayLabel(t.name)])
                 .filter((pair) => pair[0] && pair[1]);
         }
         try {
-            if (Context.opsTab && typeof Context.opsTab.getUserTaskDesignersTeamCatalog === 'function') {
-                return Context.opsTab.getUserTaskDesignersTeamCatalog();
+            if (Context.opsTab && typeof Context.opsTab.getUserTeamCatalog === 'function') {
+                return Context.opsTab.getUserTeamCatalog();
             }
         } catch (e) {
             Logger.debug('dashboard: searchable team catalog read failed', e);
@@ -540,6 +539,69 @@ const searchOutputMethods = {
             throw new Error('Supabase API config not yet discovered. Open a Fleet data page, then retry.');
         }
         return { baseUrl, anonKey };
+    },
+
+    async _dashPostgrestListGet(table, params) {
+        const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
+        const ops = this._dashOpsTab();
+        const pageWindow = this._pageWindow();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const url = new URL(baseUrl + '/' + table);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value != null && value !== '') url.searchParams.set(key, String(value));
+        });
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'GET',
+            headers: {
+                accept: 'application/json',
+                'accept-profile': 'public',
+                apikey: anonKey,
+                authorization: 'Bearer ' + jwt,
+                'x-client-info': 'fleet-ux-dashboard/' + this._version
+            },
+            credentials: 'omit'
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
+        }
+        const body = await res.json();
+        return Array.isArray(body) ? body : (body ? [body] : []);
+    },
+
+    async _dashFetchUserTeamCatalog(profileId) {
+        const id = String(profileId || this._dashGetCurrentUserId() || '').trim();
+        if (!id || !DASH_UUID_RE.test(id)) {
+            throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        }
+        const rows = await this._dashPostgrestListGet('team_member', {
+            select: 'role,team(id,name,logo_url)',
+            profile_id: 'eq.' + id,
+            status: 'eq.ACTIVE'
+        });
+        const teams = rows
+            .map((row) => {
+                const team = row && row.team;
+                if (!team || !team.id || !team.name) return null;
+                return {
+                    id: team.id,
+                    name: team.name,
+                    displayName: this._dashFormatTeamDisplayLabel(team.name),
+                    role: row.role || null
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const ops = this._dashOpsTab();
+        if (typeof ops.hydrateUserTeamCatalog === 'function') {
+            ops.hydrateUserTeamCatalog(id, teams);
+        }
+        Logger.log('dashboard: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        return teams;
     },
 
     async _dashPostgrestObjectGet(table, params) {
@@ -1405,7 +1467,6 @@ const searchOutputMethods = {
     // ── Bootstrap (projects + environments) ──,
 
     async _runBootstrap() {
-        const ops = this._dashOpsTab();
         const profileId = this._dashGetCurrentUserId();
         if (!profileId) {
             throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
@@ -1417,7 +1478,7 @@ const searchOutputMethods = {
             limit: '400'
         };
 
-        const userTeams = await ops.fetchUserTeamCatalog(profileId);
+        const userTeams = await this._dashFetchUserTeamCatalog(profileId);
         const teams = userTeams.map((t) => ({
             id: t.id,
             name: t.name,
@@ -3794,9 +3855,9 @@ const searchOutputMethods = {
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
-                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', false)}
-                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', false)}
-                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', false)}
+                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true)}
+                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
+                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
                                         </div>
                                     </div>
                                 </div>
@@ -6651,7 +6712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.45',
+    _version: '1.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
