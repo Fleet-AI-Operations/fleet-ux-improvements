@@ -6228,7 +6228,7 @@ const searchOutputMethods = {
         let versionControls = '';
         if (hasTimeline) {
             const versionOptions = [...versions]
-                .sort((a, b) => b.displayVersionNo - a.displayVersionNo)
+                .sort((a, b) => a.displayVersionNo - b.displayVersionNo)
                 .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
                 .join('');
             versionControls = `
@@ -6712,7 +6712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.48',
+    _version: '1.49',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
