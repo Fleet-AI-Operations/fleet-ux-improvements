@@ -8,7 +8,7 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description: 'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -85,22 +85,27 @@ const plugin = {
             if (legacy === null || legacy === '') return;
             const parsed = parseInt(legacy, 10);
             if (Number.isNaN(parsed)) return;
-            Storage.set(this.storageKeys.count, parsed);
+            Storage.set(this.storageKeys.count, this.clampCount(parsed));
             Logger.log(`${this.id}: migrated legacy count ${parsed} from standalone script`);
         } catch (error) {
             Logger.warn(`${this.id}: legacy count migration failed`, error);
         }
     },
 
+    clampCount(val) {
+        const parsed = typeof val === 'number' && !Number.isNaN(val) ? val : 0;
+        return Math.max(0, Math.trunc(parsed));
+    },
+
     getCount() {
         const raw = Storage.get(this.storageKeys.count, 0);
         const parsed = parseInt(raw, 10);
-        return Number.isNaN(parsed) ? 0 : parsed;
+        return this.clampCount(Number.isNaN(parsed) ? 0 : parsed);
     },
 
     setCount(val, reason) {
         const prev = this.getCount();
-        const next = typeof val === 'number' && !Number.isNaN(val) ? val : 0;
+        const next = this.clampCount(val);
         Storage.set(this.storageKeys.count, next);
         if (reason && prev !== next) {
             Logger.log(`${this.id}: count ${prev}→${next} (${reason})`);
@@ -110,7 +115,6 @@ const plugin = {
 
     countColor(val) {
         if (val > 0) return '#059669';
-        if (val < 0) return '#dc2626';
         return 'var(--foreground, #111)';
     },
 
@@ -157,7 +161,7 @@ const plugin = {
         const trimmed = (text || '').trim();
         if (trimmed === '' || trimmed === '-') return 0;
         const parsed = parseInt(trimmed, 10);
-        return Number.isNaN(parsed) ? 0 : parsed;
+        return this.clampCount(Number.isNaN(parsed) ? 0 : parsed);
     },
 
     buildCounter(state) {
@@ -234,7 +238,7 @@ const plugin = {
             '+',
             'Add 1',
             () => this.applyCountDisplay(input, this.setCount(this.getCount() + 1, '+')),
-            'width: 40px; height: 22px; font-size: 18px;'
+            'width: 52px; height: 22px; font-size: 18px; border-color: #059669;'
         );
         const btnMinus = this.makeBtn(
             '−',

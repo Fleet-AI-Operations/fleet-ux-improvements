@@ -19,18 +19,18 @@ const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
-const DASH_SEARCH_MS_KEYS = ['search-teams', 'search-projects', 'search-envs'];
+const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
-    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
-    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
-    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
-    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
     { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
+    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
+    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
+    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
-    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
+    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
 const DASH_MS_HOVER_CLOSE_MS = 150;
@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.29',
+    _version: '5.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1198,13 +1198,13 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action-row {',
             '  position: absolute;',
-            '  top: -12px;',
+            '  top: -24px;',
             '  right: 16px;',
             '  z-index: 1;',
             '  display: flex;',
             '  justify-content: flex-end;',
             '  align-items: flex-start;',
-            '  height: 12px;',
+            '  height: 24px;',
             '  overflow: visible;',
             '  pointer-events: none;',
             '}',
@@ -1227,11 +1227,9 @@ const plugin = {
             '  border: none;',
             '  border-radius: 6px 6px 0 0;',
             '  cursor: pointer;',
-            '  overflow: hidden;',
             '  flex-shrink: 0;',
             '  font-family: inherit;',
-            '  transform: translateY(0);',
-            '  transition: transform 160ms ease-in, background-color 160ms ease-in;',
+            '  transition: background-color 160ms ease-in;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove {',
             '  background: #dc2626;',
@@ -1257,10 +1255,6 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
             '  background: #475569;',
             '}',
-            '#wf-dash-modal .wf-dash-card-action:hover {',
-            '  transform: translateY(-12px);',
-            '  transition: transform 160ms ease-out, background-color 160ms ease-out;',
-            '}',
             '#wf-dash-modal .wf-dash-card-action--remove:hover {',
             '  background: #b91c1c;',
             '}',
@@ -1274,10 +1268,9 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action-icon,',
             '#wf-dash-modal .wf-dash-card-action-label {',
-            '  opacity: 0;',
+            '  opacity: 1;',
             '  line-height: 1;',
             '  white-space: nowrap;',
-            '  transition: opacity 160ms ease-in;',
             '}',
             '#wf-dash-modal .wf-dash-card-action-icon {',
             '  font-size: 14px;',
@@ -1286,11 +1279,6 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action-label {',
             '  font-size: 10px;',
             '  font-weight: 600;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-icon,',
-            '#wf-dash-modal .wf-dash-card-action:hover .wf-dash-card-action-label {',
-            '  opacity: 1;',
-            '  transition: opacity 160ms ease-out;',
             '}'
         ].join('\n');
         let style = this._modal.querySelector('#wf-dash-card-action-style');
@@ -1857,7 +1845,7 @@ const plugin = {
 
     _syncAllMsDropdowns(options) {
         const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
-            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
+            .concat(DASH_SEARCH_MS_KEYS, ...DASH_TEAM_MEMBERS_MS_KEYS);
         for (const key of keys) this._syncMsDropdown(key, options);
     },
 
