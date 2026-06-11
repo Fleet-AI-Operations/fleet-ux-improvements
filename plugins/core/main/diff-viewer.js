@@ -8,7 +8,6 @@
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
-const DV_HIGHLIGHTS_KEY = 'fleet-ux:diff-viewer-highlights';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -1799,7 +1798,6 @@ function _dvAttachListeners(modal, dash) {
             const enabled = highlightsBtn.getAttribute('data-dv-highlights') === 'on';
             if (enabled !== _dvState.showHighlights) {
                 _dvState.showHighlights = enabled;
-                try { localStorage.setItem(DV_HIGHLIGHTS_KEY, enabled ? '1' : '0'); } catch (_e) { /* no-op */ }
                 _dvState.hoverSlotIdx = null;
                 _dvClearHoverDiff(modal);
                 _dvSyncHighlightsUi(modal);
@@ -2346,7 +2344,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.33',
+    _version: '1.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2377,12 +2375,6 @@ const plugin = {
         try {
             const storedComp = localStorage.getItem(DV_COMP_MODE_KEY);
             if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
-        } catch (_e) { /* no-op */ }
-
-        // Restore persisted diff highlights preference
-        try {
-            const storedHighlights = localStorage.getItem(DV_HIGHLIGHTS_KEY);
-            if (storedHighlights === '0') _dvState.showHighlights = false;
         } catch (_e) { /* no-op */ }
 
         // Inject styles
