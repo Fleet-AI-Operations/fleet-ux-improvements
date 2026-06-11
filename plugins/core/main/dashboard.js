@@ -19,18 +19,18 @@ const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
-const DASH_SEARCH_MS_KEYS = ['search-teams', 'search-projects', 'search-envs'];
+const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
-    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
-    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
-    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
-    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
     { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
+    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
+    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
+    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
-    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
+    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
 const DASH_MS_HOVER_CLOSE_MS = 150;
@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.30',
+    _version: '5.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1845,7 +1845,7 @@ const plugin = {
 
     _syncAllMsDropdowns(options) {
         const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
-            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
+            .concat(DASH_SEARCH_MS_KEYS, ...DASH_TEAM_MEMBERS_MS_KEYS);
         for (const key of keys) this._syncMsDropdown(key, options);
     },
 

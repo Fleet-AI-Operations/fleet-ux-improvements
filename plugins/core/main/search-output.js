@@ -93,15 +93,15 @@ const DASH_SORT_OPTIONS = DASH_SORT_METRICS.flatMap((metric) => ([
 const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
 
 const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
-    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' },
-    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
-    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
-    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
     { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
+    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
+    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
+    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
-    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' }
+    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
@@ -3855,9 +3855,9 @@ const searchOutputMethods = {
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
-                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true)}
-                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
                                             ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
+                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
+                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true)}
                                         </div>
                                     </div>
                                 </div>
@@ -6712,7 +6712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.47',
+    _version: '1.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
