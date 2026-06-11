@@ -3855,9 +3855,9 @@ const searchOutputMethods = {
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
-                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', false)}
-                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', false)}
-                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', false)}
+                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true)}
+                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
+                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
                                         </div>
                                     </div>
                                 </div>
@@ -6712,7 +6712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.46',
+    _version: '1.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

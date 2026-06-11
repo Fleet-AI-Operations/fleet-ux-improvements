@@ -19,6 +19,7 @@ const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
+const DASH_SEARCH_MS_KEYS = ['search-teams', 'search-projects', 'search-envs'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
@@ -42,6 +43,18 @@ function dashIsTeamMembersMsKey(scopeKey) {
 
 function dashIsFilterMsKey(scopeKey) {
     return Boolean(scopeKey && scopeKey.startsWith('filter-'));
+}
+
+function dashIsSearchMsKey(scopeKey) {
+    return DASH_SEARCH_MS_KEYS.includes(scopeKey);
+}
+
+function dashIsFlyoutMsKey(scopeKey) {
+    return dashIsFilterMsKey(scopeKey) || dashIsSearchMsKey(scopeKey);
+}
+
+function dashAllFlyoutMsKeys() {
+    return DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
 }
 
 function dashLib() {
@@ -78,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.27',
+    _version: '5.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1361,7 +1374,7 @@ const plugin = {
     },
 
     _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
-        const isFlyout = dashIsFilterMsKey(scopeKey);
+        const isFlyout = dashIsFlyoutMsKey(scopeKey);
         const toolbar = this._msToolbarHtml(scopeKey, bulkActions);
         const flyoutAttr = isFlyout ? ' data-wf-dash-ms-flyout="1"' : '';
         const panelInitialStyle = isFlyout
@@ -1446,7 +1459,7 @@ const plugin = {
             const panel = e.target.closest('[data-wf-dash-ms-panel]');
             if (panel && modal.contains(panel)) {
                 const panelScope = panel.getAttribute('data-wf-dash-ms-panel');
-                if (dashIsFilterMsKey(panelScope)) {
+                if (dashIsFlyoutMsKey(panelScope)) {
                     this._clearMsHoverTimers(panelScope);
                     if (!this._isMsDropdownOpen(panelScope) && !this._state.msDropdownToggled[panelScope]) {
                         this._scheduleMsHoverOpen(panelScope);
@@ -1458,7 +1471,7 @@ const plugin = {
             if (!wrap || !modal.contains(wrap)) return;
             if (wrap.contains(e.relatedTarget)) return;
             const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
-            if (!dashIsFilterMsKey(scopeKey)) return;
+            if (!dashIsFlyoutMsKey(scopeKey)) return;
             this._scheduleMsHoverOpen(scopeKey);
         });
 
@@ -1466,7 +1479,7 @@ const plugin = {
             const panel = e.target.closest('[data-wf-dash-ms-panel]');
             if (panel && modal.contains(panel)) {
                 const panelScope = panel.getAttribute('data-wf-dash-ms-panel');
-                if (dashIsFilterMsKey(panelScope)) {
+                if (dashIsFlyoutMsKey(panelScope)) {
                     if (panel.contains(e.relatedTarget)) return;
                     const wrap = this._msWrapEl(panelScope);
                     if (wrap && wrap.contains(e.relatedTarget)) return;
@@ -1478,7 +1491,7 @@ const plugin = {
             if (!wrap || !modal.contains(wrap)) return;
             if (wrap.contains(e.relatedTarget)) return;
             const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
-            if (!dashIsFilterMsKey(scopeKey)) return;
+            if (!dashIsFlyoutMsKey(scopeKey)) return;
             if (!wrap.contains(e.relatedTarget)) {
                 if (this._state.msHoverDisarmed) delete this._state.msHoverDisarmed[scopeKey];
             }
@@ -1561,7 +1574,7 @@ const plugin = {
     },
 
     _msChevronForScope(scopeKey, open) {
-        if (dashIsFilterMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) return open ? '◂' : '▸';
+        if (dashIsFlyoutMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) return open ? '◂' : '▸';
         return open ? '▾' : '▸';
     },
 
@@ -1593,7 +1606,7 @@ const plugin = {
     },
 
     _repositionOpenFlyouts() {
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        for (const scopeKey of dashAllFlyoutMsKeys()) {
             if (this._isMsDropdownOpen(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
                 this._positionMsFlyoutPanel(scopeKey);
             }
@@ -1813,7 +1826,7 @@ const plugin = {
                 }
             });
         }
-        if (open && dashIsFilterMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
+        if (open && dashIsFlyoutMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
             requestAnimationFrame(() => this._positionMsFlyoutPanel(scopeKey));
         }
     },
@@ -1824,7 +1837,7 @@ const plugin = {
         const wrap = this._msWrapEl(scopeKey);
         const toggles = wrap ? wrap.querySelectorAll('[data-wf-dash-ms-toggle="' + scopeKey + '"]') : [];
         const chevron = this._q('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
-        if (dashIsFilterMsKey(scopeKey)) {
+        if (dashIsFlyoutMsKey(scopeKey)) {
             if (this._state.msDropdownToggled[scopeKey]) {
                 const panel = this._msPanelEl(scopeKey);
                 if (panel) this._resetMsFlyoutPanelPosition(panel, scopeKey);
@@ -1915,7 +1928,7 @@ const plugin = {
     },
 
     _scheduleMsHoverOpen(scopeKey) {
-        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (!dashIsFlyoutMsKey(scopeKey)) return;
         if (this._state.msHoverDisarmed && this._state.msHoverDisarmed[scopeKey]) return;
         if (this._state.msDropdownToggled[scopeKey]) return;
         this._clearMsHoverTimers(scopeKey);
@@ -1929,7 +1942,7 @@ const plugin = {
     },
 
     _scheduleMsHoverClose(scopeKey) {
-        if (!dashIsFilterMsKey(scopeKey)) return;
+        if (!dashIsFlyoutMsKey(scopeKey)) return;
         if (this._state.msDropdownToggled[scopeKey]) return;
         if (this._state.msDropdownRefreshActive) return;
         this._clearMsHoverTimers(scopeKey);
@@ -1947,8 +1960,8 @@ const plugin = {
     },
 
     _openMsDropdownHover(scopeKey) {
-        if (!dashIsFilterMsKey(scopeKey)) return;
-        for (const { scopeKey: key } of DASH_FILTER_SCOPES) {
+        if (!dashIsFlyoutMsKey(scopeKey)) return;
+        for (const key of dashAllFlyoutMsKeys()) {
             if (key === scopeKey) continue;
             if (this._state.msDropdownToggled[key]) continue;
             if (this._isMsDropdownOpen(key)) {
@@ -1969,11 +1982,11 @@ const plugin = {
         this._state.msDropdownPinned = {};
         this._state.msDropdownToggled = {};
         this._state.filterExpandAllIntent = 'expand';
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        for (const scopeKey of dashAllFlyoutMsKeys()) {
             this._setMsDropdownToggledAttr(scopeKey, false);
         }
-        const scopeKeys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
-            .concat(['search-teams', 'search-projects', 'search-envs', ...DASH_TEAM_MEMBERS_MS_KEYS]);
+        const scopeKeys = dashAllFlyoutMsKeys()
+            .concat(DASH_TEAM_MEMBERS_MS_KEYS);
         for (const scopeKey of scopeKeys) {
             const input = this._q('[data-wf-dash-ms-filter="' + scopeKey + '"]');
             if (input) input.value = '';
@@ -1984,13 +1997,12 @@ const plugin = {
     },
 
     _closeFlyoutMsDropdowns() {
-        const anyFlyoutOpen = DASH_FILTER_SCOPES.some((s) => {
-            const key = s.scopeKey;
+        const anyFlyoutOpen = dashAllFlyoutMsKeys().some((key) => {
             return this._isMsDropdownOpen(key) && !this._state.msDropdownToggled[key];
         });
         if (!anyFlyoutOpen) return;
         this._clearAllMsHoverTimers();
-        for (const { scopeKey } of DASH_FILTER_SCOPES) {
+        for (const scopeKey of dashAllFlyoutMsKeys()) {
             if (!this._isMsDropdownOpen(scopeKey)) continue;
             if (this._state.msDropdownToggled[scopeKey]) continue;
             delete this._state.msDropdownOpen[scopeKey];
@@ -2015,7 +2027,7 @@ const plugin = {
     },
 
     _scrollOpenedMsDropdownIntoView(scopeKey) {
-        if (dashIsFilterMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
+        if (dashIsFlyoutMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
             this._positionMsFlyoutPanel(scopeKey);
             return;
         }
@@ -2088,7 +2100,7 @@ const plugin = {
             return;
         }
         this._clearMsHoverTimers(scopeKey);
-        if (dashIsFilterMsKey(scopeKey)) {
+        if (dashIsFlyoutMsKey(scopeKey)) {
             const wasToggled = Boolean(this._state.msDropdownToggled[scopeKey]);
             if (wasToggled && wasOpen) {
                 delete this._state.msDropdownOpen[scopeKey];
@@ -2104,7 +2116,7 @@ const plugin = {
                 this._syncMsDropdown(scopeKey);
                 return;
             }
-            for (const { scopeKey: key } of DASH_FILTER_SCOPES) {
+            for (const key of dashAllFlyoutMsKeys()) {
                 if (key === scopeKey) continue;
                 if (this._state.msDropdownToggled[key]) continue;
                 if (this._isMsDropdownOpen(key)) {
