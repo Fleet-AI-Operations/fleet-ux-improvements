@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.34',
+    _version: '5.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1711,12 +1711,21 @@ const plugin = {
         this._state.msDropdownHoverTimers[scopeKey] = timers;
     },
 
+    _clearMsAccordionPanelInlineOpenStyles(panel) {
+        if (!panel) return;
+        panel.style.removeProperty('max-height');
+        panel.style.removeProperty('opacity');
+        panel.style.removeProperty('overflow');
+        panel.style.removeProperty('border-top');
+    },
+
     _setMsAccordionPanelVisible(scopeKey, visible, immediate) {
         const wrap = this._msWrapEl(scopeKey);
         const panel = this._msPanelEl(scopeKey);
         if (!wrap || !panel) return;
         if (visible) {
             panel.style.display = 'block';
+            this._clearMsAccordionPanelInlineOpenStyles(panel);
             if (immediate) {
                 wrap.setAttribute('data-wf-dash-ms-open', '1');
                 return;
