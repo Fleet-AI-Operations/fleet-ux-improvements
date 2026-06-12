@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.32',
+    _version: '5.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -160,11 +160,11 @@ const plugin = {
                 if (typeof self._readDualConstraintSelection === 'function') return self._readDualConstraintSelection(scopeKey);
                 return { include: new Set(), exclude: new Set() };
             },
-            resetTeamMemberConstraintState: () => {
-                if (typeof self._resetTeamMemberConstraintState === 'function') self._resetTeamMemberConstraintState();
+            resetTeamMemberConstraintState: (modal) => {
+                if (typeof self._resetTeamMemberConstraintState === 'function') self._resetTeamMemberConstraintState(modal);
             },
-            resetTeamMemberMsDropdowns: () => {
-                if (typeof self._resetTeamMemberMsDropdowns === 'function') self._resetTeamMemberMsDropdowns();
+            resetTeamMemberMsDropdowns: (modal) => {
+                if (typeof self._resetTeamMemberMsDropdowns === 'function') self._resetTeamMemberMsDropdowns(modal);
             },
             resetTeamMemberFilters: (modal) => {
                 if (typeof self._resetTeamMemberFilters === 'function') self._resetTeamMemberFilters(modal);
@@ -172,6 +172,19 @@ const plugin = {
             readTeamMembersNumericFilters: (modal) => {
                 if (typeof self._readNumericFilters === 'function') return self._readNumericFilters(modal);
                 return { rows: [], andOr: 'and' };
+            },
+            resetTeamMembersPage: () => {
+                if (typeof self.resetTeamMembersPage === 'function') self.resetTeamMembersPage();
+            },
+            getTeamMembersPageSlice: (members) => {
+                if (typeof self.getTeamMembersPageSlice === 'function') return self.getTeamMembersPageSlice(members);
+                return members;
+            },
+            syncTeamMembersPagerUi: (modal, total, searchDone) => {
+                if (typeof self.syncTeamMembersPagerUi === 'function') self.syncTeamMembersPagerUi(modal, total, searchDone);
+            },
+            syncTeamMemberConstraintListsUi: (modal) => {
+                if (typeof self._syncTeamMemberConstraintListsUi === 'function') self._syncTeamMemberConstraintListsUi(modal);
             },
             captureTabState: (modal) => {
                 for (const tab of self._tabs) {
@@ -501,7 +514,7 @@ const plugin = {
             '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
-            '  grid-template-columns: auto auto minmax(0, 1fr);',
+            '  grid-template-columns: auto 3.25rem minmax(0, 1fr);',
             '  column-gap: 8px;',
             '  align-items: start;',
             '  width: 100%;',
@@ -517,12 +530,14 @@ const plugin = {
             '  grid-column: 2;',
             '  flex-shrink: 0;',
             '  align-self: start;',
-            '  min-width: 1.25rem;',
+            '  width: 100%;',
+            '  min-width: 0;',
             '  padding: 0 5px;',
             '  font-size: 10px;',
             '  font-weight: 600;',
             '  line-height: 1.35;',
-            '  text-align: center;',
+            '  font-variant-numeric: tabular-nums;',
+            '  text-align: right;',
             '  border-radius: 999px;',
             '  background: var(--muted, #f1f5f9);',
             '  color: var(--muted-foreground, #64748b);',
@@ -1696,12 +1711,21 @@ const plugin = {
         this._state.msDropdownHoverTimers[scopeKey] = timers;
     },
 
+    _clearMsAccordionPanelInlineOpenStyles(panel) {
+        if (!panel) return;
+        panel.style.removeProperty('max-height');
+        panel.style.removeProperty('opacity');
+        panel.style.removeProperty('overflow');
+        panel.style.removeProperty('border-top');
+    },
+
     _setMsAccordionPanelVisible(scopeKey, visible, immediate) {
         const wrap = this._msWrapEl(scopeKey);
         const panel = this._msPanelEl(scopeKey);
         if (!wrap || !panel) return;
         if (visible) {
             panel.style.display = 'block';
+            this._clearMsAccordionPanelInlineOpenStyles(panel);
             if (immediate) {
                 wrap.setAttribute('data-wf-dash-ms-open', '1');
                 return;
@@ -2358,7 +2382,10 @@ const plugin = {
 
     _renderDualConstraintMsList(scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, preserve, opts) {
         const itemsEl = this._msItemsEl(scopeKey);
-        if (!itemsEl) return;
+        if (!itemsEl) {
+            Logger.warn('dashboard: dual constraint list panel missing — ' + scopeKey);
+            return;
+        }
         const options = opts || {};
         const loading = Boolean(options.loading);
         const prev = preserve || { include: new Set(), exclude: new Set() };
@@ -2374,7 +2401,13 @@ const plugin = {
             });
         }
         this._updateMsCount(scopeKey);
-        if (dashIsTeamMembersMsKey(scopeKey) && !loading && items && items.length > 0) {
+        if (dashIsTeamMembersMsKey(scopeKey)) {
+            if (!loading && items && items.length > 0) {
+                this._state.msDropdownOpen[scopeKey] = true;
+            } else if (loading) {
+                delete this._state.msDropdownOpen[scopeKey];
+            }
+        } else if (!loading && items && items.length > 0) {
             this._state.msDropdownOpen[scopeKey] = true;
         }
         this._syncMsDropdown(scopeKey, { immediate: true });
