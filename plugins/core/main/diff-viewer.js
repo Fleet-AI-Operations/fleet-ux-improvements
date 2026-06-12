@@ -16,6 +16,8 @@ const DV_CHAR_DIFF_LIMIT = 15000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
+const DV_REEL_NAV_ROW_H = 14;
+const DV_REEL_NAV_ROW_GAP = 6;
 const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
@@ -533,6 +535,73 @@ function _dvMinimizeSlot(slotIdx, modal) {
 const DV_ANIM_MS = 300;
 const DV_ANIM_EASE = 'cubic-bezier(0.37, 0, 0.63, 1)';
 
+function _dvParseTranslateY(el) {
+    const t = getComputedStyle(el).transform;
+    if (!t || t === 'none') return 0;
+    const m = t.match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([^,]+),\s*([^)]+)\)/);
+    return m ? parseFloat(m[2]) : 0;
+}
+
+function _dvMeasureNavRowH(track) {
+    if (!track) return DV_REEL_NAV_ROW_H;
+    if (track._dvRowH) return track._dvRowH;
+    const label = track.querySelector('.dv-reel-version-label');
+    if (!label) return DV_REEL_NAV_ROW_H;
+    track._dvRowH = label.offsetHeight;
+    return track._dvRowH;
+}
+
+function _dvVersionTrackOffset(viewport, track, lensIndex) {
+    const rowH = _dvMeasureNavRowH(track);
+    const nav = viewport && viewport.closest('.dv-reel-arrows-nav');
+    const slot = nav && nav.querySelector('.dv-reel-nav-current-slot');
+    if (!slot || !viewport) return -lensIndex * rowH;
+    const viewportRect = viewport.getBoundingClientRect();
+    const slotRect = slot.getBoundingClientRect();
+    const slotCenterY = slotRect.top + slotRect.height / 2 - viewportRect.top;
+    const labelCenterY = lensIndex * rowH + rowH / 2;
+    return slotCenterY - labelCenterY;
+}
+
+function _dvSyncVersionTrack(track, lensIndex) {
+    const viewport = track && track.closest('.dv-reel-arrows-nav-viewport');
+    if (!viewport) return;
+    const y = _dvVersionTrackOffset(viewport, track, lensIndex);
+    track.style.transform = 'translateY(' + y + 'px)';
+}
+
+function _dvSyncAllVersionTracks(modal) {
+    if (!modal) return;
+    for (let i = 0; i < _dvState.slots.length; i++) {
+        const slot = _dvState.slots[i];
+        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
+        const track = modal.querySelector('[data-dv-version-track="' + i + '"]');
+        if (!track) continue;
+        track._dvRowH = null;
+        _dvSyncVersionTrack(track, slot.lensIndex);
+    }
+}
+
+function _dvAnimateVersionTrack(track, viewport, delta, done) {
+    if (!track) {
+        if (done) done();
+        return;
+    }
+    const rowH = _dvMeasureNavRowH(track);
+    const fromY = _dvParseTranslateY(track);
+    const toY = fromY - delta * rowH;
+    if (typeof track.animate !== 'function') {
+        track.style.transform = 'translateY(' + toY + 'px)';
+        if (done) done();
+        return;
+    }
+    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
+    track.animate(
+        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
+        animOpts
+    ).addEventListener('finish', () => { if (done) done(); });
+}
+
 function _dvAnimateVerticalSlide(container, oldHtml, newHtml, delta, layerStyle, done) {
     if (!container) {
         if (done) done();
@@ -570,7 +639,8 @@ function _dvShiftLens(slotIdx, delta, modal) {
 
     const lensPre = modal && modal.querySelector('.dv-reel-lens [data-dv-lens-pre="' + slotIdx + '"]');
     const lens = lensPre && lensPre.closest('.dv-reel-lens');
-    const navSlide = modal && modal.querySelector('[data-dv-arrows-nav="' + slotIdx + '"] .dv-reel-arrows-nav-slide');
+    const track = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
+    const viewport = track && track.closest('.dv-reel-arrows-nav-viewport');
 
     if (!lens || typeof lens.animate !== 'function') {
         slot.lensIndex = newIdx;
@@ -580,15 +650,12 @@ function _dvShiftLens(slotIdx, delta, modal) {
     }
 
     const oldLensHtml = lens.innerHTML;
-    const oldNavHtml = navSlide ? navSlide.innerHTML : '';
     slot.lensIndex = newIdx;
     const newLensHtml = '<pre data-dv-lens-pre="' + slotIdx + '">' + _dvEscHtml(slot.promptVersions[newIdx].prompt || '') + '</pre>';
-    const newNavHtml = _dvReelArrowsNavInnerHtml(slot, slotIdx);
     const lensLayerStyle = 'position:absolute;inset:0;overflow-y:auto;padding:8px 10px;box-sizing:border-box;';
-    const navLayerStyle = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;width:100%;';
 
     slot._lensAnimating = true;
-    let pending = navSlide ? 2 : 1;
+    let pending = track ? 2 : 1;
     const finishOne = () => {
         pending -= 1;
         if (pending <= 0) {
@@ -598,7 +665,8 @@ function _dvShiftLens(slotIdx, delta, modal) {
     };
 
     _dvAnimateVerticalSlide(lens, oldLensHtml, newLensHtml, delta, lensLayerStyle, finishOne);
-    if (navSlide) _dvAnimateVerticalSlide(navSlide, oldNavHtml, newNavHtml, delta, navLayerStyle, finishOne);
+    if (track) _dvAnimateVersionTrack(track, viewport, delta, finishOne);
+    else finishOne();
 
     Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
 }
@@ -1229,9 +1297,15 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     </div>`;
 }
 
-function _dvReelVersionLabel(v, role) {
-    const cls = role === 'current' ? 'dv-reel-arrow-current' : 'dv-reel-arrow-target';
-    return '<span class="' + cls + '">v' + _dvEscHtml(String(v.displayVersionNo)) + '</span>';
+function _dvReelVersionTrackLabel(v, vi, isCurrent) {
+    const cls = 'dv-reel-version-label' + (isCurrent ? ' dv-reel-version-label--current' : '');
+    return '<span class="' + cls + '" data-vi="' + vi + '">v' + _dvEscHtml(String(v.displayVersionNo)) + '</span>';
+}
+
+function _dvReelVersionTrackHtml(slot, slotIdx) {
+    const versions = slot.promptVersions || [];
+    const lensIdx = slot.lensIndex;
+    return versions.map((v, i) => _dvReelVersionTrackLabel(v, i, i === lensIdx)).join('');
 }
 
 function _dvReelArrowBtn(slotIdx, dir, enabled) {
@@ -1243,28 +1317,21 @@ function _dvReelArrowBtn(slotIdx, dir, enabled) {
         + (dir === 'up' ? '↑' : '↓') + '</button>';
 }
 
-function _dvReelArrowsNavInnerHtml(slot, slotIdx) {
+function _dvReelArrowsNavHtml(slot, slotIdx) {
     const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
-    const lensV = versions[lensIdx];
     const canUp = lensIdx > 0;
     const canDown = lensIdx < versions.length - 1;
-    const aboveHtml = versions.slice(0, lensIdx).map((v) => _dvReelVersionLabel(v, 'above')).join('');
-    const belowHtml = versions.slice(lensIdx + 1).map((v) => _dvReelVersionLabel(v, 'below')).join('');
-    const curLabel = lensV
-        ? _dvReelVersionLabel(lensV, 'current')
-        : '<span class="dv-reel-arrow-current">—</span>';
-    return '<div class="dv-reel-version-stack dv-reel-version-stack--above">' + aboveHtml + '</div>'
-        + _dvReelArrowBtn(slotIdx, 'up', canUp)
-        + curLabel
-        + _dvReelArrowBtn(slotIdx, 'down', canDown)
-        + '<div class="dv-reel-version-stack dv-reel-version-stack--below">' + belowHtml + '</div>';
-}
-
-function _dvReelArrowsNavHtml(slot, slotIdx) {
     return '<div class="dv-reel-arrows-nav" data-dv-arrows-nav="' + slotIdx + '">'
-        + '<div class="dv-reel-arrows-nav-slide">' + _dvReelArrowsNavInnerHtml(slot, slotIdx) + '</div>'
-        + '</div>';
+        + '<div class="dv-reel-arrows-nav-viewport">'
+        + '<div class="dv-reel-arrows-nav-track" data-dv-version-track="' + slotIdx + '">'
+        + _dvReelVersionTrackHtml(slot, slotIdx)
+        + '</div></div>'
+        + '<div class="dv-reel-arrows-nav-controls">'
+        + _dvReelArrowBtn(slotIdx, 'up', canUp)
+        + '<div class="dv-reel-nav-current-slot" aria-hidden="true"></div>'
+        + _dvReelArrowBtn(slotIdx, 'down', canDown)
+        + '</div></div>';
 }
 
 function _dvReelHtml(slot, slotIdx, unifiedPeek) {
@@ -1610,6 +1677,7 @@ function _dvScheduleReelLensSync(modal, opts) {
     const finish = () => {
         _dvLensSyncScheduled = false;
         _dvSyncReelLensHeights(modal);
+        _dvSyncAllVersionTracks(modal);
     };
 
     const useDoubleRaf = afterLayout || _dvLensSyncAfterLayout;
@@ -2361,46 +2429,55 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav {',
         '  flex: 1;',
+        '  position: relative;',
         '  display: flex;',
         '  flex-direction: column;',
         '  min-height: 0;',
         '  width: 100%;',
         '  overflow: hidden;',
-        '  overflow-y: auto;',
         '}',
-        '#wf-dash-modal .dv-reel-arrows-nav-slide {',
+        '#wf-dash-modal .dv-reel-arrows-nav-viewport {',
         '  flex: 1;',
+        '  position: relative;',
+        '  min-height: 0;',
+        '  width: 100%;',
+        '  overflow: hidden;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrows-nav-track {',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  align-items: center;',
+        '  width: 100%;',
+        '  will-change: transform;',
+        '}',
+        '#wf-dash-modal .dv-reel-arrows-nav-controls {',
+        '  position: absolute;',
+        '  inset: 0;',
+        '  z-index: 2;',
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
         '  justify-content: center;',
-        '  gap: 6px;',
-        '  min-height: 0;',
-        '  width: 100%;',
-        '  position: relative;',
+        '  gap: ' + DV_REEL_NAV_ROW_GAP + 'px;',
+        '  pointer-events: none;',
         '}',
-        '#wf-dash-modal .dv-reel-version-stack {',
-        '  display: flex;',
-        '  flex-direction: column;',
-        '  align-items: center;',
-        '  gap: 6px;',
-        '  width: 100%;',
+        '#wf-dash-modal .dv-reel-arrows-nav-controls .dv-reel-arrow {',
+        '  pointer-events: auto;',
+        '  background: var(--card, var(--background, #fff));',
         '}',
-        '#wf-dash-modal .dv-reel-copy {',
+        '#wf-dash-modal .dv-reel-nav-current-slot {',
+        '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
+        '  width: 100%;',
         '  flex-shrink: 0;',
+        '  pointer-events: none;',
         '}',
-        '#wf-dash-modal .dv-reel--has-above .dv-reel-copy {',
-        '  margin-top: ' + (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) + 'px;',
-        '}',
-        '#wf-dash-modal .dv-reel-arrow-current {',
-        '  font-size: 9px;',
-        '  font-weight: 700;',
-        '  color: var(--foreground, #f8fafc);',
-        '  line-height: 1;',
-        '  font-family: inherit;',
-        '  user-select: none;',
-        '}',
-        '#wf-dash-modal .dv-reel-arrow-target {',
+        '#wf-dash-modal .dv-reel-version-label {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  justify-content: center;',
+        '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
+        '  width: 100%;',
+        '  flex-shrink: 0;',
         '  font-size: 8px;',
         '  font-weight: 600;',
         '  color: var(--muted-foreground, #64748b);',
@@ -2408,8 +2485,16 @@ function _dvInjectStyles() {
         '  font-family: inherit;',
         '  user-select: none;',
         '}',
-        '#wf-dash-modal .dv-reel-arrow {',
-        '  grid-column: 2;',
+        '#wf-dash-modal .dv-reel-version-label--current {',
+        '  font-size: 9px;',
+        '  font-weight: 700;',
+        '  color: var(--foreground, #f8fafc);',
+        '}',
+        '#wf-dash-modal .dv-reel-copy {',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel--has-above .dv-reel-copy {',
+        '  margin-top: ' + (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) + 'px;',
         '}',
     ].join('\n');
 }
@@ -2445,7 +2530,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.42',
+    _version: '1.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
