@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.16',
+    _version: '7.17',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1768,8 +1768,9 @@ const plugin = {
         const dash = Context.dashboard;
         if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
         const opts = options || {};
+        const modal = opts.modal || null;
         if (opts.loading) {
-            dash.renderTeamMemberConstraintLists({ loading: true, preserveSelections: false });
+            dash.renderTeamMemberConstraintLists({ loading: true, preserveSelections: false, modal });
             return;
         }
         const teamItems = (allTeams || [])
@@ -1780,7 +1781,8 @@ const plugin = {
             loading: false,
             teamItems,
             permItems,
-            preserveSelections: opts.preserveSelections !== false
+            preserveSelections: opts.preserveSelections !== false,
+            modal
         });
     },
 
@@ -1788,6 +1790,7 @@ const plugin = {
         const dash = Context.dashboard;
         if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
         const opts = options || {};
+        const modal = opts.modal || null;
         const teamLabels = new Set();
         const permKeys = new Set();
         if (memberMap) {
@@ -1807,7 +1810,8 @@ const plugin = {
             loading: false,
             teamItems,
             permItems,
-            preserveSelections: opts.preserveSelections !== false
+            preserveSelections: opts.preserveSelections !== false,
+            modal
         });
         Logger.debug('ops-tab: team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
     },
@@ -2488,7 +2492,7 @@ const plugin = {
         if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
             Context.dashboard.resetTeamMemberFilters(modal);
         } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
-            Context.dashboard.resetTeamMemberMsDropdowns();
+            Context.dashboard.resetTeamMemberMsDropdowns(modal);
         }
         if (outputWrap) {
             outputWrap.style.display = 'none';
@@ -3333,9 +3337,12 @@ const plugin = {
         if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
             Context.dashboard.resetTeamMemberFilters(modal);
         }
-        this._populateOpsTeamMemberConstraintLists(allTeams, { loading: false, preserveSelections: false });
+        this._populateOpsTeamMemberConstraintLists(allTeams, { loading: false, preserveSelections: false, modal });
         if (Context.dashboard && typeof Context.dashboard.resetTeamMembersPage === 'function') {
             Context.dashboard.resetTeamMembersPage();
+        }
+        if (Context.dashboard && typeof Context.dashboard.syncTeamMemberConstraintListsUi === 'function') {
+            Context.dashboard.syncTeamMemberConstraintListsUi(modal);
         }
 
         const memberMap = new Map();
@@ -3395,6 +3402,7 @@ const plugin = {
                 this._opsTeamSearchMemberCache = null;
             } else {
                 this._opsTeamSearchMemberCache = { memberMap, allTeams };
+                this._indexOpsTeamMemberFiltersFromResults(memberMap, { preserveSelections: true, modal });
                 this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
                 void this._hydrateOpsTeamMemberStatsForVisible(modal);
             }

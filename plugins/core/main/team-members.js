@@ -72,9 +72,23 @@ function teamMembersPagerChevronSvg(dir) {
     return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
 }
 
+const TEAM_MEMBERS_CONSTRAINT_SCOPES = ['team-members-teams', 'team-members-permissions'];
+
 const teamMembersMethods = {
     _teamMembersPage: 0,
     _teamMembersPageSize: TEAM_MEMBERS_PAGE_SIZE_DEFAULT,
+
+    _withTeamMembersModal(modal, fn) {
+        const root = modal || this._modal;
+        if (!root || typeof fn !== 'function') return;
+        const prev = this._modal;
+        this._modal = root;
+        try {
+            fn(root);
+        } finally {
+            this._modal = prev;
+        }
+    },
 
     _resetTeamMemberNumericFilters(modal) {
         const root = modal || this._modal;
@@ -87,40 +101,83 @@ const teamMembersMethods = {
 
     _resetTeamMemberFilters(modal) {
         this._resetTeamMemberNumericFilters(modal);
-        this._resetTeamMemberConstraintState();
+        this._resetTeamMemberConstraintState(modal);
         this.resetTeamMembersPage();
     },
 
-    _resetTeamMemberMsDropdowns() {
-        this._resetTeamMemberNumericFilters(this._modal);
-        this._resetTeamMemberConstraintState();
+    _resetTeamMemberMsDropdowns(modal) {
+        this._resetTeamMemberNumericFilters(modal || this._modal);
+        this._resetTeamMemberConstraintState(modal);
         this.resetTeamMembersPage();
     },
 
-    _resetTeamMemberConstraintState() {
-        const root = this._modal;
-        if (!root) return;
-        ['team-members-teams', 'team-members-permissions'].forEach((scopeKey) => {
-            const itemsEl = typeof this._msItemsEl === 'function' ? this._msItemsEl(scopeKey) : null;
-            if (!itemsEl) return;
-            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
-            if (typeof this._updateMsCount === 'function') this._updateMsCount(scopeKey);
-            if (typeof this._syncMsDropdown === 'function') this._syncMsDropdown(scopeKey);
+    _resetTeamMemberConstraintState(modal) {
+        this._withTeamMembersModal(modal, (root) => {
+            if (!this._state) return;
+            TEAM_MEMBERS_CONSTRAINT_SCOPES.forEach((scopeKey) => {
+                delete this._state.msDropdownOpen[scopeKey];
+                delete this._state.msDropdownToggled[scopeKey];
+                const wrap = root.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+                const panel = root.querySelector('#wf-dash-' + scopeKey + '-list');
+                const itemsEl = panel ? panel.querySelector('[data-wf-dash-ms-items]') : null;
+                const emptyHint = panel ? (panel.getAttribute('data-wf-dash-empty') || 'Run a search first') : 'Run a search first';
+                if (itemsEl) {
+                    itemsEl.innerHTML = '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">'
+                        + dashEscHtml(emptyHint) + '</p>';
+                }
+                if (wrap) wrap.removeAttribute('data-wf-dash-ms-open');
+                if (panel) {
+                    panel.style.display = 'block';
+                    panel.style.maxHeight = '0';
+                    panel.style.opacity = '0';
+                }
+                const countEl = root.querySelector('#wf-dash-' + scopeKey + '-count');
+                if (countEl) {
+                    countEl.textContent = '';
+                    countEl.style.display = 'none';
+                }
+                const chevron = root.querySelector('[data-wf-dash-ms-chevron="' + scopeKey + '"]');
+                if (chevron) chevron.textContent = '▸';
+                const toggles = wrap ? wrap.querySelectorAll('[data-wf-dash-ms-toggle="' + scopeKey + '"]') : [];
+                toggles.forEach((toggle) => toggle.setAttribute('aria-expanded', 'false'));
+            });
+            Logger.debug('team-members: constraint filter state reset');
         });
-        Logger.debug('team-members: constraint filter selections cleared');
+    },
+
+    _syncTeamMemberConstraintListsUi(modal) {
+        this._withTeamMembersModal(modal, (root) => {
+            TEAM_MEMBERS_CONSTRAINT_SCOPES.forEach((scopeKey) => {
+                const itemsEl = typeof this._msItemsEl === 'function' ? this._msItemsEl(scopeKey) : null;
+                const rowCount = itemsEl ? itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length : -1;
+                const open = Boolean(this._state && this._state.msDropdownOpen[scopeKey]);
+                Logger.debug('team-members: ' + scopeKey + ' rows=' + rowCount + ' open=' + open);
+                if (rowCount === 0 && itemsEl) {
+                    Logger.warn('team-members: constraint list empty after populate — ' + scopeKey);
+                }
+                if (typeof this._syncMsDropdown === 'function') {
+                    this._syncMsDropdown(scopeKey, { immediate: true });
+                }
+            });
+        });
     },
 
     _renderTeamMemberConstraintLists(opts) {
         const options = opts || {};
         const loading = Boolean(options.loading);
         const preserve = options.preserveSelections !== false;
-        const teamPrev = preserve && typeof this._readDualConstraintSelection === 'function'
-            ? this._readDualConstraintSelection('team-members-teams')
-            : { include: new Set(), exclude: new Set() };
-        const permPrev = preserve && typeof this._readDualConstraintSelection === 'function'
-            ? this._readDualConstraintSelection('team-members-permissions')
-            : { include: new Set(), exclude: new Set() };
-        if (typeof this._renderDualConstraintMsList === 'function') {
+        const modal = options.modal || null;
+        this._withTeamMembersModal(modal, () => {
+            const teamPrev = preserve && typeof this._readDualConstraintSelection === 'function'
+                ? this._readDualConstraintSelection('team-members-teams')
+                : { include: new Set(), exclude: new Set() };
+            const permPrev = preserve && typeof this._readDualConstraintSelection === 'function'
+                ? this._readDualConstraintSelection('team-members-permissions')
+                : { include: new Set(), exclude: new Set() };
+            if (typeof this._renderDualConstraintMsList !== 'function') {
+                Logger.warn('team-members: _renderDualConstraintMsList unavailable');
+                return;
+            }
             this._renderDualConstraintMsList(
                 'team-members-teams', options.teamItems || [],
                 'Include', 'Exclude', 'Run a search first', teamPrev, { loading }
@@ -129,10 +186,13 @@ const teamMembersMethods = {
                 'team-members-permissions', options.permItems || [],
                 'Include', 'Exclude', 'Run a search first', permPrev, { loading }
             );
-        }
-        Logger.debug('team-members: constraint lists rendered'
-            + (loading ? ' (loading)' : ' — ' + (options.teamItems || []).length + ' teams, '
-                + (options.permItems || []).length + ' permissions'));
+            if (!loading) {
+                this._syncTeamMemberConstraintListsUi(modal);
+            }
+            Logger.log('team-members: constraint lists rendered'
+                + (loading ? ' (loading)' : ' — ' + (options.teamItems || []).length + ' teams, '
+                    + (options.permItems || []).length + ' permissions'));
+        });
     },
 
     _onTeamMemberMsChange(modal) {
@@ -511,7 +571,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
