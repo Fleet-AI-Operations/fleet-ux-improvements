@@ -19,6 +19,9 @@ const TEAM_MEMBERS_COMPARATORS = [
     { id: 'neq', label: '≠' }
 ];
 
+const TEAM_MEMBERS_PAGE_SIZE_KEY = 'fleet-ux:team-members-page-size';
+const TEAM_MEMBERS_PAGE_SIZE_DEFAULT = 25;
+
 function dashEscHtml(value) {
     return String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -64,7 +67,15 @@ function teamMembersNumericFilterRowHtml(opts) {
         + '</div>';
 }
 
+function teamMembersPagerChevronSvg(dir) {
+    const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+}
+
 const teamMembersMethods = {
+    _teamMembersPage: 0,
+    _teamMembersPageSize: TEAM_MEMBERS_PAGE_SIZE_DEFAULT,
+
     _resetTeamMemberNumericFilters(modal) {
         const root = modal || this._modal;
         if (!root) return;
@@ -76,10 +87,170 @@ const teamMembersMethods = {
 
     _resetTeamMemberFilters(modal) {
         this._resetTeamMemberNumericFilters(modal);
+        this._resetTeamMemberConstraintState();
+        this.resetTeamMembersPage();
     },
 
     _resetTeamMemberMsDropdowns() {
         this._resetTeamMemberNumericFilters(this._modal);
+        this._resetTeamMemberConstraintState();
+        this.resetTeamMembersPage();
+    },
+
+    _resetTeamMemberConstraintState() {
+        const root = this._modal;
+        if (!root) return;
+        ['team-members-teams', 'team-members-permissions'].forEach((scopeKey) => {
+            const itemsEl = typeof this._msItemsEl === 'function' ? this._msItemsEl(scopeKey) : null;
+            if (!itemsEl) return;
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            if (typeof this._updateMsCount === 'function') this._updateMsCount(scopeKey);
+            if (typeof this._syncMsDropdown === 'function') this._syncMsDropdown(scopeKey);
+        });
+        Logger.debug('team-members: constraint filter selections cleared');
+    },
+
+    _renderTeamMemberConstraintLists(opts) {
+        const options = opts || {};
+        const loading = Boolean(options.loading);
+        const preserve = options.preserveSelections !== false;
+        const teamPrev = preserve && typeof this._readDualConstraintSelection === 'function'
+            ? this._readDualConstraintSelection('team-members-teams')
+            : { include: new Set(), exclude: new Set() };
+        const permPrev = preserve && typeof this._readDualConstraintSelection === 'function'
+            ? this._readDualConstraintSelection('team-members-permissions')
+            : { include: new Set(), exclude: new Set() };
+        if (typeof this._renderDualConstraintMsList === 'function') {
+            this._renderDualConstraintMsList(
+                'team-members-teams', options.teamItems || [],
+                'Include', 'Exclude', 'Run a search first', teamPrev, { loading }
+            );
+            this._renderDualConstraintMsList(
+                'team-members-permissions', options.permItems || [],
+                'Include', 'Exclude', 'Run a search first', permPrev, { loading }
+            );
+        }
+        Logger.debug('team-members: constraint lists rendered'
+            + (loading ? ' (loading)' : ' — ' + (options.teamItems || []).length + ' teams, '
+                + (options.permItems || []).length + ' permissions'));
+    },
+
+    _onTeamMemberMsChange(modal) {
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.filterTeamSearchCards !== 'function') return;
+        this.resetTeamMembersPage();
+        ops.filterTeamSearchCards(modal || this._modal);
+    },
+
+    resetTeamMembersPage() {
+        this._teamMembersPage = 0;
+    },
+
+    _readTeamMembersPageSizePref() {
+        try {
+            const v = this._pageWindow().localStorage.getItem(TEAM_MEMBERS_PAGE_SIZE_KEY);
+            if (v === '10' || v === '25' || v === '50' || v === 'all') return v;
+        } catch (_e) { /* ignore */ }
+        return null;
+    },
+
+    _persistTeamMembersPageSizePref(value) {
+        try {
+            const v = String(value || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
+            this._pageWindow().localStorage.setItem(TEAM_MEMBERS_PAGE_SIZE_KEY, v);
+        } catch (e) {
+            Logger.debug('team-members: could not persist page size', e);
+        }
+    },
+
+    _getEffectiveTeamMembersPageSize() {
+        const ps = this._teamMembersPageSize;
+        if (ps === 'all') return Infinity;
+        const n = Number(ps);
+        return Number.isFinite(n) && n > 0 ? n : TEAM_MEMBERS_PAGE_SIZE_DEFAULT;
+    },
+
+    _syncTeamMembersPageSizeUi(modal) {
+        const root = modal || this._modal;
+        if (!root) return;
+        const sel = root.querySelector('#wf-ops-team-page-size');
+        if (!sel) return;
+        const ps = this._teamMembersPageSize;
+        sel.value = ps === 'all' ? 'all' : String(ps);
+    },
+
+    _getTeamMembersPaginationMeta(total) {
+        const count = Number(total) || 0;
+        const size = this._getEffectiveTeamMembersPageSize();
+        if (count === 0 || size === Infinity) {
+            return { total: count, totalPages: 1, page: 0, canPrev: false, canNext: false, showNav: false };
+        }
+        const totalPages = Math.max(1, Math.ceil(count / size));
+        let page = this._teamMembersPage || 0;
+        if (page >= totalPages) page = totalPages - 1;
+        this._teamMembersPage = page;
+        return {
+            total: count,
+            totalPages,
+            page,
+            canPrev: page > 0,
+            canNext: page < totalPages - 1,
+            showNav: totalPages > 1
+        };
+    },
+
+    _getTeamMembersRangeLabel(total) {
+        const count = Number(total) || 0;
+        if (count === 0) return '0 members';
+        const meta = this._getTeamMembersPaginationMeta(count);
+        const suffix = count === 1 ? ' member' : ' members';
+        if (!meta.showNav) {
+            return '1–' + count + ' of ' + count + suffix;
+        }
+        const size = this._getEffectiveTeamMembersPageSize();
+        const start = meta.page * size + 1;
+        const end = Math.min((meta.page + 1) * size, count);
+        return start + '–' + end + ' of ' + count + suffix;
+    },
+
+    getTeamMembersPageSlice(members) {
+        const list = Array.isArray(members) ? members : [];
+        const size = this._getEffectiveTeamMembersPageSize();
+        if (size === Infinity) return list;
+        const meta = this._getTeamMembersPaginationMeta(list.length);
+        const start = meta.page * size;
+        return list.slice(start, start + size);
+    },
+
+    syncTeamMembersPagerUi(modal, total, searchDone) {
+        const root = modal || this._modal;
+        if (!root) return;
+        this._teamMembersPagerTotal = Number(total) || 0;
+        const row = root.querySelector('#wf-ops-team-pager-row');
+        const countEl = root.querySelector('#wf-ops-team-range-count');
+        const prevBtn = root.querySelector('#wf-ops-team-prev');
+        const nextBtn = root.querySelector('#wf-ops-team-next');
+        const showPager = Boolean(searchDone) && (Number(total) || 0) > 0;
+        if (row) row.style.display = showPager ? 'flex' : 'none';
+        if (countEl) countEl.textContent = showPager ? this._getTeamMembersRangeLabel(total) : '';
+        const meta = showPager ? this._getTeamMembersPaginationMeta(total) : null;
+        if (prevBtn) prevBtn.disabled = !meta || !meta.canPrev;
+        if (nextBtn) nextBtn.disabled = !meta || !meta.canNext;
+    },
+
+    _goTeamMembersPage(modal, delta) {
+        const meta = this._getTeamMembersPaginationMeta(
+            this._teamMembersPagerTotal != null ? this._teamMembersPagerTotal : 0
+        );
+        if (!meta.showNav) return;
+        const next = meta.page + delta;
+        if (next < 0 || next >= meta.totalPages) return;
+        this._teamMembersPage = next;
+        Logger.log('team-members: page — ' + (next + 1) + ' / ' + meta.totalPages);
+        const ops = Context.opsTab;
+        if (ops && typeof ops.filterTeamSearchCards === 'function') {
+            ops.filterTeamSearchCards(modal || this._modal);
+        }
     },
 
     _buildNumericFilterRow(modal, opts) {
@@ -191,6 +362,16 @@ function teamMembersPanelHtml(_loader) {
                                     <div id="wf-ops-team-numeric-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
                                     <button type="button" id="wf-ops-team-numeric-add" class="${btnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
+                                ${dash && typeof dash.multiSelectHtml === 'function'
+        ? `<div>
+                                    <div style="${label} font-weight: 600; margin-bottom: 8px; color: var(--foreground, #0f172a);">Narrow results</div>
+                                    <p style="${hint} margin: 0 0 8px 0;">Include requires a match; exclude removes matches. None selected = all.</p>
+                                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                                        ${dash.multiSelectHtml('team-members-teams', 'Team', 'Run a search first', false)}
+                                        ${dash.multiSelectHtml('team-members-permissions', 'Permission', 'Run a search first', false)}
+                                    </div>
+                                </div>`
+        : ''}
                                 <button type="button" id="wf-ops-team-apply-filters" class="${btnClass('primary', 'nav')} wf-dash-btn--full">Apply</button>
                             </div>
                         </div>
@@ -208,6 +389,20 @@ function teamMembersPanelHtml(_loader) {
                         <div id="wf-ops-team-search-status-placeholder" style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">
                             Results
                             <span style="display: block; font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); margin-top: 4px;">Run a search to list team members.</span>
+                        </div>
+                        <div id="wf-ops-team-pager-row" style="display: none; margin-top: 10px; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">
+                            <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                <span>Show</span>
+                                <select id="wf-ops-team-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </label>
+                            <span id="wf-ops-team-range-count" style="${label} white-space: nowrap;"></span>
+                            <button type="button" id="wf-ops-team-prev" aria-label="Previous page" title="Previous page" class="${btnClass('basic', 'icon')}">${teamMembersPagerChevronSvg('prev')}</button>
+                            <button type="button" id="wf-ops-team-next" aria-label="Next page" title="Next page" class="${btnClass('basic', 'icon')}">${teamMembersPagerChevronSvg('next')}</button>
                         </div>
                     </div>
                     <div id="wf-ops-team-search-output-wrap" style="display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px;">
@@ -277,6 +472,32 @@ function attachTeamMembersListeners(modal, dash) {
             if (row) row.remove();
         });
     }
+    const pageSizeSel = modal.querySelector('#wf-ops-team-page-size');
+    if (pageSizeSel) {
+        const pref = typeof dash._readTeamMembersPageSizePref === 'function'
+            ? dash._readTeamMembersPageSizePref()
+            : null;
+        if (pref) {
+            dash._teamMembersPageSize = pref === 'all' ? 'all' : (Number(pref) || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
+        }
+        if (typeof dash._syncTeamMembersPageSizeUi === 'function') dash._syncTeamMembersPageSizeUi(modal);
+        pageSizeSel.addEventListener('change', () => {
+            const val = pageSizeSel.value;
+            dash._teamMembersPageSize = val === 'all' ? 'all' : (Number(val) || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
+            if (typeof dash._persistTeamMembersPageSizePref === 'function') dash._persistTeamMembersPageSizePref(val);
+            if (typeof dash.resetTeamMembersPage === 'function') dash.resetTeamMembersPage();
+            Logger.log('team-members: page size — ' + val);
+            if (ops && typeof ops.filterTeamSearchCards === 'function') ops.filterTeamSearchCards(modal);
+        });
+    }
+    const teamPrev = modal.querySelector('#wf-ops-team-prev');
+    const teamNext = modal.querySelector('#wf-ops-team-next');
+    if (teamPrev && typeof dash._goTeamMembersPage === 'function') {
+        teamPrev.addEventListener('click', () => dash._goTeamMembersPage(modal, -1));
+    }
+    if (teamNext && typeof dash._goTeamMembersPage === 'function') {
+        teamNext.addEventListener('click', () => dash._goTeamMembersPage(modal, 1));
+    }
     if (!modal.dataset.wfOpsMemberDetailsToggle && typeof ops.attachTeamMemberDetailsToggle === 'function') {
         ops.attachTeamMemberDetailsToggle(modal);
     }
@@ -290,7 +511,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

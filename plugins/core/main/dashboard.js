@@ -173,6 +173,16 @@ const plugin = {
                 if (typeof self._readNumericFilters === 'function') return self._readNumericFilters(modal);
                 return { rows: [], andOr: 'and' };
             },
+            resetTeamMembersPage: () => {
+                if (typeof self.resetTeamMembersPage === 'function') self.resetTeamMembersPage();
+            },
+            getTeamMembersPageSlice: (members) => {
+                if (typeof self.getTeamMembersPageSlice === 'function') return self.getTeamMembersPageSlice(members);
+                return members;
+            },
+            syncTeamMembersPagerUi: (modal, total, searchDone) => {
+                if (typeof self.syncTeamMembersPagerUi === 'function') self.syncTeamMembersPagerUi(modal, total, searchDone);
+            },
             captureTabState: (modal) => {
                 for (const tab of self._tabs) {
                     if (typeof tab.captureState === 'function') tab.captureState(modal, self);
