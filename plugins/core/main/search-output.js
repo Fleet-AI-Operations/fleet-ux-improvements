@@ -4510,16 +4510,31 @@ const searchOutputMethods = {
             + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
     },
 
+    _cardSurfaceTabHtml(innerHtml, title) {
+        const shell = this._cardTabShellBase()
+            + ' background: var(--card, #ffffff); font-weight: 400;'
+            + ' border: ' + DASH_CARD_BORDER + '; border-bottom: none;';
+        const label = String(title || '');
+        return '<div style="' + shell + '"'
+            + (label ? ' title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '"' : '')
+            + '>' + innerHtml + '</div>';
+    },
+
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
         const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
-        const inner = this._plainTimestampHtml(iso, 'Created');
-        const shell = this._cardTabShellBase()
-            + ' background: var(--card, #ffffff); font-weight: 400;'
-            + ' border: ' + DASH_CARD_BORDER + '; border-bottom: none;';
-        return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + inner + '</div>';
+        return this._cardSurfaceTabHtml(this._plainTimestampHtml(iso, 'Created'), label);
+    },
+
+    _cardKeyTabHtml(task, itemId, highlightOpts) {
+        const key = String(task && task.key || '').trim();
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px;">`
+            + this._copyChipHtml(key, highlightOpts || {})
+            + this._taskOpenLinkHtml(task, itemId)
+            + '</span>';
+        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key');
     },
 
     _cardStatusTabHtml(task) {
@@ -6970,14 +6985,10 @@ const searchOutputMethods = {
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
                         ${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
                     </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Env', this._dataValueHtml(task.environment))}
-                    </div>
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">
-                        ${this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx })}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                 </div>
                 ${this._userStorySectionHtml(itemId)}
@@ -6991,6 +7002,12 @@ const searchOutputMethods = {
         const itemId = item.id;
         const createdTabHtml = this._cardCreatedTabHtml(item.task);
         const statusTabHtml = this._cardStatusTabHtml(item.task);
+        const keyTabHtml = this._cardKeyTabHtml(item.task, itemId, {
+            query: item.highlightQuery || '',
+            caseSensitive: Boolean(item.highlightCaseSensitive),
+            fuzzy: Boolean(item.highlightFuzzy),
+            regex: Boolean(item.highlightRegex)
+        });
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -7004,7 +7021,7 @@ const searchOutputMethods = {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}</div>
+                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
@@ -7118,14 +7135,10 @@ const searchOutputMethods = {
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
                         ${this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet')}
                     </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Env', this._dataValueHtml(task.environment))}
-                    </div>
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">
-                        ${this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex })}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
                 </div>
                 ${row2Html}
@@ -7614,7 +7627,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.79',
+    _version: '1.80',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
