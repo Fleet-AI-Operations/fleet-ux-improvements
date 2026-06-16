@@ -97,6 +97,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-qa-helpfulness', optionsKey: 'qaHelpfulness', draftKey: 'qaHelpfulness' },
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
@@ -872,6 +873,7 @@ const searchOutputMethods = {
         } finally {
             ui.submitting = false;
             this._patchHelpfulnessBlock(fid);
+            this._refreshHelpfulnessFilterUi();
         }
     },
 
@@ -911,6 +913,7 @@ const searchOutputMethods = {
         } finally {
             ui.submitting = false;
             this._patchHelpfulnessBlock(fid);
+            this._refreshHelpfulnessFilterUi();
         }
     },
 
@@ -955,6 +958,7 @@ const searchOutputMethods = {
         } finally {
             ui.submitting = false;
             this._patchHelpfulnessBlock(fid);
+            this._refreshHelpfulnessFilterUi();
         }
     },
 
@@ -2750,8 +2754,31 @@ const searchOutputMethods = {
             promptRatings: (opts.promptRatings || []).map((r) => r.id),
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
-            promptHistory: (opts.promptHistory || []).map((h) => h.id)
+            promptHistory: (opts.promptHistory || []).map((h) => h.id),
+            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id)
         };
+    },
+
+    _buildQaHelpfulnessFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const uiMap = this._state.helpfulnessUi || {};
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const flag of lib.itemQaHelpfulness(item, uiMap)) {
+                present.add(flag);
+            }
+        }
+        return (lib.QA_HELPFULNESS_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.QA_HELPFULNESS_LABELS && lib.QA_HELPFULNESS_LABELS[id]) || id
+            }));
+    },
+
+    _refreshHelpfulnessFilterUi() {
+        if (!this._state.cachedItems) return;
+        this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
     },
 
     _isDimensionAllSelected(selected, boundIds) {
@@ -2950,6 +2977,7 @@ const searchOutputMethods = {
             this._state.catalog,
             this._getSearchableTeamCatalog()
         );
+        options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -3243,6 +3271,7 @@ const searchOutputMethods = {
             taskIssues: [...(b.taskIssues || [])],
             returnTypes: [...(b.returnTypes || [])],
             promptHistory: [...(b.promptHistory || [])],
+            qaHelpfulness: [...(b.qaHelpfulness || [])],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -3281,7 +3310,8 @@ const searchOutputMethods = {
     _dashSortContext() {
         return {
             openDisputesByTaskId: this._state.openDisputesByTaskId || null,
-            resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null
+            resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null,
+            helpfulnessUi: this._state.helpfulnessUi || {}
         };
     },
 
@@ -3909,6 +3939,7 @@ const searchOutputMethods = {
                 try {
                     await this._fetchHelpfulnessRatingsBatch(uniqueFeedbackIds);
                     for (const id of uniqueFeedbackIds) this._patchHelpfulnessBlock(id);
+                    this._refreshHelpfulnessFilterUi();
                 } catch (e) {
                     Logger.warn('search-output: helpfulness hydration failed', e);
                 }
@@ -4585,6 +4616,7 @@ const searchOutputMethods = {
             'filter-statuses': 'Current task status',
             'filter-contributors': 'Contributor',
             'filter-prompt-ratings': 'Prompt rating',
+            'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
             'filter-return-types': 'Return types'
         };
@@ -4930,7 +4962,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: []
+            promptHistory: [], qaHelpfulness: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -4959,11 +4991,14 @@ const searchOutputMethods = {
             ? applied
             : this._getFilterDraft();
         const lib = dashLib();
+        const filterOptions = Object.assign({}, options, {
+            helpfulnessUi: this._state.helpfulnessUi || {}
+        });
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
-            ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, options)
+            ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterIrrelevance();
         const optionCounts = scopeItems.length > 0
-            ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, options)
+            ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterOptionCounts();
 
         const openFilterKeys = this._beginFilterMsDropdownRefresh();
@@ -5312,7 +5347,7 @@ const searchOutputMethods = {
         if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory'
+            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
         ];
         for (const key of keys) {
             if (!this._filterArraysEqual(draft[key], applied[key])) return true;
@@ -5894,6 +5929,7 @@ const searchOutputMethods = {
             || (applied.taskIssues || []).length < bounds.taskIssues.length
             || (applied.returnTypes || []).length < bounds.returnTypes.length
             || (applied.promptHistory || []).length < bounds.promptHistory.length
+            || (applied.qaHelpfulness || []).length < bounds.qaHelpfulness.length
             || (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
             || ((applied.manualFilters || []).length > 0);
@@ -7394,7 +7430,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.62',
+    _version: '1.63',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
