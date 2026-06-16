@@ -6473,7 +6473,7 @@ const searchOutputMethods = {
     _expandedVersionHeaderHtml(itemId, taskId, displayVersionNo, totalVersions) {
         return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             ${this._promptVersionCountHtml(displayVersionNo, totalVersions)}
-            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
+            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${displayVersionNo}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
         </span>`;
     },
 
@@ -7476,9 +7476,10 @@ function attachSearchOutputListeners(modal, dash) {
             if (collapseBtn && modal.contains(collapseBtn)) {
                 const itemId = collapseBtn.getAttribute('data-item-id');
                 const taskId = collapseBtn.getAttribute('data-task-id');
+                const displayNo = parseInt(collapseBtn.getAttribute('data-display-no'), 10);
                 const ui = dash._getCardUi(taskId);
                 ui.expanded = false;
-                ui.selectedDisplayNo = null;
+                ui.selectedDisplayNo = Number.isFinite(displayNo) ? displayNo : ui.selectedDisplayNo;
                 dash._patchTaskCard(itemId);
                 return;
             }
@@ -7612,7 +7613,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.77',
+    _version: '1.78',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
