@@ -4083,6 +4083,10 @@ const searchOutputMethods = {
                 if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
                 if (hist) {
+                    const remap = hist.systemFeedbackIdRemap || {};
+                    if (item.selectedFeedbackId && remap[item.selectedFeedbackId]) {
+                        item.selectedFeedbackId = remap[item.selectedFeedbackId];
+                    }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
                     for (const entry of hist.allFeedback || []) {
@@ -7603,7 +7607,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.69',
+    _version: '1.70',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

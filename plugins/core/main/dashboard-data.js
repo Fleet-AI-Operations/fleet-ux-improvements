@@ -9,7 +9,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -212,10 +212,10 @@ const plugin = {
             const rawVersions = versionsByTask.get(taskId) || [];
             const promptVersions = lib.computeDisplayVersions(rawVersions);
             const taskFeedback = feedbackByTask.get(taskId) || [];
-            const allFeedback = this._sortFeedbackEntries(
-                taskFeedback.map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles))
-            );
-            result.set(taskId, { promptVersions, allFeedback });
+            const built = taskFeedback.map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles));
+            const { entries: dedupedFeedback, idRemap } = lib.dedupeSystemFeedbackEntries(built);
+            const allFeedback = this._sortFeedbackEntries(dedupedFeedback);
+            result.set(taskId, { promptVersions, allFeedback, systemFeedbackIdRemap: idRemap });
         }
 
         Logger.debug('dashboard-data: enrichment complete — '

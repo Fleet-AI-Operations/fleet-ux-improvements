@@ -298,7 +298,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.6',
+    _version: '2.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -383,6 +383,7 @@ const plugin = {
             computeFilterOptionCounts: bind(self._computeFilterOptionCounts),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
+            dedupeSystemFeedbackEntries: bind(self._dedupeSystemFeedbackEntries),
             buildVerifierFailureDisplayFromEvent: bind(self._buildVerifierFailureDisplayFromEvent),
             buildBugReportDisplayFromEvent: bind(self._buildBugReportDisplayFromEvent),
             feedbackEntriesFromTaskEvents: bind(self._feedbackEntriesFromTaskEvents),
@@ -1386,6 +1387,33 @@ const plugin = {
             entries.push(entry);
         }
         return entries;
+    },
+
+    _dedupeSystemFeedbackEntries(entries) {
+        const input = entries || [];
+        const sortedOldest = [...input].sort((a, b) => {
+            const aAt = String(a.feedbackAt || '');
+            const bAt = String(b.feedbackAt || '');
+            return aAt < bAt ? -1 : aAt > bAt ? 1 : 0;
+        });
+        const dropIds = new Set();
+        const keptIdByVersion = new Map();
+        const idRemap = {};
+        for (const entry of sortedOldest) {
+            const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback));
+            if (!isSystem || !entry.id) continue;
+            const versionKey = String(entry.linkedDisplayVersionNo ?? '');
+            if (keptIdByVersion.has(versionKey)) {
+                dropIds.add(entry.id);
+                idRemap[String(entry.id)] = keptIdByVersion.get(versionKey);
+                continue;
+            }
+            keptIdByVersion.set(versionKey, String(entry.id));
+        }
+        return {
+            entries: input.filter((e) => !dropIds.has(e.id)),
+            idRemap
+        };
     },
 
     _buildQaFeedbackDisplay(feedbackRow, versionInfo, qaReviewer) {
