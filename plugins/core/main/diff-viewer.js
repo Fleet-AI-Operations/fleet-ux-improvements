@@ -657,6 +657,66 @@ function _dvSyncAllVersionTracks(modal) {
     }
 }
 
+function _dvReelLensZoneTopInset() {
+    return DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+}
+
+function _dvReelLensH(slotsArea) {
+    if (!slotsArea) return DV_REEL_LENS_H;
+    const v = getComputedStyle(slotsArea).getPropertyValue('--dv-reel-lens-h').trim();
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : DV_REEL_LENS_H;
+}
+
+function _dvReelCardStepH(slotsArea) {
+    return _dvReelLensH(slotsArea) + DV_REEL_ROW_GAP;
+}
+
+function _dvReelTrackOffset(lensIndex, slotsArea) {
+    const stepH = _dvReelCardStepH(slotsArea);
+    return _dvReelLensZoneTopInset() - lensIndex * stepH;
+}
+
+function _dvSyncReelTrack(track, lensIndex, modal) {
+    if (!track) return;
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const y = _dvReelTrackOffset(lensIndex, slotsArea);
+    track.style.transform = 'translateY(' + y + 'px)';
+}
+
+function _dvSyncAllReelTracks(modal) {
+    if (!modal) return;
+    for (let i = 0; i < _dvState.slots.length; i++) {
+        const slot = _dvState.slots[i];
+        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
+        if (slot._lensAnimating) continue;
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        if (!track) continue;
+        _dvSyncReelTrack(track, slot.lensIndex, modal);
+    }
+}
+
+function _dvAnimateReelTrack(track, delta, modal, done) {
+    if (!track) {
+        if (done) done();
+        return;
+    }
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const stepH = _dvReelCardStepH(slotsArea);
+    const fromY = _dvParseTranslateY(track);
+    const toY = fromY - delta * stepH;
+    if (typeof track.animate !== 'function') {
+        track.style.transform = 'translateY(' + toY + 'px)';
+        if (done) done();
+        return;
+    }
+    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
+    track.animate(
+        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
+        animOpts
+    ).addEventListener('finish', () => { if (done) done(); });
+}
+
 function _dvAnimateVersionTrack(track, viewport, delta, done) {
     if (!track) {
         if (done) done();
@@ -677,33 +737,37 @@ function _dvAnimateVersionTrack(track, viewport, delta, done) {
     ).addEventListener('finish', () => { if (done) done(); });
 }
 
-function _dvAnimateVerticalSlide(container, oldHtml, newHtml, delta, layerStyle, done) {
-    if (!container) {
-        if (done) done();
-        return;
+function _dvUpdateReelNavControls(slotIdx, modal) {
+    const slot = _dvState.slots[slotIdx];
+    if (!slot || !slot.promptVersions || !modal) return;
+    const nav = modal.querySelector('[data-dv-arrows-nav="' + slotIdx + '"]');
+    if (!nav) return;
+    const lensIdx = slot.lensIndex;
+    const versions = slot.promptVersions;
+    const upBtn = nav.querySelector('[data-dv-lens-up="' + slotIdx + '"]');
+    const downBtn = nav.querySelector('[data-dv-lens-down="' + slotIdx + '"]');
+    if (upBtn) {
+        upBtn.disabled = lensIdx <= 0;
+        upBtn.classList.toggle('disabled', lensIdx <= 0);
     }
-    if (typeof container.animate !== 'function') {
-        container.innerHTML = newHtml;
-        if (done) done();
-        return;
+    if (downBtn) {
+        downBtn.disabled = lensIdx >= versions.length - 1;
+        downBtn.classList.toggle('disabled', lensIdx >= versions.length - 1);
     }
-    const outY = delta > 0 ? '-100%' : '100%';
-    const inY = delta > 0 ? '100%' : '-100%';
-    container.style.overflow = 'hidden';
-    container.style.position = 'relative';
-    const outEl = document.createElement('div');
-    outEl.style.cssText = layerStyle;
-    outEl.innerHTML = oldHtml;
-    container.innerHTML = '';
-    container.appendChild(outEl);
-    const inEl = document.createElement('div');
-    inEl.style.cssText = layerStyle + 'transform:translateY(' + inY + ')';
-    inEl.innerHTML = newHtml;
-    container.appendChild(inEl);
-    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
-    outEl.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + outY + ')' }], animOpts);
-    inEl.animate([{ transform: 'translateY(' + inY + ')' }, { transform: 'translateY(0)' }], animOpts)
-        .addEventListener('finish', () => { if (done) done(); });
+    const versionTrack = nav.querySelector('[data-dv-version-track="' + slotIdx + '"]');
+    if (versionTrack) {
+        versionTrack.querySelectorAll('.dv-reel-version-label').forEach((el) => {
+            const vi = parseInt(el.getAttribute('data-vi'), 10);
+            el.classList.toggle('dv-reel-version-label--current', vi === lensIdx);
+        });
+    }
+    const reelTrack = modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
+    if (reelTrack) {
+        reelTrack.querySelectorAll('.dv-reel-card pre').forEach((pre) => pre.removeAttribute('data-dv-lens-pre'));
+        const card = reelTrack.querySelector('.dv-reel-card[data-vi="' + lensIdx + '"]');
+        const pre = card && card.querySelector('pre');
+        if (pre) pre.setAttribute('data-dv-lens-pre', String(slotIdx));
+    }
 }
 
 function _dvShiftLens(slotIdx, delta, modal) {
@@ -712,35 +776,34 @@ function _dvShiftLens(slotIdx, delta, modal) {
     const newIdx = slot.lensIndex + delta;
     if (newIdx < 0 || newIdx >= slot.promptVersions.length) return;
 
-    const lensPre = modal && modal.querySelector('.dv-reel-lens [data-dv-lens-pre="' + slotIdx + '"]');
-    const lens = lensPre && lensPre.closest('.dv-reel-lens');
-    const track = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
-    const viewport = track && track.closest('.dv-reel-arrows-nav-viewport');
+    const reelTrack = modal && modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
+    const versionTrack = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
+    const versionViewport = versionTrack && versionTrack.closest('.dv-reel-arrows-nav-viewport');
 
-    if (!lens || typeof lens.animate !== 'function') {
+    if (!reelTrack || typeof reelTrack.animate !== 'function') {
         slot.lensIndex = newIdx;
         Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
         _dvRenderAll(modal);
         return;
     }
 
-    const oldLensHtml = lens.innerHTML;
-    slot.lensIndex = newIdx;
-    const newLensHtml = _dvReelLensInnerHtml(slotIdx, slot.promptVersions[newIdx]);
-    const lensLayerStyle = 'position:absolute;inset:0;overflow-y:auto;padding:8px 10px;box-sizing:border-box;';
-
     slot._lensAnimating = true;
-    let pending = track ? 2 : 1;
+    let pending = 2;
     const finishOne = () => {
         pending -= 1;
         if (pending <= 0) {
             slot._lensAnimating = false;
-            _dvRenderAll(modal);
+            _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
+            if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
+            _dvUpdateReelNavControls(slotIdx, modal);
+            _dvRenderDiffs(modal);
+            _dvUpdateAboveLabels(modal);
         }
     };
 
-    _dvAnimateVerticalSlide(lens, oldLensHtml, newLensHtml, delta, lensLayerStyle, finishOne);
-    if (track) _dvAnimateVersionTrack(track, viewport, delta, finishOne);
+    slot.lensIndex = newIdx;
+    _dvAnimateReelTrack(reelTrack, delta, modal, finishOne);
+    if (versionTrack) _dvAnimateVersionTrack(versionTrack, versionViewport, delta, finishOne);
     else finishOne();
 
     Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
@@ -1392,42 +1455,35 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
         + '</div></div>';
 }
 
-function _dvReelLensInnerHtml(slotIdx, version) {
+function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
     const submitted = version && version.createdAt
         ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('Submitted', version.createdAt)}</div>`
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
-    return submitted + '<pre data-dv-lens-pre="' + slotIdx + '">' + prompt + '</pre>';
+    const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
+    return submitted + '<pre' + preAttr + '>' + prompt + '</pre>';
+}
+
+function _dvReelCardTrackHtml(slot, slotIdx) {
+    const versions = slot.promptVersions || [];
+    const lensIdx = slot.lensIndex;
+    if (versions.length === 0) {
+        return '<div class="dv-reel-card"><span class="dv-reel-empty-mark">—</span></div>';
+    }
+    return versions.map((v, i) => (
+        '<div class="dv-reel-card" data-vi="' + i + '">' + _dvReelCardInnerHtml(slotIdx, v, i === lensIdx) + '</div>'
+    )).join('');
 }
 
 function _dvReelHtml(slot, slotIdx) {
-    const versions = slot.promptVersions;
-    const lensIdx = slot.lensIndex;
-    const prevV = lensIdx > 0 ? versions[lensIdx - 1] : null;
-    const lensV = versions[lensIdx];
-    const nextV = lensIdx < versions.length - 1 ? versions[lensIdx + 1] : null;
-
-    const peekRow = (dir) => {
-        if (dir === 'above') {
-            return prevV
-                ? '<div class="dv-reel-peek dv-reel-peek--above" aria-hidden="true"></div>'
-                : '<div class="dv-reel-peek dv-reel-peek--spacer" aria-hidden="true"></div>';
-        }
-        return nextV
-            ? '<div class="dv-reel-peek dv-reel-peek--below" aria-hidden="true"></div>'
-            : '<div class="dv-reel-peek dv-reel-peek--spacer" aria-hidden="true"></div>';
-    };
-
-    const lensHtml = lensV
-        ? `<div class="dv-reel-lens">${_dvReelLensInnerHtml(slotIdx, lensV)}</div>`
-        : '<div class="dv-reel-lens"><span class="dv-reel-empty-mark">—</span></div>';
-
     const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
-    return `<div class="dv-reel dv-reel--has-above dv-reel--has-below">
-        ${peekRow('above')}
-        ${lensHtml}
-        ${peekRow('below')}
+    return `<div class="dv-reel">
+        <div class="dv-reel-viewport" data-dv-reel-viewport="${slotIdx}">
+            <div class="dv-reel-track" data-dv-reel-track="${slotIdx}">
+                ${_dvReelCardTrackHtml(slot, slotIdx)}
+            </div>
+        </div>
         <div class="dv-reel-arrows">
             ${copyPromptBtn}
             ${_dvReelArrowsNavHtml(slot, slotIdx)}
@@ -1768,10 +1824,14 @@ function _dvSyncReelLensHeights(modal) {
     void slotsArea.offsetHeight;
 
     const slots = [...modal.querySelectorAll('.dv-slot')];
-    const lenses = [...modal.querySelectorAll('.dv-reel-lens')];
-    if (lenses.length === 0) return;
+    const cards = [...modal.querySelectorAll('.dv-reel-card')];
+    if (cards.length === 0) return;
 
-    const scrollTops = lenses.map((lens) => lens.scrollTop);
+    const scrollTops = _dvState.slots.map((slot, i) => {
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
+        return card ? card.scrollTop : 0;
+    });
     const unifiedChrome = _dvReelUnifiedChromeH();
 
     let maxBudget = Infinity;
@@ -1799,7 +1859,12 @@ function _dvSyncReelLensHeights(modal) {
     if (unified < DV_REEL_LENS_H) unified = Math.max(unified, Math.min(DV_REEL_LENS_H, saneMax));
 
     slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
-    lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
+    _dvState.slots.forEach((slot, i) => {
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
+        if (card) card.scrollTop = scrollTops[i] || 0;
+        if (track && !slot._lensAnimating) _dvSyncReelTrack(track, slot.lensIndex, modal);
+    });
     if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
     Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome=' + unifiedChrome + ')');
 }
@@ -2419,8 +2484,7 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
-        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
-        '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
+        '  grid-template-rows: 1fr;',
         '  column-gap: 4px;',
         '  flex: 1;',
         '  height: 100%;',
@@ -2428,44 +2492,23 @@ function _dvInjectStyles() {
         '  padding: 6px 4px 6px 6px;',
         '  box-sizing: border-box;',
         '}',
-        '#wf-dash-modal .dv-reel--has-above {',
-        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
-        '}',
-        '#wf-dash-modal .dv-reel--has-below {',
-        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
-        '}',
-        '#wf-dash-modal .dv-reel--has-above.dv-reel--has-below {',
-        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek {',
+        '#wf-dash-modal .dv-reel-viewport {',
         '  grid-column: 1;',
-        '  height: ' + DV_REEL_PEEK_H + 'px;',
+        '  grid-row: 1;',
+        '  height: calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px));',
+        '  min-height: 0;',
         '  overflow: hidden;',
-        '  background: var(--background, #fff);',
-        '  border: 1px solid var(--border, #e2e8f0);',
-        '  border-radius: 6px;',
-        '  box-sizing: border-box;',
+        '  position: relative;',
+        '}',
+        '#wf-dash-modal .dv-reel-track {',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  gap: ' + DV_REEL_ROW_GAP + 'px;',
+        '  will-change: transform;',
+        '}',
+        '#wf-dash-modal .dv-reel-card {',
         '  flex-shrink: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--above {',
-        '  border-top-left-radius: 0;',
-        '  border-top-right-radius: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--below {',
-        '  border-bottom-left-radius: 0;',
-        '  border-bottom-right-radius: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--spacer {',
-        '  visibility: hidden;',
-        '  background: transparent;',
-        '  border-color: transparent;',
-        '}',
-        '#wf-dash-modal .dv-diff-equal {',
-        '  color: var(--muted-foreground, #64748b);',
-        '}',
-        '#wf-dash-modal .dv-reel-lens {',
-        '  grid-column: 1;',
-        '  height: 100%;',
+        '  height: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '  min-height: 0;',
         '  overflow-y: auto;',
         '  overflow-x: hidden;',
@@ -2474,9 +2517,11 @@ function _dvInjectStyles() {
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
         '  box-sizing: border-box;',
-        '  position: relative;',
         '}',
-        '#wf-dash-modal .dv-reel-lens pre {',
+        '#wf-dash-modal .dv-diff-equal {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-reel-card pre {',
         '  margin: 0;',
         '  padding: 0;',
         '  white-space: pre-wrap;',
@@ -2604,7 +2649,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.51',
+    _version: '1.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
