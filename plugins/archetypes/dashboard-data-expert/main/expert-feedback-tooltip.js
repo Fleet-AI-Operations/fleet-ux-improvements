@@ -15,7 +15,7 @@ const plugin = {
     name: 'Expert Feedback Tooltip Fix',
     description:
         'Fixes Recent Feedback tooltip text color and enables scrolling for long feedback on expert profile pages',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -30,6 +30,11 @@ const plugin = {
             this._injectFeedbackTooltipStyles();
             state.stylesInjected = true;
         }
+
+        const roots = this._findRecentFeedbackRoots();
+        const sig = roots.length;
+        if (sig === state.lastSig) return;
+        state.lastSig = sig;
 
         const fixedNow = this._fixFeedbackTooltips();
         if (fixedNow > 0) {

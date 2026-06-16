@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeToolEnvGate',
     name: 'Dispute Tool Environment Gate',
     description: 'Detects tool environment readiness for dispute detail pages',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -26,8 +26,9 @@ const plugin = {
         if (!state.observerAttached) {
             this.installObserver(state);
             state.observerAttached = true;
+            this.updateReadyState(state); // Run once immediately; observer handles subsequent changes
         }
-        this.updateReadyState(state);
+        // After the observer is installed, all updates come from the observer itself — no need to re-run here
     },
 
     installObserver(state) {

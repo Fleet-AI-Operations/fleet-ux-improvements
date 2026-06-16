@@ -91,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.35',
+    _version: '5.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -332,6 +332,9 @@ const plugin = {
             }
         }
         this._overlay.style.display = 'none';
+        if (Context.opsTab && typeof Context.opsTab.onModalClosed === 'function') {
+            Context.opsTab.onModalClosed();
+        }
         Logger.log('dashboard: closed');
     },
 
@@ -1503,16 +1506,19 @@ const plugin = {
         });
 
         const win = this._pageWindow();
-        if (win && typeof win.addEventListener === 'function') win.addEventListener('resize', () => {
-            if (this._flyoutResizeTimer) clearTimeout(this._flyoutResizeTimer);
-            this._flyoutResizeTimer = setTimeout(() => {
-                this._flyoutResizeTimer = null;
-                if (this._isOpen()) {
-                    this._repositionOpenFlyouts();
-                    this._applyAllSidePanelWidths();
-                }
-            }, 100);
-        }, { passive: true });
+        if (win && typeof win.addEventListener === 'function' && !this._resizeListenerAttached) {
+            this._resizeListenerAttached = true;
+            win.addEventListener('resize', () => {
+                if (this._flyoutResizeTimer) clearTimeout(this._flyoutResizeTimer);
+                this._flyoutResizeTimer = setTimeout(() => {
+                    this._flyoutResizeTimer = null;
+                    if (this._isOpen()) {
+                        this._repositionOpenFlyouts();
+                        this._applyAllSidePanelWidths();
+                    }
+                }, 100);
+            }, { passive: true });
+        }
 
         modal.addEventListener('change', (e) => {
             const cb = e.target;

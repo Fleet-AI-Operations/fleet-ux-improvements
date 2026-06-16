@@ -58,7 +58,7 @@ const plugin = {
     name: 'Request Revisions Screenshot Upload Improvement',
     description:
         'Replaces Request Revisions screenshot upload with drag-drop/upload and paste-image controls; forwards files to native input',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -236,20 +236,17 @@ const plugin = {
     ensurePasteListener(state) {
         if (state.pasteListenerAttached) return;
         state.pasteListenerAttached = true;
-        document.addEventListener(
-            'paste',
-            ev => {
-                const files = imageFilesFromClipboard(ev.clipboardData);
-                if (!files.length) return;
-                if (shouldIgnorePasteTarget(ev.target)) return;
-                const input = document.querySelector(`input[${FILE_INPUT_ATTR}]`);
-                if (!input || !document.contains(input)) return;
-                ev.preventDefault();
-                ev.stopPropagation();
-                this.mergeIntoFileInput(input, files);
-            },
-            true
-        );
+        const pasteHandler = ev => {
+            const files = imageFilesFromClipboard(ev.clipboardData);
+            if (!files.length) return;
+            if (shouldIgnorePasteTarget(ev.target)) return;
+            const input = document.querySelector(`input[${FILE_INPUT_ATTR}]`);
+            if (!input || !document.contains(input)) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.mergeIntoFileInput(input, files);
+        };
+        CleanupRegistry.registerEventListener(document, 'paste', pasteHandler, true);
         Logger.debug('Request Revisions screenshot upload improvement: document paste listener attached');
     },
 

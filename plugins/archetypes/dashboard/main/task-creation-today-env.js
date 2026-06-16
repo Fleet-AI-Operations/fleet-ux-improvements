@@ -3,10 +3,10 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
-    initialState: { missingLogged: false, lastUncertain: false },
+    initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
 
     COPY_FEEDBACK_SUCCESS_MS: 1000,
     COPY_FEEDBACK_FAILURE_MS: 500,
@@ -271,12 +271,14 @@ const plugin = {
                 .sort((a, b) => b[1] - a[1])
                 .map(([name, n]) => `${name}: ${n}`)
                 .join(', ');
+        const statsPayload = JSON.stringify({ todayCount, uncertain, envCount });
 
         const copyButtonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
         const arrowBtnActive = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent border-blue-500 text-blue-500 hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-base font-medium cursor-pointer';
         const arrowBtnDisabled = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent border-gray-500 text-gray-500 text-base font-medium cursor-not-allowed';
 
         let block = panel.querySelector('[data-wf-task-creation-today-env-block]');
+        if (block && statsPayload === state.lastStatsPayload) return;
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-task-creation-today-env-block', 'true');
@@ -456,5 +458,6 @@ const plugin = {
             Logger.info('task-creation-today-env: last visible row is today — showing uncertain count and scroll message');
         }
         state.lastUncertain = uncertain;
+        state.lastStatsPayload = statsPayload;
     }
 };

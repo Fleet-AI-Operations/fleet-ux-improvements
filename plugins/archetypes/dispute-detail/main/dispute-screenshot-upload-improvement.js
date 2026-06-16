@@ -58,7 +58,7 @@ const plugin = {
     name: 'Dispute Screenshot Upload Improvement',
     description:
         'Replaces the resolution screenshot control with drag-drop/upload and paste-image controls; forwards files to the native input',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -244,20 +244,17 @@ const plugin = {
     ensurePasteListener(state) {
         if (state.pasteListenerAttached) return;
         state.pasteListenerAttached = true;
-        document.addEventListener(
-            'paste',
-            ev => {
-                const files = imageFilesFromClipboard(ev.clipboardData);
-                if (!files.length) return;
-                if (shouldIgnorePasteTarget(ev.target)) return;
-                const input = document.querySelector(`input[${FILE_INPUT_ATTR}]`);
-                if (!input || !document.contains(input)) return;
-                ev.preventDefault();
-                ev.stopPropagation();
-                this.mergeIntoFileInput(input, files);
-            },
-            true
-        );
+        const pasteHandler = ev => {
+            const files = imageFilesFromClipboard(ev.clipboardData);
+            if (!files.length) return;
+            if (shouldIgnorePasteTarget(ev.target)) return;
+            const input = document.querySelector(`input[${FILE_INPUT_ATTR}]`);
+            if (!input || !document.contains(input)) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.mergeIntoFileInput(input, files);
+        };
+        CleanupRegistry.registerEventListener(document, 'paste', pasteHandler, true);
         Logger.debug('Dispute screenshot upload improvement: document paste listener attached');
     },
 

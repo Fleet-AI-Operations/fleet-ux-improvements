@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -33,6 +33,11 @@ const plugin = {
         // Add buttons to individual tools if option is enabled
         const showOnTool = Storage.getSubOptionEnabled(this.id, 'show-on-tool', false);
         if (showOnTool) {
+            const panel = this.findWorkflowPanel();
+            const toolsContainer = panel ? this.findToolsArea(panel) : null;
+            const cardCount = toolsContainer ? toolsContainer.querySelectorAll('div.rounded-lg.border').length : 0;
+            if (cardCount === state.lastToolCardCount) return;
+            state.lastToolCardCount = cardCount;
             this.addToolButtons(state, context);
         }
     },

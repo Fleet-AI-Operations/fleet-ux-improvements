@@ -291,11 +291,13 @@ done <<< "$versioned_list"
 if [[ "$dry_run" == true ]]; then
   echo "[dry-run] Would run: $script_dir/update-versions.sh --dry-run" >&2
   "$script_dir/update-versions.sh" --dry-run
+  echo "[dry-run] Would run: $script_dir/compute-hashes.sh" >&2
   echo "[dry-run] Would run: git add -A && git commit -m \"$commit_msg\" && git push" >&2
   exit 0
 fi
 
 "$script_dir/update-versions.sh"
+"$script_dir/compute-hashes.sh"
 
 # Commit and push only if there is something to commit
 if [[ -z "$(git -C "$root" status --short)" ]]; then

@@ -22,7 +22,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -251,10 +251,6 @@ const plugin = {
             }
         };
 
-        pre.addEventListener('mouseenter', showHandle);
-        pre.addEventListener('mouseleave', (e) => hideHandle(e, resizeHandle));
-        resizeHandle.addEventListener('mouseenter', showHandle);
-        resizeHandle.addEventListener('mouseleave', (e) => hideHandle(e, pre));
         CleanupRegistry.registerEventListener(pre, 'mouseenter', showHandle);
         CleanupRegistry.registerEventListener(pre, 'mouseleave', (e) => hideHandle(e, resizeHandle));
         CleanupRegistry.registerEventListener(resizeHandle, 'mouseenter', showHandle);
