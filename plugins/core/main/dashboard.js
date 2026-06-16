@@ -94,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.42',
+    _version: '5.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1131,20 +1131,29 @@ const plugin = {
     },
 
     _splitPanelHandleStyle() {
-        return 'flex-shrink: 0; width: 8px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
-            + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;';
+        return 'flex-shrink: 0; width: 10px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
+            + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;'
+            + ' display: flex; align-items: center; justify-content: center;';
+    },
+
+    _splitPanelHandleGripHtml() {
+        return '<span class="wf-dash-split-grip" aria-hidden="true">'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '</span>';
     },
 
     _splitPanelHandleHtml() {
         return '<div data-wf-dash-split-handle role="separator" aria-orientation="vertical"'
             + ' aria-label="Resize side panel" tabindex="0" title="Drag to resize side panel"'
-            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+            + ' style="' + this._splitPanelHandleStyle() + '">' + this._splitPanelHandleGripHtml() + '</div>';
     },
 
     _resultsPanelWidthHandleHtml() {
         return '<div data-wf-dash-results-width-handle role="separator" aria-orientation="vertical"'
             + ' aria-label="Resize results panel max width" tabindex="0" title="Drag to set results panel max width"'
-            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+            + ' style="' + this._splitPanelHandleStyle() + '">' + this._splitPanelHandleGripHtml() + '</div>';
     },
 
     _splitPanelAsideStyle(widthPx) {
@@ -1414,6 +1423,26 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-split-resize-style';
         style.textContent = [
+            '.wf-dash-split-grip {',
+            '  display: flex;',
+            '  flex-direction: column;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  gap: 3px;',
+            '  pointer-events: none;',
+            '}',
+            '.wf-dash-split-grip-dot {',
+            '  width: 3px;',
+            '  height: 3px;',
+            '  border-radius: 50%;',
+            '  background: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent);',
+            '}',
+            '[data-wf-dash-split-handle]:hover .wf-dash-split-grip-dot,',
+            '[data-wf-dash-split-handle]:active .wf-dash-split-grip-dot,',
+            '[data-wf-dash-results-width-handle]:hover .wf-dash-split-grip-dot,',
+            '[data-wf-dash-results-width-handle]:active .wf-dash-split-grip-dot {',
+            '  background: var(--muted-foreground, #64748b);',
+            '}',
             '[data-wf-dash-split-handle]:hover,',
             '[data-wf-dash-split-handle]:active,',
             '[data-wf-dash-results-width-handle]:hover,',
