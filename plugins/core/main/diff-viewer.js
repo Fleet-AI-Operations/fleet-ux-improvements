@@ -1221,11 +1221,10 @@ function _dvAboveLabelInnerHtml() {
 function _dvSetAboveLabelEl(el, inner) {
     if (!el) return;
     el.innerHTML = inner;
+    el.style.display = 'flex';
     if (inner) {
-        el.style.display = 'flex';
         el.removeAttribute('aria-hidden');
     } else {
-        el.style.display = 'none';
         el.setAttribute('aria-hidden', 'true');
     }
 }
@@ -2161,7 +2160,7 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-slot-above-label {',
         '  flex-shrink: 0;',
-        '  min-height: 18px;',
+        '  height: 18px;',
         '  margin-bottom: 4px;',
         '  box-sizing: border-box;',
         '  display: flex;',
@@ -2519,7 +2518,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.46',
+    _version: '1.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
