@@ -17,6 +17,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
+const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
@@ -4513,7 +4514,7 @@ const searchOutputMethods = {
     _cardSurfaceTabHtml(innerHtml, title) {
         const shell = this._cardTabShellBase()
             + ' background: var(--card, #ffffff); font-weight: 400;'
-            + ' border: ' + DASH_CARD_BORDER + '; border-bottom: none;';
+            + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
         const label = String(title || '');
         return '<div style="' + shell + '"'
             + (label ? ' title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '"' : '')
@@ -7606,7 +7607,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.81',
+    _version: '1.82',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
