@@ -693,9 +693,6 @@ function _dvSwapSlots(fromIdx, toIdx, modal) {
 
 function _dvGetSlotColumn(modal, idx) {
     if (!modal || idx == null || idx < 0) return null;
-    if (_dvState.compMode === 'rolling') {
-        return modal.querySelector('#dv-extra-container [data-dv-slot-column="' + idx + '"]');
-    }
     if (idx === 0) return _dvQ(modal, 'dv-base-container');
     const cols = modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]');
     return cols[idx - 1] || null;
@@ -704,7 +701,7 @@ function _dvGetSlotColumn(modal, idx) {
 function _dvGetSlotWrap(modal, idx) {
     const col = _dvGetSlotColumn(modal, idx);
     if (!col) return null;
-    if (idx === 0 && _dvState.compMode !== 'rolling') {
+    if (idx === 0) {
         return col.querySelector('#dv-base-slot-inner') || col.querySelector('.dv-slot-wrap');
     }
     return col.querySelector('.dv-slot-wrap');
@@ -717,16 +714,10 @@ function _dvHitTestSlotIdx(modal, clientX, clientY, ghostEl) {
     const el = document.elementFromPoint(clientX, clientY);
     if (ghostEl) ghostEl.style.visibility = prevVis || '';
     if (!el || !modal.contains(el)) return null;
-    if (_dvState.compMode !== 'rolling') {
-        const baseCol = el.closest('#dv-base-container');
-        if (baseCol && modal.contains(baseCol)) return 0;
-    }
+    const baseCol = el.closest('#dv-base-container');
+    if (baseCol && modal.contains(baseCol)) return 0;
     const extraCol = el.closest('#dv-extra-container [data-dv-slot-column]');
     if (!extraCol || !modal.contains(extraCol)) return null;
-    if (_dvState.compMode === 'rolling') {
-        const attrIdx = parseInt(extraCol.getAttribute('data-dv-slot-column'), 10);
-        return Number.isFinite(attrIdx) ? attrIdx : null;
-    }
     const cols = [...modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]')];
     const idx = cols.indexOf(extraCol);
     return idx >= 0 ? idx + 1 : null;
@@ -1394,23 +1385,11 @@ function _dvRenderSlotsArea(modal) {
     if (!baseInner || !extraContainer) return;
 
     _dvState.hoverSlotIdx = null;
-    const isRolling = _dvState.compMode === 'rolling';
 
     if (_dvState.slots.length === 0) {
         if (baseContainer) baseContainer.style.display = '';
         baseInner.innerHTML = _dvEmptySlotPlaceholder();
         extraContainer.innerHTML = '';
-        return;
-    }
-
-    if (isRolling) {
-        if (baseContainer) baseContainer.style.display = 'none';
-        let allHtml = '';
-        for (let i = 0; i < _dvState.slots.length; i++) {
-            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
-        }
-        extraContainer.innerHTML = allHtml;
-        _dvUpdateAboveLabels(modal);
         return;
     }
 
@@ -1664,22 +1643,19 @@ function _dvScheduleReelLensSync(modal, opts) {
 
     const finish = () => {
         _dvLensSyncScheduled = false;
+        _dvLensSyncAfterLayout = false;
         _dvSyncReelLensHeights(modal);
         _dvSyncAllVersionTracks(modal);
     };
 
-    const useDoubleRaf = afterLayout || _dvLensSyncAfterLayout;
-    _dvLensSyncAfterLayout = false;
-
-    if (useDoubleRaf) {
-        requestAnimationFrame(() => {
-            requestAnimationFrame(finish);
-        });
-    } else {
+    requestAnimationFrame(() => {
         requestAnimationFrame(finish);
-    }
+    });
 }
 
+// INVARIANT: reel lens height is derived ONLY from .dv-slots-columns-row.clientHeight.
+// Never measure column/wrap parents — rolling extra-container is overflow-x:auto
+// and breaks height propagation. Modes must share identical slot DOM placement.
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
     const header = slotEl.querySelector('.dv-slot-header');
     const headerH = header ? header.offsetHeight : 0;
@@ -1694,6 +1670,14 @@ function _dvSyncReelLensHeights(modal) {
 
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     if (!slotsArea) return;
+
+    const row = _dvQ(modal, 'dv-slots-columns-row');
+    const rowH = row ? row.clientHeight : 0;
+    if (rowH <= 0) {
+        _dvLensSyncScheduled = false;
+        _dvScheduleReelLensSync(modal, { afterLayout: true });
+        return;
+    }
 
     slotsArea.style.removeProperty('--dv-reel-lens-h');
     void slotsArea.offsetHeight;
@@ -1717,6 +1701,17 @@ function _dvSyncReelLensHeights(modal) {
     if (unified < DV_REEL_LENS_H && maxBudget < DV_REEL_LENS_H) {
         Logger.debug('diff-viewer: lens height budget below floor — ' + Math.round(maxBudget) + 'px');
     }
+
+    const maxHeaderH = Math.max(0, ...slots.map((s) => {
+        const h = s.querySelector('.dv-slot-header');
+        return h ? h.offsetHeight : 0;
+    }));
+    const saneMax = rowH - maxHeaderH - unifiedChrome;
+    if (unified < DV_REEL_LENS_H && saneMax >= DV_REEL_LENS_H) {
+        Logger.warn('diff-viewer: lens budget suspiciously small — using sane max');
+        unified = Math.floor(saneMax);
+    }
+    if (unified < DV_REEL_LENS_H) unified = Math.max(unified, Math.min(DV_REEL_LENS_H, saneMax));
 
     slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
     lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
@@ -2210,24 +2205,8 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling {',
         '  gap: 0;',
         '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
-        '  position: static;',
-        '  z-index: auto;',
-        '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
-        '  flex: 1;',
-        '  align-self: stretch;',
-        '  min-height: 0;',
-        '  min-width: 0;',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slots-columns-row {',
-        '  min-height: 0;',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column {',
-        '  align-self: stretch;',
         '}',
         '#wf-dash-modal .dv-rolling-overlay {',
         '  position: absolute;',
@@ -2513,7 +2492,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.49',
+    _version: '1.50',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
