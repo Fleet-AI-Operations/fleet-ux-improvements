@@ -1202,23 +1202,9 @@ function _dvCopyIconSvg() {
     return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
 }
 
-function _dvReelUnifiedPeekFlags() {
-    let anyAbove = false;
-    let anyBelow = false;
-    for (const slot of _dvState.slots) {
-        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
-        const lensIdx = slot.lensIndex;
-        if (lensIdx > 0) anyAbove = true;
-        if (lensIdx < slot.promptVersions.length - 1) anyBelow = true;
-    }
-    return { anyAbove, anyBelow };
-}
-
-function _dvReelUnifiedChromeH(unifiedPeek) {
-    const { anyAbove, anyBelow } = unifiedPeek || _dvReelUnifiedPeekFlags();
+function _dvReelUnifiedChromeH() {
     let chrome = 12;
-    if (anyAbove) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
-    if (anyBelow) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+    chrome += (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) * 2;
     return chrome;
 }
 
@@ -1273,7 +1259,7 @@ function _dvActiveCompareTexts() {
     return null;
 }
 
-function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
+function _dvSlotHtml(slot, slotIdx, slotCount) {
     const authorDisplay = slot.authorName
         ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
         : _dvEscHtml(slot.authorEmail || '—');
@@ -1292,7 +1278,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     } else if (slot.error) {
         bodyHtml = `<div style="flex:1;padding:12px;font-size:11px;color:#dc2626;overflow-y:auto;">${_dvEscHtml(slot.error)}</div>`;
     } else if (slot.promptVersions && slot.promptVersions.length > 0) {
-        bodyHtml = _dvReelHtml(slot, slotIdx, unifiedPeek);
+        bodyHtml = _dvReelHtml(slot, slotIdx);
     } else {
         bodyHtml = `<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted-foreground,#64748b);padding:16px;">No versions available</div>`;
     }
@@ -1346,16 +1332,14 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
         + '</div></div>';
 }
 
-function _dvReelHtml(slot, slotIdx, unifiedPeek) {
-    const { anyAbove, anyBelow } = unifiedPeek || _dvReelUnifiedPeekFlags();
+function _dvReelHtml(slot, slotIdx) {
     const versions = slot.promptVersions;
     const lensIdx = slot.lensIndex;
     const prevV = lensIdx > 0 ? versions[lensIdx - 1] : null;
     const lensV = versions[lensIdx];
     const nextV = lensIdx < versions.length - 1 ? versions[lensIdx + 1] : null;
 
-    const peekRow = (visible, dir) => {
-        if (!visible) return '';
+    const peekRow = (dir) => {
         if (dir === 'above') {
             return prevV
                 ? '<div class="dv-reel-peek dv-reel-peek--above" aria-hidden="true"></div>'
@@ -1366,18 +1350,16 @@ function _dvReelHtml(slot, slotIdx, unifiedPeek) {
             : '<div class="dv-reel-peek dv-reel-peek--spacer" aria-hidden="true"></div>';
     };
 
-    const reelMods = (anyAbove ? ' dv-reel--has-above' : '') + (anyBelow ? ' dv-reel--has-below' : '');
-
     const lensHtml = lensV
         ? `<div class="dv-reel-lens"><pre data-dv-lens-pre="${slotIdx}">${_dvEscHtml(lensV.prompt || '')}</pre></div>`
         : '<div class="dv-reel-lens"><span class="dv-reel-empty-mark">—</span></div>';
 
     const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
-    return `<div class="dv-reel${reelMods}">
-        ${peekRow(anyAbove, 'above')}
+    return `<div class="dv-reel dv-reel--has-above dv-reel--has-below">
+        ${peekRow('above')}
         ${lensHtml}
-        ${peekRow(anyBelow, 'below')}
+        ${peekRow('below')}
         <div class="dv-reel-arrows">
             ${copyPromptBtn}
             ${_dvReelArrowsNavHtml(slot, slotIdx)}
@@ -1425,13 +1407,11 @@ function _dvRenderSlotsArea(modal) {
         return;
     }
 
-    const unifiedPeek = _dvReelUnifiedPeekFlags();
-
     if (isRolling) {
         if (baseContainer) baseContainer.style.display = 'none';
         let allHtml = '';
         for (let i = 0; i < _dvState.slots.length; i++) {
-            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
         }
         extraContainer.innerHTML = allHtml;
         _dvUpdateAboveLabels(modal);
@@ -1439,10 +1419,10 @@ function _dvRenderSlotsArea(modal) {
     }
 
     if (baseContainer) baseContainer.style.display = '';
-    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length, unifiedPeek);
+    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -1739,8 +1719,7 @@ function _dvSyncReelLensHeights(modal) {
     if (lenses.length === 0) return;
 
     const scrollTops = lenses.map((lens) => lens.scrollTop);
-    const unifiedPeek = _dvReelUnifiedPeekFlags();
-    const unifiedChrome = _dvReelUnifiedChromeH(unifiedPeek);
+    const unifiedChrome = _dvReelUnifiedChromeH();
 
     let maxBudget = Infinity;
     for (const slotEl of slots) {
@@ -2542,7 +2521,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.44',
+    _version: '1.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
