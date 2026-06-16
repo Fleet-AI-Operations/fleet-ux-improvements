@@ -105,10 +105,12 @@ const DASH_FILTER_SCOPES = [
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
+    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
-    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
-    { id: 'prompt_version_count', label: 'Distinct Prompt Versions †', type: 'number', hydrateHint: true }
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' }
 ];
+
+const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
 
 const DASH_OUTPUT_NUM_COMPARATORS = [
     { id: 'gt', label: '>' },
@@ -135,7 +137,7 @@ function dashManualFilterWordCount(text) {
 }
 
 function dashManualFilterFieldOptionsHtml(selectedId) {
-    const sel = selectedId || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0].id;
+    const sel = selectedId || DASH_MANUAL_FILTER_DEFAULT_FIELD;
     return DASH_OUTPUT_MANUAL_FILTER_FIELDS.map((f) => {
         const selected = f.id === sel ? ' selected' : '';
         return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>' + dashEscHtml(f.label) + '</option>';
@@ -153,8 +155,9 @@ function dashManualComparatorOptionsHtml(fieldType, selectedId) {
 
 function dashManualFilterRowHtml(opts) {
     const options = opts || {};
-    const field = options.field || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0].id;
+    const field = options.field || DASH_MANUAL_FILTER_DEFAULT_FIELD;
     const fieldMeta = DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === field)
+        || DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === DASH_MANUAL_FILTER_DEFAULT_FIELD)
         || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0];
     const isDate = fieldMeta.type === 'date';
     const comparator = options.comparator || (isDate ? 'gte' : 'gte');
@@ -3177,6 +3180,7 @@ const searchOutputMethods = {
         if (rowsEl) rowsEl.innerHTML = '';
         const andOrToggle = this._q('#wf-dash-manual-andor');
         if (andOrToggle) andOrToggle.checked = false;
+        this._buildManualFilterRow({ field: DASH_MANUAL_FILTER_DEFAULT_FIELD });
     },
 
     _readSearchOutputManualFilters() {
@@ -7580,7 +7584,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.64',
+    _version: '1.65',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
