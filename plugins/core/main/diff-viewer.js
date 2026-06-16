@@ -1681,23 +1681,11 @@ function _dvScheduleReelLensSync(modal, opts) {
 }
 
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
-    const wrap = slotEl.closest('.dv-slot-wrap');
     const header = slotEl.querySelector('.dv-slot-header');
-    if (!wrap) return null;
     const headerH = header ? header.offsetHeight : 0;
-
-    const column = wrap.parentElement;
-    if (!column) return null;
-
-    let siblingsH = 0;
-    for (const child of column.children) {
-        if (child === wrap) continue;
-        if (child instanceof HTMLElement && child.offsetParent !== null) {
-            siblingsH += child.offsetHeight;
-        }
-    }
-
-    return column.clientHeight - siblingsH - headerH - unifiedChrome;
+    const row = slotEl.closest('.dv-slots-columns-row');
+    if (!row) return null;
+    return row.clientHeight - headerH - unifiedChrome;
 }
 
 function _dvSyncReelLensHeights(modal) {
@@ -2525,7 +2513,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.48',
+    _version: '1.49',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
