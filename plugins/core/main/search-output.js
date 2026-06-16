@@ -6095,9 +6095,9 @@ const searchOutputMethods = {
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${versionActionBadge}${this._copyIconHtml(version.prompt)}
+                        ${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${submittedHtml}</div>
+                    ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
                 ${feedbackHtml}${fallbackHtml}${orphanHtml}
@@ -6749,7 +6749,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.53',
+    _version: '1.54',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
