@@ -2585,10 +2585,11 @@ const searchOutputMethods = {
         this._state.resolvedDisputeAtByTaskId = new Map();
         this._state.resolverDisputeTaskIds = new Set();
         this._state.disputeIngestQueue = null;
+        const blockOnDisputes = Boolean(includeDisputes && searchDepth === 'deep');
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
             includeTaskCreation,
             includeQa,
-            includeDisputes: false
+            includeDisputes: blockOnDisputes
         }));
         const tasksPromise = includeTaskCreation
             ? this._trackSearchLoadPromise(
@@ -2602,6 +2603,155 @@ const searchOutputMethods = {
                 this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
             )
             : Promise.resolve([]);
+
+        if (blockOnDisputes) {
+            const resolvedPrefetchPromise = this._trackSearchLoadPromise(
+                'Resolved disputes (prefetch cache)',
+                this._ensureResolvedDisputesPrefetch()
+            );
+            const bootstrapPromise = this._fetchDisputesBootstrap(scope, afterIso, beforeIso);
+            const resolverPromise = authorIds.length > 0
+                ? this._trackSearchLoadPromise(
+                    'Disputes resolved by selected author(s)',
+                    this._fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope)
+                )
+                : Promise.resolve({
+                    resolverDisputeTaskIds: new Set(),
+                    resolverDisputeAtByTaskId: new Map(),
+                    bulkIncomplete: false
+                });
+            const [bootstrap, creationRows, feedbackRows, resolverResult] = await Promise.all([
+                Promise.all([resolvedPrefetchPromise, bootstrapPromise]).then(([, result]) => result),
+                tasksPromise,
+                qaPromise,
+                resolverPromise
+            ]);
+            this._state.openDisputesByTaskId = bootstrap.openDisputesByTaskId;
+            this._state.resolvedDisputeTaskIds = bootstrap.resolvedDisputeTaskIds;
+            this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
+            let bulkIncomplete = bootstrap.bulkIncomplete;
+            const resolverDisputeTaskIds = resolverResult.resolverDisputeTaskIds;
+            bulkIncomplete = bulkIncomplete || resolverResult.bulkIncomplete;
+            for (const [taskId, at] of resolverResult.resolverDisputeAtByTaskId) {
+                const prev = bootstrap.resolvedDisputeAtByTaskId.get(taskId);
+                if (!prev || at > prev) bootstrap.resolvedDisputeAtByTaskId.set(taskId, at);
+            }
+            this._state.resolverDisputeTaskIds = resolverDisputeTaskIds;
+            this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
+            this._state.disputesBulkIncomplete = bulkIncomplete;
+            const disputeTaskIds = this._discoveryDisputeTaskIds(
+                includeDisputes, authorIds, bootstrap, resolverDisputeTaskIds
+            );
+
+            const creationIds = new Set(creationRows.map((r) => r.id));
+            const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
+            const qaTaskIdSet = new Set(qaTaskIds);
+            const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
+            const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIdSet.has(id));
+            if (missingQaTaskIds.length > 0 || missingDisputeTaskIds.length > 0) {
+                this._setSearchLoadPhase('Loading linked tasks…');
+            }
+            const [qaOnlyRows, disputeOnlyRows] = await Promise.all([
+                missingQaTaskIds.length > 0
+                    ? this._trackSearchLoadPromise(
+                        'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
+                        this._fetchTaskRowsByIds(missingQaTaskIds, scope)
+                    )
+                    : Promise.resolve([]),
+                missingDisputeTaskIds.length > 0
+                    ? this._trackSearchLoadPromise(
+                        'Tasks from disputes (' + missingDisputeTaskIds.length + ' id(s))',
+                        this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
+                    )
+                    : Promise.resolve([])
+            ]);
+
+            const allTaskRows = [...creationRows];
+            const seenIds = new Set(creationIds);
+            for (const row of qaOnlyRows) {
+                if (!seenIds.has(row.id)) {
+                    seenIds.add(row.id);
+                    allTaskRows.push(row);
+                }
+            }
+            for (const row of disputeOnlyRows) {
+                if (!seenIds.has(row.id)) {
+                    seenIds.add(row.id);
+                    allTaskRows.push(row);
+                }
+            }
+
+            let allFeedbackRows = [...feedbackRows];
+            if (disputeTaskIds.length > 0 && !includeQa) {
+                this._setSearchLoadPhase('Loading supplementary QA feedback…');
+                const disputeQaRows = await this._trackSearchLoadPromise(
+                    'QA feedback for ' + disputeTaskIds.length + ' dispute task(s)',
+                    this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope)
+                );
+                const seenFb = new Set(allFeedbackRows.map((f) => f.id));
+                for (const fb of disputeQaRows) {
+                    if (!seenFb.has(fb.id)) {
+                        seenFb.add(fb.id);
+                        allFeedbackRows.push(fb);
+                    }
+                }
+            }
+
+            this._setSearchLoadPhase('Assembling results…');
+            const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
+                trackSearchLoad: true
+            });
+
+            const items = [];
+            if (includeTaskCreation) {
+                const creationTasks = creationRows
+                    .map((row) => enrichedTasksById.get(row.id))
+                    .filter(Boolean);
+                items.push(...this._taskCreationItemsFromTasks(creationTasks));
+                Logger.log('dashboard: task creation items built — ' + creationTasks.length);
+            }
+            if (includeQa && feedbackRows.length > 0) {
+                items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
+            }
+            if (disputeTaskIds.length > 0) {
+                const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
+                const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
+                    inScopeIds,
+                    enrichedTasksById,
+                    bootstrap.openDisputesByTaskId
+                );
+                const existingTaskIds = new Set(items.map((it) => it.task.id));
+                for (const disputeItem of disputeItems) {
+                    if (!existingTaskIds.has(disputeItem.task.id)) {
+                        existingTaskIds.add(disputeItem.task.id);
+                        items.push(disputeItem);
+                    }
+                }
+            }
+
+            this._setSearchLoadPhase('Assembling result cards…');
+            let mergedItems = this._mergeWorkerOutputItemsByTask(items);
+            const dateFilter = this._filterCardsBySearchDateRange(
+                mergedItems,
+                afterIso,
+                beforeIso,
+                allFeedbackRows,
+                bootstrap.openDisputesByTaskId,
+                bootstrap.resolvedDisputeAtByTaskId
+            );
+            mergedItems = dateFilter.items;
+            const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
+            allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
+            this._trimOpenDisputesToTarget(keptTaskIds);
+
+            const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
+            return {
+                items: resultItems,
+                allFeedbackRows,
+                includeQa,
+                includeDisputes
+            };
+        }
 
         const [creationRows, feedbackRows] = await Promise.all([tasksPromise, qaPromise]);
 
@@ -2663,7 +2813,7 @@ const searchOutputMethods = {
 
         const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
 
-        if (includeDisputes) {
+        if (includeDisputes && !blockOnDisputes) {
             const searchGen = this._state.searchGeneration;
             void this._runAsyncDisputeSearchHydration(searchGen, {
                 scope,
@@ -7430,7 +7580,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.63',
+    _version: '1.64',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
