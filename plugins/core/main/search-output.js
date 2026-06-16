@@ -756,9 +756,8 @@ const searchOutputMethods = {
                     <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
                     <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
                 </div>
-                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">QA Review</span>
-                <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
                 <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="1" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
+                <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
                 ${removeHtml}
             </div>`;
     },
@@ -7589,7 +7588,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.67',
+    _version: '1.68',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
