@@ -5134,6 +5134,7 @@ const searchOutputMethods = {
                         );
                     }
                 }
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
                 this._setSearchLoadPhase('Applying filters…');
                 Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
                     + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : ''));
@@ -5156,6 +5157,10 @@ const searchOutputMethods = {
                     this._setLeftTab('filters');
                 }
             } catch (err) {
+                if (gen !== this._state.searchGeneration) {
+                    Logger.debug('dashboard: stale search gen ' + gen + ' dropped in catch');
+                    return;
+                }
                 if (this._handleDashSessionRefreshError(err)) {
                     this._setSearchError('');
                 } else {
@@ -5166,6 +5171,10 @@ const searchOutputMethods = {
                 this._state.appliedFilters = null;
                 Logger.warn('dashboard: search failed', err);
             } finally {
+                if (gen !== this._state.searchGeneration) {
+                    Logger.debug('dashboard: stale search gen ' + gen + ' skipped finally');
+                    return;
+                }
                 this._state.searchFetchActive = false;
                 this._state.loading = false;
                 this._state.searchLoadPhase = '';
@@ -6733,7 +6742,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.51',
+    _version: '1.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
