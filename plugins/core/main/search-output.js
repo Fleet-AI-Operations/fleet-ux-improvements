@@ -6435,20 +6435,33 @@ const searchOutputMethods = {
         return byDisplayNo;
     },
 
+    _feedbackEntryAt(entry) {
+        return String(entry.feedbackAt || (entry.display && entry.display.feedbackAt) || '');
+    },
+
+    _feedbackEntriesOldestFirst(entries) {
+        return [...(entries || [])].sort((a, b) => {
+            const aAt = this._feedbackEntryAt(a);
+            const bAt = this._feedbackEntryAt(b);
+            return aAt < bAt ? -1 : aAt > bAt ? 1 : 0;
+        });
+    },
+
     _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId, highlightRegex) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
         const promptBody = version.prompt
             ? this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx)
             : '—';
         const promptLabel = showVersionLabel
             ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
             : this._labelSpan('Prompt');
-        const versionActionEntry = feedbackEntries.length ? feedbackEntries[feedbackEntries.length - 1] : null;
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
-        const feedbackHtml = feedbackEntries.map((entry) => {
+        const feedbackHtml = orderedFeedback.map((entry) => {
             const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id);
             const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
             return qaHtml + linkedDisputes;
@@ -7162,7 +7175,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.57',
+    _version: '1.58',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
