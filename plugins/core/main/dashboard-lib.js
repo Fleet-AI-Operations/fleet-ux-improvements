@@ -6,9 +6,6 @@ const DASH_PG_IN_MAX = 25;
 
 const DASH_LIB_MIN_SUBSTRING_LENGTH = 3;
 const DASH_LIB_MS_PER_DAY = 86400000;
-const DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS = 7;
-const DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE =
-    'Blank searches must be constrained to a max 7 day period to prevent overload';
 
 const DASH_LIB_RETURN_TYPE_LABELS = {
     accepted: 'Accepted',
@@ -298,7 +295,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.8',
+    _version: '2.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -312,8 +309,6 @@ const plugin = {
             pgInChunks: dashLibPgInChunks,
 
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
-            UNIVERSAL_SEARCH_MAX_DAYS: DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS,
-            UNIVERSAL_SEARCH_RANGE_MESSAGE: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE,
             CHECKBOX_FILTER_DIMENSIONS: self._checkboxFilterDimensions,
 
             isQueryEmpty: (value, caseSensitive) => dashLibPrepareText(value, caseSensitive).length === 0,
@@ -1556,19 +1551,7 @@ const plugin = {
             && (p.searchEnvKeys || []).length === 0;
     },
 
-    _validateUniversalSearchRange(afterLocal, beforeLocal) {
-        if (!afterLocal || !beforeLocal) {
-            return { allowed: false, message: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE };
-        }
-        const after = dashLibParseDateInput(afterLocal);
-        const before = dashLibParseDateInput(beforeLocal);
-        if (!after || !before) {
-            return { allowed: false, message: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE };
-        }
-        const spanDays = Math.round((dashLibStartOfLocalDay(before) - dashLibStartOfLocalDay(after)) / DASH_LIB_MS_PER_DAY);
-        if (spanDays > DASH_LIB_UNIVERSAL_SEARCH_MAX_DAYS) {
-            return { allowed: false, message: DASH_LIB_UNIVERSAL_SEARCH_RANGE_MESSAGE };
-        }
+    _validateUniversalSearchRange(_afterLocal, _beforeLocal) {
         return { allowed: true, message: '' };
     },
 

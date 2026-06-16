@@ -5460,17 +5460,10 @@ const searchOutputMethods = {
             searchProjectIds: this._selectedFromList('search-projects'),
             searchEnvKeys: this._selectedFromList('search-envs')
         });
-        const universalCheck = isAllTime
-            ? { allowed: true, message: '' }
-            : lib.validateUniversalSearchRange(after, before);
-        const blankBlocked = isUniversal && !universalCheck.allowed;
         const hintEl = this._q('#wf-dash-universal-hint');
         if (hintEl) {
             if (isAllTime && isUniversal) {
                 hintEl.textContent = 'All Time — no date bound on this search.';
-                hintEl.style.display = 'block';
-            } else if (blankBlocked) {
-                hintEl.textContent = lib.UNIVERSAL_SEARCH_RANGE_MESSAGE;
                 hintEl.style.display = 'block';
             } else {
                 hintEl.style.display = 'none';
@@ -5480,7 +5473,6 @@ const searchOutputMethods = {
         if (searchBtn) {
             const noOutputTypes = !this._state.includeTasks && !this._state.includeQa && !this._state.includeDisputes;
             const searchDisabled = this._state.loading
-                || blankBlocked
                 || noOutputTypes
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
@@ -5499,7 +5491,7 @@ const searchOutputMethods = {
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
-        return { check, isUniversal, blankBlocked };
+        return { check, isUniversal };
     },
 
     _isFilterSelectionValid() {
@@ -5835,19 +5827,6 @@ const searchOutputMethods = {
             if (!lib) {
                 this._setSearchError('Dashboard helpers not loaded. Reload the page and try again.');
                 return;
-            }
-            if (lib.isUniversalSearchParams({
-                authorCount: this._state.draftTokens.length,
-                searchTeamIds: this._selectedFromList('search-teams'),
-                searchProjectIds: this._selectedFromList('search-projects'),
-                searchEnvKeys: this._selectedFromList('search-envs')
-            })) {
-                const quickPreset = ((this._q('#wf-dash-quick-range') || {}).value || '');
-                const isAllTime = quickPreset === 'all-time';
-                if (!isAllTime && !lib.validateUniversalSearchRange(after, before).allowed) {
-                    this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
-                    return;
-                }
             }
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
@@ -7627,7 +7606,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.80',
+    _version: '1.81',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
