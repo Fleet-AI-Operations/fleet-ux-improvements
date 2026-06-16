@@ -6485,14 +6485,15 @@ const searchOutputMethods = {
     _plainTimestampHtml(iso, prefixLabel) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
-        const agoHtml = ago
-            ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
-            : '';
-        const formattedSpan = `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`;
-        const prefix = prefixLabel
-            ? `<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span> `
-            : '';
-        return ago ? `${prefix}${formattedSpan} ${agoHtml}` : `${prefix}${formattedSpan}`;
+        const parts = [];
+        if (prefixLabel) {
+            parts.push(`<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span>`);
+        }
+        parts.push(`<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`);
+        if (ago) {
+            parts.push(`<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`);
+        }
+        return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
     },
 
     _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy, regex) {
@@ -7613,7 +7614,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.78',
+    _version: '1.79',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
