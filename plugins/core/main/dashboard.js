@@ -94,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.43',
+    _version: '5.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -846,12 +846,12 @@ const plugin = {
             ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
-                position: relative; padding: 10px 14px; font-size: 13px; font-weight: 500;
+                position: relative; padding: 3px 14px; font-size: 13px; font-weight: 500;
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
             ">${t.label}</button>`).join('');
         const updateTabBtn = `<button type="button" class="wf-dash-tab" data-wf-dash-tab="update" style="
-                display: none; position: relative; padding: 10px 14px; font-size: 13px; font-weight: 600;
+                display: none; position: relative; padding: 3px 14px; font-size: 13px; font-weight: 600;
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: #991b1b;
             ">Update</button>`;
@@ -877,7 +877,7 @@ const plugin = {
         }).join('');
 
         return `
-            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 3px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                 <div id="wf-dash-header-tabs" style="display: flex; align-items: center; gap: 0; flex-shrink: 0; min-width: 0;">
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
