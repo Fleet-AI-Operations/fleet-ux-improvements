@@ -17,8 +17,9 @@ const DV_WORD_DIFF_TOKEN_LIMIT = 4000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
-const DV_REEL_NAV_ROW_H = 14;
-const DV_REEL_NAV_ROW_GAP = 6;
+const DV_REEL_NAV_LABEL_H = 14;
+const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
+const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
 const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
@@ -553,12 +554,8 @@ function _dvParseTranslateY(el) {
 }
 
 function _dvMeasureNavRowH(track) {
-    if (!track) return DV_REEL_NAV_ROW_H;
-    if (track._dvRowH) return track._dvRowH;
-    const label = track.querySelector('.dv-reel-version-label');
-    if (!label) return DV_REEL_NAV_ROW_H;
-    track._dvRowH = label.offsetHeight;
-    return track._dvRowH;
+    if (track && track._dvRowH) return track._dvRowH;
+    return DV_REEL_NAV_ROW_H;
 }
 
 function _dvVersionTrackOffset(viewport, track, lensIndex) {
@@ -2466,9 +2463,10 @@ function _dvInjectStyles() {
         '  display: flex;',
         '  align-items: center;',
         '  justify-content: center;',
-        '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
+        '  height: ' + DV_REEL_NAV_ROW_H + 'px;',
         '  width: 100%;',
         '  flex-shrink: 0;',
+        '  box-sizing: border-box;',
         '  font-size: 8px;',
         '  font-weight: 600;',
         '  color: var(--muted-foreground, #64748b);',
@@ -2521,7 +2519,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.45',
+    _version: '1.46',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
