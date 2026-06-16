@@ -16,9 +16,7 @@ const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_BG = '#64748b';
-const DASH_CARD_KIND_TAB_HEIGHT = '24px';
-const DASH_CARD_KIND_TAB_SLOT_WIDTH = '7.75rem';
-const DASH_CARD_KIND_TAB_GAP = '0.25rem';
+const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
@@ -78,7 +76,7 @@ const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and d
 
 const DASH_SORT_DEFAULT = 'task_submitted:desc';
 const DASH_SORT_METRICS = [
-    { id: 'task_submitted', label: 'Task submitted' },
+    { id: 'task_submitted', label: 'Task created' },
     { id: 'task_revised', label: 'Task revised' },
     { id: 'feedback_given', label: 'Feedback given' },
     { id: 'dispute_submitted', label: 'Dispute submitted' },
@@ -3728,15 +3726,26 @@ const searchOutputMethods = {
         return base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
-    _cardKindTabSlotHtml(kind, present) {
-        const cfg = DASH_OUTPUT_KIND_CONFIG[kind];
-        const shell = 'width: ' + DASH_CARD_KIND_TAB_SLOT_WIDTH + '; height: ' + DASH_CARD_KIND_TAB_HEIGHT
-            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
-            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
-        if (!present || !cfg) {
-            return '<div style="' + shell + ' visibility: hidden;" aria-hidden="true"></div>';
+    _taskInitialCreatedAt(task) {
+        if (!task) return '';
+        const versions = task.promptVersions || [];
+        if (versions.length) {
+            const first = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo)[0];
+            if (first && first.createdAt) return first.createdAt;
         }
-        return '<div style="' + shell + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;" title="' + dashEscHtml(cfg.label) + '" aria-label="' + dashEscHtml(cfg.label) + '">' + dashEscHtml(cfg.label) + '</div>';
+        return task.createdAt || '';
+    },
+
+    _cardCreatedTabHtml(task) {
+        const iso = this._taskInitialCreatedAt(task);
+        const formatted = dashFormatCreatedAt(iso);
+        const ago = dashRelativeAgo(iso);
+        const label = ago ? `Created: ${formatted} (${ago})` : `Created: ${formatted}`;
+        const shell = 'height: ' + DASH_CARD_TAB_HEIGHT
+            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;'
+            + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;';
+        return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + dashEscHtml(label) + '</div>';
     },
 
     _cardActionAreaHtml(itemId) {
@@ -6156,9 +6165,7 @@ const searchOutputMethods = {
     _resultCardOuterWrap(item, cardHtml) {
         this._ensureCardActionStyles();
         const itemId = item.id;
-        const kinds = (item.kinds && item.kinds.length) ? item.kinds : [item.kind];
-        const kindSet = new Set(kinds);
-        const kindTabsHtml = DASH_KIND_MERGE_ORDER.map((kind) => this._cardKindTabSlotHtml(kind, kindSet.has(kind))).join('');
+        const createdTabHtml = this._cardCreatedTabHtml(item.task);
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -6172,7 +6179,7 @@ const searchOutputMethods = {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: ${DASH_CARD_KIND_TAB_GAP}; min-width: 0;">${kindTabsHtml}</div>
+                <div style="display: flex; align-items: flex-end; min-width: 0;">${createdTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
@@ -6742,7 +6749,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.52',
+    _version: '1.53',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
