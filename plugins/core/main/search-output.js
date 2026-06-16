@@ -6483,6 +6483,13 @@ const searchOutputMethods = {
         </span>`;
     },
 
+    _expandedVersionHeaderHtml(itemId, taskId, displayVersionNo, totalVersions) {
+        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            ${this._promptVersionCountHtml(displayVersionNo, totalVersions)}
+            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
+        </span>`;
+    },
+
 
     _fieldGroupHtml(label, valueHtml) {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
@@ -7087,16 +7094,10 @@ const searchOutputMethods = {
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
-        let row3Left = '';
+        let row3Html = '';
         if (expanded) {
-            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
-        }
-
-        let versionControls = '';
-        if (hasTimeline && expanded) {
-            versionControls = `
-                <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
+            row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
+                    <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
                 </div>`;
         }
 
@@ -7104,22 +7105,18 @@ const searchOutputMethods = {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
-            const versionHeaderControls = hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo
-                ? this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions)
-                : '';
+            let versionHeaderControls = '';
+            if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
+                versionHeaderControls = this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
+            } else if (hasTimeline && expanded) {
+                versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
+            }
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
                 orphanDisputes, itemId, highlightRegex, versionHeaderControls
             );
         }).join('');
-
-        const row3Html = (row3Left || versionControls)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
-                    ${row3Left}
-                    ${versionControls}
-                </div>`
-            : '';
 
         const row2Html = reviewerBadges
             ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
@@ -7630,7 +7627,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.73',
+    _version: '1.74',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
