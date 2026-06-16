@@ -4715,7 +4715,6 @@ const searchOutputMethods = {
                                 </div>
                                 <div id="wf-dash-manual-filter-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
-                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Distinct Prompt Versions † counts one visible prompt until a card is hydrated, then uses display versions (v1, v2, …).</p>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
@@ -7611,7 +7610,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.75',
+    _version: '1.76',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
