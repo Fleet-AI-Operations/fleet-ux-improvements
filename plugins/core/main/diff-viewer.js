@@ -65,8 +65,8 @@ function _dvCreateEmptyDragState() {
     };
 }
 
-// DvSlot:   { slotId, taskId, key, authorName, authorEmail, promptVersions, lensIndex, loading, error }
-// DvStash:  { taskId, key, authorName, authorEmail }
+// DvSlot:   { slotId, taskId, key, authorName, authorEmail, createdAt, promptVersions, lensIndex, loading, error }
+// DvStash:  { taskId, key, authorName, authorEmail, createdAt }
 
 // ── LCS diff engine (ported from prompt-diff-highlight.js) ──
 
@@ -166,6 +166,52 @@ function _dvEqualSpanHtml(text) {
 
 function _dvPlainPromptHtml(text) {
     return _dvEqualSpanHtml(text || '');
+}
+
+function _dvFormatCreatedAt(iso) {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function _dvRelativeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    const parts = [];
+    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
+    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
+    return parts.join(', ') + ' ago';
+}
+
+function _dvTaskInitialCreatedAt(taskCreatedAt, promptVersions) {
+    const versions = promptVersions || [];
+    if (versions.length) {
+        const first = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo)[0];
+        if (first && first.createdAt) return first.createdAt;
+    }
+    return taskCreatedAt || '';
+}
+
+function _dvTimestampLineHtml(prefixLabel, iso) {
+    if (!iso) return '';
+    const formatted = _dvFormatCreatedAt(iso);
+    const ago = _dvRelativeAgo(iso);
+    const dateSpan = `<span class="dv-timestamp-date">${_dvEscHtml(formatted)}</span>`;
+    let html = `<span class="dv-timestamp-accent">${_dvEscHtml(prefixLabel)}</span> ${dateSpan}`;
+    if (ago) html += ` <span class="dv-timestamp-accent">(${_dvEscHtml(ago)})</span>`;
+    return html;
 }
 
 function _dvHighlightStyles() {
@@ -404,12 +450,14 @@ async function _dvFetchTask(raw) {
         [task.id], profilesMap, { skipFeedbackFetch: true }
     );
     const taskData = enriched.get(task.id) || {};
+    const promptVersions = taskData.promptVersions || [];
     return {
         taskId: task.id,
         key: task.key || '',
         authorName: (task.author && task.author.name) || '',
         authorEmail: (task.author && task.author.email) || '',
-        promptVersions: taskData.promptVersions || []
+        createdAt: _dvTaskInitialCreatedAt(row.created_at || '', promptVersions),
+        promptVersions
     };
 }
 
@@ -420,10 +468,20 @@ function _dvStashFind(taskId) {
 }
 
 function _dvAddToStash(entry) {
-    if (_dvStashFind(entry.taskId) < 0) {
-        _dvState.stash.push({ taskId: entry.taskId, key: entry.key, authorName: entry.authorName, authorEmail: entry.authorEmail });
+    const idx = _dvStashFind(entry.taskId);
+    if (idx < 0) {
+        _dvState.stash.push({
+            taskId: entry.taskId,
+            key: entry.key,
+            authorName: entry.authorName,
+            authorEmail: entry.authorEmail,
+            createdAt: entry.createdAt || ''
+        });
         _dvSaveStash();
         Logger.log('diff-viewer: stash add — ' + (entry.key || entry.taskId));
+    } else if (entry.createdAt && !_dvState.stash[idx].createdAt) {
+        _dvState.stash[idx].createdAt = entry.createdAt;
+        _dvSaveStash();
     }
 }
 
@@ -467,6 +525,7 @@ function _dvAddSlot(seed, modal) {
         key: seed.key || '',
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
+        createdAt: seed.createdAt || '',
         promptVersions: null,
         lensIndex: 0,
         loading: true,
@@ -478,7 +537,8 @@ function _dvAddSlot(seed, modal) {
             taskId: seed.taskId,
             key: seed.key,
             authorName: seed.authorName,
-            authorEmail: seed.authorEmail
+            authorEmail: seed.authorEmail,
+            createdAt: seed.createdAt || ''
         });
     }
     _dvRenderAll(modal);
@@ -500,13 +560,15 @@ async function _dvHydrateSlot(slotId, seed, modal) {
         slot.authorName = data.authorName || slot.authorName;
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
+        slot.createdAt = data.createdAt || slot.createdAt || '';
         slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions) ?? 0;
         slot.loading = false;
         _dvAddToStash({
             taskId: data.taskId,
             key: data.key,
             authorName: data.authorName,
-            authorEmail: data.authorEmail
+            authorEmail: data.authorEmail,
+            createdAt: slot.createdAt
         });
         Logger.log('diff-viewer: slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
         _dvRenderAll(modal);
@@ -537,7 +599,13 @@ function _dvRemoveSlot(slotIdx, modal) {
 function _dvMinimizeSlot(slotIdx, modal) {
     if (slotIdx < 0 || slotIdx >= _dvState.slots.length) return;
     const slot = _dvState.slots[slotIdx];
-    _dvAddToStash({ taskId: slot.taskId, key: slot.key, authorName: slot.authorName, authorEmail: slot.authorEmail });
+    _dvAddToStash({
+        taskId: slot.taskId,
+        key: slot.key,
+        authorName: slot.authorName,
+        authorEmail: slot.authorEmail,
+        createdAt: slot.createdAt || ''
+    });
     _dvState.slots.splice(slotIdx, 1);
     Logger.log('diff-viewer: slot minimized to stash — ' + (slot.key || slot.taskId));
     _dvRenderAll(modal);
@@ -658,7 +726,7 @@ function _dvShiftLens(slotIdx, delta, modal) {
 
     const oldLensHtml = lens.innerHTML;
     slot.lensIndex = newIdx;
-    const newLensHtml = '<pre data-dv-lens-pre="' + slotIdx + '">' + _dvEscHtml(slot.promptVersions[newIdx].prompt || '') + '</pre>';
+    const newLensHtml = _dvReelLensInnerHtml(slotIdx, slot.promptVersions[newIdx]);
     const lensLayerStyle = 'position:absolute;inset:0;overflow-y:auto;padding:8px 10px;box-sizing:border-box;';
 
     slot._lensAnimating = true;
@@ -939,6 +1007,7 @@ function _dvApplyViewProgression(modal) {
             slotId,
             taskId: base.taskId, key: base.key,
             authorName: base.authorName, authorEmail: base.authorEmail,
+            createdAt: base.createdAt || '',
             promptVersions: base.promptVersions,
             lensIndex: i, loading: false, error: null
         });
@@ -1254,6 +1323,9 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
     const authorHtml = authorDisplay
         ? `<div class="dv-slot-author" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>`
         : '';
+    const createdHtml = slot.createdAt
+        ? `<div class="dv-slot-created">${_dvTimestampLineHtml('Created', slot.createdAt)}</div>`
+        : '';
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -1275,6 +1347,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
             <div style="flex:1;min-width:0;overflow:hidden;">
                 ${keyCopyHtml}
                 ${authorHtml}
+                ${createdHtml}
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">${minimizeBtn}${removeBtn}</div>
         </div>
@@ -1319,6 +1392,14 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
         + '</div></div>';
 }
 
+function _dvReelLensInnerHtml(slotIdx, version) {
+    const submitted = version && version.createdAt
+        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('Submitted', version.createdAt)}</div>`
+        : '';
+    const prompt = version ? _dvEscHtml(version.prompt || '') : '';
+    return submitted + '<pre data-dv-lens-pre="' + slotIdx + '">' + prompt + '</pre>';
+}
+
 function _dvReelHtml(slot, slotIdx) {
     const versions = slot.promptVersions;
     const lensIdx = slot.lensIndex;
@@ -1338,7 +1419,7 @@ function _dvReelHtml(slot, slotIdx) {
     };
 
     const lensHtml = lensV
-        ? `<div class="dv-reel-lens"><pre data-dv-lens-pre="${slotIdx}">${_dvEscHtml(lensV.prompt || '')}</pre></div>`
+        ? `<div class="dv-reel-lens">${_dvReelLensInnerHtml(slotIdx, lensV)}</div>`
         : '<div class="dv-reel-lens"><span class="dv-reel-empty-mark">—</span></div>';
 
     const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
@@ -1424,10 +1505,14 @@ function _dvRenderStash(modal) {
         const chipBg = 'var(--card,#fff)';
         const chipBorder = active ? '#22c55e' : 'var(--border,#e2e8f0)';
         const keyColor = active ? '#22c55e' : 'var(--foreground,#0f172a)';
+        const createdHtml = entry.createdAt
+            ? `<div class="dv-stash-created">${_dvTimestampLineHtml('Created', entry.createdAt)}</div>`
+            : '';
         html += `<div data-dv-stash-chip="${idx}" style="display:flex;align-items:flex-start;gap:6px;padding:7px 8px;background:${chipBg};border:1px solid ${chipBorder};border-radius:7px;cursor:pointer;transition:border-color 0.15s,color 0.15s;" title="Click to add slot">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 <div style="font-size:11px;font-weight:600;color:${keyColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${keyLine}</div>
                 <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
+                ${createdHtml}
             </div>
             <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
         </div>`;
@@ -1960,7 +2045,13 @@ function _dvAttachListeners(modal, dash) {
             const idx = parseInt(stashChip.getAttribute('data-dv-stash-chip'), 10);
             const entry = _dvState.stash[idx];
             if (entry) {
-                _dvAddSlot({ taskId: entry.taskId, key: entry.key, authorName: entry.authorName, authorEmail: entry.authorEmail }, modal);
+                _dvAddSlot({
+                    taskId: entry.taskId,
+                    key: entry.key,
+                    authorName: entry.authorName,
+                    authorEmail: entry.authorEmail,
+                    createdAt: entry.createdAt || ''
+                }, modal);
             }
             return;
         }
@@ -2229,6 +2320,27 @@ function _dvInjectStyles() {
         '  overflow: hidden;',
         '  text-overflow: ellipsis;',
         '}',
+        '#wf-dash-modal .dv-slot-created,',
+        '#wf-dash-modal .dv-stash-created {',
+        '  margin-top: 2px;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '  white-space: nowrap;',
+        '  overflow: hidden;',
+        '  text-overflow: ellipsis;',
+        '}',
+        '#wf-dash-modal .dv-version-submitted {',
+        '  margin: 0 0 4px 0;',
+        '  padding: 0;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '}',
+        '#wf-dash-modal .dv-timestamp-accent {',
+        '  color: var(--brand, var(--primary, #2563eb));',
+        '}',
+        '#wf-dash-modal .dv-timestamp-date {',
+        '  color: var(--foreground, #0f172a);',
+        '}',
         '#wf-dash-modal .dv-slot-column {',
         '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
         '  min-width: ' + DV_SLOT_WIDTH_PX + 'px;',
@@ -2492,7 +2604,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.50',
+    _version: '1.51',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
