@@ -15,8 +15,8 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
-const DASH_CARD_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
+const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
@@ -4516,7 +4516,9 @@ const searchOutputMethods = {
         const ago = dashRelativeAgo(iso);
         const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
         const inner = this._plainTimestampHtml(iso, 'Created');
-        const shell = this._cardTabShellBase() + ' background: ' + DASH_CARD_TAB_BG + '; font-weight: 400;';
+        const shell = this._cardTabShellBase()
+            + ' background: var(--card, #ffffff); font-weight: 400;'
+            + ' border: ' + DASH_CARD_BORDER + '; border-bottom: none;';
         return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + inner + '</div>';
     },
 
@@ -7610,7 +7612,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.76',
+    _version: '1.77',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
