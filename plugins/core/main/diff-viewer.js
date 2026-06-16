@@ -1866,7 +1866,14 @@ function _dvAttachListeners(modal, dash) {
             if (mode !== _dvState.mode) {
                 _dvState.mode = mode;
                 _dvSyncModeUi(modal);
-                if (mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                if (mode === 'free-text') {
+                    _dvRenderFreeTextDiff(modal);
+                } else {
+                    _dvRenderDiffs(modal);
+                    _dvUpdateRollingOverlay(modal);
+                    _dvLensSyncScheduled = false;
+                    _dvScheduleReelLensSync(modal, { afterLayout: true });
+                }
                 Logger.log('diff-viewer: mode → ' + mode);
             }
             return;
@@ -2518,7 +2525,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.47',
+    _version: '1.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
