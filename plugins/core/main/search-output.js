@@ -6363,10 +6363,12 @@ const searchOutputMethods = {
             resolutionHtml = `
                 <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
                     <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                            <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                            ${resolvedHtml}
-                            ${statusLabel}
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
+                                <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
+                                ${resolvedHtml}
+                            </div>
+                            <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
                         </div>
                         ${resolverHtml}
                         <div>
@@ -6377,15 +6379,17 @@ const searchOutputMethods = {
                 </div>`;
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
+        const disputeRightHtml = (categoryHtml || claimControlHtml)
+            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">${categoryHtml}${claimControlHtml}</div>`
+            : '';
         return `
             <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
                         <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
                         ${submittedHtml}
-                        ${categoryHtml}
                     </div>
-                    ${claimControlHtml}
+                    ${disputeRightHtml}
                 </div>
                 <div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
@@ -7165,7 +7169,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.59',
+    _version: '1.60',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
