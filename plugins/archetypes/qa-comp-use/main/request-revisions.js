@@ -32,7 +32,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '5.1',
+    _version: '5.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -99,8 +99,13 @@ const plugin = {
         });
         
         if (dialogs.length === 0) {
+            if (state.lastSig !== 0) state.lastSig = 0;
             return;
         }
+
+        const sig = dialogs.length + '|' + dialogs.map((d) => d.outerHTML.length).join(',');
+        if (sig === state.lastSig) return;
+        state.lastSig = sig;
         
         // Find the Request Revisions modal: heading "Request Revisions"; prefer dialog that contains #feedback-Task / #feedback-Environment
         let requestRevisionsModal = null;

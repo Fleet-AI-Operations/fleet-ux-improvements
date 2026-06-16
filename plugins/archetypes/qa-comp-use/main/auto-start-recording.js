@@ -5,7 +5,7 @@ const plugin = {
     id: 'autoStartRecording',
     name: 'Auto Start Recording',
     description: 'Automatically clicks the "Start Recording" button once when it appears on the page.',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -16,7 +16,14 @@ const plugin = {
     onMutation(state, context) {
         if (state.clicked) return;
 
-        const button = this.findStartRecordingButton();
+        const allButtons = typeof Context !== 'undefined' && Context.dom
+            ? Context.dom.queryAll('button', { context: `${this.id}.onMutation` })
+            : Array.from(document.querySelectorAll('button'));
+        const sig = allButtons.length + '|' + (allButtons.map((b) => b.textContent.trim()).join(','));
+        if (sig === state.lastRunSig) return;
+        state.lastRunSig = sig;
+
+        const button = allButtons.find((b) => (b.textContent || '').trim() === 'Start Recording') || null;
         if (!button) {
             if (!state.missingLogged) {
                 Logger.debug('Auto Start Recording: \"Start Recording\" button not found yet');

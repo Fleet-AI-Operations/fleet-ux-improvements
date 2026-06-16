@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.17',
+    _version: '7.18',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2510,6 +2510,7 @@ const plugin = {
         this._abortOpsTeamSearchInFlight('modal closed');
         this._opsTeamSearchActive = null;
         this._clearOpsMemberEditState();
+        this._opsExpertStatsCache.clear();
     },
 
     _getOpsTeamMemberTeamConstraints() {

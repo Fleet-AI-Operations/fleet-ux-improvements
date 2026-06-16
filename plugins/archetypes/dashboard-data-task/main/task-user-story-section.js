@@ -21,7 +21,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -294,10 +294,6 @@ const plugin = {
             }
         };
 
-        pre.addEventListener('mouseenter', showHandle);
-        pre.addEventListener('mouseleave', (e) => hideHandle(e, resizeHandle));
-        resizeHandle.addEventListener('mouseenter', showHandle);
-        resizeHandle.addEventListener('mouseleave', (e) => hideHandle(e, pre));
         CleanupRegistry.registerEventListener(pre, 'mouseenter', showHandle);
         CleanupRegistry.registerEventListener(pre, 'mouseleave', (e) => hideHandle(e, resizeHandle));
         CleanupRegistry.registerEventListener(resizeHandle, 'mouseenter', showHandle);

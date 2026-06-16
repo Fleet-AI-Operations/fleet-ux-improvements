@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -17,6 +17,7 @@ const plugin = {
     _foreignModalObserver: null,
     _presenceInterval: null,
     _pulseInterval: null,
+    _presenceObserver: null,
     _docPaneCache: {},
     _gearClickHandler: null,
 
@@ -111,6 +112,23 @@ const plugin = {
             }
             #wf-settings-modal::backdrop {
                 background: rgba(0, 0, 0, 0.45);
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    },
+
+    _ensurePulseKeyframes() {
+        if (document.getElementById('wf-settings-pulse-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-settings-pulse-styles';
+        style.textContent = `
+            @keyframes wf-settings-pulse {
+                0%, 49% { border: 2px solid #dc2626 !important; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4) !important; }
+                50%, 100% { border: 1px solid #60a5fa !important; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important; }
+            }
+            .wf-settings-btn-pulsing {
+                animation: wf-settings-pulse 2s step-end infinite !important;
+                transition: none !important;
             }
         `;
         (document.head || document.documentElement).appendChild(style);
@@ -223,32 +241,10 @@ const plugin = {
     
     _startPulseAnimation(settingsBtn) {
         if (!settingsBtn) return;
-        
-        // Stop existing animation if any
-        if (this._pulseInterval) {
-            clearInterval(this._pulseInterval);
-            this._pulseInterval = null;
-        }
-        
-        // Ensure smooth transitions
-        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
-        
-        // Set initial state (start with red outline); keep fill solid while update is highlighted
-        settingsBtn.style.background = 'var(--background, white)';
-        settingsBtn.style.border = '2px solid #dc2626';
-        settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-        
-        let isOn = true; // Start with red outline (on state)
-        this._pulseInterval = setInterval(() => {
-            isOn = !isOn;
-            if (isOn) {
-                settingsBtn.style.border = '2px solid #dc2626';
-                settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-            } else {
-                settingsBtn.style.border = '1px solid #60a5fa';
-                settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-            }
-        }, 1000); // 1 second per state
+        this._stopPulseAnimation();
+        this._ensurePulseKeyframes();
+        settingsBtn.style.transition = 'none';
+        settingsBtn.classList.add('wf-settings-btn-pulsing');
     },
     
     _stopPulseAnimation() {
@@ -258,6 +254,8 @@ const plugin = {
         }
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (settingsBtn) {
+            settingsBtn.classList.remove('wf-settings-btn-pulsing');
+            settingsBtn.style.transition = '';
             settingsBtn.style.border = '1px solid #60a5fa';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
             if (settingsBtn.matches(':hover')) {
@@ -390,16 +388,15 @@ const plugin = {
     },
 
     _startPresenceGuard() {
-        if (this._presenceInterval) return;
-        const guard = () => {
-            // Only ensure button if it doesn't exist - don't reset if it's already there and pulsing
-            const existingBtn = document.getElementById('wf-settings-btn');
-            if (!existingBtn) {
-                this._ensureSettingsButton();
-            }
+        if (this._presenceObserver) return;
+        const check = () => {
+            if (!document.getElementById('wf-settings-btn')) this._ensureSettingsButton();
             this._ensureModalPresence();
         };
-        this._presenceInterval = setInterval(guard, 1000);
+        const obs = new MutationObserver(check);
+        obs.observe(document.body, { childList: true, subtree: true });
+        this._presenceObserver = obs;
+        check();
     },
     
     _hasActiveDevSettings() {

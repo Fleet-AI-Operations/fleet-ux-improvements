@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.7',
+    _version: '2.8',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -155,17 +155,29 @@ const plugin = {
     },
 
     findPromptSection(scopeRoot) {
-        if (!scopeRoot) {
-            const taskDetailPanel = document.querySelector('[data-ui="qa-task-detail-panel"]');
-            if (taskDetailPanel) {
-                const inPanel = this.findPromptSection(taskDetailPanel);
-                if (inPanel) return inPanel;
+        const root = scopeRoot || document.querySelector('[data-ui="qa-task-detail-panel"]') || document;
+        if (root.querySelector && root.querySelector('#prompt-editor')) {
+            const promptEditor = root.querySelector('#prompt-editor');
+            const section = promptEditor.closest('div.space-y-2.relative') || promptEditor.closest('div.space-y-2') || promptEditor.closest('div.flex.flex-col.gap-2');
+            if (section) return section;
+        }
+        const options = { context: `${this.id}.findPromptSection`, root };
+
+        // Label-based fallback: find "Prompt" or "Problem Description" label then climb to section wrapper.
+        const labelSelectors = ['span.text-sm.text-muted-foreground.font-medium', 'div.text-sm.text-muted-foreground.font-medium'];
+        for (const sel of labelSelectors) {
+            const elements = Context.dom.queryAll(sel, options);
+            for (const el of elements) {
+                const text = (el.textContent || '').trim();
+                const isPrompt = text === 'Prompt' || text.startsWith('Prompt');
+                const isProblemDesc = text === 'Problem Description' || text.startsWith('Problem Description');
+                if (!isPrompt && !isProblemDesc) continue;
+                const section = el.closest('div.space-y-2.relative') || el.closest('div.space-y-2') || el.closest('div.flex.flex-col.gap-2');
+                if (section) return section;
             }
         }
-        const options = { context: `${this.id}.findPromptSection` };
-        if (scopeRoot) options.root = scopeRoot;
-        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
 
+        const candidates = Context.dom.queryAll('div.flex.flex-col.gap-2', options);
         for (const candidate of candidates) {
             const label = candidate.querySelector('label');
             const span = candidate.querySelector('span.text-sm.text-muted-foreground.font-medium');
@@ -484,7 +496,6 @@ const plugin = {
                 showExecuteFailure();
             }
         };
-        executeBtn.addEventListener('click', onExecute);
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
 
         actionRow.appendChild(select);
@@ -552,7 +563,6 @@ const plugin = {
             });
         };
 
-        button.addEventListener('click', handleCopy);
         CleanupRegistry.registerEventListener(button, 'click', handleCopy);
         return button;
     }

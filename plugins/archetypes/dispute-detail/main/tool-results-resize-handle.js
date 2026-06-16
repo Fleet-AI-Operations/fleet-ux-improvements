@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeDetailToolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false, envWaitingLogged: false },
@@ -136,7 +136,6 @@ const plugin = {
             document.body.style.userSelect = '';
         };
 
-        resizeHandle.addEventListener('mousedown', handleMouseDown);
         CleanupRegistry.registerEventListener(resizeHandle, 'mousedown', handleMouseDown);
     },
 

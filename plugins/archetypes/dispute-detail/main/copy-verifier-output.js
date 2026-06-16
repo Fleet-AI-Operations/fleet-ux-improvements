@@ -13,7 +13,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -26,6 +26,10 @@ const plugin = {
         const scoreRow = this.findScoreRow();
         const stdoutRow = scoreRow ? null : this.findStdoutRow();
         const anchorRow = scoreRow || stdoutRow;
+        const sig = (anchorRow ? anchorRow.outerHTML.length : 0) + '|' + (anchorRow ? (anchorRow.querySelector(`[${COPY_BUTTON_MARKER}="true"]`) ? 1 : 0) : 0);
+        if (sig === state.lastRunSig) return;
+        state.lastRunSig = sig;
+
         if (!anchorRow) {
             if (!state.verifierTargetMissingLogged) {
                 Logger.debug('Copy Verifier Output: Stdout/Score row not found');

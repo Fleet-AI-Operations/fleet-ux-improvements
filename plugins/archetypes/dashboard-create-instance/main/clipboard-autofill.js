@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -29,6 +29,10 @@ const plugin = {
     },
 
     onMutation(state) {
+        const h2Count = document.querySelectorAll('h2').length;
+        if (state.uiRoot && h2Count === state.lastH2Count) return;
+        state.lastH2Count = h2Count;
+
         const root = this.findCreatePageRoot();
         if (!root) {
             if (!state.missingLogged) {

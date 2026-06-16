@@ -13,6 +13,7 @@ const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
 const DV_CHAR_DIFF_LIMIT = 15000;
+const DV_WORD_DIFF_TOKEN_LIMIT = 4000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
@@ -225,7 +226,15 @@ function _dvDiffUnits(baseText, compareText, granularity) {
     if (isChar) {
         return { a: baseText.split(''), b: compareText.split(''), effectiveGranularity: 'char' };
     }
-    return { a: _dvTokenize(baseText), b: _dvTokenize(compareText), effectiveGranularity: 'word' };
+    const a = _dvTokenize(baseText);
+    const b = _dvTokenize(compareText);
+    if (a.length + b.length > DV_WORD_DIFF_TOKEN_LIMIT) {
+        Logger.debug(`diff-viewer: word token count ${a.length + b.length} > ${DV_WORD_DIFF_TOKEN_LIMIT}; falling back to line diff`);
+        const aLines = baseText.split('\n');
+        const bLines = compareText.split('\n');
+        return { a: aLines, b: bLines, effectiveGranularity: 'line' };
+    }
+    return { a, b, effectiveGranularity: 'word' };
 }
 
 function _dvSimilarityPercent(baseText, compareText, granularity) {
@@ -483,6 +492,7 @@ async function _dvHydrateSlot(slotId, seed, modal) {
         const data = await _dvFetchTask(lookup);
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return; // slot was removed before hydration completed
+        if (!modal.isConnected) return; // modal was rebuilt; drop stale update
         const slot = _dvState.slots[slotIdx];
         slot.taskId = data.taskId;
         slot.promptVersions = data.promptVersions;
@@ -852,6 +862,8 @@ function _dvEndDrag(modal, commit) {
 }
 
 function _dvAttachDragListeners(modal) {
+    if (modal._dvDragListenersAttached) return;
+    modal._dvDragListenersAttached = true;
     const onPointerDown = (e) => {
         if (e.button !== 0) return;
         if (_dvState.drag.pending || _dvState.drag.active) return;
@@ -2530,7 +2542,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.43',
+    _version: '1.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

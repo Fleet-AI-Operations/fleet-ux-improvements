@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -22,7 +22,6 @@ const plugin = {
         textarea:          null,
         lastSavedValue:    null,
         saveDebounceTimer: null,
-        saveIntervalId:    null,
         statusEl:          null,
         statusCurrent:     null,   // 'pending' | 'saved' — only write DOM on transitions
         restoreInjected:   false,
@@ -34,7 +33,10 @@ const plugin = {
         missingLogged:     false
     },
 
-    // ─── lifecycle ────────────────────────────────────────────────────────────
+    destroy(state) {
+        this.maybeSave(state);
+        this.teardown(state);
+    },
 
     onMutation(state, context) {
         if (!state.stylesInjected) {
@@ -62,7 +64,6 @@ const plugin = {
     },
 
     teardown(state) {
-        if (state.saveIntervalId)    { clearInterval(state.saveIntervalId);   state.saveIntervalId = null; }
         if (state.saveDebounceTimer) { clearTimeout(state.saveDebounceTimer);  state.saveDebounceTimer = null; }
         state.textarea          = null;
         state.statusEl          = null;
@@ -86,10 +87,15 @@ const plugin = {
         // registerEventListener also calls addEventListener internally
         CleanupRegistry.registerEventListener(textarea, 'input', onInput);
 
-        state.saveIntervalId = setInterval(() => {
+        const onChange = () => {
             if (!state.saveDebounceTimer) this.maybeSave(state);
-        }, 1000);
-        CleanupRegistry.registerInterval(state.saveIntervalId);
+        };
+        CleanupRegistry.registerEventListener(textarea, 'change', onChange);
+
+        const onVisibilityHide = () => {
+            if (document.visibilityState === 'hidden') this.maybeSave(state);
+        };
+        CleanupRegistry.registerEventListener(document, 'visibilitychange', onVisibilityHide);
 
         this.maybeShowRestoreButtons(state, textarea);
 

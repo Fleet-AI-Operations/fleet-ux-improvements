@@ -18,7 +18,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -30,6 +30,10 @@ const plugin = {
 
     onMutation(state) {
         const tables = this._findDatasetsTaskTables();
+        const sig = tables.length + (tables.length > 0 ? '|' + tables.reduce((s, t) => s + (t.rows ? t.rows.length : 0), 0) : '');
+        if (sig === state.lastSig) return;
+        state.lastSig = sig;
+
         if (!tables.length) {
             if (!state.missingLogged) {
                 Logger.debug(PLUGIN_ID + ': waiting for Datasets task table');

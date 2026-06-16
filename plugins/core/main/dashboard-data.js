@@ -3,12 +3,13 @@
 // Loaded after dashboard-lib.js, before dashboard.js; registers Context.dashboardData.
 
 const DASH_DATA_FEEDBACK_PAGE_SIZE = 200;
+const DASH_DATA_FEEDBACK_MAX_PAGES = 20;
 
 const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -133,7 +134,12 @@ const plugin = {
         const seenIds = new Set(knownIds);
         for (const chunk of this._pgInChunks(taskIds)) {
             let offset = 0;
+            let pageCount = 0;
             while (true) {
+                if (pageCount >= DASH_DATA_FEEDBACK_MAX_PAGES) {
+                    Logger.warn(`dashboard-data: feedback pagination hit ${DASH_DATA_FEEDBACK_MAX_PAGES}-page cap; stopping early`);
+                    break;
+                }
                 const qs = {
                     eval_task_id: this._pgInFilter(chunk),
                     order: 'created_at.desc',
@@ -148,6 +154,7 @@ const plugin = {
                     feedbackRows.push(row);
                     added++;
                 }
+                pageCount++;
                 if (page.length < DASH_DATA_FEEDBACK_PAGE_SIZE) break;
                 offset += DASH_DATA_FEEDBACK_PAGE_SIZE;
             }

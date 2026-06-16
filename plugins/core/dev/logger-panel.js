@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.12',
+    _version: '2.13',
     enabledByDefault: true,
     phase: 'core',
 
@@ -34,6 +34,7 @@ const plugin = {
         originalConsole: null,
         unsubscribe: null,
         guardInterval: null,
+        presenceObserver: null,
         ui: null,
         handlers: null,
         newLogCount: 0,
@@ -54,10 +55,11 @@ const plugin = {
     },
 
     _startPresenceGuard(state, context) {
-        if (state.guardInterval) return;
-        state.guardInterval = setInterval(() => {
-            this._ensureUI(state, context);
-        }, 1000);
+        if (state.presenceObserver) return;
+        const check = () => this._ensureUI(state, context);
+        const obs = new MutationObserver(check);
+        obs.observe(document.body, { childList: true, subtree: false });
+        state.presenceObserver = obs;
     },
 
     _ensureUI(state, context) {
@@ -761,6 +763,10 @@ const plugin = {
         if (state.guardInterval) {
             clearInterval(state.guardInterval);
             state.guardInterval = null;
+        }
+        if (state.presenceObserver) {
+            state.presenceObserver.disconnect();
+            state.presenceObserver = null;
         }
         if (state.handlers) {
             const ui = state.ui;

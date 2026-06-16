@@ -3,7 +3,7 @@ const plugin = {
     id: 'feedbackGivenStats',
     name: 'Feedback Given Stats',
     description: 'Show overall approval rate, today\'s feedback count and environment breakdown with day and per-env approval rates, plus copy and scroll warning',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -281,6 +281,7 @@ const plugin = {
         const arrowBtnDisabled = 'inline-flex items-center justify-center w-8 h-8 rounded-sm border bg-transparent border-gray-500 text-gray-500 text-base font-medium cursor-not-allowed';
 
         let block = card.querySelector('[data-wf-feedback-stats-block]');
+        if (block && statsPayload === state.lastStatsPayload) return;
         if (!block) {
             block = document.createElement('div');
             block.setAttribute('data-wf-feedback-stats-block', 'true');

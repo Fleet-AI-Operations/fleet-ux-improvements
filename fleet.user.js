@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/optimize] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.4.1
+// @version      9.5.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.4.1';
+    const VERSION = '9.5.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -58,8 +58,8 @@
     // Branches that behave like main: run immediately, no dev-ID check, no dev-only features (test-update simulates main for testing).
     const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
     const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
-    /** GM storage defaults when log keys are unset; main-like builds keep prior behavior. */
-    const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? false : true;
+    /** GM storage defaults when log keys are unset; dev builds default verbose on, main stays silent. */
+    const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? true : false;
     const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
     /** When unset in storage: both off by default (site-native refresh UX; GitHub #78). */
     const DEFAULT_PAGE_REFRESH_CONFIRMATION = false;
@@ -770,8 +770,13 @@
             });
             
             // Clear plugin order for all known archetypes
-            // We'll try common archetype IDs
-            const commonArchetypeIds = ['global', 'qa-tool-use', 'qa-comp-use', 'tool-use-task-creation'];
+            const commonArchetypeIds = [
+                'global', 'dashboard', 'tool-use-task-creation', 'tool-use-task-creation-openclaw',
+                'tool-use-revision', 'create-task-project-selection', 'dashboard-create-instance',
+                'comp-use-task-creation', 'comp-use-revision', 'qa-tool-use', 'qa-session',
+                'qa-comp-use', 'disputes', 'dispute-detail', 'task-view', 'dashboard-data-task',
+                'dashboard-data-expert', 'no-vnc', 'assessments-grade', 'assessments-grade-detail',
+            ];
             commonArchetypeIds.forEach(archetypeId => {
                 this.delete(`plugin-order-${archetypeId}`);
                 clearedCount++;
@@ -863,7 +868,7 @@
         
         isDebugEnabled() {
             if (this._debugEnabled === null) {
-                const storageOn = Storage.get('debug', true);
+                const storageOn = Storage.get('debug', false);
                 const rl = Context.remoteLogging;
                 const remoteOn = rl && rl.debug && rl.submodule;
                 this._debugEnabled = storageOn || !!remoteOn;
@@ -1665,10 +1670,25 @@
         devPlugins: [],
         currentArchetype: null,
         currentDevArchetype: null,
+        _fetchedAt: 0,
+        _fetchPromise: null,
         
         async loadArchetypes() {
-            // Always fetch archetypes on every page load - never cache
-            // Add cache-busting timestamp to prevent browser-level caching
+            // Coalesce concurrent callers into one in-flight request; re-fetch after 5 min.
+            const CACHE_TTL_MS = 5 * 60 * 1000;
+            if (this._fetchPromise) return this._fetchPromise;
+            if (this._fetchedAt && (Date.now() - this._fetchedAt) < CACHE_TTL_MS && this.archetypes.length > 0) {
+                Logger.debug('loadArchetypes: returning cached config (age=' + (Date.now() - this._fetchedAt) + 'ms)');
+                return;
+            }
+            this._fetchPromise = this._doFetchArchetypes().finally(() => {
+                this._fetchedAt = Date.now();
+                this._fetchPromise = null;
+            });
+            return this._fetchPromise;
+        },
+
+        async _doFetchArchetypes() {
             const timestamp = Date.now();
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.archetypesPath}?t=${timestamp}`;
             
@@ -1869,7 +1889,8 @@
                     const selectorMatches = (selector) => {
                         if (selector.startsWith('text:')) {
                             const searchText = selector.slice(5);
-                            const elements = document.querySelectorAll('*');
+                            const textCandidateSelectors = 'h1, h2, h3, h4, h5, h6, span, p, label, li, td, th, button, a, [aria-label]';
+                            const elements = document.querySelectorAll(textCandidateSelectors);
                             for (const el of elements) {
                                 if (el.children.length === 0 && el.textContent.trim() === searchText) return true;
                             }
@@ -1889,6 +1910,7 @@
                         Logger.log(`✓ Disambiguated to: ${archetype.id} - ${archetype.name}`);
                         this.currentArchetype = archetype;
                         Context.currentArchetype = archetype;
+                        observer && observer.disconnect();
                         resolve(archetype);
                         return;
                     }
@@ -1897,19 +1919,28 @@
                 // No disambiguation match yet
                 if (attempts < maxAttempts) {
                     Logger.debug(`Disambiguation attempt ${attempts}/${maxAttempts}, retrying...`);
-                    setTimeout(checkSelectors, checkInterval);
                 } else {
                     // Fallback to most specific URL match
                     const fallback = candidates[0];
                     Logger.warn(`Disambiguation failed after ${maxAttempts} attempts, falling back to: ${fallback.id}`);
                     this.currentArchetype = fallback;
                     Context.currentArchetype = fallback;
+                    observer && observer.disconnect();
                     resolve(fallback);
                 }
             };
-            
-            // Start checking
-            checkSelectors();
+
+            // Use MutationObserver instead of polling — fire a check on each DOM change
+            // up to maxAttempts times, then fall back.
+            let observer = null;
+            if (typeof MutationObserver !== 'undefined') {
+                observer = new MutationObserver(() => {
+                    if (attempts >= maxAttempts) { observer.disconnect(); return; }
+                    checkSelectors();
+                });
+                observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+            }
+            checkSelectors(); // Run immediately in case selectors already match
         },
         
         getPluginsForCurrentArchetype() {
@@ -2011,7 +2042,8 @@
                     const selectorMatches = (selector) => {
                         if (selector.startsWith('text:')) {
                             const searchText = selector.slice(5);
-                            const elements = document.querySelectorAll('*');
+                            const textCandidateSelectors = 'h1, h2, h3, h4, h5, h6, span, p, label, li, td, th, button, a, [aria-label]';
+                            const elements = document.querySelectorAll(textCandidateSelectors);
                             for (const el of elements) {
                                 if (el.children.length === 0 && el.textContent.trim() === searchText) return true;
                             }
@@ -2811,6 +2843,7 @@
     // ============= PLUGIN MANAGER =============
     const PluginManager = {
         plugins: {},
+        _enabledCache: new Map(),
         
         register(plugin) {
             if (!plugin.id) {
@@ -2845,7 +2878,10 @@
         },
         
         isEnabled(id) {
-            return Storage.getPluginEnabled(id);
+            if (this._enabledCache.has(id)) return this._enabledCache.get(id);
+            const result = Storage.getPluginEnabled(id);
+            this._enabledCache.set(id, result);
+            return result;
         },
 
         /**
@@ -2875,6 +2911,7 @@
         
         setEnabled(id, enabled) {
             Storage.setPluginEnabled(id, enabled);
+            this._enabledCache.set(id, enabled);
         },
         
         cleanupArchetypePlugins() {
@@ -2956,6 +2993,7 @@
     let mutationRafId = null;
     let corePluginsLoaded = false;
     let navigationHandlerActive = false;
+    let navigationPendingUrl = null;
     
     async function initializeCorePlugins() {
         if (corePluginsLoaded) {
@@ -3125,9 +3163,11 @@
         }
 
         // Prevent concurrent invocations from racing each other. A prior call is still
-        // awaiting the GitHub fetch, so drop this one rather than risk a stale reload.
+        // awaiting the GitHub fetch, so queue this URL and let the in-flight handler
+        // pick it up after it finishes.
         if (navigationHandlerActive) {
-            Logger.log('Navigation handler already active, skipping...');
+            navigationPendingUrl = newUrl;
+            Logger.debug('Navigation handler already active — queued pending URL: ' + newUrl);
             return;
         }
         navigationHandlerActive = true;
@@ -3135,6 +3175,7 @@
         Logger.log('Handling navigation, checking archetype match...');
 
         try {
+            ArchetypeManager._fetchedAt = 0; // Invalidate cache so we get fresh config for this navigation
             await ArchetypeManager.loadArchetypes();
 
             // If further navigation occurred while we were fetching, the URL we were
@@ -3161,8 +3202,6 @@
 
             if (warrantsFullReload && !Context.coreOnlyMode) {
                 Logger.log('Navigation target has configured archetype plugins; refreshing page...');
-                Storage.delete('workflow-cache-latest');
-                Storage.delete('workflow-cache-latest-url');
                 Context.requestExtensionReload('SPA navigation with configured archetype plugins');
                 return;
             }
@@ -3173,6 +3212,14 @@
             Logger.error('Failed to check archetype match on navigation:', error);
         } finally {
             navigationHandlerActive = false;
+            if (navigationPendingUrl && navigationPendingUrl !== newUrl) {
+                const pendingUrl = navigationPendingUrl;
+                navigationPendingUrl = null;
+                Logger.debug('Navigation handler: processing queued URL: ' + pendingUrl);
+                void handleNavigation(pendingUrl, newUrl);
+                return;
+            }
+            navigationPendingUrl = null;
         }
         
         Logger.log('Handling navigation, reinitializing...');
@@ -3220,7 +3267,8 @@
         console.log(`${LOG_PREFIX} v${VERSION}`);
         Logger.log('Starting...');
 
-        // Install central network observer ASAP so any subsequent page fetches are observed.
+        // NetworkObserver was started before the handshake delay to capture early requests.
+        // Calling init() again is a no-op if already initialized.
         NetworkObserver.init();
 
         // Initialize navigation monitoring FIRST
@@ -3243,6 +3291,7 @@
 
     if (MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch)) {
         writeMainActiveBranchMarker();
+        NetworkObserver.init();
         setTimeout(function() {
             try {
                 const pageWindow = Context.getPageWindow();
@@ -3264,6 +3313,7 @@
             runFleet();
         }, SCRIPT_HANDSHAKE_DELAY_MS);
     } else {
+        NetworkObserver.init();
         setTimeout(function() {
             let isDev = false;
             console.log("[Fleet UX Enhancer] - Checking if dev mode is enabled");

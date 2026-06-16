@@ -945,16 +945,24 @@ const searchOutputMethods = {
         void this._ensureResolvedDisputesPrefetch();
     },
 
+    _resetResolvedDisputesPrefetchForRetry() {
+        this._state.resolvedDisputesPrefetchStarted = false;
+        this._state.resolvedDisputesPrefetchStatus = 'idle';
+        this._state.resolvedDisputesPrefetchPromise = null;
+    },
+
     async _awaitBootstrapForPrefetch() {
         if (this._state.bootstrapStatus === 'done') return true;
         if (this._state.bootstrapStatus === 'error') return false;
+        if (!this._state.bootstrapRunPromise) {
+            await this._doBootstrap();
+        }
         if (this._state.bootstrapRunPromise) {
             try {
                 await this._state.bootstrapRunPromise;
             } catch (_e) { /* logged in _doBootstrap */ }
-            return this._state.bootstrapStatus === 'done';
         }
-        return false;
+        return this._state.bootstrapStatus === 'done';
     },
 
     async _runResolvedDisputesPrefetch() {
@@ -962,9 +970,13 @@ const searchOutputMethods = {
         try {
             const ready = await this._awaitBootstrapForPrefetch();
             if (!ready) {
-                Logger.warn('dashboard: resolved disputes prefetch skipped — bootstrap not ready');
+                if (this._state.bootstrapStatus === 'error') {
+                    Logger.warn('dashboard: resolved disputes prefetch skipped — bootstrap failed');
+                } else {
+                    Logger.debug('dashboard: resolved disputes prefetch skipped — bootstrap not ready');
+                }
                 this._state.resolvedDisputesByTaskId = new Map();
-                this._state.resolvedDisputesPrefetchStatus = 'error';
+                this._resetResolvedDisputesPrefetchForRetry();
                 return;
             }
             const teamIds = this._getSearchableTeamCatalog().map(([id]) => id);
@@ -1536,6 +1548,9 @@ const searchOutputMethods = {
             this._state.sessionRefreshRequired = false;
             Logger.log('dashboard: bootstrap complete (' + (result.teams ? result.teams.length : 0) + ' teams, '
                 + result.projects.length + ' projects, ' + result.environments.length + ' environments)');
+            if (this._state.resolvedDisputesPrefetchStatus !== 'done') {
+                this._resetResolvedDisputesPrefetchForRetry();
+            }
             this._startResolvedDisputesPrefetchOnce();
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
@@ -2020,8 +2035,9 @@ const searchOutputMethods = {
 
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
+        const qaTaskIdSet = new Set(qaTaskIds);
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
-        const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIds.includes(id));
+        const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIdSet.has(id));
         if (missingQaTaskIds.length > 0 || missingDisputeTaskIds.length > 0) {
             this._setSearchLoadPhase('Loading linked tasks…');
         }
@@ -3313,12 +3329,13 @@ const searchOutputMethods = {
                 prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
                 skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
             });
+            const taskIdSet = new Set(taskIds);
             const hydratedItems = (this._state.cachedItems || []).filter(
-                (it) => taskIds.includes(it.task.id) && !it.hydrated
+                (it) => taskIdSet.has(it.task.id) && !it.hydrated
             );
             await this._hydrateDisputesForItems(hydratedItems, profilesMap);
             for (const item of this._state.cachedItems || []) {
-                if (!taskIds.includes(item.task.id) || item.hydrated) continue;
+                if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
                 if (hist) {
                     item.task.promptVersions = hist.promptVersions || [];
@@ -5076,8 +5093,10 @@ const searchOutputMethods = {
             this._renderResults();
 
             this._state.searchFetchActive = true;
+            const gen = (this._state.searchGeneration = (this._state.searchGeneration || 0) + 1);
             try {
                 const scope = await this._buildSearchApiScope();
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 Logger.info('dashboard: search started — '
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
                     + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
@@ -5092,6 +5111,7 @@ const searchOutputMethods = {
                     scope,
                     searchDepth
                 });
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
                 const items = searchResult.items;
                 this._state.cachedItems = items;
                 if (searchDepth === 'deep' && items.length > 0) {
@@ -5233,6 +5253,7 @@ const searchOutputMethods = {
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
         this._state.userStoryUi = {};
+        this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
         this._state.resultsPage = 0;
         this._state.hydrateBulkActive = false;
@@ -6712,7 +6733,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.49',
+    _version: '1.51',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -6756,7 +6777,6 @@ const plugin = {
                 dash._syncResultsPagerUi();
             },
             onActivate(modal, dash) {
-                dash._startResolvedDisputesPrefetchOnce();
                 requestAnimationFrame(() => dash._applyAllSidePanelWidths());
             }
         });

@@ -178,14 +178,14 @@ Scripts in `dev/utils/` automate branch creation, `fleet.user.js` sync, version 
 | Script | Purpose |
 |--------|---------|
 | **checkout.sh** | Create a feature branch and sync `fleet.user.js` for that branch. Use when **starting** work on a feature. |
-| **push.sh** | Version-aware commit and push: bump versions for changed files if needed, run `update-versions.sh`, then commit and push. Use for **committing** on a branch. |
+| **push.sh** | Version-aware commit and push: bump versions for changed files if needed, run `update-versions.sh` and `compute-hashes.sh`, then commit and push. Use for **committing** on a branch. |
 | **test.sh** | Create a test branch and sync `fleet.user.js` for that branch. Use to **simulate** how main userscript users would experience an update before releasing. |
 | **update-versions.sh** | Sync `archetypes.json` and `fleet.user.js` with plugin `_version` values; normalize fleet `@version`/const `VERSION`; bump `archetypesVersion`. Used by `push.sh`; can be run standalone. |
 | **compute-hashes.sh** | Compute SHA-256 hashes for all plugin files listed in `archetypes.json` and write them back. Run after `update-versions.sh`. |
 | **sync-branch-config.sh** | Align `fleet.user.js` with the current git branch. Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches. |
 | **apply-archetypes-boolean-patch.sh** | Validate and merge boolean-only edits into `archetypes.json`. Used by the Apply archetypes boolean patch GitHub Actions workflow. |
 | **delete-branch.sh** | Delete the current branch locally and on origin. Use after a branch has been merged. |
-| **toggle-core-only-mode.sh** | Toggle `coreOnlyMode` in `archetypes.json` (and compute hashes). |
+| **toggle-core-only-mode.sh** | Toggle `coreOnlyMode` in `archetypes.json`, then runs `compute-hashes.sh` to keep hashes consistent. |
 | **hash-ops-password.sh** | Generate a SHA-256 hash for the Ops dashboard password and print the value to paste into `archetypes.json`. |
 | **encrypt-ops-secrets.sh** | Encrypt gitignored `local/ops-secrets.json` with the Ops password into committed `ops-secrets.enc.json` (AES-256-GCM + PBKDF2). `ops-tab.js` decrypts this file at runtime using the password stored on the device. |
 
@@ -220,7 +220,7 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 **push.sh** — `./dev/utils/push.sh [--dry-run] ["optional commit message"]`
 
 - Lists uncommitted changes; for each changed versioned file (plugins, fleet.user.js, settings-modal docs), bumps version by 0.1 if working tree is not already higher than HEAD. Updates `archetypes.json` settingsModalDocs for .md changes.
-- Runs `./dev/utils/update-versions.sh` to sync archetypes and fleet, then `git add -A`, `git commit`, `git push` (only if there is something to commit). Default message: "push.sh auto commit at <date/time>".
+- Runs `./dev/utils/update-versions.sh` and `./dev/utils/compute-hashes.sh` to sync archetypes and fleet, then `git add -A`, `git commit`, `git push` (only if there is something to commit). Default message: "push.sh auto commit at <date/time>".
 - Requires `jq`. Use for normal commits on a branch to keep versions in sync automatically.
 
 **test.sh** — `./dev/utils/test.sh [--dry-run] <new_branch_name>`
@@ -336,7 +336,7 @@ Branch-specific sync of `fleet.user.js` is handled by the helper scripts (`check
 
 - **`./dev/utils/update-versions.sh`**: Syncs `archetypes.json` with plugin `_version` values and fleet `@version`/const `VERSION`; bumps `archetypesVersion`. Run standalone or via `push.sh`.
 - **`./dev/utils/compute-hashes.sh`**: Computes and writes SHA-256 hashes for all plugins. **Always run this after `update-versions.sh`.** CI enforces hash freshness.
-- **`./dev/utils/push.sh`**: Version-aware commit and push: bumps versions for changed files (plugins, fleet, settings-modal docs) if needed, runs `update-versions.sh`, then commits and pushes. **Prefer `push.sh` when committing** to keep versions in sync. (Note: does not run `compute-hashes.sh` automatically; run it before `push.sh` if plugin content changed.)
+- **`./dev/utils/push.sh`**: Version-aware commit and push: bumps versions for changed files (plugins, fleet, settings-modal docs) if needed, runs `update-versions.sh` and `compute-hashes.sh`, then commits and pushes. **Prefer `push.sh` when committing** to keep versions and hashes in sync automatically.
 - Otherwise: perform version updates manually (plugin `_version`, `archetypes.json` plugin entry, hash, `archetypesVersion`) and double-check consistency.
 
 ## Userscript Installation (Branch-Specific)

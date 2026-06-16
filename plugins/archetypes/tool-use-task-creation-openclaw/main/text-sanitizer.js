@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '3.3',
+    _version: '3.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -509,7 +509,6 @@ const plugin = {
                 showExecuteFailure();
             }
         };
-        executeBtn.addEventListener('click', onExecute);
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);
 
         actionRow.appendChild(select);
