@@ -6439,18 +6439,19 @@ const searchOutputMethods = {
     },
 
 
-    _promptVersionLabelHtml(taskId, versionNo, totalVersions) {
-        const id = String(taskId || '').trim();
-        const suffix = ` ${versionNo} of ${totalVersions}`;
+    _promptVersionCountHtml(versionNo, totalVersions) {
         const labelStyle = this._labelStyle();
-        const suffixSpan = `<span style="${labelStyle}">${dashEscHtml(suffix)}</span>`;
-        if (!id) {
-            return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px;">${this._labelSpan('Prompt Version')}${suffixSpan}</span>`;
-        }
-        const title = 'Copy task ID: ' + id;
-        const btnStyle = labelStyle + ' border: none; background: transparent; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent); text-underline-offset: 2px;';
-        return `<span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px;">
-            <button type="button" data-wf-dash-copy="${dashEscHtml(id)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">Prompt Version</button>${suffixSpan}
+        return `<span style="${labelStyle}">${dashEscHtml(' ' + versionNo + ' of ' + totalVersions)}</span>`;
+    },
+
+    _collapsedVersionPickerHtml(itemId, taskId, versions, selectedDisplayNo, totalVersions) {
+        const versionOptions = [...versions]
+            .sort((a, b) => a.displayVersionNo - b.displayVersionNo)
+            .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
+            .join('');
+        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>
+            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
         </span>`;
     },
 
@@ -6856,7 +6857,7 @@ const searchOutputMethods = {
         });
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId, highlightRegex) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, itemId, highlightRegex, versionHeaderControls) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -6865,9 +6866,15 @@ const searchOutputMethods = {
         const promptBody = version.prompt
             ? this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx)
             : '—';
-        const promptLabel = showVersionLabel
-            ? this._promptVersionLabelHtml(taskId, version.displayVersionNo, totalVersions)
-            : this._labelSpan('Prompt');
+        let promptLabel;
+        if (versionHeaderControls) {
+            promptLabel = versionHeaderControls;
+        } else if (showVersionLabel) {
+            promptLabel = this._promptVersionCountHtml(version.displayVersionNo, totalVersions);
+        } else {
+            promptLabel = this._labelSpan('Prompt');
+        }
+        const showPromptCopy = !showVersionLabel && !versionHeaderControls;
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const feedbackHtml = orderedFeedback.map((entry) => {
@@ -6882,7 +6889,7 @@ const searchOutputMethods = {
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}
+                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}
                     </div>
                     ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
@@ -7050,15 +7057,10 @@ const searchOutputMethods = {
         }
 
         let versionControls = '';
-        if (hasTimeline) {
-            const versionOptions = [...versions]
-                .sort((a, b) => a.displayVersionNo - b.displayVersionNo)
-                .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
-                .join('');
+        if (hasTimeline && expanded) {
             versionControls = `
                 <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-${expanded ? 'collapse' : 'show-all'}="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${expanded ? 'Collapse' : 'Show All'}</button>
-                    ${expanded ? '' : `<select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>`}
+                    <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
                 </div>`;
         }
 
@@ -7066,10 +7068,13 @@ const searchOutputMethods = {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
+            const versionHeaderControls = hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo
+                ? this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions)
+                : '';
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes, itemId, highlightRegex
+                orphanDisputes, itemId, highlightRegex, versionHeaderControls
             );
         }).join('');
 
@@ -7584,7 +7589,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.65',
+    _version: '1.66',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
