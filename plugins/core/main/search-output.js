@@ -19,6 +19,7 @@ const DASH_CARD_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
+const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
@@ -631,6 +632,340 @@ const searchOutputMethods = {
             throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
         }
         return res.json();
+    },
+
+    async _dashPostgrestUpsert(table, conflictCols, body) {
+        const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
+        const ops = this._dashOpsTab();
+        const pageWindow = this._pageWindow();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const url = new URL(baseUrl + '/' + table);
+        url.searchParams.set('on_conflict', conflictCols);
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'POST',
+            headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                'content-profile': 'public',
+                prefer: 'resolution=merge-duplicates',
+                apikey: anonKey,
+                authorization: 'Bearer ' + jwt,
+                'x-client-info': 'fleet-ux-dashboard/' + this._version
+            },
+            credentials: 'omit',
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
+        }
+    },
+
+    _helpfulnessFeedbackIdInFilter(ids) {
+        const numeric = (ids || [])
+            .map((id) => Number(String(id).trim()))
+            .filter((n) => Number.isFinite(n) && n > 0);
+        if (numeric.length === 0) return '';
+        return 'in.(' + numeric.join(',') + ')';
+    },
+
+    _getHelpfulnessUi(feedbackId) {
+        const id = String(feedbackId || '').trim();
+        if (!id) {
+            return {
+                isHelpful: null,
+                reportText: null,
+                localText: '',
+                loaded: false,
+                submitting: false,
+                confirmingRemove: false,
+                dirty: false
+            };
+        }
+        if (!this._state.helpfulnessUi[id]) {
+            this._state.helpfulnessUi[id] = {
+                isHelpful: null,
+                reportText: null,
+                localText: '',
+                loaded: false,
+                submitting: false,
+                confirmingRemove: false,
+                dirty: false
+            };
+        }
+        return this._state.helpfulnessUi[id];
+    },
+
+    _helpfulnessThumbSvg(direction) {
+        if (direction === 'up') {
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; flex-shrink: 0;"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"></path></svg>';
+        }
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; flex-shrink: 0;"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"></path></svg>';
+    },
+
+    _helpfulnessThumbBtnStyle(direction, active) {
+        const base = 'display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: opacity 0.15s;';
+        if (direction === 'up' && active) {
+            return base + ' border: 1px solid #10b981; background: color-mix(in srgb, #10b981 8%, var(--card, #ffffff)); color: #047857;';
+        }
+        if (direction === 'down' && active) {
+            return base + ' border: 1px solid #ef4444; background: color-mix(in srgb, #ef4444 8%, var(--card, #ffffff)); color: #b91c1c;';
+        }
+        return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); color: var(--muted-foreground, #64748b);';
+    },
+
+    _helpfulnessBlockHtml(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        const ui = this._getHelpfulnessUi(fid);
+        const escId = dashEscHtml(fid);
+        const upActive = ui.isHelpful === true;
+        const downActive = ui.isHelpful === false;
+        const submittedText = ui.reportText != null ? String(ui.reportText) : '';
+        const localText = ui.localText != null ? String(ui.localText) : '';
+        const hasSubmitted = ui.reportText != null;
+        const submitLabel = hasSubmitted ? 'Update' : 'Submit';
+        const canSubmit = localText.trim().length > 0 && localText !== submittedText && !ui.submitting;
+        const submitClass = this._dashBtnClass('primary', 'compact');
+        const basicClass = this._dashBtnClass('basic', 'compact');
+        const submitDisabled = !canSubmit ? ' disabled' : '';
+        const submitStyle = !canSubmit ? ' opacity: 0.45; cursor: not-allowed;' : '';
+        const textareaStyle = this._inputStyle()
+            + ' flex: 1; min-width: 0; min-height: 64px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 6px 8px; font-size: 12px; line-height: 1.4;';
+
+        let removeHtml = '';
+        if (ui.confirmingRemove) {
+            removeHtml = `<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; max-width: 180px;">
+                <span style="font-size: 11px; color: var(--muted-foreground, #64748b); text-align: right; line-height: 1.3;">Are you sure? This action cannot be undone.</span>
+                <div style="display: inline-flex; gap: 4px;">
+                    <button type="button" data-wf-dash-qa-review-confirm="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}"${ui.submitting ? ' disabled' : ''}>Confirm</button>
+                    <button type="button" data-wf-dash-qa-review-cancel="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}"${ui.submitting ? ' disabled' : ''}>Cancel</button>
+                </div>
+            </div>`;
+        } else if (hasSubmitted) {
+            removeHtml = `<button type="button" data-wf-dash-qa-review-remove="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${ui.submitting ? ' disabled' : ''}>Remove Review</button>`;
+        }
+
+        return `
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Helpfulness</span>
+                    <div style="display: inline-flex; align-items: center; gap: 4px;">
+                        <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
+                        <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Review</span>
+                    <div style="display: flex; align-items: flex-start; gap: 6px;">
+                        <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0; margin-top: 2px;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
+                        <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="3" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
+                        ${removeHtml}
+                    </div>
+                </div>
+            </div>`;
+    },
+
+    _patchHelpfulnessBlock(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid || !this._modal) return;
+        let wrap = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-helpfulness]')) {
+            if (el.getAttribute('data-wf-dash-helpfulness') === fid) {
+                wrap = el;
+                break;
+            }
+        }
+        if (!wrap) return;
+        const ta = wrap.querySelector('[data-wf-dash-qa-review-input]');
+        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
+        const selStart = hadFocus ? ta.selectionStart : null;
+        const selEnd = hadFocus ? ta.selectionEnd : null;
+        wrap.innerHTML = this._helpfulnessBlockHtml(fid);
+        if (hadFocus) {
+            const newTa = wrap.querySelector('[data-wf-dash-qa-review-input]');
+            if (newTa) {
+                newTa.focus();
+                try {
+                    if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
+                } catch (_e) { /* ignore */ }
+            }
+        }
+    },
+
+    async _fetchHelpfulnessRatingsBatch(feedbackIds) {
+        const userId = this._dashGetCurrentUserId();
+        if (!userId) {
+            Logger.warn('search-output: helpfulness batch skipped — no user id');
+            return;
+        }
+        const unique = [...new Set((feedbackIds || []).map((id) => String(id).trim()).filter(Boolean))];
+        if (unique.length === 0) return;
+
+        const rowsByFeedbackId = new Map();
+        for (let i = 0; i < unique.length; i += DASH_HELPFULNESS_BATCH_CHUNK) {
+            const chunk = unique.slice(i, i + DASH_HELPFULNESS_BATCH_CHUNK);
+            const inFilter = this._helpfulnessFeedbackIdInFilter(chunk);
+            if (!inFilter) continue;
+            const rows = await this._dashPostgrestListGet('feedback_helpfulness_ratings', {
+                select: 'feedback_id,is_helpful,report_text',
+                feedback_id: inFilter,
+                user_id: 'eq.' + userId
+            });
+            for (const row of rows) {
+                if (row && row.feedback_id != null) {
+                    rowsByFeedbackId.set(String(row.feedback_id), row);
+                }
+            }
+        }
+
+        for (const fid of unique) {
+            const ui = this._getHelpfulnessUi(fid);
+            const row = rowsByFeedbackId.get(fid);
+            ui.loaded = true;
+            if (row) {
+                ui.isHelpful = row.is_helpful === true ? true : (row.is_helpful === false ? false : null);
+                ui.reportText = row.report_text != null ? String(row.report_text) : null;
+                if (!ui.dirty) {
+                    ui.localText = ui.reportText != null ? String(ui.reportText) : '';
+                }
+            } else {
+                ui.isHelpful = null;
+                ui.reportText = null;
+                if (!ui.dirty) ui.localText = '';
+            }
+        }
+        Logger.debug('search-output: helpfulness batch loaded for ' + unique.length + ' feedback row(s)');
+    },
+
+    _helpfulnessUpsertBody(feedbackId, fields) {
+        const userId = this._dashGetCurrentUserId();
+        if (!userId) throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        const feedbackNum = Number(String(feedbackId).trim());
+        if (!Number.isFinite(feedbackNum) || feedbackNum <= 0) {
+            throw new Error('Invalid feedback id');
+        }
+        return Object.assign({
+            feedback_id: feedbackNum,
+            user_id: userId
+        }, fields || {});
+    },
+
+    async _handleThumbClick(feedbackId, direction) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid || (direction !== 'up' && direction !== 'down')) return;
+        const ui = this._getHelpfulnessUi(fid);
+        if (ui.submitting) return;
+
+        const wantHelpful = direction === 'up';
+        const prev = ui.isHelpful;
+        let next;
+        if (prev === wantHelpful) next = null;
+        else next = wantHelpful;
+
+        ui.isHelpful = next;
+        ui.submitting = true;
+        this._patchHelpfulnessBlock(fid);
+        try {
+            await this._dashPostgrestUpsert(
+                'feedback_helpfulness_ratings',
+                'feedback_id,user_id',
+                this._helpfulnessUpsertBody(fid, { is_helpful: next })
+            );
+            Logger.log('search-output: helpfulness ' + (next === true ? 'up' : next === false ? 'down' : 'cleared') + ' — feedback ' + fid);
+        } catch (e) {
+            ui.isHelpful = prev;
+            Logger.warn('search-output: helpfulness update failed — feedback ' + fid, e);
+        } finally {
+            ui.submitting = false;
+            this._patchHelpfulnessBlock(fid);
+        }
+    },
+
+    _handleQaReviewInput(feedbackId, value) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        ui.localText = String(value || '');
+        ui.dirty = true;
+        this._patchHelpfulnessBlock(fid);
+    },
+
+    async _handleQaReviewSubmit(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        const text = String(ui.localText || '').trim();
+        const submittedText = ui.reportText != null ? String(ui.reportText) : '';
+        if (!text || text === submittedText || ui.submitting) return;
+
+        ui.submitting = true;
+        this._patchHelpfulnessBlock(fid);
+        try {
+            await this._dashPostgrestUpsert(
+                'feedback_helpfulness_ratings',
+                'feedback_id,user_id',
+                this._helpfulnessUpsertBody(fid, {
+                    is_helpful: ui.isHelpful,
+                    report_text: text
+                })
+            );
+            ui.reportText = text;
+            ui.dirty = false;
+            Logger.log('search-output: QA review submitted — feedback ' + fid + ' (' + text.length + ' chars)');
+        } catch (e) {
+            Logger.warn('search-output: QA review submit failed — feedback ' + fid, e);
+        } finally {
+            ui.submitting = false;
+            this._patchHelpfulnessBlock(fid);
+        }
+    },
+
+    _handleQaReviewRemovePrompt(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        if (ui.submitting || ui.reportText == null) return;
+        ui.confirmingRemove = true;
+        this._patchHelpfulnessBlock(fid);
+    },
+
+    _handleQaReviewRemoveCancel(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        ui.confirmingRemove = false;
+        this._patchHelpfulnessBlock(fid);
+    },
+
+    async _handleQaReviewRemoveConfirm(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        if (ui.submitting) return;
+
+        ui.submitting = true;
+        this._patchHelpfulnessBlock(fid);
+        try {
+            await this._dashPostgrestUpsert(
+                'feedback_helpfulness_ratings',
+                'feedback_id,user_id',
+                this._helpfulnessUpsertBody(fid, { report_text: null })
+            );
+            ui.reportText = null;
+            ui.localText = '';
+            ui.dirty = false;
+            ui.confirmingRemove = false;
+            Logger.log('search-output: QA review removed — feedback ' + fid);
+        } catch (e) {
+            Logger.warn('search-output: QA review remove failed — feedback ' + fid, e);
+        } finally {
+            ui.submitting = false;
+            this._patchHelpfulnessBlock(fid);
+        }
     },
 
     async _switchFleetTeam(teamId) {
@@ -3340,19 +3675,33 @@ const searchOutputMethods = {
                 (it) => taskIdSet.has(it.task.id) && !it.hydrated
             );
             await this._hydrateDisputesForItems(hydratedItems, profilesMap);
+            const feedbackIdsToLoad = [];
             for (const item of this._state.cachedItems || []) {
                 if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
                 if (hist) {
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    for (const entry of hist.allFeedback || []) {
+                        if (entry.id) feedbackIdsToLoad.push(entry.id);
+                    }
                     if (item.selectedFeedbackId) {
+                        feedbackIdsToLoad.push(item.selectedFeedbackId);
                         const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                         if (entry && entry.display) item.qaFeedback = entry.display;
                     }
                 }
                 item.hydrated = true;
                 updated++;
+            }
+            const uniqueFeedbackIds = [...new Set(feedbackIdsToLoad.map((id) => String(id).trim()).filter(Boolean))];
+            if (uniqueFeedbackIds.length > 0) {
+                try {
+                    await this._fetchHelpfulnessRatingsBatch(uniqueFeedbackIds);
+                    for (const id of uniqueFeedbackIds) this._patchHelpfulnessBlock(id);
+                } catch (e) {
+                    Logger.warn('search-output: helpfulness hydration failed', e);
+                }
             }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
@@ -5831,7 +6180,7 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
-    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
@@ -5891,6 +6240,13 @@ const searchOutputMethods = {
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
             : '';
+        const helpfulnessHtml = feedbackId
+            ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-helpfulness="${dashEscHtml(String(feedbackId))}">
+                    ${this._helpfulnessBlockHtml(String(feedbackId))}
+                </div>
+            </div>`
+            : '';
         return `
             <div style="margin-top: 12px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
@@ -5904,6 +6260,7 @@ const searchOutputMethods = {
                 ${reviewerHtml}
                 ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
                 ${blocks}
+                ${helpfulnessHtml}
             </div>`;
     },
 
@@ -6092,11 +6449,11 @@ const searchOutputMethods = {
         const versionActionEntry = feedbackEntries.length ? feedbackEntries[feedbackEntries.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const feedbackHtml = feedbackEntries.map((entry) => {
-            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx);
+            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id);
             const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
             return qaHtml + linkedDisputes;
         }).join('');
-        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx) : '';
+        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null) : '';
         const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
         return `
@@ -6141,7 +6498,7 @@ const searchOutputMethods = {
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
             </div>`;
         if (item.qaFeedback) {
-            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx);
+            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null);
         }
         const disputes = item.disputes || [];
         if (disputes.length > 0) {
@@ -6699,6 +7056,47 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
                 return;
             }
+            const thumbBtn = e.target.closest('[data-wf-dash-thumb]');
+            if (thumbBtn && modal.contains(thumbBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = thumbBtn.getAttribute('data-wf-dash-feedback-id');
+                const dir = thumbBtn.getAttribute('data-wf-dash-thumb');
+                if (fid && dir) void dash._handleThumbClick(fid, dir);
+                return;
+            }
+            const qaReviewSubmitBtn = e.target.closest('[data-wf-dash-qa-review-submit]');
+            if (qaReviewSubmitBtn && modal.contains(qaReviewSubmitBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewSubmitBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) void dash._handleQaReviewSubmit(fid);
+                return;
+            }
+            const qaReviewRemoveBtn = e.target.closest('[data-wf-dash-qa-review-remove]');
+            if (qaReviewRemoveBtn && modal.contains(qaReviewRemoveBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewRemoveBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) dash._handleQaReviewRemovePrompt(fid);
+                return;
+            }
+            const qaReviewConfirmBtn = e.target.closest('[data-wf-dash-qa-review-confirm]');
+            if (qaReviewConfirmBtn && modal.contains(qaReviewConfirmBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewConfirmBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) void dash._handleQaReviewRemoveConfirm(fid);
+                return;
+            }
+            const qaReviewCancelBtn = e.target.closest('[data-wf-dash-qa-review-cancel]');
+            if (qaReviewCancelBtn && modal.contains(qaReviewCancelBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewCancelBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) dash._handleQaReviewRemoveCancel(fid);
+                return;
+            }
             const addToDiffBtn = e.target.closest('[data-wf-dash-add-to-diff]');
             if (addToDiffBtn && modal.contains(addToDiffBtn)) {
                 e.stopPropagation();
@@ -6751,13 +7149,20 @@ function attachSearchOutputListeners(modal, dash) {
             ui.selectedDisplayNo = displayNo;
             dash._patchTaskCard(itemId);
         });
+        modal.addEventListener('input', (e) => {
+            const ta = e.target.closest('[data-wf-dash-qa-review-input]');
+            if (ta && modal.contains(ta)) {
+                const fid = ta.getAttribute('data-wf-dash-feedback-id');
+                if (fid) dash._handleQaReviewInput(fid, ta.value);
+            }
+        });
 }
 
 const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.56',
+    _version: '1.57',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
