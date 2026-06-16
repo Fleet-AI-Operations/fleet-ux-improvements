@@ -791,7 +791,10 @@ const searchOutputMethods = {
         return (feedbackRows || []).filter((fb) => fb && idSet.has(fb.eval_task_id));
     },
 
-    async _fetchDisputesBulkPages(teamIds, statusParam, afterIso, beforeIso, contributorSet) {
+    async _fetchDisputesBulkPages(teamIds, statusParam, afterIso, beforeIso, contributorSet, options) {
+        const fleetWebChannel = (options && Object.prototype.hasOwnProperty.call(options, 'fleetWebChannel'))
+            ? options.fleetWebChannel
+            : 'search';
         const allRows = [];
         let offset = 0;
         let pageNum = 0;
@@ -811,7 +814,10 @@ const searchOutputMethods = {
             if (beforeIso) qs.set('createdBefore', beforeIso);
             let page;
             try {
-                page = await this._fleetWebGetSearch(this._dashFleetWebPath('disputes_list') + '?' + qs.toString());
+                page = await this._fleetWebGet(
+                    this._dashFleetWebPath('disputes_list') + '?' + qs.toString(),
+                    fleetWebChannel
+                );
             } catch (e) {
                 Logger.warn('dashboard: disputes bulk fetch failed' + (statusParam ? ' (' + statusParam + ')' : ''), e);
                 break;
@@ -985,7 +991,9 @@ const searchOutputMethods = {
                 return;
             }
             Logger.log('dashboard: resolved disputes prefetch started — ' + teamIds.length + ' team(s)');
-            const { rows, capped } = await this._fetchDisputesBulkPages(teamIds, 'resolved', null, null, null);
+            const { rows, capped } = await this._fetchDisputesBulkPages(
+                teamIds, 'resolved', null, null, null, { fleetWebChannel: null }
+            );
             this._state.resolvedDisputesByTaskId = this._indexResolvedDisputeRows(rows);
             this._state.resolvedDisputesBulkIncomplete = capped;
             this._state.resolvedDisputesPrefetchStatus = 'done';
@@ -6749,7 +6757,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.55',
+    _version: '1.56',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
