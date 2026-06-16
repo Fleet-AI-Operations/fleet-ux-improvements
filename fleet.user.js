@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/optimize] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.5.1
+// @version      9.5.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.5.1';
+    const VERSION = '9.5.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -371,7 +371,8 @@
             GM_setValue(STORAGE_PREFIX + key, value);
         },
         getPluginEnabled(pluginId) {
-            const plugin = PluginManager.get(pluginId);
+            const pm = Context.pluginManager;
+            const plugin = pm ? pm.get(pluginId) : null;
             const defaultValue = plugin ? (plugin.enabledByDefault !== false) : true;
             return this.get(`plugin-${pluginId}-enabled`, defaultValue);
         },
@@ -454,7 +455,7 @@
             let clearedCount = 0;
             
             // Clear all plugin-related storage
-            const allPlugins = plugins || (typeof PluginManager !== 'undefined' ? PluginManager.getAll() : []);
+            const allPlugins = plugins || (Context.pluginManager ? Context.pluginManager.getAll() : []);
             allPlugins.forEach(plugin => {
                 // Clear plugin enabled state
                 this.delete(`plugin-${plugin.id}-enabled`);
@@ -640,7 +641,7 @@
             if (typeof this._moduleLogEnabled[moduleId] === 'undefined') {
                 const storageOn = Storage.getModuleLoggingEnabled(moduleId);
                 let remoteOn = false;
-                const reg = typeof PluginManager !== 'undefined' ? PluginManager.get(moduleId) : null;
+                const reg = Context.pluginManager ? Context.pluginManager.get(moduleId) : null;
                 const file = reg && reg._sourceFile;
                 if (file && Context.remoteModuleLogByFile && Context.remoteModuleLogByFile[file]) {
                     remoteOn = true;
@@ -2989,6 +2990,8 @@
                 });
         }
     };
+
+    Context.pluginManager = PluginManager;
 
     // ============= MAIN INITIALIZATION =============
     let mainObserver = null;
