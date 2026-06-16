@@ -2780,7 +2780,7 @@ const searchOutputMethods = {
             }
         }
 
-        const allFeedbackRows = [...feedbackRows];
+        let allFeedbackRows = [...feedbackRows];
 
         this._setSearchLoadPhase('Assembling results…');
         const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
@@ -7589,7 +7589,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.66',
+    _version: '1.67',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
