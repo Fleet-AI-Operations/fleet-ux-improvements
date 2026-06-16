@@ -13,6 +13,8 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
+const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width';
+const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
 const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
 const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
@@ -27,6 +29,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
     { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
     { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-qa-helpfulness', optionsKey: 'qaHelpfulness', draftKey: 'qaHelpfulness' },
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
@@ -91,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.36',
+    _version: '5.42',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -239,11 +242,15 @@ const plugin = {
             cardUi: {},
             taskOpenUi: {},
             disputeClaimUi: {},
+            helpfulnessUi: {},
             userStoryUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
             searchFetchActive: false,
+            disputeSearchHydrationActive: false,
+            disputeIngestQueue: null,
+            searchGeneration: 0,
             targetIdsCacheKey: '',
             targetIdsCache: null,
             msDropdownOpen: {},
@@ -313,7 +320,10 @@ const plugin = {
                     }
                 }
             }
-            requestAnimationFrame(() => this._applyAllSidePanelWidths());
+            requestAnimationFrame(() => {
+                this._applyAllSidePanelWidths();
+                this._applyAllResultsPanelMaxWidths();
+            });
             Logger.log('dashboard: opened');
         } catch (e) {
             Logger.error('dashboard: open failed', e);
@@ -404,6 +414,7 @@ const plugin = {
             this._modal = modal;
             this._built = true;
             this._splitResizeAttached = false;
+            this._resultsWidthResizeAttached = false;
             this._attachListeners();
             this._ensureSpinnerKeyframes();
             this._ensureMsOptionStyles();
@@ -412,7 +423,9 @@ const plugin = {
             this._ensureUserStoryStyles();
             this._ensureSplitPanelResizeStyles();
             this._attachSplitPanelResize();
+            this._attachResultsPanelWidthResize();
             this._applyAllSidePanelWidths();
+            this._applyAllResultsPanelMaxWidths();
             this._syncDashboardUpdateMode();
             this._syncAllMsDropdowns();
             for (const tab of this._tabs) {
@@ -1012,8 +1025,8 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-btn--secondary {',
             '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: var(--background, #fff);',
-            '  color: var(--brand, var(--primary, #2563eb));',
+            '  background: #000;',
+            '  color: #fff;',
             '}',
             '#wf-dash-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
             '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
@@ -1094,6 +1107,29 @@ const plugin = {
         }
     },
 
+    _readResultsPanelMaxWidthPref() {
+        try {
+            const raw = this._pageWindow().localStorage.getItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+            if (raw == null || raw === '') return null;
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_RESULTS_WIDTH) return n;
+        } catch (_e) { /* fall through */ }
+        return null;
+    },
+
+    _writeResultsPanelMaxWidthPref(widthPx) {
+        try {
+            if (widthPx == null) {
+                this._pageWindow().localStorage.removeItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+                return;
+            }
+            const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
+            this._pageWindow().localStorage.setItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
+        } catch (e) {
+            Logger.warn('dashboard: failed to write results panel max width pref', e);
+        }
+    },
+
     _splitPanelHandleStyle() {
         return 'flex-shrink: 0; width: 8px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
             + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;';
@@ -1105,10 +1141,28 @@ const plugin = {
             + ' style="' + this._splitPanelHandleStyle() + '"></div>';
     },
 
+    _resultsPanelWidthHandleHtml() {
+        return '<div data-wf-dash-results-width-handle role="separator" aria-orientation="vertical"'
+            + ' aria-label="Resize results panel max width" tabindex="0" title="Drag to set results panel max width"'
+            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+    },
+
     _splitPanelAsideStyle(widthPx) {
         const w = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx || DASH_SIDE_PANEL_MIN_WIDTH));
         return 'width: ' + w + 'px; min-width: ' + DASH_SIDE_PANEL_MIN_WIDTH + 'px; flex-shrink: 0;'
             + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
+    },
+
+    _splitPanelRightHtml(rightHtml, scopeKey) {
+        if (scopeKey !== 'dashboard') {
+            return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
+                + rightHtml + '</div>';
+        }
+        return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: row; overflow: hidden;">'
+            + '<div data-wf-dash-results-column style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
+            + rightHtml + '</div>'
+            + this._resultsPanelWidthHandleHtml()
+            + '</div>';
     },
 
     _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
@@ -1117,19 +1171,40 @@ const plugin = {
         return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
-            + '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
-            + rightHtml + '</div></section>';
+            + this._splitPanelRightHtml(rightHtml, scope)
+            + '</section>';
     },
 
     splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
         return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey);
     },
 
+    _splitPanelHandleReserve(scopeKey) {
+        return scopeKey === 'dashboard' ? 32 : 16;
+    },
+
+    _availableResultsPanelWidth(root) {
+        const rootW = root ? root.getBoundingClientRect().width : 0;
+        const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
+        const basis = rootW > 0 ? rootW : fallbackW;
+        const left = root ? root.querySelector('[data-wf-dash-split-left]') : null;
+        const leftW = left ? left.getBoundingClientRect().width : DASH_SIDE_PANEL_MIN_WIDTH;
+        const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
+        const handleReserve = this._splitPanelHandleReserve(scope);
+        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve));
+    },
+
+    _clampResultsPanelMaxWidth(root, widthPx) {
+        const available = this._availableResultsPanelWidth(root);
+        return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(available, widthPx)));
+    },
+
     _clampSidePanelWidth(root, widthPx) {
         const rootW = root ? root.getBoundingClientRect().width : 0;
         const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
         const basis = rootW > 0 ? rootW : fallbackW;
-        const handleReserve = 16;
+        const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
+        const handleReserve = this._splitPanelHandleReserve(scope);
         const viewportW = this._pageWindow().innerWidth || basis;
         const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
@@ -1158,6 +1233,35 @@ const plugin = {
             const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
             const pref = this._readSidePanelWidthPref(scope);
             this._applySidePanelWidth(root, pref);
+        });
+    },
+
+    _applyResultsPanelMaxWidth(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const col = root.querySelector('[data-wf-dash-results-column]');
+        if (!col) return;
+        const pref = this._readResultsPanelMaxWidthPref();
+        const available = this._availableResultsPanelWidth(root);
+        if (!pref) {
+            col.style.flex = '1';
+            col.style.minWidth = '0';
+            col.style.width = '';
+            col.style.maxWidth = '';
+            return;
+        }
+        const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(available, pref));
+        col.style.flex = '0 0 auto';
+        col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
+        col.style.width = clamped + 'px';
+        col.style.maxWidth = clamped + 'px';
+    },
+
+    _applyAllResultsPanelMaxWidths() {
+        if (!this._modal) return;
+        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+            this._applyResultsPanelMaxWidth(root);
         });
     },
 
@@ -1247,31 +1351,26 @@ const plugin = {
             '  cursor: pointer;',
             '  flex-shrink: 0;',
             '  font-family: inherit;',
-            '  transition: background-color 160ms ease-in;',
+            '  transition: background 0.15s, border-color 0.15s, color 0.15s;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove {',
             '  background: #dc2626;',
             '  color: #fff;',
             '}',
-            '#wf-dash-modal .wf-dash-card-action--get-verifier {',
-            '  width: auto;',
-            '  min-width: 5.5rem;',
-            '  padding: 0 8px;',
-            '  background: #64748b;',
-            '  color: #fff;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action--get-verifier:hover {',
-            '  background: #475569;',
-            '}',
+            '#wf-dash-modal .wf-dash-card-action--get-verifier,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
             '  width: auto;',
             '  min-width: 5.5rem;',
             '  padding: 0 8px;',
-            '  background: #64748b;',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: #000;',
             '  color: #fff;',
             '}',
+            '#wf-dash-modal .wf-dash-card-action--get-verifier:hover,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
-            '  background: #475569;',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--brand, var(--primary, #2563eb));',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove:hover {',
             '  background: #b91c1c;',
@@ -1316,7 +1415,9 @@ const plugin = {
         style.id = 'wf-dash-split-resize-style';
         style.textContent = [
             '[data-wf-dash-split-handle]:hover,',
-            '[data-wf-dash-split-handle]:active {',
+            '[data-wf-dash-split-handle]:active,',
+            '[data-wf-dash-results-width-handle]:hover,',
+            '[data-wf-dash-results-width-handle]:active {',
             '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
             '}'
         ].join('\n');
@@ -1334,22 +1435,67 @@ const plugin = {
             const root = handle.closest('[data-wf-dash-split-root]');
             const left = root ? root.querySelector('[data-wf-dash-split-left]') : null;
             if (!root || !left) return;
+            const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
             const startX = e.clientX;
             const startWidth = left.getBoundingClientRect().width;
             const onMove = (ev) => {
                 const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
                 this._applySidePanelWidth(root, next);
+                if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
             };
             const onUp = () => {
                 doc.removeEventListener('mousemove', onMove);
                 doc.removeEventListener('mouseup', onUp);
                 doc.body.style.cursor = '';
                 doc.body.style.userSelect = '';
-                const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
                 const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
                 this._writeSidePanelWidthPref(finalWidth, scope);
                 this._applySidePanelWidth(root, finalWidth);
+                if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
                 Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
+            };
+            doc.body.style.cursor = 'col-resize';
+            doc.body.style.userSelect = 'none';
+            doc.addEventListener('mousemove', onMove);
+            doc.addEventListener('mouseup', onUp);
+        });
+    },
+
+    _attachResultsPanelWidthResize() {
+        if (!this._modal || this._resultsWidthResizeAttached) return;
+        this._resultsWidthResizeAttached = true;
+        const doc = this._pageWindow().document;
+        this._modal.addEventListener('mousedown', (e) => {
+            const handle = e.target.closest('[data-wf-dash-results-width-handle]');
+            if (!handle || !this._modal.contains(handle)) return;
+            e.preventDefault();
+            const root = handle.closest('[data-wf-dash-split-root]');
+            const col = root ? root.querySelector('[data-wf-dash-results-column]') : null;
+            if (!root || !col) return;
+            const colLeft = col.getBoundingClientRect().left;
+            const onMove = (ev) => {
+                const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
+                col.style.flex = '0 0 auto';
+                col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
+                col.style.width = next + 'px';
+                col.style.maxWidth = next + 'px';
+            };
+            const onUp = () => {
+                doc.removeEventListener('mousemove', onMove);
+                doc.removeEventListener('mouseup', onUp);
+                doc.body.style.cursor = '';
+                doc.body.style.userSelect = '';
+                const available = this._availableResultsPanelWidth(root);
+                const finalWidth = this._clampResultsPanelMaxWidth(root, col.getBoundingClientRect().width);
+                if (finalWidth >= available - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                    this._writeResultsPanelMaxWidthPref(null);
+                    this._applyResultsPanelMaxWidth(root);
+                    Logger.log('dashboard: results panel max width cleared (full width)');
+                } else {
+                    this._writeResultsPanelMaxWidthPref(finalWidth);
+                    this._applyResultsPanelMaxWidth(root);
+                    Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
+                }
             };
             doc.body.style.cursor = 'col-resize';
             doc.body.style.userSelect = 'none';
@@ -1515,6 +1661,7 @@ const plugin = {
                     if (this._isOpen()) {
                         this._repositionOpenFlyouts();
                         this._applyAllSidePanelWidths();
+                        this._applyAllResultsPanelMaxWidths();
                     }
                 }, 100);
             }, { passive: true });
@@ -2272,7 +2419,10 @@ const plugin = {
             Context.opsTab.revalidateOnDashboardTabActivated(this._modal);
         }
         if (tabId === 'search-output' || tabId === 'team-members' || tabId === 'diff-viewer') {
-            requestAnimationFrame(() => this._applyAllSidePanelWidths());
+            requestAnimationFrame(() => {
+                this._applyAllSidePanelWidths();
+                this._applyAllResultsPanelMaxWidths();
+            });
         }
     },
 

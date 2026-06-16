@@ -32,6 +32,12 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     flagged: 'Flagged',
     escalated: 'Escalated'
 };
+const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
+const DASH_LIB_QA_HELPFULNESS_LABELS = {
+    helpful: 'Helpful',
+    not_helpful: 'Not helpful',
+    written_review: 'Written review'
+};
 
 const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
 const DASH_LIB_VERIFIER_FAILURE_BADGE = 'Verifier Generation Error';
@@ -292,7 +298,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -395,7 +401,12 @@ const plugin = {
             isUniversalSearchParams: bind(self._isUniversalSearchParams),
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
-            qaTextBlockLabel: bind(self._qaTextBlockLabel)
+            qaTextBlockLabel: bind(self._qaTextBlockLabel),
+
+            QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
+            QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
+            itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
+            itemQaHelpfulness: bind(self._itemQaHelpfulness)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -749,7 +760,44 @@ const plugin = {
         return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
     },
 
-    _applyClientWorkerOutputFilters(items, filters, listBounds) {
+    _itemFeedbackIdsForHelpfulness(item) {
+        const task = item && item.task;
+        if (!task) return [];
+        if (item.selectedFeedbackId) return [String(item.selectedFeedbackId)];
+        const ids = [];
+        for (const entry of task.allFeedback || []) {
+            if (entry.display && (entry.display.isSystemFeedback || entry.display.isVerifierFailure)) continue;
+            if (entry.id) ids.push(String(entry.id));
+        }
+        return ids;
+    },
+
+    _itemQaHelpfulness(item, helpfulnessUi) {
+        const uiMap = helpfulnessUi || {};
+        const flags = new Set();
+        for (const fid of this._itemFeedbackIdsForHelpfulness(item)) {
+            const ui = uiMap[fid];
+            if (!ui) continue;
+            if (ui.isHelpful === true) flags.add('helpful');
+            if (ui.isHelpful === false) flags.add('not_helpful');
+            const reviewText = ui.reportText != null ? String(ui.reportText).trim() : '';
+            if (reviewText.length > 0) flags.add('written_review');
+        }
+        return [...flags];
+    },
+
+    _itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, forceIncludeId) {
+        const selected = draft.qaHelpfulness || [];
+        const count = (listBounds.qaHelpfulness || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemQaHelpfulness(item, helpfulnessUi), effective, count);
+    },
+
+    _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
         const bounds = listBounds || {};
@@ -766,6 +814,13 @@ const plugin = {
         if (promptHistoryCount > 0) {
             passed = passed.filter((item) => dashLibPassesDimension(
                 this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
+            ));
+        }
+        const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
+        const qaHelpfulnessCount = (bounds.qaHelpfulness || []).length;
+        if (qaHelpfulnessCount > 0) {
+            passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
+                item, f, bounds, helpfulnessUi
             ));
         }
         const queryActive = regex
@@ -976,7 +1031,7 @@ const plugin = {
     },
 
     _applyFiltersAndSort(cachedItems, filters, listBounds, sortContext) {
-        const filtered = this._applyClientWorkerOutputFilters(cachedItems, filters, listBounds);
+        const filtered = this._applyClientWorkerOutputFilters(cachedItems, filters, listBounds, sortContext);
         const sortMetric = (filters && filters.sortMetric) || 'task_submitted';
         const sortOrder = (filters && filters.sortOrder) === 'asc' ? 'asc' : 'desc';
         return this._sortWorkerOutputItems(filtered, sortMetric, sortOrder, sortContext || null);
@@ -1001,6 +1056,7 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
         result.promptHistory = new Set();
+        result.qaHelpfulness = new Set();
         return result;
     },
 
@@ -1027,6 +1083,18 @@ const plugin = {
             ));
             if (!hasMatch) irrelevantHistory.add(id);
         }
+        const helpfulnessUi = (options && options.helpfulnessUi) || {};
+        const helpfulnessOptions = (options && options.qaHelpfulness) || [];
+        const irrelevantHelpfulness = result.qaHelpfulness;
+        for (const { id } of helpfulnessOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemQaHelpfulness(item, helpfulnessUi).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id)
+            ));
+            if (!hasMatch) irrelevantHelpfulness.add(id);
+        }
         return result;
     },
 
@@ -1035,6 +1103,7 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Map()])
         );
         result.promptHistory = new Map();
+        result.qaHelpfulness = new Map();
         return result;
     },
 
@@ -1053,6 +1122,11 @@ const plugin = {
         const selectedHistory = effective.promptHistory || [];
         if (allHistory.length > 0 && selectedHistory.length === 0) {
             effective.promptHistory = [...allHistory];
+        }
+        const allHelpfulness = bounds.qaHelpfulness || [];
+        const selectedHelpfulness = effective.qaHelpfulness || [];
+        if (allHelpfulness.length > 0 && selectedHelpfulness.length === 0) {
+            effective.qaHelpfulness = [...allHelpfulness];
         }
         return effective;
     },
@@ -1080,6 +1154,18 @@ const plugin = {
                 && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, id)
             )).length;
             historyCounts.set(id, count);
+        }
+        const helpfulnessUi = (options && options.helpfulnessUi) || {};
+        const helpfulnessOptions = (options && options.qaHelpfulness) || [];
+        const helpfulnessCounts = result.qaHelpfulness;
+        for (const { id } of helpfulnessOptions) {
+            const count = items.filter((item) => (
+                this._itemQaHelpfulness(item, helpfulnessUi).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id)
+            )).length;
+            helpfulnessCounts.set(id, count);
         }
         return result;
     },
