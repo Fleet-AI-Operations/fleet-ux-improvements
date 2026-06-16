@@ -298,7 +298,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.7',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -827,7 +827,6 @@ const plugin = {
         const fuzzy = f.fuzzy || false;
         const caseSensitive = f.caseSensitive || false;
         const regex = Boolean(f.regex);
-        const searchHiddenVersions = f.searchHiddenVersions || false;
         const tasks = items.map((item) => item.task);
         const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
@@ -855,7 +854,7 @@ const plugin = {
         const out = [];
         for (const item of passed) {
             const { matched, extraVersionNos } = this._matchItemSubstring(
-                item, promptText, fuzzy, caseSensitive, searchHiddenVersions, regex
+                item, promptText, fuzzy, caseSensitive, true, regex
             );
             if (matched) {
                 out.push(this._annotateItem(item, extraVersionNos, promptText, caseSensitive, fuzzy, regex));

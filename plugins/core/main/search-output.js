@@ -3438,7 +3438,6 @@ const searchOutputMethods = {
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortMetric: sort.sortMetric,
             sortOrder: sort.sortOrder,
             manualFilters: [],
@@ -4704,9 +4703,6 @@ const searchOutputMethods = {
                                             <input type="checkbox" id="wf-dash-regex"> RegEx (ECMAScript)
                                         </label>
                                     </div>
-                                    <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
-                                        <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions (requires hydrated results)
-                                    </label>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
@@ -5526,7 +5522,6 @@ const searchOutputMethods = {
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
-        if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
@@ -5752,8 +5747,6 @@ const searchOutputMethods = {
             Logger.log('search-output: retrieve task loaded — ' + row.id + ' (fully hydrated)');
             const prompt = this._q('#wf-dash-prompt');
             if (prompt) prompt.value = '';
-            const hidden = this._q('#wf-dash-hidden-versions');
-            if (hidden) hidden.checked = false;
             const caseEl = this._q('#wf-dash-case');
             if (caseEl) caseEl.checked = false;
             const fuzzyEl = this._q('#wf-dash-fuzzy');
@@ -5935,8 +5928,6 @@ const searchOutputMethods = {
                     + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : ''));
                 const prompt = this._q('#wf-dash-prompt');
                 if (prompt) prompt.value = '';
-                const hidden = this._q('#wf-dash-hidden-versions');
-                if (hidden) hidden.checked = false;
                 const caseEl = this._q('#wf-dash-case');
                 if (caseEl) caseEl.checked = false;
                 const fuzzyEl = this._q('#wf-dash-fuzzy');
@@ -6022,8 +6013,6 @@ const searchOutputMethods = {
     _clearFilterUiFields() {
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
-        const hidden = this._q('#wf-dash-hidden-versions');
-        if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
         if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
@@ -6072,8 +6061,6 @@ const searchOutputMethods = {
         this._syncBulkHydrateUi();
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
-        const hidden = this._q('#wf-dash-hidden-versions');
-        if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
         if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
@@ -6091,7 +6078,6 @@ const searchOutputMethods = {
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortMetric: sort.sortMetric,
             sortOrder: sort.sortOrder
         });
@@ -7357,8 +7343,6 @@ function attachSearchOutputListeners(modal, dash) {
         }
         const caseEl = dash._q('#wf-dash-case');
         if (caseEl) caseEl.addEventListener('change', () => dash._updateSubstringErrorUi());
-        const hiddenVersions = dash._q('#wf-dash-hidden-versions');
-        if (hiddenVersions) hiddenVersions.addEventListener('change', () => dash._updateApplyFiltersUi());
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
@@ -7627,7 +7611,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.74',
+    _version: '1.75',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
