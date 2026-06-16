@@ -734,38 +734,28 @@ const searchOutputMethods = {
         const submitDisabled = !canSubmit ? ' disabled' : '';
         const submitStyle = !canSubmit ? ' opacity: 0.45; cursor: not-allowed;' : '';
         const textareaStyle = this._inputStyle()
-            + ' flex: 1; min-width: 0; min-height: 64px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 6px 8px; font-size: 12px; line-height: 1.4;';
+            + ' flex: 1; min-width: 120px; height: 28px; min-height: 28px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
 
         let removeHtml = '';
         if (ui.confirmingRemove) {
-            removeHtml = `<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; max-width: 180px;">
-                <span style="font-size: 11px; color: var(--muted-foreground, #64748b); text-align: right; line-height: 1.3;">Are you sure? This action cannot be undone.</span>
-                <div style="display: inline-flex; gap: 4px;">
-                    <button type="button" data-wf-dash-qa-review-confirm="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}"${ui.submitting ? ' disabled' : ''}>Confirm</button>
-                    <button type="button" data-wf-dash-qa-review-cancel="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}"${ui.submitting ? ' disabled' : ''}>Cancel</button>
-                </div>
-            </div>`;
+            removeHtml = `<span style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Are you sure?</span>
+                <button type="button" data-wf-dash-qa-review-confirm="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${ui.submitting ? ' disabled' : ''}>Confirm</button>
+                <button type="button" data-wf-dash-qa-review-cancel="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${ui.submitting ? ' disabled' : ''}>Cancel</button>`;
         } else if (hasSubmitted) {
             removeHtml = `<button type="button" data-wf-dash-qa-review-remove="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${ui.submitting ? ' disabled' : ''}>Remove Review</button>`;
         }
 
         return `
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">Helpfulness</span>
-                    <div style="display: inline-flex; align-items: center; gap: 4px;">
-                        <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
-                        <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
-                    </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Helpfulness</span>
+                <div style="display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                    <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
+                    <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <span style="font-weight: 600; color: var(--foreground, #0f172a);">QA Review</span>
-                    <div style="display: flex; align-items: flex-start; gap: 6px;">
-                        <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0; margin-top: 2px;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
-                        <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="3" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
-                        ${removeHtml}
-                    </div>
-                </div>
+                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">QA Review</span>
+                <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
+                <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="1" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
+                ${removeHtml}
             </div>`;
     },
 
@@ -7175,7 +7165,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.58',
+    _version: '1.59',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
