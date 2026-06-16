@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/optimize] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.5.0
+// @version      9.5.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.5.0';
+    const VERSION = '9.5.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -361,266 +361,6 @@
         root.appendChild(overlay);
     }
 
-    function runFleet() {
-    // ============= CLEANUP REGISTRY =============
-    const CleanupRegistry = {
-        _items: {
-            intervals: [],
-            timeouts: [],
-            observers: [],
-            eventListeners: [],
-            elements: [],
-        },
-        
-        registerInterval(id) {
-            this._items.intervals.push(id);
-            return id;
-        },
-        
-        registerTimeout(id) {
-            this._items.timeouts.push(id);
-            return id;
-        },
-        
-        registerObserver(observer) {
-            this._items.observers.push(observer);
-            return observer;
-        },
-        
-        registerEventListener(target, event, handler, options) {
-            this._items.eventListeners.push({ target, event, handler, options });
-            target.addEventListener(event, handler, options);
-        },
-        
-        registerElement(element) {
-            this._items.elements.push(element);
-            return element;
-        },
-        
-        cleanup() {
-            Logger.debug('Running cleanup...');
-            
-            this._items.intervals.forEach(id => clearInterval(id));
-            this._items.intervals = [];
-            
-            this._items.timeouts.forEach(id => clearTimeout(id));
-            this._items.timeouts = [];
-            
-            this._items.observers.forEach(obs => obs.disconnect());
-            this._items.observers = [];
-            
-            this._items.eventListeners.forEach(({ target, event, handler, options }) => {
-                target.removeEventListener(event, handler, options);
-            });
-            this._items.eventListeners = [];
-            
-            this._items.elements.forEach(el => {
-                if (el && el.parentNode) {
-                    el.parentNode.removeChild(el);
-                }
-            });
-            this._items.elements = [];
-            
-            Logger.debug('Cleanup complete');
-        }
-    };
-
-    // ============= URL PATTERN MATCHER =============
-    const UrlMatcher = {
-        /**
-         * Normalize URL by removing www subdomain for consistent matching
-         * @param {string} url - The URL to normalize
-         * @returns {string} - Normalized URL without www
-         */
-        _normalizeUrl(url) {
-            return url.replace(/^https:\/\/www\./, 'https://');
-        },
-        
-        /**
-         * Extract the path portion after the base URL
-         * Works with both www and non-www URLs
-         * @param {string} fullUrl - The complete URL
-         * @returns {string} - The path after BASE_URL
-         */
-        getPathFromUrl(fullUrl) {
-            // Normalize both URLs to handle www/non-www variations
-            const normalizedBase = this._normalizeUrl(BASE_URL);
-            const normalizedUrl = this._normalizeUrl(fullUrl);
-            
-            if (normalizedUrl.startsWith(normalizedBase)) {
-                // Remove base URL and any query string/hash
-                let path = normalizedUrl.slice(normalizedBase.length);
-                path = path.split('?')[0].split('#')[0];
-                // Remove trailing slash for consistent matching
-                if (path.endsWith('/') && path.length > 1) {
-                    path = path.slice(0, -1);
-                }
-                return path;
-            }
-
-            // noVNC instances live on a separate subdomain origin — return a synthetic
-            // path constant so detectArchetype() can still match the no-vnc archetype.
-            try {
-                const hostname = new URL(fullUrl).hostname;
-                if (NOVNC_HOST_PATTERN.test(hostname)) {
-                    return NOVNC_SYNTHETIC_PATH;
-                }
-            } catch (e) {}
-
-            return '';
-        },
-        
-        /**
-         * Convert a URL pattern to a regex
-         * Supports:
-         *   - Exact match: "dashboard" matches only "dashboard"
-         *   - Wildcard segment: "tasks/*" matches "tasks/123" but not "tasks/123/edit"
-         *   - Wildcard suffix: "tasks*" matches "tasks", "tasks123", "tasks/anything"
-         *   - Combined: "tasks/*\/review" matches "tasks/123/review"
-         * 
-         * @param {string} pattern - The URL pattern
-         * @returns {RegExp} - Compiled regex
-         */
-        patternToRegex(pattern) {
-            // Escape special regex characters (including '*', which we re-expand below)
-            let regexStr = pattern
-                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            
-            // Handle wildcards:
-            // /* at segment boundaries = match one segment (no slashes)
-            // * at end or mid-word = match anything including slashes
-            
-            // First, handle /*/  (wildcard segment in middle)
-            regexStr = regexStr.replace(/\/\\\*\//g, '/[^/]+/');
-            
-            // Handle /* at end (wildcard segment at end, must have content)
-            regexStr = regexStr.replace(/\/\\\*$/g, '/[^/]+');
-            
-            // Handle trailing * (match anything including empty)
-            regexStr = regexStr.replace(/\\\*$/g, '.*');
-            
-            // Handle remaining * (mid-pattern wildcards)
-            regexStr = regexStr.replace(/\\\*/g, '.*');
-            
-            // Anchor the pattern
-            return new RegExp(`^${regexStr}$`);
-        },
-        
-        /**
-         * Test if a path matches a pattern
-         * @param {string} path - The current path
-         * @param {string} pattern - The URL pattern to test
-         * @returns {boolean}
-         */
-        matches(path, pattern) {
-            const regex = this.patternToRegex(pattern);
-            const result = regex.test(path);
-            Logger.debug(`URL match test: "${path}" vs "${pattern}" (${regex}) = ${result}`);
-            return result;
-        },
-        
-        /**
-         * Calculate specificity score for a pattern (more specific = higher score)
-         * Used to determine which archetype takes precedence
-         * @param {string} pattern - The URL pattern
-         * @returns {number}
-         */
-        getSpecificity(pattern) {
-            let score = 0;
-            
-            // More segments = more specific
-            const segments = pattern.split('/').filter(s => s.length > 0);
-            score += segments.length * 10;
-            
-            // Literal segments are more specific than wildcards
-            segments.forEach(seg => {
-                if (seg === '*') {
-                    score += 1; // Wildcard segment
-                } else if (seg.includes('*')) {
-                    score += 3; // Partial wildcard
-                } else {
-                    score += 5; // Literal segment
-                }
-            });
-            
-            // Patterns ending in * are less specific
-            if (pattern.endsWith('*')) {
-                score -= 2;
-            }
-            
-            return score;
-        }
-    };
-
-    // ============= NAVIGATION MANAGER =============
-    const NavigationManager = {
-        _lastUrl: window.location.href,
-        _initialized: false,
-        _onNavigateCallbacks: [],
-        
-        init() {
-            if (this._initialized) return;
-            this._initialized = true;
-            
-            const originalPushState = history.pushState;
-            const originalReplaceState = history.replaceState;
-            const self = this;
-            
-            history.pushState = function(state, title, url) {
-                originalPushState.apply(this, arguments);
-                self._handleNavigation('pushState', url);
-            };
-            
-            history.replaceState = function(state, title, url) {
-                originalReplaceState.apply(this, arguments);
-                self._handleNavigation('replaceState', url);
-            };
-            
-            window.addEventListener('popstate', () => {
-                this._handleNavigation('popstate');
-            });
-            
-            Logger.log('✓ Navigation monitoring initialized');
-        },
-        
-        _handleNavigation(method, url) {
-            const newUrl = window.location.href;
-            
-            if (newUrl === this._lastUrl) {
-                Logger.debug(`Navigation method called (${method}) but URL unchanged`);
-                return;
-            }
-            
-            const previousUrl = this._lastUrl;
-            const previousPath = UrlMatcher.getPathFromUrl(previousUrl);
-            const nextPath = UrlMatcher.getPathFromUrl(newUrl);
-
-            this._lastUrl = newUrl;
-
-            if (previousPath === nextPath) {
-                Logger.debug('Query-only or hash-only URL change; skipping plugin navigation');
-                return;
-            }
-
-            Logger.log(`Navigation detected [${method}]: ${previousUrl} → ${newUrl}`);
-
-            this._onNavigateCallbacks.forEach(callback => {
-                try {
-                    callback(newUrl, previousUrl);
-                } catch (e) {
-                    Logger.error('Error in navigation callback:', e);
-                }
-            });
-        },
-        
-        onNavigate(callback) {
-            this._onNavigateCallbacks.push(callback);
-        },
-        
-        getCurrentUrl() {
-            return this._lastUrl;
-        }
-    };
 
     // ============= STORAGE MANAGER =============
     const Storage = {
@@ -1030,94 +770,6 @@
     };
 
     Context.logger = Logger;
-
-    Context.requestExtensionReload = (reason) => RefreshGuard.requestExtensionReload(reason);
-    RefreshGuard.init();
-
-    /**
-     * Read `logs` / per-plugin `log` from archetypes.json and merge into Context.
-     * Remote debug/verbose only apply when remote submodule is true. Per-file `log` follows
-     * the same submodule master gate as storage (via _shouldLogModule).
-     */
-    function applyArchetypeRemoteLoggingConfig(config) {
-        const logs = (config && config.logs) || {};
-        Context.remoteLogging = {
-            debug: logs.debug === true,
-            verbose: logs.verbose === true,
-            submodule: logs.submodule === true
-        };
-        const byFile = Object.create(null);
-        const ingestPluginList = (list) => {
-            if (!list || !Array.isArray(list)) return;
-            for (const def of list) {
-                if (def && typeof def === 'object' && def.name && def.log === true) {
-                    byFile[def.name] = true;
-                }
-            }
-        };
-        ingestPluginList(config.corePlugins);
-        ingestPluginList(config.devPlugins);
-        (config.archetypes || []).forEach((a) => ingestPluginList(a.plugins));
-        (config.devArchetypes || []).forEach((a) => ingestPluginList(a.plugins));
-        Context.remoteModuleLogByFile = byFile;
-        Logger._debugEnabled = null;
-        Logger._verboseEnabled = null;
-        Logger._submoduleEnabled = null;
-        Logger._moduleLogEnabled = {};
-    }
-
-    // ============= DOM SELECTORS (SAFE) =============
-    const DomUtils = {
-        _invalidSelectorLog: new Set(),
-        
-        _resolveRoot(options) {
-            return (options && options.root) ? options.root : document;
-        },
-        
-        _logInvalidSelector(selector, error, contextLabel) {
-            const key = `${contextLabel || 'unknown'}::${selector}`;
-            if (this._invalidSelectorLog.has(key)) return;
-            this._invalidSelectorLog.add(key);
-            const contextSuffix = contextLabel ? ` (${contextLabel})` : '';
-            Logger.error(`Invalid selector${contextSuffix}: "${selector}"`, error);
-        },
-        
-        query(selector, options = {}) {
-            if (!selector) return null;
-            const root = this._resolveRoot(options);
-            if (!root || !root.querySelector) return null;
-            try {
-                return root.querySelector(selector);
-            } catch (error) {
-                this._logInvalidSelector(selector, error, options.context);
-                return null;
-            }
-        },
-        
-        queryAll(selector, options = {}) {
-            if (!selector) return [];
-            const root = this._resolveRoot(options);
-            if (!root || !root.querySelectorAll) return [];
-            try {
-                return Array.from(root.querySelectorAll(selector));
-            } catch (error) {
-                this._logInvalidSelector(selector, error, options.context);
-                return [];
-            }
-        },
-        
-        closest(element, selector, options = {}) {
-            if (!element || !selector || !element.closest) return null;
-            try {
-                return element.closest(selector);
-            } catch (error) {
-                this._logInvalidSelector(selector, error, options.context);
-                return null;
-            }
-        }
-    };
-    
-    Context.dom = DomUtils;
 
     // ============= NETWORK OBSERVER =============
     /**
@@ -1661,6 +1313,356 @@
         refreshFromPage: (pageWindow) => NetworkObserver.refreshFromPage(pageWindow),
         decodeJwtPayload: (jwt) => FleetSessionAuth._decodeJwtPayload(jwt)
     };
+
+    function runFleet() {
+    // ============= CLEANUP REGISTRY =============
+    const CleanupRegistry = {
+        _items: {
+            intervals: [],
+            timeouts: [],
+            observers: [],
+            eventListeners: [],
+            elements: [],
+        },
+        
+        registerInterval(id) {
+            this._items.intervals.push(id);
+            return id;
+        },
+        
+        registerTimeout(id) {
+            this._items.timeouts.push(id);
+            return id;
+        },
+        
+        registerObserver(observer) {
+            this._items.observers.push(observer);
+            return observer;
+        },
+        
+        registerEventListener(target, event, handler, options) {
+            this._items.eventListeners.push({ target, event, handler, options });
+            target.addEventListener(event, handler, options);
+        },
+        
+        registerElement(element) {
+            this._items.elements.push(element);
+            return element;
+        },
+        
+        cleanup() {
+            Logger.debug('Running cleanup...');
+            
+            this._items.intervals.forEach(id => clearInterval(id));
+            this._items.intervals = [];
+            
+            this._items.timeouts.forEach(id => clearTimeout(id));
+            this._items.timeouts = [];
+            
+            this._items.observers.forEach(obs => obs.disconnect());
+            this._items.observers = [];
+            
+            this._items.eventListeners.forEach(({ target, event, handler, options }) => {
+                target.removeEventListener(event, handler, options);
+            });
+            this._items.eventListeners = [];
+            
+            this._items.elements.forEach(el => {
+                if (el && el.parentNode) {
+                    el.parentNode.removeChild(el);
+                }
+            });
+            this._items.elements = [];
+            
+            Logger.debug('Cleanup complete');
+        }
+    };
+
+    // ============= URL PATTERN MATCHER =============
+    const UrlMatcher = {
+        /**
+         * Normalize URL by removing www subdomain for consistent matching
+         * @param {string} url - The URL to normalize
+         * @returns {string} - Normalized URL without www
+         */
+        _normalizeUrl(url) {
+            return url.replace(/^https:\/\/www\./, 'https://');
+        },
+        
+        /**
+         * Extract the path portion after the base URL
+         * Works with both www and non-www URLs
+         * @param {string} fullUrl - The complete URL
+         * @returns {string} - The path after BASE_URL
+         */
+        getPathFromUrl(fullUrl) {
+            // Normalize both URLs to handle www/non-www variations
+            const normalizedBase = this._normalizeUrl(BASE_URL);
+            const normalizedUrl = this._normalizeUrl(fullUrl);
+            
+            if (normalizedUrl.startsWith(normalizedBase)) {
+                // Remove base URL and any query string/hash
+                let path = normalizedUrl.slice(normalizedBase.length);
+                path = path.split('?')[0].split('#')[0];
+                // Remove trailing slash for consistent matching
+                if (path.endsWith('/') && path.length > 1) {
+                    path = path.slice(0, -1);
+                }
+                return path;
+            }
+
+            // noVNC instances live on a separate subdomain origin — return a synthetic
+            // path constant so detectArchetype() can still match the no-vnc archetype.
+            try {
+                const hostname = new URL(fullUrl).hostname;
+                if (NOVNC_HOST_PATTERN.test(hostname)) {
+                    return NOVNC_SYNTHETIC_PATH;
+                }
+            } catch (e) {}
+
+            return '';
+        },
+        
+        /**
+         * Convert a URL pattern to a regex
+         * Supports:
+         *   - Exact match: "dashboard" matches only "dashboard"
+         *   - Wildcard segment: "tasks/*" matches "tasks/123" but not "tasks/123/edit"
+         *   - Wildcard suffix: "tasks*" matches "tasks", "tasks123", "tasks/anything"
+         *   - Combined: "tasks/*\/review" matches "tasks/123/review"
+         * 
+         * @param {string} pattern - The URL pattern
+         * @returns {RegExp} - Compiled regex
+         */
+        patternToRegex(pattern) {
+            // Escape special regex characters (including '*', which we re-expand below)
+            let regexStr = pattern
+                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // Handle wildcards:
+            // /* at segment boundaries = match one segment (no slashes)
+            // * at end or mid-word = match anything including slashes
+            
+            // First, handle /*/  (wildcard segment in middle)
+            regexStr = regexStr.replace(/\/\\\*\//g, '/[^/]+/');
+            
+            // Handle /* at end (wildcard segment at end, must have content)
+            regexStr = regexStr.replace(/\/\\\*$/g, '/[^/]+');
+            
+            // Handle trailing * (match anything including empty)
+            regexStr = regexStr.replace(/\\\*$/g, '.*');
+            
+            // Handle remaining * (mid-pattern wildcards)
+            regexStr = regexStr.replace(/\\\*/g, '.*');
+            
+            // Anchor the pattern
+            return new RegExp(`^${regexStr}$`);
+        },
+        
+        /**
+         * Test if a path matches a pattern
+         * @param {string} path - The current path
+         * @param {string} pattern - The URL pattern to test
+         * @returns {boolean}
+         */
+        matches(path, pattern) {
+            const regex = this.patternToRegex(pattern);
+            const result = regex.test(path);
+            Logger.debug(`URL match test: "${path}" vs "${pattern}" (${regex}) = ${result}`);
+            return result;
+        },
+        
+        /**
+         * Calculate specificity score for a pattern (more specific = higher score)
+         * Used to determine which archetype takes precedence
+         * @param {string} pattern - The URL pattern
+         * @returns {number}
+         */
+        getSpecificity(pattern) {
+            let score = 0;
+            
+            // More segments = more specific
+            const segments = pattern.split('/').filter(s => s.length > 0);
+            score += segments.length * 10;
+            
+            // Literal segments are more specific than wildcards
+            segments.forEach(seg => {
+                if (seg === '*') {
+                    score += 1; // Wildcard segment
+                } else if (seg.includes('*')) {
+                    score += 3; // Partial wildcard
+                } else {
+                    score += 5; // Literal segment
+                }
+            });
+            
+            // Patterns ending in * are less specific
+            if (pattern.endsWith('*')) {
+                score -= 2;
+            }
+            
+            return score;
+        }
+    };
+
+    // ============= NAVIGATION MANAGER =============
+    const NavigationManager = {
+        _lastUrl: window.location.href,
+        _initialized: false,
+        _onNavigateCallbacks: [],
+        
+        init() {
+            if (this._initialized) return;
+            this._initialized = true;
+            
+            const originalPushState = history.pushState;
+            const originalReplaceState = history.replaceState;
+            const self = this;
+            
+            history.pushState = function(state, title, url) {
+                originalPushState.apply(this, arguments);
+                self._handleNavigation('pushState', url);
+            };
+            
+            history.replaceState = function(state, title, url) {
+                originalReplaceState.apply(this, arguments);
+                self._handleNavigation('replaceState', url);
+            };
+            
+            window.addEventListener('popstate', () => {
+                this._handleNavigation('popstate');
+            });
+            
+            Logger.log('✓ Navigation monitoring initialized');
+        },
+        
+        _handleNavigation(method, url) {
+            const newUrl = window.location.href;
+            
+            if (newUrl === this._lastUrl) {
+                Logger.debug(`Navigation method called (${method}) but URL unchanged`);
+                return;
+            }
+            
+            const previousUrl = this._lastUrl;
+            const previousPath = UrlMatcher.getPathFromUrl(previousUrl);
+            const nextPath = UrlMatcher.getPathFromUrl(newUrl);
+
+            this._lastUrl = newUrl;
+
+            if (previousPath === nextPath) {
+                Logger.debug('Query-only or hash-only URL change; skipping plugin navigation');
+                return;
+            }
+
+            Logger.log(`Navigation detected [${method}]: ${previousUrl} → ${newUrl}`);
+
+            this._onNavigateCallbacks.forEach(callback => {
+                try {
+                    callback(newUrl, previousUrl);
+                } catch (e) {
+                    Logger.error('Error in navigation callback:', e);
+                }
+            });
+        },
+        
+        onNavigate(callback) {
+            this._onNavigateCallbacks.push(callback);
+        },
+        
+        getCurrentUrl() {
+            return this._lastUrl;
+        }
+    };
+
+
+    Context.requestExtensionReload = (reason) => RefreshGuard.requestExtensionReload(reason);
+    RefreshGuard.init();
+
+    /**
+     * Read `logs` / per-plugin `log` from archetypes.json and merge into Context.
+     * Remote debug/verbose only apply when remote submodule is true. Per-file `log` follows
+     * the same submodule master gate as storage (via _shouldLogModule).
+     */
+    function applyArchetypeRemoteLoggingConfig(config) {
+        const logs = (config && config.logs) || {};
+        Context.remoteLogging = {
+            debug: logs.debug === true,
+            verbose: logs.verbose === true,
+            submodule: logs.submodule === true
+        };
+        const byFile = Object.create(null);
+        const ingestPluginList = (list) => {
+            if (!list || !Array.isArray(list)) return;
+            for (const def of list) {
+                if (def && typeof def === 'object' && def.name && def.log === true) {
+                    byFile[def.name] = true;
+                }
+            }
+        };
+        ingestPluginList(config.corePlugins);
+        ingestPluginList(config.devPlugins);
+        (config.archetypes || []).forEach((a) => ingestPluginList(a.plugins));
+        (config.devArchetypes || []).forEach((a) => ingestPluginList(a.plugins));
+        Context.remoteModuleLogByFile = byFile;
+        Logger._debugEnabled = null;
+        Logger._verboseEnabled = null;
+        Logger._submoduleEnabled = null;
+        Logger._moduleLogEnabled = {};
+    }
+
+    // ============= DOM SELECTORS (SAFE) =============
+    const DomUtils = {
+        _invalidSelectorLog: new Set(),
+        
+        _resolveRoot(options) {
+            return (options && options.root) ? options.root : document;
+        },
+        
+        _logInvalidSelector(selector, error, contextLabel) {
+            const key = `${contextLabel || 'unknown'}::${selector}`;
+            if (this._invalidSelectorLog.has(key)) return;
+            this._invalidSelectorLog.add(key);
+            const contextSuffix = contextLabel ? ` (${contextLabel})` : '';
+            Logger.error(`Invalid selector${contextSuffix}: "${selector}"`, error);
+        },
+        
+        query(selector, options = {}) {
+            if (!selector) return null;
+            const root = this._resolveRoot(options);
+            if (!root || !root.querySelector) return null;
+            try {
+                return root.querySelector(selector);
+            } catch (error) {
+                this._logInvalidSelector(selector, error, options.context);
+                return null;
+            }
+        },
+        
+        queryAll(selector, options = {}) {
+            if (!selector) return [];
+            const root = this._resolveRoot(options);
+            if (!root || !root.querySelectorAll) return [];
+            try {
+                return Array.from(root.querySelectorAll(selector));
+            } catch (error) {
+                this._logInvalidSelector(selector, error, options.context);
+                return [];
+            }
+        },
+        
+        closest(element, selector, options = {}) {
+            if (!element || !selector || !element.closest) return null;
+            try {
+                return element.closest(selector);
+            } catch (error) {
+                this._logInvalidSelector(selector, error, options.context);
+                return null;
+            }
+        }
+    };
+    
+    Context.dom = DomUtils;
 
     // ============= ARCHETYPE MANAGER =============
     const ArchetypeManager = {
@@ -3027,7 +3029,7 @@
         Logger.log('Initializing for current page...');
 
         try {
-            NetworkObserver.refreshFromPage(Context.getPageWindow());
+            Context.networkObserver.refreshFromPage(Context.getPageWindow());
         } catch (e) {
             Logger.debug('FleetSessionAuth: refreshFromPage on init failed', e);
         }
@@ -3267,8 +3269,7 @@
         console.log(`${LOG_PREFIX} v${VERSION}`);
         Logger.log('Starting...');
 
-        // NetworkObserver was started before the handshake delay to capture early requests.
-        // Calling init() again is a no-op if already initialized.
+        // NetworkObserver.init() runs at document-start (before handshake); idempotent if already installed.
         NetworkObserver.init();
 
         // Initialize navigation monitoring FIRST
