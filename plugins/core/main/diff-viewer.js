@@ -496,6 +496,22 @@ function _dvRemoveFromStash(taskId, modal) {
     }
 }
 
+function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
+    if (!taskId) return;
+    let removedSlots = 0;
+    for (let i = _dvState.slots.length - 1; i >= 0; i--) {
+        if (_dvState.slots[i].taskId === taskId) {
+            _dvState.slots.splice(i, 1);
+            removedSlots += 1;
+        }
+    }
+    _dvRemoveFromStash(taskId, modal);
+    if (removedSlots > 0) _dvRenderAll(modal);
+    Logger.log('diff-viewer: task removed from stash'
+        + (removedSlots > 0 ? ' and ' + removedSlots + ' comparison slot(s)' : '')
+        + ' — ' + taskId);
+}
+
 // ── Lens index resolution ──
 
 function _dvNextLensIndex(taskId, promptVersions) {
@@ -1619,7 +1635,7 @@ function _dvRenderStash(modal) {
                 <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
                 ${createdHtml}
             </div>
-            <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
+            <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash and diff view" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
         </div>`;
     });
     chips.innerHTML = html;
@@ -2178,7 +2194,7 @@ function _dvAttachListeners(modal, dash) {
             e.stopPropagation();
             const idx = parseInt(stashRemove.getAttribute('data-dv-stash-remove'), 10);
             const entry = _dvState.stash[idx];
-            if (entry) _dvRemoveFromStash(entry.taskId, modal);
+            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal);
             return;
         }
     });
@@ -2705,7 +2721,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.54',
+    _version: '1.55',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
