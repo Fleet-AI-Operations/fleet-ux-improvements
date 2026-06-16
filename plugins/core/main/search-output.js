@@ -4515,9 +4515,10 @@ const searchOutputMethods = {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
-        const label = ago ? `Created: ${formatted} (${ago})` : `Created: ${formatted}`;
-        const shell = this._cardTabShellBase() + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;';
-        return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + dashEscHtml(label) + '</div>';
+        const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
+        const inner = this._plainTimestampHtml(iso, 'Created');
+        const shell = this._cardTabShellBase() + ' background: ' + DASH_CARD_TAB_BG + '; font-weight: 400;';
+        return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + inner + '</div>';
     },
 
     _cardStatusTabHtml(task) {
@@ -6487,14 +6488,17 @@ const searchOutputMethods = {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
-    _plainTimestampHtml(iso) {
+    _plainTimestampHtml(iso, prefixLabel) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
         const agoHtml = ago
             ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
             : '';
         const formattedSpan = `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`;
-        return ago ? `${formattedSpan} ${agoHtml}` : formattedSpan;
+        const prefix = prefixLabel
+            ? `<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span> `
+            : '';
+        return ago ? `${prefix}${formattedSpan} ${agoHtml}` : `${prefix}${formattedSpan}`;
     },
 
     _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy, regex) {
@@ -7626,7 +7630,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.72',
+    _version: '1.73',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
