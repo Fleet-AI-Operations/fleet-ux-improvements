@@ -677,11 +677,45 @@ function _dvReelTrackOffset(lensIndex, slotsArea) {
     return _dvReelLensZoneTopInset() - lensIndex * stepH;
 }
 
+function _dvReelLensBounds(modal) {
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const cardH = _dvReelLensH(slotsArea);
+    const lensTop = _dvReelLensZoneTopInset();
+    return {
+        lensTop,
+        lensBottom: lensTop + cardH,
+        cardH,
+        stepH: _dvReelCardStepH(slotsArea)
+    };
+}
+
+function _dvReelContentOpacity(cardTop, cardBottom, bounds) {
+    const overlapTop = Math.max(cardTop, bounds.lensTop);
+    const overlapBottom = Math.min(cardBottom, bounds.lensBottom);
+    const overlap = Math.max(0, overlapBottom - overlapTop);
+    if (bounds.cardH <= 0) return 0;
+    return Math.min(1, overlap / bounds.cardH);
+}
+
+function _dvApplyReelContentOpacities(track, translateY, modal) {
+    if (!track || !modal) return;
+    const bounds = _dvReelLensBounds(modal);
+    track.querySelectorAll('.dv-reel-card').forEach((card, i) => {
+        const cardTop = translateY + i * bounds.stepH;
+        const cardBottom = cardTop + bounds.cardH;
+        const opacity = _dvReelContentOpacity(cardTop, cardBottom, bounds);
+        const content = card.querySelector('.dv-reel-card-content');
+        const target = content || card.querySelector('.dv-reel-empty-mark');
+        if (target) target.style.opacity = String(opacity);
+    });
+}
+
 function _dvSyncReelTrack(track, lensIndex, modal) {
     if (!track) return;
     const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
     const y = _dvReelTrackOffset(lensIndex, slotsArea);
     track.style.transform = 'translateY(' + y + 'px)';
+    _dvApplyReelContentOpacities(track, y, modal);
 }
 
 function _dvSyncAllReelTracks(modal) {
@@ -707,14 +741,29 @@ function _dvAnimateReelTrack(track, delta, modal, done) {
     const toY = fromY - delta * stepH;
     if (typeof track.animate !== 'function') {
         track.style.transform = 'translateY(' + toY + 'px)';
+        _dvApplyReelContentOpacities(track, toY, modal);
         if (done) done();
         return;
     }
     const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
-    track.animate(
+    const anim = track.animate(
         [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
         animOpts
-    ).addEventListener('finish', () => { if (done) done(); });
+    );
+    let rafId = 0;
+    const tick = () => {
+        _dvApplyReelContentOpacities(track, _dvParseTranslateY(track), modal);
+        if (anim.playState === 'running' || anim.playState === 'pending') {
+            rafId = requestAnimationFrame(tick);
+        }
+    };
+    rafId = requestAnimationFrame(tick);
+    anim.addEventListener('finish', () => {
+        cancelAnimationFrame(rafId);
+        track.style.transform = 'translateY(' + toY + 'px)';
+        _dvApplyReelContentOpacities(track, toY, modal);
+        if (done) done();
+    });
 }
 
 function _dvAnimateVersionTrack(track, viewport, delta, done) {
@@ -1461,7 +1510,7 @@ function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
-    return submitted + '<pre' + preAttr + '>' + prompt + '</pre>';
+    return '<div class="dv-reel-card-content">' + submitted + '<pre' + preAttr + '>' + prompt + '</pre></div>';
 }
 
 function _dvReelCardTrackHtml(slot, slotIdx) {
@@ -1830,7 +1879,8 @@ function _dvSyncReelLensHeights(modal) {
     const scrollTops = _dvState.slots.map((slot, i) => {
         const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
         const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
-        return card ? card.scrollTop : 0;
+        const content = card && card.querySelector('.dv-reel-card-content');
+        return content ? content.scrollTop : 0;
     });
     const unifiedChrome = _dvReelUnifiedChromeH();
 
@@ -1862,7 +1912,8 @@ function _dvSyncReelLensHeights(modal) {
     _dvState.slots.forEach((slot, i) => {
         const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
         const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
-        if (card) card.scrollTop = scrollTops[i] || 0;
+        const content = card && card.querySelector('.dv-reel-card-content');
+        if (content) content.scrollTop = scrollTops[i] || 0;
         if (track && !slot._lensAnimating) _dvSyncReelTrack(track, slot.lensIndex, modal);
     });
     if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
@@ -2510,12 +2561,17 @@ function _dvInjectStyles() {
         '  flex-shrink: 0;',
         '  height: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '  min-height: 0;',
-        '  overflow-y: auto;',
-        '  overflow-x: hidden;',
+        '  overflow: hidden;',
         '  padding: 8px 10px;',
         '  background: var(--background, #fff);',
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-reel-card-content {',
+        '  height: 100%;',
+        '  overflow-y: auto;',
+        '  overflow-x: hidden;',
         '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-diff-equal {',
@@ -2649,7 +2705,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.52',
+    _version: '1.53',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
