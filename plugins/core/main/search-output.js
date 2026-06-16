@@ -4505,16 +4505,25 @@ const searchOutputMethods = {
         return task.createdAt || '';
     },
 
+    _cardTabShellBase() {
+        return 'height: ' + DASH_CARD_TAB_HEIGHT
+            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+    },
+
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
         const label = ago ? `Created: ${formatted} (${ago})` : `Created: ${formatted}`;
-        const shell = 'height: ' + DASH_CARD_TAB_HEIGHT
-            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
-            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;'
-            + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;';
+        const shell = this._cardTabShellBase() + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;';
         return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + dashEscHtml(label) + '</div>';
+    },
+
+    _cardStatusTabHtml(task) {
+        const meta = this._statusDisplayMeta(task.status);
+        const shell = this._cardTabShellBase() + ' background: ' + meta.bg + '; color: ' + meta.color + ';';
+        return '<div style="' + shell + '" title="' + dashEscHtml(meta.label) + '" aria-label="' + dashEscHtml(meta.label) + '">' + dashEscHtml(meta.label) + '</div>';
     },
 
     _cardActionAreaHtml(itemId) {
@@ -6551,7 +6560,7 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${link}</span>`;
     },
 
-    _statusBadgeHtml(status) {
+    _statusDisplayMeta(status) {
         const key = (status || 'unknown').toLowerCase();
         let color = 'var(--muted-foreground, #64748b)';
         let bg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent)';
@@ -6559,7 +6568,12 @@ const searchOutputMethods = {
         if (key.includes('production')) { color = '#15803d'; bg = 'color-mix(in srgb, #16a34a 14%, transparent)'; }
         else if (key === 'bugged') { color = DASH_FLAGGED_COLOR; bg = DASH_FLAGGED_BG; label = 'Bugged'; }
         else if (key.includes('review')) { color = '#b45309'; bg = 'color-mix(in srgb, #d97706 14%, transparent)'; }
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(label)}</span>`;
+        return { color, bg, label };
+    },
+
+    _statusBadgeHtml(status) {
+        const meta = this._statusDisplayMeta(status);
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${meta.color}; background: ${meta.bg};">${dashEscHtml(meta.label)}</span>`;
     },
 
     _qaAlertBadgeStyle() {
@@ -6955,18 +6969,17 @@ const searchOutputMethods = {
             <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx }))}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
-                </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx }))}
+                        ${this._taskOpenLinkHtml(task, itemId)}
+                    </div>
                 </div>
                 ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
@@ -6978,6 +6991,7 @@ const searchOutputMethods = {
         this._ensureCardActionStyles();
         const itemId = item.id;
         const createdTabHtml = this._cardCreatedTabHtml(item.task);
+        const statusTabHtml = this._cardStatusTabHtml(item.task);
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -6991,7 +7005,7 @@ const searchOutputMethods = {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; min-width: 0;">${createdTabHtml}</div>
+                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
@@ -7103,24 +7117,29 @@ const searchOutputMethods = {
                 </div>`
             : '';
 
+        const row2Html = reviewerBadges
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${reviewerBadges}
+                </div>`
+            : '';
+
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex }))}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">
+                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex }))}
+                        ${this._taskOpenLinkHtml(task, itemId)}
+                    </div>
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    ${reviewerBadges}
-                </div>
+                ${row2Html}
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
@@ -7607,7 +7626,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.70',
+    _version: '1.71',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
