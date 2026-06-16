@@ -298,7 +298,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -760,22 +760,43 @@ const plugin = {
         return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
     },
 
-    _itemFeedbackIdsForHelpfulness(item) {
+    _feedbackEligibleForHelpfulness(entry, currentUserId) {
+        if (!entry || !entry.id) return false;
+        const display = entry.display;
+        if (display && (display.isSystemFeedback || display.isVerifierFailure)) return false;
+        if (entry.isSystemFeedback || entry.isVerifierFailure) return false;
+        const userId = String(currentUserId || '').trim();
+        if (!userId) return true;
+        const authorId = String(
+            (display && display.qaReviewerId)
+            || (entry.reviewer && entry.reviewer.id)
+            || ''
+        ).trim();
+        return !(authorId && authorId === userId);
+    },
+
+    _itemFeedbackIdsForHelpfulness(item, currentUserId) {
         const task = item && item.task;
         if (!task) return [];
-        if (item.selectedFeedbackId) return [String(item.selectedFeedbackId)];
+        if (item.selectedFeedbackId) {
+            const entry = (task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
+            return entry && this._feedbackEligibleForHelpfulness(entry, currentUserId)
+                ? [String(item.selectedFeedbackId)]
+                : [];
+        }
         const ids = [];
         for (const entry of task.allFeedback || []) {
-            if (entry.display && (entry.display.isSystemFeedback || entry.display.isVerifierFailure)) continue;
-            if (entry.id) ids.push(String(entry.id));
+            if (this._feedbackEligibleForHelpfulness(entry, currentUserId) && entry.id) {
+                ids.push(String(entry.id));
+            }
         }
         return ids;
     },
 
-    _itemQaHelpfulness(item, helpfulnessUi) {
+    _itemQaHelpfulness(item, helpfulnessUi, currentUserId) {
         const uiMap = helpfulnessUi || {};
         const flags = new Set();
-        for (const fid of this._itemFeedbackIdsForHelpfulness(item)) {
+        for (const fid of this._itemFeedbackIdsForHelpfulness(item, currentUserId)) {
             const ui = uiMap[fid];
             if (!ui) continue;
             if (ui.isHelpful === true) flags.add('helpful');
@@ -786,7 +807,7 @@ const plugin = {
         return [...flags];
     },
 
-    _itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, forceIncludeId) {
+    _itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, forceIncludeId, currentUserId) {
         const selected = draft.qaHelpfulness || [];
         const count = (listBounds.qaHelpfulness || []).length;
         if (count === 0) return true;
@@ -794,7 +815,7 @@ const plugin = {
         if (forceIncludeId !== undefined) {
             effective = [...new Set([...selected, forceIncludeId])];
         }
-        return dashLibPassesDimension(this._itemQaHelpfulness(item, helpfulnessUi), effective, count);
+        return dashLibPassesDimension(this._itemQaHelpfulness(item, helpfulnessUi, currentUserId), effective, count);
     },
 
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
@@ -817,10 +838,11 @@ const plugin = {
             ));
         }
         const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
+        const currentUserId = (sortContext && sortContext.currentUserId) || '';
         const qaHelpfulnessCount = (bounds.qaHelpfulness || []).length;
         if (qaHelpfulnessCount > 0) {
             passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
-                item, f, bounds, helpfulnessUi
+                item, f, bounds, helpfulnessUi, undefined, currentUserId
             ));
         }
         const queryActive = regex
@@ -1084,14 +1106,15 @@ const plugin = {
             if (!hasMatch) irrelevantHistory.add(id);
         }
         const helpfulnessUi = (options && options.helpfulnessUi) || {};
+        const currentUserId = (options && options.currentUserId) || '';
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const irrelevantHelpfulness = result.qaHelpfulness;
         for (const { id } of helpfulnessOptions) {
             const hasMatch = items.some((item) => (
-                this._itemQaHelpfulness(item, helpfulnessUi).includes(id)
+                this._itemQaHelpfulness(item, helpfulnessUi, currentUserId).includes(id)
                 && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
                 && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id, currentUserId)
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
@@ -1156,14 +1179,15 @@ const plugin = {
             historyCounts.set(id, count);
         }
         const helpfulnessUi = (options && options.helpfulnessUi) || {};
+        const currentUserId = (options && options.currentUserId) || '';
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const helpfulnessCounts = result.qaHelpfulness;
         for (const { id } of helpfulnessOptions) {
             const count = items.filter((item) => (
-                this._itemQaHelpfulness(item, helpfulnessUi).includes(id)
+                this._itemQaHelpfulness(item, helpfulnessUi, currentUserId).includes(id)
                 && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
                 && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
             )).length;
             helpfulnessCounts.set(id, count);
         }

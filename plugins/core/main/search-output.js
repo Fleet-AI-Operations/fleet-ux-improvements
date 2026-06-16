@@ -669,6 +669,15 @@ const searchOutputMethods = {
         }
     },
 
+    _shouldShowHelpfulness(qa, feedbackId) {
+        if (!feedbackId || !qa) return false;
+        if (qa.isSystemFeedback || qa.isVerifierFailure) return false;
+        const userId = this._dashGetCurrentUserId();
+        const reviewerId = String(qa.qaReviewerId || '').trim();
+        if (userId && reviewerId && userId === reviewerId) return false;
+        return true;
+    },
+
     _helpfulnessFeedbackIdInFilter(ids) {
         const numeric = (ids || [])
             .map((id) => Number(String(id).trim()))
@@ -2916,7 +2925,7 @@ const searchOutputMethods = {
         const uiMap = this._state.helpfulnessUi || {};
         const present = new Set();
         for (const item of scopeItems || []) {
-            for (const flag of lib.itemQaHelpfulness(item, uiMap)) {
+            for (const flag of lib.itemQaHelpfulness(item, uiMap, this._dashGetCurrentUserId())) {
                 present.add(flag);
             }
         }
@@ -3464,7 +3473,8 @@ const searchOutputMethods = {
         return {
             openDisputesByTaskId: this._state.openDisputesByTaskId || null,
             resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null,
-            helpfulnessUi: this._state.helpfulnessUi || {}
+            helpfulnessUi: this._state.helpfulnessUi || {},
+            currentUserId: this._dashGetCurrentUserId()
         };
     },
 
@@ -4076,12 +4086,16 @@ const searchOutputMethods = {
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
                     for (const entry of hist.allFeedback || []) {
-                        if (entry.id) feedbackIdsToLoad.push(entry.id);
+                        if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
+                            feedbackIdsToLoad.push(entry.id);
+                        }
                     }
                     if (item.selectedFeedbackId) {
-                        feedbackIdsToLoad.push(item.selectedFeedbackId);
                         const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                         if (entry && entry.display) item.qaFeedback = entry.display;
+                        if (entry && entry.display && this._shouldShowHelpfulness(entry.display, item.selectedFeedbackId)) {
+                            feedbackIdsToLoad.push(item.selectedFeedbackId);
+                        }
                     }
                 }
                 item.hydrated = true;
@@ -5145,7 +5159,8 @@ const searchOutputMethods = {
             : this._getFilterDraft();
         const lib = dashLib();
         const filterOptions = Object.assign({}, options, {
-            helpfulnessUi: this._state.helpfulnessUi || {}
+            helpfulnessUi: this._state.helpfulnessUi || {},
+            currentUserId: this._dashGetCurrentUserId()
         });
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
@@ -6645,7 +6660,7 @@ const searchOutputMethods = {
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
             : '';
-        const helpfulnessHtml = feedbackId
+        const helpfulnessHtml = this._shouldShowHelpfulness(qa, feedbackId)
             ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
                 <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-helpfulness="${dashEscHtml(String(feedbackId))}">
                     ${this._helpfulnessBlockHtml(String(feedbackId))}
@@ -7588,7 +7603,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.68',
+    _version: '1.69',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
