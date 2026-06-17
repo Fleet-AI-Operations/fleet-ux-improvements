@@ -225,7 +225,8 @@ function _dvTimestampLineHtml(prefixLabel, iso) {
 
 function _dvVersionCountHtml(count) {
     if (!count || count <= 0) return '';
-    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${count}</span> <span class="dv-version-count-label">versions</span></span>`;
+    const label = count === 1 ? 'version' : 'versions';
+    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${count}</span> <span class="dv-version-count-label">${label}</span></span>`;
 }
 
 function _dvSlotVersionCountHtml(slot) {
@@ -2927,7 +2928,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.67',
+    _version: '1.68',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
