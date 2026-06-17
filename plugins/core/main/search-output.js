@@ -81,6 +81,7 @@ const DASH_RESULTS_MODE_HINTS = {
     add: 'Adds new search results to previous ones (deduplicated).'
 };
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+const DASH_NONE_SELECTED_HINT = 'None selected = all.';
 
 const DASH_SORT_DEFAULT = 'task_submitted:desc';
 const DASH_SORT_METRICS = [
@@ -5083,7 +5084,7 @@ const searchOutputMethods = {
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
-                                        <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
+                                        <div style="${hint} margin-bottom: 8px;">${dashEscHtml(DASH_NONE_SELECTED_HINT)}</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
                                             ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
                                             ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
@@ -5133,10 +5134,11 @@ const searchOutputMethods = {
                                     </div>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                    <div style="${label} margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                                         <span>Narrow results</span>
                                         <button type="button" id="wf-dash-filter-expand-all" aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
                                     </div>
+                                    <div style="${hint} margin-bottom: 8px;">${dashEscHtml(DASH_NONE_SELECTED_HINT)}</div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
@@ -8109,7 +8111,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.89',
+    _version: '1.90',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
