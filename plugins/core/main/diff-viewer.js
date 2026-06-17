@@ -17,6 +17,9 @@ const DV_WORD_DIFF_TOKEN_LIMIT = 4000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
+const DV_REEL_LENS_TOP = DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+const DV_REEL_VIEWPORT_H_EXPR = 'calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px))';
+const DV_REEL_COPY_RAIL_PAD = DV_REEL_LENS_TOP + 26 + 10; // lens top + icon height + nav gap
 const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
@@ -674,7 +677,7 @@ function _dvSyncAllVersionTracks(modal) {
 }
 
 function _dvReelLensZoneTopInset() {
-    return DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+    return DV_REEL_LENS_TOP;
 }
 
 function _dvReelLensH(slotsArea) {
@@ -2561,7 +2564,8 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel-viewport {',
         '  grid-column: 1;',
         '  grid-row: 1;',
-        '  height: calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px));',
+        '  align-self: start;',
+        '  height: ' + DV_REEL_VIEWPORT_H_EXPR + ';',
         '  min-height: 0;',
         '  overflow: hidden;',
         '  position: relative;',
@@ -2607,14 +2611,16 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows {',
         '  grid-column: 2;',
-        '  grid-row: 1 / -1;',
+        '  grid-row: 1;',
+        '  align-self: start;',
+        '  position: relative;',
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
-        '  justify-content: flex-start;',
-        '  gap: 10px;',
-        '  align-self: stretch;',
+        '  height: ' + DV_REEL_VIEWPORT_H_EXPR + ';',
         '  min-height: 0;',
+        '  width: 100%;',
+        '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav {',
         '  flex: 1;',
@@ -2624,6 +2630,8 @@ function _dvInjectStyles() {
         '  min-height: 0;',
         '  width: 100%;',
         '  overflow: hidden;',
+        '  padding-top: ' + DV_REEL_COPY_RAIL_PAD + 'px;',
+        '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav-viewport {',
         '  flex: 1;',
@@ -2680,8 +2688,12 @@ function _dvInjectStyles() {
         '  color: var(--foreground, #f8fafc);',
         '}',
         '#wf-dash-modal .dv-reel-copy {',
+        '  position: absolute;',
+        '  top: ' + DV_REEL_LENS_TOP + 'px;',
+        '  left: 0;',
+        '  z-index: 3;',
         '  flex-shrink: 0;',
-        '  margin-top: ' + (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) + 'px;',
+        '  margin: 0;',
         '}',
     ].join('\n');
 }
@@ -2717,7 +2729,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.57',
+    _version: '1.58',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
