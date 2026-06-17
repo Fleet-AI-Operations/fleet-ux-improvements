@@ -17,8 +17,12 @@ const DV_WORD_DIFF_TOKEN_LIMIT = 4000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
-const DV_REEL_NAV_ROW_H = 14;
-const DV_REEL_NAV_ROW_GAP = 6;
+const DV_REEL_LENS_TOP = DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+const DV_REEL_VIEWPORT_H_EXPR = 'calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px))';
+const DV_REEL_COPY_RAIL_PAD = DV_REEL_LENS_TOP + 26 + 10; // lens top + icon height + nav gap
+const DV_REEL_NAV_LABEL_H = 14;
+const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
+const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
 const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
@@ -64,8 +68,8 @@ function _dvCreateEmptyDragState() {
     };
 }
 
-// DvSlot:   { slotId, taskId, key, authorName, authorEmail, promptVersions, lensIndex, loading, error }
-// DvStash:  { taskId, key, authorName, authorEmail }
+// DvSlot:   { slotId, taskId, key, authorName, authorEmail, createdAt, promptVersions, lensIndex, loading, error }
+// DvStash:  { taskId, key, authorName, authorEmail, createdAt }
 
 // ── LCS diff engine (ported from prompt-diff-highlight.js) ──
 
@@ -165,6 +169,69 @@ function _dvEqualSpanHtml(text) {
 
 function _dvPlainPromptHtml(text) {
     return _dvEqualSpanHtml(text || '');
+}
+
+function _dvFormatCreatedAt(iso) {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function _dvRelativeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    const parts = [];
+    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
+    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
+    return parts.join(', ') + ' ago';
+}
+
+function _dvTaskInitialCreatedAt(taskCreatedAt, promptVersions) {
+    const versions = promptVersions || [];
+    if (versions.length) {
+        const first = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo)[0];
+        if (first && first.createdAt) return first.createdAt;
+    }
+    return taskCreatedAt || '';
+}
+
+function _dvTimestampLineHtml(prefixLabel, iso) {
+    if (!iso) return '';
+    const formatted = _dvFormatCreatedAt(iso);
+    const ago = _dvRelativeAgo(iso);
+    const dateSpan = `<span class="dv-timestamp-date">${_dvEscHtml(formatted)}</span>`;
+    let html = prefixLabel
+        ? `<span class="dv-timestamp-accent">${_dvEscHtml(prefixLabel)}</span> ${dateSpan}`
+        : dateSpan;
+    if (ago) html += ` <span class="dv-timestamp-accent">(${_dvEscHtml(ago)})</span>`;
+    return html;
+}
+
+function _dvSlotVersionCountHtml(slot) {
+    const versions = slot.promptVersions;
+    if (!versions || versions.length === 0) return '';
+    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${versions.length}</span> <span class="dv-version-count-label">versions</span></span>`;
+}
+
+function _dvSlotMetaRowHtml(slot) {
+    const createdHtml = slot.createdAt
+        ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', slot.createdAt)}</div>`
+        : '';
+    const versionHtml = _dvSlotVersionCountHtml(slot);
+    if (!createdHtml && !versionHtml) return '';
+    return `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`;
 }
 
 function _dvHighlightStyles() {
@@ -403,12 +470,14 @@ async function _dvFetchTask(raw) {
         [task.id], profilesMap, { skipFeedbackFetch: true }
     );
     const taskData = enriched.get(task.id) || {};
+    const promptVersions = taskData.promptVersions || [];
     return {
         taskId: task.id,
         key: task.key || '',
         authorName: (task.author && task.author.name) || '',
         authorEmail: (task.author && task.author.email) || '',
-        promptVersions: taskData.promptVersions || []
+        createdAt: _dvTaskInitialCreatedAt(row.created_at || '', promptVersions),
+        promptVersions
     };
 }
 
@@ -419,10 +488,20 @@ function _dvStashFind(taskId) {
 }
 
 function _dvAddToStash(entry) {
-    if (_dvStashFind(entry.taskId) < 0) {
-        _dvState.stash.push({ taskId: entry.taskId, key: entry.key, authorName: entry.authorName, authorEmail: entry.authorEmail });
+    const idx = _dvStashFind(entry.taskId);
+    if (idx < 0) {
+        _dvState.stash.push({
+            taskId: entry.taskId,
+            key: entry.key,
+            authorName: entry.authorName,
+            authorEmail: entry.authorEmail,
+            createdAt: entry.createdAt || ''
+        });
         _dvSaveStash();
         Logger.log('diff-viewer: stash add — ' + (entry.key || entry.taskId));
+    } else if (entry.createdAt && !_dvState.stash[idx].createdAt) {
+        _dvState.stash[idx].createdAt = entry.createdAt;
+        _dvSaveStash();
     }
 }
 
@@ -435,6 +514,22 @@ function _dvRemoveFromStash(taskId, modal) {
         _dvRenderStash(modal);
         _dvRenderStashChipStates(modal);
     }
+}
+
+function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
+    if (!taskId) return;
+    let removedSlots = 0;
+    for (let i = _dvState.slots.length - 1; i >= 0; i--) {
+        if (_dvState.slots[i].taskId === taskId) {
+            _dvState.slots.splice(i, 1);
+            removedSlots += 1;
+        }
+    }
+    _dvRemoveFromStash(taskId, modal);
+    if (removedSlots > 0) _dvRenderAll(modal);
+    Logger.log('diff-viewer: task removed from stash'
+        + (removedSlots > 0 ? ' and ' + removedSlots + ' comparison slot(s)' : '')
+        + ' — ' + taskId);
 }
 
 // ── Lens index resolution ──
@@ -466,6 +561,7 @@ function _dvAddSlot(seed, modal) {
         key: seed.key || '',
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
+        createdAt: seed.createdAt || '',
         promptVersions: null,
         lensIndex: 0,
         loading: true,
@@ -477,7 +573,8 @@ function _dvAddSlot(seed, modal) {
             taskId: seed.taskId,
             key: seed.key,
             authorName: seed.authorName,
-            authorEmail: seed.authorEmail
+            authorEmail: seed.authorEmail,
+            createdAt: seed.createdAt || ''
         });
     }
     _dvRenderAll(modal);
@@ -499,13 +596,15 @@ async function _dvHydrateSlot(slotId, seed, modal) {
         slot.authorName = data.authorName || slot.authorName;
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
+        slot.createdAt = data.createdAt || slot.createdAt || '';
         slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions) ?? 0;
         slot.loading = false;
         _dvAddToStash({
             taskId: data.taskId,
             key: data.key,
             authorName: data.authorName,
-            authorEmail: data.authorEmail
+            authorEmail: data.authorEmail,
+            createdAt: slot.createdAt
         });
         Logger.log('diff-viewer: slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
         _dvRenderAll(modal);
@@ -536,7 +635,13 @@ function _dvRemoveSlot(slotIdx, modal) {
 function _dvMinimizeSlot(slotIdx, modal) {
     if (slotIdx < 0 || slotIdx >= _dvState.slots.length) return;
     const slot = _dvState.slots[slotIdx];
-    _dvAddToStash({ taskId: slot.taskId, key: slot.key, authorName: slot.authorName, authorEmail: slot.authorEmail });
+    _dvAddToStash({
+        taskId: slot.taskId,
+        key: slot.key,
+        authorName: slot.authorName,
+        authorEmail: slot.authorEmail,
+        createdAt: slot.createdAt || ''
+    });
     _dvState.slots.splice(slotIdx, 1);
     Logger.log('diff-viewer: slot minimized to stash — ' + (slot.key || slot.taskId));
     _dvRenderAll(modal);
@@ -553,12 +658,8 @@ function _dvParseTranslateY(el) {
 }
 
 function _dvMeasureNavRowH(track) {
-    if (!track) return DV_REEL_NAV_ROW_H;
-    if (track._dvRowH) return track._dvRowH;
-    const label = track.querySelector('.dv-reel-version-label');
-    if (!label) return DV_REEL_NAV_ROW_H;
-    track._dvRowH = label.offsetHeight;
-    return track._dvRowH;
+    if (track && track._dvRowH) return track._dvRowH;
+    return DV_REEL_NAV_ROW_H;
 }
 
 function _dvVersionTrackOffset(viewport, track, lensIndex) {
@@ -592,6 +693,115 @@ function _dvSyncAllVersionTracks(modal) {
     }
 }
 
+function _dvReelLensZoneTopInset() {
+    return DV_REEL_LENS_TOP;
+}
+
+function _dvReelLensH(slotsArea) {
+    if (!slotsArea) return DV_REEL_LENS_H;
+    const v = getComputedStyle(slotsArea).getPropertyValue('--dv-reel-lens-h').trim();
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : DV_REEL_LENS_H;
+}
+
+function _dvReelCardStepH(slotsArea) {
+    return _dvReelLensH(slotsArea) + DV_REEL_ROW_GAP;
+}
+
+function _dvReelTrackOffset(lensIndex, slotsArea) {
+    const stepH = _dvReelCardStepH(slotsArea);
+    return _dvReelLensZoneTopInset() - lensIndex * stepH;
+}
+
+function _dvReelLensBounds(modal) {
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const cardH = _dvReelLensH(slotsArea);
+    const lensTop = _dvReelLensZoneTopInset();
+    return {
+        lensTop,
+        lensBottom: lensTop + cardH,
+        cardH,
+        stepH: _dvReelCardStepH(slotsArea)
+    };
+}
+
+function _dvReelContentOpacity(cardTop, cardBottom, bounds) {
+    const overlapTop = Math.max(cardTop, bounds.lensTop);
+    const overlapBottom = Math.min(cardBottom, bounds.lensBottom);
+    const overlap = Math.max(0, overlapBottom - overlapTop);
+    if (bounds.cardH <= 0) return 0;
+    return Math.min(1, overlap / bounds.cardH);
+}
+
+function _dvApplyReelContentOpacities(track, translateY, modal) {
+    if (!track || !modal) return;
+    const bounds = _dvReelLensBounds(modal);
+    track.querySelectorAll('.dv-reel-card').forEach((card, i) => {
+        const cardTop = translateY + i * bounds.stepH;
+        const cardBottom = cardTop + bounds.cardH;
+        const opacity = _dvReelContentOpacity(cardTop, cardBottom, bounds);
+        const content = card.querySelector('.dv-reel-card-content');
+        const target = content || card.querySelector('.dv-reel-empty-mark');
+        if (target) target.style.opacity = String(opacity);
+    });
+}
+
+function _dvSyncReelTrack(track, lensIndex, modal) {
+    if (!track) return;
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const y = _dvReelTrackOffset(lensIndex, slotsArea);
+    track.style.transform = 'translateY(' + y + 'px)';
+    _dvApplyReelContentOpacities(track, y, modal);
+}
+
+function _dvSyncAllReelTracks(modal) {
+    if (!modal) return;
+    for (let i = 0; i < _dvState.slots.length; i++) {
+        const slot = _dvState.slots[i];
+        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
+        if (slot._lensAnimating) continue;
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        if (!track) continue;
+        _dvSyncReelTrack(track, slot.lensIndex, modal);
+    }
+}
+
+function _dvAnimateReelTrack(track, delta, modal, done) {
+    if (!track) {
+        if (done) done();
+        return;
+    }
+    const slotsArea = modal && _dvQ(modal, 'dv-slots-area');
+    const stepH = _dvReelCardStepH(slotsArea);
+    const fromY = _dvParseTranslateY(track);
+    const toY = fromY - delta * stepH;
+    if (typeof track.animate !== 'function') {
+        track.style.transform = 'translateY(' + toY + 'px)';
+        _dvApplyReelContentOpacities(track, toY, modal);
+        if (done) done();
+        return;
+    }
+    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
+    const anim = track.animate(
+        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
+        animOpts
+    );
+    let rafId = 0;
+    const tick = () => {
+        _dvApplyReelContentOpacities(track, _dvParseTranslateY(track), modal);
+        if (anim.playState === 'running' || anim.playState === 'pending') {
+            rafId = requestAnimationFrame(tick);
+        }
+    };
+    rafId = requestAnimationFrame(tick);
+    anim.addEventListener('finish', () => {
+        cancelAnimationFrame(rafId);
+        track.style.transform = 'translateY(' + toY + 'px)';
+        _dvApplyReelContentOpacities(track, toY, modal);
+        if (done) done();
+    });
+}
+
 function _dvAnimateVersionTrack(track, viewport, delta, done) {
     if (!track) {
         if (done) done();
@@ -612,33 +822,37 @@ function _dvAnimateVersionTrack(track, viewport, delta, done) {
     ).addEventListener('finish', () => { if (done) done(); });
 }
 
-function _dvAnimateVerticalSlide(container, oldHtml, newHtml, delta, layerStyle, done) {
-    if (!container) {
-        if (done) done();
-        return;
+function _dvUpdateReelNavControls(slotIdx, modal) {
+    const slot = _dvState.slots[slotIdx];
+    if (!slot || !slot.promptVersions || !modal) return;
+    const nav = modal.querySelector('[data-dv-arrows-nav="' + slotIdx + '"]');
+    if (!nav) return;
+    const lensIdx = slot.lensIndex;
+    const versions = slot.promptVersions;
+    const upBtn = nav.querySelector('[data-dv-lens-up="' + slotIdx + '"]');
+    const downBtn = nav.querySelector('[data-dv-lens-down="' + slotIdx + '"]');
+    if (upBtn) {
+        upBtn.disabled = lensIdx <= 0;
+        upBtn.classList.toggle('disabled', lensIdx <= 0);
     }
-    if (typeof container.animate !== 'function') {
-        container.innerHTML = newHtml;
-        if (done) done();
-        return;
+    if (downBtn) {
+        downBtn.disabled = lensIdx >= versions.length - 1;
+        downBtn.classList.toggle('disabled', lensIdx >= versions.length - 1);
     }
-    const outY = delta > 0 ? '-100%' : '100%';
-    const inY = delta > 0 ? '100%' : '-100%';
-    container.style.overflow = 'hidden';
-    container.style.position = 'relative';
-    const outEl = document.createElement('div');
-    outEl.style.cssText = layerStyle;
-    outEl.innerHTML = oldHtml;
-    container.innerHTML = '';
-    container.appendChild(outEl);
-    const inEl = document.createElement('div');
-    inEl.style.cssText = layerStyle + 'transform:translateY(' + inY + ')';
-    inEl.innerHTML = newHtml;
-    container.appendChild(inEl);
-    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
-    outEl.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + outY + ')' }], animOpts);
-    inEl.animate([{ transform: 'translateY(' + inY + ')' }, { transform: 'translateY(0)' }], animOpts)
-        .addEventListener('finish', () => { if (done) done(); });
+    const versionTrack = nav.querySelector('[data-dv-version-track="' + slotIdx + '"]');
+    if (versionTrack) {
+        versionTrack.querySelectorAll('.dv-reel-version-label').forEach((el) => {
+            const vi = parseInt(el.getAttribute('data-vi'), 10);
+            el.classList.toggle('dv-reel-version-label--current', vi === lensIdx);
+        });
+    }
+    const reelTrack = modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
+    if (reelTrack) {
+        reelTrack.querySelectorAll('.dv-reel-card pre').forEach((pre) => pre.removeAttribute('data-dv-lens-pre'));
+        const card = reelTrack.querySelector('.dv-reel-card[data-vi="' + lensIdx + '"]');
+        const pre = card && card.querySelector('pre');
+        if (pre) pre.setAttribute('data-dv-lens-pre', String(slotIdx));
+    }
 }
 
 function _dvShiftLens(slotIdx, delta, modal) {
@@ -647,35 +861,34 @@ function _dvShiftLens(slotIdx, delta, modal) {
     const newIdx = slot.lensIndex + delta;
     if (newIdx < 0 || newIdx >= slot.promptVersions.length) return;
 
-    const lensPre = modal && modal.querySelector('.dv-reel-lens [data-dv-lens-pre="' + slotIdx + '"]');
-    const lens = lensPre && lensPre.closest('.dv-reel-lens');
-    const track = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
-    const viewport = track && track.closest('.dv-reel-arrows-nav-viewport');
+    const reelTrack = modal && modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
+    const versionTrack = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
+    const versionViewport = versionTrack && versionTrack.closest('.dv-reel-arrows-nav-viewport');
 
-    if (!lens || typeof lens.animate !== 'function') {
+    if (!reelTrack || typeof reelTrack.animate !== 'function') {
         slot.lensIndex = newIdx;
         Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
         _dvRenderAll(modal);
         return;
     }
 
-    const oldLensHtml = lens.innerHTML;
-    slot.lensIndex = newIdx;
-    const newLensHtml = '<pre data-dv-lens-pre="' + slotIdx + '">' + _dvEscHtml(slot.promptVersions[newIdx].prompt || '') + '</pre>';
-    const lensLayerStyle = 'position:absolute;inset:0;overflow-y:auto;padding:8px 10px;box-sizing:border-box;';
-
     slot._lensAnimating = true;
-    let pending = track ? 2 : 1;
+    let pending = 2;
     const finishOne = () => {
         pending -= 1;
         if (pending <= 0) {
             slot._lensAnimating = false;
-            _dvRenderAll(modal);
+            _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
+            if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
+            _dvUpdateReelNavControls(slotIdx, modal);
+            _dvRenderDiffs(modal);
+            _dvUpdateAboveLabels(modal);
         }
     };
 
-    _dvAnimateVerticalSlide(lens, oldLensHtml, newLensHtml, delta, lensLayerStyle, finishOne);
-    if (track) _dvAnimateVersionTrack(track, viewport, delta, finishOne);
+    slot.lensIndex = newIdx;
+    _dvAnimateReelTrack(reelTrack, delta, modal, finishOne);
+    if (versionTrack) _dvAnimateVersionTrack(versionTrack, versionViewport, delta, finishOne);
     else finishOne();
 
     Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
@@ -696,9 +909,6 @@ function _dvSwapSlots(fromIdx, toIdx, modal) {
 
 function _dvGetSlotColumn(modal, idx) {
     if (!modal || idx == null || idx < 0) return null;
-    if (_dvState.compMode === 'rolling') {
-        return modal.querySelector('#dv-extra-container [data-dv-slot-column="' + idx + '"]');
-    }
     if (idx === 0) return _dvQ(modal, 'dv-base-container');
     const cols = modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]');
     return cols[idx - 1] || null;
@@ -707,7 +917,7 @@ function _dvGetSlotColumn(modal, idx) {
 function _dvGetSlotWrap(modal, idx) {
     const col = _dvGetSlotColumn(modal, idx);
     if (!col) return null;
-    if (idx === 0 && _dvState.compMode !== 'rolling') {
+    if (idx === 0) {
         return col.querySelector('#dv-base-slot-inner') || col.querySelector('.dv-slot-wrap');
     }
     return col.querySelector('.dv-slot-wrap');
@@ -720,16 +930,10 @@ function _dvHitTestSlotIdx(modal, clientX, clientY, ghostEl) {
     const el = document.elementFromPoint(clientX, clientY);
     if (ghostEl) ghostEl.style.visibility = prevVis || '';
     if (!el || !modal.contains(el)) return null;
-    if (_dvState.compMode !== 'rolling') {
-        const baseCol = el.closest('#dv-base-container');
-        if (baseCol && modal.contains(baseCol)) return 0;
-    }
+    const baseCol = el.closest('#dv-base-container');
+    if (baseCol && modal.contains(baseCol)) return 0;
     const extraCol = el.closest('#dv-extra-container [data-dv-slot-column]');
     if (!extraCol || !modal.contains(extraCol)) return null;
-    if (_dvState.compMode === 'rolling') {
-        const attrIdx = parseInt(extraCol.getAttribute('data-dv-slot-column'), 10);
-        return Number.isFinite(attrIdx) ? attrIdx : null;
-    }
     const cols = [...modal.querySelectorAll('#dv-extra-container [data-dv-slot-column]')];
     const idx = cols.indexOf(extraCol);
     return idx >= 0 ? idx + 1 : null;
@@ -951,6 +1155,7 @@ function _dvApplyViewProgression(modal) {
             slotId,
             taskId: base.taskId, key: base.key,
             authorName: base.authorName, authorEmail: base.authorEmail,
+            createdAt: base.createdAt || '',
             promptVersions: base.promptVersions,
             lensIndex: i, loading: false, error: null
         });
@@ -1202,23 +1407,9 @@ function _dvCopyIconSvg() {
     return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
 }
 
-function _dvReelUnifiedPeekFlags() {
-    let anyAbove = false;
-    let anyBelow = false;
-    for (const slot of _dvState.slots) {
-        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
-        const lensIdx = slot.lensIndex;
-        if (lensIdx > 0) anyAbove = true;
-        if (lensIdx < slot.promptVersions.length - 1) anyBelow = true;
-    }
-    return { anyAbove, anyBelow };
-}
-
-function _dvReelUnifiedChromeH(unifiedPeek) {
-    const { anyAbove, anyBelow } = unifiedPeek || _dvReelUnifiedPeekFlags();
+function _dvReelUnifiedChromeH() {
     let chrome = 12;
-    if (anyAbove) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
-    if (anyBelow) chrome += DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+    chrome += (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) * 2;
     return chrome;
 }
 
@@ -1238,11 +1429,10 @@ function _dvAboveLabelInnerHtml() {
 function _dvSetAboveLabelEl(el, inner) {
     if (!el) return;
     el.innerHTML = inner;
+    el.style.display = 'flex';
     if (inner) {
-        el.style.display = 'flex';
         el.removeAttribute('aria-hidden');
     } else {
-        el.style.display = 'none';
         el.setAttribute('aria-hidden', 'true');
     }
 }
@@ -1273,7 +1463,7 @@ function _dvActiveCompareTexts() {
     return null;
 }
 
-function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
+function _dvSlotHtml(slot, slotIdx, slotCount) {
     const authorDisplay = slot.authorName
         ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
         : _dvEscHtml(slot.authorEmail || '—');
@@ -1281,6 +1471,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     const authorHtml = authorDisplay
         ? `<div class="dv-slot-author" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>`
         : '';
+    const createdHtml = _dvSlotMetaRowHtml(slot);
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -1292,7 +1483,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
     } else if (slot.error) {
         bodyHtml = `<div style="flex:1;padding:12px;font-size:11px;color:#dc2626;overflow-y:auto;">${_dvEscHtml(slot.error)}</div>`;
     } else if (slot.promptVersions && slot.promptVersions.length > 0) {
-        bodyHtml = _dvReelHtml(slot, slotIdx, unifiedPeek);
+        bodyHtml = _dvReelHtml(slot, slotIdx);
     } else {
         bodyHtml = `<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted-foreground,#64748b);padding:16px;">No versions available</div>`;
     }
@@ -1302,6 +1493,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount, unifiedPeek) {
             <div style="flex:1;min-width:0;overflow:hidden;">
                 ${keyCopyHtml}
                 ${authorHtml}
+                ${createdHtml}
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">${minimizeBtn}${removeBtn}</div>
         </div>
@@ -1322,7 +1514,6 @@ function _dvReelVersionTrackHtml(slot, slotIdx) {
 
 function _dvReelArrowBtn(slotIdx, dir, enabled) {
     return '<button type="button" data-dv-lens-' + dir + '="' + slotIdx + '"'
-        + (enabled ? '' : ' disabled')
         + ' title="' + (dir === 'up' ? 'Previous' : 'Next') + ' version"'
         + ' class="dv-reel-arrow wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon"'
         + (enabled ? '' : ' disabled') + '>'
@@ -1346,38 +1537,35 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
         + '</div></div>';
 }
 
-function _dvReelHtml(slot, slotIdx, unifiedPeek) {
-    const { anyAbove, anyBelow } = unifiedPeek || _dvReelUnifiedPeekFlags();
-    const versions = slot.promptVersions;
+function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
+    const submitted = version && version.createdAt
+        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('Submitted', version.createdAt)}</div>`
+        : '';
+    const prompt = version ? _dvEscHtml(version.prompt || '') : '';
+    const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
+    return '<div class="dv-reel-card-content">' + submitted + '<pre' + preAttr + '>' + prompt + '</pre></div>';
+}
+
+function _dvReelCardTrackHtml(slot, slotIdx) {
+    const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
-    const prevV = lensIdx > 0 ? versions[lensIdx - 1] : null;
-    const lensV = versions[lensIdx];
-    const nextV = lensIdx < versions.length - 1 ? versions[lensIdx + 1] : null;
+    if (versions.length === 0) {
+        return '<div class="dv-reel-card"><span class="dv-reel-empty-mark">—</span></div>';
+    }
+    return versions.map((v, i) => (
+        '<div class="dv-reel-card" data-vi="' + i + '">' + _dvReelCardInnerHtml(slotIdx, v, i === lensIdx) + '</div>'
+    )).join('');
+}
 
-    const peekRow = (visible, dir) => {
-        if (!visible) return '';
-        if (dir === 'above') {
-            return prevV
-                ? '<div class="dv-reel-peek dv-reel-peek--above" aria-hidden="true"></div>'
-                : '<div class="dv-reel-peek dv-reel-peek--spacer" aria-hidden="true"></div>';
-        }
-        return nextV
-            ? '<div class="dv-reel-peek dv-reel-peek--below" aria-hidden="true"></div>'
-            : '<div class="dv-reel-peek dv-reel-peek--spacer" aria-hidden="true"></div>';
-    };
-
-    const reelMods = (anyAbove ? ' dv-reel--has-above' : '') + (anyBelow ? ' dv-reel--has-below' : '');
-
-    const lensHtml = lensV
-        ? `<div class="dv-reel-lens"><pre data-dv-lens-pre="${slotIdx}">${_dvEscHtml(lensV.prompt || '')}</pre></div>`
-        : '<div class="dv-reel-lens"><span class="dv-reel-empty-mark">—</span></div>';
-
+function _dvReelHtml(slot, slotIdx) {
     const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
-    return `<div class="dv-reel${reelMods}">
-        ${peekRow(anyAbove, 'above')}
-        ${lensHtml}
-        ${peekRow(anyBelow, 'below')}
+    return `<div class="dv-reel">
+        <div class="dv-reel-viewport" data-dv-reel-viewport="${slotIdx}">
+            <div class="dv-reel-track" data-dv-reel-track="${slotIdx}">
+                ${_dvReelCardTrackHtml(slot, slotIdx)}
+            </div>
+        </div>
         <div class="dv-reel-arrows">
             ${copyPromptBtn}
             ${_dvReelArrowsNavHtml(slot, slotIdx)}
@@ -1416,7 +1604,6 @@ function _dvRenderSlotsArea(modal) {
     if (!baseInner || !extraContainer) return;
 
     _dvState.hoverSlotIdx = null;
-    const isRolling = _dvState.compMode === 'rolling';
 
     if (_dvState.slots.length === 0) {
         if (baseContainer) baseContainer.style.display = '';
@@ -1425,24 +1612,11 @@ function _dvRenderSlotsArea(modal) {
         return;
     }
 
-    const unifiedPeek = _dvReelUnifiedPeekFlags();
-
-    if (isRolling) {
-        if (baseContainer) baseContainer.style.display = 'none';
-        let allHtml = '';
-        for (let i = 0; i < _dvState.slots.length; i++) {
-            allHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
-        }
-        extraContainer.innerHTML = allHtml;
-        _dvUpdateAboveLabels(modal);
-        return;
-    }
-
     if (baseContainer) baseContainer.style.display = '';
-    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length, unifiedPeek);
+    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length, unifiedPeek)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
@@ -1469,12 +1643,16 @@ function _dvRenderStash(modal) {
         const chipBg = 'var(--card,#fff)';
         const chipBorder = active ? '#22c55e' : 'var(--border,#e2e8f0)';
         const keyColor = active ? '#22c55e' : 'var(--foreground,#0f172a)';
+        const createdHtml = entry.createdAt
+            ? `<div class="dv-stash-created">${_dvTimestampLineHtml('Created', entry.createdAt)}</div>`
+            : '';
         html += `<div data-dv-stash-chip="${idx}" style="display:flex;align-items:flex-start;gap:6px;padding:7px 8px;background:${chipBg};border:1px solid ${chipBorder};border-radius:7px;cursor:pointer;transition:border-color 0.15s,color 0.15s;" title="Click to add slot">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 <div style="font-size:11px;font-weight:600;color:${keyColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${keyLine}</div>
                 <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
+                ${createdHtml}
             </div>
-            <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
+            <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash and diff view" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
         </div>`;
     });
     chips.innerHTML = html;
@@ -1688,40 +1866,25 @@ function _dvScheduleReelLensSync(modal, opts) {
 
     const finish = () => {
         _dvLensSyncScheduled = false;
+        _dvLensSyncAfterLayout = false;
         _dvSyncReelLensHeights(modal);
         _dvSyncAllVersionTracks(modal);
     };
 
-    const useDoubleRaf = afterLayout || _dvLensSyncAfterLayout;
-    _dvLensSyncAfterLayout = false;
-
-    if (useDoubleRaf) {
-        requestAnimationFrame(() => {
-            requestAnimationFrame(finish);
-        });
-    } else {
+    requestAnimationFrame(() => {
         requestAnimationFrame(finish);
-    }
+    });
 }
 
+// INVARIANT: reel lens height is derived ONLY from .dv-slots-columns-row.clientHeight.
+// Never measure column/wrap parents — rolling extra-container is overflow-x:auto
+// and breaks height propagation. Modes must share identical slot DOM placement.
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
-    const wrap = slotEl.closest('.dv-slot-wrap');
     const header = slotEl.querySelector('.dv-slot-header');
-    if (!wrap) return null;
     const headerH = header ? header.offsetHeight : 0;
-
-    const column = wrap.parentElement;
-    if (!column) return null;
-
-    let siblingsH = 0;
-    for (const child of column.children) {
-        if (child === wrap) continue;
-        if (child instanceof HTMLElement && child.offsetParent !== null) {
-            siblingsH += child.offsetHeight;
-        }
-    }
-
-    return column.clientHeight - siblingsH - headerH - unifiedChrome;
+    const row = slotEl.closest('.dv-slots-columns-row');
+    if (!row) return null;
+    return row.clientHeight - headerH - unifiedChrome;
 }
 
 function _dvSyncReelLensHeights(modal) {
@@ -1731,16 +1894,28 @@ function _dvSyncReelLensHeights(modal) {
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     if (!slotsArea) return;
 
+    const row = _dvQ(modal, 'dv-slots-columns-row');
+    const rowH = row ? row.clientHeight : 0;
+    if (rowH <= 0) {
+        _dvLensSyncScheduled = false;
+        _dvScheduleReelLensSync(modal, { afterLayout: true });
+        return;
+    }
+
     slotsArea.style.removeProperty('--dv-reel-lens-h');
     void slotsArea.offsetHeight;
 
     const slots = [...modal.querySelectorAll('.dv-slot')];
-    const lenses = [...modal.querySelectorAll('.dv-reel-lens')];
-    if (lenses.length === 0) return;
+    const cards = [...modal.querySelectorAll('.dv-reel-card')];
+    if (cards.length === 0) return;
 
-    const scrollTops = lenses.map((lens) => lens.scrollTop);
-    const unifiedPeek = _dvReelUnifiedPeekFlags();
-    const unifiedChrome = _dvReelUnifiedChromeH(unifiedPeek);
+    const scrollTops = _dvState.slots.map((slot, i) => {
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
+        const content = card && card.querySelector('.dv-reel-card-content');
+        return content ? content.scrollTop : 0;
+    });
+    const unifiedChrome = _dvReelUnifiedChromeH();
 
     let maxBudget = Infinity;
     for (const slotEl of slots) {
@@ -1755,8 +1930,25 @@ function _dvSyncReelLensHeights(modal) {
         Logger.debug('diff-viewer: lens height budget below floor — ' + Math.round(maxBudget) + 'px');
     }
 
+    const maxHeaderH = Math.max(0, ...slots.map((s) => {
+        const h = s.querySelector('.dv-slot-header');
+        return h ? h.offsetHeight : 0;
+    }));
+    const saneMax = rowH - maxHeaderH - unifiedChrome;
+    if (unified < DV_REEL_LENS_H && saneMax >= DV_REEL_LENS_H) {
+        Logger.warn('diff-viewer: lens budget suspiciously small — using sane max');
+        unified = Math.floor(saneMax);
+    }
+    if (unified < DV_REEL_LENS_H) unified = Math.max(unified, Math.min(DV_REEL_LENS_H, saneMax));
+
     slotsArea.style.setProperty('--dv-reel-lens-h', unified + 'px');
-    lenses.forEach((lens, i) => { lens.scrollTop = scrollTops[i] || 0; });
+    _dvState.slots.forEach((slot, i) => {
+        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
+        const card = track && track.querySelector('.dv-reel-card[data-vi="' + slot.lensIndex + '"]');
+        const content = card && card.querySelector('.dv-reel-card-content');
+        if (content) content.scrollTop = scrollTops[i] || 0;
+        if (track && !slot._lensAnimating) _dvSyncReelTrack(track, slot.lensIndex, modal);
+    });
     if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
     Logger.debug('diff-viewer: reel lens height synced — ' + unified + 'px (budget=' + Math.round(maxBudget) + ', chrome=' + unifiedChrome + ')');
 }
@@ -1891,7 +2083,14 @@ function _dvAttachListeners(modal, dash) {
             if (mode !== _dvState.mode) {
                 _dvState.mode = mode;
                 _dvSyncModeUi(modal);
-                if (mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                if (mode === 'free-text') {
+                    _dvRenderFreeTextDiff(modal);
+                } else {
+                    _dvRenderDiffs(modal);
+                    _dvUpdateRollingOverlay(modal);
+                    _dvLensSyncScheduled = false;
+                    _dvScheduleReelLensSync(modal, { afterLayout: true });
+                }
                 Logger.log('diff-viewer: mode → ' + mode);
             }
             return;
@@ -1995,7 +2194,13 @@ function _dvAttachListeners(modal, dash) {
             const idx = parseInt(stashChip.getAttribute('data-dv-stash-chip'), 10);
             const entry = _dvState.stash[idx];
             if (entry) {
-                _dvAddSlot({ taskId: entry.taskId, key: entry.key, authorName: entry.authorName, authorEmail: entry.authorEmail }, modal);
+                _dvAddSlot({
+                    taskId: entry.taskId,
+                    key: entry.key,
+                    authorName: entry.authorName,
+                    authorEmail: entry.authorEmail,
+                    createdAt: entry.createdAt || ''
+                }, modal);
             }
             return;
         }
@@ -2006,7 +2211,7 @@ function _dvAttachListeners(modal, dash) {
             e.stopPropagation();
             const idx = parseInt(stashRemove.getAttribute('data-dv-stash-remove'), 10);
             const entry = _dvState.stash[idx];
-            if (entry) _dvRemoveFromStash(entry.taskId, modal);
+            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal);
             return;
         }
     });
@@ -2185,7 +2390,7 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-slot-above-label {',
         '  flex-shrink: 0;',
-        '  min-height: 18px;',
+        '  height: 18px;',
         '  margin-bottom: 4px;',
         '  box-sizing: border-box;',
         '  display: flex;',
@@ -2240,24 +2445,8 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling {',
         '  gap: 0;',
         '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
-        '  position: static;',
-        '  z-index: auto;',
-        '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
-        '  flex: 1;',
-        '  align-self: stretch;',
-        '  min-height: 0;',
-        '  min-width: 0;',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slots-columns-row {',
-        '  min-height: 0;',
-        '}',
-        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column {',
-        '  align-self: stretch;',
         '}',
         '#wf-dash-modal .dv-rolling-overlay {',
         '  position: absolute;',
@@ -2279,6 +2468,54 @@ function _dvInjectStyles() {
         '  white-space: nowrap;',
         '  overflow: hidden;',
         '  text-overflow: ellipsis;',
+        '}',
+        '#wf-dash-modal .dv-slot-meta {',
+        '  display: flex;',
+        '  align-items: baseline;',
+        '  justify-content: space-between;',
+        '  gap: 8px;',
+        '  margin-top: 2px;',
+        '  min-width: 0;',
+        '}',
+        '#wf-dash-modal .dv-slot-meta .dv-slot-created {',
+        '  margin-top: 0;',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '}',
+        '#wf-dash-modal .dv-slot-version-count {',
+        '  flex-shrink: 0;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '  white-space: nowrap;',
+        '}',
+        '#wf-dash-modal .dv-version-count-num {',
+        '  color: var(--foreground, #f8fafc);',
+        '  font-weight: 600;',
+        '}',
+        '#wf-dash-modal .dv-version-count-label {',
+        '  color: var(--brand, var(--primary, #2563eb));',
+        '  font-weight: 600;',
+        '}',
+        '#wf-dash-modal .dv-slot-created,',
+        '#wf-dash-modal .dv-stash-created {',
+        '  margin-top: 2px;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '  white-space: nowrap;',
+        '  overflow: hidden;',
+        '  text-overflow: ellipsis;',
+        '}',
+        '#wf-dash-modal .dv-version-submitted {',
+        '  margin: 0 0 4px 0;',
+        '  padding: 0;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '}',
+        '#wf-dash-modal .dv-timestamp-accent {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-timestamp-date {',
+        '  color: var(--foreground, #0f172a);',
         '}',
         '#wf-dash-modal .dv-slot-column {',
         '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
@@ -2358,8 +2595,7 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
         '  grid-template-columns: 1fr 26px;',
-        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
-        '  row-gap: ' + DV_REEL_ROW_GAP + 'px;',
+        '  grid-template-rows: 1fr;',
         '  column-gap: 4px;',
         '  flex: 1;',
         '  height: 100%;',
@@ -2367,55 +2603,42 @@ function _dvInjectStyles() {
         '  padding: 6px 4px 6px 6px;',
         '  box-sizing: border-box;',
         '}',
-        '#wf-dash-modal .dv-reel--has-above {',
-        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
-        '}',
-        '#wf-dash-modal .dv-reel--has-below {',
-        '  grid-template-rows: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
-        '}',
-        '#wf-dash-modal .dv-reel--has-above.dv-reel--has-below {',
-        '  grid-template-rows: ' + DV_REEL_PEEK_H + 'px var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px) ' + DV_REEL_PEEK_H + 'px;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek {',
+        '#wf-dash-modal .dv-reel-viewport {',
         '  grid-column: 1;',
-        '  height: ' + DV_REEL_PEEK_H + 'px;',
-        '  overflow: hidden;',
-        '  background: var(--background, #fff);',
-        '  border: 1px solid var(--border, #e2e8f0);',
-        '  border-radius: 6px;',
-        '  box-sizing: border-box;',
-        '  flex-shrink: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--above {',
-        '  border-top-left-radius: 0;',
-        '  border-top-right-radius: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--below {',
-        '  border-bottom-left-radius: 0;',
-        '  border-bottom-right-radius: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel-peek--spacer {',
-        '  visibility: hidden;',
-        '  background: transparent;',
-        '  border-color: transparent;',
-        '}',
-        '#wf-dash-modal .dv-diff-equal {',
-        '  color: var(--muted-foreground, #64748b);',
-        '}',
-        '#wf-dash-modal .dv-reel-lens {',
-        '  grid-column: 1;',
-        '  height: 100%;',
+        '  grid-row: 1;',
+        '  align-self: start;',
+        '  height: ' + DV_REEL_VIEWPORT_H_EXPR + ';',
         '  min-height: 0;',
-        '  overflow-y: auto;',
-        '  overflow-x: hidden;',
+        '  overflow: hidden;',
+        '  position: relative;',
+        '}',
+        '#wf-dash-modal .dv-reel-track {',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  gap: ' + DV_REEL_ROW_GAP + 'px;',
+        '  will-change: transform;',
+        '}',
+        '#wf-dash-modal .dv-reel-card {',
+        '  flex-shrink: 0;',
+        '  height: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
+        '  min-height: 0;',
+        '  overflow: hidden;',
         '  padding: 8px 10px;',
         '  background: var(--background, #fff);',
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
         '  box-sizing: border-box;',
-        '  position: relative;',
         '}',
-        '#wf-dash-modal .dv-reel-lens pre {',
+        '#wf-dash-modal .dv-reel-card-content {',
+        '  height: 100%;',
+        '  overflow-y: auto;',
+        '  overflow-x: hidden;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-diff-equal {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-reel-card pre {',
         '  margin: 0;',
         '  padding: 0;',
         '  white-space: pre-wrap;',
@@ -2430,14 +2653,16 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows {',
         '  grid-column: 2;',
-        '  grid-row: 1 / -1;',
+        '  grid-row: 1;',
+        '  align-self: start;',
+        '  position: relative;',
         '  display: flex;',
         '  flex-direction: column;',
         '  align-items: center;',
-        '  justify-content: flex-start;',
-        '  gap: 10px;',
-        '  align-self: stretch;',
+        '  height: ' + DV_REEL_VIEWPORT_H_EXPR + ';',
         '  min-height: 0;',
+        '  width: 100%;',
+        '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav {',
         '  flex: 1;',
@@ -2447,6 +2672,8 @@ function _dvInjectStyles() {
         '  min-height: 0;',
         '  width: 100%;',
         '  overflow: hidden;',
+        '  padding-top: ' + DV_REEL_COPY_RAIL_PAD + 'px;',
+        '  box-sizing: border-box;',
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav-viewport {',
         '  flex: 1;',
@@ -2475,7 +2702,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav-controls .dv-reel-arrow {',
         '  pointer-events: auto;',
-        '  background: var(--card, var(--background, #fff));',
         '}',
         '#wf-dash-modal .dv-reel-nav-current-slot {',
         '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
@@ -2487,9 +2713,10 @@ function _dvInjectStyles() {
         '  display: flex;',
         '  align-items: center;',
         '  justify-content: center;',
-        '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
+        '  height: ' + DV_REEL_NAV_ROW_H + 'px;',
         '  width: 100%;',
         '  flex-shrink: 0;',
+        '  box-sizing: border-box;',
         '  font-size: 8px;',
         '  font-weight: 600;',
         '  color: var(--muted-foreground, #64748b);',
@@ -2503,10 +2730,12 @@ function _dvInjectStyles() {
         '  color: var(--foreground, #f8fafc);',
         '}',
         '#wf-dash-modal .dv-reel-copy {',
+        '  position: absolute;',
+        '  top: ' + DV_REEL_LENS_TOP + 'px;',
+        '  left: 0;',
+        '  z-index: 3;',
         '  flex-shrink: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel--has-above .dv-reel-copy {',
-        '  margin-top: ' + (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) + 'px;',
+        '  margin: 0;',
         '}',
     ].join('\n');
 }
@@ -2542,7 +2771,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.44',
+    _version: '1.59',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

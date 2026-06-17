@@ -13,10 +13,13 @@
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
+const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
-const DASH_CARD_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
+const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
+const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
+const DASH_TASK_CARD_BG = '#121212';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
@@ -70,10 +73,15 @@ const DASH_FLAGGED_BORDER = '#ca8a04';
 const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
-    quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
-    deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
+    quick: 'Faster results, task history hydration only on demand.',
+    deep: 'Slower results with complete task history for each card.'
+};
+const DASH_RESULTS_MODE_HINTS = {
+    clear: 'Clears previous results and replaces with new search results.',
+    add: 'Adds new search results to previous ones (deduplicated).'
 };
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+const DASH_NONE_SELECTED_HINT = 'None selected = all.';
 
 const DASH_SORT_DEFAULT = 'task_submitted:desc';
 const DASH_SORT_METRICS = [
@@ -669,6 +677,15 @@ const searchOutputMethods = {
         }
     },
 
+    _shouldShowHelpfulness(qa, feedbackId) {
+        if (!feedbackId || !qa) return false;
+        if (qa.isSystemFeedback || qa.isVerifierFailure) return false;
+        const userId = this._dashGetCurrentUserId();
+        const reviewerId = String(qa.qaReviewerId || '').trim();
+        if (userId && reviewerId && userId === reviewerId) return false;
+        return true;
+    },
+
     _helpfulnessFeedbackIdInFilter(ids) {
         const numeric = (ids || [])
             .map((id) => Number(String(id).trim()))
@@ -756,9 +773,8 @@ const searchOutputMethods = {
                     <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
                     <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
                 </div>
-                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">QA Review</span>
-                <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
                 <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="1" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
+                <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
                 ${removeHtml}
             </div>`;
     },
@@ -1134,6 +1150,7 @@ const searchOutputMethods = {
         const useDateEarlyExit = Boolean(afterIso || beforeIso);
         let consecutiveEmptyFilteredPages = 0;
         while (pageNum < DASH_DISPUTES_MAX_PAGES) {
+            if (this._shouldStopSearch()) break;
             const qs = new URLSearchParams({
                 teamIds: teamIds.join(','),
                 limit: String(DASH_DISPUTES_PAGE_SIZE),
@@ -1161,6 +1178,9 @@ const searchOutputMethods = {
                 + ' — ' + rows.length + ' rows (offset ' + offset + ')');
             allRows.push(...rows);
             lastPageLen = rows.length;
+            if (options.loadTracker) {
+                options.loadTracker.setCount(allRows.length);
+            }
             if (typeof options.onPage === 'function') {
                 try {
                     options.onPage(rows, pageNum, { offset });
@@ -1271,13 +1291,14 @@ const searchOutputMethods = {
         return byTaskId;
     },
 
-    _ensureResolvedDisputesPrefetch() {
+    _ensureResolvedDisputesPrefetch(loadTracker) {
         if (this._state.resolvedDisputesPrefetchStatus === 'done'
             || this._state.resolvedDisputesPrefetchStatus === 'error') {
-            return Promise.resolve();
+            const cache = this._state.resolvedDisputesByTaskId || new Map();
+            return Promise.resolve(cache.size);
         }
         if (!this._state.resolvedDisputesPrefetchPromise) {
-            this._state.resolvedDisputesPrefetchPromise = this._runResolvedDisputesPrefetch();
+            this._state.resolvedDisputesPrefetchPromise = this._runResolvedDisputesPrefetch(loadTracker);
         }
         return this._state.resolvedDisputesPrefetchPromise;
     },
@@ -1308,7 +1329,7 @@ const searchOutputMethods = {
         return this._state.bootstrapStatus === 'done';
     },
 
-    async _runResolvedDisputesPrefetch() {
+    async _runResolvedDisputesPrefetch(loadTracker) {
         this._state.resolvedDisputesPrefetchStatus = 'loading';
         try {
             const ready = await this._awaitBootstrapForPrefetch();
@@ -1320,18 +1341,18 @@ const searchOutputMethods = {
                 }
                 this._state.resolvedDisputesByTaskId = new Map();
                 this._resetResolvedDisputesPrefetchForRetry();
-                return;
+                return 0;
             }
             const teamIds = this._getSearchableTeamCatalog().map(([id]) => id);
             if (teamIds.length === 0) {
                 Logger.debug('dashboard: resolved disputes prefetch skipped — no team scope');
                 this._state.resolvedDisputesByTaskId = new Map();
                 this._state.resolvedDisputesPrefetchStatus = 'done';
-                return;
+                return 0;
             }
             Logger.log('dashboard: resolved disputes prefetch started — ' + teamIds.length + ' team(s)');
             const { rows, capped } = await this._fetchDisputesBulkPages(
-                teamIds, 'resolved', null, null, null, { fleetWebChannel: null }
+                teamIds, 'resolved', null, null, null, { fleetWebChannel: null, loadTracker }
             );
             this._state.resolvedDisputesByTaskId = this._indexResolvedDisputeRows(rows);
             this._state.resolvedDisputesBulkIncomplete = capped;
@@ -1342,10 +1363,12 @@ const searchOutputMethods = {
             if (capped) {
                 Logger.warn('dashboard: resolved disputes prefetch incomplete — pagination capped');
             }
+            return this._state.resolvedDisputesByTaskId.size;
         } catch (e) {
             Logger.warn('dashboard: resolved disputes prefetch failed', e);
             this._state.resolvedDisputesByTaskId = new Map();
             this._state.resolvedDisputesPrefetchStatus = 'error';
+            return 0;
         }
     },
 
@@ -1391,13 +1414,15 @@ const searchOutputMethods = {
         return cache.get(taskId) || [];
     },
 
-    async _fetchOpenDisputesBulk(scope, afterIso, beforeIso) {
+    async _fetchOpenDisputesBulk(scope, afterIso, beforeIso, loadTracker) {
         const teamIds = (scope && scope.teamIds) || [];
         if (teamIds.length === 0) {
             Logger.debug('dashboard: open disputes bootstrap skipped — no team scope');
             return { openDisputesByTaskId: new Map(), bulkIncomplete: false };
         }
-        const openResult = await this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null);
+        const openResult = await this._fetchDisputesBulkPages(teamIds, null, afterIso, beforeIso, null, {
+            loadTracker
+        });
         const openDisputesByTaskId = new Map();
         let openRowCount = 0;
         for (const row of openResult.rows) {
@@ -1438,7 +1463,7 @@ const searchOutputMethods = {
         const [openPart, resolvedMeta] = await Promise.all([
             this._trackSearchLoadPromise(
                 'Open disputes (bulk pagination)',
-                this._fetchOpenDisputesBulk(scope, afterIso, beforeIso)
+                (tracker) => this._fetchOpenDisputesBulk(scope, afterIso, beforeIso, tracker)
             ),
             Promise.resolve(this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, null))
         ]);
@@ -1660,11 +1685,13 @@ const searchOutputMethods = {
         return dashPgInChunks(ids);
     },
 
-    async _fetchProfilesByIds(profileIds, logContext) {
+    async _fetchProfilesByIds(profileIds, logContext, loadTracker) {
         const chunks = dashPgInChunks(profileIds);
         if (chunks.length === 0) return [];
         const all = [];
+        const total = profileIds.length;
         for (const chunk of chunks) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('profiles.select_person', {
                 id: dashPgInFilter(chunk)
             }, logContext || 'search').catch((e) => {
@@ -1672,19 +1699,23 @@ const searchOutputMethods = {
                 return [];
             });
             all.push(...rows);
+            if (loadTracker) loadTracker.setCount(all.length, total);
         }
         return all;
     },
 
-    async _fetchTargetProjectMap(targetIds) {
+    async _fetchTargetProjectMap(targetIds, loadTracker) {
         if (!targetIds || targetIds.length === 0) return new Map();
         const map = new Map();
+        const total = targetIds.length;
         for (const chunk of dashPgInChunks(targetIds)) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('task_project_targets.select_project_map', {
                 id: dashPgInFilter(chunk),
                 limit: String(chunk.length)
             }, 'search').catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
             for (const r of rows) if (r.id && r.project_id) map.set(r.id, r.project_id);
+            if (loadTracker) loadTracker.setCount(map.size, total);
         }
         Logger.debug('dashboard: target→project map built (' + map.size + ' / ' + targetIds.length + ' targets resolved)');
         return map;
@@ -1916,15 +1947,17 @@ const searchOutputMethods = {
 
     // ── Worker output search ──,
 
-    async _fetchTargetIdsForProjects(projectIds) {
+    async _fetchTargetIdsForProjects(projectIds, loadTracker) {
         if (!projectIds || projectIds.length === 0) return [];
         const ids = [];
         for (const chunk of dashPgInChunks(projectIds)) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('task_project_targets.select_ids', {
                 project_id: dashPgInFilter(chunk),
                 limit: '500'
             }, 'search').catch((e) => { Logger.warn('dashboard: project→target lookup failed', e); return []; });
             for (const r of rows) if (r.id) ids.push(r.id);
+            if (loadTracker) loadTracker.setCount(ids.length);
         }
         Logger.debug('dashboard: project→target ids (' + ids.length + ' for ' + projectIds.length + ' project(s))');
         return ids;
@@ -1964,7 +1997,7 @@ const searchOutputMethods = {
             } else {
                 targetIds = await this._trackSearchLoadPromise(
                     'Project targets for ' + projectIds.length + ' project(s)',
-                    this._fetchTargetIdsForProjects(projectIds)
+                    (tracker) => this._fetchTargetIdsForProjects(projectIds, tracker)
                 );
                 this._state.targetIdsCacheKey = cacheKey;
                 this._state.targetIdsCache = targetIds;
@@ -2031,7 +2064,7 @@ const searchOutputMethods = {
         return true;
     },
 
-    async _fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope) {
+    async _fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope, loadTracker) {
         if (scope.hasProjectFilter && scope.targetIds.length === 0) {
             Logger.debug('dashboard: tasks skipped — project filter matched no targets');
             return [];
@@ -2044,9 +2077,12 @@ const searchOutputMethods = {
         const scopeVariants = this._scopeQueryVariants(scope);
         let pageNum = 0;
         for (const authorChunk of authorVariants) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 let offset = 0;
                 while (true) {
+                    if (this._shouldStopSearch()) break;
                     const qs = {
                         order: 'created_at.desc',
                         offset: String(offset),
@@ -2063,6 +2099,7 @@ const searchOutputMethods = {
                     pageNum++;
                     Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
                     for (const row of page) if (row && row.id) byId.set(row.id, row);
+                    if (loadTracker) loadTracker.setCount(byId.size);
                     if (page.length < DASH_TASKS_PAGE_SIZE) break;
                     offset += DASH_TASKS_PAGE_SIZE;
                 }
@@ -2073,13 +2110,16 @@ const searchOutputMethods = {
         return allRows;
     },
 
-    async _fetchTaskRowsByIds(taskIds, scope, channel) {
+    async _fetchTaskRowsByIds(taskIds, scope, channel, loadTracker) {
         if (!taskIds || taskIds.length === 0) return [];
         const pgChannel = channel || 'search';
         const scopeVariants = this._scopeQueryVariants(scope);
         const byId = new Map();
+        const totalIds = taskIds.length;
         for (const chunk of dashPgInChunks(taskIds)) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 const qs = {
                     id: dashPgInFilter(chunk),
                     limit: String(chunk.length)
@@ -2088,12 +2128,13 @@ const searchOutputMethods = {
                 const page = await this._pgQuery('tasks.select_search', qs, pgChannel);
                 Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
                 for (const row of page) if (row && row.id) byId.set(row.id, row);
+                if (loadTracker) loadTracker.setCount(byId.size, totalIds);
             }
         }
         return [...byId.values()];
     },
 
-    async _fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope) {
+    async _fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope, loadTracker) {
         if (scope.hasProjectFilter && scope.targetIds.length === 0) {
             Logger.debug('dashboard: QA skipped — project filter matched no targets');
             return [];
@@ -2109,9 +2150,12 @@ const searchOutputMethods = {
         const authorVariants = this._authorQueryVariants(authorIds);
         const scopeVariants = useTaskScopeEmbed ? this._scopeQueryVariants(scope) : [{}];
         for (const authorChunk of authorVariants) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 let offset = 0;
                 while (true) {
+                    if (this._shouldStopSearch()) break;
                     const qs = {
                         order: 'created_at.desc',
                         offset: String(offset),
@@ -2132,6 +2176,7 @@ const searchOutputMethods = {
                         seenFeedbackIds.add(row.id);
                         allFeedback.push(row);
                     }
+                    if (loadTracker) loadTracker.setCount(allFeedback.length);
                     if (page.length < DASH_QA_PAGE_SIZE) break;
                     offset += DASH_QA_PAGE_SIZE;
                 }
@@ -2141,13 +2186,14 @@ const searchOutputMethods = {
         return allFeedback;
     },
 
-    async _fetchQaFeedbackRowsForTaskIds(taskIds, scope, channel) {
+    async _fetchQaFeedbackRowsForTaskIds(taskIds, scope, channel, loadTracker) {
         if (!taskIds || taskIds.length === 0) return [];
         if (scope.hasProjectFilter && scope.targetIds.length === 0) return [];
         const pgChannel = channel || 'search';
         const allFeedback = [];
         const seenFeedbackIds = new Set();
         for (const chunk of dashPgInChunks(taskIds)) {
+            if (this._shouldStopSearch()) break;
             const qs = {
                 eval_task_id: dashPgInFilter(chunk),
                 order: 'created_at.desc',
@@ -2160,6 +2206,7 @@ const searchOutputMethods = {
                 seenFeedbackIds.add(row.id);
                 allFeedback.push(row);
             }
+            if (loadTracker) loadTracker.setCount(allFeedback.length);
         }
         return allFeedback;
     },
@@ -2180,13 +2227,13 @@ const searchOutputMethods = {
             profileIdsArr.length > 0
                 ? track(
                     'Contributor profiles (' + profileIdsArr.length + ')',
-                    this._fetchProfilesByIds(profileIdsArr, 'search')
+                    (tracker) => this._fetchProfilesByIds(profileIdsArr, 'search', tracker)
                 )
                 : Promise.resolve([]),
             uniqueTargetIds.length > 0
                 ? track(
                     'Target→project map (' + uniqueTargetIds.length + ')',
-                    this._fetchTargetProjectMap(uniqueTargetIds)
+                    (tracker) => this._fetchTargetProjectMap(uniqueTargetIds, tracker)
                 )
                 : Promise.resolve(new Map())
         ]);
@@ -2581,12 +2628,129 @@ const searchOutputMethods = {
         return [...ids];
     },
 
+    _mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows) {
+        const allTaskRows = [...(creationRows || [])];
+        const seenIds = new Set(allTaskRows.map((r) => r.id));
+        for (const row of qaOnlyRows || []) {
+            if (row && row.id && !seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
+        for (const row of disputeOnlyRows || []) {
+            if (row && row.id && !seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
+        return allTaskRows;
+    },
+
+    async _assembleWorkerOutputSearchResult(options) {
+        const opts = options || {};
+        const {
+            includeTaskCreation,
+            includeQa,
+            includeDisputes,
+            blockOnDisputes,
+            creationRows,
+            feedbackRows,
+            qaOnlyRows,
+            disputeOnlyRows,
+            disputeTaskIds,
+            afterIso,
+            beforeIso,
+            openDisputesByTaskId,
+            resolvedDisputeAtByTaskId,
+            scope,
+            authorIds,
+            searchDepth
+        } = opts;
+        const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows);
+        let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
+            ? opts.allFeedbackRows.slice()
+            : [...(feedbackRows || [])];
+
+        this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
+        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
+            trackSearchLoad: true
+        });
+
+        const items = [];
+        if (includeTaskCreation) {
+            const creationTasks = (creationRows || [])
+                .map((row) => enrichedTasksById.get(row.id))
+                .filter(Boolean);
+            items.push(...this._taskCreationItemsFromTasks(creationTasks));
+            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
+        }
+        if (includeQa && (feedbackRows || []).length > 0) {
+            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
+        }
+        if (disputeTaskIds && disputeTaskIds.length > 0) {
+            const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
+            const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
+                inScopeIds,
+                enrichedTasksById,
+                openDisputesByTaskId || new Map()
+            );
+            const existingTaskIds = new Set(items.map((it) => it.task.id));
+            for (const disputeItem of disputeItems) {
+                if (!existingTaskIds.has(disputeItem.task.id)) {
+                    existingTaskIds.add(disputeItem.task.id);
+                    items.push(disputeItem);
+                }
+            }
+        }
+
+        this._setSearchLoadPhase('Assembling result cards…', items.length);
+        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
+        const dateFilter = this._filterCardsBySearchDateRange(
+            mergedItems,
+            afterIso,
+            beforeIso,
+            allFeedbackRows,
+            openDisputesByTaskId || new Map(),
+            resolvedDisputeAtByTaskId || new Map()
+        );
+        mergedItems = dateFilter.items;
+        const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
+        allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
+        this._trimOpenDisputesToTarget(keptTaskIds);
+
+        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
+
+        if (includeDisputes && !blockOnDisputes && !this._shouldStopSearch()) {
+            const searchGen = this._state.searchGeneration;
+            void this._runAsyncDisputeSearchHydration(searchGen, {
+                scope,
+                afterIso,
+                beforeIso,
+                authorIds,
+                includeQa,
+                allFeedbackRows
+            });
+        }
+
+        return {
+            items: resultItems,
+            allFeedbackRows,
+            includeQa,
+            includeDisputes
+        };
+    },
+
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
-        this._state.disputesBulkIncomplete = false;
-        this._state.openDisputesByTaskId = new Map();
-        this._state.resolvedDisputeTaskIds = new Set();
-        this._state.resolvedDisputeAtByTaskId = new Map();
-        this._state.resolverDisputeTaskIds = new Set();
+        const preserveDisputeState = this._isAdditiveResultsMode()
+            && Array.isArray(this._state.resultsLoadSnapshot)
+            && this._state.resultsLoadSnapshot.length > 0;
+        if (!preserveDisputeState) {
+            this._state.disputesBulkIncomplete = false;
+            this._state.openDisputesByTaskId = new Map();
+            this._state.resolvedDisputeTaskIds = new Set();
+            this._state.resolvedDisputeAtByTaskId = new Map();
+            this._state.resolverDisputeTaskIds = new Set();
+        }
         this._state.disputeIngestQueue = null;
         const blockOnDisputes = Boolean(includeDisputes && searchDepth === 'deep');
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
@@ -2597,20 +2761,20 @@ const searchOutputMethods = {
         const tasksPromise = includeTaskCreation
             ? this._trackSearchLoadPromise(
                 'Task creation rows',
-                this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope)
+                (tracker) => this._fetchTaskRowsForSearch(authorIds, afterIso, beforeIso, scope, tracker)
             )
             : Promise.resolve([]);
         const qaPromise = includeQa
             ? this._trackSearchLoadPromise(
                 'QA feedback rows',
-                this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope)
+                (tracker) => this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope, tracker)
             )
             : Promise.resolve([]);
 
         if (blockOnDisputes) {
             const resolvedPrefetchPromise = this._trackSearchLoadPromise(
                 'Resolved disputes (prefetch cache)',
-                this._ensureResolvedDisputesPrefetch()
+                (tracker) => this._ensureResolvedDisputesPrefetch(tracker)
             );
             const bootstrapPromise = this._fetchDisputesBootstrap(scope, afterIso, beforeIso);
             const resolverPromise = authorIds.length > 0
@@ -2629,6 +2793,31 @@ const searchOutputMethods = {
                 qaPromise,
                 resolverPromise
             ]);
+            if (this._shouldStopSearch()) {
+                const emptyBootstrap = {
+                    openDisputesByTaskId: new Map(),
+                    resolvedDisputeAtByTaskId: new Map()
+                };
+                const partialBootstrap = bootstrap || emptyBootstrap;
+                return this._assembleWorkerOutputSearchResult({
+                    includeTaskCreation,
+                    includeQa,
+                    includeDisputes,
+                    blockOnDisputes,
+                    creationRows: creationRows || [],
+                    feedbackRows: feedbackRows || [],
+                    qaOnlyRows: [],
+                    disputeOnlyRows: [],
+                    disputeTaskIds: [],
+                    afterIso,
+                    beforeIso,
+                    openDisputesByTaskId: partialBootstrap.openDisputesByTaskId || new Map(),
+                    resolvedDisputeAtByTaskId: partialBootstrap.resolvedDisputeAtByTaskId || new Map(),
+                    scope,
+                    authorIds,
+                    searchDepth
+                });
+            }
             this._state.openDisputesByTaskId = bootstrap.openDisputesByTaskId;
             this._state.resolvedDisputeTaskIds = bootstrap.resolvedDisputeTaskIds;
             this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
@@ -2651,45 +2840,31 @@ const searchOutputMethods = {
             const qaTaskIdSet = new Set(qaTaskIds);
             const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
             const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIdSet.has(id));
-            if (missingQaTaskIds.length > 0 || missingDisputeTaskIds.length > 0) {
-                this._setSearchLoadPhase('Loading linked tasks…');
+            const linkedTaskCount = missingQaTaskIds.length + missingDisputeTaskIds.length;
+            if (linkedTaskCount > 0) {
+                this._setSearchLoadPhase('Loading linked tasks…', linkedTaskCount);
             }
             const [qaOnlyRows, disputeOnlyRows] = await Promise.all([
                 missingQaTaskIds.length > 0
                     ? this._trackSearchLoadPromise(
                         'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
-                        this._fetchTaskRowsByIds(missingQaTaskIds, scope)
+                        (tracker) => this._fetchTaskRowsByIds(missingQaTaskIds, scope, undefined, tracker)
                     )
                     : Promise.resolve([]),
                 missingDisputeTaskIds.length > 0
                     ? this._trackSearchLoadPromise(
                         'Tasks from disputes (' + missingDisputeTaskIds.length + ' id(s))',
-                        this._fetchTaskRowsByIds(missingDisputeTaskIds, scope)
+                        (tracker) => this._fetchTaskRowsByIds(missingDisputeTaskIds, scope, undefined, tracker)
                     )
                     : Promise.resolve([])
             ]);
 
-            const allTaskRows = [...creationRows];
-            const seenIds = new Set(creationIds);
-            for (const row of qaOnlyRows) {
-                if (!seenIds.has(row.id)) {
-                    seenIds.add(row.id);
-                    allTaskRows.push(row);
-                }
-            }
-            for (const row of disputeOnlyRows) {
-                if (!seenIds.has(row.id)) {
-                    seenIds.add(row.id);
-                    allTaskRows.push(row);
-                }
-            }
-
             let allFeedbackRows = [...feedbackRows];
-            if (disputeTaskIds.length > 0 && !includeQa) {
-                this._setSearchLoadPhase('Loading supplementary QA feedback…');
+            if (!this._shouldStopSearch() && disputeTaskIds.length > 0 && !includeQa) {
+                this._setSearchLoadPhase('Loading supplementary QA feedback…', disputeTaskIds.length);
                 const disputeQaRows = await this._trackSearchLoadPromise(
                     'QA feedback for ' + disputeTaskIds.length + ' dispute task(s)',
-                    this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope)
+                    (tracker) => this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope, undefined, tracker)
                 );
                 const seenFb = new Set(allFeedbackRows.map((f) => f.id));
                 for (const fb of disputeQaRows) {
@@ -2700,140 +2875,80 @@ const searchOutputMethods = {
                 }
             }
 
-            this._setSearchLoadPhase('Assembling results…');
-            const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
-                trackSearchLoad: true
-            });
-
-            const items = [];
-            if (includeTaskCreation) {
-                const creationTasks = creationRows
-                    .map((row) => enrichedTasksById.get(row.id))
-                    .filter(Boolean);
-                items.push(...this._taskCreationItemsFromTasks(creationTasks));
-                Logger.log('dashboard: task creation items built — ' + creationTasks.length);
-            }
-            if (includeQa && feedbackRows.length > 0) {
-                items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
-            }
-            if (disputeTaskIds.length > 0) {
-                const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
-                const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
-                    inScopeIds,
-                    enrichedTasksById,
-                    bootstrap.openDisputesByTaskId
-                );
-                const existingTaskIds = new Set(items.map((it) => it.task.id));
-                for (const disputeItem of disputeItems) {
-                    if (!existingTaskIds.has(disputeItem.task.id)) {
-                        existingTaskIds.add(disputeItem.task.id);
-                        items.push(disputeItem);
-                    }
-                }
-            }
-
-            this._setSearchLoadPhase('Assembling result cards…');
-            let mergedItems = this._mergeWorkerOutputItemsByTask(items);
-            const dateFilter = this._filterCardsBySearchDateRange(
-                mergedItems,
+            return this._assembleWorkerOutputSearchResult({
+                includeTaskCreation,
+                includeQa,
+                includeDisputes,
+                blockOnDisputes,
+                creationRows,
+                feedbackRows,
+                qaOnlyRows,
+                disputeOnlyRows,
+                disputeTaskIds,
+                allFeedbackRows,
                 afterIso,
                 beforeIso,
-                allFeedbackRows,
-                bootstrap.openDisputesByTaskId,
-                bootstrap.resolvedDisputeAtByTaskId
-            );
-            mergedItems = dateFilter.items;
-            const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
-            allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
-            this._trimOpenDisputesToTarget(keptTaskIds);
-
-            const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
-            return {
-                items: resultItems,
-                allFeedbackRows,
-                includeQa,
-                includeDisputes
-            };
+                openDisputesByTaskId: bootstrap.openDisputesByTaskId,
+                resolvedDisputeAtByTaskId: bootstrap.resolvedDisputeAtByTaskId,
+                scope,
+                authorIds,
+                searchDepth
+            });
         }
 
         const [creationRows, feedbackRows] = await Promise.all([tasksPromise, qaPromise]);
+        if (this._shouldStopSearch()) {
+            return this._assembleWorkerOutputSearchResult({
+                includeTaskCreation,
+                includeQa,
+                includeDisputes,
+                blockOnDisputes,
+                creationRows: creationRows || [],
+                feedbackRows: feedbackRows || [],
+                qaOnlyRows: [],
+                disputeOnlyRows: [],
+                disputeTaskIds: [],
+                afterIso,
+                beforeIso,
+                openDisputesByTaskId: this._state.openDisputesByTaskId,
+                resolvedDisputeAtByTaskId: this._state.resolvedDisputeAtByTaskId,
+                scope,
+                authorIds,
+                searchDepth
+            });
+        }
 
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
         if (missingQaTaskIds.length > 0) {
-            this._setSearchLoadPhase('Loading linked tasks…');
+            this._setSearchLoadPhase('Loading linked tasks…', missingQaTaskIds.length);
         }
-        const qaOnlyRows = missingQaTaskIds.length > 0
+        const qaOnlyRows = missingQaTaskIds.length > 0 && !this._shouldStopSearch()
             ? await this._trackSearchLoadPromise(
                 'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
-                this._fetchTaskRowsByIds(missingQaTaskIds, scope)
+                (tracker) => this._fetchTaskRowsByIds(missingQaTaskIds, scope, undefined, tracker)
             )
             : [];
 
-        const allTaskRows = [...creationRows];
-        const seenIds = new Set(creationIds);
-        for (const row of qaOnlyRows) {
-            if (!seenIds.has(row.id)) {
-                seenIds.add(row.id);
-                allTaskRows.push(row);
-            }
-        }
-
-        let allFeedbackRows = [...feedbackRows];
-
-        this._setSearchLoadPhase('Assembling results…');
-        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
-            trackSearchLoad: true
-        });
-
-        const items = [];
-        if (includeTaskCreation) {
-            const creationTasks = creationRows
-                .map((row) => enrichedTasksById.get(row.id))
-                .filter(Boolean);
-            items.push(...this._taskCreationItemsFromTasks(creationTasks));
-            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
-        }
-        if (includeQa && feedbackRows.length > 0) {
-            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
-        }
-
-        this._setSearchLoadPhase('Assembling result cards…');
-        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
-        const dateFilter = this._filterCardsBySearchDateRange(
-            mergedItems,
+        return this._assembleWorkerOutputSearchResult({
+            includeTaskCreation,
+            includeQa,
+            includeDisputes,
+            blockOnDisputes,
+            creationRows,
+            feedbackRows,
+            qaOnlyRows,
+            disputeOnlyRows: [],
+            disputeTaskIds: [],
             afterIso,
             beforeIso,
-            allFeedbackRows,
-            this._state.openDisputesByTaskId,
-            this._state.resolvedDisputeAtByTaskId
-        );
-        mergedItems = dateFilter.items;
-        const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
-        allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
-        this._trimOpenDisputesToTarget(keptTaskIds);
-
-        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
-
-        if (includeDisputes && !blockOnDisputes) {
-            const searchGen = this._state.searchGeneration;
-            void this._runAsyncDisputeSearchHydration(searchGen, {
-                scope,
-                afterIso,
-                beforeIso,
-                authorIds,
-                includeQa,
-                allFeedbackRows
-            });
-        }
-
-        return {
-            items: resultItems,
-            allFeedbackRows,
-            includeQa,
-            includeDisputes
-        };
+            openDisputesByTaskId: this._state.openDisputesByTaskId,
+            resolvedDisputeAtByTaskId: this._state.resolvedDisputeAtByTaskId,
+            scope,
+            authorIds,
+            searchDepth
+        });
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -2872,8 +2987,16 @@ const searchOutputMethods = {
                     }
                 }
             }
-            if (item.hydrated === false) merged.hydrated = false;
-            else if (merged.hydrated === undefined) merged.hydrated = item.hydrated !== false;
+            if (item.hydrated === false) {
+                if (merged.hydrated !== true) merged.hydrated = false;
+            } else if (item.hydrated !== false) {
+                merged.hydrated = true;
+                const mergedVers = (merged.task.promptVersions || []).length;
+                const itemVers = (item.task.promptVersions || []).length;
+                if (itemVers > mergedVers) merged.task = item.task;
+            } else if (merged.hydrated === undefined) {
+                merged.hydrated = item.hydrated !== false;
+            }
         }
         const mergedItems = [...byTask.values()].map((merged) => {
             const kinds = DASH_KIND_MERGE_ORDER.filter((k) => merged.kinds.has(k));
@@ -2917,7 +3040,7 @@ const searchOutputMethods = {
         const uiMap = this._state.helpfulnessUi || {};
         const present = new Set();
         for (const item of scopeItems || []) {
-            for (const flag of lib.itemQaHelpfulness(item, uiMap)) {
+            for (const flag of lib.itemQaHelpfulness(item, uiMap, this._dashGetCurrentUserId())) {
                 present.add(flag);
             }
         }
@@ -2934,10 +3057,25 @@ const searchOutputMethods = {
         this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
     },
 
-    _isDimensionAllSelected(selected, boundIds) {
+    _isDimensionUnrestricted(selected, boundIds) {
         const bounds = boundIds || [];
         if (bounds.length === 0) return true;
-        return (selected || []).length >= bounds.length;
+        const sel = selected || [];
+        return sel.length === 0 || sel.length >= bounds.length;
+    },
+
+    _isDimensionAllSelected(selected, boundIds) {
+        return this._isDimensionUnrestricted(selected, boundIds);
+    },
+
+    _normalizeFilterDimensionSelection(selected, boundIds) {
+        return this._isDimensionUnrestricted(selected, boundIds) ? [] : [...(selected || [])];
+    },
+
+    _filterDimensionEquivalent(draftSel, appliedSel, boundIds) {
+        const draftNorm = this._normalizeFilterDimensionSelection(draftSel, boundIds);
+        const appliedNorm = this._normalizeFilterDimensionSelection(appliedSel, boundIds);
+        return this._filterArraysEqual(draftNorm, appliedNorm);
     },
 
     _expandAppliedForBoundsGrowth(applied, prevBounds, newBounds) {
@@ -2946,14 +3084,14 @@ const searchOutputMethods = {
             const prevBoundIds = prevBounds[draftKey] || [];
             const newBoundIds = newBounds[draftKey] || [];
             const appliedSel = (applied[draftKey] || []);
+            if (this._isDimensionUnrestricted(appliedSel, prevBoundIds)) {
+                next[draftKey] = [];
+                continue;
+            }
             if (prevBoundIds.length === 0 && newBoundIds.length > 0) {
-                next[draftKey] = [...newBoundIds];
-            } else if (
-                prevBoundIds.length > 0
-                && newBoundIds.length > prevBoundIds.length
-                && this._isDimensionAllSelected(appliedSel, prevBoundIds)
-            ) {
-                next[draftKey] = [...newBoundIds];
+                next[draftKey] = [];
+            } else if (newBoundIds.length > prevBoundIds.length) {
+                next[draftKey] = appliedSel.filter((id) => newBoundIds.includes(id));
             }
         }
         return next;
@@ -2962,25 +3100,13 @@ const searchOutputMethods = {
     _checkedIdsForFilterScope(draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncFromApplied) {
         const boundIds = listBounds[draftKey] || [];
         const appliedSel = (applied && applied[draftKey]) || [];
-        const prevBoundIds = (prevBounds && prevBounds[draftKey]) || [];
 
-        if (syncFromApplied && applied) {
-            if (this._isDimensionAllSelected(appliedSel, boundIds)) {
-                return new Set(optionIds);
-            }
-            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
-        }
-
-        if (prevBoundIds.length === 0 && boundIds.length > 0 && appliedSel.length === 0) {
-            return new Set(optionIds);
-        }
-
-        if (prevSelected !== null && prevBoundIds.length > 0) {
+        if (!syncFromApplied && prevSelected !== null) {
             return prevSelected;
         }
 
-        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
-            return new Set(optionIds);
+        if (this._isDimensionUnrestricted(appliedSel, boundIds)) {
+            return new Set();
         }
 
         if (appliedSel.length > 0) {
@@ -3051,6 +3177,304 @@ const searchOutputMethods = {
         this._persistSearchDepthPref(next);
         this._syncSearchDepthUi();
         Logger.log('dashboard: search depth — ' + next);
+    },
+
+    _readResultsModePref() {
+        try {
+            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_MODE_STORAGE_KEY);
+            if (v === 'add' || v === 'clear') return v;
+        } catch (_e) { /* ignore */ }
+        return 'clear';
+    },
+
+    _persistResultsModePref(mode) {
+        try {
+            this._pageWindow().localStorage.setItem(
+                DASH_RESULTS_MODE_STORAGE_KEY,
+                mode === 'add' ? 'add' : 'clear'
+            );
+        } catch (e) {
+            Logger.debug('dashboard: could not persist results mode', e);
+        }
+    },
+
+    _isAdditiveResultsMode() {
+        return (this._state && this._state.resultsMode) === 'add';
+    },
+
+    _resultsModeToggleHtml(hintKey) {
+        const label = this._labelStyle();
+        return `<div style="margin-top: 4px; margin-bottom: 10px;">
+            <div style="${label} margin-bottom: 6px; font-weight: 600;">Results mode</div>
+            <div style="display: flex; width: 100%; gap: 8px;">
+                <button type="button" data-wf-dash-results-mode="clear" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Clear</button>
+                <button type="button" data-wf-dash-results-mode="add" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Add</button>
+            </div>
+            <div data-wf-dash-results-mode-hint="${dashEscHtml(hintKey)}" style="margin-top: 8px;"></div>
+        </div>`;
+    },
+
+    _syncResultsModeHint() {
+        const mode = this._state.resultsMode || 'clear';
+        const hint = this._hintStyle();
+        const text = DASH_RESULTS_MODE_HINTS[mode] || '';
+        const modal = this._modal;
+        if (!modal) return;
+        modal.querySelectorAll('[data-wf-dash-results-mode-hint]').forEach((el) => {
+            el.innerHTML = `<span style="${hint} line-height: 1.4;">${dashEscHtml(text)}</span>`;
+        });
+    },
+
+    _syncResultsModeUi() {
+        const mode = this._state.resultsMode || this._readResultsModePref();
+        this._state.resultsMode = mode === 'add' ? 'add' : 'clear';
+        const modal = this._modal;
+        if (!modal) return;
+        modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
+            const btnMode = btn.getAttribute('data-wf-dash-results-mode');
+            const active = btnMode === this._state.resultsMode;
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            btn.style.cssText = this._btnDepthSegmentStyle(active);
+        });
+        this._syncResultsModeHint();
+    },
+
+    _setResultsMode(mode) {
+        const next = mode === 'add' ? 'add' : 'clear';
+        this._state.resultsMode = next;
+        this._persistResultsModePref(next);
+        this._syncResultsModeUi();
+        Logger.log('dashboard: results mode — ' + next);
+    },
+
+    _cloneOpenDisputesMap(map) {
+        const src = map || new Map();
+        const out = new Map();
+        for (const [taskId, rows] of src) {
+            out.set(taskId, Array.isArray(rows) ? rows.slice() : rows);
+        }
+        return out;
+    },
+
+    _snapshotDisputeState() {
+        const open = this._state.openDisputesByTaskId;
+        const resolvedAt = this._state.resolvedDisputeAtByTaskId;
+        return {
+            openDisputesByTaskId: open ? this._cloneOpenDisputesMap(open) : null,
+            resolvedDisputeTaskIds: this._state.resolvedDisputeTaskIds
+                ? new Set(this._state.resolvedDisputeTaskIds) : null,
+            resolvedDisputeAtByTaskId: resolvedAt ? new Map(resolvedAt) : null,
+            resolverDisputeTaskIds: this._state.resolverDisputeTaskIds
+                ? new Set(this._state.resolverDisputeTaskIds) : null,
+            disputesBulkIncomplete: Boolean(this._state.disputesBulkIncomplete)
+        };
+    },
+
+    _mergeOpenDisputesMaps(baseMap, extraMap) {
+        const out = this._cloneOpenDisputesMap(baseMap || new Map());
+        for (const [taskId, rows] of (extraMap || new Map())) {
+            const bucket = out.get(taskId) || [];
+            const seen = new Set(bucket.map((r) => r && r.id).filter(Boolean));
+            for (const row of rows || []) {
+                if (row && row.id != null && !seen.has(row.id)) {
+                    seen.add(row.id);
+                    bucket.push(row);
+                }
+            }
+            if (bucket.length > 0) out.set(taskId, bucket);
+        }
+        return out;
+    },
+
+    _mergeDisputeStateSnapshot(snapshot, current) {
+        const snap = snapshot || {};
+        const cur = current || {};
+        const openBase = snap.openDisputesByTaskId || new Map();
+        const openExtra = cur.openDisputesByTaskId || new Map();
+        this._state.openDisputesByTaskId = this._mergeOpenDisputesMaps(openBase, openExtra);
+
+        const resolvedIds = new Set([
+            ...(snap.resolvedDisputeTaskIds || []),
+            ...(cur.resolvedDisputeTaskIds || [])
+        ]);
+        this._state.resolvedDisputeTaskIds = resolvedIds;
+
+        const resolverIds = new Set([
+            ...(snap.resolverDisputeTaskIds || []),
+            ...(cur.resolverDisputeTaskIds || [])
+        ]);
+        this._state.resolverDisputeTaskIds = resolverIds;
+
+        const atMap = new Map(snap.resolvedDisputeAtByTaskId || []);
+        for (const [taskId, at] of (cur.resolvedDisputeAtByTaskId || new Map())) {
+            const prev = atMap.get(taskId);
+            if (!prev || at > prev) atMap.set(taskId, at);
+        }
+        this._state.resolvedDisputeAtByTaskId = atMap;
+        this._state.disputesBulkIncomplete = Boolean(snap.disputesBulkIncomplete || cur.disputesBulkIncomplete);
+    },
+
+    _restoreDisputeStateSnapshot(snapshot) {
+        if (!snapshot) return;
+        this._state.openDisputesByTaskId = snapshot.openDisputesByTaskId
+            ? this._cloneOpenDisputesMap(snapshot.openDisputesByTaskId) : null;
+        this._state.resolvedDisputeTaskIds = snapshot.resolvedDisputeTaskIds
+            ? new Set(snapshot.resolvedDisputeTaskIds) : null;
+        this._state.resolvedDisputeAtByTaskId = snapshot.resolvedDisputeAtByTaskId
+            ? new Map(snapshot.resolvedDisputeAtByTaskId) : null;
+        this._state.resolverDisputeTaskIds = snapshot.resolverDisputeTaskIds
+            ? new Set(snapshot.resolverDisputeTaskIds) : null;
+        this._state.disputesBulkIncomplete = Boolean(snapshot.disputesBulkIncomplete);
+    },
+
+    _beginResultsLoad() {
+        const additive = this._isAdditiveResultsMode();
+        this._state.resultsKindTab = 'all';
+        this._state.resultsPage = 0;
+        this._state.hasSearched = true;
+        this._state.loading = true;
+        this._state.hydrateBulkActive = false;
+        this._state.autoHydrateActive = false;
+        this._state.autoHydrateScheduled = false;
+        this._state.autoHydratePending = false;
+        this._state.autoHydratePendingLogged = false;
+        this._state.disputeSearchHydrationActive = false;
+        this._state.disputeIngestQueue = null;
+
+        if (additive && this._state.cachedItems && this._state.cachedItems.length > 0) {
+            this._state.resultsLoadSnapshot = this._state.cachedItems.slice();
+            this._state.disputeLoadSnapshot = this._snapshotDisputeState();
+        } else {
+            this._state.resultsLoadSnapshot = null;
+            this._state.disputeLoadSnapshot = null;
+            this._state.cachedItems = null;
+            this._state.filteredItems = null;
+            this._state.appliedFilters = null;
+            this._state.disputesBulkIncomplete = false;
+            this._state.openDisputesByTaskId = null;
+            this._state.resolvedDisputeTaskIds = null;
+            this._state.resolvedDisputeAtByTaskId = null;
+            this._state.resolverDisputeTaskIds = null;
+        }
+    },
+
+    _restoreResultsLoadSnapshotOnError() {
+        if (this._isAdditiveResultsMode() && Array.isArray(this._state.resultsLoadSnapshot)) {
+            this._state.cachedItems = this._state.resultsLoadSnapshot.slice();
+            this._restoreDisputeStateSnapshot(this._state.disputeLoadSnapshot);
+        } else {
+            this._state.cachedItems = null;
+            this._state.filteredItems = null;
+            this._state.appliedFilters = null;
+        }
+        this._state.resultsLoadSnapshot = null;
+        this._state.disputeLoadSnapshot = null;
+    },
+
+    _resetResultsLoadFilterUi(mergedItems) {
+        const prompt = this._q('#wf-dash-prompt');
+        if (prompt) prompt.value = '';
+        const caseEl = this._q('#wf-dash-case');
+        if (caseEl) caseEl.checked = false;
+        const fuzzyEl = this._q('#wf-dash-fuzzy');
+        if (fuzzyEl) fuzzyEl.checked = false;
+        const regexEl = this._q('#wf-dash-regex');
+        if (regexEl) regexEl.checked = false;
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
+        this._resetManualFilters();
+        this._resetFilterDraftsFromResults(mergedItems || this._state.cachedItems || []);
+        this._applyResultsPageSizeForNewSearch();
+        this._state.resultsKindTab = 'all';
+        this._state.resultsPage = 0;
+    },
+
+    _preferRicherSearchResultItem(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        const aHydr = a.hydrated !== false;
+        const bHydr = b.hydrated !== false;
+        if (aHydr && !bHydr) return a;
+        if (bHydr && !aHydr) return b;
+        const aVers = (a.task && a.task.promptVersions) ? a.task.promptVersions.length : 0;
+        const bVers = (b.task && b.task.promptVersions) ? b.task.promptVersions.length : 0;
+        if (bVers > aVers) return b;
+        if (aVers > bVers) return a;
+        return b;
+    },
+
+    _mergeAdditiveSearchResults(previous, incoming) {
+        const prev = previous || [];
+        const inc = incoming || [];
+        if (prev.length === 0) return this._mergeWorkerOutputItemsByTask(inc.slice());
+        if (inc.length === 0) return this._mergeWorkerOutputItemsByTask(prev.slice());
+        const incomingTaskIds = new Set(inc.map((it) => it && it.task && it.task.id).filter(Boolean));
+        const prevOnly = prev.filter((it) => it && it.task && !incomingTaskIds.has(it.task.id));
+        const dedupedIncoming = [];
+        const seenIncoming = new Map();
+        for (const item of inc) {
+            if (!item || !item.task || !item.task.id) continue;
+            const taskId = item.task.id;
+            const existing = seenIncoming.get(taskId);
+            seenIncoming.set(taskId, existing ? this._preferRicherSearchResultItem(existing, item) : item);
+        }
+        for (const item of seenIncoming.values()) dedupedIncoming.push(item);
+        return this._mergeWorkerOutputItemsByTask([...prevOnly, ...dedupedIncoming]);
+    },
+
+    _kindsUnionFromItems(items) {
+        const kindSet = new Set();
+        for (const item of items || []) {
+            for (const k of ((item && item.kinds && item.kinds.length) ? item.kinds : [item && item.kind])) {
+                if (k) kindSet.add(k);
+            }
+        }
+        return kindSet;
+    },
+
+    _syncCommittedFromCachedItems() {
+        const items = this._state.cachedItems || [];
+        const kindSet = this._kindsUnionFromItems(items);
+        const prev = this._state.committed || {};
+        this._state.committed = {
+            accumulatedResults: true,
+            retrieveMode: false,
+            includeTaskCreation: kindSet.has('task_creation'),
+            includeQa: kindSet.has('qa'),
+            includeDisputes: kindSet.has('dispute'),
+            searchDepth: prev.searchDepth || this._state.searchDepth || 'quick',
+            authorCount: 0,
+            authorLabels: [],
+            searchKinds: DASH_KIND_MERGE_ORDER.filter((k) => kindSet.has(k))
+        };
+    },
+
+    _finalizeResultsLoad(newItems, options) {
+        const opts = options || {};
+        const snapshot = this._state.resultsLoadSnapshot;
+        const additive = this._isAdditiveResultsMode() && Array.isArray(snapshot);
+        let merged;
+        if (additive) {
+            merged = this._mergeAdditiveSearchResults(snapshot, newItems || []);
+            this._mergeDisputeStateSnapshot(this._state.disputeLoadSnapshot, this._snapshotDisputeState());
+        } else {
+            merged = newItems || [];
+        }
+        this._state.cachedItems = merged;
+        this._state.resultsLoadSnapshot = null;
+        this._state.disputeLoadSnapshot = null;
+
+        if (additive && snapshot.length > 0) {
+            this._syncCommittedFromCachedItems();
+        } else if (opts.committed) {
+            this._state.committed = opts.committed;
+        }
+
+        this._resetResultsLoadFilterUi(merged);
+        if (merged.length > 0 && !opts.skipFiltersTab) {
+            this._setLeftTab('filters');
+        }
+        return merged;
     },
 
     _committedSearchKinds(committed) {
@@ -3145,15 +3569,8 @@ const searchOutputMethods = {
         return newBounds;
     },
 
-    _isFilterDraftValid(draft, listBounds) {
-        if (!draft) return false;
-        const bounds = listBounds || {};
-        for (const { draftKey } of DASH_FILTER_SCOPES) {
-            const all = (bounds[draftKey] || []).length;
-            if (all === 0) continue;
-            if ((draft[draftKey] || []).length === 0) return false;
-        }
-        return true;
+    _isFilterDraftValid(draft) {
+        return Boolean(draft);
     },
 
     _buildManualFilterRow(opts) {
@@ -3387,8 +3804,8 @@ const searchOutputMethods = {
             const sel = (filters && filters[draftKey]) || [];
             if (boundIds.length === 0) {
                 next[draftKey] = [];
-            } else if (this._isDimensionAllSelected(sel, boundIds)) {
-                next[draftKey] = [...boundIds];
+            } else if (this._isDimensionUnrestricted(sel, boundIds)) {
+                next[draftKey] = [];
             } else {
                 next[draftKey] = sel.filter((id) => boundIds.includes(id));
             }
@@ -3413,24 +3830,22 @@ const searchOutputMethods = {
     },
 
     _filtersAllSelectedFromBounds(bounds) {
-        const b = bounds || {};
         const sort = this._readDashSortFromUi();
         return {
-            teamIds: [...(b.teamIds || [])],
-            projectIds: [...(b.projectIds || [])],
-            envKeys: [...(b.envKeys || [])],
-            statuses: [...(b.statuses || [])],
-            contributorIds: [...(b.contributorIds || [])],
-            promptRatings: [...(b.promptRatings || [])],
-            taskIssues: [...(b.taskIssues || [])],
-            returnTypes: [...(b.returnTypes || [])],
-            promptHistory: [...(b.promptHistory || [])],
-            qaHelpfulness: [...(b.qaHelpfulness || [])],
+            teamIds: [],
+            projectIds: [],
+            envKeys: [],
+            statuses: [],
+            contributorIds: [],
+            promptRatings: [],
+            taskIssues: [],
+            returnTypes: [],
+            promptHistory: [],
+            qaHelpfulness: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortMetric: sort.sortMetric,
             sortOrder: sort.sortOrder,
             manualFilters: [],
@@ -3465,7 +3880,8 @@ const searchOutputMethods = {
         return {
             openDisputesByTaskId: this._state.openDisputesByTaskId || null,
             resolvedDisputesByTaskId: this._state.resolvedDisputesByTaskId || null,
-            helpfulnessUi: this._state.helpfulnessUi || {}
+            helpfulnessUi: this._state.helpfulnessUi || {},
+            currentUserId: this._dashGetCurrentUserId()
         };
     },
 
@@ -4074,15 +4490,23 @@ const searchOutputMethods = {
                 if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
                 if (hist) {
+                    const remap = hist.systemFeedbackIdRemap || {};
+                    if (item.selectedFeedbackId && remap[item.selectedFeedbackId]) {
+                        item.selectedFeedbackId = remap[item.selectedFeedbackId];
+                    }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
                     for (const entry of hist.allFeedback || []) {
-                        if (entry.id) feedbackIdsToLoad.push(entry.id);
+                        if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
+                            feedbackIdsToLoad.push(entry.id);
+                        }
                     }
                     if (item.selectedFeedbackId) {
-                        feedbackIdsToLoad.push(item.selectedFeedbackId);
                         const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                         if (entry && entry.display) item.qaFeedback = entry.display;
+                        if (entry && entry.display && this._shouldShowHelpfulness(entry.display, item.selectedFeedbackId)) {
+                            feedbackIdsToLoad.push(item.selectedFeedbackId);
+                        }
                     }
                 }
                 item.hydrated = true;
@@ -4123,14 +4547,16 @@ const searchOutputMethods = {
         Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
 
         for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+            if (this._shouldStopSearch()) break;
             const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
             const done = i;
             if (typeof opts.onProgress === 'function') {
                 opts.onProgress(done, total);
             }
             hydratedTotal += await this._hydrateItems(chunk, enrichOptions);
+            if (this._shouldStopSearch()) break;
         }
-        if (typeof opts.onProgress === 'function') {
+        if (!this._shouldStopSearch() && typeof opts.onProgress === 'function') {
             opts.onProgress(total, total);
         }
         if (hydratedTotal > 0) {
@@ -4488,16 +4914,43 @@ const searchOutputMethods = {
         return task.createdAt || '';
     },
 
+    _cardTabShellBase() {
+        return 'height: ' + DASH_CARD_TAB_HEIGHT
+            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+    },
+
+    _cardSurfaceTabHtml(innerHtml, title) {
+        const shell = this._cardTabShellBase()
+            + ' background: var(--card, #ffffff); font-weight: 400;'
+            + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
+        const label = String(title || '');
+        return '<div style="' + shell + '"'
+            + (label ? ' title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '"' : '')
+            + '>' + innerHtml + '</div>';
+    },
+
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
-        const label = ago ? `Created: ${formatted} (${ago})` : `Created: ${formatted}`;
-        const shell = 'height: ' + DASH_CARD_TAB_HEIGHT
-            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
-            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;'
-            + ' background: ' + DASH_CARD_TAB_BG + '; color: #fff;';
-        return '<div style="' + shell + '" title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '">' + dashEscHtml(label) + '</div>';
+        const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
+        return this._cardSurfaceTabHtml(this._plainTimestampHtml(iso, 'Created'), label);
+    },
+
+    _cardKeyTabHtml(task, itemId, highlightOpts) {
+        const key = String(task && task.key || '').trim();
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px;">`
+            + this._copyChipHtml(key, highlightOpts || {})
+            + this._taskOpenLinkHtml(task, itemId)
+            + '</span>';
+        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key');
+    },
+
+    _cardStatusTabHtml(task) {
+        const meta = this._statusDisplayMeta(task.status);
+        const shell = this._cardTabShellBase() + ' background: ' + meta.bg + '; color: ' + meta.color + ';';
+        return '<div style="' + shell + '" title="' + dashEscHtml(meta.label) + '" aria-label="' + dashEscHtml(meta.label) + '">' + dashEscHtml(meta.label) + '</div>';
     },
 
     _cardActionAreaHtml(itemId) {
@@ -4631,7 +5084,7 @@ const searchOutputMethods = {
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
-                                        <div style="${hint} margin-bottom: 8px;">None selected = all.</div>
+                                        <div style="${hint} margin-bottom: 8px;">${dashEscHtml(DASH_NONE_SELECTED_HINT)}</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
                                             ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
                                             ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
@@ -4639,6 +5092,7 @@ const searchOutputMethods = {
                                         </div>
                                     </div>
                                 </div>
+                                ${this._resultsModeToggleHtml('contributor')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
                                     <button type="button" id="wf-dash-clear-params" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
                                     <button type="button" id="wf-dash-search" class="${this._dashBtnClass('primary', 'nav')}">Search</button>
@@ -4649,6 +5103,7 @@ const searchOutputMethods = {
                                 <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key. Full Fleet URLs are also accepted.</p>
                                 <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID, version ID, task key, or URL" style="${input}">
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
+                                ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
                                     <button type="button" id="wf-dash-retrieve-clear" class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
                                     <button type="button" id="wf-dash-retrieve-btn" class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
@@ -4677,22 +5132,19 @@ const searchOutputMethods = {
                                             <input type="checkbox" id="wf-dash-regex"> RegEx (ECMAScript)
                                         </label>
                                     </div>
-                                    <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; margin-top: 8px;">
-                                        <input type="checkbox" id="wf-dash-hidden-versions"> Search hidden versions (requires hydrated results)
-                                    </label>
                                 </div>
                                 <div id="wf-dash-filter-lists-wrap">
-                                    <div style="${label} margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                    <div style="${label} margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                                         <span>Narrow results</span>
                                         <button type="button" id="wf-dash-filter-expand-all" aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
                                     </div>
+                                    <div style="${hint} margin-bottom: 8px;">${dashEscHtml(DASH_NONE_SELECTED_HINT)}</div>
                                     <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
                                         ${DASH_FILTER_SCOPES.map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
                                     </div>
                                 </div>
                                 <div id="wf-dash-manual-filter-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
-                                    <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">Comparator rows applied after checkbox filters. Distinct Prompt Versions † counts one visible prompt until a card is hydrated, then uses display versions (v1, v2, …).</p>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
@@ -5070,6 +5522,8 @@ const searchOutputMethods = {
         const items = this._getSearchableTeamCatalog().map(([id, label]) => ({ id, label }));
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-teams', prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-teams');
         this._updateMsCount('search-teams');
         this._syncMsDropdown('search-teams');
         this._syncMsDropdownFilterUi('search-teams');
@@ -5084,6 +5538,8 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-projects', prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-projects');
         this._updateMsCount('search-projects');
         this._syncMsDropdown('search-projects');
         this._syncMsDropdownFilterUi('search-projects');
@@ -5099,6 +5555,8 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-envs', prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-envs');
         this._updateMsCount('search-envs');
         this._syncMsDropdown('search-envs');
         this._syncMsDropdownFilterUi('search-envs');
@@ -5146,9 +5604,10 @@ const searchOutputMethods = {
             : this._getFilterDraft();
         const lib = dashLib();
         const filterOptions = Object.assign({}, options, {
-            helpfulnessUi: this._state.helpfulnessUi || {}
+            helpfulnessUi: this._state.helpfulnessUi || {},
+            currentUserId: this._dashGetCurrentUserId()
         });
-        const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
+        const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterIrrelevance();
         const optionCounts = scopeItems.length > 0
@@ -5189,7 +5648,6 @@ const searchOutputMethods = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
                 });
-                if (syncDraftFromApplied) this._setMsBulkToggleMode(scopeKey, 'none');
                 this._updateMsCount(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -5420,17 +5878,10 @@ const searchOutputMethods = {
             searchProjectIds: this._selectedFromList('search-projects'),
             searchEnvKeys: this._selectedFromList('search-envs')
         });
-        const universalCheck = isAllTime
-            ? { allowed: true, message: '' }
-            : lib.validateUniversalSearchRange(after, before);
-        const blankBlocked = isUniversal && !universalCheck.allowed;
         const hintEl = this._q('#wf-dash-universal-hint');
         if (hintEl) {
             if (isAllTime && isUniversal) {
                 hintEl.textContent = 'All Time — no date bound on this search.';
-                hintEl.style.display = 'block';
-            } else if (blankBlocked) {
-                hintEl.textContent = lib.UNIVERSAL_SEARCH_RANGE_MESSAGE;
                 hintEl.style.display = 'block';
             } else {
                 hintEl.style.display = 'none';
@@ -5440,7 +5891,6 @@ const searchOutputMethods = {
         if (searchBtn) {
             const noOutputTypes = !this._state.includeTasks && !this._state.includeQa && !this._state.includeDisputes;
             const searchDisabled = this._state.loading
-                || blankBlocked
                 || noOutputTypes
                 || ((after || before) && !check.valid);
             searchBtn.disabled = searchDisabled;
@@ -5459,25 +5909,11 @@ const searchOutputMethods = {
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
-        return { check, isUniversal, blankBlocked };
+        return { check, isUniversal };
     },
 
     _isFilterSelectionValid() {
-        if (!this._state.cachedItems) return false;
-        const applied = this._state.appliedFilters;
-        const options = this._state.filterListOptions;
-        const listBounds = options ? this._listBoundsFromOptions(options) : {};
-        for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
-            if (!this._isFilterScopeVisible(scopeKey)) continue;
-            const all = this._allFromList(scopeKey);
-            if (all.length === 0) continue;
-            if (this._selectedFromList(scopeKey).length > 0) continue;
-            const boundIds = listBounds[draftKey] || [];
-            const appliedSel = (applied && applied[draftKey]) || [];
-            if (this._isDimensionAllSelected(appliedSel, boundIds)) continue;
-            return false;
-        }
-        return true;
+        return Boolean(this._state.cachedItems);
     },
 
     _filterArraysEqual(a, b) {
@@ -5494,17 +5930,18 @@ const searchOutputMethods = {
         const applied = this._state.appliedFilters;
         if (!applied) return this._state.cachedItems !== null;
         const draft = this._currentClientFilters();
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
-        if (Boolean(draft.searchHiddenVersions) !== Boolean(applied.searchHiddenVersions)) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
         ];
         for (const key of keys) {
-            if (!this._filterArraysEqual(draft[key], applied[key])) return true;
+            const boundIds = bounds[key] || [];
+            if (!this._filterDimensionEquivalent(draft[key], applied[key], boundIds)) return true;
         }
         const manual = this._readSearchOutputManualFilters();
         if ((applied.manualAndOr || 'and') !== manual.andOr) return true;
@@ -5541,12 +5978,7 @@ const searchOutputMethods = {
         }
         const applyHint = this._q('#wf-dash-apply-hint');
         if (applyHint) {
-            if (disabled && this._state.cachedItems && !selectionValid) {
-                applyHint.textContent = 'Select at least one option in each filter group.';
-                applyHint.style.display = 'block';
-            } else {
-                applyHint.style.display = 'none';
-            }
+            applyHint.style.display = 'none';
         }
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
@@ -5668,26 +6100,7 @@ const searchOutputMethods = {
         this._setRetrieveError('');
         this._setSearchError('');
 
-        this._state.resultsKindTab = 'all';
-        this._state.resultsPage = 0;
-        this._state.hasSearched = true;
-        this._state.loading = true;
-        this._state.cachedItems = null;
-        this._state.filteredItems = null;
-        this._state.appliedFilters = null;
-        this._state.hydrateBulkActive = false;
-        this._state.autoHydrateActive = false;
-        this._state.autoHydrateScheduled = false;
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
-        this._state.disputesBulkIncomplete = false;
-        this._state.openDisputesByTaskId = null;
-        this._state.resolvedDisputeTaskIds = null;
-        this._state.resolvedDisputeAtByTaskId = null;
-        this._state.resolverDisputeTaskIds = null;
-        this._resetSearchLoadLog();
-        this._state.searchLoadPhase = 'Retrieving task…';
-        this._state.committed = {
+        const retrieveCommitted = {
             retrieveMode: true,
             retrieveLabel: parsed.value,
             includeTaskCreation: true,
@@ -5698,6 +6111,10 @@ const searchOutputMethods = {
             authorLabels: [],
             searchKinds: ['task_creation']
         };
+        this._beginResultsLoad();
+        this._resetSearchLoadLog();
+        this._state.searchLoadPhase = 'Retrieving task…';
+        this._state.committed = retrieveCommitted;
         this._setRetrieveButtonLoading(true);
         this._setSearchButtonLoading(false);
         this._updateResultsKindTabsUi();
@@ -5711,41 +6128,27 @@ const searchOutputMethods = {
             const { row, versionOverride } = await this._fetchTaskRowForRetrieve(parsed);
             if (!row) {
                 this._setRetrieveError('No task found for that identifier.');
-                this._state.cachedItems = null;
-                this._state.filteredItems = null;
-                this._state.appliedFilters = null;
+                this._restoreResultsLoadSnapshotOnError();
                 return;
             }
             const item = await this._buildRetrieveTaskItem(row, versionOverride);
-            this._state.cachedItems = [item];
-            this._setSearchLoadPhase('Hydrating task…');
+            this._setSearchLoadPhase('Hydrating task…', 1);
             await this._hydrateAllSearchResults([item], { skipFeedbackFetch: false });
-            this._setSearchLoadPhase('Applying filters…');
+            this._setSearchLoadPhase('Applying filters…', 1);
             Logger.log('search-output: retrieve task loaded — ' + row.id + ' (fully hydrated)');
-            const prompt = this._q('#wf-dash-prompt');
-            if (prompt) prompt.value = '';
-            const hidden = this._q('#wf-dash-hidden-versions');
-            if (hidden) hidden.checked = false;
-            const caseEl = this._q('#wf-dash-case');
-            if (caseEl) caseEl.checked = false;
-            const fuzzyEl = this._q('#wf-dash-fuzzy');
-            if (fuzzyEl) fuzzyEl.checked = false;
-            const regexEl = this._q('#wf-dash-regex');
-            if (regexEl) regexEl.checked = false;
-            const sortEl = this._q('#wf-dash-sort');
-            if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
-            this._resetManualFilters();
-            this._resetFilterDraftsFromResults([item]);
-            this._applyResultsPageSizeForNewSearch();
+            const additive = this._isAdditiveResultsMode()
+                && Array.isArray(this._state.resultsLoadSnapshot)
+                && this._state.resultsLoadSnapshot.length > 0;
+            this._finalizeResultsLoad([item], {
+                committed: additive ? null : retrieveCommitted
+            });
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
                 this._setRetrieveError('');
             } else {
                 this._setRetrieveError(err.message || String(err));
             }
-            this._state.cachedItems = null;
-            this._state.filteredItems = null;
-            this._state.appliedFilters = null;
+            this._restoreResultsLoadSnapshotOnError();
             Logger.warn('search-output: retrieve task failed', err);
         } finally {
             this._state.searchFetchActive = false;
@@ -5799,23 +6202,10 @@ const searchOutputMethods = {
                 this._setSearchError('Dashboard helpers not loaded. Reload the page and try again.');
                 return;
             }
-            if (lib.isUniversalSearchParams({
-                authorCount: this._state.draftTokens.length,
-                searchTeamIds: this._selectedFromList('search-teams'),
-                searchProjectIds: this._selectedFromList('search-projects'),
-                searchEnvKeys: this._selectedFromList('search-envs')
-            })) {
-                const quickPreset = ((this._q('#wf-dash-quick-range') || {}).value || '');
-                const isAllTime = quickPreset === 'all-time';
-                if (!isAllTime && !lib.validateUniversalSearchRange(after, before).allowed) {
-                    this._setSearchError(lib.UNIVERSAL_SEARCH_RANGE_MESSAGE);
-                    return;
-                }
-            }
 
             const authorIds = this._state.draftTokens.map((t) => t.id);
             const authorLabels = this._state.draftTokens.map((t) => this._personDisplayLabel(t));
-            this._state.committed = {
+            const searchCommitted = {
                 authorIds,
                 authorCount: authorIds.length,
                 authorLabels,
@@ -5831,25 +6221,9 @@ const searchOutputMethods = {
                     includeDisputes ? 'dispute' : null
                 ].filter(Boolean)
             };
-            this._state.resultsKindTab = 'all';
-            this._state.resultsPage = 0;
-            this._state.hasSearched = true;
-            this._state.loading = true;
-            this._state.cachedItems = null;
-            this._state.filteredItems = null;
-            this._state.appliedFilters = null;
-            this._state.hydrateBulkActive = false;
-            this._state.autoHydrateActive = false;
-            this._state.autoHydrateScheduled = false;
-            this._state.autoHydratePending = false;
-            this._state.autoHydratePendingLogged = false;
-            this._state.disputesBulkIncomplete = false;
-            this._state.disputeSearchHydrationActive = false;
-            this._state.disputeIngestQueue = null;
-            this._state.openDisputesByTaskId = null;
-            this._state.resolvedDisputeTaskIds = null;
-            this._state.resolvedDisputeAtByTaskId = null;
-            this._state.resolverDisputeTaskIds = null;
+            this._state.committed = searchCommitted;
+            this._beginResultsLoad();
+            this._state.searchStopRequested = false;
             this._resetSearchLoadLog();
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
@@ -5861,8 +6235,15 @@ const searchOutputMethods = {
 
             this._state.searchFetchActive = true;
             const gen = (this._state.searchGeneration = (this._state.searchGeneration || 0) + 1);
+            const hadPriorResults = this._isAdditiveResultsMode()
+                && Array.isArray(this._state.resultsLoadSnapshot)
+                && this._state.resultsLoadSnapshot.length > 0;
             try {
                 const scope = await this._buildSearchApiScope();
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch([]);
+                    return;
+                }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 Logger.info('dashboard: search started — '
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
@@ -5878,51 +6259,45 @@ const searchOutputMethods = {
                     scope,
                     searchDepth
                 });
-                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
                 const items = searchResult.items;
                 this._state.cachedItems = items;
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch(items);
+                    return;
+                }
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
                 if (searchDepth === 'deep' && items.length > 0) {
-                    this._setSearchLoadPhase('Hydrating results…');
+                    this._setSearchLoadPhase('Hydrating results…', 0, items.length);
                     const hydrateLogId = this._beginSearchLoadEntry('Deep hydration (0/' + items.length + ')');
                     await this._hydrateAllSearchResults(items, {
                         prefetchedFeedbackRows: searchResult.allFeedbackRows,
                         skipFeedbackFetch: false,
                         onProgress: (done, total) => {
-                            this._setSearchLoadPhase('Hydrating results (' + done + '/' + total + ')…');
+                            this._setSearchLoadPhase('Hydrating results…', done, total);
                             if (hydrateLogId != null) {
                                 this._updateSearchLoadEntry(hydrateLogId, 'Deep hydration (' + done + '/' + total + ')');
                             }
                         }
                     });
-                    if (hydrateLogId != null) {
+                    if (hydrateLogId != null && !this._shouldStopSearch()) {
                         this._resolveSearchLoadEntry(
                             hydrateLogId,
                             'Deep hydration (' + items.length + '/' + items.length + ')'
                         );
                     }
                 }
-                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
-                this._setSearchLoadPhase('Applying filters…');
-                Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
-                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : ''));
-                const prompt = this._q('#wf-dash-prompt');
-                if (prompt) prompt.value = '';
-                const hidden = this._q('#wf-dash-hidden-versions');
-                if (hidden) hidden.checked = false;
-                const caseEl = this._q('#wf-dash-case');
-                if (caseEl) caseEl.checked = false;
-                const fuzzyEl = this._q('#wf-dash-fuzzy');
-                if (fuzzyEl) fuzzyEl.checked = false;
-                const regexEl = this._q('#wf-dash-regex');
-                if (regexEl) regexEl.checked = false;
-                const sortEl = this._q('#wf-dash-sort');
-                if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
-                this._resetManualFilters();
-                this._resetFilterDraftsFromResults(items);
-                this._applyResultsPageSizeForNewSearch();
-                if (items.length > 0) {
-                    this._setLeftTab('filters');
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch(items);
+                    return;
                 }
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
+                this._setSearchLoadPhase('Applying filters…', items.length);
+                Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
+                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : '')
+                    + (hadPriorResults ? ' (add mode)' : ''));
+                this._finalizeResultsLoad(items, {
+                    committed: hadPriorResults ? null : searchCommitted
+                });
             } catch (err) {
                 if (gen !== this._state.searchGeneration) {
                     Logger.debug('dashboard: stale search gen ' + gen + ' dropped in catch');
@@ -5933,9 +6308,7 @@ const searchOutputMethods = {
                 } else {
                     this._setSearchError(err.message || String(err));
                 }
-                this._state.cachedItems = null;
-                this._state.filteredItems = null;
-                this._state.appliedFilters = null;
+                this._restoreResultsLoadSnapshotOnError();
                 Logger.warn('dashboard: search failed', err);
             } finally {
                 if (gen !== this._state.searchGeneration) {
@@ -5977,6 +6350,8 @@ const searchOutputMethods = {
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const itemsEl = this._msItemsEl(key);
             if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            this._setMsBulkToggleMode(key, 'all');
+            this._applyMsBulkToggleLabel(key);
             this._updateMsCount(key);
         });
         this._syncOutputToggleUi();
@@ -5994,8 +6369,6 @@ const searchOutputMethods = {
     _clearFilterUiFields() {
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
-        const hidden = this._q('#wf-dash-hidden-versions');
-        if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
         if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => {
@@ -6044,8 +6417,6 @@ const searchOutputMethods = {
         this._syncBulkHydrateUi();
         const prompt = this._q('#wf-dash-prompt');
         if (prompt) prompt.value = '';
-        const hidden = this._q('#wf-dash-hidden-versions');
-        if (hidden) hidden.checked = false;
         const sortEl = this._q('#wf-dash-sort');
         if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
         ['#wf-dash-case', '#wf-dash-fuzzy', '#wf-dash-regex'].forEach((sel) => { const el = this._q(sel); if (el) el.checked = false; });
@@ -6056,14 +6427,20 @@ const searchOutputMethods = {
     },
 
     _currentClientFilters() {
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const draft = this._getFilterDraft();
+        const checkboxFilters = {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const sel = draft[draftKey] || [];
+            const boundIds = bounds[draftKey] || [];
+            checkboxFilters[draftKey] = this._normalizeFilterDimensionSelection(sel, boundIds);
+        }
         const sort = this._readDashSortFromUi();
-        return Object.assign({}, draft, {
+        return Object.assign({}, checkboxFilters, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
             caseSensitive: Boolean((this._q('#wf-dash-case') || {}).checked),
-            searchHiddenVersions: Boolean((this._q('#wf-dash-hidden-versions') || {}).checked),
             sortMetric: sort.sortMetric,
             sortOrder: sort.sortOrder
         });
@@ -6074,17 +6451,22 @@ const searchOutputMethods = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
-        return applied.teamIds.length < bounds.teamIds.length
-            || applied.projectIds.length < bounds.projectIds.length
-            || applied.envKeys.length < bounds.envKeys.length
-            || (applied.statuses || []).length < bounds.statuses.length
-            || (applied.contributorIds || []).length < bounds.contributorIds.length
-            || (applied.promptRatings || []).length < bounds.promptRatings.length
-            || (applied.taskIssues || []).length < bounds.taskIssues.length
-            || (applied.returnTypes || []).length < bounds.returnTypes.length
-            || (applied.promptHistory || []).length < bounds.promptHistory.length
-            || (applied.qaHelpfulness || []).length < bounds.qaHelpfulness.length
-            || (applied.regex && lib.isRegexQueryActive(applied.promptText))
+        const dims = [
+            ['teamIds', bounds.teamIds],
+            ['projectIds', bounds.projectIds],
+            ['envKeys', bounds.envKeys],
+            ['statuses', bounds.statuses],
+            ['contributorIds', bounds.contributorIds],
+            ['promptRatings', bounds.promptRatings],
+            ['taskIssues', bounds.taskIssues],
+            ['returnTypes', bounds.returnTypes],
+            ['promptHistory', bounds.promptHistory],
+            ['qaHelpfulness', bounds.qaHelpfulness]
+        ];
+        for (const [key, boundIds] of dims) {
+            if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
+        }
+        return (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
             || ((applied.manualFilters || []).length > 0);
     },
@@ -6136,6 +6518,52 @@ const searchOutputMethods = {
         if (clearParams) clearParams.disabled = loading;
     },
 
+    _canShowStopSearchButton() {
+        const s = this._state;
+        return Boolean(s && s.loading && s.committed && !s.committed.retrieveMode);
+    },
+
+    _shouldStopSearch() {
+        const s = this._state;
+        return Boolean(s && s.loading && s.searchStopRequested && s.committed && !s.committed.retrieveMode);
+    },
+
+    _requestStopSearchFetches() {
+        if (!this._canShowStopSearchButton()) return;
+        Logger.log('search-output: stop fetches requested');
+        this._state.searchStopRequested = true;
+        this._state.searchGeneration = (this._state.searchGeneration || 0) + 1;
+    },
+
+    _finishStoppedSearch(items) {
+        const list = items || [];
+        const hydratedCount = list.filter((it) => it && it.hydrated).length;
+        Logger.info('search-output: search stopped — ' + list.length + ' item(s)'
+            + (hydratedCount > 0 ? ', ' + hydratedCount + ' hydrated' : ''));
+        const hadPrior = this._isAdditiveResultsMode()
+            && Array.isArray(this._state.resultsLoadSnapshot)
+            && this._state.resultsLoadSnapshot.length > 0;
+        this._finalizeResultsLoad(list, {
+            committed: hadPrior ? null : this._state.committed,
+            skipFiltersTab: list.length === 0
+        });
+        this._state.searchFetchActive = false;
+        this._state.loading = false;
+        this._state.searchLoadPhase = '';
+        this._state.searchStopRequested = false;
+        this._resetSearchLoadLog();
+        this._setSearchButtonLoading(false);
+        this._updateSubstringErrorUi();
+        this._updateApplyFiltersUi();
+        this._refreshResultsView({ filterSource: 'search-defaults' });
+    },
+
+    _stopSearchButtonHtml() {
+        if (!this._canShowStopSearchButton()) return '';
+        const cls = this._dashBtnClass('basic', 'compact');
+        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Stop Fetches</button>`;
+    },
+
     _resetSearchLoadLog() {
         if (!this._state) return;
         this._state.searchLoadLog = [];
@@ -6173,15 +6601,64 @@ const searchOutputMethods = {
         this._syncSearchLoadPhaseUi();
     },
 
-    _trackSearchLoadPromise(message, promise) {
-        const id = this._beginSearchLoadEntry(message);
-        return Promise.resolve(promise).then(
+    _searchLoadMessage(base, count, total) {
+        const label = String(base || '').trim();
+        if (count == null || Number.isNaN(Number(count))) return label;
+        const n = Number(count);
+        if (total != null && !Number.isNaN(Number(total)) && Number(total) !== n) {
+            return label + ' (' + n + '/' + total + ')';
+        }
+        return label + ' (' + n + ')';
+    },
+
+    _trackSearchLoadPromise(message, promiseOrFn) {
+        const base = String(message || '').trim();
+        const id = this._beginSearchLoadEntry(this._searchLoadMessage(base, 0));
+        const tracker = {
+            setCount: (count, total) => {
+                this._updateSearchLoadEntry(id, this._searchLoadMessage(base, count, total));
+            },
+            setMessage: (text) => {
+                this._updateSearchLoadEntry(id, String(text || '').trim());
+            },
+            resolve: (count, total) => {
+                this._resolveSearchLoadEntry(
+                    id,
+                    count != null ? this._searchLoadMessage(base, count, total) : undefined
+                );
+            }
+        };
+        const run = typeof promiseOrFn === 'function' ? promiseOrFn(tracker) : promiseOrFn;
+        return Promise.resolve(run).then(
             (value) => {
-                this._resolveSearchLoadEntry(id);
+                const log = this._state.searchLoadLog;
+                const entry = Array.isArray(log) ? log.find((e) => e.id === id) : null;
+                if (!entry || entry.resolved) return value;
+                if (Array.isArray(value)) {
+                    tracker.resolve(value.length);
+                } else if (value instanceof Map) {
+                    tracker.resolve(value.size);
+                } else if (typeof value === 'number' && !Number.isNaN(value)) {
+                    tracker.resolve(value);
+                } else if (value && typeof value === 'object') {
+                    if (Array.isArray(value.rows)) {
+                        tracker.resolve(value.rows.length);
+                    } else if (value.openDisputesByTaskId instanceof Map) {
+                        let rowCount = 0;
+                        for (const rows of value.openDisputesByTaskId.values()) rowCount += rows.length;
+                        tracker.resolve(rowCount);
+                    } else if (value.resolverDisputeTaskIds instanceof Set) {
+                        tracker.resolve(value.resolverDisputeTaskIds.size);
+                    } else {
+                        tracker.resolve();
+                    }
+                } else {
+                    tracker.resolve();
+                }
                 return value;
             },
             (err) => {
-                this._resolveSearchLoadEntry(id, message + ' — failed');
+                this._resolveSearchLoadEntry(id, base + ' — failed');
                 throw err;
             }
         );
@@ -6219,32 +6696,42 @@ const searchOutputMethods = {
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
         const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const stopBtnHtml = this._stopSearchButtonHtml();
         const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
             wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
                 ${this._loadingSpinnerHtml(20)}
                 <div data-wf-dash-results-load-col style="${colStyle}">
+                    ${stopBtnHtml}
                     <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
                     ${logHtml}
                 </div>
             </div>`;
             return;
         }
+        const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
+        let stopBtn = colEl ? colEl.querySelector('[data-wf-dash-stop-search]') : null;
+        if (stopBtnHtml) {
+            if (!stopBtn && colEl) {
+                colEl.insertAdjacentHTML('afterbegin', stopBtnHtml);
+            }
+        } else if (stopBtn) {
+            stopBtn.remove();
+        }
         const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
         if (phaseEl) {
             phaseEl.textContent = phase;
             phaseEl.style.display = phase ? '' : 'none';
         }
-        const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
         const logEl = loadingEl.querySelector('[data-wf-dash-results-load-log]');
         if (logEl) logEl.remove();
         if (logHtml && colEl) colEl.insertAdjacentHTML('beforeend', logHtml);
     },
 
-    _setSearchLoadPhase(message) {
+    _setSearchLoadPhase(message, count, total) {
         if (!this._state || !this._state.loading) return;
-        this._state.searchLoadPhase = String(message || '').trim();
+        this._state.searchLoadPhase = this._searchLoadMessage(String(message || '').trim(), count, total);
         this._syncSearchLoadPhaseUi();
     },
 
@@ -6287,6 +6774,22 @@ const searchOutputMethods = {
         }
         if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
             const committed = s.committed;
+            if (committed.accumulatedResults) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const tabs = this._resultsKindTabsMeta(committed);
+                const activeTab = s.resultsKindTab || 'all';
+                let tabNote = '';
+                if (tabs.length > 1 && activeTab !== 'all') {
+                    const activeMeta = tabs.find((t) => t.id === activeTab);
+                    if (activeMeta) tabNote = ' in ' + activeMeta.label;
+                }
+                const countLabel = s.filteredItems.length === scopeTotal
+                    ? s.filteredItems.length + ' result(s)' + tabNote
+                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
+                const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — accumulated results${dashEscHtml(filterNote)}</span>`;
+                return;
+            }
             if (committed.retrieveMode) {
                 const scopeTotal = this._getFilterScopeItems().length;
                 const countLabel = s.filteredItems.length === scopeTotal
@@ -6455,19 +6958,30 @@ const searchOutputMethods = {
         </span>`;
     },
 
+    _expandedVersionHeaderHtml(itemId, taskId, displayVersionNo, totalVersions) {
+        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            ${this._promptVersionCountHtml(displayVersionNo, totalVersions)}
+            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${displayVersionNo}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
+        </span>`;
+    },
+
 
     _fieldGroupHtml(label, valueHtml) {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
-    _plainTimestampHtml(iso) {
+    _plainTimestampHtml(iso, prefixLabel) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
-        const agoHtml = ago
-            ? `<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`
-            : '';
-        const formattedSpan = `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`;
-        return ago ? `${formattedSpan} ${agoHtml}` : formattedSpan;
+        const parts = [];
+        if (prefixLabel) {
+            parts.push(`<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span>`);
+        }
+        parts.push(`<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`);
+        if (ago) {
+            parts.push(`<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`);
+        }
+        return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
     },
 
     _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy, regex) {
@@ -6533,7 +7047,7 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${link}</span>`;
     },
 
-    _statusBadgeHtml(status) {
+    _statusDisplayMeta(status) {
         const key = (status || 'unknown').toLowerCase();
         let color = 'var(--muted-foreground, #64748b)';
         let bg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent)';
@@ -6541,7 +7055,12 @@ const searchOutputMethods = {
         if (key.includes('production')) { color = '#15803d'; bg = 'color-mix(in srgb, #16a34a 14%, transparent)'; }
         else if (key === 'bugged') { color = DASH_FLAGGED_COLOR; bg = DASH_FLAGGED_BG; label = 'Bugged'; }
         else if (key.includes('review')) { color = '#b45309'; bg = 'color-mix(in srgb, #d97706 14%, transparent)'; }
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${color}; background: ${bg};">${dashEscHtml(label)}</span>`;
+        return { color, bg, label };
+    },
+
+    _statusBadgeHtml(status) {
+        const meta = this._statusDisplayMeta(status);
+        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${meta.color}; background: ${meta.bg};">${dashEscHtml(meta.label)}</span>`;
     },
 
     _qaAlertBadgeStyle() {
@@ -6646,7 +7165,7 @@ const searchOutputMethods = {
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
             : '';
-        const helpfulnessHtml = feedbackId
+        const helpfulnessHtml = this._shouldShowHelpfulness(qa, feedbackId)
             ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
                 <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-helpfulness="${dashEscHtml(String(feedbackId))}">
                     ${this._helpfulnessBlockHtml(String(feedbackId))}
@@ -6934,21 +7453,16 @@ const searchOutputMethods = {
             bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
         }
         const cardHtml = `
-            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: hq, caseSensitive: cs, fuzzy: fz, regex: rx }))}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
-                </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                 </div>
                 ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
@@ -6960,6 +7474,13 @@ const searchOutputMethods = {
         this._ensureCardActionStyles();
         const itemId = item.id;
         const createdTabHtml = this._cardCreatedTabHtml(item.task);
+        const statusTabHtml = this._cardStatusTabHtml(item.task);
+        const keyTabHtml = this._cardKeyTabHtml(item.task, itemId, {
+            query: item.highlightQuery || '',
+            caseSensitive: Boolean(item.highlightCaseSensitive),
+            fuzzy: Boolean(item.highlightFuzzy),
+            regex: Boolean(item.highlightRegex)
+        });
         const showHydrateTab = item.hydrated === false
             && this._state.committed
             && this._state.committed.searchDepth === 'quick';
@@ -6973,7 +7494,7 @@ const searchOutputMethods = {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; min-width: 0;">${createdTabHtml}</div>
+                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
@@ -7051,16 +7572,10 @@ const searchOutputMethods = {
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
-        let row3Left = '';
+        let row3Html = '';
         if (expanded) {
-            row3Left = `<div style="display: inline-flex; align-items: center; gap: 8px;">${this._labelSpan('Timeline')}<button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button></div>`;
-        }
-
-        let versionControls = '';
-        if (hasTimeline && expanded) {
-            versionControls = `
-                <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
+            row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
+                    <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
                 </div>`;
         }
 
@@ -7068,9 +7583,12 @@ const searchOutputMethods = {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
-            const versionHeaderControls = hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo
-                ? this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions)
-                : '';
+            let versionHeaderControls = '';
+            if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
+                versionHeaderControls = this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
+            } else if (hasTimeline && expanded) {
+                versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
+            }
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
@@ -7078,31 +7596,25 @@ const searchOutputMethods = {
             );
         }).join('');
 
-        const row3Html = (row3Left || versionControls)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
-                    ${row3Left}
-                    ${versionControls}
+        const row2Html = reviewerBadges
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    ${reviewerBadges}
                 </div>`
             : '';
 
         const cardHtml = `
-            <article class="wf-dash-task-card-article" style="position: relative; border: 2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1)); border-radius: 10px; background: var(--card, #ffffff); overflow: hidden;">
+            <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Key', this._copyChipHtml(task.key, { query: highlightQuery, caseSensitive, fuzzy: highlightFuzzy, regex: highlightRegex }))}
-                        ${this._taskOpenLinkHtml(task, itemId)}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; min-width: 0;">
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
                     </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._statusBadgeHtml(task.status)}</div>
                 </div>
-                <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    ${reviewerBadges}
-                </div>
+                ${row2Html}
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
@@ -7198,6 +7710,12 @@ function attachSearchOutputListeners(modal, dash) {
         const depthDeep = dash._q('#wf-dash-depth-deep');
         if (depthQuick) depthQuick.addEventListener('click', () => dash._setSearchDepth('quick'));
         if (depthDeep) depthDeep.addEventListener('click', () => dash._setSearchDepth('deep'));
+
+        modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                dash._setResultsMode(btn.getAttribute('data-wf-dash-results-mode'));
+            });
+        });
 
         const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
         if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
@@ -7319,8 +7837,6 @@ function attachSearchOutputListeners(modal, dash) {
         }
         const caseEl = dash._q('#wf-dash-case');
         if (caseEl) caseEl.addEventListener('change', () => dash._updateSubstringErrorUi());
-        const hiddenVersions = dash._q('#wf-dash-hidden-versions');
-        if (hiddenVersions) hiddenVersions.addEventListener('change', () => dash._updateApplyFiltersUi());
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
@@ -7411,6 +7927,11 @@ function attachSearchOutputListeners(modal, dash) {
             }, { passive: true });
         }
     modal.addEventListener('click', (e) => {
+            const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
+            if (stopSearchBtn && modal.contains(stopSearchBtn)) {
+                dash._requestStopSearchFetches();
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -7453,9 +7974,10 @@ function attachSearchOutputListeners(modal, dash) {
             if (collapseBtn && modal.contains(collapseBtn)) {
                 const itemId = collapseBtn.getAttribute('data-item-id');
                 const taskId = collapseBtn.getAttribute('data-task-id');
+                const displayNo = parseInt(collapseBtn.getAttribute('data-display-no'), 10);
                 const ui = dash._getCardUi(taskId);
                 ui.expanded = false;
-                ui.selectedDisplayNo = null;
+                ui.selectedDisplayNo = Number.isFinite(displayNo) ? displayNo : ui.selectedDisplayNo;
                 dash._patchTaskCard(itemId);
                 return;
             }
@@ -7589,7 +8111,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.67',
+    _version: '1.92',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -7626,6 +8148,8 @@ const plugin = {
                 dash._applyDefaultSearchDates();
                 dash._state.searchDepth = 'quick';
                 dash._syncSearchDepthUi();
+                dash._state.resultsMode = dash._readResultsModePref();
+                dash._syncResultsModeUi();
                 const pagePref = dash._readResultsPageSizePref();
                 dash._state.resultsPageSize = pagePref === 'all' ? 'all' : (Number(pagePref) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
                 dash._state.resultsPage = 0;

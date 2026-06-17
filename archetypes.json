@@ -1,7 +1,7 @@
 {
   "version": "9.5.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.234",
+  "archetypesVersion": "10.280",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -34,32 +34,32 @@
     },
     {
       "name": "dashboard-lib.js",
-      "version": "2.5",
-      "hash": "sha256-fab86fc4e5ccdb42dbf2a461971f0bda759357ee0227eab5dce3ddb55ede06a6",
+      "version": "2.10",
+      "hash": "sha256-2da305dec463d3b52dd2b87a991fb6323a8771d314e3d174ef949e604e48cb6e",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "2.1",
-      "hash": "sha256-d4989453b5458c4f126f138401244d4d699b20ff0708581141bc49140e51718e",
+      "version": "2.2",
+      "hash": "sha256-4fa5f347e821294336074c2827af59d8ae8c96eb919b1b6508e11cfed91fb6d1",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "5.42",
-      "hash": "sha256-7b340d3f5da5845ac2e22e497878507aa9fabf5fba431dfcf464632d489e89ae",
+      "version": "5.48",
+      "hash": "sha256-b1d6dc82286acca54aba2bc2d3b6fd5f30eba1ca0ae6986612c85388d730cd42",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "1.67",
-      "hash": "sha256-f9e75efd9f0c8b11f5ff56f401725ab91a3677573b219d9441138cc6fb920e0c",
+      "version": "1.92",
+      "hash": "sha256-f96393ad5b0c9227f7fbe966e568f9a2b4073c520588ff8f7aa493d3ab522369",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.44",
-      "hash": "sha256-a9d5566b3d82c48cfe7c1774e71a9317654a8f881b76a8f3049824d8facd9a83",
+      "version": "1.59",
+      "hash": "sha256-8b2d1763c9627639d799396dd21a0b68fd639c513e8b1c55144a648fae0cf91b",
       "log": false
     },
     {
@@ -78,8 +78,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.13",
-      "hash": "sha256-88a9fdda810af2fdb998456610f4ba9dee5af4bc8a7814bbc6f464f867367c1b",
+      "version": "2.14",
+      "hash": "sha256-6aca31e25d0e67d983009d5c6144da884db7b6af6fa439f257d4084051fba318",
       "log": false
     }
   ],

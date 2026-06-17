@@ -94,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.42',
+    _version: '5.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -530,7 +530,7 @@ const plugin = {
             '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
-            '  grid-template-columns: auto 3.25rem minmax(0, 1fr);',
+            '  grid-template-columns: auto max-content minmax(0, 1fr);',
             '  column-gap: 8px;',
             '  align-items: start;',
             '  width: 100%;',
@@ -546,14 +546,17 @@ const plugin = {
             '  grid-column: 2;',
             '  flex-shrink: 0;',
             '  align-self: start;',
-            '  width: 100%;',
-            '  min-width: 0;',
-            '  padding: 0 5px;',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  width: max-content;',
+            '  min-width: calc(3ch + 8px);',
+            '  padding: 0 4px;',
             '  font-size: 10px;',
             '  font-weight: 600;',
             '  line-height: 1.35;',
             '  font-variant-numeric: tabular-nums;',
-            '  text-align: right;',
+            '  text-align: center;',
             '  border-radius: 999px;',
             '  background: var(--muted, #f1f5f9);',
             '  color: var(--muted-foreground, #64748b);',
@@ -846,12 +849,12 @@ const plugin = {
             ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
-                position: relative; padding: 10px 14px; font-size: 13px; font-weight: 500;
+                position: relative; padding: 3px 14px; font-size: 13px; font-weight: 500;
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
             ">${t.label}</button>`).join('');
         const updateTabBtn = `<button type="button" class="wf-dash-tab" data-wf-dash-tab="update" style="
-                display: none; position: relative; padding: 10px 14px; font-size: 13px; font-weight: 600;
+                display: none; position: relative; padding: 3px 14px; font-size: 13px; font-weight: 600;
                 background: transparent; border: none; border-bottom: 2px solid transparent;
                 margin-bottom: -1px; cursor: pointer; color: #991b1b;
             ">Update</button>`;
@@ -877,7 +880,7 @@ const plugin = {
         }).join('');
 
         return `
-            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 10px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
+            <div style="display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 3px 18px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
                 <div id="wf-dash-header-tabs" style="display: flex; align-items: center; gap: 0; flex-shrink: 0; min-width: 0;">
                     <div style="font-size: 15px; font-weight: 600; color: var(--foreground, #0f172a); margin-right: 12px; flex-shrink: 0;">Dashboard</div>
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
@@ -1131,20 +1134,29 @@ const plugin = {
     },
 
     _splitPanelHandleStyle() {
-        return 'flex-shrink: 0; width: 8px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
-            + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;';
+        return 'flex-shrink: 0; width: 10px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
+            + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;'
+            + ' display: flex; align-items: center; justify-content: center;';
+    },
+
+    _splitPanelHandleGripHtml() {
+        return '<span class="wf-dash-split-grip" aria-hidden="true">'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '<span class="wf-dash-split-grip-dot"></span>'
+            + '</span>';
     },
 
     _splitPanelHandleHtml() {
         return '<div data-wf-dash-split-handle role="separator" aria-orientation="vertical"'
             + ' aria-label="Resize side panel" tabindex="0" title="Drag to resize side panel"'
-            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+            + ' style="' + this._splitPanelHandleStyle() + '">' + this._splitPanelHandleGripHtml() + '</div>';
     },
 
     _resultsPanelWidthHandleHtml() {
         return '<div data-wf-dash-results-width-handle role="separator" aria-orientation="vertical"'
             + ' aria-label="Resize results panel max width" tabindex="0" title="Drag to set results panel max width"'
-            + ' style="' + this._splitPanelHandleStyle() + '"></div>';
+            + ' style="' + this._splitPanelHandleStyle() + '">' + this._splitPanelHandleGripHtml() + '</div>';
     },
 
     _splitPanelAsideStyle(widthPx) {
@@ -1414,6 +1426,26 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-split-resize-style';
         style.textContent = [
+            '.wf-dash-split-grip {',
+            '  display: flex;',
+            '  flex-direction: column;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  gap: 3px;',
+            '  pointer-events: none;',
+            '}',
+            '.wf-dash-split-grip-dot {',
+            '  width: 3px;',
+            '  height: 3px;',
+            '  border-radius: 50%;',
+            '  background: color-mix(in srgb, var(--muted-foreground, #64748b) 45%, transparent);',
+            '}',
+            '[data-wf-dash-split-handle]:hover .wf-dash-split-grip-dot,',
+            '[data-wf-dash-split-handle]:active .wf-dash-split-grip-dot,',
+            '[data-wf-dash-results-width-handle]:hover .wf-dash-split-grip-dot,',
+            '[data-wf-dash-results-width-handle]:active .wf-dash-split-grip-dot {',
+            '  background: var(--muted-foreground, #64748b);',
+            '}',
             '[data-wf-dash-split-handle]:hover,',
             '[data-wf-dash-split-handle]:active,',
             '[data-wf-dash-results-width-handle]:hover,',
@@ -1512,7 +1544,7 @@ const plugin = {
         const hasFilterBox = this._msScopeHasFilterBox(scopeKey);
         if (!bulkActions && !hasFilterBox) return '';
         const bulkToggle = bulkActions
-            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Deselect all">None</button>`
+            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Select all">All</button>`
             : '';
         const filterInput = hasFilterBox
             ? `<div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none;">
@@ -1699,6 +1731,8 @@ const plugin = {
                 const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
                 this._keepFilterMsDropdownOpen(key);
                 this._toggleMsBulkSelection(key);
+                if (key.startsWith('search-teams')) this._renderSearchProjectsList();
+                if (key.startsWith('search-')) this._validateRangeUi();
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
@@ -1924,7 +1958,7 @@ const plugin = {
 
     _msBulkToggleMode(scopeKey) {
         const mode = (this._state.msBulkToggleMode || {})[scopeKey];
-        return mode === 'all' ? 'all' : 'none';
+        return mode === 'none' ? 'none' : 'all';
     },
 
     _setMsBulkToggleMode(scopeKey, mode) {
@@ -2583,9 +2617,14 @@ const plugin = {
         }
         const all = this._allFromList(scopeKey);
         const n = this._selectedFromList(scopeKey).length;
-        if (scopeKey.startsWith('search-')) {
-            countEl.textContent = String(n);
-            countEl.style.display = n > 0 ? 'inline' : 'none';
+        if (scopeKey.startsWith('search-') || scopeKey.startsWith('filter-')) {
+            const unrestricted = all.length === 0 || n === 0 || n >= all.length;
+            countEl.textContent = unrestricted ? (all.length + '/' + all.length) : (n + '/' + all.length);
+            countEl.style.display = all.length > 0 ? 'inline' : 'none';
+            if (all.length > 1) {
+                this._setMsBulkToggleMode(scopeKey, n === 0 ? 'all' : 'none');
+                this._applyMsBulkToggleLabel(scopeKey);
+            }
         } else {
             countEl.textContent = n + '/' + all.length;
             countEl.style.display = all.length > 0 ? 'inline' : 'none';

@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.13',
+    _version: '2.14',
     enabledByDefault: true,
     phase: 'core',
 
@@ -461,9 +461,9 @@ const plugin = {
         state.ui = null;
     },
 
-    _toggleButtonLabel(visible) {
+    _toggleButtonLabel() {
         const archetypesVersion = (typeof Context !== 'undefined' && Context.archetypesVersion) ? Context.archetypesVersion : '?';
-        return visible ? `Hide • a${archetypesVersion}` : `Logs • a${archetypesVersion}`;
+        return `a${archetypesVersion}`;
     },
 
     _updateVisibility(state, visible) {
