@@ -94,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.47',
+    _version: '5.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1731,6 +1731,8 @@ const plugin = {
                 const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
                 this._keepFilterMsDropdownOpen(key);
                 this._toggleMsBulkSelection(key);
+                if (key.startsWith('search-teams')) this._renderSearchProjectsList();
+                if (key.startsWith('search-')) this._validateRangeUi();
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
@@ -2620,7 +2622,7 @@ const plugin = {
             countEl.textContent = unrestricted ? (all.length + '/' + all.length) : (n + '/' + all.length);
             countEl.style.display = all.length > 0 ? 'inline' : 'none';
             if (all.length > 1) {
-                this._setMsBulkToggleMode(scopeKey, unrestricted ? 'all' : 'none');
+                this._setMsBulkToggleMode(scopeKey, n === 0 ? 'all' : 'none');
                 this._applyMsBulkToggleLabel(scopeKey);
             }
         } else {

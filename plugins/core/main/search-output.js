@@ -5520,7 +5520,7 @@ const searchOutputMethods = {
         const items = this._getSearchableTeamCatalog().map(([id, label]) => ({ id, label }));
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-teams', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._setMsBulkToggleMode('search-teams', prevSelected.size === 0 ? 'all' : 'none');
         this._applyMsBulkToggleLabel('search-teams');
         this._updateMsCount('search-teams');
         this._syncMsDropdown('search-teams');
@@ -5536,7 +5536,7 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-projects', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._setMsBulkToggleMode('search-projects', prevSelected.size === 0 ? 'all' : 'none');
         this._applyMsBulkToggleLabel('search-projects');
         this._updateMsCount('search-projects');
         this._syncMsDropdown('search-projects');
@@ -5553,7 +5553,7 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-envs', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._setMsBulkToggleMode('search-envs', prevSelected.size === 0 ? 'all' : 'none');
         this._applyMsBulkToggleLabel('search-envs');
         this._updateMsCount('search-envs');
         this._syncMsDropdown('search-envs');
@@ -5646,13 +5646,6 @@ const searchOutputMethods = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
                 });
-                if (syncDraftFromApplied) {
-                    const appliedSel = (applied && applied[draftKey]) || [];
-                    const bulkMode = this._isDimensionUnrestricted(appliedSel, listBounds[draftKey] || [])
-                        ? 'all'
-                        : 'none';
-                    this._setMsBulkToggleMode(scopeKey, bulkMode);
-                }
                 this._updateMsCount(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -8116,7 +8109,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.88',
+    _version: '1.89',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
