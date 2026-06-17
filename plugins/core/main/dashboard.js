@@ -94,7 +94,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.46',
+    _version: '5.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1544,7 +1544,7 @@ const plugin = {
         const hasFilterBox = this._msScopeHasFilterBox(scopeKey);
         if (!bulkActions && !hasFilterBox) return '';
         const bulkToggle = bulkActions
-            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Deselect all">None</button>`
+            ? `<button type="button" data-wf-dash-ms-bulk-toggle="${dashEscHtml(scopeKey)}" aria-label="Select all">All</button>`
             : '';
         const filterInput = hasFilterBox
             ? `<div data-wf-dash-ms-filter-wrap="${dashEscHtml(scopeKey)}" style="display: none;">
@@ -1956,7 +1956,7 @@ const plugin = {
 
     _msBulkToggleMode(scopeKey) {
         const mode = (this._state.msBulkToggleMode || {})[scopeKey];
-        return mode === 'all' ? 'all' : 'none';
+        return mode === 'none' ? 'none' : 'all';
     },
 
     _setMsBulkToggleMode(scopeKey, mode) {
@@ -2615,9 +2615,14 @@ const plugin = {
         }
         const all = this._allFromList(scopeKey);
         const n = this._selectedFromList(scopeKey).length;
-        if (scopeKey.startsWith('search-')) {
-            countEl.textContent = String(n);
-            countEl.style.display = n > 0 ? 'inline' : 'none';
+        if (scopeKey.startsWith('search-') || scopeKey.startsWith('filter-')) {
+            const unrestricted = all.length === 0 || n === 0 || n >= all.length;
+            countEl.textContent = unrestricted ? (all.length + '/' + all.length) : (n + '/' + all.length);
+            countEl.style.display = all.length > 0 ? 'inline' : 'none';
+            if (all.length > 1) {
+                this._setMsBulkToggleMode(scopeKey, unrestricted ? 'all' : 'none');
+                this._applyMsBulkToggleLabel(scopeKey);
+            }
         } else {
             countEl.textContent = n + '/' + all.length;
             countEl.style.display = all.length > 0 ? 'inline' : 'none';

@@ -3056,10 +3056,25 @@ const searchOutputMethods = {
         this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
     },
 
-    _isDimensionAllSelected(selected, boundIds) {
+    _isDimensionUnrestricted(selected, boundIds) {
         const bounds = boundIds || [];
         if (bounds.length === 0) return true;
-        return (selected || []).length >= bounds.length;
+        const sel = selected || [];
+        return sel.length === 0 || sel.length >= bounds.length;
+    },
+
+    _isDimensionAllSelected(selected, boundIds) {
+        return this._isDimensionUnrestricted(selected, boundIds);
+    },
+
+    _normalizeFilterDimensionSelection(selected, boundIds) {
+        return this._isDimensionUnrestricted(selected, boundIds) ? [] : [...(selected || [])];
+    },
+
+    _filterDimensionEquivalent(draftSel, appliedSel, boundIds) {
+        const draftNorm = this._normalizeFilterDimensionSelection(draftSel, boundIds);
+        const appliedNorm = this._normalizeFilterDimensionSelection(appliedSel, boundIds);
+        return this._filterArraysEqual(draftNorm, appliedNorm);
     },
 
     _expandAppliedForBoundsGrowth(applied, prevBounds, newBounds) {
@@ -3068,14 +3083,14 @@ const searchOutputMethods = {
             const prevBoundIds = prevBounds[draftKey] || [];
             const newBoundIds = newBounds[draftKey] || [];
             const appliedSel = (applied[draftKey] || []);
+            if (this._isDimensionUnrestricted(appliedSel, prevBoundIds)) {
+                next[draftKey] = [];
+                continue;
+            }
             if (prevBoundIds.length === 0 && newBoundIds.length > 0) {
-                next[draftKey] = [...newBoundIds];
-            } else if (
-                prevBoundIds.length > 0
-                && newBoundIds.length > prevBoundIds.length
-                && this._isDimensionAllSelected(appliedSel, prevBoundIds)
-            ) {
-                next[draftKey] = [...newBoundIds];
+                next[draftKey] = [];
+            } else if (newBoundIds.length > prevBoundIds.length) {
+                next[draftKey] = appliedSel.filter((id) => newBoundIds.includes(id));
             }
         }
         return next;
@@ -3084,25 +3099,13 @@ const searchOutputMethods = {
     _checkedIdsForFilterScope(draftKey, optionIds, applied, prevBounds, listBounds, prevSelected, syncFromApplied) {
         const boundIds = listBounds[draftKey] || [];
         const appliedSel = (applied && applied[draftKey]) || [];
-        const prevBoundIds = (prevBounds && prevBounds[draftKey]) || [];
 
-        if (syncFromApplied && applied) {
-            if (this._isDimensionAllSelected(appliedSel, boundIds)) {
-                return new Set(optionIds);
-            }
-            return new Set(appliedSel.filter((id) => optionIds.includes(id)));
-        }
-
-        if (prevBoundIds.length === 0 && boundIds.length > 0 && appliedSel.length === 0) {
-            return new Set(optionIds);
-        }
-
-        if (prevSelected !== null && prevBoundIds.length > 0) {
+        if (!syncFromApplied && prevSelected !== null) {
             return prevSelected;
         }
 
-        if (applied && this._isDimensionAllSelected(appliedSel, boundIds)) {
-            return new Set(optionIds);
+        if (this._isDimensionUnrestricted(appliedSel, boundIds)) {
+            return new Set();
         }
 
         if (appliedSel.length > 0) {
@@ -3565,15 +3568,8 @@ const searchOutputMethods = {
         return newBounds;
     },
 
-    _isFilterDraftValid(draft, listBounds) {
-        if (!draft) return false;
-        const bounds = listBounds || {};
-        for (const { draftKey } of DASH_FILTER_SCOPES) {
-            const all = (bounds[draftKey] || []).length;
-            if (all === 0) continue;
-            if ((draft[draftKey] || []).length === 0) return false;
-        }
-        return true;
+    _isFilterDraftValid(draft) {
+        return Boolean(draft);
     },
 
     _buildManualFilterRow(opts) {
@@ -3807,8 +3803,8 @@ const searchOutputMethods = {
             const sel = (filters && filters[draftKey]) || [];
             if (boundIds.length === 0) {
                 next[draftKey] = [];
-            } else if (this._isDimensionAllSelected(sel, boundIds)) {
-                next[draftKey] = [...boundIds];
+            } else if (this._isDimensionUnrestricted(sel, boundIds)) {
+                next[draftKey] = [];
             } else {
                 next[draftKey] = sel.filter((id) => boundIds.includes(id));
             }
@@ -3833,19 +3829,18 @@ const searchOutputMethods = {
     },
 
     _filtersAllSelectedFromBounds(bounds) {
-        const b = bounds || {};
         const sort = this._readDashSortFromUi();
         return {
-            teamIds: [...(b.teamIds || [])],
-            projectIds: [...(b.projectIds || [])],
-            envKeys: [...(b.envKeys || [])],
-            statuses: [...(b.statuses || [])],
-            contributorIds: [...(b.contributorIds || [])],
-            promptRatings: [...(b.promptRatings || [])],
-            taskIssues: [...(b.taskIssues || [])],
-            returnTypes: [...(b.returnTypes || [])],
-            promptHistory: [...(b.promptHistory || [])],
-            qaHelpfulness: [...(b.qaHelpfulness || [])],
+            teamIds: [],
+            projectIds: [],
+            envKeys: [],
+            statuses: [],
+            contributorIds: [],
+            promptRatings: [],
+            taskIssues: [],
+            returnTypes: [],
+            promptHistory: [],
+            qaHelpfulness: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -5525,6 +5520,8 @@ const searchOutputMethods = {
         const items = this._getSearchableTeamCatalog().map(([id, label]) => ({ id, label }));
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-teams', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-teams');
         this._updateMsCount('search-teams');
         this._syncMsDropdown('search-teams');
         this._syncMsDropdownFilterUi('search-teams');
@@ -5539,6 +5536,8 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-projects', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-projects');
         this._updateMsCount('search-projects');
         this._syncMsDropdown('search-projects');
         this._syncMsDropdownFilterUi('search-projects');
@@ -5554,6 +5553,8 @@ const searchOutputMethods = {
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
         itemsEl.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
+        this._setMsBulkToggleMode('search-envs', prevSelected.size === 0 || prevSelected.size >= items.length ? 'all' : 'none');
+        this._applyMsBulkToggleLabel('search-envs');
         this._updateMsCount('search-envs');
         this._syncMsDropdown('search-envs');
         this._syncMsDropdownFilterUi('search-envs');
@@ -5604,7 +5605,7 @@ const searchOutputMethods = {
             helpfulnessUi: this._state.helpfulnessUi || {},
             currentUserId: this._dashGetCurrentUserId()
         });
-        const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft, listBounds)
+        const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterIrrelevance();
         const optionCounts = scopeItems.length > 0
@@ -5645,7 +5646,13 @@ const searchOutputMethods = {
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
                 });
-                if (syncDraftFromApplied) this._setMsBulkToggleMode(scopeKey, 'none');
+                if (syncDraftFromApplied) {
+                    const appliedSel = (applied && applied[draftKey]) || [];
+                    const bulkMode = this._isDimensionUnrestricted(appliedSel, listBounds[draftKey] || [])
+                        ? 'all'
+                        : 'none';
+                    this._setMsBulkToggleMode(scopeKey, bulkMode);
+                }
                 this._updateMsCount(scopeKey);
                 this._syncMsDropdown(scopeKey);
                 if (scopeKey.startsWith('filter-')) this._syncMsDropdownFilterUi(scopeKey);
@@ -5911,21 +5918,7 @@ const searchOutputMethods = {
     },
 
     _isFilterSelectionValid() {
-        if (!this._state.cachedItems) return false;
-        const applied = this._state.appliedFilters;
-        const options = this._state.filterListOptions;
-        const listBounds = options ? this._listBoundsFromOptions(options) : {};
-        for (const { scopeKey, draftKey } of DASH_FILTER_SCOPES) {
-            if (!this._isFilterScopeVisible(scopeKey)) continue;
-            const all = this._allFromList(scopeKey);
-            if (all.length === 0) continue;
-            if (this._selectedFromList(scopeKey).length > 0) continue;
-            const boundIds = listBounds[draftKey] || [];
-            const appliedSel = (applied && applied[draftKey]) || [];
-            if (this._isDimensionAllSelected(appliedSel, boundIds)) continue;
-            return false;
-        }
-        return true;
+        return Boolean(this._state.cachedItems);
     },
 
     _filterArraysEqual(a, b) {
@@ -5942,6 +5935,7 @@ const searchOutputMethods = {
         const applied = this._state.appliedFilters;
         if (!applied) return this._state.cachedItems !== null;
         const draft = this._currentClientFilters();
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if ((draft.promptText || '').trim() !== (applied.promptText || '').trim()) return true;
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
@@ -5951,7 +5945,8 @@ const searchOutputMethods = {
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
         ];
         for (const key of keys) {
-            if (!this._filterArraysEqual(draft[key], applied[key])) return true;
+            const boundIds = bounds[key] || [];
+            if (!this._filterDimensionEquivalent(draft[key], applied[key], boundIds)) return true;
         }
         const manual = this._readSearchOutputManualFilters();
         if ((applied.manualAndOr || 'and') !== manual.andOr) return true;
@@ -5988,12 +5983,7 @@ const searchOutputMethods = {
         }
         const applyHint = this._q('#wf-dash-apply-hint');
         if (applyHint) {
-            if (disabled && this._state.cachedItems && !selectionValid) {
-                applyHint.textContent = 'Select at least one option in each filter group.';
-                applyHint.style.display = 'block';
-            } else {
-                applyHint.style.display = 'none';
-            }
+            applyHint.style.display = 'none';
         }
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
@@ -6365,6 +6355,8 @@ const searchOutputMethods = {
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const itemsEl = this._msItemsEl(key);
             if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            this._setMsBulkToggleMode(key, 'all');
+            this._applyMsBulkToggleLabel(key);
             this._updateMsCount(key);
         });
         this._syncOutputToggleUi();
@@ -6440,9 +6432,16 @@ const searchOutputMethods = {
     },
 
     _currentClientFilters() {
+        const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         const draft = this._getFilterDraft();
+        const checkboxFilters = {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const sel = draft[draftKey] || [];
+            const boundIds = bounds[draftKey] || [];
+            checkboxFilters[draftKey] = this._normalizeFilterDimensionSelection(sel, boundIds);
+        }
         const sort = this._readDashSortFromUi();
-        return Object.assign({}, draft, {
+        return Object.assign({}, checkboxFilters, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -6457,17 +6456,22 @@ const searchOutputMethods = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
-        return applied.teamIds.length < bounds.teamIds.length
-            || applied.projectIds.length < bounds.projectIds.length
-            || applied.envKeys.length < bounds.envKeys.length
-            || (applied.statuses || []).length < bounds.statuses.length
-            || (applied.contributorIds || []).length < bounds.contributorIds.length
-            || (applied.promptRatings || []).length < bounds.promptRatings.length
-            || (applied.taskIssues || []).length < bounds.taskIssues.length
-            || (applied.returnTypes || []).length < bounds.returnTypes.length
-            || (applied.promptHistory || []).length < bounds.promptHistory.length
-            || (applied.qaHelpfulness || []).length < bounds.qaHelpfulness.length
-            || (applied.regex && lib.isRegexQueryActive(applied.promptText))
+        const dims = [
+            ['teamIds', bounds.teamIds],
+            ['projectIds', bounds.projectIds],
+            ['envKeys', bounds.envKeys],
+            ['statuses', bounds.statuses],
+            ['contributorIds', bounds.contributorIds],
+            ['promptRatings', bounds.promptRatings],
+            ['taskIssues', bounds.taskIssues],
+            ['returnTypes', bounds.returnTypes],
+            ['promptHistory', bounds.promptHistory],
+            ['qaHelpfulness', bounds.qaHelpfulness]
+        ];
+        for (const [key, boundIds] of dims) {
+            if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
+        }
+        return (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
             || ((applied.manualFilters || []).length > 0);
     },
@@ -8112,7 +8116,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.87',
+    _version: '1.88',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

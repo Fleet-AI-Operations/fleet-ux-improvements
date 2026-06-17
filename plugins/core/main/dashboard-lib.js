@@ -283,10 +283,15 @@ function dashLibPersonLabel(name, email) {
     return trimmedName || trimmedEmail || 'Unknown';
 }
 
+function dashLibIsDimensionUnrestricted(selected, optionCount) {
+    if (optionCount === 0) return true;
+    const sel = selected || [];
+    return sel.length === 0 || sel.length >= optionCount;
+}
+
 function dashLibPassesDimension(values, selected, optionCount) {
     if (optionCount === 0) return true;
-    if (selected.length === 0) return false;
-    if (selected.length >= optionCount) return true;
+    if (dashLibIsDimensionUnrestricted(selected, optionCount)) return true;
     const set = new Set(selected);
     return values.some((value) => set.has(value));
 }
@@ -295,7 +300,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.9',
+    _version: '2.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -307,6 +312,7 @@ const plugin = {
             PG_IN_MAX: DASH_PG_IN_MAX,
             pgInFilter: dashLibPgInFilter,
             pgInChunks: dashLibPgInChunks,
+            isDimensionUnrestricted: dashLibIsDimensionUnrestricted,
 
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             CHECKBOX_FILTER_DIMENSIONS: self._checkboxFilterDimensions,
@@ -607,22 +613,22 @@ const plugin = {
         const returnTypes = f.returnTypes || [];
 
         const allTeams = bounds.teamIds || [];
-        if (teamIds.length > 0) {
+        if (teamIds.length > 0 && !dashLibIsDimensionUnrestricted(teamIds, allTeams.length)) {
             const teamSet = new Set(teamIds);
             result = result.filter((task) => task.teamId && teamSet.has(task.teamId));
-        } else if (allTeams.length > 0) result = [];
+        }
 
         const allProjects = bounds.projectIds || [];
-        if (projectIds.length > 0) {
+        if (projectIds.length > 0 && !dashLibIsDimensionUnrestricted(projectIds, allProjects.length)) {
             const projectSet = new Set(projectIds);
             result = result.filter((task) => task.projectId && projectSet.has(task.projectId));
-        } else if (allProjects.length > 0) result = [];
+        }
 
         const allEnvs = bounds.envKeys || [];
-        if (envKeys.length > 0) {
+        if (envKeys.length > 0 && !dashLibIsDimensionUnrestricted(envKeys, allEnvs.length)) {
             const envSet = new Set(envKeys);
             result = result.filter((task) => task.envKey && envSet.has(task.envKey));
-        } else if (allEnvs.length > 0) result = [];
+        }
 
         const statusCount = (bounds.statuses || []).length;
         result = result.filter((task) => dashLibPassesDimension([task.status].filter(Boolean), statuses, statusCount));
