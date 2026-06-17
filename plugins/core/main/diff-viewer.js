@@ -2683,8 +2683,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-copy {',
         '  flex-shrink: 0;',
-        '}',
-        '#wf-dash-modal .dv-reel--has-above .dv-reel-copy {',
         '  margin-top: ' + (DV_REEL_PEEK_H + DV_REEL_ROW_GAP) + 'px;',
         '}',
     ].join('\n');
@@ -2721,7 +2719,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.55',
+    _version: '1.56',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
