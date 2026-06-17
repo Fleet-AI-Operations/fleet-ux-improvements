@@ -1877,8 +1877,9 @@ function _dvScheduleReelLensSync(modal, opts) {
 }
 
 // INVARIANT: reel lens height is derived ONLY from .dv-slots-columns-row.clientHeight.
-// Never measure column/wrap parents — rolling extra-container is overflow-x:auto
-// and breaks height propagation. Modes must share identical slot DOM placement.
+// Never measure column/wrap parents for lens height — overflow-x on slot columns
+// breaks height propagation. Lens budget uses .dv-slots-columns-row only.
+// Rolling mode scrolls the row (all slots); base mode scrolls extra-container only.
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
     const header = slotEl.querySelector('.dv-slot-header');
     const headerH = header ? header.offsetHeight : 0;
@@ -1966,12 +1967,15 @@ function _dvAttachReelLensResizeObserver(modal) {
 
 function _dvAttachRollingOverlayListeners(modal) {
     if (!modal || modal._dvRollingListenersAttached) return;
+    const row = _dvQ(modal, 'dv-slots-columns-row');
     const extra = _dvQ(modal, 'dv-extra-container');
-    if (!extra) return;
+    if (!row && !extra) return;
     modal._dvRollingListenersAttached = true;
-    extra.addEventListener('scroll', () => {
+    const onScroll = () => {
         if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
-    }, { passive: true });
+    };
+    if (row) row.addEventListener('scroll', onScroll, { passive: true });
+    if (extra) extra.addEventListener('scroll', onScroll, { passive: true });
 }
 
 function _dvRenderFreeTextDiff(modal) {
@@ -2445,6 +2449,19 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling {',
         '  gap: 0;',
         '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slots-columns-row {',
+        '  overflow-x: auto;',
+        '  overflow-y: hidden;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
+        '  position: static;',
+        '  z-index: auto;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
+        '  overflow: visible;',
+        '  flex: 0 0 auto;',
+        '  min-width: auto;',
+        '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
         '}',
@@ -2771,7 +2788,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.59',
+    _version: '1.60',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
