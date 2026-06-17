@@ -212,9 +212,26 @@ function _dvTimestampLineHtml(prefixLabel, iso) {
     const formatted = _dvFormatCreatedAt(iso);
     const ago = _dvRelativeAgo(iso);
     const dateSpan = `<span class="dv-timestamp-date">${_dvEscHtml(formatted)}</span>`;
-    let html = `<span class="dv-timestamp-accent">${_dvEscHtml(prefixLabel)}</span> ${dateSpan}`;
+    let html = prefixLabel
+        ? `<span class="dv-timestamp-accent">${_dvEscHtml(prefixLabel)}</span> ${dateSpan}`
+        : dateSpan;
     if (ago) html += ` <span class="dv-timestamp-accent">(${_dvEscHtml(ago)})</span>`;
     return html;
+}
+
+function _dvSlotVersionCountHtml(slot) {
+    const versions = slot.promptVersions;
+    if (!versions || versions.length === 0) return '';
+    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${versions.length}</span> <span class="dv-version-count-label">versions</span></span>`;
+}
+
+function _dvSlotMetaRowHtml(slot) {
+    const createdHtml = slot.createdAt
+        ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', slot.createdAt)}</div>`
+        : '';
+    const versionHtml = _dvSlotVersionCountHtml(slot);
+    if (!createdHtml && !versionHtml) return '';
+    return `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`;
 }
 
 function _dvHighlightStyles() {
@@ -1454,9 +1471,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
     const authorHtml = authorDisplay
         ? `<div class="dv-slot-author" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>`
         : '';
-    const createdHtml = slot.createdAt
-        ? `<div class="dv-slot-created">${_dvTimestampLineHtml('Created', slot.createdAt)}</div>`
-        : '';
+    const createdHtml = _dvSlotMetaRowHtml(slot);
 
     const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
@@ -2454,6 +2469,33 @@ function _dvInjectStyles() {
         '  overflow: hidden;',
         '  text-overflow: ellipsis;',
         '}',
+        '#wf-dash-modal .dv-slot-meta {',
+        '  display: flex;',
+        '  align-items: baseline;',
+        '  justify-content: space-between;',
+        '  gap: 8px;',
+        '  margin-top: 2px;',
+        '  min-width: 0;',
+        '}',
+        '#wf-dash-modal .dv-slot-meta .dv-slot-created {',
+        '  margin-top: 0;',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '}',
+        '#wf-dash-modal .dv-slot-version-count {',
+        '  flex-shrink: 0;',
+        '  font-size: 10px;',
+        '  line-height: 1.3;',
+        '  white-space: nowrap;',
+        '}',
+        '#wf-dash-modal .dv-version-count-num {',
+        '  color: var(--foreground, #f8fafc);',
+        '  font-weight: 600;',
+        '}',
+        '#wf-dash-modal .dv-version-count-label {',
+        '  color: var(--brand, var(--primary, #2563eb));',
+        '  font-weight: 600;',
+        '}',
         '#wf-dash-modal .dv-slot-created,',
         '#wf-dash-modal .dv-stash-created {',
         '  margin-top: 2px;',
@@ -2729,7 +2771,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.58',
+    _version: '1.59',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
