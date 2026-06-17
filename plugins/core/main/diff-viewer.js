@@ -254,7 +254,7 @@ function _dvHighlightStyles() {
     const dark = document.documentElement.classList.contains('dark');
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
     const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
-    const equalBg = dark ? 'rgba(249,115,22,0.25)' : 'rgba(249,115,22,0.3)';
+    const equalBg = 'rgba(250,215,50,0.4)';
     const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
     return {
         remove: `background-color:${removeBg};${span}`,
@@ -2928,7 +2928,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.68',
+    _version: '1.69',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
