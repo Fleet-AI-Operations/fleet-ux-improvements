@@ -19,7 +19,7 @@ const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = 'color-mix(in srgb, var(--muted-foreground, #64748b) 10%, var(--card, #ffffff))';
+const DASH_TASK_CARD_BG = '#121212';
 const DASH_HYDRATE_TASK_CHUNK = 25;
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
@@ -8111,7 +8111,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.90',
+    _version: '1.91',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
