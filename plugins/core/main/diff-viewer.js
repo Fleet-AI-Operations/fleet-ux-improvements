@@ -1496,7 +1496,6 @@ function _dvReelVersionTrackHtml(slot, slotIdx) {
 
 function _dvReelArrowBtn(slotIdx, dir, enabled) {
     return '<button type="button" data-dv-lens-' + dir + '="' + slotIdx + '"'
-        + (enabled ? '' : ' disabled')
         + ' title="' + (dir === 'up' ? 'Previous' : 'Next') + ' version"'
         + ' class="dv-reel-arrow wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon"'
         + (enabled ? '' : ' disabled') + '>'
@@ -2653,7 +2652,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-arrows-nav-controls .dv-reel-arrow {',
         '  pointer-events: auto;',
-        '  background: var(--card, var(--background, #fff));',
         '}',
         '#wf-dash-modal .dv-reel-nav-current-slot {',
         '  height: var(--dv-reel-nav-row-h, ' + DV_REEL_NAV_ROW_H + 'px);',
@@ -2719,7 +2717,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.56',
+    _version: '1.57',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
