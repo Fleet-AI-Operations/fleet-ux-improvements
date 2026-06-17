@@ -8,6 +8,7 @@
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
+const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -18,8 +19,10 @@ const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
 const DV_REEL_LENS_TOP = DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+const DV_VERSION_SUBMITTED_CHROME = 17; // 10px * 1.3 line-height + 4px card-body gap
+const DV_REEL_COPY_TOP = DV_REEL_LENS_TOP + DV_VERSION_SUBMITTED_CHROME;
 const DV_REEL_VIEWPORT_H_EXPR = 'calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px))';
-const DV_REEL_COPY_RAIL_PAD = DV_REEL_LENS_TOP + 26 + 10; // lens top + icon height + nav gap
+const DV_REEL_COPY_RAIL_PAD = DV_REEL_COPY_TOP + 26 + 10; // copy top + icon height + nav gap
 const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
@@ -36,6 +39,7 @@ const _dvState = {
     granularity: 'word', // 'word' | 'char'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
+    highlightModality: 'differences', // 'differences' | 'similarities'
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -69,7 +73,7 @@ function _dvCreateEmptyDragState() {
 }
 
 // DvSlot:   { slotId, taskId, key, authorName, authorEmail, createdAt, promptVersions, lensIndex, loading, error }
-// DvStash:  { taskId, key, authorName, authorEmail, createdAt }
+// DvStash:  { taskId, key, authorName, authorEmail, createdAt, versionCount? }
 
 // ── LCS diff engine (ported from prompt-diff-highlight.js) ──
 
@@ -219,10 +223,22 @@ function _dvTimestampLineHtml(prefixLabel, iso) {
     return html;
 }
 
+function _dvVersionCountHtml(count) {
+    if (!count || count <= 0) return '';
+    const label = count === 1 ? 'version' : 'versions';
+    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${count}</span> <span class="dv-version-count-label">${label}</span></span>`;
+}
+
 function _dvSlotVersionCountHtml(slot) {
     const versions = slot.promptVersions;
     if (!versions || versions.length === 0) return '';
-    return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${versions.length}</span> <span class="dv-version-count-label">versions</span></span>`;
+    return _dvVersionCountHtml(versions.length);
+}
+
+function _dvStashVersionCountHtml(entry) {
+    const slot = _dvState.slots.find((s) => s.taskId === entry.taskId && s.promptVersions && s.promptVersions.length > 0);
+    const count = slot ? slot.promptVersions.length : (entry.versionCount || 0);
+    return _dvVersionCountHtml(count);
 }
 
 function _dvSlotMetaRowHtml(slot) {
@@ -238,25 +254,27 @@ function _dvHighlightStyles() {
     const dark = document.documentElement.classList.contains('dark');
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
     const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
+    const equalBg = 'rgba(250,215,50,0.4)';
     const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
     return {
         remove: `background-color:${removeBg};${span}`,
-        add: `background-color:${addBg};${span}`
+        add: `background-color:${addBg};${span}`,
+        equal: `background-color:${equalBg};${span}`
     };
 }
 
-function _dvRenderBaseHtml(diff, removeStyle) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'remove'], 'remove');
+function _dvRenderBaseHtml(diff, highlightStyle, highlightType) {
+    const groups = _dvGroupConsecutive(diff, ['equal', 'remove'], highlightType);
     let html = '';
     groups.forEach((group) => {
         let text = group.values.join('');
-        if (group.type === 'remove') {
+        if (group.type === highlightType) {
             if (text === '\n') {
-                html += `<span style="${removeStyle}">↵</span>\n`;
+                html += `<span style="${highlightStyle}">↵</span>\n`;
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${removeStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
+                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
             html += _dvEqualSpanHtml(text);
@@ -265,18 +283,18 @@ function _dvRenderBaseHtml(diff, removeStyle) {
     return html;
 }
 
-function _dvRenderCompareHtml(diff, addStyle) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'add'], 'add');
+function _dvRenderCompareHtml(diff, highlightStyle, highlightType) {
+    const groups = _dvGroupConsecutive(diff, ['equal', 'add'], highlightType);
     let html = '';
     groups.forEach((group) => {
         let text = group.values.join('');
-        if (group.type === 'add') {
+        if (group.type === highlightType) {
             if (text === '\n') {
-                html += `<span style="${addStyle}">↵</span>\n`;
+                html += `<span style="${highlightStyle}">↵</span>\n`;
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${addStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
+                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
             html += _dvEqualSpanHtml(text);
@@ -325,16 +343,24 @@ function _dvDiffPair(baseText, compareText, granularity) {
             compareHtml: _dvPlainPromptHtml(compareText)
         };
     }
+    const similarities = _dvState.highlightModality === 'similarities';
+    const baseHighlight = similarities ? 'equal' : 'remove';
+    const compareHighlight = similarities ? 'equal' : 'add';
+    const styles = _dvHighlightStyles();
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
         Logger.warn('diff-viewer: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
         const diff = _dvComputeWordDiff(baseText, compareText);
-        const styles = _dvHighlightStyles();
-        return { baseHtml: _dvRenderBaseHtml(diff, styles.remove), compareHtml: _dvRenderCompareHtml(diff, styles.add) };
+        return {
+            baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
+            compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
+        };
     }
     const diff = isChar ? _dvComputeCharDiff(baseText, compareText) : _dvComputeWordDiff(baseText, compareText);
-    const styles = _dvHighlightStyles();
-    return { baseHtml: _dvRenderBaseHtml(diff, styles.remove), compareHtml: _dvRenderCompareHtml(diff, styles.add) };
+    return {
+        baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
+        compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
+    };
 }
 
 // ── Stash persistence ──
@@ -495,14 +521,33 @@ function _dvAddToStash(entry) {
             key: entry.key,
             authorName: entry.authorName,
             authorEmail: entry.authorEmail,
-            createdAt: entry.createdAt || ''
+            createdAt: entry.createdAt || '',
+            versionCount: entry.versionCount || 0
         });
         _dvSaveStash();
         Logger.log('diff-viewer: stash add — ' + (entry.key || entry.taskId));
-    } else if (entry.createdAt && !_dvState.stash[idx].createdAt) {
-        _dvState.stash[idx].createdAt = entry.createdAt;
-        _dvSaveStash();
+    } else {
+        let changed = false;
+        if (entry.createdAt && !_dvState.stash[idx].createdAt) {
+            _dvState.stash[idx].createdAt = entry.createdAt;
+            changed = true;
+        }
+        if (entry.versionCount && entry.versionCount > (_dvState.stash[idx].versionCount || 0)) {
+            _dvState.stash[idx].versionCount = entry.versionCount;
+            changed = true;
+        }
+        if (changed) _dvSaveStash();
     }
+}
+
+function _dvClearStash(modal) {
+    if (_dvState.stash.length === 0) return;
+    const count = _dvState.stash.length;
+    _dvState.stash = [];
+    _dvState.slots = [];
+    _dvSaveStash();
+    _dvRenderAll(modal);
+    Logger.log('diff-viewer: stash cleared — ' + count + ' item(s)');
 }
 
 function _dvRemoveFromStash(taskId, modal) {
@@ -604,7 +649,8 @@ async function _dvHydrateSlot(slotId, seed, modal) {
             key: data.key,
             authorName: data.authorName,
             authorEmail: data.authorEmail,
-            createdAt: slot.createdAt
+            createdAt: slot.createdAt,
+            versionCount: (data.promptVersions || []).length
         });
         Logger.log('diff-viewer: slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
         _dvRenderAll(modal);
@@ -640,7 +686,8 @@ function _dvMinimizeSlot(slotIdx, modal) {
         key: slot.key,
         authorName: slot.authorName,
         authorEmail: slot.authorEmail,
-        createdAt: slot.createdAt || ''
+        createdAt: slot.createdAt || '',
+        versionCount: (slot.promptVersions || []).length
     });
     _dvState.slots.splice(slotIdx, 1);
     Logger.log('diff-viewer: slot minimized to stash — ' + (slot.key || slot.taskId));
@@ -740,7 +787,7 @@ function _dvApplyReelContentOpacities(track, translateY, modal) {
         const cardTop = translateY + i * bounds.stepH;
         const cardBottom = cardTop + bounds.cardH;
         const opacity = _dvReelContentOpacity(cardTop, cardBottom, bounds);
-        const content = card.querySelector('.dv-reel-card-content');
+        const content = card.querySelector('.dv-reel-card-body') || card.querySelector('.dv-reel-card-content');
         const target = content || card.querySelector('.dv-reel-empty-mark');
         if (target) target.style.opacity = String(opacity);
     });
@@ -1192,6 +1239,10 @@ function _dvSegBtn(attrName, value, label, active, divider) {
     return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
 }
 
+function _dvToggleCell(labelStyle, title, innerHtml) {
+    return `<div class="dv-toggle-cell"><div style="${labelStyle}margin-bottom:6px;">${title}</div>${innerHtml}</div>`;
+}
+
 function _dvPanelHtml(dash) {
     const box = dash.panelBoxStyle ? dash.panelBoxStyle() : '';
     const label = dash.labelStyle ? dash.labelStyle() : 'font-size:11px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:.04em;';
@@ -1201,31 +1252,17 @@ function _dvPanelHtml(dash) {
     const gran = _dvState.granularity;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
+    const highlightModality = _dvState.highlightModality;
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
-        <div id="dv-highlights-section" style="flex-shrink:0;">
-            <div style="${label}margin-bottom:6px;">Diff Highlights</div>
-            <div class="dv-seg-group">
-                ${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}
-                ${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}
-            </div>
-        </div>
-        <div style="flex-shrink:0;">
-            <div style="${label}margin-bottom:6px;">Diff Modality</div>
-            <div class="dv-seg-group">
-                ${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}
-                ${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}
-            </div>
+        <div id="dv-universal-toggles" class="dv-universal-toggles">
+            ${_dvToggleCell(label, 'Highlights', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
+            ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
+            ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
         </div>
         <div id="dv-tasks-controls" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;">
-            <div style="flex-shrink:0;">
-                <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div class="dv-seg-group">
-                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
-                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
-                </div>
-            </div>
             <div id="dv-comp-mode-section" style="flex-shrink:0;">
                 <div style="${label}margin-bottom:6px;">Mode</div>
                 <div class="dv-seg-group">
@@ -1250,18 +1287,12 @@ function _dvPanelHtml(dash) {
                 <div id="dv-search-error" style="display:none;font-size:11px;color:#dc2626;margin-top:4px;"></div>
             </div>
             <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;">
-                <div style="${label}margin-bottom:6px;flex-shrink:0;">Stash</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-shrink:0;gap:8px;">
+                    <div style="${label}">Stash</div>
+                    <button type="button" id="dv-stash-clear" data-dv-stash-clear class="${btnClass('basic', 'nav')}" style="flex-shrink:0;padding:2px 8px;font-size:10px;line-height:1.4;" disabled>Clear</button>
+                </div>
                 <div id="dv-stash-chips" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-height:0;">
                     <div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>
-                </div>
-            </div>
-        </div>
-        <div id="dv-free-controls" style="display:${_dvState.mode==='free-text'?'flex':'none'};flex-direction:column;gap:12px;flex-shrink:0;">
-            <div>
-                <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div class="dv-seg-group">
-                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
-                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
                 </div>
             </div>
         </div>
@@ -1423,7 +1454,10 @@ function _dvAboveLabelInnerHtml() {
     if (noDifference) {
         return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
     }
-    return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' diff similarity</span>';
+    if (_dvState.highlightModality === 'similarities') {
+        return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' similarity</span>';
+    }
+    return '<span class="dv-slot-above-label-sim">' + (100 - percent) + '% ' + granLabel + ' difference</span>';
 }
 
 function _dvSetAboveLabelEl(el, inner) {
@@ -1538,19 +1572,22 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
 }
 
 function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
-    const submitted = version && version.createdAt
-        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('Submitted', version.createdAt)}</div>`
+    const submittedInner = version && version.createdAt
+        ? _dvTimestampLineHtml('', version.createdAt)
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
-    return '<div class="dv-reel-card-content">' + submitted + '<pre' + preAttr + '>' + prompt + '</pre></div>';
+    return '<div class="dv-reel-card-body">'
+        + '<div class="dv-version-submitted">' + submittedInner + '</div>'
+        + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div></div>'
+        + '</div>';
 }
 
 function _dvReelCardTrackHtml(slot, slotIdx) {
     const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
     if (versions.length === 0) {
-        return '<div class="dv-reel-card"><span class="dv-reel-empty-mark">—</span></div>';
+        return '<div class="dv-reel-card"><div class="dv-reel-card-prompt"><span class="dv-reel-empty-mark">—</span></div></div>';
     }
     return versions.map((v, i) => (
         '<div class="dv-reel-card" data-vi="' + i + '">' + _dvReelCardInnerHtml(slotIdx, v, i === lensIdx) + '</div>'
@@ -1621,41 +1658,53 @@ function _dvRenderSlotsArea(modal) {
     extraContainer.innerHTML = extraHtml;
 }
 
+function _dvStashChipHtml(entry, idx, active) {
+    const authorLine = entry.authorName
+        ? _dvEscHtml(entry.authorName) + (entry.authorEmail ? ' · ' + _dvEscHtml(entry.authorEmail) : '')
+        : _dvEscHtml(entry.authorEmail || '—');
+    const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
+    const authorHtml = authorLine
+        ? `<div class="dv-slot-author" title="${authorLine}">${authorLine}</div>`
+        : '';
+    const createdHtml = entry.createdAt
+        ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
+        : '';
+    const versionHtml = _dvStashVersionCountHtml(entry);
+    const metaHtml = (createdHtml || versionHtml)
+        ? `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`
+        : '';
+    const removeBtnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
+    return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
+        <div class="dv-stash-chip-main">
+            <div class="dv-stash-key">${keyLine}</div>
+            ${authorHtml}
+            ${metaHtml}
+        </div>
+        <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash and diff view" style="${removeBtnStyle}">×</button>
+    </div>`;
+}
+
 function _dvRenderStash(modal) {
     const chips = _dvQ(modal, 'dv-stash-chips');
     if (!chips) return;
     if (_dvState.stash.length === 0) {
         chips.innerHTML = `<div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>`;
+        _dvSyncStashClearUi(modal);
         return;
     }
-    // Count how many slots exist per task
     const slotCountByTaskId = new Map();
     for (const s of _dvState.slots) {
         slotCountByTaskId.set(s.taskId, (slotCountByTaskId.get(s.taskId) || 0) + 1);
     }
-    let html = '';
-    _dvState.stash.forEach((entry, idx) => {
-        const active = slotCountByTaskId.has(entry.taskId);
-        const authorLine = entry.authorName
-            ? _dvEscHtml(entry.authorName) + (entry.authorEmail ? ' · ' + _dvEscHtml(entry.authorEmail) : '')
-            : _dvEscHtml(entry.authorEmail || '—');
-        const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
-        const chipBg = 'var(--card,#fff)';
-        const chipBorder = active ? '#22c55e' : 'var(--border,#e2e8f0)';
-        const keyColor = active ? '#22c55e' : 'var(--foreground,#0f172a)';
-        const createdHtml = entry.createdAt
-            ? `<div class="dv-stash-created">${_dvTimestampLineHtml('Created', entry.createdAt)}</div>`
-            : '';
-        html += `<div data-dv-stash-chip="${idx}" style="display:flex;align-items:flex-start;gap:6px;padding:7px 8px;background:${chipBg};border:1px solid ${chipBorder};border-radius:7px;cursor:pointer;transition:border-color 0.15s,color 0.15s;" title="Click to add slot">
-            <div style="flex:1;min-width:0;overflow:hidden;">
-                <div style="font-size:11px;font-weight:600;color:${keyColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${keyLine}</div>
-                <div style="font-size:10px;color:var(--muted-foreground,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${authorLine}</div>
-                ${createdHtml}
-            </div>
-            <button type="button" data-dv-stash-remove="${idx}" title="Remove from stash and diff view" style="width:18px;height:18px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">×</button>
-        </div>`;
-    });
-    chips.innerHTML = html;
+    chips.innerHTML = _dvState.stash.map((entry, idx) => (
+        _dvStashChipHtml(entry, idx, slotCountByTaskId.has(entry.taskId))
+    )).join('');
+    _dvSyncStashClearUi(modal);
+}
+
+function _dvSyncStashClearUi(modal) {
+    const btn = _dvQ(modal, 'dv-stash-clear');
+    if (btn) btn.disabled = _dvState.stash.length === 0;
 }
 
 function _dvRenderStashChipStates(modal) {
@@ -1667,10 +1716,11 @@ function _dvRenderStashChipStates(modal) {
         const entry = _dvState.stash[idx];
         if (!entry) return;
         const active = slotTaskIds.has(entry.taskId);
-        chip.style.background = 'var(--card,#fff)';
-        chip.style.borderColor = active ? '#22c55e' : 'var(--border,#e2e8f0)';
-        const keyEl = chip.querySelector('div > div:first-child');
-        if (keyEl) keyEl.style.color = active ? '#22c55e' : 'var(--foreground,#0f172a)';
+        chip.classList.toggle('dv-stash-chip--active', active);
+        const versionEl = chip.querySelector('.dv-slot-version-count');
+        if (versionEl) {
+            versionEl.outerHTML = _dvStashVersionCountHtml(entry);
+        }
     });
 }
 
@@ -1877,8 +1927,9 @@ function _dvScheduleReelLensSync(modal, opts) {
 }
 
 // INVARIANT: reel lens height is derived ONLY from .dv-slots-columns-row.clientHeight.
-// Never measure column/wrap parents — rolling extra-container is overflow-x:auto
-// and breaks height propagation. Modes must share identical slot DOM placement.
+// Never measure column/wrap parents for lens height — overflow-x on slot columns
+// breaks height propagation. Lens budget uses .dv-slots-columns-row only.
+// Rolling mode scrolls the row (all slots); base mode scrolls extra-container only.
 function _dvSlotLensBudget(slotEl, unifiedChrome) {
     const header = slotEl.querySelector('.dv-slot-header');
     const headerH = header ? header.offsetHeight : 0;
@@ -1966,12 +2017,15 @@ function _dvAttachReelLensResizeObserver(modal) {
 
 function _dvAttachRollingOverlayListeners(modal) {
     if (!modal || modal._dvRollingListenersAttached) return;
+    const row = _dvQ(modal, 'dv-slots-columns-row');
     const extra = _dvQ(modal, 'dv-extra-container');
-    if (!extra) return;
+    if (!row && !extra) return;
     modal._dvRollingListenersAttached = true;
-    extra.addEventListener('scroll', () => {
+    const onScroll = () => {
         if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
-    }, { passive: true });
+    };
+    if (row) row.addEventListener('scroll', onScroll, { passive: true });
+    if (extra) extra.addEventListener('scroll', onScroll, { passive: true });
 }
 
 function _dvRenderFreeTextDiff(modal) {
@@ -1996,12 +2050,10 @@ function _dvRenderFreeTextDiff(modal) {
 
 function _dvSyncModeUi(modal) {
     const tasks = _dvQ(modal, 'dv-tasks-controls');
-    const free = _dvQ(modal, 'dv-free-controls');
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     const freeArea = _dvQ(modal, 'dv-free-area');
     const isTask = _dvState.mode === 'tasks';
     if (tasks) tasks.style.display = isTask ? 'flex' : 'none';
-    if (free) free.style.display = isTask ? 'none' : 'flex';
     if (slotsArea) slotsArea.style.display = isTask ? 'flex' : 'none';
     if (freeArea) freeArea.style.display = isTask ? 'none' : 'flex';
     modal.querySelectorAll('[data-dv-mode]').forEach((btn) => {
@@ -2013,6 +2065,14 @@ function _dvSyncModeUi(modal) {
 function _dvSyncGranularityUi(modal) {
     modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-seg') === _dvState.granularity;
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+function _dvSyncHighlightModalityUi(modal) {
+    if (!modal) return;
+    modal.querySelectorAll('[data-dv-highlight-modality]').forEach((btn) => {
+        const active = btn.getAttribute('data-dv-highlight-modality') === _dvState.highlightModality;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 }
@@ -2105,8 +2165,25 @@ function _dvAttachListeners(modal, dash) {
                 try { localStorage.setItem(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
                 _dvSyncGranularityUi(modal);
                 _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
                 Logger.log('diff-viewer: granularity → ' + gran);
+            }
+            return;
+        }
+
+        // ── Highlight modality toggle ──
+        const modalityBtn = e.target.closest('[data-dv-highlight-modality]');
+        if (modalityBtn && modal.contains(modalityBtn)) {
+            const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
+            if (modality !== _dvState.highlightModality) {
+                _dvState.highlightModality = modality;
+                try { localStorage.setItem(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
+                _dvSyncHighlightModalityUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: highlight modality → ' + modality);
             }
             return;
         }
@@ -2142,8 +2219,9 @@ function _dvAttachListeners(modal, dash) {
                 _dvClearHoverDiff(modal);
                 _dvSyncHighlightsUi(modal);
                 _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
-                Logger.log('diff-viewer: diff highlights → ' + (enabled ? 'on' : 'off'));
+                Logger.log('diff-viewer: highlights → ' + (enabled ? 'on' : 'off'));
             }
             return;
         }
@@ -2202,6 +2280,14 @@ function _dvAttachListeners(modal, dash) {
                     createdAt: entry.createdAt || ''
                 }, modal);
             }
+            return;
+        }
+
+        // ── Stash clear ──
+        const stashClear = e.target.closest('[data-dv-stash-clear]');
+        if (stashClear && modal.contains(stashClear)) {
+            e.stopPropagation();
+            _dvClearStash(modal);
             return;
         }
 
@@ -2331,6 +2417,16 @@ function _dvInjectStyles() {
         '#wf-dash-modal [data-wf-dash-tab="diff-viewer"].wf-dash-tab--add-pulse {',
         '  animation: dvDiffTabAddPulse 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
         '}',
+        '#wf-dash-modal .dv-universal-toggles {',
+        '  display: flex;',
+        '  flex-direction: row;',
+        '  flex-wrap: wrap;',
+        '  gap: 12px;',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-toggle-cell {',
+        '  flex-shrink: 0;',
+        '}',
         '#wf-dash-modal .dv-seg-group {',
         '  display: inline-flex;',
         '  border-radius: 6px;',
@@ -2445,6 +2541,19 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-slots-area--rolling {',
         '  gap: 0;',
         '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slots-columns-row {',
+        '  overflow-x: auto;',
+        '  overflow-y: hidden;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base {',
+        '  position: static;',
+        '  z-index: auto;',
+        '}',
+        '#wf-dash-modal .dv-slots-area--rolling .dv-slot-columns-extra {',
+        '  overflow: visible;',
+        '  flex: 0 0 auto;',
+        '  min-width: auto;',
+        '}',
         '#wf-dash-modal .dv-slots-area--rolling .dv-slot-column--base .dv-slot-wrap {',
         '  border: 1px solid var(--border, #e2e8f0);',
         '}',
@@ -2493,11 +2602,42 @@ function _dvInjectStyles() {
         '  font-weight: 600;',
         '}',
         '#wf-dash-modal .dv-version-count-label {',
-        '  color: var(--brand, var(--primary, #2563eb));',
+        '  color: var(--muted-foreground, #64748b);',
         '  font-weight: 600;',
         '}',
-        '#wf-dash-modal .dv-slot-created,',
-        '#wf-dash-modal .dv-stash-created {',
+        '#wf-dash-modal .dv-stash-chip {',
+        '  display: flex;',
+        '  align-items: flex-start;',
+        '  gap: 8px;',
+        '  padding: 8px 10px;',
+        '  background: var(--card, #fff);',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 8px;',
+        '  cursor: pointer;',
+        '  transition: border-color 0.15s;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-stash-chip--active {',
+        '  border-color: #22c55e;',
+        '}',
+        '#wf-dash-modal .dv-stash-chip-main {',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '  overflow: hidden;',
+        '}',
+        '#wf-dash-modal .dv-stash-key {',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
+        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+        '  color: var(--foreground, #f8fafc);',
+        '  white-space: nowrap;',
+        '  overflow: hidden;',
+        '  text-overflow: ellipsis;',
+        '}',
+        '#wf-dash-modal .dv-stash-chip--active .dv-stash-key {',
+        '  color: #22c55e;',
+        '}',
+        '#wf-dash-modal .dv-slot-created {',
         '  margin-top: 2px;',
         '  font-size: 10px;',
         '  line-height: 1.3;',
@@ -2506,8 +2646,9 @@ function _dvInjectStyles() {
         '  text-overflow: ellipsis;',
         '}',
         '#wf-dash-modal .dv-version-submitted {',
-        '  margin: 0 0 4px 0;',
+        '  margin: 0;',
         '  padding: 0;',
+        '  flex-shrink: 0;',
         '  font-size: 10px;',
         '  line-height: 1.3;',
         '}',
@@ -2623,14 +2764,30 @@ function _dvInjectStyles() {
         '  height: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '  min-height: 0;',
         '  overflow: hidden;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-reel-card-body {',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  gap: 4px;',
+        '  height: 100%;',
+        '  min-height: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel-card-prompt {',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '  overflow: hidden;',
         '  padding: 8px 10px;',
         '  background: var(--background, #fff);',
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
         '  box-sizing: border-box;',
+        '  display: flex;',
+        '  flex-direction: column;',
         '}',
         '#wf-dash-modal .dv-reel-card-content {',
-        '  height: 100%;',
+        '  flex: 1;',
+        '  min-height: 0;',
         '  overflow-y: auto;',
         '  overflow-x: hidden;',
         '  box-sizing: border-box;',
@@ -2731,7 +2888,7 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-copy {',
         '  position: absolute;',
-        '  top: ' + DV_REEL_LENS_TOP + 'px;',
+        '  top: ' + DV_REEL_COPY_TOP + 'px;',
         '  left: 0;',
         '  z-index: 3;',
         '  flex-shrink: 0;',
@@ -2771,7 +2928,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.59',
+    _version: '1.69',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2804,6 +2961,14 @@ const plugin = {
             if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
         } catch (_e) { /* no-op */ }
 
+        // Restore persisted highlight modality
+        try {
+            const storedModality = localStorage.getItem(DV_HIGHLIGHT_MODALITY_KEY);
+            if (storedModality === 'differences' || storedModality === 'similarities') {
+                _dvState.highlightModality = storedModality;
+            }
+        } catch (_e) { /* no-op */ }
+
         // Inject styles
         _dvInjectStyles();
 
@@ -2824,6 +2989,7 @@ const plugin = {
                 _dvAttachReelLensResizeObserver(modal);
                 _dvAttachRollingOverlayListeners(modal);
                 _dvSyncHighlightsUi(modal);
+                _dvSyncHighlightModalityUi(modal);
                 _dvSyncCompModeUi(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
@@ -2831,6 +2997,7 @@ const plugin = {
             onActivate(modal) {
                 _dvRenderAll(modal);
                 _dvSyncHighlightsUi(modal);
+                _dvSyncHighlightModalityUi(modal);
                 _dvSyncCompModeUi(modal);
                 _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
