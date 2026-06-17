@@ -8,6 +8,7 @@
 const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
+const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -36,6 +37,7 @@ const _dvState = {
     granularity: 'word', // 'word' | 'char'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
+    highlightModality: 'differences', // 'differences' | 'similarities'
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -249,25 +251,27 @@ function _dvHighlightStyles() {
     const dark = document.documentElement.classList.contains('dark');
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
     const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
+    const equalBg = dark ? 'rgba(249,115,22,0.25)' : 'rgba(249,115,22,0.3)';
     const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
     return {
         remove: `background-color:${removeBg};${span}`,
-        add: `background-color:${addBg};${span}`
+        add: `background-color:${addBg};${span}`,
+        equal: `background-color:${equalBg};${span}`
     };
 }
 
-function _dvRenderBaseHtml(diff, removeStyle) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'remove'], 'remove');
+function _dvRenderBaseHtml(diff, highlightStyle, highlightType) {
+    const groups = _dvGroupConsecutive(diff, ['equal', 'remove'], highlightType);
     let html = '';
     groups.forEach((group) => {
         let text = group.values.join('');
-        if (group.type === 'remove') {
+        if (group.type === highlightType) {
             if (text === '\n') {
-                html += `<span style="${removeStyle}">↵</span>\n`;
+                html += `<span style="${highlightStyle}">↵</span>\n`;
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${removeStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
+                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
             html += _dvEqualSpanHtml(text);
@@ -276,18 +280,18 @@ function _dvRenderBaseHtml(diff, removeStyle) {
     return html;
 }
 
-function _dvRenderCompareHtml(diff, addStyle) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'add'], 'add');
+function _dvRenderCompareHtml(diff, highlightStyle, highlightType) {
+    const groups = _dvGroupConsecutive(diff, ['equal', 'add'], highlightType);
     let html = '';
     groups.forEach((group) => {
         let text = group.values.join('');
-        if (group.type === 'add') {
+        if (group.type === highlightType) {
             if (text === '\n') {
-                html += `<span style="${addStyle}">↵</span>\n`;
+                html += `<span style="${highlightStyle}">↵</span>\n`;
             } else {
                 const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
                 const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${addStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
+                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
             }
         } else {
             html += _dvEqualSpanHtml(text);
@@ -336,16 +340,24 @@ function _dvDiffPair(baseText, compareText, granularity) {
             compareHtml: _dvPlainPromptHtml(compareText)
         };
     }
+    const similarities = _dvState.highlightModality === 'similarities';
+    const baseHighlight = similarities ? 'equal' : 'remove';
+    const compareHighlight = similarities ? 'equal' : 'add';
+    const styles = _dvHighlightStyles();
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
         Logger.warn('diff-viewer: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
         const diff = _dvComputeWordDiff(baseText, compareText);
-        const styles = _dvHighlightStyles();
-        return { baseHtml: _dvRenderBaseHtml(diff, styles.remove), compareHtml: _dvRenderCompareHtml(diff, styles.add) };
+        return {
+            baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
+            compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
+        };
     }
     const diff = isChar ? _dvComputeCharDiff(baseText, compareText) : _dvComputeWordDiff(baseText, compareText);
-    const styles = _dvHighlightStyles();
-    return { baseHtml: _dvRenderBaseHtml(diff, styles.remove), compareHtml: _dvRenderCompareHtml(diff, styles.add) };
+    return {
+        baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
+        compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
+    };
 }
 
 // ── Stash persistence ──
@@ -523,6 +535,16 @@ function _dvAddToStash(entry) {
         }
         if (changed) _dvSaveStash();
     }
+}
+
+function _dvClearStash(modal) {
+    if (_dvState.stash.length === 0) return;
+    const count = _dvState.stash.length;
+    _dvState.stash = [];
+    _dvState.slots = [];
+    _dvSaveStash();
+    _dvRenderAll(modal);
+    Logger.log('diff-viewer: stash cleared — ' + count + ' item(s)');
 }
 
 function _dvRemoveFromStash(taskId, modal) {
@@ -1214,6 +1236,10 @@ function _dvSegBtn(attrName, value, label, active, divider) {
     return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
 }
 
+function _dvToggleCell(labelStyle, title, innerHtml) {
+    return `<div class="dv-toggle-cell"><div style="${labelStyle}margin-bottom:6px;">${title}</div>${innerHtml}</div>`;
+}
+
 function _dvPanelHtml(dash) {
     const box = dash.panelBoxStyle ? dash.panelBoxStyle() : '';
     const label = dash.labelStyle ? dash.labelStyle() : 'font-size:11px;font-weight:600;color:var(--muted-foreground,#64748b);text-transform:uppercase;letter-spacing:.04em;';
@@ -1223,31 +1249,17 @@ function _dvPanelHtml(dash) {
     const gran = _dvState.granularity;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
+    const highlightModality = _dvState.highlightModality;
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
-        <div id="dv-highlights-section" style="flex-shrink:0;">
-            <div style="${label}margin-bottom:6px;">Diff Highlights</div>
-            <div class="dv-seg-group">
-                ${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}
-                ${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}
-            </div>
-        </div>
-        <div style="flex-shrink:0;">
-            <div style="${label}margin-bottom:6px;">Diff Modality</div>
-            <div class="dv-seg-group">
-                ${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}
-                ${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}
-            </div>
+        <div id="dv-universal-toggles" class="dv-universal-toggles">
+            ${_dvToggleCell(label, 'Highlights', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
+            ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
+            ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
         </div>
         <div id="dv-tasks-controls" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;">
-            <div style="flex-shrink:0;">
-                <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div class="dv-seg-group">
-                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
-                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
-                </div>
-            </div>
             <div id="dv-comp-mode-section" style="flex-shrink:0;">
                 <div style="${label}margin-bottom:6px;">Mode</div>
                 <div class="dv-seg-group">
@@ -1272,18 +1284,12 @@ function _dvPanelHtml(dash) {
                 <div id="dv-search-error" style="display:none;font-size:11px;color:#dc2626;margin-top:4px;"></div>
             </div>
             <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;">
-                <div style="${label}margin-bottom:6px;flex-shrink:0;">Stash</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-shrink:0;gap:8px;">
+                    <div style="${label}">Stash</div>
+                    <button type="button" id="dv-stash-clear" data-dv-stash-clear class="${btnClass('basic', 'nav')}" style="flex-shrink:0;padding:2px 8px;font-size:10px;line-height:1.4;" disabled>Clear</button>
+                </div>
                 <div id="dv-stash-chips" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-height:0;">
                     <div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>
-                </div>
-            </div>
-        </div>
-        <div id="dv-free-controls" style="display:${_dvState.mode==='free-text'?'flex':'none'};flex-direction:column;gap:12px;flex-shrink:0;">
-            <div>
-                <div style="${label}margin-bottom:6px;">Diff Granularity</div>
-                <div class="dv-seg-group">
-                    ${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}
-                    ${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}
                 </div>
             </div>
         </div>
@@ -1445,7 +1451,10 @@ function _dvAboveLabelInnerHtml() {
     if (noDifference) {
         return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
     }
-    return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' diff similarity</span>';
+    if (_dvState.highlightModality === 'similarities') {
+        return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' similarity</span>';
+    }
+    return '<span class="dv-slot-above-label-sim">' + (100 - percent) + '% ' + granLabel + ' difference</span>';
 }
 
 function _dvSetAboveLabelEl(el, inner) {
@@ -1677,6 +1686,7 @@ function _dvRenderStash(modal) {
     if (!chips) return;
     if (_dvState.stash.length === 0) {
         chips.innerHTML = `<div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>`;
+        _dvSyncStashClearUi(modal);
         return;
     }
     const slotCountByTaskId = new Map();
@@ -1686,6 +1696,12 @@ function _dvRenderStash(modal) {
     chips.innerHTML = _dvState.stash.map((entry, idx) => (
         _dvStashChipHtml(entry, idx, slotCountByTaskId.has(entry.taskId))
     )).join('');
+    _dvSyncStashClearUi(modal);
+}
+
+function _dvSyncStashClearUi(modal) {
+    const btn = _dvQ(modal, 'dv-stash-clear');
+    if (btn) btn.disabled = _dvState.stash.length === 0;
 }
 
 function _dvRenderStashChipStates(modal) {
@@ -2031,12 +2047,10 @@ function _dvRenderFreeTextDiff(modal) {
 
 function _dvSyncModeUi(modal) {
     const tasks = _dvQ(modal, 'dv-tasks-controls');
-    const free = _dvQ(modal, 'dv-free-controls');
     const slotsArea = _dvQ(modal, 'dv-slots-area');
     const freeArea = _dvQ(modal, 'dv-free-area');
     const isTask = _dvState.mode === 'tasks';
     if (tasks) tasks.style.display = isTask ? 'flex' : 'none';
-    if (free) free.style.display = isTask ? 'none' : 'flex';
     if (slotsArea) slotsArea.style.display = isTask ? 'flex' : 'none';
     if (freeArea) freeArea.style.display = isTask ? 'none' : 'flex';
     modal.querySelectorAll('[data-dv-mode]').forEach((btn) => {
@@ -2048,6 +2062,14 @@ function _dvSyncModeUi(modal) {
 function _dvSyncGranularityUi(modal) {
     modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
         const active = btn.getAttribute('data-dv-seg') === _dvState.granularity;
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+function _dvSyncHighlightModalityUi(modal) {
+    if (!modal) return;
+    modal.querySelectorAll('[data-dv-highlight-modality]').forEach((btn) => {
+        const active = btn.getAttribute('data-dv-highlight-modality') === _dvState.highlightModality;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 }
@@ -2140,8 +2162,25 @@ function _dvAttachListeners(modal, dash) {
                 try { localStorage.setItem(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
                 _dvSyncGranularityUi(modal);
                 _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
                 Logger.log('diff-viewer: granularity → ' + gran);
+            }
+            return;
+        }
+
+        // ── Highlight modality toggle ──
+        const modalityBtn = e.target.closest('[data-dv-highlight-modality]');
+        if (modalityBtn && modal.contains(modalityBtn)) {
+            const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
+            if (modality !== _dvState.highlightModality) {
+                _dvState.highlightModality = modality;
+                try { localStorage.setItem(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
+                _dvSyncHighlightModalityUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: highlight modality → ' + modality);
             }
             return;
         }
@@ -2177,8 +2216,9 @@ function _dvAttachListeners(modal, dash) {
                 _dvClearHoverDiff(modal);
                 _dvSyncHighlightsUi(modal);
                 _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
-                Logger.log('diff-viewer: diff highlights → ' + (enabled ? 'on' : 'off'));
+                Logger.log('diff-viewer: highlights → ' + (enabled ? 'on' : 'off'));
             }
             return;
         }
@@ -2237,6 +2277,14 @@ function _dvAttachListeners(modal, dash) {
                     createdAt: entry.createdAt || ''
                 }, modal);
             }
+            return;
+        }
+
+        // ── Stash clear ──
+        const stashClear = e.target.closest('[data-dv-stash-clear]');
+        if (stashClear && modal.contains(stashClear)) {
+            e.stopPropagation();
+            _dvClearStash(modal);
             return;
         }
 
@@ -2365,6 +2413,18 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal [data-wf-dash-tab="diff-viewer"].wf-dash-tab--add-pulse {',
         '  animation: dvDiffTabAddPulse 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
+        '}',
+        '#wf-dash-modal .dv-universal-toggles {',
+        '  display: flex;',
+        '  flex-direction: row;',
+        '  gap: 12px;',
+        '  overflow-x: auto;',
+        '  overflow-y: hidden;',
+        '  flex-shrink: 0;',
+        '  -webkit-overflow-scrolling: touch;',
+        '}',
+        '#wf-dash-modal .dv-toggle-cell {',
+        '  flex-shrink: 0;',
         '}',
         '#wf-dash-modal .dv-seg-group {',
         '  display: inline-flex;',
@@ -2867,7 +2927,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.63',
+    _version: '1.65',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2900,6 +2960,14 @@ const plugin = {
             if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
         } catch (_e) { /* no-op */ }
 
+        // Restore persisted highlight modality
+        try {
+            const storedModality = localStorage.getItem(DV_HIGHLIGHT_MODALITY_KEY);
+            if (storedModality === 'differences' || storedModality === 'similarities') {
+                _dvState.highlightModality = storedModality;
+            }
+        } catch (_e) { /* no-op */ }
+
         // Inject styles
         _dvInjectStyles();
 
@@ -2920,6 +2988,7 @@ const plugin = {
                 _dvAttachReelLensResizeObserver(modal);
                 _dvAttachRollingOverlayListeners(modal);
                 _dvSyncHighlightsUi(modal);
+                _dvSyncHighlightModalityUi(modal);
                 _dvSyncCompModeUi(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
@@ -2927,6 +2996,7 @@ const plugin = {
             onActivate(modal) {
                 _dvRenderAll(modal);
                 _dvSyncHighlightsUi(modal);
+                _dvSyncHighlightModalityUi(modal);
                 _dvSyncCompModeUi(modal);
                 _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
