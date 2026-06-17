@@ -19,8 +19,10 @@ const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
 const DV_REEL_LENS_TOP = DV_REEL_PEEK_H + DV_REEL_ROW_GAP;
+const DV_VERSION_SUBMITTED_CHROME = 17; // 10px * 1.3 line-height + 4px card-body gap
+const DV_REEL_COPY_TOP = DV_REEL_LENS_TOP + DV_VERSION_SUBMITTED_CHROME;
 const DV_REEL_VIEWPORT_H_EXPR = 'calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px))';
-const DV_REEL_COPY_RAIL_PAD = DV_REEL_LENS_TOP + 26 + 10; // lens top + icon height + nav gap
+const DV_REEL_COPY_RAIL_PAD = DV_REEL_COPY_TOP + 26 + 10; // copy top + icon height + nav gap
 const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
@@ -1569,13 +1571,13 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
 }
 
 function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
-    const submitted = version && version.createdAt
-        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('', version.createdAt)}</div>`
+    const submittedInner = version && version.createdAt
+        ? _dvTimestampLineHtml('', version.createdAt)
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
     return '<div class="dv-reel-card-body">'
-        + submitted
+        + '<div class="dv-version-submitted">' + submittedInner + '</div>'
         + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div></div>'
         + '</div>';
 }
@@ -2885,7 +2887,7 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-copy {',
         '  position: absolute;',
-        '  top: ' + DV_REEL_LENS_TOP + 'px;',
+        '  top: ' + DV_REEL_COPY_TOP + 'px;',
         '  left: 0;',
         '  z-index: 3;',
         '  flex-shrink: 0;',
@@ -2925,7 +2927,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.66',
+    _version: '1.67',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
