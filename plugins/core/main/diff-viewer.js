@@ -740,7 +740,7 @@ function _dvApplyReelContentOpacities(track, translateY, modal) {
         const cardTop = translateY + i * bounds.stepH;
         const cardBottom = cardTop + bounds.cardH;
         const opacity = _dvReelContentOpacity(cardTop, cardBottom, bounds);
-        const content = card.querySelector('.dv-reel-card-content');
+        const content = card.querySelector('.dv-reel-card-body') || card.querySelector('.dv-reel-card-content');
         const target = content || card.querySelector('.dv-reel-empty-mark');
         if (target) target.style.opacity = String(opacity);
     });
@@ -1539,18 +1539,21 @@ function _dvReelArrowsNavHtml(slot, slotIdx) {
 
 function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
     const submitted = version && version.createdAt
-        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('Submitted', version.createdAt)}</div>`
+        ? `<div class="dv-version-submitted">${_dvTimestampLineHtml('', version.createdAt)}</div>`
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
-    return '<div class="dv-reel-card-content">' + submitted + '<pre' + preAttr + '>' + prompt + '</pre></div>';
+    return '<div class="dv-reel-card-body">'
+        + submitted
+        + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div></div>'
+        + '</div>';
 }
 
 function _dvReelCardTrackHtml(slot, slotIdx) {
     const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
     if (versions.length === 0) {
-        return '<div class="dv-reel-card"><span class="dv-reel-empty-mark">—</span></div>';
+        return '<div class="dv-reel-card"><div class="dv-reel-card-prompt"><span class="dv-reel-empty-mark">—</span></div></div>';
     }
     return versions.map((v, i) => (
         '<div class="dv-reel-card" data-vi="' + i + '">' + _dvReelCardInnerHtml(slotIdx, v, i === lensIdx) + '</div>'
@@ -2523,8 +2526,9 @@ function _dvInjectStyles() {
         '  text-overflow: ellipsis;',
         '}',
         '#wf-dash-modal .dv-version-submitted {',
-        '  margin: 0 0 4px 0;',
+        '  margin: 0;',
         '  padding: 0;',
+        '  flex-shrink: 0;',
         '  font-size: 10px;',
         '  line-height: 1.3;',
         '}',
@@ -2640,14 +2644,30 @@ function _dvInjectStyles() {
         '  height: var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px);',
         '  min-height: 0;',
         '  overflow: hidden;',
+        '  box-sizing: border-box;',
+        '}',
+        '#wf-dash-modal .dv-reel-card-body {',
+        '  display: flex;',
+        '  flex-direction: column;',
+        '  gap: 4px;',
+        '  height: 100%;',
+        '  min-height: 0;',
+        '}',
+        '#wf-dash-modal .dv-reel-card-prompt {',
+        '  flex: 1;',
+        '  min-height: 0;',
+        '  overflow: hidden;',
         '  padding: 8px 10px;',
         '  background: var(--background, #fff);',
         '  border-radius: 6px;',
         '  border: 1px solid var(--border, #e2e8f0);',
         '  box-sizing: border-box;',
+        '  display: flex;',
+        '  flex-direction: column;',
         '}',
         '#wf-dash-modal .dv-reel-card-content {',
-        '  height: 100%;',
+        '  flex: 1;',
+        '  min-height: 0;',
         '  overflow-y: auto;',
         '  overflow-x: hidden;',
         '  box-sizing: border-box;',
@@ -2788,7 +2808,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.60',
+    _version: '1.62',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

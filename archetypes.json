@@ -1,7 +1,7 @@
 {
   "version": "9.5.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.281",
+  "archetypesVersion": "10.283",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -58,8 +58,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.60",
-      "hash": "sha256-8dc021bdcd60136461d30e69fb33cdd1727311f9160fd8ae1931c142ca91560a",
+      "version": "1.62",
+      "hash": "sha256-2c990b62827e0636aecd362f662fcdfb952c96254c7b064301d38857a936adba",
       "log": false
     },
     {
