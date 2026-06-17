@@ -71,8 +71,8 @@ const DASH_FLAGGED_BORDER = '#ca8a04';
 const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 
 const DASH_SEARCH_DEPTH_HINTS = {
-    quick: 'Fast results from the initial API response. Hydrate cards for full prompt history and feedback.',
-    deep: 'Same fast search, then hydrates every result before showing cards (slower, full timelines).'
+    quick: 'Faster results, task history hydration only on demand.',
+    deep: 'Slower results with complete task history for each card.'
 };
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
 
@@ -7836,7 +7836,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.84',
+    _version: '1.85',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
