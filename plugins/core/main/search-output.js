@@ -1143,6 +1143,7 @@ const searchOutputMethods = {
         const useDateEarlyExit = Boolean(afterIso || beforeIso);
         let consecutiveEmptyFilteredPages = 0;
         while (pageNum < DASH_DISPUTES_MAX_PAGES) {
+            if (this._shouldStopSearch()) break;
             const qs = new URLSearchParams({
                 teamIds: teamIds.join(','),
                 limit: String(DASH_DISPUTES_PAGE_SIZE),
@@ -1683,6 +1684,7 @@ const searchOutputMethods = {
         const all = [];
         const total = profileIds.length;
         for (const chunk of chunks) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('profiles.select_person', {
                 id: dashPgInFilter(chunk)
             }, logContext || 'search').catch((e) => {
@@ -1700,6 +1702,7 @@ const searchOutputMethods = {
         const map = new Map();
         const total = targetIds.length;
         for (const chunk of dashPgInChunks(targetIds)) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('task_project_targets.select_project_map', {
                 id: dashPgInFilter(chunk),
                 limit: String(chunk.length)
@@ -1941,6 +1944,7 @@ const searchOutputMethods = {
         if (!projectIds || projectIds.length === 0) return [];
         const ids = [];
         for (const chunk of dashPgInChunks(projectIds)) {
+            if (this._shouldStopSearch()) break;
             const rows = await this._pgQuery('task_project_targets.select_ids', {
                 project_id: dashPgInFilter(chunk),
                 limit: '500'
@@ -2066,9 +2070,12 @@ const searchOutputMethods = {
         const scopeVariants = this._scopeQueryVariants(scope);
         let pageNum = 0;
         for (const authorChunk of authorVariants) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 let offset = 0;
                 while (true) {
+                    if (this._shouldStopSearch()) break;
                     const qs = {
                         order: 'created_at.desc',
                         offset: String(offset),
@@ -2103,7 +2110,9 @@ const searchOutputMethods = {
         const byId = new Map();
         const totalIds = taskIds.length;
         for (const chunk of dashPgInChunks(taskIds)) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 const qs = {
                     id: dashPgInFilter(chunk),
                     limit: String(chunk.length)
@@ -2134,9 +2143,12 @@ const searchOutputMethods = {
         const authorVariants = this._authorQueryVariants(authorIds);
         const scopeVariants = useTaskScopeEmbed ? this._scopeQueryVariants(scope) : [{}];
         for (const authorChunk of authorVariants) {
+            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
+                if (this._shouldStopSearch()) break;
                 let offset = 0;
                 while (true) {
+                    if (this._shouldStopSearch()) break;
                     const qs = {
                         order: 'created_at.desc',
                         offset: String(offset),
@@ -2174,6 +2186,7 @@ const searchOutputMethods = {
         const allFeedback = [];
         const seenFeedbackIds = new Set();
         for (const chunk of dashPgInChunks(taskIds)) {
+            if (this._shouldStopSearch()) break;
             const qs = {
                 eval_task_id: dashPgInFilter(chunk),
                 order: 'created_at.desc',
@@ -2608,6 +2621,118 @@ const searchOutputMethods = {
         return [...ids];
     },
 
+    _mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows) {
+        const allTaskRows = [...(creationRows || [])];
+        const seenIds = new Set(allTaskRows.map((r) => r.id));
+        for (const row of qaOnlyRows || []) {
+            if (row && row.id && !seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
+        for (const row of disputeOnlyRows || []) {
+            if (row && row.id && !seenIds.has(row.id)) {
+                seenIds.add(row.id);
+                allTaskRows.push(row);
+            }
+        }
+        return allTaskRows;
+    },
+
+    async _assembleWorkerOutputSearchResult(options) {
+        const opts = options || {};
+        const {
+            includeTaskCreation,
+            includeQa,
+            includeDisputes,
+            blockOnDisputes,
+            creationRows,
+            feedbackRows,
+            qaOnlyRows,
+            disputeOnlyRows,
+            disputeTaskIds,
+            afterIso,
+            beforeIso,
+            openDisputesByTaskId,
+            resolvedDisputeAtByTaskId,
+            scope,
+            authorIds,
+            searchDepth
+        } = opts;
+        const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows);
+        let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
+            ? opts.allFeedbackRows.slice()
+            : [...(feedbackRows || [])];
+
+        this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
+        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
+            trackSearchLoad: true
+        });
+
+        const items = [];
+        if (includeTaskCreation) {
+            const creationTasks = (creationRows || [])
+                .map((row) => enrichedTasksById.get(row.id))
+                .filter(Boolean);
+            items.push(...this._taskCreationItemsFromTasks(creationTasks));
+            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
+        }
+        if (includeQa && (feedbackRows || []).length > 0) {
+            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
+        }
+        if (disputeTaskIds && disputeTaskIds.length > 0) {
+            const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
+            const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
+                inScopeIds,
+                enrichedTasksById,
+                openDisputesByTaskId || new Map()
+            );
+            const existingTaskIds = new Set(items.map((it) => it.task.id));
+            for (const disputeItem of disputeItems) {
+                if (!existingTaskIds.has(disputeItem.task.id)) {
+                    existingTaskIds.add(disputeItem.task.id);
+                    items.push(disputeItem);
+                }
+            }
+        }
+
+        this._setSearchLoadPhase('Assembling result cards…', items.length);
+        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
+        const dateFilter = this._filterCardsBySearchDateRange(
+            mergedItems,
+            afterIso,
+            beforeIso,
+            allFeedbackRows,
+            openDisputesByTaskId || new Map(),
+            resolvedDisputeAtByTaskId || new Map()
+        );
+        mergedItems = dateFilter.items;
+        const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
+        allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
+        this._trimOpenDisputesToTarget(keptTaskIds);
+
+        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
+
+        if (includeDisputes && !blockOnDisputes && !this._shouldStopSearch()) {
+            const searchGen = this._state.searchGeneration;
+            void this._runAsyncDisputeSearchHydration(searchGen, {
+                scope,
+                afterIso,
+                beforeIso,
+                authorIds,
+                includeQa,
+                allFeedbackRows
+            });
+        }
+
+        return {
+            items: resultItems,
+            allFeedbackRows,
+            includeQa,
+            includeDisputes
+        };
+    },
+
     async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
         this._state.disputesBulkIncomplete = false;
         this._state.openDisputesByTaskId = new Map();
@@ -2656,6 +2781,31 @@ const searchOutputMethods = {
                 qaPromise,
                 resolverPromise
             ]);
+            if (this._shouldStopSearch()) {
+                const emptyBootstrap = {
+                    openDisputesByTaskId: new Map(),
+                    resolvedDisputeAtByTaskId: new Map()
+                };
+                const partialBootstrap = bootstrap || emptyBootstrap;
+                return this._assembleWorkerOutputSearchResult({
+                    includeTaskCreation,
+                    includeQa,
+                    includeDisputes,
+                    blockOnDisputes,
+                    creationRows: creationRows || [],
+                    feedbackRows: feedbackRows || [],
+                    qaOnlyRows: [],
+                    disputeOnlyRows: [],
+                    disputeTaskIds: [],
+                    afterIso,
+                    beforeIso,
+                    openDisputesByTaskId: partialBootstrap.openDisputesByTaskId || new Map(),
+                    resolvedDisputeAtByTaskId: partialBootstrap.resolvedDisputeAtByTaskId || new Map(),
+                    scope,
+                    authorIds,
+                    searchDepth
+                });
+            }
             this._state.openDisputesByTaskId = bootstrap.openDisputesByTaskId;
             this._state.resolvedDisputeTaskIds = bootstrap.resolvedDisputeTaskIds;
             this._state.resolvedDisputeAtByTaskId = bootstrap.resolvedDisputeAtByTaskId;
@@ -2697,23 +2847,8 @@ const searchOutputMethods = {
                     : Promise.resolve([])
             ]);
 
-            const allTaskRows = [...creationRows];
-            const seenIds = new Set(creationIds);
-            for (const row of qaOnlyRows) {
-                if (!seenIds.has(row.id)) {
-                    seenIds.add(row.id);
-                    allTaskRows.push(row);
-                }
-            }
-            for (const row of disputeOnlyRows) {
-                if (!seenIds.has(row.id)) {
-                    seenIds.add(row.id);
-                    allTaskRows.push(row);
-                }
-            }
-
             let allFeedbackRows = [...feedbackRows];
-            if (disputeTaskIds.length > 0 && !includeQa) {
+            if (!this._shouldStopSearch() && disputeTaskIds.length > 0 && !includeQa) {
                 this._setSearchLoadPhase('Loading supplementary QA feedback…', disputeTaskIds.length);
                 const disputeQaRows = await this._trackSearchLoadPromise(
                     'QA feedback for ' + disputeTaskIds.length + ' dispute task(s)',
@@ -2728,63 +2863,48 @@ const searchOutputMethods = {
                 }
             }
 
-            this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
-            const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
-                trackSearchLoad: true
-            });
-
-            const items = [];
-            if (includeTaskCreation) {
-                const creationTasks = creationRows
-                    .map((row) => enrichedTasksById.get(row.id))
-                    .filter(Boolean);
-                items.push(...this._taskCreationItemsFromTasks(creationTasks));
-                Logger.log('dashboard: task creation items built — ' + creationTasks.length);
-            }
-            if (includeQa && feedbackRows.length > 0) {
-                items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
-            }
-            if (disputeTaskIds.length > 0) {
-                const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
-                const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
-                    inScopeIds,
-                    enrichedTasksById,
-                    bootstrap.openDisputesByTaskId
-                );
-                const existingTaskIds = new Set(items.map((it) => it.task.id));
-                for (const disputeItem of disputeItems) {
-                    if (!existingTaskIds.has(disputeItem.task.id)) {
-                        existingTaskIds.add(disputeItem.task.id);
-                        items.push(disputeItem);
-                    }
-                }
-            }
-
-            this._setSearchLoadPhase('Assembling result cards…', items.length);
-            let mergedItems = this._mergeWorkerOutputItemsByTask(items);
-            const dateFilter = this._filterCardsBySearchDateRange(
-                mergedItems,
+            return this._assembleWorkerOutputSearchResult({
+                includeTaskCreation,
+                includeQa,
+                includeDisputes,
+                blockOnDisputes,
+                creationRows,
+                feedbackRows,
+                qaOnlyRows,
+                disputeOnlyRows,
+                disputeTaskIds,
+                allFeedbackRows,
                 afterIso,
                 beforeIso,
-                allFeedbackRows,
-                bootstrap.openDisputesByTaskId,
-                bootstrap.resolvedDisputeAtByTaskId
-            );
-            mergedItems = dateFilter.items;
-            const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
-            allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
-            this._trimOpenDisputesToTarget(keptTaskIds);
-
-            const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
-            return {
-                items: resultItems,
-                allFeedbackRows,
-                includeQa,
-                includeDisputes
-            };
+                openDisputesByTaskId: bootstrap.openDisputesByTaskId,
+                resolvedDisputeAtByTaskId: bootstrap.resolvedDisputeAtByTaskId,
+                scope,
+                authorIds,
+                searchDepth
+            });
         }
 
         const [creationRows, feedbackRows] = await Promise.all([tasksPromise, qaPromise]);
+        if (this._shouldStopSearch()) {
+            return this._assembleWorkerOutputSearchResult({
+                includeTaskCreation,
+                includeQa,
+                includeDisputes,
+                blockOnDisputes,
+                creationRows: creationRows || [],
+                feedbackRows: feedbackRows || [],
+                qaOnlyRows: [],
+                disputeOnlyRows: [],
+                disputeTaskIds: [],
+                afterIso,
+                beforeIso,
+                openDisputesByTaskId: this._state.openDisputesByTaskId,
+                resolvedDisputeAtByTaskId: this._state.resolvedDisputeAtByTaskId,
+                scope,
+                authorIds,
+                searchDepth
+            });
+        }
 
         const creationIds = new Set(creationRows.map((r) => r.id));
         const qaTaskIds = [...new Set(feedbackRows.map((f) => f.eval_task_id).filter(Boolean))];
@@ -2792,76 +2912,31 @@ const searchOutputMethods = {
         if (missingQaTaskIds.length > 0) {
             this._setSearchLoadPhase('Loading linked tasks…', missingQaTaskIds.length);
         }
-        const qaOnlyRows = missingQaTaskIds.length > 0
+        const qaOnlyRows = missingQaTaskIds.length > 0 && !this._shouldStopSearch()
             ? await this._trackSearchLoadPromise(
                 'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
                 (tracker) => this._fetchTaskRowsByIds(missingQaTaskIds, scope, undefined, tracker)
             )
             : [];
 
-        const allTaskRows = [...creationRows];
-        const seenIds = new Set(creationIds);
-        for (const row of qaOnlyRows) {
-            if (!seenIds.has(row.id)) {
-                seenIds.add(row.id);
-                allTaskRows.push(row);
-            }
-        }
-
-        let allFeedbackRows = [...feedbackRows];
-
-        this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
-        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
-            trackSearchLoad: true
-        });
-
-        const items = [];
-        if (includeTaskCreation) {
-            const creationTasks = creationRows
-                .map((row) => enrichedTasksById.get(row.id))
-                .filter(Boolean);
-            items.push(...this._taskCreationItemsFromTasks(creationTasks));
-            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
-        }
-        if (includeQa && feedbackRows.length > 0) {
-            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
-        }
-
-        this._setSearchLoadPhase('Assembling result cards…', items.length);
-        let mergedItems = this._mergeWorkerOutputItemsByTask(items);
-        const dateFilter = this._filterCardsBySearchDateRange(
-            mergedItems,
+        return this._assembleWorkerOutputSearchResult({
+            includeTaskCreation,
+            includeQa,
+            includeDisputes,
+            blockOnDisputes,
+            creationRows,
+            feedbackRows,
+            qaOnlyRows,
+            disputeOnlyRows: [],
+            disputeTaskIds: [],
             afterIso,
             beforeIso,
-            allFeedbackRows,
-            this._state.openDisputesByTaskId,
-            this._state.resolvedDisputeAtByTaskId
-        );
-        mergedItems = dateFilter.items;
-        const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
-        allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
-        this._trimOpenDisputesToTarget(keptTaskIds);
-
-        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false }));
-
-        if (includeDisputes && !blockOnDisputes) {
-            const searchGen = this._state.searchGeneration;
-            void this._runAsyncDisputeSearchHydration(searchGen, {
-                scope,
-                afterIso,
-                beforeIso,
-                authorIds,
-                includeQa,
-                allFeedbackRows
-            });
-        }
-
-        return {
-            items: resultItems,
-            allFeedbackRows,
-            includeQa,
-            includeDisputes
-        };
+            openDisputesByTaskId: this._state.openDisputesByTaskId,
+            resolvedDisputeAtByTaskId: this._state.resolvedDisputeAtByTaskId,
+            scope,
+            authorIds,
+            searchDepth
+        });
     },
 
     _mergeWorkerOutputItemsByTask(items) {
@@ -4159,14 +4234,16 @@ const searchOutputMethods = {
         Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
 
         for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
+            if (this._shouldStopSearch()) break;
             const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
             const done = i;
             if (typeof opts.onProgress === 'function') {
                 opts.onProgress(done, total);
             }
             hydratedTotal += await this._hydrateItems(chunk, enrichOptions);
+            if (this._shouldStopSearch()) break;
         }
-        if (typeof opts.onProgress === 'function') {
+        if (!this._shouldStopSearch() && typeof opts.onProgress === 'function') {
             opts.onProgress(total, total);
         }
         if (hydratedTotal > 0) {
@@ -5886,6 +5963,7 @@ const searchOutputMethods = {
             this._state.resolvedDisputeTaskIds = null;
             this._state.resolvedDisputeAtByTaskId = null;
             this._state.resolverDisputeTaskIds = null;
+            this._state.searchStopRequested = false;
             this._resetSearchLoadLog();
             this._state.searchLoadPhase = 'Building search scope…';
             this._setSearchError('');
@@ -5899,6 +5977,10 @@ const searchOutputMethods = {
             const gen = (this._state.searchGeneration = (this._state.searchGeneration || 0) + 1);
             try {
                 const scope = await this._buildSearchApiScope();
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch([]);
+                    return;
+                }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 Logger.info('dashboard: search started — '
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
@@ -5914,9 +5996,13 @@ const searchOutputMethods = {
                     scope,
                     searchDepth
                 });
-                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
                 const items = searchResult.items;
                 this._state.cachedItems = items;
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch(items);
+                    return;
+                }
+                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
                 if (searchDepth === 'deep' && items.length > 0) {
                     this._setSearchLoadPhase('Hydrating results…', 0, items.length);
                     const hydrateLogId = this._beginSearchLoadEntry('Deep hydration (0/' + items.length + ')');
@@ -5930,12 +6016,16 @@ const searchOutputMethods = {
                             }
                         }
                     });
-                    if (hydrateLogId != null) {
+                    if (hydrateLogId != null && !this._shouldStopSearch()) {
                         this._resolveSearchLoadEntry(
                             hydrateLogId,
                             'Deep hydration (' + items.length + '/' + items.length + ')'
                         );
                     }
+                }
+                if (this._shouldStopSearch()) {
+                    this._finishStoppedSearch(items);
+                    return;
                 }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
                 this._setSearchLoadPhase('Applying filters…', items.length);
@@ -6165,6 +6255,62 @@ const searchOutputMethods = {
         if (clearParams) clearParams.disabled = loading;
     },
 
+    _canShowStopSearchButton() {
+        const s = this._state;
+        return Boolean(s && s.loading && s.committed && !s.committed.retrieveMode);
+    },
+
+    _shouldStopSearch() {
+        const s = this._state;
+        return Boolean(s && s.loading && s.searchStopRequested && s.committed && !s.committed.retrieveMode);
+    },
+
+    _requestStopSearchFetches() {
+        if (!this._canShowStopSearchButton()) return;
+        Logger.log('search-output: stop fetches requested');
+        this._state.searchStopRequested = true;
+        this._state.searchGeneration = (this._state.searchGeneration || 0) + 1;
+    },
+
+    _finishStoppedSearch(items) {
+        const list = items || [];
+        const hydratedCount = list.filter((it) => it && it.hydrated).length;
+        Logger.info('search-output: search stopped — ' + list.length + ' item(s)'
+            + (hydratedCount > 0 ? ', ' + hydratedCount + ' hydrated' : ''));
+        this._state.cachedItems = list;
+        this._state.searchFetchActive = false;
+        this._state.loading = false;
+        this._state.searchLoadPhase = '';
+        this._state.searchStopRequested = false;
+        this._resetSearchLoadLog();
+        this._setSearchButtonLoading(false);
+        const prompt = this._q('#wf-dash-prompt');
+        if (prompt) prompt.value = '';
+        const caseEl = this._q('#wf-dash-case');
+        if (caseEl) caseEl.checked = false;
+        const fuzzyEl = this._q('#wf-dash-fuzzy');
+        if (fuzzyEl) fuzzyEl.checked = false;
+        const regexEl = this._q('#wf-dash-regex');
+        if (regexEl) regexEl.checked = false;
+        const sortEl = this._q('#wf-dash-sort');
+        if (sortEl) sortEl.value = DASH_SORT_DEFAULT;
+        this._resetManualFilters();
+        this._resetFilterDraftsFromResults(list);
+        this._applyResultsPageSizeForNewSearch();
+        if (list.length > 0) {
+            this._setLeftTab('filters');
+        }
+        this._updateSubstringErrorUi();
+        this._updateApplyFiltersUi();
+        this._refreshResultsView({ filterSource: 'search-defaults' });
+    },
+
+    _stopSearchButtonHtml() {
+        if (!this._canShowStopSearchButton()) return '';
+        const cls = this._dashBtnClass('basic', 'compact');
+        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Stop Fetches</button>`;
+    },
+
     _resetSearchLoadLog() {
         if (!this._state) return;
         this._state.searchLoadLog = [];
@@ -6297,24 +6443,34 @@ const searchOutputMethods = {
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
         const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const stopBtnHtml = this._stopSearchButtonHtml();
         const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
             wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
                 ${this._loadingSpinnerHtml(20)}
                 <div data-wf-dash-results-load-col style="${colStyle}">
+                    ${stopBtnHtml}
                     <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
                     ${logHtml}
                 </div>
             </div>`;
             return;
         }
+        const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
+        let stopBtn = colEl ? colEl.querySelector('[data-wf-dash-stop-search]') : null;
+        if (stopBtnHtml) {
+            if (!stopBtn && colEl) {
+                colEl.insertAdjacentHTML('afterbegin', stopBtnHtml);
+            }
+        } else if (stopBtn) {
+            stopBtn.remove();
+        }
         const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
         if (phaseEl) {
             phaseEl.textContent = phase;
             phaseEl.style.display = phase ? '' : 'none';
         }
-        const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
         const logEl = loadingEl.querySelector('[data-wf-dash-results-load-log]');
         if (logEl) logEl.remove();
         if (logHtml && colEl) colEl.insertAdjacentHTML('beforeend', logHtml);
@@ -7496,6 +7652,11 @@ function attachSearchOutputListeners(modal, dash) {
             }, { passive: true });
         }
     modal.addEventListener('click', (e) => {
+            const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
+            if (stopSearchBtn && modal.contains(stopSearchBtn)) {
+                dash._requestStopSearchFetches();
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -7675,7 +7836,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.83',
+    _version: '1.84',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
