@@ -6132,6 +6132,7 @@ const searchOutputMethods = {
                 return;
             }
             const item = await this._buildRetrieveTaskItem(row, versionOverride);
+            this._state.cachedItems = [item];
             this._setSearchLoadPhase('Hydrating task…', 1);
             await this._hydrateAllSearchResults([item], { skipFeedbackFetch: false });
             this._setSearchLoadPhase('Applying filters…', 1);
@@ -8111,7 +8112,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.92',
+    _version: '1.93',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
