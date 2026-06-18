@@ -36,6 +36,7 @@ const DASH_DISPUTES_PAGE_SIZE = 100;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
+const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
@@ -475,27 +476,44 @@ const searchOutputMethods = {
         return this._fleetWebGet(path, 'hydrate');
     },
 
-    async _fleetWebPost(path) {
+    async _fleetWebPost(path, options) {
+        const opts = options || {};
         const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
         const pageWindow = this._pageWindow();
         const requestFetch = pageWindow.fetch || fetch;
-        const res = await requestFetch.call(pageWindow, url, {
+        const headers = {
+            accept: '*/*',
+            referer: opts.referer || (DASH_FLEET_ORIGIN + '/work/problems/disputes')
+        };
+        if (opts.body != null) {
+            headers['content-type'] = 'application/json';
+        }
+        const fetchInit = {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                accept: '*/*',
-                referer: DASH_FLEET_ORIGIN + '/work/problems/disputes'
-            }
-        });
+            headers
+        };
+        if (opts.body != null) {
+            fetchInit.body = JSON.stringify(opts.body);
+        }
+        const res = await requestFetch.call(pageWindow, url, fetchInit);
         if (!res.ok) {
             const text = await res.text().catch(() => '');
             throw new Error('Fleet web API ' + res.status + ': ' + (text || res.statusText));
         }
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
-            return res.json().catch(() => null);
+            const json = await res.json().catch(() => null);
+            if (json && json.success === false) {
+                throw new Error('Fleet web API reported failure');
+            }
+            return json;
         }
         return null;
+    },
+
+    _flagResolveApiPath(flagId) {
+        return DASH_FLEET_FLAGS_PATH + '/' + encodeURIComponent(String(flagId)) + '/resolve';
     },
 
     _disputeClaimApiPath(disputeId) {
@@ -980,6 +998,156 @@ const searchOutputMethods = {
             ui.submitting = false;
             this._patchHelpfulnessBlock(fid);
             this._refreshHelpfulnessFilterUi();
+        }
+    },
+
+    _getFlagResolutionUi(flagId) {
+        const id = String(flagId || '').trim();
+        if (!id) {
+            return { localNote: '', submitting: false };
+        }
+        if (!this._state.flagResolutionUi[id]) {
+            this._state.flagResolutionUi[id] = {
+                localNote: '',
+                submitting: false
+            };
+        }
+        return this._state.flagResolutionUi[id];
+    },
+
+    _flagResolutionBlockHtml(flagId, itemId) {
+        const fid = String(flagId || '').trim();
+        const escFlagId = dashEscHtml(fid);
+        const escItemId = dashEscHtml(String(itemId || '').trim());
+        const ui = this._getFlagResolutionUi(fid);
+        const localNote = ui.localNote != null ? String(ui.localNote) : '';
+        const confirmClass = this._dashBtnClass('primary', 'compact');
+        const dismissClass = this._dashBtnClass('basic', 'compact');
+        const disabled = ui.submitting ? ' disabled' : '';
+        const textareaStyle = this._inputStyle()
+            + ' flex: 1; min-width: 120px; height: 28px; min-height: 28px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+        return `
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Resolution</span>
+                <textarea data-wf-dash-flag-resolution-input="1" data-wf-dash-flag-id="${escFlagId}" data-item-id="${escItemId}" rows="1" placeholder="Resolution note…" style="${textareaStyle}"${disabled}>${dashEscHtml(localNote)}</textarea>
+                <button type="button" data-wf-dash-flag-confirm="1" data-wf-dash-flag-id="${escFlagId}" data-item-id="${escItemId}" class="${confirmClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Confirm</button>
+                <button type="button" data-wf-dash-flag-dismiss="1" data-wf-dash-flag-id="${escFlagId}" data-item-id="${escItemId}" class="${dismissClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Dismiss</button>
+            </div>`;
+    },
+
+    _patchFlagResolutionBlock(flagId) {
+        const fid = String(flagId || '').trim();
+        if (!fid || !this._modal) return;
+        let wrap = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-flag-resolution]')) {
+            if (el.getAttribute('data-wf-dash-flag-resolution') === fid) {
+                wrap = el;
+                break;
+            }
+        }
+        if (!wrap) return;
+        const itemId = wrap.getAttribute('data-wf-dash-item-id') || '';
+        const ta = wrap.querySelector('[data-wf-dash-flag-resolution-input]');
+        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
+        const selStart = hadFocus ? ta.selectionStart : null;
+        const selEnd = hadFocus ? ta.selectionEnd : null;
+        wrap.innerHTML = this._flagResolutionBlockHtml(fid, itemId);
+        if (hadFocus) {
+            const newTa = wrap.querySelector('[data-wf-dash-flag-resolution-input]');
+            if (newTa) {
+                newTa.focus();
+                try {
+                    if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
+                } catch (_e) { /* ignore */ }
+            }
+        }
+    },
+
+    _handleFlagResolutionInput(flagId, value) {
+        const fid = String(flagId || '').trim();
+        if (!fid) return;
+        const ui = this._getFlagResolutionUi(fid);
+        ui.localNote = String(value || '');
+        this._patchFlagResolutionBlock(fid);
+    },
+
+    async _refreshFlagPrefetchCaches() {
+        this._resetPrefetchForRetry('pendingFlags');
+        this._resetPrefetchForRetry('resolvedFlags');
+        await Promise.all([
+            this._ensurePrefetch('pendingFlags'),
+            this._ensurePrefetch('resolvedFlags')
+        ]);
+    },
+
+    async _rehydrateCard(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || !item.task || !item.task.id) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('search-output: card rehydrate skipped — dashboardData not loaded');
+            return;
+        }
+        const taskId = item.task.id;
+        const profilesMap = this._profilesMapFromHydrateItems([item]);
+        this._state.hydrateFetchActive = true;
+        try {
+            const enrichment = await Context.dashboardData.enrichTasksWithHistory([taskId], profilesMap, {});
+            const hist = enrichment.get(taskId);
+            if (hist) {
+                const remap = hist.systemFeedbackIdRemap || {};
+                if (item.selectedFeedbackId && remap[item.selectedFeedbackId]) {
+                    item.selectedFeedbackId = remap[item.selectedFeedbackId];
+                }
+                item.task.promptVersions = hist.promptVersions || [];
+                item.task.allFeedback = hist.allFeedback || [];
+                if (item.selectedFeedbackId) {
+                    const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
+                    if (entry && entry.display) item.qaFeedback = entry.display;
+                }
+            }
+            item.disputes = [];
+            item.flags = [];
+            await this._overlayDisputesAndFlags([item], profilesMap);
+            this._patchTaskCard(itemId);
+            this._onScopeDataEnriched();
+            Logger.log('search-output: card rehydrated — ' + itemId);
+        } catch (e) {
+            if (!this._handleDashSessionRefreshError(e)) {
+                Logger.warn('search-output: card rehydrate failed — ' + itemId, e);
+            }
+        } finally {
+            this._state.hydrateFetchActive = false;
+        }
+    },
+
+    async _handleFlagResolution(flagId, itemId, resolution) {
+        const fid = String(flagId || '').trim();
+        const iid = String(itemId || '').trim();
+        if (!fid || !iid || (resolution !== 'confirmed' && resolution !== 'dismissed')) return;
+        const ui = this._getFlagResolutionUi(fid);
+        if (ui.submitting) return;
+
+        ui.submitting = true;
+        this._patchFlagResolutionBlock(fid);
+        try {
+            await this._fleetWebPost(this._flagResolveApiPath(fid), {
+                body: {
+                    resolution,
+                    note: String(ui.localNote || '').trim()
+                },
+                referer: DASH_FLEET_SENIOR_REVIEW_REFERER
+            });
+            Logger.log('search-output: flag ' + resolution + ' — flag ' + fid);
+            delete this._state.flagResolutionUi[fid];
+            await this._refreshFlagPrefetchCaches();
+            await this._rehydrateCard(iid);
+        } catch (e) {
+            Logger.warn('search-output: flag resolution failed — flag ' + fid, e);
+        } finally {
+            if (this._state.flagResolutionUi[fid]) {
+                ui.submitting = false;
+                this._patchFlagResolutionBlock(fid);
+            }
         }
     },
 
@@ -7274,7 +7442,7 @@ const searchOutputMethods = {
         return '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent); letter-spacing: 0.04em;">NONE PROVIDED</span>';
     },
 
-    _flagBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+    _flagBlockHtml(display, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -7339,6 +7507,13 @@ const searchOutputMethods = {
                     </div>
                 </div>`;
         }
+        const flagResolutionInputHtml = (display.isPending && itemId)
+            ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-flag-resolution="${dashEscHtml(String(display.id || ''))}" data-wf-dash-item-id="${dashEscHtml(String(itemId))}">
+                    ${this._flagResolutionBlockHtml(display.id, itemId)}
+                </div>
+            </div>`
+            : '';
         return `
             <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
@@ -7351,6 +7526,7 @@ const searchOutputMethods = {
                 ${issuesHtml}
                 ${reviewerNoteHtml}
                 ${resolutionHtml}
+                ${flagResolutionInputHtml}
             </div>`;
     },
 
@@ -7447,7 +7623,7 @@ const searchOutputMethods = {
         for (const flag of orphanFlags || []) {
             blocks.push({
                 sortAt: String(flag.createdAt || ''),
-                html: this._flagBlockHtml(flag, hq, cs, fz, rx)
+                html: this._flagBlockHtml(flag, hq, cs, fz, rx, itemId)
             });
         }
         return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
@@ -7475,7 +7651,7 @@ const searchOutputMethods = {
         for (const flag of item.flags || []) {
             blocks.push({
                 sortAt: String(flag.createdAt || ''),
-                html: this._flagBlockHtml(flag, hq, cs, fz, rx)
+                html: this._flagBlockHtml(flag, hq, cs, fz, rx, itemId)
             });
         }
         return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
@@ -8150,6 +8326,24 @@ function attachSearchOutputListeners(modal, dash) {
                 if (fid) dash._handleQaReviewRemoveCancel(fid);
                 return;
             }
+            const flagConfirmBtn = e.target.closest('[data-wf-dash-flag-confirm]');
+            if (flagConfirmBtn && modal.contains(flagConfirmBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const flagId = flagConfirmBtn.getAttribute('data-wf-dash-flag-id');
+                const itemId = flagConfirmBtn.getAttribute('data-item-id');
+                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'confirmed');
+                return;
+            }
+            const flagDismissBtn = e.target.closest('[data-wf-dash-flag-dismiss]');
+            if (flagDismissBtn && modal.contains(flagDismissBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const flagId = flagDismissBtn.getAttribute('data-wf-dash-flag-id');
+                const itemId = flagDismissBtn.getAttribute('data-item-id');
+                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'dismissed');
+                return;
+            }
             const addToDiffBtn = e.target.closest('[data-wf-dash-add-to-diff]');
             if (addToDiffBtn && modal.contains(addToDiffBtn)) {
                 e.stopPropagation();
@@ -8207,6 +8401,12 @@ function attachSearchOutputListeners(modal, dash) {
             if (ta && modal.contains(ta)) {
                 const fid = ta.getAttribute('data-wf-dash-feedback-id');
                 if (fid) dash._handleQaReviewInput(fid, ta.value);
+                return;
+            }
+            const flagTa = e.target.closest('[data-wf-dash-flag-resolution-input]');
+            if (flagTa && modal.contains(flagTa)) {
+                const flagId = flagTa.getAttribute('data-wf-dash-flag-id');
+                if (flagId) dash._handleFlagResolutionInput(flagId, flagTa.value);
             }
         });
 }
@@ -8215,7 +8415,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.95',
+    _version: '1.96',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
