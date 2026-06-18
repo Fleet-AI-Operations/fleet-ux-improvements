@@ -42,6 +42,13 @@ const DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE = 'qa.revision_requested';
 const DASH_LIB_RSC_REF_RE = /^\$(\d+)$/;
 const DASH_LIB_BUG_REPORT_DEDUP_MS = 2000;
 
+const DASH_LIB_FLAG_REASON_LABELS = {
+    ai_generated: 'AI Generated',
+    poor_feedback_from_previous_qa: 'Poor Feedback From Previous QA',
+    possible_duplicate: 'Possible Duplicate',
+    other: 'Other'
+};
+
 function dashLibPgInFilter(values) {
     const list = (Array.isArray(values) ? values : []).filter((v) => v != null && v !== '');
     if (list.length === 0) return null;
@@ -300,7 +307,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.10',
+    _version: '2.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -395,6 +402,8 @@ const plugin = {
             resolveTaskEventsWithFlightTable: dashLibResolveTaskEventsWithFlightTable,
             mergeTaskEventsPreferRsc: bind(self._mergeTaskEventsPreferRsc),
             buildDisputeDisplay: bind(self._buildDisputeDisplay),
+            buildFlagDisplay: bind(self._buildFlagDisplay),
+            flagReasonLabel: (reason) => self._flagReasonLabel(reason),
 
             dateLocalToIso: bind(self._dateLocalToIso),
             validateCreatedAtRange: bind(self._validateCreatedAtRange),
@@ -1193,6 +1202,50 @@ const plugin = {
             helpfulnessCounts.set(id, count);
         }
         return result;
+    },
+
+    _flagReasonLabel(reason) {
+        const key = String(reason || '').trim();
+        if (!key) return '';
+        return DASH_LIB_FLAG_REASON_LABELS[key] || key.replace(/_/g, ' ');
+    },
+
+    _embeddedPersonFields(person) {
+        if (!person || typeof person !== 'object') {
+            return { id: '', name: '', email: '' };
+        }
+        return {
+            id: String(person.id || ''),
+            name: String(person.full_name || ''),
+            email: String(person.email || '')
+        };
+    },
+
+    _buildFlagDisplay(flagRow) {
+        const resolution = flagRow && flagRow.resolution ? String(flagRow.resolution) : '';
+        const status = resolution || 'pending';
+        const flagger = this._embeddedPersonFields(flagRow && flagRow.flagger);
+        const resolver = this._embeddedPersonFields(flagRow && flagRow.resolver);
+        return {
+            id: String((flagRow && flagRow.id) || ''),
+            taskId: String((flagRow && flagRow.task_id) || ''),
+            reason: this._flagReasonLabel(flagRow && flagRow.reason),
+            reasonKey: String((flagRow && flagRow.reason) || ''),
+            note: dashLibNormalizeNewlines((flagRow && flagRow.note) || ''),
+            status,
+            createdAt: String((flagRow && flagRow.created_at) || ''),
+            resolutionAt: flagRow && flagRow.resolved_at ? String(flagRow.resolved_at) : null,
+            resolutionNote: dashLibNormalizeNewlines((flagRow && flagRow.resolution_note) || ''),
+            resolverId: resolver.id || String((flagRow && flagRow.resolved_by) || ''),
+            resolverName: resolver.name,
+            resolverEmail: resolver.email,
+            flaggerId: flagger.id || String((flagRow && flagRow.flagger_id) || ''),
+            flaggerName: flagger.name,
+            flaggerEmail: flagger.email,
+            isConfirmed: status === 'confirmed',
+            isDismissed: status === 'dismissed',
+            isPending: status === 'pending'
+        };
     },
 
     _buildDisputeDisplay(disputeRow, profilesMap) {
