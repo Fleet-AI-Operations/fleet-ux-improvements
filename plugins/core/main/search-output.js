@@ -7403,6 +7403,84 @@ const searchOutputMethods = {
         });
     },
 
+    _sortTaskActionBlocksByDate(blocks) {
+        return [...(blocks || [])].sort((a, b) => {
+            const aAt = String(a.sortAt || '');
+            const bAt = String(b.sortAt || '');
+            return aAt < bAt ? -1 : aAt > bAt ? 1 : 0;
+        });
+    },
+
+    _versionTaskActionsHtml(feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId) {
+        const hq = highlightQuery || '';
+        const cs = Boolean(caseSensitive);
+        const fz = Boolean(highlightFuzzy);
+        const rx = Boolean(highlightRegex);
+        const blocks = [];
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        for (const entry of orderedFeedback) {
+            if (entry.display) {
+                blocks.push({
+                    sortAt: this._feedbackEntryAt(entry),
+                    html: this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id)
+                });
+            }
+            for (const dispute of entry.disputes || []) {
+                blocks.push({
+                    sortAt: String(dispute.submittedAt || ''),
+                    html: this._disputeBlockHtml(dispute, hq, cs, fz, itemId, rx)
+                });
+            }
+        }
+        if (fallbackFeedback) {
+            blocks.push({
+                sortAt: String(fallbackFeedback.feedbackAt || ''),
+                html: this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null)
+            });
+        }
+        for (const dispute of orphanDisputes || []) {
+            blocks.push({
+                sortAt: String(dispute.submittedAt || ''),
+                html: this._disputeBlockHtml(dispute, hq, cs, fz, itemId, rx)
+            });
+        }
+        for (const flag of orphanFlags || []) {
+            blocks.push({
+                sortAt: String(flag.createdAt || ''),
+                html: this._flagBlockHtml(flag, hq, cs, fz, rx)
+            });
+        }
+        return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
+    },
+
+    _quickTaskActionsHtml(item, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+        const hq = highlightQuery || '';
+        const cs = Boolean(caseSensitive);
+        const fz = Boolean(highlightFuzzy);
+        const rx = Boolean(highlightRegex);
+        const itemId = item.id;
+        const blocks = [];
+        if (item.qaFeedback) {
+            blocks.push({
+                sortAt: String(item.qaFeedback.feedbackAt || ''),
+                html: this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null)
+            });
+        }
+        for (const dispute of item.disputes || []) {
+            blocks.push({
+                sortAt: String(dispute.submittedAt || ''),
+                html: this._disputeBlockHtml(dispute, hq, cs, fz, itemId, rx)
+            });
+        }
+        for (const flag of item.flags || []) {
+            blocks.push({
+                sortAt: String(flag.createdAt || ''),
+                html: this._flagBlockHtml(flag, hq, cs, fz, rx)
+            });
+        }
+        return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
+    },
+
     _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
@@ -7423,14 +7501,10 @@ const searchOutputMethods = {
         const showPromptCopy = !showVersionLabel && !versionHeaderControls;
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
-        const feedbackHtml = orderedFeedback.map((entry) => {
-            const qaHtml = this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id);
-            const linkedDisputes = (entry.disputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
-            return qaHtml + linkedDisputes;
-        }).join('');
-        const fallbackHtml = fallbackFeedback ? this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null) : '';
-        const orphanHtml = (orphanDisputes || []).map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('')
-            + (orphanFlags || []).map((f) => this._flagBlockHtml(f, hq, cs, fz, rx)).join('');
+        const taskActionsHtml = this._versionTaskActionsHtml(
+            feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
+            hq, cs, fz, rx, itemId
+        );
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
         return `
             <div>
@@ -7441,7 +7515,7 @@ const searchOutputMethods = {
                     ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                ${feedbackHtml}${fallbackHtml}${orphanHtml}
+                ${taskActionsHtml}
             </div>`;
     },
 
@@ -7473,16 +7547,11 @@ const searchOutputMethods = {
                 </div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
             </div>`;
+        const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         if (item.qaFeedback) {
-            bodyHtml = this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null);
-        }
-        const disputes = item.disputes || [];
-        if (disputes.length > 0) {
-            bodyHtml += disputes.map((d) => this._disputeBlockHtml(d, hq, cs, fz, itemId, rx)).join('');
-        }
-        const flags = item.flags || [];
-        if (flags.length > 0) {
-            bodyHtml += flags.map((f) => this._flagBlockHtml(f, hq, cs, fz, rx)).join('');
+            bodyHtml = taskActionsHtml;
+        } else {
+            bodyHtml += taskActionsHtml;
         }
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
@@ -8146,7 +8215,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.94',
+    _version: '1.95',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

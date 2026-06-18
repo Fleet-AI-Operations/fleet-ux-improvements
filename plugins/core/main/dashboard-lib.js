@@ -21,12 +21,13 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     qa: 'QA',
     dispute: 'Disputes'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
     disputed: 'Disputed',
     flagged: 'Flagged',
+    senior_review_flagged: 'Flagged for Senior Review',
     escalated: 'Escalated'
 };
 const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
@@ -307,7 +308,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.11',
+    _version: '2.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -758,6 +759,7 @@ const plugin = {
             else if (rt === 'bugged') flags.add('flagged');
         }
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
+        if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         return [...flags];
     },
 
