@@ -2116,7 +2116,7 @@ const searchOutputMethods = {
                 qaFeedback: null,
                 disputes,
                 flags: [],
-                hydrated: true
+                hydrated: false
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
@@ -2155,7 +2155,7 @@ const searchOutputMethods = {
                 qaFeedback: null,
                 disputes: [],
                 flags,
-                hydrated: true
+                hydrated: false
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
@@ -8715,7 +8715,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
