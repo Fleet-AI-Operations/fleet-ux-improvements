@@ -15,11 +15,12 @@ const DASH_LIB_RETURN_TYPE_LABELS = {
 };
 const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
-const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute'];
+const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
 const DASH_LIB_OUTPUT_KIND_LABELS = {
     task_creation: 'Task Creation',
     qa: 'QA',
-    dispute: 'Disputes'
+    dispute: 'Disputes',
+    senior_review: 'Sr Review'
 };
 const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
@@ -308,7 +309,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.12',
+    _version: '2.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

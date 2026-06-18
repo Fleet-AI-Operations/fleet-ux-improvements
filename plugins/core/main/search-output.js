@@ -45,7 +45,8 @@ const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 const DASH_KIND_LABELS = {
     task_creation: 'Task Creation',
     qa: 'QA',
-    dispute: 'Disputes'
+    dispute: 'Disputes',
+    senior_review: 'Sr Review'
 };
 
 const DASH_OUTPUT_KIND_CONFIG = {
@@ -66,6 +67,12 @@ const DASH_OUTPUT_KIND_CONFIG = {
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
+    },
+    senior_review: {
+        label: 'Sr Review',
+        tabBg: '#ca8a04',
+        toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #a16207;'
     }
 };
 
@@ -100,7 +107,7 @@ const DASH_SORT_OPTIONS = DASH_SORT_METRICS.flatMap((metric) => ([
 ]));
 
 /** Tab strip order when one task matches multiple output kinds. */
-const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute'];
+const DASH_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
 
 const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
@@ -1223,19 +1230,72 @@ const searchOutputMethods = {
     },
 
 
+    _profileIdMatchesContributorSet(profileId, contributorSet) {
+        if (!contributorSet || contributorSet.size === 0) return true;
+        const id = profileId != null ? String(profileId).trim() : '';
+        if (!id) return false;
+        return contributorSet.has(id) || contributorSet.has(this._dashNormProfileId(id));
+    },
+
     _disputeMatchesContributorFilter(row, contributorSet) {
         if (!contributorSet || contributorSet.size === 0) return true;
+        const writerId = row && row.eval_task && row.eval_task.created_by
+            ? String(row.eval_task.created_by).trim()
+            : '';
         const resolverId = row && row.resolved_by ? String(row.resolved_by).trim() : '';
-        if (!resolverId) return false;
-        return contributorSet.has(resolverId) || contributorSet.has(this._dashNormProfileId(resolverId));
+        return this._profileIdMatchesContributorSet(writerId, contributorSet)
+            || this._profileIdMatchesContributorSet(resolverId, contributorSet);
+    },
+
+    _flagMatchesContributorFilter(row, contributorSet) {
+        if (!contributorSet || contributorSet.size === 0) return true;
+        const writerId = row && row.task && row.task.created_by
+            ? String(row.task.created_by).trim()
+            : '';
+        const resolverId = row && row.resolved_by ? String(row.resolved_by).trim() : '';
+        return this._profileIdMatchesContributorSet(writerId, contributorSet)
+            || this._profileIdMatchesContributorSet(resolverId, contributorSet);
     },
 
     _disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet) {
-        const filterByResolver = contributorSet && contributorSet.size > 0;
-        const timestamp = filterByResolver
-            ? (row && row.resolved_at ? String(row.resolved_at) : '')
-            : (row && row.created_at ? String(row.created_at) : '');
-        if (filterByResolver && !timestamp) return false;
+        if (!afterIso && !beforeIso) return true;
+        if (!row) return false;
+        if (contributorSet && contributorSet.size > 0) {
+            const timestamps = [];
+            const writerId = row.eval_task && row.eval_task.created_by
+                ? String(row.eval_task.created_by).trim()
+                : '';
+            const resolverId = row.resolved_by ? String(row.resolved_by).trim() : '';
+            if (this._profileIdMatchesContributorSet(resolverId, contributorSet) && row.resolved_at) {
+                timestamps.push(String(row.resolved_at));
+            }
+            if (this._profileIdMatchesContributorSet(writerId, contributorSet) && row.created_at) {
+                timestamps.push(String(row.created_at));
+            }
+            if (timestamps.length === 0) return false;
+            return timestamps.some((ts) => this._disputeInCreatedAtRange(ts, afterIso, beforeIso));
+        }
+        const timestamp = row.created_at ? String(row.created_at) : '';
+        return this._disputeInCreatedAtRange(timestamp, afterIso, beforeIso);
+    },
+
+    _flagInSearchDateRange(row, afterIso, beforeIso, contributorSet) {
+        if (!afterIso && !beforeIso) return true;
+        if (!row) return false;
+        if (contributorSet && contributorSet.size > 0) {
+            const timestamps = [];
+            const writerId = row.task && row.task.created_by ? String(row.task.created_by).trim() : '';
+            const resolverId = row.resolved_by ? String(row.resolved_by).trim() : '';
+            if (this._profileIdMatchesContributorSet(resolverId, contributorSet) && row.resolved_at) {
+                timestamps.push(String(row.resolved_at));
+            }
+            if (this._profileIdMatchesContributorSet(writerId, contributorSet) && row.created_at) {
+                timestamps.push(String(row.created_at));
+            }
+            if (timestamps.length === 0) return false;
+            return timestamps.some((ts) => this._disputeInCreatedAtRange(ts, afterIso, beforeIso));
+        }
+        const timestamp = row.created_at ? String(row.created_at) : '';
         return this._disputeInCreatedAtRange(timestamp, afterIso, beforeIso);
     },
 
@@ -1271,6 +1331,10 @@ const searchOutputMethods = {
             if (d.submittedAt) timestamps.push(String(d.submittedAt));
             if (d.resolutionAt) timestamps.push(String(d.resolutionAt));
             if (d.originalFeedbackCreatedAt) timestamps.push(String(d.originalFeedbackCreatedAt));
+        }
+        for (const f of item.flags || []) {
+            if (f.createdAt) timestamps.push(String(f.createdAt));
+            if (f.resolutionAt) timestamps.push(String(f.resolutionAt));
         }
         return timestamps;
     },
@@ -1439,7 +1503,10 @@ const searchOutputMethods = {
             resolved_by: row.resolved_by,
             resolution_reason: row.resolution_reason,
             feedback_id: row.feedback_id,
-            original_feedback_created_at: row.original_feedback_created_at
+            original_feedback_created_at: row.original_feedback_created_at,
+            eval_task: row.eval_task || null,
+            creator: row.creator || null,
+            resolver: row.resolver || null
         };
     },
 
@@ -1682,7 +1749,8 @@ const searchOutputMethods = {
             created_at: row.created_at,
             updated_at: row.updated_at,
             flagger: row.flagger || null,
-            resolver: row.resolver || null
+            resolver: row.resolver || null,
+            task: row.task || null
         };
     },
 
@@ -1746,12 +1814,12 @@ const searchOutputMethods = {
         const scopeTeamIds = (scope && scope.teamIds) || [];
         const resolvedDisputeTaskIds = new Set();
         const resolvedDisputeAtByTaskId = new Map();
-        const filterByResolver = contributorSet && contributorSet.size > 0;
+        const filterByContributor = contributorSet && contributorSet.size > 0;
         for (const rows of cache.values()) {
             for (const row of rows) {
                 if (!row || !row.eval_task_id) continue;
                 if (!this._disputeRowInTeamScope(row, scopeTeamIds)) continue;
-                if (filterByResolver) {
+                if (filterByContributor) {
                     if (!this._disputeMatchesContributorFilter(row, contributorSet)) continue;
                     if (!this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet)) continue;
                 } else if (!this._disputeRowInSearchDateRange(row, afterIso, beforeIso, true)) {
@@ -1769,22 +1837,27 @@ const searchOutputMethods = {
         return { resolvedDisputeTaskIds, resolvedDisputeAtByTaskId };
     },
 
-    _deriveOpenDisputeMeta(scope, afterIso, beforeIso) {
+    _deriveOpenDisputeMeta(scope, afterIso, beforeIso, contributorSet) {
         const cache = this._getPrefetchCache('openDisputes');
         const scopeTeamIds = (scope && scope.teamIds) || [];
         const openDisputesByTaskId = new Map();
+        const filterByContributor = contributorSet && contributorSet.size > 0;
         for (const [taskId, rows] of cache) {
-            const filtered = (rows || []).filter((row) => (
-                this._disputeRowInTeamScope(row, scopeTeamIds)
-                && this._disputeRowInSearchDateRange(row, afterIso, beforeIso, false)
-            ));
+            const filtered = (rows || []).filter((row) => {
+                if (!this._disputeRowInTeamScope(row, scopeTeamIds)) return false;
+                if (filterByContributor) {
+                    if (!this._disputeMatchesContributorFilter(row, contributorSet)) return false;
+                    return this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet);
+                }
+                return this._disputeRowInSearchDateRange(row, afterIso, beforeIso, false);
+            });
             if (filtered.length > 0) openDisputesByTaskId.set(taskId, filtered);
         }
         return { openDisputesByTaskId };
     },
 
     _deriveDisputeBootstrap(scope, afterIso, beforeIso, contributorSet) {
-        const openMeta = this._deriveOpenDisputeMeta(scope, afterIso, beforeIso);
+        const openMeta = this._deriveOpenDisputeMeta(scope, afterIso, beforeIso, contributorSet || null);
         const resolvedMeta = this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, contributorSet || null);
         const bulkIncomplete = this._isAnyPrefetchIncomplete(['openDisputes', 'resolvedDisputes']);
         Logger.log('dashboard: disputes bootstrap — ' + openMeta.openDisputesByTaskId.size
@@ -1850,6 +1923,244 @@ const searchOutputMethods = {
             && this._flagRowInSearchDateRange(row, afterIso, beforeIso, true)
         ));
         return [...pending, ...resolved];
+    },
+
+    async _awaitPrefetchKindsForSearch(options) {
+        const opts = options || {};
+        const kinds = [];
+        if (opts.includeDisputes) {
+            kinds.push('openDisputes', 'resolvedDisputes');
+        }
+        if (opts.includeSeniorReview) {
+            kinds.push('pendingFlags', 'resolvedFlags');
+        }
+        if (kinds.length === 0) return;
+        await Promise.all(kinds.map((kind) => this._trackSearchLoadPromise(
+            'Prefetch ' + this._prefetchLabel(kind),
+            (tracker) => this._ensurePrefetch(kind, tracker)
+        )));
+    },
+
+    _prefetchEmbedMatchesProjectScope(embed, scope) {
+        if (!scope || !scope.hasProjectFilter) return true;
+        const targetId = embed && embed.task_project_target && embed.task_project_target.id
+            ? String(embed.task_project_target.id)
+            : '';
+        if (!targetId) return false;
+        return (scope.targetIds || []).includes(targetId);
+    },
+
+    _prefetchDisputeRowPassesFilters(row, scope, afterIso, beforeIso, contributorSet, preferResolvedAt) {
+        if (!row || !row.eval_task_id) return false;
+        if (!this._disputeRowInTeamScope(row, (scope && scope.teamIds) || [])) return false;
+        if (contributorSet && contributorSet.size > 0) {
+            if (!this._disputeMatchesContributorFilter(row, contributorSet)) return false;
+            return this._disputeInSearchDateRange(row, afterIso, beforeIso, contributorSet);
+        }
+        return this._disputeRowInSearchDateRange(row, afterIso, beforeIso, preferResolvedAt);
+    },
+
+    _prefetchFlagRowPassesFilters(row, scope, afterIso, beforeIso, contributorSet, preferResolvedAt) {
+        if (!row || !row.task_id) return false;
+        if (!this._flagRowInTeamScope(row, (scope && scope.teamIds) || [])) return false;
+        if (contributorSet && contributorSet.size > 0) {
+            if (!this._flagMatchesContributorFilter(row, contributorSet)) return false;
+            return this._flagInSearchDateRange(row, afterIso, beforeIso, contributorSet);
+        }
+        return this._flagRowInSearchDateRange(row, afterIso, beforeIso, preferResolvedAt);
+    },
+
+    _scanPrefetchDisputeRows(scope, afterIso, beforeIso, contributorSet) {
+        const grouped = new Map();
+        const ingest = (rows, preferResolvedAt) => {
+            for (const row of rows || []) {
+                if (!this._prefetchDisputeRowPassesFilters(row, scope, afterIso, beforeIso, contributorSet, preferResolvedAt)) {
+                    continue;
+                }
+                const taskId = this._disputeRowEvalTaskId(row);
+                if (!taskId) continue;
+                const bucket = grouped.get(taskId) || [];
+                bucket.push(row);
+                grouped.set(taskId, bucket);
+            }
+        };
+        for (const rows of this._getPrefetchCache('openDisputes').values()) ingest(rows, false);
+        for (const rows of this._getPrefetchCache('resolvedDisputes').values()) ingest(rows, true);
+        return grouped;
+    },
+
+    _scanPrefetchFlagRows(scope, afterIso, beforeIso, contributorSet) {
+        const grouped = new Map();
+        const ingest = (rows, preferResolvedAt) => {
+            for (const row of rows || []) {
+                if (!this._prefetchFlagRowPassesFilters(row, scope, afterIso, beforeIso, contributorSet, preferResolvedAt)) {
+                    continue;
+                }
+                const taskId = String(row.task_id || '');
+                if (!taskId) continue;
+                const bucket = grouped.get(taskId) || [];
+                bucket.push(row);
+                grouped.set(taskId, bucket);
+            }
+        };
+        for (const rows of this._getPrefetchCache('pendingFlags').values()) ingest(rows, false);
+        for (const rows of this._getPrefetchCache('resolvedFlags').values()) ingest(rows, true);
+        return grouped;
+    },
+
+    _collectPrefetchDisputeProfileIds(groupedRows) {
+        const ids = new Set();
+        for (const rows of groupedRows.values()) {
+            for (const row of rows) {
+                if (row.resolved_by) ids.add(row.resolved_by);
+                if (row.eval_task && row.eval_task.created_by) ids.add(row.eval_task.created_by);
+            }
+        }
+        return [...ids];
+    },
+
+    _collectPrefetchFlagProfileIds(groupedRows) {
+        const ids = new Set();
+        for (const rows of groupedRows.values()) {
+            for (const row of rows) {
+                if (row.resolved_by) ids.add(row.resolved_by);
+                if (row.flagger_id) ids.add(row.flagger_id);
+                if (row.task && row.task.created_by) ids.add(row.task.created_by);
+            }
+        }
+        return [...ids];
+    },
+
+    _taskFromFleetTaskEmbed(embed, profilesMap, options) {
+        if (!embed || !embed.id) return null;
+        const opt = options || {};
+        const teamId = opt.teamId || embed.team_id || '';
+        const projectTarget = embed.task_project_target;
+        const projectId = projectTarget && projectTarget.project ? String(projectTarget.project.id || '') : '';
+        const projectName = projectTarget && projectTarget.project ? String(projectTarget.project.name || '') : '';
+        const version = dashFirstEmbed(embed.eval_task_versions);
+        const creator = embed.creator || opt.creator || null;
+        const authorId = embed.created_by || (creator && creator.id) || '';
+        const profile = authorId ? profilesMap.get(authorId) : null;
+        const authorName = creator && creator.full_name
+            ? String(creator.full_name)
+            : (profile ? this._personChipName(profile, authorId) : '');
+        const authorEmail = creator && creator.email
+            ? String(creator.email)
+            : ((profile && profile.email) || '');
+        const prompt = version && version.prompt ? String(version.prompt) : '';
+        const createdAt = embed.created_at || (version && version.created_at) || '';
+        const promptVersions = version ? [{
+            id: version.id != null ? String(version.id) : '',
+            displayVersionNo: 1,
+            versionNo: 1,
+            prompt,
+            envKey: version.env_key || '',
+            createdAt: version.created_at || createdAt
+        }] : [];
+        return {
+            id: String(embed.id),
+            key: embed.key || '',
+            author: {
+                id: authorId || '',
+                name: authorName,
+                email: authorEmail
+            },
+            prompt,
+            environment: (version && version.env_key) || '',
+            project: projectName || this._projectName(projectId),
+            team: this._teamName(teamId),
+            teamId: teamId || '',
+            projectId: projectId || '',
+            envKey: (version && version.env_key) || '',
+            createdAt: createdAt || '',
+            status: embed.task_lifecycle_status || '',
+            promptVersions,
+            allFeedback: []
+        };
+    },
+
+    _buildPrefetchHydratedDisputeItems(groupedRows, profilesMap, scope) {
+        const items = [];
+        for (const [taskId, rows] of groupedRows) {
+            if (!rows || rows.length === 0) continue;
+            let embed = null;
+            for (const row of rows) {
+                if (row && row.eval_task && row.eval_task.id) {
+                    embed = row.eval_task;
+                    break;
+                }
+            }
+            if (!embed) {
+                Logger.warn('search-output: dispute prefetch missing eval_task embed — task ' + String(taskId).slice(0, 8));
+                continue;
+            }
+            if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
+            const teamId = rows[0].team_id || embed.team_id || '';
+            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId });
+            if (!task) continue;
+            const disputes = this._disputeRowsToDisplays(rows, profilesMap);
+            let sortAt = task.createdAt || '';
+            for (const row of rows) {
+                const ts = String(row.resolved_at || row.created_at || '');
+                if (ts && ts > sortAt) sortAt = ts;
+            }
+            const linked = rows.find((r) => r.feedback_id != null);
+            items.push({
+                id: 'dispute-' + taskId,
+                kind: 'dispute',
+                kinds: ['dispute'],
+                sortAt,
+                task,
+                selectedFeedbackId: linked ? String(linked.feedback_id) : null,
+                qaFeedback: null,
+                disputes,
+                flags: [],
+                hydrated: true
+            });
+        }
+        items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        Logger.log('search-output: prefetch dispute items — ' + items.length);
+        return items;
+    },
+
+    _buildPrefetchHydratedFlagItems(groupedRows, profilesMap, scope) {
+        const lib = dashLib();
+        const items = [];
+        for (const [taskId, rows] of groupedRows) {
+            if (!rows || rows.length === 0) continue;
+            const embedRow = rows.find((r) => r.task && r.task.id);
+            const embed = embedRow ? embedRow.task : null;
+            if (!embed) {
+                Logger.warn('search-output: flag prefetch missing task embed — task ' + String(taskId).slice(0, 8));
+                continue;
+            }
+            if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
+            const teamId = embed.team_id || rows[0].team_id || '';
+            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId, creator: embed.creator });
+            if (!task) continue;
+            const flags = rows.map((row) => lib.buildFlagDisplay(row));
+            let sortAt = task.createdAt || '';
+            for (const row of rows) {
+                const ts = String(row.resolved_at || row.created_at || '');
+                if (ts && ts > sortAt) sortAt = ts;
+            }
+            items.push({
+                id: 'senior-review-' + taskId,
+                kind: 'senior_review',
+                kinds: ['senior_review'],
+                sortAt,
+                task,
+                selectedFeedbackId: null,
+                qaFeedback: null,
+                disputes: [],
+                flags,
+                hydrated: true
+            });
+        }
+        items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        Logger.log('search-output: prefetch flag items — ' + items.length);
+        return items;
     },
 
     async _fetchDisputeResolverTaskIds(authorIds, afterIso, beforeIso, scope) {
@@ -1985,6 +2296,10 @@ const searchOutputMethods = {
         const flagRows = this._getFilteredFlagRows(taskId, scope, afterIso, beforeIso);
         if (flagRows.length > 0) {
             this._mergeBulkFlagsOntoItem(item, flagRows);
+            if (!item.kinds.includes('senior_review')) {
+                item.kinds.push('senior_review');
+                item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
+            }
             changed = true;
         }
         return changed;
@@ -2718,35 +3033,6 @@ const searchOutputMethods = {
         }));
     },
 
-    _disputeDiscoveryItemsFromTaskIds(taskIds, enrichedTasksById, openDisputesByTaskId) {
-        const items = [];
-        const openMap = openDisputesByTaskId || new Map();
-        for (const taskId of taskIds) {
-            const task = enrichedTasksById.get(taskId);
-            if (!task) continue;
-            let sortAt = task.createdAt || '';
-            const openRows = openMap.get(taskId) || [];
-            for (const row of openRows) {
-                const candidate = row.created_at || '';
-                if (candidate && candidate > sortAt) sortAt = candidate;
-            }
-            const linked = openRows.find((r) => r.feedback_id != null);
-            items.push({
-                id: 'dispute-' + taskId,
-                kind: 'dispute',
-                sortAt,
-                task,
-                selectedFeedbackId: linked ? String(linked.feedback_id) : null,
-                qaFeedback: null,
-                disputes: [],
-                flags: []
-            });
-        }
-        items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
-        Logger.log('dashboard: dispute discovery items — ' + items.length);
-        return items;
-    },
-
     _mergeBulkDisputesOntoItem(item, bulkRows, profilesMap) {
         const displays = this._disputeRowsToDisplays(bulkRows, profilesMap);
         const existing = item.disputes || [];
@@ -2760,28 +3046,10 @@ const searchOutputMethods = {
         item.disputes = merged;
     },
 
-    _discoveryDisputeTaskIds(includeDisputes, authorIds, bootstrap, resolverDisputeTaskIds) {
-        if (!includeDisputes) return [];
-        if (authorIds && authorIds.length > 0) {
-            return [...resolverDisputeTaskIds];
-        }
-        const ids = new Set([
-            ...(bootstrap.openDisputesByTaskId ? bootstrap.openDisputesByTaskId.keys() : []),
-            ...(bootstrap.resolvedDisputeTaskIds || [])
-        ]);
-        return [...ids];
-    },
-
-    _mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows) {
+    _mergeSupplementalTaskRows(creationRows, qaOnlyRows) {
         const allTaskRows = [...(creationRows || [])];
         const seenIds = new Set(allTaskRows.map((r) => r.id));
         for (const row of qaOnlyRows || []) {
-            if (row && row.id && !seenIds.has(row.id)) {
-                seenIds.add(row.id);
-                allTaskRows.push(row);
-            }
-        }
-        for (const row of disputeOnlyRows || []) {
             if (row && row.id && !seenIds.has(row.id)) {
                 seenIds.add(row.id);
                 allTaskRows.push(row);
@@ -2796,11 +3064,12 @@ const searchOutputMethods = {
             includeTaskCreation,
             includeQa,
             includeDisputes,
+            includeSeniorReview,
             creationRows,
             feedbackRows,
             qaOnlyRows,
-            disputeOnlyRows,
-            disputeTaskIds,
+            prefetchDisputeItems,
+            prefetchFlagItems,
             afterIso,
             beforeIso,
             openDisputesByTaskId,
@@ -2809,41 +3078,38 @@ const searchOutputMethods = {
             authorIds,
             searchDepth
         } = opts;
-        const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows, disputeOnlyRows);
+        const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows);
         let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
             ? opts.allFeedbackRows.slice()
             : [...(feedbackRows || [])];
 
-        this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
-        const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
-            trackSearchLoad: true
-        });
-
         const items = [];
-        if (includeTaskCreation) {
-            const creationTasks = (creationRows || [])
-                .map((row) => enrichedTasksById.get(row.id))
-                .filter(Boolean);
-            items.push(...this._taskCreationItemsFromTasks(creationTasks));
-            Logger.log('dashboard: task creation items built — ' + creationTasks.length);
+        const prefetchItems = [
+            ...(prefetchDisputeItems || []),
+            ...(prefetchFlagItems || [])
+        ];
+        if (prefetchItems.length > 0) {
+            items.push(...prefetchItems);
         }
-        if (includeQa && (feedbackRows || []).length > 0) {
-            items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
-        }
-        if (disputeTaskIds && disputeTaskIds.length > 0) {
-            const inScopeIds = disputeTaskIds.filter((id) => enrichedTasksById.has(id));
-            const disputeItems = this._disputeDiscoveryItemsFromTaskIds(
-                inScopeIds,
-                enrichedTasksById,
-                openDisputesByTaskId || new Map()
-            );
-            const existingTaskIds = new Set(items.map((it) => it.task.id));
-            for (const disputeItem of disputeItems) {
-                if (!existingTaskIds.has(disputeItem.task.id)) {
-                    existingTaskIds.add(disputeItem.task.id);
-                    items.push(disputeItem);
-                }
+
+        if (allTaskRows.length > 0 || allFeedbackRows.length > 0) {
+            this._setSearchLoadPhase('Assembling results…', allTaskRows.length);
+            const { enrichedTasksById, profilesMap } = await this._buildQuickTasksById(allTaskRows, allFeedbackRows, {
+                trackSearchLoad: true
+            });
+
+            if (includeTaskCreation) {
+                const creationTasks = (creationRows || [])
+                    .map((row) => enrichedTasksById.get(row.id))
+                    .filter(Boolean);
+                items.push(...this._taskCreationItemsFromTasks(creationTasks));
+                Logger.log('dashboard: task creation items built — ' + creationTasks.length);
             }
+            if (includeQa && (feedbackRows || []).length > 0) {
+                items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
+            }
+        } else if (items.length > 0) {
+            this._setSearchLoadPhase('Assembling results…', items.length);
         }
 
         this._setSearchLoadPhase('Assembling result cards…', items.length);
@@ -2861,17 +3127,31 @@ const searchOutputMethods = {
         allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
         this._trimOpenDisputesToTarget(keptTaskIds);
 
-        const resultItems = mergedItems.map((item) => Object.assign({}, item, { hydrated: false, flags: item.flags || [] }));
+        const resultItems = mergedItems.map((item) => Object.assign({}, item, {
+            hydrated: item.hydrated === true,
+            flags: item.flags || []
+        }));
 
         return {
             items: resultItems,
             allFeedbackRows,
             includeQa,
-            includeDisputes
+            includeDisputes,
+            includeSeniorReview
         };
     },
 
-    async _fetchWorkerOutputSearch({ authorIds, includeTaskCreation, includeQa, includeDisputes, afterIso, beforeIso, scope, searchDepth }) {
+    async _fetchWorkerOutputSearch({
+        authorIds,
+        includeTaskCreation,
+        includeQa,
+        includeDisputes,
+        includeSeniorReview,
+        afterIso,
+        beforeIso,
+        scope,
+        searchDepth
+    }) {
         this._state.activeSearchScope = scope;
         this._state.activeSearchAfterIso = afterIso;
         this._state.activeSearchBeforeIso = beforeIso;
@@ -2882,6 +3162,7 @@ const searchOutputMethods = {
             && this._state.resultsLoadSnapshot.length > 0;
         if (!preserveDisputeState) {
             this._state.disputesBulkIncomplete = false;
+            this._state.flagsBulkIncomplete = false;
             this._state.openDisputesByTaskId = new Map();
             this._state.resolvedDisputeTaskIds = new Set();
             this._state.resolvedDisputeAtByTaskId = new Map();
@@ -2891,15 +3172,70 @@ const searchOutputMethods = {
         this._setSearchLoadPhase(this._searchFetchSourcesLabel({
             includeTaskCreation,
             includeQa,
-            includeDisputes
+            includeDisputes,
+            includeSeniorReview
         }));
 
-        const prefetchPromise = searchDepth === 'deep'
-            ? Promise.all(DASH_PREFETCH_KINDS.map((kind) => this._trackSearchLoadPromise(
-                'Prefetch ' + this._prefetchLabel(kind),
-                (tracker) => this._ensurePrefetch(kind, tracker)
-            )))
-            : Promise.resolve();
+        await this._awaitPrefetchKindsForSearch({ includeDisputes, includeSeniorReview });
+
+        if (searchDepth === 'deep') {
+            const extraKinds = DASH_PREFETCH_KINDS.filter((kind) => {
+                if (includeDisputes && (kind === 'openDisputes' || kind === 'resolvedDisputes')) return false;
+                if (includeSeniorReview && (kind === 'pendingFlags' || kind === 'resolvedFlags')) return false;
+                return true;
+            });
+            if (extraKinds.length > 0) {
+                await Promise.all(extraKinds.map((kind) => this._trackSearchLoadPromise(
+                    'Prefetch ' + this._prefetchLabel(kind),
+                    (tracker) => this._ensurePrefetch(kind, tracker)
+                )));
+            }
+        }
+
+        const contributorSet = authorIds.length > 0 ? this._contributorSetFromAuthorIds(authorIds) : null;
+
+        let prefetchDisputeItems = [];
+        let prefetchFlagItems = [];
+        let disputeBootstrap = null;
+
+        if (includeDisputes) {
+            const groupedDisputes = this._scanPrefetchDisputeRows(scope, afterIso, beforeIso, contributorSet);
+            const disputeProfileIds = this._collectPrefetchDisputeProfileIds(groupedDisputes);
+            const disputeProfiles = disputeProfileIds.length > 0
+                ? await this._trackSearchLoadPromise(
+                    'Contributor profiles for disputes (' + disputeProfileIds.length + ')',
+                    (tracker) => this._fetchProfilesByIds(disputeProfileIds, 'search', tracker)
+                )
+                : [];
+            prefetchDisputeItems = this._buildPrefetchHydratedDisputeItems(
+                groupedDisputes,
+                this._buildProfilesMap(disputeProfiles),
+                scope
+            );
+            disputeBootstrap = this._deriveDisputeBootstrap(scope, afterIso, beforeIso, contributorSet);
+            this._state.openDisputesByTaskId = disputeBootstrap.openDisputesByTaskId;
+            this._state.resolvedDisputeTaskIds = disputeBootstrap.resolvedDisputeTaskIds;
+            this._state.resolvedDisputeAtByTaskId = disputeBootstrap.resolvedDisputeAtByTaskId;
+            this._state.disputesBulkIncomplete = disputeBootstrap.bulkIncomplete;
+            this._state.resolverDisputeTaskIds = new Set(disputeBootstrap.resolvedDisputeTaskIds);
+        }
+
+        if (includeSeniorReview) {
+            const groupedFlags = this._scanPrefetchFlagRows(scope, afterIso, beforeIso, contributorSet);
+            const flagProfileIds = this._collectPrefetchFlagProfileIds(groupedFlags);
+            const flagProfiles = flagProfileIds.length > 0
+                ? await this._trackSearchLoadPromise(
+                    'Contributor profiles for flags (' + flagProfileIds.length + ')',
+                    (tracker) => this._fetchProfilesByIds(flagProfileIds, 'search', tracker)
+                )
+                : [];
+            prefetchFlagItems = this._buildPrefetchHydratedFlagItems(
+                groupedFlags,
+                this._buildProfilesMap(flagProfiles),
+                scope
+            );
+            this._state.flagsBulkIncomplete = this._isAnyPrefetchIncomplete(['pendingFlags', 'resolvedFlags']);
+        }
 
         const tasksPromise = includeTaskCreation
             ? this._trackSearchLoadPromise(
@@ -2914,26 +3250,17 @@ const searchOutputMethods = {
             )
             : Promise.resolve([]);
 
-        let disputeBootstrap = null;
-        if (includeDisputes || searchDepth === 'deep') {
-            if (searchDepth === 'deep') {
-                await prefetchPromise;
-            }
-        }
-
-        const contributorSet = authorIds.length > 0 ? this._contributorSetFromAuthorIds(authorIds) : null;
-        if (includeDisputes) {
-            disputeBootstrap = this._deriveDisputeBootstrap(scope, afterIso, beforeIso, contributorSet);
-        }
-
         const [creationRows, feedbackRows] = await Promise.all([tasksPromise, qaPromise]);
 
         const assembleBase = {
             includeTaskCreation,
             includeQa,
             includeDisputes,
+            includeSeniorReview,
             creationRows: creationRows || [],
             feedbackRows: feedbackRows || [],
+            prefetchDisputeItems,
+            prefetchFlagItems,
             afterIso,
             beforeIso,
             scope,
@@ -2949,74 +3276,9 @@ const searchOutputMethods = {
             const partialBootstrap = disputeBootstrap || emptyBootstrap;
             return this._assembleWorkerOutputSearchResult(Object.assign({}, assembleBase, {
                 qaOnlyRows: [],
-                disputeOnlyRows: [],
-                disputeTaskIds: [],
+                allFeedbackRows: feedbackRows || [],
                 openDisputesByTaskId: partialBootstrap.openDisputesByTaskId || new Map(),
                 resolvedDisputeAtByTaskId: partialBootstrap.resolvedDisputeAtByTaskId || new Map()
-            }));
-        }
-
-        if (includeDisputes && disputeBootstrap) {
-            this._state.openDisputesByTaskId = disputeBootstrap.openDisputesByTaskId;
-            this._state.resolvedDisputeTaskIds = disputeBootstrap.resolvedDisputeTaskIds;
-            this._state.resolvedDisputeAtByTaskId = disputeBootstrap.resolvedDisputeAtByTaskId;
-            this._state.disputesBulkIncomplete = disputeBootstrap.bulkIncomplete;
-            const resolverDisputeTaskIds = authorIds.length > 0
-                ? disputeBootstrap.resolvedDisputeTaskIds
-                : new Set();
-            this._state.resolverDisputeTaskIds = resolverDisputeTaskIds;
-
-            const disputeTaskIds = this._discoveryDisputeTaskIds(
-                includeDisputes, authorIds, disputeBootstrap, resolverDisputeTaskIds
-            );
-
-            const creationIds = new Set((creationRows || []).map((r) => r.id));
-            const qaTaskIds = [...new Set((feedbackRows || []).map((f) => f.eval_task_id).filter(Boolean))];
-            const qaTaskIdSet = new Set(qaTaskIds);
-            const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
-            const missingDisputeTaskIds = disputeTaskIds.filter((id) => !creationIds.has(id) && !qaTaskIdSet.has(id));
-            const linkedTaskCount = missingQaTaskIds.length + missingDisputeTaskIds.length;
-            if (linkedTaskCount > 0) {
-                this._setSearchLoadPhase('Loading linked tasks…', linkedTaskCount);
-            }
-            const [qaOnlyRows, disputeOnlyRows] = await Promise.all([
-                missingQaTaskIds.length > 0
-                    ? this._trackSearchLoadPromise(
-                        'Tasks from QA (' + missingQaTaskIds.length + ' id(s))',
-                        (tracker) => this._fetchTaskRowsByIds(missingQaTaskIds, scope, undefined, tracker)
-                    )
-                    : Promise.resolve([]),
-                missingDisputeTaskIds.length > 0
-                    ? this._trackSearchLoadPromise(
-                        'Tasks from disputes (' + missingDisputeTaskIds.length + ' id(s))',
-                        (tracker) => this._fetchTaskRowsByIds(missingDisputeTaskIds, scope, undefined, tracker)
-                    )
-                    : Promise.resolve([])
-            ]);
-
-            let allFeedbackRows = [...(feedbackRows || [])];
-            if (!this._shouldStopSearch() && disputeTaskIds.length > 0 && !includeQa) {
-                this._setSearchLoadPhase('Loading supplementary QA feedback…', disputeTaskIds.length);
-                const disputeQaRows = await this._trackSearchLoadPromise(
-                    'QA feedback for ' + disputeTaskIds.length + ' dispute task(s)',
-                    (tracker) => this._fetchQaFeedbackRowsForTaskIds(disputeTaskIds, scope, undefined, tracker)
-                );
-                const seenFb = new Set(allFeedbackRows.map((f) => f.id));
-                for (const fb of disputeQaRows) {
-                    if (!seenFb.has(fb.id)) {
-                        seenFb.add(fb.id);
-                        allFeedbackRows.push(fb);
-                    }
-                }
-            }
-
-            return this._assembleWorkerOutputSearchResult(Object.assign({}, assembleBase, {
-                qaOnlyRows,
-                disputeOnlyRows,
-                disputeTaskIds,
-                allFeedbackRows,
-                openDisputesByTaskId: disputeBootstrap.openDisputesByTaskId,
-                resolvedDisputeAtByTaskId: disputeBootstrap.resolvedDisputeAtByTaskId
             }));
         }
 
@@ -3035,10 +3297,13 @@ const searchOutputMethods = {
 
         return this._assembleWorkerOutputSearchResult(Object.assign({}, assembleBase, {
             qaOnlyRows,
-            disputeOnlyRows: [],
-            disputeTaskIds: [],
-            openDisputesByTaskId: this._state.openDisputesByTaskId || new Map(),
-            resolvedDisputeAtByTaskId: this._state.resolvedDisputeAtByTaskId || new Map()
+            allFeedbackRows: feedbackRows || [],
+            openDisputesByTaskId: disputeBootstrap
+                ? disputeBootstrap.openDisputesByTaskId
+                : (this._state.openDisputesByTaskId || new Map()),
+            resolvedDisputeAtByTaskId: disputeBootstrap
+                ? disputeBootstrap.resolvedDisputeAtByTaskId
+                : (this._state.resolvedDisputeAtByTaskId || new Map())
         }));
     },
 
@@ -3367,7 +3632,8 @@ const searchOutputMethods = {
             resolvedDisputeAtByTaskId: resolvedAt ? new Map(resolvedAt) : null,
             resolverDisputeTaskIds: this._state.resolverDisputeTaskIds
                 ? new Set(this._state.resolverDisputeTaskIds) : null,
-            disputesBulkIncomplete: Boolean(this._state.disputesBulkIncomplete)
+            disputesBulkIncomplete: Boolean(this._state.disputesBulkIncomplete),
+            flagsBulkIncomplete: Boolean(this._state.flagsBulkIncomplete)
         };
     },
 
@@ -3413,6 +3679,7 @@ const searchOutputMethods = {
         }
         this._state.resolvedDisputeAtByTaskId = atMap;
         this._state.disputesBulkIncomplete = Boolean(snap.disputesBulkIncomplete || cur.disputesBulkIncomplete);
+        this._state.flagsBulkIncomplete = Boolean(snap.flagsBulkIncomplete || cur.flagsBulkIncomplete);
     },
 
     _restoreDisputeStateSnapshot(snapshot) {
@@ -3426,6 +3693,7 @@ const searchOutputMethods = {
         this._state.resolverDisputeTaskIds = snapshot.resolverDisputeTaskIds
             ? new Set(snapshot.resolverDisputeTaskIds) : null;
         this._state.disputesBulkIncomplete = Boolean(snapshot.disputesBulkIncomplete);
+        this._state.flagsBulkIncomplete = Boolean(snapshot.flagsBulkIncomplete);
     },
 
     _beginResultsLoad() {
@@ -3450,6 +3718,7 @@ const searchOutputMethods = {
             this._state.filteredItems = null;
             this._state.appliedFilters = null;
             this._state.disputesBulkIncomplete = false;
+            this._state.flagsBulkIncomplete = false;
             this._state.openDisputesByTaskId = null;
             this._state.resolvedDisputeTaskIds = null;
             this._state.resolvedDisputeAtByTaskId = null;
@@ -3541,6 +3810,7 @@ const searchOutputMethods = {
             includeTaskCreation: kindSet.has('task_creation'),
             includeQa: kindSet.has('qa'),
             includeDisputes: kindSet.has('dispute'),
+            includeSeniorReview: kindSet.has('senior_review'),
             searchDepth: prev.searchDepth || this._state.searchDepth || 'quick',
             authorCount: 0,
             authorLabels: [],
@@ -3582,6 +3852,7 @@ const searchOutputMethods = {
         if (committed.includeTaskCreation) kinds.push('task_creation');
         if (committed.includeQa) kinds.push('qa');
         if (committed.includeDisputes) kinds.push('dispute');
+        if (committed.includeSeniorReview) kinds.push('senior_review');
         return kinds;
     },
 
@@ -3593,7 +3864,8 @@ const searchOutputMethods = {
             const singleLabels = {
                 task_creation: 'All/Task Creation',
                 qa: 'All/QA',
-                dispute: 'All/Disputes'
+                dispute: 'All/Disputes',
+                senior_review: 'All/Sr Review'
             };
             return [{ id: 'all', label: singleLabels[kind] || 'All' }];
         }
@@ -5139,6 +5411,7 @@ const searchOutputMethods = {
                                             <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
                                             <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
+                                            <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
                                         </div>
                                     </div>
                                     <div>
@@ -5345,6 +5618,10 @@ const searchOutputMethods = {
             this._state.includeDisputes = !this._state.includeDisputes;
             this._syncOutputToggleUi();
             Logger.log('dashboard: Disputes ' + (this._state.includeDisputes ? 'on' : 'off'));
+        } else if (kind === 'senior_review') {
+            this._state.includeSeniorReview = !this._state.includeSeniorReview;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: Sr Review ' + (this._state.includeSeniorReview ? 'on' : 'off'));
         }
     },
 
@@ -5352,6 +5629,7 @@ const searchOutputMethods = {
         const tasksBtn = this._q('#wf-dash-toggle-tasks');
         const qaBtn = this._q('#wf-dash-toggle-qa');
         const disputesBtn = this._q('#wf-dash-toggle-disputes');
+        const seniorReviewBtn = this._q('#wf-dash-toggle-senior-review');
         if (tasksBtn) {
             tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
             tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
@@ -5363,6 +5641,10 @@ const searchOutputMethods = {
         if (disputesBtn) {
             disputesBtn.setAttribute('aria-pressed', this._state.includeDisputes ? 'true' : 'false');
             disputesBtn.style.cssText = this._btnToggleStyle(this._state.includeDisputes, 'dispute');
+        }
+        if (seniorReviewBtn) {
+            seniorReviewBtn.setAttribute('aria-pressed', this._state.includeSeniorReview ? 'true' : 'false');
+            seniorReviewBtn.style.cssText = this._btnToggleStyle(this._state.includeSeniorReview, 'senior_review');
         }
     },
 
@@ -5992,7 +6274,8 @@ const searchOutputMethods = {
         }
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
-            const noOutputTypes = !this._state.includeTasks && !this._state.includeQa && !this._state.includeDisputes;
+            const noOutputTypes = !this._state.includeTasks && !this._state.includeQa
+                && !this._state.includeDisputes && !this._state.includeSeniorReview;
             const searchDisabled = this._state.loading
                 || noOutputTypes
                 || ((after || before) && !check.valid);
@@ -6287,8 +6570,9 @@ const searchOutputMethods = {
             const includeTasks = this._state.includeTasks;
             const includeQa = this._state.includeQa;
             const includeDisputes = this._state.includeDisputes;
-            if (!includeTasks && !includeQa && !includeDisputes) {
-                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, or Disputes.');
+            const includeSeniorReview = this._state.includeSeniorReview;
+            if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview) {
+                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
                 return;
             }
             const searchDepth = this._getSearchDepthFromUi();
@@ -6316,13 +6600,15 @@ const searchOutputMethods = {
                 includeTaskCreation: includeTasks,
                 includeQa,
                 includeDisputes,
+                includeSeniorReview,
                 afterLocal: after,
                 beforeLocal: before,
                 searchDepth,
                 searchKinds: [
                     includeTasks ? 'task_creation' : null,
                     includeQa ? 'qa' : null,
-                    includeDisputes ? 'dispute' : null
+                    includeDisputes ? 'dispute' : null,
+                    includeSeniorReview ? 'senior_review' : null
                 ].filter(Boolean)
             };
             this._state.committed = searchCommitted;
@@ -6351,13 +6637,14 @@ const searchOutputMethods = {
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 Logger.info('dashboard: search started — '
                     + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null].filter(Boolean).join('+')
+                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null].filter(Boolean).join('+')
                     + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
                 const searchResult = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
                     includeQa,
                     includeDisputes,
+                    includeSeniorReview,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
                     scope,
@@ -6448,6 +6735,7 @@ const searchOutputMethods = {
         this._state.includeTasks = true;
         this._state.includeQa = true;
         this._state.includeDisputes = false;
+        this._state.includeSeniorReview = false;
         ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
@@ -6607,6 +6895,7 @@ const searchOutputMethods = {
         if (committed.includeTaskCreation) types.push('tasks');
         if (committed.includeQa) types.push('QA');
         if (committed.includeDisputes) types.push('disputes');
+        if (committed.includeSeniorReview) types.push('Sr Review');
         if (types.length > 0) parts.push('types: ' + types.join('+'));
         if (committed.afterLocal) parts.push('after ' + committed.afterLocal);
         if (committed.beforeLocal) parts.push('before ' + committed.beforeLocal);
@@ -6839,15 +7128,19 @@ const searchOutputMethods = {
         this._syncSearchLoadPhaseUi();
     },
 
-    _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes }) {
+    _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes, includeSeniorReview }) {
         const parts = [];
         if (includeTaskCreation) parts.push('task creations');
         if (includeQa) parts.push('QA feedback');
         if (includeDisputes) parts.push('disputes');
+        if (includeSeniorReview) parts.push('Sr Review flags');
         if (parts.length === 0) return 'Fetching data…';
         if (parts.length === 1) return 'Fetching ' + parts[0] + '…';
         if (parts.length === 2) return 'Fetching ' + parts[0] + ' and ' + parts[1] + '…';
-        return 'Fetching ' + parts[0] + ', ' + parts[1] + ', and ' + parts[2] + '…';
+        if (parts.length === 3) {
+            return 'Fetching ' + parts[0] + ', ' + parts[1] + ', and ' + parts[2] + '…';
+        }
+        return 'Fetching ' + parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1] + '…';
     },
 
     _updateResultsStatus() {
@@ -6921,6 +7214,7 @@ const searchOutputMethods = {
             if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
             if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
             if (committed.includeDisputes) modes.push({ kind: 'dispute', label: 'disputes' });
+            if (committed.includeSeniorReview) modes.push({ kind: 'senior_review', label: 'Sr Review' });
             const modeHtml = modes.map((mode, index) => {
                 const cfg = DASH_OUTPUT_KIND_CONFIG[mode.kind];
                 const hl = cfg ? cfg.textHighlight : '';
@@ -6931,10 +7225,13 @@ const searchOutputMethods = {
             const disputesNote = s.disputesBulkIncomplete
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
+            const flagsNote = s.flagsBulkIncomplete
+                ? ' · Sr Review list may be incomplete (narrow date range)'
+                : '';
             const prefetchLoadingNote = this._prefetchLoadingActive()
                 ? ' · loading prefetch caches…'
                 : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
             return;
         }
         el.textContent = '';
@@ -8078,6 +8375,11 @@ function attachSearchOutputListeners(modal, dash) {
             dash._toggleOutputType('disputes');
             dash._validateRangeUi();
         });
+        const toggleSeniorReview = dash._q('#wf-dash-toggle-senior-review');
+        if (toggleSeniorReview) toggleSeniorReview.addEventListener('click', () => {
+            dash._toggleOutputType('senior_review');
+            dash._validateRangeUi();
+        });
 
         const prompt = dash._q('#wf-dash-prompt');
         if (prompt) {
@@ -8415,7 +8717,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '1.96',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
