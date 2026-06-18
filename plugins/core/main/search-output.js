@@ -3011,7 +3011,8 @@ const searchOutputMethods = {
                 selectedFeedbackId: feedback.id,
                 qaFeedback,
                 disputes: [],
-                flags: []
+                flags: [],
+                hydrated: false
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
@@ -3029,7 +3030,8 @@ const searchOutputMethods = {
             selectedFeedbackId: null,
             qaFeedback: null,
             disputes: [],
-            flags: []
+            flags: [],
+            hydrated: false
         }));
     },
 
@@ -3322,9 +3324,12 @@ const searchOutputMethods = {
                     qaFeedback: null,
                     qaSortAt: '',
                     disputes: [],
-                    flags: []
+                    flags: [],
+                    hydrated: item.hydrated === true
                 };
                 byTask.set(taskId, merged);
+            } else {
+                merged.hydrated = merged.hydrated === true && item.hydrated === true;
             }
             merged.kinds.add(item.kind);
             if (item.sortAt > merged.sortAt) merged.sortAt = item.sortAt;
@@ -3352,16 +3357,9 @@ const searchOutputMethods = {
                     merged.flags.push(f);
                 }
             }
-            if (item.hydrated === false) {
-                if (merged.hydrated !== true) merged.hydrated = false;
-            } else if (item.hydrated !== false) {
-                merged.hydrated = true;
-                const mergedVers = (merged.task.promptVersions || []).length;
-                const itemVers = (item.task.promptVersions || []).length;
-                if (itemVers > mergedVers) merged.task = item.task;
-            } else if (merged.hydrated === undefined) {
-                merged.hydrated = item.hydrated !== false;
-            }
+            const mergedVers = (merged.task.promptVersions || []).length;
+            const itemVers = (item.task.promptVersions || []).length;
+            if (itemVers > mergedVers) merged.task = item.task;
         }
         const mergedItems = [...byTask.values()].map((merged) => {
             const kinds = DASH_KIND_MERGE_ORDER.filter((k) => merged.kinds.has(k));
@@ -3375,7 +3373,7 @@ const searchOutputMethods = {
                 qaFeedback: merged.qaFeedback,
                 disputes: merged.disputes,
                 flags: merged.flags,
-                hydrated: merged.hydrated !== false
+                hydrated: merged.hydrated === true
             };
         });
         const folded = items.length - mergedItems.length;
@@ -3760,8 +3758,8 @@ const searchOutputMethods = {
     _preferRicherSearchResultItem(a, b) {
         if (!a) return b;
         if (!b) return a;
-        const aHydr = a.hydrated !== false;
-        const bHydr = b.hydrated !== false;
+        const aHydr = a.hydrated === true;
+        const bHydr = b.hydrated === true;
         if (aHydr && !bHydr) return a;
         if (bHydr && !aHydr) return b;
         const aVers = (a.task && a.task.promptVersions) ? a.task.promptVersions.length : 0;
@@ -8717,7 +8715,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
