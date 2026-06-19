@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -53,7 +53,8 @@ const plugin = {
         jscolorLoadPromise: null,
         jscolorFailed: false,
         activeSection: null,
-        textObserver: null
+        textObserver: null,
+        textObserverSource: null
     },
 
     onMutation(state) {
@@ -150,6 +151,12 @@ const plugin = {
             '  border: 0 !important;',
             '  padding: 0 !important;',
             '  margin: 0 !important;',
+            '  pointer-events: none !important;',
+            '  user-select: none !important;',
+            '}',
+            '[' + REPLICA_MARKER + '="true"] {',
+            '  user-select: text !important;',
+            '  cursor: text;',
             '}',
             '[' + CONTROLS_MARKER + '="true"] input[type="number"] {',
             '  width: 3rem;',
@@ -284,7 +291,10 @@ const plugin = {
         if (!original || !replica) {
             return;
         }
-        replica.textContent = original.textContent;
+        const next = original.textContent;
+        if (replica.textContent !== next) {
+            replica.textContent = next;
+        }
     },
 
     disconnectTextObserver(state) {
@@ -292,9 +302,13 @@ const plugin = {
             state.textObserver.disconnect();
             state.textObserver = null;
         }
+        state.textObserverSource = null;
     },
 
     attachTextObserver(original, replica, state) {
+        if (state.textObserver && state.textObserverSource === original) {
+            return;
+        }
         this.disconnectTextObserver(state);
         const observer = new MutationObserver(() => {
             this.syncReplicaText(original, replica);
@@ -306,6 +320,7 @@ const plugin = {
         });
         CleanupRegistry.registerObserver(observer);
         state.textObserver = observer;
+        state.textObserverSource = original;
     },
 
     ensureReplica(section, displayEl, state) {

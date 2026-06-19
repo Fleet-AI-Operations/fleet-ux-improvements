@@ -9,7 +9,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -139,7 +139,7 @@ const plugin = {
     async _fetchTaskShellBatch(taskIds) {
         const shellRows = [];
         for (const chunk of this._pgInChunks(taskIds)) {
-            const rows = await this._pgQuery('tasks.select_search', {
+            const rows = await this._pgQuery('tasks.select_shell', {
                 id: this._pgInFilter(chunk),
                 limit: String(chunk.length)
             });

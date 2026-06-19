@@ -338,7 +338,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.17',
+    _version: '2.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -454,7 +454,9 @@ const plugin = {
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
-            itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets)
+            itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets),
+            itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
+            itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -892,6 +894,57 @@ const plugin = {
         return dashLibPassesDimension(this._itemV1CreationTimeBuckets(item), effective, count);
     },
 
+    _collectItemQaReviewDurationSeconds(item) {
+        const seconds = [];
+        const seen = new Set();
+        const addDisplay = (display, feedbackId) => {
+            if (!display || display.isSystemFeedback || display.isVerifierFailure) return;
+            const key = feedbackId != null ? String(feedbackId) : '';
+            if (key && seen.has(key)) return;
+            const sec = display.reviewDurationSeconds;
+            if (sec == null || !Number.isFinite(Number(sec)) || Number(sec) < 0) return;
+            if (key) seen.add(key);
+            seconds.push(Number(sec));
+        };
+        if (item && item.qaFeedback) {
+            addDisplay(item.qaFeedback, item.selectedFeedbackId || item.qaFeedback.id);
+        }
+        const task = item && item.task;
+        if (task && Array.isArray(task.allFeedback)) {
+            for (const entry of task.allFeedback) {
+                addDisplay(entry.display || null, entry.id);
+            }
+        }
+        return seconds;
+    },
+
+    _itemQaTimeMinutes(item) {
+        const seconds = this._collectItemQaReviewDurationSeconds(item);
+        if (seconds.length === 0) return null;
+        return dashLibV1CreationTimeMinutes(Math.max(...seconds));
+    },
+
+    _itemQaTimeMinutesBuckets(item) {
+        const buckets = new Set();
+        for (const sec of this._collectItemQaReviewDurationSeconds(item)) {
+            const minutes = dashLibV1CreationTimeMinutes(sec);
+            const bucketId = dashLibV1CreationTimeBucketId(minutes);
+            if (bucketId) buckets.add(bucketId);
+        }
+        return [...buckets];
+    },
+
+    _itemPassesQaTimeFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.qaTimeMinutes || [];
+        const count = (listBounds.qaTimeMinutes || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemQaTimeMinutesBuckets(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
@@ -921,6 +974,10 @@ const plugin = {
         const v1CreationTimeCount = (bounds.v1CreationTimeMinutes || []).length;
         if (v1CreationTimeCount > 0) {
             passed = passed.filter((item) => this._itemPassesV1CreationTimeFilter(item, f, bounds));
+        }
+        const qaTimeCount = (bounds.qaTimeMinutes || []).length;
+        if (qaTimeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesQaTimeFilter(item, f, bounds));
         }
         const queryActive = regex
             ? lib.isRegexQueryActive(promptText)
@@ -1157,6 +1214,7 @@ const plugin = {
         result.promptHistory = new Set();
         result.qaHelpfulness = new Set();
         result.v1CreationTimeMinutes = new Set();
+        result.qaTimeMinutes = new Set();
         return result;
     },
 
@@ -1193,6 +1251,8 @@ const plugin = {
                 && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
                 && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
@@ -1205,8 +1265,22 @@ const plugin = {
                 && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, id)
+                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantV1CreationTime.add(id);
+        }
+        const qaTimeOptions = (options && options.qaTimeMinutes) || [];
+        const irrelevantQaTime = result.qaTimeMinutes;
+        for (const { id } of qaTimeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemQaTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantQaTime.add(id);
         }
         return result;
     },
@@ -1218,6 +1292,7 @@ const plugin = {
         result.promptHistory = new Map();
         result.qaHelpfulness = new Map();
         result.v1CreationTimeMinutes = new Map();
+        result.qaTimeMinutes = new Map();
         return result;
     },
 
@@ -1246,6 +1321,11 @@ const plugin = {
         const selectedV1CreationTime = effective.v1CreationTimeMinutes || [];
         if (allV1CreationTime.length > 0 && selectedV1CreationTime.length === 0) {
             effective.v1CreationTimeMinutes = [...allV1CreationTime];
+        }
+        const allQaTime = bounds.qaTimeMinutes || [];
+        const selectedQaTime = effective.qaTimeMinutes || [];
+        if (allQaTime.length > 0 && selectedQaTime.length === 0) {
+            effective.qaTimeMinutes = [...allQaTime];
         }
         return effective;
     },
@@ -1284,6 +1364,8 @@ const plugin = {
                 && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
                 && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             helpfulnessCounts.set(id, count);
         }
@@ -1296,8 +1378,22 @@ const plugin = {
                 && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, id)
+                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             v1CreationTimeCounts.set(id, count);
+        }
+        const qaTimeOptions = (options && options.qaTimeMinutes) || [];
+        const qaTimeCounts = result.qaTimeMinutes;
+        for (const { id } of qaTimeOptions) {
+            const count = items.filter((item) => (
+                this._itemQaTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, id)
+            )).length;
+            qaTimeCounts.set(id, count);
         }
         return result;
     },
@@ -1610,7 +1706,11 @@ const plugin = {
         const isEscalated = !isPositive && dashLibIsQaEscalatedForFleetReview(data);
         const isFlaggedAsBugged = !isPositive && !isEscalated
             && dashLibIsQaFlaggedAsBugged(data, feedbackRow.feedback_content);
-        return {
+        const reviewDurationRaw = Number(data.qa_review_duration_seconds);
+        const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
+            ? reviewDurationRaw
+            : null;
+        const display = {
             isSystemFeedback: false,
             isPositive,
             isEscalated,
@@ -1625,6 +1725,8 @@ const plugin = {
             qaReviewerName: String((qaReviewer && qaReviewer.name) || ''),
             qaReviewerEmail: String((qaReviewer && qaReviewer.email) || '')
         };
+        if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        return display;
     },
 
     _dateInputValue(date) {

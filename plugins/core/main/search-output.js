@@ -21,7 +21,9 @@ const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_TASK_CARD_BG = '#121212';
 const DASH_HYDRATE_TASK_CHUNK = 25;
+const DASH_HYDRATE_BATCH_CONCURRENCY = 3;
 const DASH_HYDRATE_BATCH_MAX = 100;
+const DASH_SEARCH_FETCH_CONCURRENCY = 8;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 3;
@@ -31,7 +33,7 @@ const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
 const DASH_TASKS_PAGE_SIZE = 100;
-const DASH_QA_PAGE_SIZE = 50;
+const DASH_QA_PAGE_SIZE = 100;
 const DASH_DISPUTES_PAGE_SIZE = 100;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
@@ -120,6 +122,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
+    { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
@@ -127,7 +130,8 @@ const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
-    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true },
+    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
@@ -317,6 +321,40 @@ function dashProblemCreationDurationText(seconds) {
     if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
     if (parts.length === 0 && total > 0) return '< 1 min';
     return parts.join(', ');
+}
+
+function dashTimestampWithDurationParts(iso, durationSeconds) {
+    const formatted = dashFormatCreatedAt(iso);
+    const ago = dashCreatedTabRelativeAgo(iso);
+    const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
+    const durationText = Number.isFinite(durationSec) && durationSec >= 0
+        ? dashProblemCreationDurationText(durationSec)
+        : '';
+    return { formatted, ago, durationText };
+}
+
+function dashTimestampWithDurationHtml(iso, durationSeconds) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const regular = 'color: var(--foreground, #0f172a);';
+    const parts = [`<span style="${regular}">${dashEscHtml(formatted)}</span>`];
+    if (ago) {
+        parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+    }
+    if (durationText) {
+        parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+    }
+    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+}
+
+function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    let text = String(label || '').trim();
+    if (text) text += ' ';
+    text += formatted;
+    if (ago) text += ` (${ago})`;
+    if (durationText) text += ` in ${durationText}`;
+    return text;
 }
 
 /** PostgREST may return an embed as one object or an array — normalize to a single row. */
@@ -2285,6 +2323,47 @@ const searchOutputMethods = {
         return byTaskId;
     },
 
+    async _runConcurrentWorkers(items, concurrency, worker) {
+        if (!items || items.length === 0) return;
+        let idx = 0;
+        const cap = Math.min(concurrency, items.length);
+        const runWorker = async () => {
+            while (idx < items.length) {
+                if (this._shouldStopSearch()) return;
+                const item = items[idx++];
+                await worker(item);
+            }
+        };
+        await Promise.all(Array.from({ length: cap }, () => runWorker()));
+    },
+
+    async _fetchPaginatedQueryVariants(options) {
+        const {
+            variants,
+            pageSize,
+            queryKey,
+            channel,
+            buildQs,
+            onPage
+        } = options;
+        if (!variants || variants.length === 0) return;
+        let pageNum = 0;
+        await this._runConcurrentWorkers(variants, DASH_SEARCH_FETCH_CONCURRENCY, async (variant) => {
+            let offset = 0;
+            while (true) {
+                if (this._shouldStopSearch()) break;
+                const qs = buildQs(variant, offset);
+                if (!qs) break;
+                const page = await this._pgQuery(queryKey, qs, channel);
+                pageNum++;
+                Logger.debug('dashboard: ' + queryKey + ' page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
+                if (onPage) onPage(page, variant, offset);
+                if (page.length < pageSize) break;
+                offset += pageSize;
+            }
+        });
+    },
+
     _flagRowsToDisplays(rows, profilesMap) {
         const lib = dashLib();
         return (rows || []).map((row) => lib.buildFlagDisplay(row, profilesMap));
@@ -2454,16 +2533,18 @@ const searchOutputMethods = {
     async _fetchProfilesByIds(profileIds, logContext, loadTracker) {
         const chunks = dashPgInChunks(profileIds);
         if (chunks.length === 0) return [];
-        const all = [];
         const total = profileIds.length;
-        for (const chunk of chunks) {
-            if (this._shouldStopSearch()) break;
-            const rows = await this._pgQuery('profiles.select_person', {
+        const chunkResults = await Promise.all(chunks.map((chunk) => {
+            if (this._shouldStopSearch()) return Promise.resolve([]);
+            return this._pgQuery('profiles.select_person', {
                 id: dashPgInFilter(chunk)
             }, logContext || 'search').catch((e) => {
                 Logger.warn('dashboard: profile lookup chunk failed', e);
                 return [];
             });
+        }));
+        const all = [];
+        for (const rows of chunkResults) {
             all.push(...rows);
             if (loadTracker) loadTracker.setCount(all.length, total);
         }
@@ -2474,12 +2555,15 @@ const searchOutputMethods = {
         if (!targetIds || targetIds.length === 0) return new Map();
         const map = new Map();
         const total = targetIds.length;
-        for (const chunk of dashPgInChunks(targetIds)) {
-            if (this._shouldStopSearch()) break;
-            const rows = await this._pgQuery('task_project_targets.select_project_map', {
+        const chunks = dashPgInChunks(targetIds);
+        const chunkResults = await Promise.all(chunks.map((chunk) => {
+            if (this._shouldStopSearch()) return Promise.resolve([]);
+            return this._pgQuery('task_project_targets.select_project_map', {
                 id: dashPgInFilter(chunk),
                 limit: String(chunk.length)
             }, 'search').catch((e) => { Logger.warn('dashboard: target→project lookup failed', e); return []; });
+        }));
+        for (const rows of chunkResults) {
             for (const r of rows) if (r.id && r.project_id) map.set(r.id, r.project_id);
             if (loadTracker) loadTracker.setCount(map.size, total);
         }
@@ -2844,36 +2928,37 @@ const searchOutputMethods = {
         const byId = new Map();
         const authorVariants = this._authorQueryVariants(authorIds);
         const scopeVariants = this._scopeQueryVariants(scope);
-        let pageNum = 0;
+        const variants = [];
         for (const authorChunk of authorVariants) {
-            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
-                if (this._shouldStopSearch()) break;
-                let offset = 0;
-                while (true) {
-                    if (this._shouldStopSearch()) break;
-                    const qs = {
-                        order: 'created_at.desc',
-                        offset: String(offset),
-                        limit: String(DASH_TASKS_PAGE_SIZE)
-                    };
-                    if (authorChunk) {
-                        const f = dashPgInFilter(authorChunk);
-                        if (!f) continue;
-                        qs.created_by = f;
-                    }
-                    if (!this._applyTaskScopeToQs(qs, scope, scopeOverride)) continue;
-                    this._addCreatedAtRange(qs, afterIso, beforeIso);
-                    const page = await this._pgQuery('tasks.select_search', qs, 'search');
-                    pageNum++;
-                    Logger.debug('dashboard: tasks page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
-                    for (const row of page) if (row && row.id) byId.set(row.id, row);
-                    if (loadTracker) loadTracker.setCount(byId.size);
-                    if (page.length < DASH_TASKS_PAGE_SIZE) break;
-                    offset += DASH_TASKS_PAGE_SIZE;
-                }
+                variants.push({ authorChunk, scopeOverride });
             }
         }
+        await this._fetchPaginatedQueryVariants({
+            variants,
+            pageSize: DASH_TASKS_PAGE_SIZE,
+            queryKey: 'tasks.select_search',
+            channel: 'search',
+            buildQs: (variant, offset) => {
+                const qs = {
+                    order: 'created_at.desc',
+                    offset: String(offset),
+                    limit: String(DASH_TASKS_PAGE_SIZE)
+                };
+                if (variant.authorChunk) {
+                    const f = dashPgInFilter(variant.authorChunk);
+                    if (!f) return null;
+                    qs.created_by = f;
+                }
+                if (!this._applyTaskScopeToQs(qs, scope, variant.scopeOverride)) return null;
+                this._addCreatedAtRange(qs, afterIso, beforeIso);
+                return qs;
+            },
+            onPage: (page) => {
+                for (const row of page) if (row && row.id) byId.set(row.id, row);
+                if (loadTracker) loadTracker.setCount(byId.size);
+            }
+        });
         const allRows = [...byId.values()];
         Logger.debug('dashboard: tasks fetched (' + allRows.length + ' rows)');
         return allRows;
@@ -2885,21 +2970,23 @@ const searchOutputMethods = {
         const scopeVariants = this._scopeQueryVariants(scope);
         const byId = new Map();
         const totalIds = taskIds.length;
+        const jobs = [];
         for (const chunk of dashPgInChunks(taskIds)) {
-            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
-                if (this._shouldStopSearch()) break;
-                const qs = {
-                    id: dashPgInFilter(chunk),
-                    limit: String(chunk.length)
-                };
-                if (!this._applyTaskScopeToQs(qs, scope, scopeOverride)) continue;
-                const page = await this._pgQuery('tasks.select_search', qs, pgChannel);
-                Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
-                for (const row of page) if (row && row.id) byId.set(row.id, row);
-                if (loadTracker) loadTracker.setCount(byId.size, totalIds);
+                jobs.push({ chunk, scopeOverride });
             }
         }
+        await this._runConcurrentWorkers(jobs, DASH_SEARCH_FETCH_CONCURRENCY, async ({ chunk, scopeOverride }) => {
+            const qs = {
+                id: dashPgInFilter(chunk),
+                limit: String(chunk.length)
+            };
+            if (!this._applyTaskScopeToQs(qs, scope, scopeOverride)) return;
+            const page = await this._pgQuery('tasks.select_search', qs, pgChannel);
+            Logger.debug('dashboard: tasks by id chunk — ' + page.length + ' rows');
+            for (const row of page) if (row && row.id) byId.set(row.id, row);
+            if (loadTracker) loadTracker.setCount(byId.size, totalIds);
+        });
         return [...byId.values()];
     },
 
@@ -2914,43 +3001,44 @@ const searchOutputMethods = {
             + (useTaskScopeEmbed ? ' · task scope embed (teams)' : ''));
         const seenFeedbackIds = new Set();
         const allFeedback = [];
-        let pageNum = 0;
         const qaQueryKey = useTaskScopeEmbed ? 'qa_feedback.select_row_scoped' : 'qa_feedback.select_row';
         const authorVariants = this._authorQueryVariants(authorIds);
         const scopeVariants = useTaskScopeEmbed ? this._scopeQueryVariants(scope) : [{}];
+        const variants = [];
         for (const authorChunk of authorVariants) {
-            if (this._shouldStopSearch()) break;
             for (const scopeOverride of scopeVariants) {
-                if (this._shouldStopSearch()) break;
-                let offset = 0;
-                while (true) {
-                    if (this._shouldStopSearch()) break;
-                    const qs = {
-                        order: 'created_at.desc',
-                        offset: String(offset),
-                        limit: String(DASH_QA_PAGE_SIZE)
-                    };
-                    if (authorChunk) {
-                        const f = dashPgInFilter(authorChunk);
-                        if (!f) continue;
-                        qs.created_by = f;
-                    }
-                    if (useTaskScopeEmbed && !this._applyTaskScopeToQaQs(qs, scope, scopeOverride)) continue;
-                    this._addCreatedAtRange(qs, afterIso, beforeIso);
-                    const page = await this._pgQuery(qaQueryKey, qs, 'search');
-                    pageNum++;
-                    Logger.debug('dashboard: QA feedback page ' + pageNum + ' — ' + page.length + ' rows (offset ' + offset + ')');
-                    for (const row of page) {
-                        if (!row || !row.id || seenFeedbackIds.has(row.id)) continue;
-                        seenFeedbackIds.add(row.id);
-                        allFeedback.push(row);
-                    }
-                    if (loadTracker) loadTracker.setCount(allFeedback.length);
-                    if (page.length < DASH_QA_PAGE_SIZE) break;
-                    offset += DASH_QA_PAGE_SIZE;
-                }
+                variants.push({ authorChunk, scopeOverride });
             }
         }
+        await this._fetchPaginatedQueryVariants({
+            variants,
+            pageSize: DASH_QA_PAGE_SIZE,
+            queryKey: qaQueryKey,
+            channel: 'search',
+            buildQs: (variant, offset) => {
+                const qs = {
+                    order: 'created_at.desc',
+                    offset: String(offset),
+                    limit: String(DASH_QA_PAGE_SIZE)
+                };
+                if (variant.authorChunk) {
+                    const f = dashPgInFilter(variant.authorChunk);
+                    if (!f) return null;
+                    qs.created_by = f;
+                }
+                if (useTaskScopeEmbed && !this._applyTaskScopeToQaQs(qs, scope, variant.scopeOverride)) return null;
+                this._addCreatedAtRange(qs, afterIso, beforeIso);
+                return qs;
+            },
+            onPage: (page) => {
+                for (const row of page) {
+                    if (!row || !row.id || seenFeedbackIds.has(row.id)) continue;
+                    seenFeedbackIds.add(row.id);
+                    allFeedback.push(row);
+                }
+                if (loadTracker) loadTracker.setCount(allFeedback.length);
+            }
+        });
         Logger.debug('dashboard: QA feedback rows fetched (' + allFeedback.length + ' total)');
         return allFeedback;
     },
@@ -3445,7 +3533,8 @@ const searchOutputMethods = {
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
             promptHistory: (opts.promptHistory || []).map((h) => h.id),
             qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
-            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id)
+            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id),
+            qaTimeMinutes: (opts.qaTimeMinutes || []).map((h) => h.id)
         };
     },
 
@@ -3471,6 +3560,22 @@ const searchOutputMethods = {
         const present = new Set();
         for (const item of scopeItems || []) {
             for (const bucketId of lib.itemV1CreationTimeBuckets(item)) {
+                present.add(bucketId);
+            }
+        }
+        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
+            }));
+    },
+
+    _buildQaTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const bucketId of lib.itemQaTimeMinutesBuckets(item)) {
                 present.add(bucketId);
             }
         }
@@ -3991,6 +4096,7 @@ const searchOutputMethods = {
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
         options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
+        options.qaTimeMinutes = this._buildQaTimeFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -4100,6 +4206,8 @@ const searchOutputMethods = {
             case 'v1_creation_time_minutes':
                 if (!item.hydrated) return null;
                 return dashLib().itemV1CreationTimeMinutes(item);
+            case 'qa_time_minutes':
+                return dashLib().itemQaTimeMinutes(item);
             default:
                 return null;
         }
@@ -4180,6 +4288,30 @@ const searchOutputMethods = {
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
         this._syncDropExcludedUi();
+    },
+
+    _isTasksHydratingActive() {
+        if (this._state.hydrateBulkActive || this._state.autoHydrateActive) return true;
+        const ui = this._state.hydrateUi || {};
+        for (const key of Object.keys(ui)) {
+            if (ui[key] && ui[key].status === 'loading') return true;
+        }
+        return false;
+    },
+
+    _syncResultsHydrateBannerUi() {
+        const el = this._q('#wf-dash-results-hydrate-banner');
+        if (!el) return;
+        if (!this._isTasksHydratingActive()) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+            return;
+        }
+        const label = this._labelStyle();
+        el.style.display = 'block';
+        el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
+            + this._loadingSpinnerHtml(14)
+            + '<span>Hydrating tasks</span></span>';
     },
 
     _syncDropExcludedUi() {
@@ -4282,6 +4414,7 @@ const searchOutputMethods = {
             promptHistory: [],
             qaHelpfulness: [],
             v1CreationTimeMinutes: [],
+            qaTimeMinutes: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -5002,16 +5135,24 @@ const searchOutputMethods = {
         let hydratedTotal = 0;
         Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
 
+        const batches = [];
         for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
-            if (this._shouldStopSearch()) break;
-            const chunk = toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK);
-            const done = i;
-            if (typeof opts.onProgress === 'function') {
-                opts.onProgress(done, total);
-            }
-            hydratedTotal += await this._hydrateItems(chunk, enrichOptions);
-            if (this._shouldStopSearch()) break;
+            batches.push({
+                items: toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK),
+                batchIndex: batches.length
+            });
         }
+        const batchResults = new Array(batches.length).fill(0);
+        let completedCards = 0;
+        await this._runConcurrentWorkers(batches, DASH_HYDRATE_BATCH_CONCURRENCY, async (batch) => {
+            if (this._shouldStopSearch()) return;
+            batchResults[batch.batchIndex] = await this._hydrateItems(batch.items, enrichOptions);
+            completedCards += batch.items.length;
+            if (typeof opts.onProgress === 'function') {
+                opts.onProgress(completedCards, total);
+            }
+        });
+        hydratedTotal = batchResults.reduce((sum, count) => sum + count, 0);
         if (!this._shouldStopSearch() && typeof opts.onProgress === 'function') {
             opts.onProgress(total, total);
         }
@@ -5191,34 +5332,36 @@ const searchOutputMethods = {
 
     _syncBulkHydrateUi() {
         const btn = this._q('#wf-dash-bulk-hydrate');
-        if (!btn) return;
-        const committed = this._state.committed;
-        const canLabel = Boolean(
-            committed
-            && committed.searchDepth === 'quick'
-            && this._state.filteredItems !== null
-            && this._state.cachedItems !== null
-        );
-        if (canLabel) {
-            const kinds = this._committedSearchKinds(committed);
-            const tab = this._state.resultsKindTab || 'all';
-            const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
-            const unhydratedCount = this._getUnhydratedInView().length;
-            btn.textContent = unhydratedCount > 0
-                ? base + ' (' + unhydratedCount + ' remaining)'
-                : base;
+        if (btn) {
+            const committed = this._state.committed;
+            const canLabel = Boolean(
+                committed
+                && committed.searchDepth === 'quick'
+                && this._state.filteredItems !== null
+                && this._state.cachedItems !== null
+            );
+            if (canLabel) {
+                const kinds = this._committedSearchKinds(committed);
+                const tab = this._state.resultsKindTab || 'all';
+                const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
+                const unhydratedCount = this._getUnhydratedInView().length;
+                btn.textContent = unhydratedCount > 0
+                    ? base + ' (' + unhydratedCount + ' remaining)'
+                    : base;
+            }
+            if (!this._bulkHydrateShowable()) {
+                btn.style.display = 'none';
+            } else {
+                const unhydratedCount = this._getUnhydratedInView().length;
+                if (unhydratedCount === 0) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = '';
+                    btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
+                }
+            }
         }
-        if (!this._bulkHydrateShowable()) {
-            btn.style.display = 'none';
-            return;
-        }
-        const unhydratedCount = this._getUnhydratedInView().length;
-        if (unhydratedCount === 0) {
-            btn.style.display = 'none';
-            return;
-        }
-        btn.style.display = '';
-        btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
+        this._syncResultsHydrateBannerUi();
     },
 
     _setBulkHydrateProgress(done, total) {
@@ -5376,7 +5519,6 @@ const searchOutputMethods = {
         let base = 'height: ' + DASH_CARD_TAB_HEIGHT
             + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
             + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
-        if (opts.fullWidth) base += ' width: 100%; min-width: 0;';
         return base;
     },
 
@@ -5393,40 +5535,26 @@ const searchOutputMethods = {
 
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
-        const formatted = dashFormatCreatedAt(iso);
-        const ago = dashCreatedTabRelativeAgo(iso);
         const creationSec = task && task.initialCreationTimeSeconds;
-        const durationText = (creationSec != null && Number.isFinite(Number(creationSec)))
-            ? dashProblemCreationDurationText(Number(creationSec))
-            : '';
-        const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
-        const regular = 'color: var(--foreground, #0f172a);';
-        const parts = [
-            `<span style="${this._labelStyle()}">Created</span>`,
-            `<span style="${regular}">${dashEscHtml(formatted)}</span>`
-        ];
-        if (ago) {
-            parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
-        }
-        if (durationText) {
-            parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
-        }
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
-        let label = `Created ${formatted}`;
-        if (ago) label += ` (${ago})`;
-        if (durationText) label += ` in ${durationText}`;
+        const durationSec = (creationSec != null && Number.isFinite(Number(creationSec)))
+            ? Number(creationSec)
+            : null;
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">`
+            + `<span style="${this._labelStyle()}">Created</span>`
+            + dashTimestampWithDurationHtml(iso, durationSec)
+            + '</span>';
+        const label = dashLabeledTimestampWithDurationPlainText('Created', iso, durationSec);
         return this._cardSurfaceTabHtml(inner, label);
     },
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: flex; align-items: stretch; width: 100%; min-width: 0;">`
+        const inner = `<span style="display: inline-flex; align-items: stretch;">`
             + this._copyChipHtml(key, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
-            noHorizontalPadding: true,
-            fullWidth: true
+            noHorizontalPadding: true
         });
     },
 
@@ -5691,6 +5819,7 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </div>
+                        <div id="wf-dash-results-hydrate-banner" style="display: none; margin-top: 8px;"></div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
@@ -5709,7 +5838,8 @@ const searchOutputMethods = {
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
             'filter-return-types': 'Return types',
-            'filter-v1-creation-time': 'v1 Creation Time Minutes'
+            'filter-v1-creation-time': 'v1 Creation Time Minutes',
+            'filter-qa-time': 'QA Time Minutes'
         };
         return labels[scopeKey] || scopeKey;
     },
@@ -6068,7 +6198,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: []
+            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -6287,6 +6417,7 @@ const searchOutputMethods = {
         } else {
             wrap.appendChild(newCard);
         }
+        this._syncResultsHydrateBannerUi();
     },
 
     _setLeftTab(tab) {
@@ -6493,7 +6624,7 @@ const searchOutputMethods = {
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
-            'v1CreationTimeMinutes'
+            'v1CreationTimeMinutes', 'qaTimeMinutes'
         ];
         for (const key of keys) {
             const boundIds = bounds[key] || [];
@@ -7025,7 +7156,8 @@ const searchOutputMethods = {
             ['returnTypes', bounds.returnTypes],
             ['promptHistory', bounds.promptHistory],
             ['qaHelpfulness', bounds.qaHelpfulness],
-            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes]
+            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes],
+            ['qaTimeMinutes', bounds.qaTimeMinutes]
         ];
         for (const [key, boundIds] of dims) {
             if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
@@ -7749,7 +7881,7 @@ const searchOutputMethods = {
             </div>`;
         }).join('');
         const submittedHtml = qa.feedbackAt
-            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(qa.feedbackAt))
+            ? this._fieldGroupHtml('Submitted', dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds))
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`
@@ -8250,15 +8382,11 @@ const searchOutputMethods = {
         });
         const showHydrateTab = item.hydrated === false
             && this._state.committed
-            && this._state.committed.searchDepth === 'quick';
+            && this._state.committed.searchDepth === 'quick'
+            && !this._isTasksHydratingActive();
         let hydrateTabHtml = '';
         if (showHydrateTab) {
-            const ui = this._getHydrateUi(itemId);
-            const loading = ui.status === 'loading';
-            const tabInner = loading
-                ? `<span style="display: inline-flex; align-items: center; gap: 5px; pointer-events: none;">${this._loadingSpinnerHtml(12)}<span>Hydrating…</span></span>`
-                : 'Hydrate';
-            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
+            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
                 <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
@@ -8905,7 +9033,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.14',
+    _version: '2.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
