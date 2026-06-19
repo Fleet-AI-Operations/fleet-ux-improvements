@@ -11,7 +11,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -276,7 +276,36 @@ const plugin = {
         }
 
         btn._fleetToolbar = anchor;
-        anchor.appendChild(btn);
+        this.placeToggleButton(btn, anchor);
+    },
+
+    findGradingToggleInAnchor(anchor) {
+        for (const candidate of anchor.children) {
+            if (candidate.tagName !== 'BUTTON') {
+                continue;
+            }
+            if (candidate.getAttribute(TOGGLE_MARKER) === 'true') {
+                continue;
+            }
+            const text = (candidate.textContent || '').replace(/\s+/g, ' ').trim();
+            if (text === 'Show Grading' || text === 'Hide Grading') {
+                return candidate;
+            }
+        }
+        return null;
+    },
+
+    placeToggleButton(btn, anchor) {
+        const gradingBtn = this.findGradingToggleInAnchor(anchor);
+        if (gradingBtn) {
+            if (btn.nextElementSibling !== gradingBtn) {
+                anchor.insertBefore(btn, gradingBtn);
+            }
+            return;
+        }
+        if (btn.parentElement !== anchor || btn !== anchor.lastElementChild) {
+            anchor.appendChild(btn);
+        }
     },
 
     ensureCollapseSliver(panel) {
@@ -312,8 +341,8 @@ const plugin = {
                 if (btn.parentElement !== targetSliver) {
                     targetSliver.appendChild(btn);
                 }
-            } else if (btn._fleetToolbar && btn.parentElement !== btn._fleetToolbar) {
-                btn._fleetToolbar.appendChild(btn);
+            } else if (btn._fleetToolbar) {
+                this.placeToggleButton(btn, btn._fleetToolbar);
             }
 
             if (!collapsed && sliver && !sliver.contains(btn)) {
