@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '9.3',
+    _version: '9.5',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -27,7 +27,8 @@ const plugin = {
             openModal: (opts) => self.openModal(opts),
             shouldShowUpdateBanner: () => self._shouldShowUpdateNotification(),
             createUpdateNotificationHTML: () => self._createUpdateNotificationHTML(),
-            attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root)
+            attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root),
+            refreshUpdateIndicator: () => self._updatePulseAnimation()
         };
         this._ensureDialogBackdropStyles();
         this._ensureSettingsButton();
@@ -116,23 +117,6 @@ const plugin = {
         `;
         (document.head || document.documentElement).appendChild(style);
     },
-
-    _ensurePulseKeyframes() {
-        if (document.getElementById('wf-settings-pulse-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-settings-pulse-styles';
-        style.textContent = `
-            @keyframes wf-settings-pulse {
-                0%, 49% { border: 2px solid #dc2626 !important; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4) !important; }
-                50%, 100% { border: 1px solid #60a5fa !important; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important; }
-            }
-            .wf-settings-btn-pulsing {
-                animation: wf-settings-pulse 2s step-end infinite !important;
-                transition: none !important;
-            }
-        `;
-        (document.head || document.documentElement).appendChild(style);
-    },
     
     // No destroy method - this plugin persists
     
@@ -186,7 +170,6 @@ const plugin = {
             
             settingsBtn.style.cssText = baseStyles;
         } else if (isAlreadyPulsing) {
-            // Only update transition if pulsing, don't reset border/box-shadow
             settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
         }
         
@@ -212,11 +195,15 @@ const plugin = {
             settingsBtn.addEventListener('mouseenter', () => {
                 settingsBtn.style.background = 'var(--background, white)';
                 settingsBtn.style.transform = 'scale(1.1)';
-                settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                if (this._pulseInterval === null) {
+                    settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                }
             });
             settingsBtn.addEventListener('mouseleave', () => {
                 settingsBtn.style.transform = 'scale(1)';
-                settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                if (this._pulseInterval === null) {
+                    settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                }
                 const solidBg =
                     Context.isOutdated ||
                     (Context.isDevBranch && this._getPulseOverrideEnabled()) ||
@@ -241,10 +228,29 @@ const plugin = {
     
     _startPulseAnimation(settingsBtn) {
         if (!settingsBtn) return;
-        this._stopPulseAnimation();
-        this._ensurePulseKeyframes();
-        settingsBtn.style.transition = 'none';
-        settingsBtn.classList.add('wf-settings-btn-pulsing');
+
+        if (this._pulseInterval) {
+            clearInterval(this._pulseInterval);
+            this._pulseInterval = null;
+        }
+
+        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
+        settingsBtn.style.background = 'var(--background, white)';
+        settingsBtn.style.border = '2px solid #dc2626';
+        settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
+
+        let isOn = true;
+        this._pulseInterval = setInterval(() => {
+            isOn = !isOn;
+            if (isOn) {
+                settingsBtn.style.border = '2px solid #dc2626';
+                settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
+            } else {
+                settingsBtn.style.border = '1px solid #60a5fa';
+                settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            }
+        }, 1000);
+        Logger.log('settings-ui: update indicator pulse started');
     },
     
     _stopPulseAnimation() {
@@ -254,7 +260,6 @@ const plugin = {
         }
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (settingsBtn) {
-            settingsBtn.classList.remove('wf-settings-btn-pulsing');
             settingsBtn.style.transition = '';
             settingsBtn.style.border = '1px solid #60a5fa';
             settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
@@ -270,17 +275,10 @@ const plugin = {
     _updatePulseAnimation() {
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (!settingsBtn) {
-            Logger.debug('Settings button not found for pulse animation update');
+            Logger.debug('settings-ui: settings button not found for pulse animation update');
             return;
         }
-        
-        const shouldPulse = Context.isOutdated || (Context.isDevBranch && this._getPulseOverrideEnabled());
-        
-        if (shouldPulse) {
-            this._startPulseAnimation(settingsBtn);
-        } else {
-            this._stopPulseAnimation();
-        }
+        this._applySettingsButtonBehavior(settingsBtn);
     },
     
     _toggleModal() {

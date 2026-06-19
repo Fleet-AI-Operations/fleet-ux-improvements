@@ -138,6 +138,11 @@
       "description": "Hides the \"You are currently testing the environment\" banner that can block the embedded work area"
     },
     {
+      "file": "prompt-display-style.js",
+      "name": "Prompt Display Style",
+      "description": "Adjust prompt font size, text color, and background in view mode"
+    },
+    {
       "file": "metadata-tag-qa-enhancements.js",
       "name": "Metadata Tag QA Enhancements",
       "description": "Show/hide Writer Metadata section and/or QA suggested tag changes (toggle tags + copy as text feedback)"
@@ -146,6 +151,11 @@
       "file": "request-revisions.js",
       "name": "Request Revisions Improvements",
       "description": "Improvements to the Request Revisions Workflow"
+    },
+    {
+      "file": "toggle-main-panels.js",
+      "name": "Toggle Main Panels",
+      "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
     }
   ],
   "archetypes/qa-comp-use/dev": [],
