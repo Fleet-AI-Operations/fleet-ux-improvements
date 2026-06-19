@@ -9,7 +9,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -136,6 +136,18 @@ const plugin = {
         return versionRows;
     },
 
+    async _fetchTaskShellBatch(taskIds) {
+        const shellRows = [];
+        for (const chunk of this._pgInChunks(taskIds)) {
+            const rows = await this._pgQuery('tasks.select_search', {
+                id: this._pgInFilter(chunk),
+                limit: String(chunk.length)
+            });
+            shellRows.push(...rows);
+        }
+        return shellRows;
+    },
+
     async _fetchFeedbackBatch(taskIds, prefetchedRows) {
         const prefetched = Array.isArray(prefetchedRows) ? prefetchedRows : [];
         const knownIds = [...new Set(prefetched.map((f) => f && f.id).filter(Boolean))];
@@ -179,7 +191,7 @@ const plugin = {
      * @param {string[]} taskIds
      * @param {Map<string, {full_name: string, email: string}>} [profilesMap]
      * @param {{ prefetchedFeedbackRows?: object[], skipFeedbackFetch?: boolean }} [options]
-     * @returns {Promise<Map<string, { promptVersions: object[], allFeedback: object[] }>>}
+     * @returns {Promise<Map<string, { promptVersions: object[], allFeedback: object[], key?: string, status?: string }>>}
      */
     async _enrichTasksWithHistory(taskIds, profilesMap, options) {
         const lib = Context.dashboardLib;
@@ -187,7 +199,7 @@ const plugin = {
         const ids = [...new Set((taskIds || []).filter(Boolean))];
         if (ids.length === 0) return new Map();
 
-        Logger.debug('dashboard-data: enriching ' + ids.length + ' task(s) with version + feedback history');
+        Logger.debug('dashboard-data: enriching ' + ids.length + ' task(s) with shell, version + feedback history');
 
         const prefetched = Array.isArray(opts.prefetchedFeedbackRows) ? opts.prefetchedFeedbackRows : [];
         const skipFeedbackFetch = Boolean(opts.skipFeedbackFetch);
@@ -195,9 +207,10 @@ const plugin = {
             ? Promise.resolve(prefetched)
             : this._fetchFeedbackBatch(ids, prefetched);
 
-        const [versionRows, feedbackRows] = await Promise.all([
+        const [versionRows, feedbackRows, shellRows] = await Promise.all([
             this._fetchVersionsBatch(ids),
-            feedbackPromise
+            feedbackPromise,
+            this._fetchTaskShellBatch(ids)
         ]);
 
         const reviewerProfiles = new Map(profilesMap || []);
@@ -215,6 +228,10 @@ const plugin = {
 
         const versionsByTask = this._groupBy(versionRows, (r) => r.task_id);
         const feedbackByTask = this._groupBy(feedbackRows, (r) => r.eval_task_id);
+        const shellByTaskId = new Map();
+        for (const row of shellRows) {
+            if (row && row.id) shellByTaskId.set(row.id, row);
+        }
         const result = new Map();
 
         for (const taskId of ids) {
@@ -224,15 +241,20 @@ const plugin = {
             const built = taskFeedback.map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles));
             const { entries: dedupedFeedback, idRemap } = lib.dedupeSystemFeedbackEntries(built);
             const allFeedback = this._sortFeedbackEntries(dedupedFeedback);
-            result.set(taskId, {
+            const shell = shellByTaskId.get(taskId);
+            const entry = {
                 promptVersions,
                 allFeedback,
                 systemFeedbackIdRemap: idRemap,
                 initialCreationTimeSeconds: this._initialCreationTimeSeconds(rawVersions)
-            });
+            };
+            if (shell && shell.key) entry.key = String(shell.key);
+            if (shell && shell.task_lifecycle_status) entry.status = String(shell.task_lifecycle_status);
+            result.set(taskId, entry);
         }
 
         Logger.debug('dashboard-data: enrichment complete — '
+            + shellRows.length + ' task shell row(s), '
             + versionRows.length + ' version rows, ' + feedbackRows.length + ' feedback rows');
         return result;
     }

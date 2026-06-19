@@ -1142,6 +1142,7 @@ const searchOutputMethods = {
                 }
                 item.task.promptVersions = hist.promptVersions || [];
                 item.task.allFeedback = hist.allFeedback || [];
+                this._applyTaskShellFromEnrichment(item.task, hist);
                 if (hist.initialCreationTimeSeconds != null) {
                     item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
                 } else {
@@ -4882,6 +4883,12 @@ const searchOutputMethods = {
         }
     },
 
+    _applyTaskShellFromEnrichment(task, hist) {
+        if (!task || !hist) return;
+        if (hist.key) task.key = hist.key;
+        if (hist.status) task.status = hist.status;
+    },
+
     _profilesMapFromHydrateItems(items) {
         const profilesMap = new Map();
         for (const item of items || []) {
@@ -4926,6 +4933,7 @@ const searchOutputMethods = {
                     }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    this._applyTaskShellFromEnrichment(item.task, hist);
                     if (hist.initialCreationTimeSeconds != null) {
                         item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
                     } else {
@@ -8810,7 +8818,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.8',
+    _version: '2.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
