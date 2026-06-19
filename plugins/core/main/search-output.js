@@ -4216,6 +4216,30 @@ const searchOutputMethods = {
         this._syncDropExcludedUi();
     },
 
+    _isTasksHydratingActive() {
+        if (this._state.hydrateBulkActive || this._state.autoHydrateActive) return true;
+        const ui = this._state.hydrateUi || {};
+        for (const key of Object.keys(ui)) {
+            if (ui[key] && ui[key].status === 'loading') return true;
+        }
+        return false;
+    },
+
+    _syncResultsHydrateBannerUi() {
+        const el = this._q('#wf-dash-results-hydrate-banner');
+        if (!el) return;
+        if (!this._isTasksHydratingActive()) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+            return;
+        }
+        const label = this._labelStyle();
+        el.style.display = 'block';
+        el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
+            + this._loadingSpinnerHtml(14)
+            + '<span>Hydrating tasks</span></span>';
+    },
+
     _syncDropExcludedUi() {
         const btn = this._q('#wf-dash-drop-excluded');
         if (!btn) return;
@@ -5225,34 +5249,36 @@ const searchOutputMethods = {
 
     _syncBulkHydrateUi() {
         const btn = this._q('#wf-dash-bulk-hydrate');
-        if (!btn) return;
-        const committed = this._state.committed;
-        const canLabel = Boolean(
-            committed
-            && committed.searchDepth === 'quick'
-            && this._state.filteredItems !== null
-            && this._state.cachedItems !== null
-        );
-        if (canLabel) {
-            const kinds = this._committedSearchKinds(committed);
-            const tab = this._state.resultsKindTab || 'all';
-            const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
-            const unhydratedCount = this._getUnhydratedInView().length;
-            btn.textContent = unhydratedCount > 0
-                ? base + ' (' + unhydratedCount + ' remaining)'
-                : base;
+        if (btn) {
+            const committed = this._state.committed;
+            const canLabel = Boolean(
+                committed
+                && committed.searchDepth === 'quick'
+                && this._state.filteredItems !== null
+                && this._state.cachedItems !== null
+            );
+            if (canLabel) {
+                const kinds = this._committedSearchKinds(committed);
+                const tab = this._state.resultsKindTab || 'all';
+                const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
+                const unhydratedCount = this._getUnhydratedInView().length;
+                btn.textContent = unhydratedCount > 0
+                    ? base + ' (' + unhydratedCount + ' remaining)'
+                    : base;
+            }
+            if (!this._bulkHydrateShowable()) {
+                btn.style.display = 'none';
+            } else {
+                const unhydratedCount = this._getUnhydratedInView().length;
+                if (unhydratedCount === 0) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = '';
+                    btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
+                }
+            }
         }
-        if (!this._bulkHydrateShowable()) {
-            btn.style.display = 'none';
-            return;
-        }
-        const unhydratedCount = this._getUnhydratedInView().length;
-        if (unhydratedCount === 0) {
-            btn.style.display = 'none';
-            return;
-        }
-        btn.style.display = '';
-        btn.disabled = this._state.hydrateBulkActive || this._state.autoHydrateActive;
+        this._syncResultsHydrateBannerUi();
     },
 
     _setBulkHydrateProgress(done, total) {
@@ -5710,6 +5736,7 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </div>
+                        <div id="wf-dash-results-hydrate-banner" style="display: none; margin-top: 8px;"></div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
@@ -6306,6 +6333,7 @@ const searchOutputMethods = {
         } else {
             wrap.appendChild(newCard);
         }
+        this._syncResultsHydrateBannerUi();
     },
 
     _setLeftTab(tab) {
@@ -8269,15 +8297,11 @@ const searchOutputMethods = {
         });
         const showHydrateTab = item.hydrated === false
             && this._state.committed
-            && this._state.committed.searchDepth === 'quick';
+            && this._state.committed.searchDepth === 'quick'
+            && !this._isTasksHydratingActive();
         let hydrateTabHtml = '';
         if (showHydrateTab) {
-            const ui = this._getHydrateUi(itemId);
-            const loading = ui.status === 'loading';
-            const tabInner = loading
-                ? `<span style="display: inline-flex; align-items: center; gap: 5px; pointer-events: none;">${this._loadingSpinnerHtml(12)}<span>Hydrating…</span></span>`
-                : 'Hydrate';
-            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
+            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
         }
         const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
                 <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
@@ -8924,7 +8948,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.16',
+    _version: '2.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
