@@ -8,13 +8,14 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         styleInjected: false,
         missingLogged: false,
+        headerMissingLogged: false,
         activationLogged: false,
         hiddenPane: null
     },
@@ -36,11 +37,18 @@ const plugin = {
         }
         state.missingLogged = false;
 
-        const leftToolbar = this.findPanelHeaderToolbar(panels.left);
-        const rightToolbar = this.findPanelHeaderToolbar(panels.right);
+        const leftToolbar = this.findPanelHeaderToolbar(panels.left, 'left');
+        const rightToolbar = this.findPanelHeaderToolbar(panels.right, 'right');
         if (!leftToolbar || !rightToolbar) {
+            if (!state.headerMissingLogged) {
+                Logger.debug(
+                    `${this.id}: pane header toolbar not found (left=${!!leftToolbar}, right=${!!rightToolbar})`
+                );
+                state.headerMissingLogged = true;
+            }
             return;
         }
+        state.headerMissingLogged = false;
 
         this.ensureToggleButton('left', state, leftToolbar);
         this.ensureToggleButton('right', state, rightToolbar);
@@ -54,50 +62,74 @@ const plugin = {
     },
 
     getPanels() {
-        const taskCard = document.querySelector('[data-ui="qa-task-card"]');
-        let group = taskCard || null;
+        const taskDetail = document.querySelector('[data-ui="qa-task-detail-panel"]');
+        if (!taskDetail) {
+            return { left: null, right: null, group: null };
+        }
 
-        if (!group) {
-            const horizontalGroups = document.querySelectorAll(
-                '[data-panel-group][data-panel-group-direction="horizontal"]'
-            );
-            for (const g of horizontalGroups) {
-                const direct = g.querySelectorAll(':scope > [data-panel]');
-                if (direct.length === 2) {
-                    group = g;
-                    break;
+        const left = taskDetail.matches('[data-panel]') ? taskDetail : taskDetail.closest('[data-panel]');
+        if (!left || !left.parentElement) {
+            return { left: null, right: null, group: null };
+        }
+
+        const group =
+            left.closest('[data-ui="qa-task-card"]') ||
+            left.closest('[data-panel-group][data-panel-group-direction="horizontal"]') ||
+            left.parentElement;
+
+        let right = null;
+        for (const child of group.children) {
+            if (child !== left && child.hasAttribute('data-panel')) {
+                right = child;
+                break;
+            }
+        }
+
+        if (!right) {
+            const instanceTab = document.querySelector('[data-ui="qa-instance-tab"]');
+            if (instanceTab && group.contains(instanceTab)) {
+                for (const child of group.children) {
+                    if (child !== left && child.hasAttribute('data-panel') && child.contains(instanceTab)) {
+                        right = child;
+                        break;
+                    }
                 }
             }
         }
 
-        if (!group) {
-            return { left: null, right: null, group: null };
-        }
-
-        const panelGroup = group.matches('[data-panel-group]')
-            ? group
-            : group.querySelector('[data-panel-group][data-panel-group-direction="horizontal"]') || group;
-
-        const directPanels = panelGroup.querySelectorAll(':scope > [data-panel]');
-        if (directPanels.length < 2) {
-            return { left: null, right: null, group: panelGroup };
-        }
-
-        const taskDetail = document.querySelector('[data-ui="qa-task-detail-panel"]');
-        const left = (taskDetail && taskDetail.closest('[data-panel]')) || directPanels[0];
-        const right = left === directPanels[0] ? directPanels[1] : directPanels[0];
-
-        return { left, right, group: panelGroup };
+        return { left, right, group };
     },
 
-    findPanelHeaderToolbar(panel) {
-        const header = panel.querySelector(':scope > div.h-9.border-b');
+    findPanelHeaderToolbar(panel, side) {
+        if (!panel) {
+            return null;
+        }
+
+        let header = null;
+        if (side === 'right') {
+            const tab = panel.querySelector('[data-ui="qa-instance-tab"], [data-ui="qa-verifier-tab"]');
+            header = tab ? tab.closest('div.h-9.border-b') : null;
+        }
+        if (!header) {
+            header = panel.querySelector('div.h-9.border-b');
+        }
         if (!header) {
             return null;
         }
+
+        const rows = header.querySelectorAll('div.flex');
+        for (const row of rows) {
+            if (row.classList.contains('items-center') && row.classList.contains('justify-between')) {
+                return row;
+            }
+        }
+
         return (
+            header.querySelector('div.flex.items-center.justify-between') ||
             header.querySelector('div.flex.w-full.items-center.justify-between') ||
-            header.querySelector('div.flex.w-full.items-center')
+            header.querySelector('div.flex.items-center.justify-between.w-full') ||
+            header.querySelector('div.flex.w-full.items-center') ||
+            header.querySelector('div.flex.items-center')
         );
     },
 
@@ -117,11 +149,14 @@ const plugin = {
             '  width: auto !important;',
             '  overflow: hidden !important;',
             '}',
-            '[data-panel][data-fleet-collapsed="true"] > :not(:first-child) {',
+            '[data-panel][data-fleet-collapsed="true"] * {',
             '  display: none !important;',
             '}',
-            '[data-panel][data-fleet-collapsed="true"] > :first-child *:not([' + TOGGLE_MARKER + '="true"]) {',
-            '  display: none !important;',
+            '[data-panel][data-fleet-collapsed="true"] [data-fleet-pane-header="true"] {',
+            '  display: flex !important;',
+            '}',
+            '[data-panel][data-fleet-collapsed="true"] [' + TOGGLE_MARKER + '="true"] {',
+            '  display: inline-flex !important;',
             '}',
             '[data-panel-group][data-fleet-has-collapsed] > [data-panel]:not([data-fleet-collapsed="true"]) {',
             '  flex: 1 1 100% !important;',
@@ -142,6 +177,11 @@ const plugin = {
     },
 
     ensureToggleButton(side, state, toolbar) {
+        const header = toolbar.closest('div.h-9.border-b');
+        if (header) {
+            header.setAttribute('data-fleet-pane-header', 'true');
+        }
+
         let btn = toolbar.querySelector('[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"]');
         if (btn && btn.getAttribute('data-fleet-plugin') !== this.id) {
             btn.remove();
