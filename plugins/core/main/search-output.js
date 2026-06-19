@@ -5440,7 +5440,7 @@ const searchOutputMethods = {
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
             <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
                 <span class="wf-dash-card-action-inner">
-                    <span class="wf-dash-card-action-label">Add to Diff</span>
+                    <span class="wf-dash-card-action-label">Diff</span>
                 </span>
             </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--get-verifier" data-wf-dash-get-verifier="1" data-item-id="${dashEscHtml(itemId)}" title="Get verifier" aria-label="Get verifier">
@@ -8905,7 +8905,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.12',
+    _version: '2.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
