@@ -8167,17 +8167,18 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
-        return `
-            <div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}
-                    </div>
-                    ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
-                </div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                ${taskActionsHtml}
-            </div>`;
+        const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, versionActionBadge || '');
+        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+            + taskActionsHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _resultCardHtml(item) {
@@ -8197,21 +8198,23 @@ const searchOutputMethods = {
         const promptBody = promptText
             ? this._dashHighlightedHtml(promptText, hq, cs, fz, rx)
             : '—';
-        let bodyHtml = `
-            <div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                        ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
-                    </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
-                </div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-            </div>`;
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
+        const blockId = 'version:' + itemId + ':quick';
+        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}`;
+        const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        let promptSectionHtml = this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+        );
+        let bodyHtml;
         if (item.qaFeedback) {
             bodyHtml = taskActionsHtml;
         } else {
-            bodyHtml += taskActionsHtml;
+            bodyHtml = promptSectionHtml + taskActionsHtml;
         }
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
@@ -8890,7 +8893,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.10',
+    _version: '2.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
