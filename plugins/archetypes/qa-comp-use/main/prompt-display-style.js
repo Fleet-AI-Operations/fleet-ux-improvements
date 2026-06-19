@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -407,9 +407,30 @@ const plugin = {
         return button;
     },
 
+    findCopyButtonAnchor(section) {
+        const fleetCopy = section.querySelector('[data-fleet-copy-prompt="true"]');
+        if (fleetCopy) {
+            return fleetCopy;
+        }
+
+        const header = section.querySelector('.flex.items-center.justify-between');
+        const searchRoot = header
+            ? header.querySelector('.flex.items-center.gap-2') || header
+            : section;
+
+        const buttons = searchRoot.querySelectorAll('button');
+        for (const btn of buttons) {
+            const text = btn.textContent.trim();
+            if (text === 'Copy') {
+                return btn;
+            }
+        }
+        return null;
+    },
+
     ensureControls(section, displayEl, state) {
-        const labelEl = this.findPromptLabelEl(section);
-        if (!labelEl) {
+        const copyAnchor = this.findCopyButtonAnchor(section);
+        if (!copyAnchor) {
             return;
         }
 
@@ -453,7 +474,7 @@ const plugin = {
         controls.appendChild(fontLabel);
         controls.appendChild(fontInput);
 
-        labelEl.insertAdjacentElement('afterend', controls);
+        copyAnchor.insertAdjacentElement('afterend', controls);
 
         const appendResetButton = (textBtn, bgBtn) => {
             const resetBtn = this.makeResetBtn('Reset to defaults', () => {
