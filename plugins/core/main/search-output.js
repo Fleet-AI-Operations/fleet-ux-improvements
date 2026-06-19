@@ -319,6 +319,40 @@ function dashProblemCreationDurationText(seconds) {
     return parts.join(', ');
 }
 
+function dashTimestampWithDurationParts(iso, durationSeconds) {
+    const formatted = dashFormatCreatedAt(iso);
+    const ago = dashCreatedTabRelativeAgo(iso);
+    const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
+    const durationText = Number.isFinite(durationSec) && durationSec >= 0
+        ? dashProblemCreationDurationText(durationSec)
+        : '';
+    return { formatted, ago, durationText };
+}
+
+function dashTimestampWithDurationHtml(iso, durationSeconds) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const regular = 'color: var(--foreground, #0f172a);';
+    const parts = [`<span style="${regular}">${dashEscHtml(formatted)}</span>`];
+    if (ago) {
+        parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+    }
+    if (durationText) {
+        parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+    }
+    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+}
+
+function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    let text = String(label || '').trim();
+    if (text) text += ' ';
+    text += formatted;
+    if (ago) text += ` (${ago})`;
+    if (durationText) text += ` in ${durationText}`;
+    return text;
+}
+
 /** PostgREST may return an embed as one object or an array — normalize to a single row. */
 function dashFirstEmbed(embed) {
     if (!embed) return null;
@@ -5392,28 +5426,15 @@ const searchOutputMethods = {
 
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
-        const formatted = dashFormatCreatedAt(iso);
-        const ago = dashCreatedTabRelativeAgo(iso);
         const creationSec = task && task.initialCreationTimeSeconds;
-        const durationText = (creationSec != null && Number.isFinite(Number(creationSec)))
-            ? dashProblemCreationDurationText(Number(creationSec))
-            : '';
-        const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
-        const regular = 'color: var(--foreground, #0f172a);';
-        const parts = [
-            `<span style="${this._labelStyle()}">Created</span>`,
-            `<span style="${regular}">${dashEscHtml(formatted)}</span>`
-        ];
-        if (ago) {
-            parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
-        }
-        if (durationText) {
-            parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
-        }
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
-        let label = `Created ${formatted}`;
-        if (ago) label += ` (${ago})`;
-        if (durationText) label += ` in ${durationText}`;
+        const durationSec = (creationSec != null && Number.isFinite(Number(creationSec)))
+            ? Number(creationSec)
+            : null;
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">`
+            + `<span style="${this._labelStyle()}">Created</span>`
+            + dashTimestampWithDurationHtml(iso, durationSec)
+            + '</span>';
+        const label = dashLabeledTimestampWithDurationPlainText('Created', iso, durationSec);
         return this._cardSurfaceTabHtml(inner, label);
     },
 
@@ -7747,7 +7768,7 @@ const searchOutputMethods = {
             </div>`;
         }).join('');
         const submittedHtml = qa.feedbackAt
-            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(qa.feedbackAt))
+            ? this._fieldGroupHtml('Submitted', dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds))
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`
@@ -8903,7 +8924,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.15',
+    _version: '2.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

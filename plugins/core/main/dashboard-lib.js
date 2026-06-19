@@ -338,7 +338,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.17',
+    _version: '2.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1610,7 +1610,11 @@ const plugin = {
         const isEscalated = !isPositive && dashLibIsQaEscalatedForFleetReview(data);
         const isFlaggedAsBugged = !isPositive && !isEscalated
             && dashLibIsQaFlaggedAsBugged(data, feedbackRow.feedback_content);
-        return {
+        const reviewDurationRaw = Number(data.qa_review_duration_seconds);
+        const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
+            ? reviewDurationRaw
+            : null;
+        const display = {
             isSystemFeedback: false,
             isPositive,
             isEscalated,
@@ -1625,6 +1629,8 @@ const plugin = {
             qaReviewerName: String((qaReviewer && qaReviewer.name) || ''),
             qaReviewerEmail: String((qaReviewer && qaReviewer.email) || '')
         };
+        if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        return display;
     },
 
     _dateInputValue(date) {
