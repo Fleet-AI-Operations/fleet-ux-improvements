@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.327",
+  "archetypesVersion": "10.328",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -422,9 +422,9 @@
         },
         {
           "name": "prompt-display-style.js",
-          "version": "1.4",
+          "version": "1.5",
           "log": false,
-          "hash": "sha256-74c519a913b4dac5b215d18e8dac848ba083e1ac0075b4d7d92ac20557981642"
+          "hash": "sha256-69227d004a0675dcf9530263db2b4598925d76a26996427906c645bccfda480a"
         },
         {
           "name": "top-nav-horizontal-scroll.js",
