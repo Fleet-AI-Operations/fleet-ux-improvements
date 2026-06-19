@@ -7442,6 +7442,18 @@ const searchOutputMethods = {
         return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
     },
 
+    _formatCreationTime(seconds) {
+        const total = Math.round(Number(seconds));
+        if (!Number.isFinite(total) || total < 0) return '';
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const parts = [];
+        if (h > 0) parts.push(h + (h === 1 ? ' hour' : ' hours'));
+        if (m > 0) parts.push(m + (m === 1 ? ' minute' : ' minutes'));
+        if (parts.length === 0) parts.push('< 1 minute');
+        return parts.join(', ');
+    },
+
     _dismissedBadgeHtml() {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
@@ -7989,11 +8001,16 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
+        const creationTimeSec = version.problemCreationTime;
+        const creationTimeHtml = creationTimeSec != null
+            ? this._fieldGroupHtml('Creation Time',
+                `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(this._formatCreationTime(creationTimeSec))}</span>`)
+            : '';
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}
+                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}${creationTimeHtml}
                     </div>
                     ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
@@ -8727,7 +8744,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

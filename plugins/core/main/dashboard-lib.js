@@ -309,7 +309,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.14',
+    _version: '2.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -440,7 +440,10 @@ const plugin = {
                     displayVersionNo: displayNo,
                     prompt,
                     envKey: String(v.env_key ?? ''),
-                    createdAt: String(v.created_at ?? '')
+                    createdAt: String(v.created_at ?? ''),
+                    problemCreationTime: (v.metadata && typeof v.metadata.problem_creation_time === 'number')
+                        ? v.metadata.problem_creation_time
+                        : null
                 });
                 prevPrompt = prompt;
             }
