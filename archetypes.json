@@ -1,7 +1,7 @@
 {
   "version": "9.5.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.316",
+  "archetypesVersion": "10.317",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -452,9 +452,9 @@
         },
         {
           "name": "toggle-main-panels.js",
-          "version": "1.1",
+          "version": "1.2",
           "log": false,
-          "hash": "sha256-9658b5eb5b2cc268b4e3854612775de4c0caee115a22eb1ac884204e1748d207"
+          "hash": "sha256-0288d09cfd4e708fe8afa4c8d5d9df53c9784d154f52844a5ec5335bd4cf84fc"
         }
       ]
     },

@@ -3,12 +3,14 @@
 
 const STYLE_ID = 'fleet-qa-toggle-main-panels';
 const TOGGLE_MARKER = 'data-fleet-pane-toggle';
+const SLIVER_MARKER = 'data-fleet-pane-sliver';
+const COLLAPSED_STRIP_WIDTH = '2.75rem';
 
 const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -53,6 +55,7 @@ const plugin = {
         this.ensureToggleButton('left', state, leftToolbar);
         this.ensureToggleButton('right', state, rightToolbar);
         this.applyCollapsedState(state, panels);
+        this.relocateToggleButtons(state, panels);
         this.updateButtonLabels(state);
 
         if (!state.activationLogged) {
@@ -143,24 +146,43 @@ const plugin = {
         style.setAttribute('data-fleet-plugin', this.id);
         style.textContent = [
             '[data-panel][data-fleet-collapsed="true"] {',
-            '  flex: 0 0 auto !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 5.5rem !important;',
-            '  width: auto !important;',
+            '  flex: 0 0 ' + COLLAPSED_STRIP_WIDTH + ' !important;',
+            '  min-width: ' + COLLAPSED_STRIP_WIDTH + ' !important;',
+            '  max-width: ' + COLLAPSED_STRIP_WIDTH + ' !important;',
+            '  width: ' + COLLAPSED_STRIP_WIDTH + ' !important;',
             '  overflow: hidden !important;',
             '}',
-            '[data-panel][data-fleet-collapsed="true"] * {',
+            '[data-panel][data-fleet-collapsed="true"] > *:not([' + SLIVER_MARKER + '="true"]) {',
             '  display: none !important;',
             '}',
-            '[data-panel][data-fleet-collapsed="true"] [data-fleet-pane-header="true"] {',
-            '  display: flex !important;',
+            '[' + SLIVER_MARKER + '="true"] {',
+            '  display: none;',
             '}',
-            '[data-panel][data-fleet-collapsed="true"] [' + TOGGLE_MARKER + '="true"] {',
-            '  display: inline-flex !important;',
+            '[data-panel][data-fleet-collapsed="true"] > [' + SLIVER_MARKER + '="true"] {',
+            '  display: flex !important;',
+            '  flex-direction: column !important;',
+            '  align-items: center !important;',
+            '  justify-content: flex-start !important;',
+            '  width: 100% !important;',
+            '  height: 100% !important;',
+            '  min-height: 100% !important;',
+            '  padding: 0.35rem 0.15rem !important;',
+            '  box-sizing: border-box !important;',
+            '  background: var(--background, #fff) !important;',
+            '  border-right: 1px solid var(--border, #e5e5e5) !important;',
+            '}',
+            '[data-panel][data-fleet-collapsed="true"] [' + SLIVER_MARKER + '="true"] [' + TOGGLE_MARKER + '="true"] {',
+            '  writing-mode: vertical-rl !important;',
+            '  text-orientation: mixed !important;',
+            '  white-space: nowrap !important;',
+            '  height: auto !important;',
+            '  min-height: 3.5rem !important;',
+            '  padding: 0.5rem 0.25rem !important;',
             '}',
             '[data-panel-group][data-fleet-has-collapsed] > [data-panel]:not([data-fleet-collapsed="true"]) {',
-            '  flex: 1 1 100% !important;',
-            '  max-width: 100% !important;',
+            '  flex: 1 1 auto !important;',
+            '  min-width: 0 !important;',
+            '  max-width: none !important;',
             '}',
             '[data-panel-group][data-fleet-has-collapsed] > [data-resize-handle][data-panel-group-direction="horizontal"] {',
             '  display: none !important;',
@@ -201,8 +223,54 @@ const plugin = {
                 e.preventDefault();
                 this.onToggleClick(side, state);
             });
+            btn._fleetToolbar = toolbar;
             toolbar.appendChild(btn);
+        } else if (!btn._fleetToolbar) {
+            btn._fleetToolbar = toolbar;
         }
+    },
+
+    ensureCollapseSliver(panel) {
+        let sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"]');
+        if (!sliver) {
+            sliver = document.createElement('div');
+            sliver.setAttribute(SLIVER_MARKER, 'true');
+            sliver.setAttribute('data-fleet-plugin', this.id);
+            panel.insertBefore(sliver, panel.firstChild);
+        }
+        return sliver;
+    },
+
+    relocateToggleButtons(state, panels) {
+        ['left', 'right'].forEach((side) => {
+            const panel = side === 'left' ? panels.left : panels.right;
+            if (!panel) {
+                return;
+            }
+
+            const btn = panel.querySelector(
+                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
+            );
+            if (!btn) {
+                return;
+            }
+
+            const collapsed = state.hiddenPane === side;
+            const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"]');
+
+            if (collapsed) {
+                const targetSliver = this.ensureCollapseSliver(panel);
+                if (btn.parentElement !== targetSliver) {
+                    targetSliver.appendChild(btn);
+                }
+            } else if (btn._fleetToolbar && btn.parentElement !== btn._fleetToolbar) {
+                btn._fleetToolbar.appendChild(btn);
+            }
+
+            if (!collapsed && sliver && !sliver.contains(btn)) {
+                sliver.remove();
+            }
+        });
     },
 
     onToggleClick(side, state) {
@@ -220,6 +288,7 @@ const plugin = {
         }
         const panels = this.getPanels();
         this.applyCollapsedState(state, panels);
+        this.relocateToggleButtons(state, panels);
         this.updateButtonLabels(state);
     },
 
