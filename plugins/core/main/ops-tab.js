@@ -183,7 +183,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.18',
+    _version: '7.19',
     phase: 'core',
     enabledByDefault: true,
 
@@ -314,6 +314,7 @@ const plugin = {
         this._subscribeOpsTaskDataActionCapture();
         this._subscribeOpsExpertActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
+        this._subscribeOpsTeamDashboardActionStorageSync();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
         }
@@ -1846,6 +1847,60 @@ const plugin = {
         }
     },
 
+    _reloadOpsTeamDashboardActionsFromStorage() {
+        this._loadOpsTeamSearchActionFromStorage();
+        this._loadOpsTeamAddMemberActionFromStorage();
+        return !!this._opsTeamSearchActionCache.nextAction;
+    },
+
+    _subscribeOpsTeamDashboardActionStorageSync() {
+        const self = this;
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            if (!pageWindow || pageWindow.__wfOpsTeamActionStorageSynced) return;
+            pageWindow.addEventListener('storage', (e) => {
+                if (!e || !e.key) return;
+                if (e.key === OPS_TEAM_SEARCH_ACTION_STORAGE_KEY && e.newValue) {
+                    const routerState = pageWindow.localStorage
+                        ? pageWindow.localStorage.getItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY)
+                        : '';
+                    self._opsTeamSearchActionCache = {
+                        nextAction: e.newValue,
+                        routerState: routerState || ''
+                    };
+                    Logger.debug('ops-tab: team search action synced from storage event (' + e.newValue.slice(0, 12) + '…)');
+                } else if (e.key === OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY && e.newValue) {
+                    const routerState = pageWindow.localStorage
+                        ? pageWindow.localStorage.getItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY)
+                        : '';
+                    self._opsTeamAddMemberActionCache = {
+                        nextAction: e.newValue,
+                        routerState: routerState || ''
+                    };
+                    Logger.debug('ops-tab: team add-member action synced from storage event (' + e.newValue.slice(0, 12) + '…)');
+                } else if (e.key === OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY && e.newValue
+                    && self._opsTeamSearchActionCache.nextAction) {
+                    self._opsTeamSearchActionCache.routerState = e.newValue;
+                } else if (e.key === OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY && e.newValue
+                    && self._opsTeamAddMemberActionCache.nextAction) {
+                    self._opsTeamAddMemberActionCache.routerState = e.newValue;
+                }
+            });
+            pageWindow.__wfOpsTeamActionStorageSynced = true;
+            Logger.debug('ops-tab: team dashboard action storage sync listener installed');
+        } catch (e) {
+            Logger.debug('ops-tab: team dashboard action storage sync failed', e);
+        }
+    },
+
+    _openOpsTeamPageInBackground() {
+        const pageWindow = this._getOpsPageWindow();
+        const opened = pageWindow.open(OPS_TEAM_SEARCH_URL, '_blank', 'noopener,noreferrer');
+        pageWindow.focus();
+        Logger.log('ops-tab: team page opened in background tab for credential refresh');
+        return opened;
+    },
+
     _persistOpsTeamSearchAction({ nextAction, routerState }) {
         if (!nextAction) return;
         const changed = nextAction !== this._opsTeamSearchActionCache.nextAction;
@@ -2105,7 +2160,10 @@ const plugin = {
     },
 
     _renderOpsTeamSearchActionRefreshBannerHtml() {
-        const teamUrl = OPS_TEAM_SEARCH_URL;
+        const btnStyle = [
+            'display: inline-block;padding: 8px 14px;font-size: 13px;font-weight: 600;',
+            'border-radius: 6px;cursor: pointer;border: 1px solid #dc2626;'
+        ].join('');
         return [
             '<div id="wf-ops-team-search-action-refresh-banner" style="',
             'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: #fee2e2;',
@@ -2120,18 +2178,43 @@ const plugin = {
             '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
             '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
-            'Open the Team page, run a member search or add a member once, then return here and try again.',
+            'Open the Team page in a new tab (it refreshes credentials automatically), then click ',
+            '<strong>Retry search</strong> here.',
             '</p>',
+            '<p id="wf-ops-team-search-stale-retry-status" style="display: none; font-size: 12px; color: #b91c1c; margin: 8px 0 0 0; line-height: 1.45;"></p>',
             '</div>',
             '</div>',
-            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
-            '<a href="', this._opsEscapeAttr(teamUrl), '" target="_blank" rel="noopener noreferrer" id="wf-ops-team-search-go-now" style="',
-            'display: inline-block;padding: 8px 14px;font-size: 13px;font-weight: 600;',
-            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
-            'cursor: pointer;text-decoration: none;">Go now</a>',
+            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">',
+            '<button type="button" id="wf-ops-team-search-open-team" style="',
+            btnStyle,
+            'color: #991b1b;background: #fef2f2;">Open Team page</button>',
+            '<button type="button" id="wf-ops-team-search-retry-btn" style="',
+            btnStyle,
+            'color: #fff;background: #dc2626;">Retry search</button>',
             '</div>',
             '</div>'
         ].join('');
+    },
+
+    _setOpsTeamSearchStaleRetryStatus(modal, message) {
+        const banner = this._opsQuery(modal, '#wf-ops-team-search-action-refresh-banner', 'teamSearchStaleRetryStatus');
+        if (!banner) return;
+        const statusEl = banner.querySelector('#wf-ops-team-search-stale-retry-status');
+        if (!statusEl) return;
+        if (message) {
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+        } else {
+            statusEl.textContent = '';
+            statusEl.style.display = 'none';
+        }
+    },
+
+    _clearOpsTeamSearchStaleBanner(modal) {
+        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchStaleClear');
+        const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStalePlaceholderRestore');
+        if (cards) cards.innerHTML = '';
+        if (placeholder) placeholder.style.display = '';
     },
 
     _showOpsTeamSearchActionRefreshBanner(modal) {
@@ -2150,15 +2233,35 @@ const plugin = {
                 outputWrap.appendChild(cards);
             }
             cards.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
-            const goNow = cards.querySelector('#wf-ops-team-search-go-now');
-            if (goNow) {
-                goNow.addEventListener('click', () => {
-                    Logger.log('ops-tab: team search refresh link opened (new tab)');
+            const self = this;
+            const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
+            if (openTeamBtn) {
+                openTeamBtn.addEventListener('click', () => {
+                    self._openOpsTeamPageInBackground();
+                });
+            }
+            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => {
+                    void self._handleOpsTeamSearchCredentialRetry(modal);
                 });
             }
         }
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
-        Logger.info('ops-tab: team search refresh banner shown — user must visit /dashboard/team');
+        Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+    },
+
+    async _handleOpsTeamSearchCredentialRetry(modal) {
+        this._setOpsTeamSearchStaleRetryStatus(modal, '');
+        const hasSearchAction = this._reloadOpsTeamDashboardActionsFromStorage();
+        if (!hasSearchAction) {
+            this._setOpsTeamSearchStaleRetryStatus(modal,
+                'Credentials not ready yet — wait for the Team page to finish loading, then retry.');
+            Logger.debug('ops-tab: team search credential retry — no action in storage yet');
+            return;
+        }
+        Logger.log('ops-tab: team search credentials reloaded from storage — retrying search');
+        await this._handleOpsTeamSearch(modal);
     },
 
     async _fetchOpsTeamSearchPage(teamId, userId, query, offset, signal) {
@@ -3313,11 +3416,13 @@ const plugin = {
             return;
         }
 
+        this._reloadOpsTeamDashboardActionsFromStorage();
         if (!this._opsTeamSearchActionCache.nextAction) {
             this._showOpsTeamSearchActionRefreshBanner(modal);
             return;
         }
 
+        this._clearOpsTeamSearchStaleBanner(modal);
         this._injectOpsSpinnerStyle();
 
         this._abortOpsTeamSearchInFlight('new search started');
