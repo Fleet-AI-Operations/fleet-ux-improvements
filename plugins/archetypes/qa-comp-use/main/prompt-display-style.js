@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -257,11 +257,18 @@ const plugin = {
         };
     },
 
+    lineHeightForFontSize(fontSize) {
+        const size = this.clampFontSize(fontSize);
+        const ratio = size <= FONT_DEFAULT ? 1.5 : 1.5 + Math.min(0.4, (size - FONT_DEFAULT) * 0.03);
+        return String(Math.round(size * ratio)) + 'px';
+    },
+
     applyStyles(replica, prefs) {
         if (!replica) {
             return;
         }
         replica.style.fontSize = prefs.fontSize + 'px';
+        replica.style.lineHeight = this.lineHeightForFontSize(prefs.fontSize);
         replica.style.color = prefs.textColor;
         replica.style.backgroundColor = prefs.bgColor;
         if (prefs.bgColor && prefs.bgColor !== BG_DEFAULT && prefs.bgColor !== 'transparent') {
