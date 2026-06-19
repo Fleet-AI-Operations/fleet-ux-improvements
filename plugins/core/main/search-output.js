@@ -8260,7 +8260,7 @@ const searchOutputMethods = {
                 : 'Hydrate';
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
+        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
                 <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
@@ -8905,7 +8905,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.13',
+    _version: '2.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
