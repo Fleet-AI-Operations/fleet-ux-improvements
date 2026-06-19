@@ -37,6 +37,19 @@ const DASH_LIB_QA_HELPFULNESS_LABELS = {
     not_helpful: 'Not helpful',
     written_review: 'Written review'
 };
+const DASH_LIB_V1_CREATION_TIME_BUCKET_ORDER = [
+    'lt_5', '5_10', '11_20', '21_40', '41_60', '61_90', '91_120', 'gt_120'
+];
+const DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS = {
+    lt_5: '<5 minutes',
+    '5_10': '5-10 minutes',
+    '11_20': '11-20 minutes',
+    '21_40': '21-40 minutes',
+    '41_60': '41-60 minutes',
+    '61_90': '61-90 minutes',
+    '91_120': '91-120 minutes',
+    gt_120: '> 120 minutes'
+};
 
 const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
 const DASH_LIB_VERIFIER_FAILURE_BADGE = 'Verifier Generation Error';
@@ -305,11 +318,29 @@ function dashLibPassesDimension(values, selected, optionCount) {
     return values.some((value) => set.has(value));
 }
 
+function dashLibV1CreationTimeMinutes(seconds) {
+    const sec = Number(seconds);
+    if (!Number.isFinite(sec) || sec < 0) return null;
+    return Math.round(sec / 60);
+}
+
+function dashLibV1CreationTimeBucketId(minutes) {
+    if (!Number.isFinite(minutes) || minutes < 0) return null;
+    if (minutes < 5) return 'lt_5';
+    if (minutes <= 10) return '5_10';
+    if (minutes <= 20) return '11_20';
+    if (minutes <= 40) return '21_40';
+    if (minutes <= 60) return '41_60';
+    if (minutes <= 90) return '61_90';
+    if (minutes <= 120) return '91_120';
+    return 'gt_120';
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.15',
+    _version: '2.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -418,8 +449,14 @@ const plugin = {
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
+            V1_CREATION_TIME_BUCKET_ORDER: DASH_LIB_V1_CREATION_TIME_BUCKET_ORDER,
+            V1_CREATION_TIME_BUCKET_LABELS: DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS,
+            v1CreationTimeMinutes: dashLibV1CreationTimeMinutes,
+            v1CreationTimeBucketId: dashLibV1CreationTimeBucketId,
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
-            itemQaHelpfulness: bind(self._itemQaHelpfulness)
+            itemQaHelpfulness: bind(self._itemQaHelpfulness),
+            itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
+            itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -440,10 +477,7 @@ const plugin = {
                     displayVersionNo: displayNo,
                     prompt,
                     envKey: String(v.env_key ?? ''),
-                    createdAt: String(v.created_at ?? ''),
-                    problemCreationTime: (v.metadata && typeof v.metadata.problem_creation_time === 'number')
-                        ? v.metadata.problem_creation_time
-                        : null
+                    createdAt: String(v.created_at ?? '')
                 });
                 prevPrompt = prompt;
             }
@@ -835,6 +869,31 @@ const plugin = {
         return dashLibPassesDimension(this._itemQaHelpfulness(item, helpfulnessUi, currentUserId), effective, count);
     },
 
+    _itemV1CreationTimeMinutes(item) {
+        const task = item && item.task;
+        if (!task) return null;
+        const sec = task.initialCreationTimeSeconds;
+        return dashLibV1CreationTimeMinutes(sec);
+    },
+
+    _itemV1CreationTimeBuckets(item) {
+        const minutes = this._itemV1CreationTimeMinutes(item);
+        if (minutes == null) return [];
+        const bucketId = dashLibV1CreationTimeBucketId(minutes);
+        return bucketId ? [bucketId] : [];
+    },
+
+    _itemPassesV1CreationTimeFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.v1CreationTimeMinutes || [];
+        const count = (listBounds.v1CreationTimeMinutes || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemV1CreationTimeBuckets(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
@@ -860,6 +919,10 @@ const plugin = {
             passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
                 item, f, bounds, helpfulnessUi, undefined, currentUserId
             ));
+        }
+        const v1CreationTimeCount = (bounds.v1CreationTimeMinutes || []).length;
+        if (v1CreationTimeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesV1CreationTimeFilter(item, f, bounds));
         }
         const queryActive = regex
             ? lib.isRegexQueryActive(promptText)
@@ -1095,6 +1158,7 @@ const plugin = {
         );
         result.promptHistory = new Set();
         result.qaHelpfulness = new Set();
+        result.v1CreationTimeMinutes = new Set();
         return result;
     },
 
@@ -1134,6 +1198,18 @@ const plugin = {
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
+        const v1CreationTimeOptions = (options && options.v1CreationTimeMinutes) || [];
+        const irrelevantV1CreationTime = result.v1CreationTimeMinutes;
+        for (const { id } of v1CreationTimeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemV1CreationTimeBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantV1CreationTime.add(id);
+        }
         return result;
     },
 
@@ -1143,6 +1219,7 @@ const plugin = {
         );
         result.promptHistory = new Map();
         result.qaHelpfulness = new Map();
+        result.v1CreationTimeMinutes = new Map();
         return result;
     },
 
@@ -1166,6 +1243,11 @@ const plugin = {
         const selectedHelpfulness = effective.qaHelpfulness || [];
         if (allHelpfulness.length > 0 && selectedHelpfulness.length === 0) {
             effective.qaHelpfulness = [...allHelpfulness];
+        }
+        const allV1CreationTime = bounds.v1CreationTimeMinutes || [];
+        const selectedV1CreationTime = effective.v1CreationTimeMinutes || [];
+        if (allV1CreationTime.length > 0 && selectedV1CreationTime.length === 0) {
+            effective.v1CreationTimeMinutes = [...allV1CreationTime];
         }
         return effective;
     },
@@ -1206,6 +1288,18 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
             )).length;
             helpfulnessCounts.set(id, count);
+        }
+        const v1CreationTimeOptions = (options && options.v1CreationTimeMinutes) || [];
+        const v1CreationTimeCounts = result.v1CreationTimeMinutes;
+        for (const { id } of v1CreationTimeOptions) {
+            const count = items.filter((item) => (
+                this._itemV1CreationTimeBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, id)
+            )).length;
+            v1CreationTimeCounts.set(id, count);
         }
         return result;
     },

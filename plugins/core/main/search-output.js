@@ -119,13 +119,15 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
-    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' }
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
@@ -1107,6 +1109,11 @@ const searchOutputMethods = {
                 }
                 item.task.promptVersions = hist.promptVersions || [];
                 item.task.allFeedback = hist.allFeedback || [];
+                if (hist.initialCreationTimeSeconds != null) {
+                    item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
+                } else {
+                    delete item.task.initialCreationTimeSeconds;
+                }
                 if (item.selectedFeedbackId) {
                     const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                     if (entry && entry.display) item.qaFeedback = entry.display;
@@ -3403,7 +3410,8 @@ const searchOutputMethods = {
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
             promptHistory: (opts.promptHistory || []).map((h) => h.id),
-            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id)
+            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
+            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id)
         };
     },
 
@@ -3421,6 +3429,22 @@ const searchOutputMethods = {
             .map((id) => ({
                 id,
                 label: (lib.QA_HELPFULNESS_LABELS && lib.QA_HELPFULNESS_LABELS[id]) || id
+            }));
+    },
+
+    _buildV1CreationTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const bucketId of lib.itemV1CreationTimeBuckets(item)) {
+                present.add(bucketId);
+            }
+        }
+        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
             }));
     },
 
@@ -3932,6 +3956,7 @@ const searchOutputMethods = {
             this._getSearchableTeamCatalog()
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
+        options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -4038,6 +4063,9 @@ const searchOutputMethods = {
             case 'prompt_version_count':
                 if (!item.hydrated) return 1;
                 return this._displayPromptVersionCount(task);
+            case 'v1_creation_time_minutes':
+                if (!item.hydrated) return null;
+                return dashLib().itemV1CreationTimeMinutes(item);
             default:
                 return null;
         }
@@ -4219,6 +4247,7 @@ const searchOutputMethods = {
             returnTypes: [],
             promptHistory: [],
             qaHelpfulness: [],
+            v1CreationTimeMinutes: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -4864,6 +4893,11 @@ const searchOutputMethods = {
                     }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    if (hist.initialCreationTimeSeconds != null) {
+                        item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
+                    } else {
+                        delete item.task.initialCreationTimeSeconds;
+                    }
                     for (const entry of hist.allFeedback || []) {
                         if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
                             feedbackIdsToLoad.push(entry.id);
@@ -5606,7 +5640,8 @@ const searchOutputMethods = {
             'filter-prompt-ratings': 'Prompt rating',
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
-            'filter-return-types': 'Return types'
+            'filter-return-types': 'Return types',
+            'filter-v1-creation-time': 'v1 Creation Time Minutes'
         };
         return labels[scopeKey] || scopeKey;
     },
@@ -5965,7 +6000,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: []
+            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -6329,7 +6364,8 @@ const searchOutputMethods = {
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
+            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
+            'v1CreationTimeMinutes'
         ];
         for (const key of keys) {
             const boundIds = bounds[key] || [];
@@ -6859,7 +6895,8 @@ const searchOutputMethods = {
             ['taskIssues', bounds.taskIssues],
             ['returnTypes', bounds.returnTypes],
             ['promptHistory', bounds.promptHistory],
-            ['qaHelpfulness', bounds.qaHelpfulness]
+            ['qaHelpfulness', bounds.qaHelpfulness],
+            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes]
         ];
         for (const [key, boundIds] of dims) {
             if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
@@ -7454,6 +7491,36 @@ const searchOutputMethods = {
         return parts.join(', ');
     },
 
+    _initialCreationTimeHtml(task) {
+        const sec = task && task.initialCreationTimeSeconds;
+        if (sec == null || !Number.isFinite(Number(sec))) return '';
+        return this._fieldGroupHtml('Initial Creation Time',
+            `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(this._formatCreationTime(sec))}</span>`);
+    },
+
+    _cardHeaderMetaRowHtml(task) {
+        const initialCreationHtml = this._initialCreationTimeHtml(task);
+        const projectLink = task.projectId
+            ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
+            : '';
+        const rightStyle = initialCreationHtml
+            ? 'display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0;'
+            : 'flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;';
+        return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                    </div>
+                    ${initialCreationHtml
+            ? `<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; min-width: 0;">${initialCreationHtml}</div>`
+            : ''}
+                    <div style="${rightStyle}">
+                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                    </div>
+                </div>`;
+    },
+
     _dismissedBadgeHtml() {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
@@ -8001,16 +8068,11 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
-        const creationTimeSec = version.problemCreationTime;
-        const creationTimeHtml = creationTimeSec != null
-            ? this._fieldGroupHtml('Creation Time',
-                `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(this._formatCreationTime(creationTimeSec))}</span>`)
-            : '';
         return `
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}${creationTimeHtml}
+                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}
                     </div>
                     ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
@@ -8032,7 +8094,6 @@ const searchOutputMethods = {
         const cs = Boolean(item.highlightCaseSensitive);
         const fz = Boolean(item.highlightFuzzy);
         const rx = Boolean(item.highlightRegex);
-        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
         const promptText = task.prompt || '';
         const promptBody = promptText
             ? this._dashHighlightedHtml(promptText, hq, cs, fz, rx)
@@ -8055,16 +8116,7 @@ const searchOutputMethods = {
         }
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
-                    </div>
-                </div>
+                ${this._cardHeaderMetaRowHtml(task)}
                 ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
@@ -8169,8 +8221,6 @@ const searchOutputMethods = {
             renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
         }
 
-        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
-
         const reviewerBadges = allFeedback.length > 0
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
@@ -8208,16 +8258,7 @@ const searchOutputMethods = {
 
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
-                    </div>
-                </div>
+                ${this._cardHeaderMetaRowHtml(task)}
                 ${row2Html}
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
@@ -8744,7 +8785,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

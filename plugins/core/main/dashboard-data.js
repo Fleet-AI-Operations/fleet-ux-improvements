@@ -9,7 +9,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -114,6 +114,15 @@ const plugin = {
         ));
     },
 
+    _initialCreationTimeSeconds(rawVersions) {
+        const v1 = (rawVersions || []).find((row) => row && row.version_no === 1);
+        const meta = v1 && v1.metadata;
+        const sec = meta && typeof meta.problem_creation_time === 'number'
+            ? meta.problem_creation_time
+            : null;
+        return sec != null && Number.isFinite(sec) ? sec : null;
+    },
+
     async _fetchVersionsBatch(taskIds) {
         const versionRows = [];
         for (const chunk of this._pgInChunks(taskIds)) {
@@ -215,7 +224,12 @@ const plugin = {
             const built = taskFeedback.map((feedback) => this._buildFeedbackEntry(feedback, rawVersions, reviewerProfiles));
             const { entries: dedupedFeedback, idRemap } = lib.dedupeSystemFeedbackEntries(built);
             const allFeedback = this._sortFeedbackEntries(dedupedFeedback);
-            result.set(taskId, { promptVersions, allFeedback, systemFeedbackIdRemap: idRemap });
+            result.set(taskId, {
+                promptVersions,
+                allFeedback,
+                systemFeedbackIdRemap: idRemap,
+                initialCreationTimeSeconds: this._initialCreationTimeSeconds(rawVersions)
+            });
         }
 
         Logger.debug('dashboard-data: enrichment complete — '
