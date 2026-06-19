@@ -120,6 +120,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
+    { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
@@ -127,7 +128,8 @@ const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
-    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true },
+    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
@@ -3479,7 +3481,8 @@ const searchOutputMethods = {
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
             promptHistory: (opts.promptHistory || []).map((h) => h.id),
             qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
-            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id)
+            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id),
+            qaTimeMinutes: (opts.qaTimeMinutes || []).map((h) => h.id)
         };
     },
 
@@ -3505,6 +3508,22 @@ const searchOutputMethods = {
         const present = new Set();
         for (const item of scopeItems || []) {
             for (const bucketId of lib.itemV1CreationTimeBuckets(item)) {
+                present.add(bucketId);
+            }
+        }
+        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
+            }));
+    },
+
+    _buildQaTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const bucketId of lib.itemQaTimeMinutesBuckets(item)) {
                 present.add(bucketId);
             }
         }
@@ -4025,6 +4044,7 @@ const searchOutputMethods = {
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
         options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
+        options.qaTimeMinutes = this._buildQaTimeFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -4134,6 +4154,8 @@ const searchOutputMethods = {
             case 'v1_creation_time_minutes':
                 if (!item.hydrated) return null;
                 return dashLib().itemV1CreationTimeMinutes(item);
+            case 'qa_time_minutes':
+                return dashLib().itemQaTimeMinutes(item);
             default:
                 return null;
         }
@@ -4340,6 +4362,7 @@ const searchOutputMethods = {
             promptHistory: [],
             qaHelpfulness: [],
             v1CreationTimeMinutes: [],
+            qaTimeMinutes: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -5755,7 +5778,8 @@ const searchOutputMethods = {
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
             'filter-return-types': 'Return types',
-            'filter-v1-creation-time': 'v1 Creation Time Minutes'
+            'filter-v1-creation-time': 'v1 Creation Time Minutes',
+            'filter-qa-time': 'QA Time Minutes'
         };
         return labels[scopeKey] || scopeKey;
     },
@@ -6114,7 +6138,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: []
+            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -6540,7 +6564,7 @@ const searchOutputMethods = {
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
-            'v1CreationTimeMinutes'
+            'v1CreationTimeMinutes', 'qaTimeMinutes'
         ];
         for (const key of keys) {
             const boundIds = bounds[key] || [];
@@ -7072,7 +7096,8 @@ const searchOutputMethods = {
             ['returnTypes', bounds.returnTypes],
             ['promptHistory', bounds.promptHistory],
             ['qaHelpfulness', bounds.qaHelpfulness],
-            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes]
+            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes],
+            ['qaTimeMinutes', bounds.qaTimeMinutes]
         ];
         for (const [key, boundIds] of dims) {
             if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
@@ -8948,7 +8973,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.17',
+    _version: '2.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
