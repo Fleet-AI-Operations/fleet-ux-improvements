@@ -155,7 +155,7 @@
     {
       "file": "toggle-main-panels.js",
       "name": "Toggle Main Panels",
-      "description": "Hide or unhide the task detail pane; the environment pane expands to full width"
+      "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
     }
   ],
   "archetypes/qa-comp-use/dev": [],

@@ -111,6 +111,9 @@ const plugin = {
                 : Array.from(document.querySelectorAll('button'));
 
         for (const btn of buttons) {
+            if (btn.hasAttribute('data-fleet-pane-toggle')) {
+                continue;
+            }
             const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
             if (text === label) {
                 return btn;
