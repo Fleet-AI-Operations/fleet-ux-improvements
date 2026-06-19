@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.324",
+  "archetypesVersion": "10.327",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -447,14 +447,14 @@
         {
           "name": "show-verifier-on-run.js",
           "version": "1.2",
-          "hash": "sha256-73f6e96934291cfdf8af77412aa7765768aefe52114d32b4ba5428bbd6002a5a",
+          "hash": "sha256-d1650c9e4197b01cb558a43c863a3f08fe5ea52770aa70e19823ce6888d2debc",
           "log": false
         },
         {
           "name": "toggle-main-panels.js",
-          "version": "1.5",
+          "version": "1.8",
           "log": false,
-          "hash": "sha256-5098ffd6fd5a27a7e3adae50671bcf8eb371df1b4b94b73c0e18d7d63d536d09"
+          "hash": "sha256-8bb91912590ceff0ea7604e7b67326cbe72a3642dd2d447fa38473acc79803d7"
         }
       ]
     },
