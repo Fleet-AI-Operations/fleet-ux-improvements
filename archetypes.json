@@ -1,7 +1,7 @@
 {
-  "version": "9.5.2",
+  "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.319",
+  "archetypesVersion": "10.320",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "9.3",
-      "hash": "sha256-0aa3deac9ad2e719fbb410d43ae40830e907d65edcf3c269b3a3090830d1980d",
+      "version": "9.4",
+      "hash": "sha256-8a27d79abd6444972f6b51ced70352e8f1c18aecc746463ea3f59eed2df683a2",
       "log": false
     },
     {
