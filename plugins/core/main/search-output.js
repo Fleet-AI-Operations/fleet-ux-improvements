@@ -286,6 +286,39 @@ function dashRelativeAgo(iso) {
     return parts.join(', ') + ' ago';
 }
 
+function dashCreatedTabRelativeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalMins = Math.floor(diffMs / (1000 * 60));
+    const totalHours = Math.floor(totalMins / 60);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) {
+        let text = days + ' day' + (days === 1 ? '' : 's');
+        if (hours > 0) text += ', ' + hours + (hours === 1 ? ' hr' : ' hrs');
+        return text + ' ago';
+    }
+    if (totalHours > 0) {
+        return totalHours + (totalHours === 1 ? ' hr' : ' hrs') + ' ago';
+    }
+    const mins = Math.max(1, totalMins);
+    return mins + (mins === 1 ? ' min' : ' mins') + ' ago';
+}
+
+function dashProblemCreationDurationText(seconds) {
+    const total = Math.round(Number(seconds));
+    if (!Number.isFinite(total) || total < 0) return '';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const parts = [];
+    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
+    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
+    if (parts.length === 0 && total > 0) return '< 1 min';
+    return parts.join(', ');
+}
+
 /** PostgREST may return an embed as one object or an array — normalize to a single row. */
 function dashFirstEmbed(embed) {
     if (!embed) return null;
@@ -5348,9 +5381,28 @@ const searchOutputMethods = {
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashRelativeAgo(iso);
-        const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
-        return this._cardSurfaceTabHtml(this._plainTimestampHtml(iso, 'Created'), label);
+        const ago = dashCreatedTabRelativeAgo(iso);
+        const creationSec = task && task.initialCreationTimeSeconds;
+        const durationText = (creationSec != null && Number.isFinite(Number(creationSec)))
+            ? dashProblemCreationDurationText(Number(creationSec))
+            : '';
+        const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+        const regular = 'color: var(--foreground, #0f172a);';
+        const parts = [
+            `<span style="${this._labelStyle()}">Created</span>`,
+            `<span style="${regular}">${dashEscHtml(formatted)}</span>`
+        ];
+        if (ago) {
+            parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+        }
+        if (durationText) {
+            parts.push(`<span style="${muted}">, in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+        }
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+        let label = `Created ${formatted}`;
+        if (ago) label += ` (${ago})`;
+        if (durationText) label += `, in ${durationText}`;
+        return this._cardSurfaceTabHtml(inner, label);
     },
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
@@ -7479,41 +7531,15 @@ const searchOutputMethods = {
         return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
     },
 
-    _formatCreationTime(seconds) {
-        const total = Math.round(Number(seconds));
-        if (!Number.isFinite(total) || total < 0) return '';
-        const h = Math.floor(total / 3600);
-        const m = Math.floor((total % 3600) / 60);
-        const parts = [];
-        if (h > 0) parts.push(h + (h === 1 ? ' hour' : ' hours'));
-        if (m > 0) parts.push(m + (m === 1 ? ' minute' : ' minutes'));
-        if (parts.length === 0) parts.push('< 1 minute');
-        return parts.join(', ');
-    },
-
-    _initialCreationTimeHtml(task) {
-        const sec = task && task.initialCreationTimeSeconds;
-        if (sec == null || !Number.isFinite(Number(sec))) return '';
-        return this._fieldGroupHtml('Initial Creation Time',
-            `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(this._formatCreationTime(sec))}</span>`);
-    },
-
     _cardHeaderMetaRowHtml(task) {
-        const initialCreationHtml = this._initialCreationTimeHtml(task);
         const projectLink = task.projectId
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
             : '';
-        const rightStyle = initialCreationHtml
-            ? 'display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0;'
-            : 'flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
                         ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
                     </div>
-                    ${initialCreationHtml
-            ? `<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; min-width: 0;">${initialCreationHtml}</div>`
-            : ''}
-                    <div style="${rightStyle}">
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
@@ -8784,7 +8810,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.6',
+    _version: '2.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
