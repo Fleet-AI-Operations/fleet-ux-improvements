@@ -421,6 +421,12 @@
           "log": false
         },
         {
+          "name": "prompt-display-style.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-e224a991a1952995216395f29b1c4eae038b74e32cebc45f2687964ba10eecde"
+        },
+        {
           "name": "top-nav-horizontal-scroll.js",
           "version": "1.1",
           "hash": "sha256-ab65e41862ffac8e2377de8d40bd242761eb168fa5e9b4faee2c5d427ce20b75",
