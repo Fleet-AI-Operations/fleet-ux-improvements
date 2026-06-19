@@ -1,5 +1,5 @@
 // ============= copy-verifier-output.js =============
-// Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies successes/failures inside one markdown code fence (no blockquote prefixes).
+// Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies failures/successes as markdown with separate code fences per section.
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
@@ -12,7 +12,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -226,34 +226,38 @@ const plugin = {
         if (successes.length === 0 && failures.length === 0) {
             return null;
         }
+        const fenceFor = (content) => {
+            let maxRun = 0;
+            let run = 0;
+            for (let i = 0; i < content.length; i++) {
+                if (content[i] === '`') {
+                    run++;
+                    if (run > maxRun) maxRun = run;
+                } else {
+                    run = 0;
+                }
+            }
+            return '`'.repeat(Math.max(3, maxRun + 1));
+        };
         const lines = ['## Verifier'];
-        if (successes.length > 0) {
-            lines.push('#### Successes');
-            for (const t of successes) {
-                lines.push(`✅ ${t}`);
-            }
-        }
+        const sections = [];
         if (failures.length > 0) {
-            lines.push('');
-            lines.push('#### Failures');
-            for (const t of failures) {
-                lines.push(`❌ ${t}`);
-            }
+            sections.push({ label: 'Failures', items: failures });
         }
-        const body = lines.join('\n');
-        let maxRun = 0;
-        let run = 0;
-        for (let i = 0; i < body.length; i++) {
-            if (body[i] === '`') {
-                run++;
-                if (run > maxRun) maxRun = run;
-            } else {
-                run = 0;
-            }
+        if (successes.length > 0) {
+            sections.push({ label: 'Successes', items: successes });
         }
-        const fenceLen = Math.max(3, maxRun + 1);
-        const fence = '`'.repeat(fenceLen);
-        return `${fence}\n${body}\n${fence}`;
+        for (let i = 0; i < sections.length; i++) {
+            if (i > 0) {
+                lines.push('');
+            }
+            const { label, items } = sections[i];
+            const body = items.join('\n');
+            const fence = fenceFor(body);
+            lines.push(label);
+            lines.push(`${fence}\n${body}\n${fence}`);
+        }
+        return lines.join('\n');
     },
 
     getVerifierOutputText(container) {
