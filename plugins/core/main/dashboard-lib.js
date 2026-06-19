@@ -38,11 +38,10 @@ const DASH_LIB_QA_HELPFULNESS_LABELS = {
     written_review: 'Written review'
 };
 const DASH_LIB_V1_CREATION_TIME_BUCKET_ORDER = [
-    'lt_5', '5_10', '11_20', '21_40', '41_60', '61_90', '91_120', 'gt_120'
+    'lt_10', '11_20', '21_40', '41_60', '61_90', '91_120', 'gt_120'
 ];
 const DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS = {
-    lt_5: '<5 minutes',
-    '5_10': '5-10 minutes',
+    lt_10: '<10 minutes',
     '11_20': '11-20 minutes',
     '21_40': '21-40 minutes',
     '41_60': '41-60 minutes',
@@ -326,8 +325,7 @@ function dashLibV1CreationTimeMinutes(seconds) {
 
 function dashLibV1CreationTimeBucketId(minutes) {
     if (!Number.isFinite(minutes) || minutes < 0) return null;
-    if (minutes < 5) return 'lt_5';
-    if (minutes <= 10) return '5_10';
+    if (minutes < 10) return 'lt_10';
     if (minutes <= 20) return '11_20';
     if (minutes <= 40) return '21_40';
     if (minutes <= 60) return '41_60';
@@ -340,7 +338,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.16',
+    _version: '2.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
