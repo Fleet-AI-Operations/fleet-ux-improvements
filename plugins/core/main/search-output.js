@@ -5396,12 +5396,12 @@ const searchOutputMethods = {
             parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
         }
         if (durationText) {
-            parts.push(`<span style="${muted}">, in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+            parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
         }
         const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
         let label = `Created ${formatted}`;
         if (ago) label += ` (${ago})`;
-        if (durationText) label += `, in ${durationText}`;
+        if (durationText) label += ` in ${durationText}`;
         return this._cardSurfaceTabHtml(inner, label);
     },
 
@@ -8810,7 +8810,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.7',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
