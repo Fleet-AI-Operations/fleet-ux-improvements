@@ -6172,6 +6172,66 @@ const searchOutputMethods = {
         return this._state.disputeClaimUi[id];
     },
 
+    _getActionBlockCollapseUi(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id) return { collapsed: false };
+        if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+        if (!this._state.actionBlockUi[id]) {
+            this._state.actionBlockUi[id] = { collapsed: false };
+        }
+        return this._state.actionBlockUi[id];
+    },
+
+    _actionBlockBodyHiddenStyle(blockId) {
+        return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
+    },
+
+    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml) {
+        const rightSection = rightHtml
+            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml}</div>`
+            : '';
+        return `<div style="display: flex; align-items: stretch; gap: 0; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; flex-shrink: 0;">${leftHtml}</div>`
+            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
+            + rightSection
+            + `</div>`;
+    },
+
+    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml) {
+        const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
+        const escBlockId = dashEscHtml(blockId);
+        const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
+        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr} style="${shellStyle}">`
+            + headerRowHtml
+            + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
+            + `</div>`;
+    },
+
+    _patchActionBlock(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id || !this._modal) return false;
+        const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
+        const block = this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
+        if (!block) return false;
+        const body = block.querySelector('[data-wf-dash-action-block-body]');
+        if (!body) return false;
+        body.style.display = this._getActionBlockCollapseUi(id).collapsed ? 'none' : 'flex';
+        return true;
+    },
+
+    _toggleActionBlockCollapse(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id) return;
+        const ui = this._getActionBlockCollapseUi(id);
+        ui.collapsed = !ui.collapsed;
+        if (!this._patchActionBlock(id)) {
+            const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
+            const block = this._modal && this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
+            const itemId = block && block.getAttribute('data-wf-dash-item-id');
+            if (itemId) this._patchTaskCard(itemId);
+        }
+    },
+
     async _claimDispute(disputeId, itemId) {
         const id = String(disputeId || '').trim();
         if (!id || !itemId) return;
@@ -6895,6 +6955,7 @@ const searchOutputMethods = {
         this._state.cardUi = {};
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
+        this._state.actionBlockUi = {};
         this._state.userStoryUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
@@ -7625,7 +7686,7 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
-    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId, itemId) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
@@ -7692,21 +7753,24 @@ const searchOutputMethods = {
                 </div>
             </div>`
             : '';
-        return `
-            <div style="margin-top: 12px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>
-                        ${submittedHtml}
-                        ${promptRatingHtml}
-                    </div>
-                    ${statusLabel ? `<div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>` : ''}
-                </div>
-                ${reviewerHtml}
-                ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
-                ${blocks}
-                ${helpfulnessHtml}
-            </div>`;
+        const blockId = feedbackId
+            ? ('qa:' + feedbackId)
+            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
+            + submittedHtml
+            + promptRatingHtml;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
+        const bodyHtml = `${reviewerHtml}`
+            + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
+            + blocks
+            + helpfulnessHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _feedbackActionBadgeHtml(entry, compact) {
@@ -7815,43 +7879,44 @@ const searchOutputMethods = {
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
                 : '';
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                                <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                                ${resolvedHtml}
-                            </div>
-                            <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
-                        </div>
-                        ${resolverHtml}
+            const resBlockId = display.id ? ('dispute-res:' + display.id) : ('dispute-res:unknown:' + itemId);
+            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
+            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
+            const resBodyHtml = `${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>
-                    </div>
+                        </div>`;
+            resolutionHtml = `
+                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                    ${this._actionBlockShellHtml(
+                resBlockId,
+                itemId,
+                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
+                resHeaderRow,
+                resBodyHtml
+            )}
                 </div>`;
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const disputeRightHtml = (categoryHtml || claimControlHtml)
-            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">${categoryHtml}${claimControlHtml}</div>`
+            ? `${categoryHtml}${claimControlHtml}`
             : '';
-        return `
-            <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
-                        ${submittedHtml}
-                    </div>
-                    ${disputeRightHtml}
-                </div>
-                <div>
+        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
+        const bodyHtml = `<div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
                     <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
                 </div>
-                ${resolutionHtml}
-            </div>`;
+                ${resolutionHtml}`;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _noneProvidedBadgeHtml() {
@@ -7908,22 +7973,23 @@ const searchOutputMethods = {
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
                 : '';
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                                <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                                ${resolvedHtml}
-                            </div>
-                            <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
-                        </div>
-                        ${resolverHtml}
+            const resBlockId = display.id ? ('flag-res:' + display.id) : ('flag-res:unknown:' + itemId);
+            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
+            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
+            const resBodyHtml = `${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Resolution Note')}${this._copyIconHtml(display.resolutionNote)}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>
-                    </div>
+                        </div>`;
+            resolutionHtml = `
+                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                    ${this._actionBlockShellHtml(
+                resBlockId,
+                itemId,
+                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
+                resHeaderRow,
+                resBodyHtml
+            )}
                 </div>`;
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
@@ -7933,21 +7999,21 @@ const searchOutputMethods = {
                 </div>
             </div>`
             : '';
-        return `
-            <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>
-                        ${submittedHtml}
-                    </div>
-                    <div style="flex-shrink: 0; margin-left: auto;"><span style="${alertBadge}">Flagged for Review</span></div>
-                </div>
-                ${flaggerHtml}
+        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`);
+        const bodyHtml = `${flaggerHtml}
                 ${issuesHtml}
                 ${reviewerNoteHtml}
                 ${resolutionHtml}
-                ${flagResolutionInputHtml}
-            </div>`;
+                ${flagResolutionInputHtml}`;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _orphanFallbackDisplayNo(allFeedback, promptVersions) {
@@ -8018,7 +8084,7 @@ const searchOutputMethods = {
             if (entry.display) {
                 blocks.push({
                     sortAt: this._feedbackEntryAt(entry),
-                    html: this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id)
+                    html: this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id, itemId)
                 });
             }
             for (const dispute of entry.disputes || []) {
@@ -8031,7 +8097,7 @@ const searchOutputMethods = {
         if (fallbackFeedback) {
             blocks.push({
                 sortAt: String(fallbackFeedback.feedbackAt || ''),
-                html: this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null)
+                html: this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null, itemId)
             });
         }
         for (const dispute of orphanDisputes || []) {
@@ -8059,7 +8125,7 @@ const searchOutputMethods = {
         if (item.qaFeedback) {
             blocks.push({
                 sortAt: String(item.qaFeedback.feedbackAt || ''),
-                html: this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null)
+                html: this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null, itemId)
             });
         }
         for (const dispute of item.disputes || []) {
@@ -8620,6 +8686,12 @@ function attachSearchOutputListeners(modal, dash) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
                 return;
             }
+            const actionBlockToggle = e.target.closest('[data-wf-dash-action-block-toggle]');
+            if (actionBlockToggle && modal.contains(actionBlockToggle) && e.target === actionBlockToggle) {
+                const blockId = actionBlockToggle.getAttribute('data-wf-dash-action-block-toggle');
+                if (blockId) dash._toggleActionBlockCollapse(blockId);
+                return;
+            }
             const candidate = e.target.closest('[data-wf-dash-candidate]');
             if (candidate && modal.contains(candidate)) {
                 const id = candidate.getAttribute('data-wf-dash-candidate');
@@ -8818,7 +8890,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.9',
+    _version: '2.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
