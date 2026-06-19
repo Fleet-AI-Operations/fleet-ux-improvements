@@ -5376,7 +5376,6 @@ const searchOutputMethods = {
         let base = 'height: ' + DASH_CARD_TAB_HEIGHT
             + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
             + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
-        if (opts.fullWidth) base += ' width: 100%; min-width: 0;';
         return base;
     },
 
@@ -5420,13 +5419,12 @@ const searchOutputMethods = {
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: flex; align-items: stretch; width: 100%; min-width: 0;">`
+        const inner = `<span style="display: inline-flex; align-items: stretch;">`
             + this._copyChipHtml(key, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
-            noHorizontalPadding: true,
-            fullWidth: true
+            noHorizontalPadding: true
         });
     },
 
@@ -8905,7 +8903,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.14',
+    _version: '2.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
