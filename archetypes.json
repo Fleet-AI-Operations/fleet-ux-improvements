@@ -449,6 +449,12 @@
           "version": "1.2",
           "hash": "sha256-73f6e96934291cfdf8af77412aa7765768aefe52114d32b4ba5428bbd6002a5a",
           "log": false
+        },
+        {
+          "name": "toggle-main-panels.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-bce4d7c563c1214dfc9632bdd2730ebf2dbf954025cdc4ec0681df663cf48b7f"
         }
       ]
     },
