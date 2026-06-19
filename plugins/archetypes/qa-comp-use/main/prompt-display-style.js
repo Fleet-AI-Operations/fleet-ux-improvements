@@ -8,7 +8,7 @@ const REPLICA_MARKER = 'data-fleet-prompt-display-replica';
 const JSCOLOR_VENDOR_PATH = 'shared/vendor/jscolor.min.js';
 
 const FONT_MIN = 8;
-const FONT_MAX = 20;
+const FONT_MAX = 30;
 const FONT_DEFAULT = 14;
 const BG_DEFAULT = 'transparent';
 
@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -239,6 +239,14 @@ const plugin = {
         return window.getComputedStyle(displayEl).color || '#000000';
     },
 
+    getDefaultPrefs(displayEl) {
+        return {
+            fontSize: FONT_DEFAULT,
+            textColor: this.getDefaultTextColor(displayEl),
+            bgColor: BG_DEFAULT
+        };
+    },
+
     getPrefs(displayEl) {
         const storedText = Storage.get(this.storageKeys.textColor, null);
         const storedBg = Storage.get(this.storageKeys.bgColor, null);
@@ -317,6 +325,67 @@ const plugin = {
         }
     },
 
+    makeResetBtn(title, onClick) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '↺';
+        btn.title = title;
+        btn.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 5px;
+            border: 1px solid var(--border, #e2e8f0);
+            background: var(--accent, #f1f5f9);
+            color: var(--foreground, #111);
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            transition: background 0.15s;
+            width: 20px;
+            height: 20px;
+            font-size: 13px;
+            color: #888;
+        `;
+        btn.addEventListener('mouseenter', () => {
+            btn.style.background = 'var(--accent-foreground, #d4d8de)';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background = 'var(--accent, #f1f5f9)';
+        });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onClick();
+        });
+        return btn;
+    },
+
+    resetToDefaults(section, displayEl, prefs, fontInput, textBtn, bgBtn) {
+        Storage.delete(this.storageKeys.fontSize);
+        Storage.delete(this.storageKeys.textColor);
+        Storage.delete(this.storageKeys.bgColor);
+
+        const defaults = this.getDefaultPrefs(displayEl);
+        prefs.fontSize = defaults.fontSize;
+        prefs.textColor = defaults.textColor;
+        prefs.bgColor = defaults.bgColor;
+
+        fontInput.value = String(defaults.fontSize);
+
+        if (textBtn && textBtn.jscolor) {
+            textBtn.jscolor.fromString(this.rgbToHex(defaults.textColor));
+        }
+        if (bgBtn && bgBtn.jscolor) {
+            bgBtn.jscolor.fromString('rgba(0,0,0,0)');
+        }
+
+        const liveReplica = section.querySelector('[' + REPLICA_MARKER + '="true"]');
+        this.applyStyles(liveReplica, prefs);
+        Logger.log(`${this.id}: reset to defaults (font=${defaults.fontSize}px)`);
+    },
+
     createColorButton(kind, initialColor, alpha) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -386,6 +455,13 @@ const plugin = {
 
         labelEl.insertAdjacentElement('afterend', controls);
 
+        const appendResetButton = (textBtn, bgBtn) => {
+            const resetBtn = this.makeResetBtn('Reset to defaults', () => {
+                this.resetToDefaults(section, displayEl, prefs, fontInput, textBtn, bgBtn);
+            });
+            controls.appendChild(resetBtn);
+        };
+
         this.ensureJscolor(state)
             .then((jscolor) => {
                 if (!controls.isConnected || this.isEditMode(section)) {
@@ -430,13 +506,16 @@ const plugin = {
 
                 wirePicker(textBtn, this.storageKeys.textColor, 'text');
                 wirePicker(bgBtn, this.storageKeys.bgColor, 'bg');
+                appendResetButton(textBtn, bgBtn);
 
                 if (replicaEl) {
                     this.applyStyles(replicaEl, prefs);
                 }
             })
             .catch(() => {
-                /* warn already logged */
+                if (controls.isConnected && !this.isEditMode(section)) {
+                    appendResetButton(null, null);
+                }
             });
     },
 
