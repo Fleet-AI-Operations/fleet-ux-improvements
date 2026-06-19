@@ -11,7 +11,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -163,17 +163,10 @@ const plugin = {
             slot = document.createElement('div');
             slot.setAttribute(SLOT_MARKER, 'true');
             slot.setAttribute('data-fleet-plugin', this.id);
-            slot.className = 'flex items-center gap-2 shrink-0 ml-auto';
             toolbar.appendChild(slot);
         }
+        slot.className = 'flex flex-1 items-center justify-end min-w-0 gap-2';
         return slot;
-    },
-
-    removeEmptyToggleSlot(toolbar) {
-        const slot = toolbar.querySelector('[' + SLOT_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]');
-        if (slot && slot.childElementCount === 0) {
-            slot.remove();
-        }
     },
 
     placeToggleInToolbar(btn, side, toolbar) {
@@ -184,18 +177,21 @@ const plugin = {
             return;
         }
 
-        const gradingBtn = this.findNativeGradingToggle(toolbar);
-        if (gradingBtn) {
-            if (btn.nextElementSibling !== gradingBtn) {
-                toolbar.insertBefore(btn, gradingBtn);
-            }
-            this.removeEmptyToggleSlot(toolbar);
-            return;
-        }
-
         const slot = this.ensureToggleSlot(toolbar);
         if (btn.parentElement !== slot) {
             slot.appendChild(btn);
+        }
+
+        const gradingBtn = this.findNativeGradingToggle(toolbar);
+        if (gradingBtn) {
+            if (slot.nextElementSibling !== gradingBtn) {
+                toolbar.insertBefore(slot, gradingBtn);
+            }
+            return;
+        }
+
+        if (slot.parentElement !== toolbar || slot !== toolbar.lastElementChild) {
+            toolbar.appendChild(slot);
         }
     },
 
