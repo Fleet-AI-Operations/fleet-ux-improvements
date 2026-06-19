@@ -11,7 +11,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide the task detail pane; the environment pane expands to full width',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -56,7 +56,7 @@ const plugin = {
         }
 
         this.removeToggleButton(panels.right, 'right');
-        this.ensureToggleButton(state, leftToolbar);
+        this.ensureToggleButton(state, leftToolbar, panels.left);
         this.applyCollapsedState(state, panels);
         this.relocateToggleButton(state, panels);
         this.updateButtonLabels(state);
@@ -201,13 +201,40 @@ const plugin = {
         state.styleInjected = true;
     },
 
-    findToggleButton(panel, side) {
-        if (!panel) {
-            return null;
-        }
-        return panel.querySelector(
-            '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
+    toggleButtonSelector(side) {
+        return (
+            '[' +
+            TOGGLE_MARKER +
+            '="true"][data-fleet-pane="' +
+            side +
+            '"][data-fleet-plugin="' +
+            this.id +
+            '"]'
         );
+    },
+
+    findToggleButtons(panel, side) {
+        if (!panel) {
+            return [];
+        }
+        return Array.from(panel.querySelectorAll(this.toggleButtonSelector(side)));
+    },
+
+    findToggleButton(panel, side) {
+        return this.findToggleButtons(panel, side)[0] || null;
+    },
+
+    dedupeToggleButtons(panel, side) {
+        const buttons = this.findToggleButtons(panel, side);
+        if (buttons.length <= 1) {
+            return buttons[0] || null;
+        }
+        const keep = buttons[0];
+        for (let i = 1; i < buttons.length; i++) {
+            buttons[i].remove();
+        }
+        Logger.debug(`${this.id}: removed ${buttons.length - 1} duplicate Hide/Unhide button(s)`);
+        return keep;
     },
 
     removeToggleButton(panel, side) {
@@ -224,15 +251,21 @@ const plugin = {
         }
     },
 
-    ensureToggleButton(state, toolbar) {
+    bindToggleButton(btn, state) {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.onToggleClick(state);
+        };
+    },
+
+    ensureToggleButton(state, toolbar, panel) {
         const header = toolbar.closest('div.h-9.border-b');
         if (header) {
             header.setAttribute('data-fleet-pane-header', 'true');
         }
 
-        let btn = toolbar.querySelector(
-            '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + TOGGLE_SIDE + '"][data-fleet-plugin="' + this.id + '"]'
-        );
+        let btn = this.dedupeToggleButtons(panel || toolbar.closest('[data-panel]'), TOGGLE_SIDE);
         if (btn && btn.getAttribute('data-fleet-plugin') !== this.id) {
             btn.remove();
             btn = null;
@@ -246,15 +279,13 @@ const plugin = {
             btn.setAttribute('data-slot', 'button');
             btn.className =
                 'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 transition-colors hover:bg-accent hover:text-accent-foreground h-7 text-xs pl-2 pr-2 py-1 text-muted-foreground shrink-0';
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                this.onToggleClick(state);
-            });
         }
 
+        this.bindToggleButton(btn, state);
         btn._fleetToolbar = toolbar;
-        if (btn.parentElement !== toolbar || btn !== toolbar.lastElementChild) {
+
+        const collapsed = state.hiddenPane === TOGGLE_SIDE;
+        if (!collapsed && (btn.parentElement !== toolbar || btn !== toolbar.lastElementChild)) {
             toolbar.appendChild(btn);
         }
     },
@@ -276,21 +307,26 @@ const plugin = {
             return;
         }
 
-        const btn = this.findToggleButton(panel, TOGGLE_SIDE);
+        const toolbar = this.findPanelHeaderToolbar(panel, TOGGLE_SIDE);
+        const btn = this.dedupeToggleButtons(panel, TOGGLE_SIDE);
         if (!btn) {
             return;
         }
 
+        if (toolbar) {
+            btn._fleetToolbar = toolbar;
+        }
+
         const collapsed = state.hiddenPane === TOGGLE_SIDE;
-        const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"]');
+        const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]');
 
         if (collapsed) {
             const targetSliver = this.ensureCollapseSliver(panel);
             if (btn.parentElement !== targetSliver) {
                 targetSliver.appendChild(btn);
             }
-        } else if (btn._fleetToolbar && btn.parentElement !== btn._fleetToolbar) {
-            btn._fleetToolbar.appendChild(btn);
+        } else if (toolbar && btn.parentElement !== toolbar) {
+            toolbar.appendChild(btn);
         }
 
         if (!collapsed && sliver && !sliver.contains(btn)) {
@@ -301,7 +337,7 @@ const plugin = {
     onToggleClick(state) {
         if (state.hiddenPane === TOGGLE_SIDE) {
             state.hiddenPane = null;
-            Logger.log(`${this.id}: shown both`);
+            Logger.log(`${this.id}: shown task detail pane`);
         } else {
             state.hiddenPane = TOGGLE_SIDE;
             Logger.log(`${this.id}: hidden task detail pane`);
@@ -309,6 +345,7 @@ const plugin = {
         const panels = this.getPanels();
         this.applyCollapsedState(state, panels);
         this.relocateToggleButton(state, panels);
+        this.dedupeToggleButtons(panels.left, TOGGLE_SIDE);
         this.updateButtonLabels(state);
     },
 
