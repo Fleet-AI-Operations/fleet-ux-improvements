@@ -4,13 +4,14 @@
 const STYLE_ID = 'fleet-qa-toggle-main-panels';
 const TOGGLE_MARKER = 'data-fleet-pane-toggle';
 const SLIVER_MARKER = 'data-fleet-pane-sliver';
+const TRAILING_MARKER = 'data-fleet-pane-trailing';
 const COLLAPSED_STRIP_WIDTH = '2.75rem';
 
 const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -198,13 +199,62 @@ const plugin = {
         state.styleInjected = true;
     },
 
+    findToggleAnchor(toolbar, side) {
+        if (side === 'right' && toolbar.querySelector(':scope > [role="tablist"]')) {
+            return this.ensureTrailingActionsGroup(toolbar);
+        }
+        return toolbar;
+    },
+
+    ensureTrailingActionsGroup(toolbar) {
+        let group = toolbar.querySelector(
+            '[' + TRAILING_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]'
+        );
+        const tablist = toolbar.querySelector(':scope > [role="tablist"]');
+
+        if (group) {
+            for (const child of toolbar.children) {
+                if (child === tablist || child === group) {
+                    continue;
+                }
+                group.appendChild(child);
+            }
+            return group;
+        }
+
+        const trailing = [];
+        for (const child of toolbar.children) {
+            if (child === tablist) {
+                continue;
+            }
+            trailing.push(child);
+        }
+
+        group = document.createElement('div');
+        group.setAttribute(TRAILING_MARKER, 'true');
+        group.setAttribute('data-fleet-plugin', this.id);
+        group.className = 'flex items-center gap-2 shrink-0 ml-auto';
+        toolbar.appendChild(group);
+        for (const el of trailing) {
+            group.appendChild(el);
+        }
+        return group;
+    },
+
     ensureToggleButton(side, state, toolbar) {
         const header = toolbar.closest('div.h-9.border-b');
         if (header) {
             header.setAttribute('data-fleet-pane-header', 'true');
         }
 
-        let btn = toolbar.querySelector('[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"]');
+        const anchor = this.findToggleAnchor(toolbar, side);
+        let btn =
+            anchor.querySelector(
+                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
+            ) ||
+            toolbar.querySelector(
+                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
+            );
         if (btn && btn.getAttribute('data-fleet-plugin') !== this.id) {
             btn.remove();
             btn = null;
@@ -223,11 +273,10 @@ const plugin = {
                 e.preventDefault();
                 this.onToggleClick(side, state);
             });
-            btn._fleetToolbar = toolbar;
-            toolbar.appendChild(btn);
-        } else if (!btn._fleetToolbar) {
-            btn._fleetToolbar = toolbar;
         }
+
+        btn._fleetToolbar = anchor;
+        anchor.appendChild(btn);
     },
 
     ensureCollapseSliver(panel) {
