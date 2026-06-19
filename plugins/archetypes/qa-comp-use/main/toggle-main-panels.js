@@ -1,17 +1,17 @@
 // ============= toggle-main-panels.js =============
-// Hide/Unhide toggles in each main pane header; CSS-only collapse with mutual exclusivity.
+// Hide/Unhide toggle in the task detail pane header; CSS-only collapse expands the environment pane.
 
 const STYLE_ID = 'fleet-qa-toggle-main-panels';
 const TOGGLE_MARKER = 'data-fleet-pane-toggle';
 const SLIVER_MARKER = 'data-fleet-pane-sliver';
-const TRAILING_MARKER = 'data-fleet-pane-trailing';
 const COLLAPSED_STRIP_WIDTH = '2.75rem';
+const TOGGLE_SIDE = 'left';
 
 const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
-    description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.3',
+    description: 'Hide or unhide the task detail pane; the environment pane expands to full width',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -41,26 +41,28 @@ const plugin = {
         state.missingLogged = false;
 
         const leftToolbar = this.findPanelHeaderToolbar(panels.left, 'left');
-        const rightToolbar = this.findPanelHeaderToolbar(panels.right, 'right');
-        if (!leftToolbar || !rightToolbar) {
+        if (!leftToolbar) {
             if (!state.headerMissingLogged) {
-                Logger.debug(
-                    `${this.id}: pane header toolbar not found (left=${!!leftToolbar}, right=${!!rightToolbar})`
-                );
+                Logger.debug(`${this.id}: task detail pane header toolbar not found`);
                 state.headerMissingLogged = true;
             }
             return;
         }
         state.headerMissingLogged = false;
 
-        this.ensureToggleButton('left', state, leftToolbar);
-        this.ensureToggleButton('right', state, rightToolbar);
+        if (state.hiddenPane === 'right') {
+            state.hiddenPane = null;
+            this.clearCollapsedMarkers(panels);
+        }
+
+        this.removeToggleButton(panels.right, 'right');
+        this.ensureToggleButton(state, leftToolbar);
         this.applyCollapsedState(state, panels);
-        this.relocateToggleButtons(state, panels);
+        this.relocateToggleButton(state, panels);
         this.updateButtonLabels(state);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: Hide/Unhide toggles attached to both main pane headers`);
+            Logger.log(`${this.id}: Hide/Unhide toggle attached to task detail pane header`);
             state.activationLogged = true;
         }
     },
@@ -199,62 +201,38 @@ const plugin = {
         state.styleInjected = true;
     },
 
-    findToggleAnchor(toolbar, side) {
-        if (side === 'right' && toolbar.querySelector(':scope > [role="tablist"]')) {
-            return this.ensureTrailingActionsGroup(toolbar);
+    findToggleButton(panel, side) {
+        if (!panel) {
+            return null;
         }
-        return toolbar;
-    },
-
-    ensureTrailingActionsGroup(toolbar) {
-        let group = toolbar.querySelector(
-            '[' + TRAILING_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]'
+        return panel.querySelector(
+            '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
         );
-        const tablist = toolbar.querySelector(':scope > [role="tablist"]');
-
-        if (group) {
-            for (const child of toolbar.children) {
-                if (child === tablist || child === group) {
-                    continue;
-                }
-                group.appendChild(child);
-            }
-            return group;
-        }
-
-        const trailing = [];
-        for (const child of toolbar.children) {
-            if (child === tablist) {
-                continue;
-            }
-            trailing.push(child);
-        }
-
-        group = document.createElement('div');
-        group.setAttribute(TRAILING_MARKER, 'true');
-        group.setAttribute('data-fleet-plugin', this.id);
-        group.className = 'flex items-center gap-2 shrink-0 ml-auto';
-        toolbar.appendChild(group);
-        for (const el of trailing) {
-            group.appendChild(el);
-        }
-        return group;
     },
 
-    ensureToggleButton(side, state, toolbar) {
+    removeToggleButton(panel, side) {
+        const btn = this.findToggleButton(panel, side);
+        if (btn) {
+            btn.remove();
+        }
+        if (!panel) {
+            return;
+        }
+        const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]');
+        if (sliver && !sliver.querySelector('[' + TOGGLE_MARKER + '="true"]')) {
+            sliver.remove();
+        }
+    },
+
+    ensureToggleButton(state, toolbar) {
         const header = toolbar.closest('div.h-9.border-b');
         if (header) {
             header.setAttribute('data-fleet-pane-header', 'true');
         }
 
-        const anchor = this.findToggleAnchor(toolbar, side);
-        let btn =
-            anchor.querySelector(
-                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
-            ) ||
-            toolbar.querySelector(
-                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
-            );
+        let btn = toolbar.querySelector(
+            '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + TOGGLE_SIDE + '"][data-fleet-plugin="' + this.id + '"]'
+        );
         if (btn && btn.getAttribute('data-fleet-plugin') !== this.id) {
             btn.remove();
             btn = null;
@@ -263,7 +241,7 @@ const plugin = {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.setAttribute(TOGGLE_MARKER, 'true');
-            btn.setAttribute('data-fleet-pane', side);
+            btn.setAttribute('data-fleet-pane', TOGGLE_SIDE);
             btn.setAttribute('data-fleet-plugin', this.id);
             btn.setAttribute('data-slot', 'button');
             btn.className =
@@ -271,12 +249,14 @@ const plugin = {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                this.onToggleClick(side, state);
+                this.onToggleClick(state);
             });
         }
 
-        btn._fleetToolbar = anchor;
-        anchor.appendChild(btn);
+        btn._fleetToolbar = toolbar;
+        if (btn.parentElement !== toolbar || btn !== toolbar.lastElementChild) {
+            toolbar.appendChild(btn);
+        }
     },
 
     ensureCollapseSliver(panel) {
@@ -290,54 +270,45 @@ const plugin = {
         return sliver;
     },
 
-    relocateToggleButtons(state, panels) {
-        ['left', 'right'].forEach((side) => {
-            const panel = side === 'left' ? panels.left : panels.right;
-            if (!panel) {
-                return;
-            }
+    relocateToggleButton(state, panels) {
+        const panel = panels.left;
+        if (!panel) {
+            return;
+        }
 
-            const btn = panel.querySelector(
-                '[' + TOGGLE_MARKER + '="true"][data-fleet-pane="' + side + '"][data-fleet-plugin="' + this.id + '"]'
-            );
-            if (!btn) {
-                return;
-            }
+        const btn = this.findToggleButton(panel, TOGGLE_SIDE);
+        if (!btn) {
+            return;
+        }
 
-            const collapsed = state.hiddenPane === side;
-            const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"]');
+        const collapsed = state.hiddenPane === TOGGLE_SIDE;
+        const sliver = panel.querySelector('[' + SLIVER_MARKER + '="true"]');
 
-            if (collapsed) {
-                const targetSliver = this.ensureCollapseSliver(panel);
-                if (btn.parentElement !== targetSliver) {
-                    targetSliver.appendChild(btn);
-                }
-            } else if (btn._fleetToolbar && btn.parentElement !== btn._fleetToolbar) {
-                btn._fleetToolbar.appendChild(btn);
+        if (collapsed) {
+            const targetSliver = this.ensureCollapseSliver(panel);
+            if (btn.parentElement !== targetSliver) {
+                targetSliver.appendChild(btn);
             }
+        } else if (btn._fleetToolbar && btn.parentElement !== btn._fleetToolbar) {
+            btn._fleetToolbar.appendChild(btn);
+        }
 
-            if (!collapsed && sliver && !sliver.contains(btn)) {
-                sliver.remove();
-            }
-        });
+        if (!collapsed && sliver && !sliver.contains(btn)) {
+            sliver.remove();
+        }
     },
 
-    onToggleClick(side, state) {
-        const prev = state.hiddenPane;
-        if (state.hiddenPane === side) {
+    onToggleClick(state) {
+        if (state.hiddenPane === TOGGLE_SIDE) {
             state.hiddenPane = null;
             Logger.log(`${this.id}: shown both`);
         } else {
-            state.hiddenPane = side;
-            if (prev && prev !== side) {
-                Logger.log(`${this.id}: hidden ${side} (replaced ${prev})`);
-            } else {
-                Logger.log(`${this.id}: hidden ${side}`);
-            }
+            state.hiddenPane = TOGGLE_SIDE;
+            Logger.log(`${this.id}: hidden task detail pane`);
         }
         const panels = this.getPanels();
         this.applyCollapsedState(state, panels);
-        this.relocateToggleButtons(state, panels);
+        this.relocateToggleButton(state, panels);
         this.updateButtonLabels(state);
     },
 
@@ -353,10 +324,8 @@ const plugin = {
             right.removeAttribute('data-fleet-collapsed');
         }
 
-        if (state.hiddenPane === 'left' && left) {
+        if (state.hiddenPane === TOGGLE_SIDE && left) {
             left.setAttribute('data-fleet-collapsed', 'true');
-        } else if (state.hiddenPane === 'right' && right) {
-            right.setAttribute('data-fleet-collapsed', 'true');
         }
 
         if (group) {
@@ -382,12 +351,9 @@ const plugin = {
 
     updateButtonLabels(state) {
         document.querySelectorAll('[' + TOGGLE_MARKER + '="true"][data-fleet-plugin="' + this.id + '"]').forEach((btn) => {
-            const side = btn.getAttribute('data-fleet-pane');
-            const collapsed = state.hiddenPane === side;
+            const collapsed = state.hiddenPane === TOGGLE_SIDE;
             btn.textContent = collapsed ? 'Unhide' : 'Hide';
-            btn.title = collapsed
-                ? 'Show the ' + (side === 'left' ? 'task detail' : 'environment') + ' pane'
-                : 'Hide the ' + (side === 'left' ? 'task detail' : 'environment') + ' pane';
+            btn.title = collapsed ? 'Show the task detail pane' : 'Hide the task detail pane';
         });
     }
 };
