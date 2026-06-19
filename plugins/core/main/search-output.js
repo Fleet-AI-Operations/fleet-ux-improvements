@@ -5370,14 +5370,19 @@ const searchOutputMethods = {
         return task.createdAt || '';
     },
 
-    _cardTabShellBase() {
-        return 'height: ' + DASH_CARD_TAB_HEIGHT
+    _cardTabShellBase(options) {
+        const opts = options || {};
+        const hPad = opts.noHorizontalPadding ? '0' : '8px';
+        let base = 'height: ' + DASH_CARD_TAB_HEIGHT
             + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
-            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+            + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+        if (opts.fullWidth) base += ' width: 100%; min-width: 0;';
+        return base;
     },
 
-    _cardSurfaceTabHtml(innerHtml, title) {
-        const shell = this._cardTabShellBase()
+    _cardSurfaceTabHtml(innerHtml, title, options) {
+        const opts = options || {};
+        const shell = this._cardTabShellBase(opts)
             + ' background: var(--card, #ffffff); font-weight: 400;'
             + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
         const label = String(title || '');
@@ -5415,11 +5420,14 @@ const searchOutputMethods = {
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px;">`
+        const inner = `<span style="display: flex; align-items: stretch; width: 100%; min-width: 0;">`
             + this._copyChipHtml(key, highlightOpts || {})
-            + this._taskOpenLinkHtml(task, itemId)
+            + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
-        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key');
+        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
+            noHorizontalPadding: true,
+            fullWidth: true
+        });
     },
 
     _cardStatusTabHtml(task) {
@@ -7484,12 +7492,16 @@ const searchOutputMethods = {
         return 'display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer;';
     },
 
-    _taskOpenLinkHtml(task, itemId) {
+    _taskOpenLinkHtml(task, itemId, options) {
+        const opts = options || {};
         const taskId = String(task && task.id || '').trim();
         if (!taskId) return '';
         const teamId = String(task.teamId || '').trim();
         const ui = this._getTaskOpenUi(taskId);
         const title = 'Open task in Fleet';
+        const flushStyle = opts.flushHorizontal
+            ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
+            : '';
         if (ui.status === 'switching') {
             const teamLabel = this._teamName(teamId) || 'team';
             return `<button type="button" disabled aria-busy="true" title="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} gap: 6px; width: auto; max-width: 100%; padding: 2px 8px; cursor: wait; opacity: 0.9;">`
@@ -7497,7 +7509,7 @@ const searchOutputMethods = {
                 + `<span style="font-size: 11px; font-weight: 500; white-space: nowrap;">Switching to ${dashEscHtml(teamLabel)}</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">`
+        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
             + `${this._extLinkIconSvg(true)}`
             + `</button>`;
     },
@@ -8893,7 +8905,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.11',
+    _version: '2.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
