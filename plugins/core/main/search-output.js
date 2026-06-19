@@ -8060,7 +8060,6 @@ const searchOutputMethods = {
         } else {
             promptLabel = this._labelSpan('Prompt');
         }
-        const showPromptCopy = !showVersionLabel && !versionHeaderControls;
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const taskActionsHtml = this._versionTaskActionsHtml(
@@ -8072,7 +8071,7 @@ const searchOutputMethods = {
             <div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}
+                        ${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}
                     </div>
                     ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
                 </div>
@@ -8785,7 +8784,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
