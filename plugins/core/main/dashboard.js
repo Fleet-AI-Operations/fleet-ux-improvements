@@ -33,6 +33,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
@@ -94,7 +95,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.50',
+    _version: '5.54',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -245,6 +246,7 @@ const plugin = {
             disputeClaimUi: {},
             helpfulnessUi: {},
             flagResolutionUi: {},
+            actionBlockUi: {},
             userStoryUi: {},
             includeTasks: true,
             includeQa: true,
@@ -1334,7 +1336,7 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action-row {',
             '  position: absolute;',
             '  top: -24px;',
-            '  right: 16px;',
+            '  right: 8px;',
             '  z-index: 1;',
             '  display: flex;',
             '  justify-content: flex-end;',
@@ -1374,7 +1376,7 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
             '  width: auto;',
             '  min-width: 5.5rem;',
-            '  padding: 0 8px;',
+            '  padding: 0 4px;',
             '  border: 1px solid var(--brand, var(--primary, #2563eb));',
             '  background: #000;',
             '  color: #fff;',

@@ -119,13 +119,15 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
-    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' }
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
@@ -282,6 +284,39 @@ function dashRelativeAgo(iso) {
     if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
     parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
     return parts.join(', ') + ' ago';
+}
+
+function dashCreatedTabRelativeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalMins = Math.floor(diffMs / (1000 * 60));
+    const totalHours = Math.floor(totalMins / 60);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) {
+        let text = days + ' day' + (days === 1 ? '' : 's');
+        if (hours > 0) text += ', ' + hours + (hours === 1 ? ' hr' : ' hrs');
+        return text + ' ago';
+    }
+    if (totalHours > 0) {
+        return totalHours + (totalHours === 1 ? ' hr' : ' hrs') + ' ago';
+    }
+    const mins = Math.max(1, totalMins);
+    return mins + (mins === 1 ? ' min' : ' mins') + ' ago';
+}
+
+function dashProblemCreationDurationText(seconds) {
+    const total = Math.round(Number(seconds));
+    if (!Number.isFinite(total) || total < 0) return '';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const parts = [];
+    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
+    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
+    if (parts.length === 0 && total > 0) return '< 1 min';
+    return parts.join(', ');
 }
 
 /** PostgREST may return an embed as one object or an array — normalize to a single row. */
@@ -1107,6 +1142,12 @@ const searchOutputMethods = {
                 }
                 item.task.promptVersions = hist.promptVersions || [];
                 item.task.allFeedback = hist.allFeedback || [];
+                this._applyTaskShellFromEnrichment(item.task, hist);
+                if (hist.initialCreationTimeSeconds != null) {
+                    item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
+                } else {
+                    delete item.task.initialCreationTimeSeconds;
+                }
                 if (item.selectedFeedbackId) {
                     const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                     if (entry && entry.display) item.qaFeedback = entry.display;
@@ -2139,7 +2180,7 @@ const searchOutputMethods = {
             const teamId = embed.team_id || rows[0].team_id || '';
             const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId, creator: embed.creator });
             if (!task) continue;
-            const flags = rows.map((row) => lib.buildFlagDisplay(row));
+            const flags = rows.map((row) => lib.buildFlagDisplay(row, profilesMap));
             let sortAt = task.createdAt || '';
             for (const row of rows) {
                 const ts = String(row.resolved_at || row.created_at || '');
@@ -2244,13 +2285,13 @@ const searchOutputMethods = {
         return byTaskId;
     },
 
-    _flagRowsToDisplays(rows) {
+    _flagRowsToDisplays(rows, profilesMap) {
         const lib = dashLib();
-        return (rows || []).map((row) => lib.buildFlagDisplay(row));
+        return (rows || []).map((row) => lib.buildFlagDisplay(row, profilesMap));
     },
 
-    _mergeBulkFlagsOntoItem(item, bulkRows) {
-        const displays = this._flagRowsToDisplays(bulkRows);
+    _mergeBulkFlagsOntoItem(item, bulkRows, profilesMap) {
+        const displays = this._flagRowsToDisplays(bulkRows, profilesMap);
         const existing = item.flags || [];
         const seen = new Set(existing.map((f) => f.id).filter(Boolean));
         const merged = [...existing];
@@ -2295,7 +2336,15 @@ const searchOutputMethods = {
 
         const flagRows = this._getFilteredFlagRows(taskId, scope, afterIso, beforeIso);
         if (flagRows.length > 0) {
-            this._mergeBulkFlagsOntoItem(item, flagRows);
+            const flagProfileIds = [];
+            for (const row of flagRows) {
+                if (row && row.flagger_id) flagProfileIds.push(row.flagger_id);
+                if (row && row.resolved_by) flagProfileIds.push(row.resolved_by);
+            }
+            if (flagProfileIds.length > 0) {
+                await this._supplementProfilesMap(profilesMap, flagProfileIds);
+            }
+            this._mergeBulkFlagsOntoItem(item, flagRows, profilesMap);
             if (!item.kinds.includes('senior_review')) {
                 item.kinds.push('senior_review');
                 item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
@@ -3395,7 +3444,8 @@ const searchOutputMethods = {
             taskIssues: (opts.taskIssues || []).map((i) => i.id),
             returnTypes: (opts.returnTypes || []).map((r) => r.id),
             promptHistory: (opts.promptHistory || []).map((h) => h.id),
-            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id)
+            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
+            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id)
         };
     },
 
@@ -3413,6 +3463,22 @@ const searchOutputMethods = {
             .map((id) => ({
                 id,
                 label: (lib.QA_HELPFULNESS_LABELS && lib.QA_HELPFULNESS_LABELS[id]) || id
+            }));
+    },
+
+    _buildV1CreationTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const bucketId of lib.itemV1CreationTimeBuckets(item)) {
+                present.add(bucketId);
+            }
+        }
+        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
             }));
     },
 
@@ -3924,6 +3990,7 @@ const searchOutputMethods = {
             this._getSearchableTeamCatalog()
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
+        options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -4030,6 +4097,9 @@ const searchOutputMethods = {
             case 'prompt_version_count':
                 if (!item.hydrated) return 1;
                 return this._displayPromptVersionCount(task);
+            case 'v1_creation_time_minutes':
+                if (!item.hydrated) return null;
+                return dashLib().itemV1CreationTimeMinutes(item);
             default:
                 return null;
         }
@@ -4211,6 +4281,7 @@ const searchOutputMethods = {
             returnTypes: [],
             promptHistory: [],
             qaHelpfulness: [],
+            v1CreationTimeMinutes: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -4812,6 +4883,12 @@ const searchOutputMethods = {
         }
     },
 
+    _applyTaskShellFromEnrichment(task, hist) {
+        if (!task || !hist) return;
+        if (hist.key) task.key = hist.key;
+        if (hist.status) task.status = hist.status;
+    },
+
     _profilesMapFromHydrateItems(items) {
         const profilesMap = new Map();
         for (const item of items || []) {
@@ -4856,6 +4933,12 @@ const searchOutputMethods = {
                     }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    this._applyTaskShellFromEnrichment(item.task, hist);
+                    if (hist.initialCreationTimeSeconds != null) {
+                        item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
+                    } else {
+                        delete item.task.initialCreationTimeSeconds;
+                    }
                     for (const entry of hist.allFeedback || []) {
                         if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
                             feedbackIdsToLoad.push(entry.id);
@@ -5287,14 +5370,19 @@ const searchOutputMethods = {
         return task.createdAt || '';
     },
 
-    _cardTabShellBase() {
-        return 'height: ' + DASH_CARD_TAB_HEIGHT
+    _cardTabShellBase(options) {
+        const opts = options || {};
+        const hPad = opts.noHorizontalPadding ? '0' : '8px';
+        let base = 'height: ' + DASH_CARD_TAB_HEIGHT
             + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
-            + ' font-size: 10px; font-weight: 600; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+            + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+        if (opts.fullWidth) base += ' width: 100%; min-width: 0;';
+        return base;
     },
 
-    _cardSurfaceTabHtml(innerHtml, title) {
-        const shell = this._cardTabShellBase()
+    _cardSurfaceTabHtml(innerHtml, title, options) {
+        const opts = options || {};
+        const shell = this._cardTabShellBase(opts)
             + ' background: var(--card, #ffffff); font-weight: 400;'
             + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
         const label = String(title || '');
@@ -5306,18 +5394,40 @@ const searchOutputMethods = {
     _cardCreatedTabHtml(task) {
         const iso = this._taskInitialCreatedAt(task);
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashRelativeAgo(iso);
-        const label = ago ? `Created ${formatted} (${ago})` : `Created ${formatted}`;
-        return this._cardSurfaceTabHtml(this._plainTimestampHtml(iso, 'Created'), label);
+        const ago = dashCreatedTabRelativeAgo(iso);
+        const creationSec = task && task.initialCreationTimeSeconds;
+        const durationText = (creationSec != null && Number.isFinite(Number(creationSec)))
+            ? dashProblemCreationDurationText(Number(creationSec))
+            : '';
+        const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+        const regular = 'color: var(--foreground, #0f172a);';
+        const parts = [
+            `<span style="${this._labelStyle()}">Created</span>`,
+            `<span style="${regular}">${dashEscHtml(formatted)}</span>`
+        ];
+        if (ago) {
+            parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+        }
+        if (durationText) {
+            parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+        }
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+        let label = `Created ${formatted}`;
+        if (ago) label += ` (${ago})`;
+        if (durationText) label += ` in ${durationText}`;
+        return this._cardSurfaceTabHtml(inner, label);
     },
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px;">`
+        const inner = `<span style="display: flex; align-items: stretch; width: 100%; min-width: 0;">`
             + this._copyChipHtml(key, highlightOpts || {})
-            + this._taskOpenLinkHtml(task, itemId)
+            + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
-        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key');
+        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
+            noHorizontalPadding: true,
+            fullWidth: true
+        });
     },
 
     _cardStatusTabHtml(task) {
@@ -5330,7 +5440,7 @@ const searchOutputMethods = {
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
             <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
                 <span class="wf-dash-card-action-inner">
-                    <span class="wf-dash-card-action-label">Add to Diff</span>
+                    <span class="wf-dash-card-action-label">Diff</span>
                 </span>
             </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--get-verifier" data-wf-dash-get-verifier="1" data-item-id="${dashEscHtml(itemId)}" title="Get verifier" aria-label="Get verifier">
@@ -5598,7 +5708,8 @@ const searchOutputMethods = {
             'filter-prompt-ratings': 'Prompt rating',
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
-            'filter-return-types': 'Return types'
+            'filter-return-types': 'Return types',
+            'filter-v1-creation-time': 'v1 Creation Time Minutes'
         };
         return labels[scopeKey] || scopeKey;
     },
@@ -5957,7 +6068,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: []
+            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -6067,6 +6178,66 @@ const searchOutputMethods = {
             this._state.disputeClaimUi[id] = { status: 'idle' };
         }
         return this._state.disputeClaimUi[id];
+    },
+
+    _getActionBlockCollapseUi(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id) return { collapsed: false };
+        if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+        if (!this._state.actionBlockUi[id]) {
+            this._state.actionBlockUi[id] = { collapsed: false };
+        }
+        return this._state.actionBlockUi[id];
+    },
+
+    _actionBlockBodyHiddenStyle(blockId) {
+        return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
+    },
+
+    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml) {
+        const rightSection = rightHtml
+            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml}</div>`
+            : '';
+        return `<div style="display: flex; align-items: stretch; gap: 0; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; flex-shrink: 0;">${leftHtml}</div>`
+            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
+            + rightSection
+            + `</div>`;
+    },
+
+    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml) {
+        const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
+        const escBlockId = dashEscHtml(blockId);
+        const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
+        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr} style="${shellStyle}">`
+            + headerRowHtml
+            + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
+            + `</div>`;
+    },
+
+    _patchActionBlock(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id || !this._modal) return false;
+        const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
+        const block = this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
+        if (!block) return false;
+        const body = block.querySelector('[data-wf-dash-action-block-body]');
+        if (!body) return false;
+        body.style.display = this._getActionBlockCollapseUi(id).collapsed ? 'none' : 'flex';
+        return true;
+    },
+
+    _toggleActionBlockCollapse(blockId) {
+        const id = String(blockId || '').trim();
+        if (!id) return;
+        const ui = this._getActionBlockCollapseUi(id);
+        ui.collapsed = !ui.collapsed;
+        if (!this._patchActionBlock(id)) {
+            const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
+            const block = this._modal && this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
+            const itemId = block && block.getAttribute('data-wf-dash-item-id');
+            if (itemId) this._patchTaskCard(itemId);
+        }
     },
 
     async _claimDispute(disputeId, itemId) {
@@ -6321,7 +6492,8 @@ const searchOutputMethods = {
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness'
+            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
+            'v1CreationTimeMinutes'
         ];
         for (const key of keys) {
             const boundIds = bounds[key] || [];
@@ -6791,6 +6963,7 @@ const searchOutputMethods = {
         this._state.cardUi = {};
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
+        this._state.actionBlockUi = {};
         this._state.userStoryUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
@@ -6851,7 +7024,8 @@ const searchOutputMethods = {
             ['taskIssues', bounds.taskIssues],
             ['returnTypes', bounds.returnTypes],
             ['promptHistory', bounds.promptHistory],
-            ['qaHelpfulness', bounds.qaHelpfulness]
+            ['qaHelpfulness', bounds.qaHelpfulness],
+            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes]
         ];
         for (const [key, boundIds] of dims) {
             if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
@@ -7318,12 +7492,16 @@ const searchOutputMethods = {
         return 'display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer;';
     },
 
-    _taskOpenLinkHtml(task, itemId) {
+    _taskOpenLinkHtml(task, itemId, options) {
+        const opts = options || {};
         const taskId = String(task && task.id || '').trim();
         if (!taskId) return '';
         const teamId = String(task.teamId || '').trim();
         const ui = this._getTaskOpenUi(taskId);
         const title = 'Open task in Fleet';
+        const flushStyle = opts.flushHorizontal
+            ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
+            : '';
         if (ui.status === 'switching') {
             const teamLabel = this._teamName(teamId) || 'team';
             return `<button type="button" disabled aria-busy="true" title="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} gap: 6px; width: auto; max-width: 100%; padding: 2px 8px; cursor: wait; opacity: 0.9;">`
@@ -7331,7 +7509,7 @@ const searchOutputMethods = {
                 + `<span style="font-size: 11px; font-weight: 500; white-space: nowrap;">Switching to ${dashEscHtml(teamLabel)}</span>`
                 + `</button>`;
         }
-        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">`
+        return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
             + `${this._extLinkIconSvg(true)}`
             + `</button>`;
     },
@@ -7434,6 +7612,22 @@ const searchOutputMethods = {
         return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
     },
 
+    _cardHeaderMetaRowHtml(task) {
+        const projectLink = task.projectId
+            ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
+            : '';
+        return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                    </div>
+                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
+                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                    </div>
+                </div>`;
+    },
+
     _dismissedBadgeHtml() {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
@@ -7504,7 +7698,7 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
-    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId) {
+    _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId, itemId) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
         const isSystem = Boolean(qa.isSystemFeedback);
@@ -7571,21 +7765,24 @@ const searchOutputMethods = {
                 </div>
             </div>`
             : '';
-        return `
-            <div style="margin-top: 12px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>
-                        ${submittedHtml}
-                        ${promptRatingHtml}
-                    </div>
-                    ${statusLabel ? `<div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>` : ''}
-                </div>
-                ${reviewerHtml}
-                ${badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : ''}
-                ${blocks}
-                ${helpfulnessHtml}
-            </div>`;
+        const blockId = feedbackId
+            ? ('qa:' + feedbackId)
+            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
+            + submittedHtml
+            + promptRatingHtml;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
+        const bodyHtml = `${reviewerHtml}`
+            + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
+            + blocks
+            + helpfulnessHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _feedbackActionBadgeHtml(entry, compact) {
@@ -7694,43 +7891,44 @@ const searchOutputMethods = {
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
                 : '';
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                                <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                                ${resolvedHtml}
-                            </div>
-                            <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
-                        </div>
-                        ${resolverHtml}
+            const resBlockId = display.id ? ('dispute-res:' + display.id) : ('dispute-res:unknown:' + itemId);
+            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
+            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
+            const resBodyHtml = `${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>
-                    </div>
+                        </div>`;
+            resolutionHtml = `
+                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                    ${this._actionBlockShellHtml(
+                resBlockId,
+                itemId,
+                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
+                resHeaderRow,
+                resBodyHtml
+            )}
                 </div>`;
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const disputeRightHtml = (categoryHtml || claimControlHtml)
-            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto;">${categoryHtml}${claimControlHtml}</div>`
+            ? `${categoryHtml}${claimControlHtml}`
             : '';
-        return `
-            <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>
-                        ${submittedHtml}
-                    </div>
-                    ${disputeRightHtml}
-                </div>
-                <div>
+        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
+        const bodyHtml = `<div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
                     <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
                 </div>
-                ${resolutionHtml}
-            </div>`;
+                ${resolutionHtml}`;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _noneProvidedBadgeHtml() {
@@ -7751,6 +7949,9 @@ const searchOutputMethods = {
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.createdAt))
             : '';
         const reasonLabel = display.reason || display.reasonKey || 'Unknown';
+        const flaggerHtml = (display.flaggerId || display.flaggerName || display.flaggerEmail)
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet')}</div>`
+            : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
         const noteText = String(display.note || '').trim();
         const reviewerNoteHtml = noteText
@@ -7784,22 +7985,23 @@ const searchOutputMethods = {
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
                 : '';
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    <div style="padding: 8px 10px; border: 1px solid ${resBorder}; border-radius: 6px; background: ${resBg}; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                                <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
-                                ${resolvedHtml}
-                            </div>
-                            <div style="flex-shrink: 0; margin-left: auto;">${statusLabel}</div>
-                        </div>
-                        ${resolverHtml}
+            const resBlockId = display.id ? ('flag-res:' + display.id) : ('flag-res:unknown:' + itemId);
+            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
+            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
+            const resBodyHtml = `${resolverHtml}
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Resolution Note')}${this._copyIconHtml(display.resolutionNote)}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>
-                    </div>
+                        </div>`;
+            resolutionHtml = `
+                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
+                    ${this._actionBlockShellHtml(
+                resBlockId,
+                itemId,
+                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
+                resHeaderRow,
+                resBodyHtml
+            )}
                 </div>`;
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
@@ -7809,20 +8011,21 @@ const searchOutputMethods = {
                 </div>
             </div>`
             : '';
-        return `
-            <div style="margin-top: 8px; padding: 10px 12px; border: ${border}; border-radius: 8px; background: ${bg}; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">
-                        <span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>
-                        ${submittedHtml}
-                    </div>
-                    <div style="flex-shrink: 0; margin-left: auto;"><span style="${alertBadge}">Flagged for Review</span></div>
-                </div>
+        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`);
+        const bodyHtml = `${flaggerHtml}
                 ${issuesHtml}
                 ${reviewerNoteHtml}
                 ${resolutionHtml}
-                ${flagResolutionInputHtml}
-            </div>`;
+                ${flagResolutionInputHtml}`;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _orphanFallbackDisplayNo(allFeedback, promptVersions) {
@@ -7893,7 +8096,7 @@ const searchOutputMethods = {
             if (entry.display) {
                 blocks.push({
                     sortAt: this._feedbackEntryAt(entry),
-                    html: this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id)
+                    html: this._qaBlockHtml(entry.display, hq, cs, fz, rx, entry.id, itemId)
                 });
             }
             for (const dispute of entry.disputes || []) {
@@ -7906,7 +8109,7 @@ const searchOutputMethods = {
         if (fallbackFeedback) {
             blocks.push({
                 sortAt: String(fallbackFeedback.feedbackAt || ''),
-                html: this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null)
+                html: this._qaBlockHtml(fallbackFeedback, hq, cs, fz, rx, null, itemId)
             });
         }
         for (const dispute of orphanDisputes || []) {
@@ -7934,7 +8137,7 @@ const searchOutputMethods = {
         if (item.qaFeedback) {
             blocks.push({
                 sortAt: String(item.qaFeedback.feedbackAt || ''),
-                html: this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null)
+                html: this._qaBlockHtml(item.qaFeedback, hq, cs, fz, rx, item.selectedFeedbackId || null, itemId)
             });
         }
         for (const dispute of item.disputes || []) {
@@ -7969,7 +8172,6 @@ const searchOutputMethods = {
         } else {
             promptLabel = this._labelSpan('Prompt');
         }
-        const showPromptCopy = !showVersionLabel && !versionHeaderControls;
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
         const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
         const taskActionsHtml = this._versionTaskActionsHtml(
@@ -7977,17 +8179,18 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
-        return `
-            <div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0;">
-                        ${promptLabel}${showPromptCopy ? this._copyIconHtml(version.prompt) : ''}${submittedHtml}
-                    </div>
-                    ${versionActionBadge ? `<div style="flex-shrink: 0; margin-left: auto;">${versionActionBadge}</div>` : ''}
-                </div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-                ${taskActionsHtml}
-            </div>`;
+        const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, versionActionBadge || '');
+        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+            + taskActionsHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
     },
 
     _resultCardHtml(item) {
@@ -8003,39 +8206,31 @@ const searchOutputMethods = {
         const cs = Boolean(item.highlightCaseSensitive);
         const fz = Boolean(item.highlightFuzzy);
         const rx = Boolean(item.highlightRegex);
-        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
         const promptText = task.prompt || '';
         const promptBody = promptText
             ? this._dashHighlightedHtml(promptText, hq, cs, fz, rx)
             : '—';
-        let bodyHtml = `
-            <div>
-                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
-                    <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0;">
-                        ${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}
-                    </div>
-                    <div style="flex-shrink: 0; margin-left: auto;">${this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt))}</div>
-                </div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>
-            </div>`;
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
+        const blockId = 'version:' + itemId + ':quick';
+        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}`;
+        const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        let promptSectionHtml = this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+        );
+        let bodyHtml;
         if (item.qaFeedback) {
             bodyHtml = taskActionsHtml;
         } else {
-            bodyHtml += taskActionsHtml;
+            bodyHtml = promptSectionHtml + taskActionsHtml;
         }
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
-                    </div>
-                </div>
+                ${this._cardHeaderMetaRowHtml(task)}
                 ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
@@ -8065,7 +8260,7 @@ const searchOutputMethods = {
                 : 'Hydrate';
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: ${loading ? 'wait' : 'pointer'};" title="${loading ? 'Hydrating…' : 'Hydrate'}">${tabInner}</button>`;
         }
-        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; margin-bottom: 0;">
+        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
                 <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
                 ${hydrateTabHtml}
             </div>`;
@@ -8140,8 +8335,6 @@ const searchOutputMethods = {
             renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
         }
 
-        const projectLink = task.projectId ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet') : '';
-
         const reviewerBadges = allFeedback.length > 0
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
@@ -8179,16 +8372,7 @@ const searchOutputMethods = {
 
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
-                    </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
-                    </div>
-                </div>
+                ${this._cardHeaderMetaRowHtml(task)}
                 ${row2Html}
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
@@ -8517,6 +8701,12 @@ function attachSearchOutputListeners(modal, dash) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
                 return;
             }
+            const actionBlockToggle = e.target.closest('[data-wf-dash-action-block-toggle]');
+            if (actionBlockToggle && modal.contains(actionBlockToggle) && e.target === actionBlockToggle) {
+                const blockId = actionBlockToggle.getAttribute('data-wf-dash-action-block-toggle');
+                if (blockId) dash._toggleActionBlockCollapse(blockId);
+                return;
+            }
             const candidate = e.target.closest('[data-wf-dash-candidate]');
             if (candidate && modal.contains(candidate)) {
                 const id = candidate.getAttribute('data-wf-dash-candidate');
@@ -8715,7 +8905,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.2',
+    _version: '2.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
