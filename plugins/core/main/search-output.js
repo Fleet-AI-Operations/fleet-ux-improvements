@@ -2139,7 +2139,7 @@ const searchOutputMethods = {
             const teamId = embed.team_id || rows[0].team_id || '';
             const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId, creator: embed.creator });
             if (!task) continue;
-            const flags = rows.map((row) => lib.buildFlagDisplay(row));
+            const flags = rows.map((row) => lib.buildFlagDisplay(row, profilesMap));
             let sortAt = task.createdAt || '';
             for (const row of rows) {
                 const ts = String(row.resolved_at || row.created_at || '');
@@ -2244,13 +2244,13 @@ const searchOutputMethods = {
         return byTaskId;
     },
 
-    _flagRowsToDisplays(rows) {
+    _flagRowsToDisplays(rows, profilesMap) {
         const lib = dashLib();
-        return (rows || []).map((row) => lib.buildFlagDisplay(row));
+        return (rows || []).map((row) => lib.buildFlagDisplay(row, profilesMap));
     },
 
-    _mergeBulkFlagsOntoItem(item, bulkRows) {
-        const displays = this._flagRowsToDisplays(bulkRows);
+    _mergeBulkFlagsOntoItem(item, bulkRows, profilesMap) {
+        const displays = this._flagRowsToDisplays(bulkRows, profilesMap);
         const existing = item.flags || [];
         const seen = new Set(existing.map((f) => f.id).filter(Boolean));
         const merged = [...existing];
@@ -2295,7 +2295,15 @@ const searchOutputMethods = {
 
         const flagRows = this._getFilteredFlagRows(taskId, scope, afterIso, beforeIso);
         if (flagRows.length > 0) {
-            this._mergeBulkFlagsOntoItem(item, flagRows);
+            const flagProfileIds = [];
+            for (const row of flagRows) {
+                if (row && row.flagger_id) flagProfileIds.push(row.flagger_id);
+                if (row && row.resolved_by) flagProfileIds.push(row.resolved_by);
+            }
+            if (flagProfileIds.length > 0) {
+                await this._supplementProfilesMap(profilesMap, flagProfileIds);
+            }
+            this._mergeBulkFlagsOntoItem(item, flagRows, profilesMap);
             if (!item.kinds.includes('senior_review')) {
                 item.kinds.push('senior_review');
                 item.kinds.sort((a, b) => DASH_KIND_MERGE_ORDER.indexOf(a) - DASH_KIND_MERGE_ORDER.indexOf(b));
@@ -7751,6 +7759,9 @@ const searchOutputMethods = {
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.createdAt))
             : '';
         const reasonLabel = display.reason || display.reasonKey || 'Unknown';
+        const flaggerHtml = (display.flaggerId || display.flaggerName || display.flaggerEmail)
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet')}</div>`
+            : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
         const noteText = String(display.note || '').trim();
         const reviewerNoteHtml = noteText
@@ -7818,6 +7829,7 @@ const searchOutputMethods = {
                     </div>
                     <div style="flex-shrink: 0; margin-left: auto;"><span style="${alertBadge}">Flagged for Review</span></div>
                 </div>
+                ${flaggerHtml}
                 ${issuesHtml}
                 ${reviewerNoteHtml}
                 ${resolutionHtml}
@@ -8715,7 +8727,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

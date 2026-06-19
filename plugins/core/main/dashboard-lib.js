@@ -309,7 +309,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.13',
+    _version: '2.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1224,11 +1224,15 @@ const plugin = {
         };
     },
 
-    _buildFlagDisplay(flagRow) {
+    _buildFlagDisplay(flagRow, profilesMap) {
         const resolution = flagRow && flagRow.resolution ? String(flagRow.resolution) : '';
         const status = resolution || 'pending';
         const flagger = this._embeddedPersonFields(flagRow && flagRow.flagger);
         const resolver = this._embeddedPersonFields(flagRow && flagRow.resolver);
+        const flaggerId = flagger.id || String((flagRow && flagRow.flagger_id) || '');
+        const resolverId = resolver.id || String((flagRow && flagRow.resolved_by) || '');
+        const flaggerProfile = flaggerId && profilesMap ? profilesMap.get(flaggerId) : null;
+        const resolverProfile = resolverId && profilesMap ? profilesMap.get(resolverId) : null;
         return {
             id: String((flagRow && flagRow.id) || ''),
             taskId: String((flagRow && flagRow.task_id) || ''),
@@ -1239,12 +1243,12 @@ const plugin = {
             createdAt: String((flagRow && flagRow.created_at) || ''),
             resolutionAt: flagRow && flagRow.resolved_at ? String(flagRow.resolved_at) : null,
             resolutionNote: dashLibNormalizeNewlines((flagRow && flagRow.resolution_note) || ''),
-            resolverId: resolver.id || String((flagRow && flagRow.resolved_by) || ''),
-            resolverName: resolver.name,
-            resolverEmail: resolver.email,
-            flaggerId: flagger.id || String((flagRow && flagRow.flagger_id) || ''),
-            flaggerName: flagger.name,
-            flaggerEmail: flagger.email,
+            resolverId,
+            resolverName: resolver.name || String((resolverProfile && resolverProfile.full_name) || ''),
+            resolverEmail: resolver.email || String((resolverProfile && resolverProfile.email) || ''),
+            flaggerId,
+            flaggerName: flagger.name || String((flaggerProfile && flaggerProfile.full_name) || ''),
+            flaggerEmail: flagger.email || String((flaggerProfile && flaggerProfile.email) || ''),
             isConfirmed: status === 'confirmed',
             isDismissed: status === 'dismissed',
             isPending: status === 'pending'
