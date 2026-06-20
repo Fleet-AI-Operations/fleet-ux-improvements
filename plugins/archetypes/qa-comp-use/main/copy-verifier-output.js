@@ -12,7 +12,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -242,10 +242,10 @@ const plugin = {
         const lines = ['## Verifier'];
         const sections = [];
         if (failures.length > 0) {
-            sections.push({ label: 'Failures', items: failures });
+            sections.push({ label: 'Failures', items: failures.map((t) => `❌ ${t}`) });
         }
         if (successes.length > 0) {
-            sections.push({ label: 'Successes', items: successes });
+            sections.push({ label: 'Successes', items: successes.map((t) => `✅ ${t}`) });
         }
         for (let i = 0; i < sections.length; i++) {
             if (i > 0) {
