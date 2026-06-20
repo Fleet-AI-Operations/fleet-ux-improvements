@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.333",
+  "archetypesVersion": "10.334",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -314,8 +314,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "3.2",
-          "hash": "sha256-0f107d22168fb22a71d8d7faa0d2e6f98f3cf23195d3c32f2e7bc5d9fe5067db",
+          "version": "3.3",
+          "hash": "sha256-e627fa2cae76f6e5679af5c344b562e3313081d3debd0c13f0512b0c17f3271f",
           "log": false
         },
         {
@@ -410,8 +410,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "2.2",
-          "hash": "sha256-dfe457039f0b60d16786583edd29116e8350a70d866ca3de77ee6b6512815f4e",
+          "version": "2.3",
+          "hash": "sha256-7fadf5d300ede55b7ae52e9290626947817b0a9a5a7cfc3a2ccccbfa01498417",
           "log": false
         },
         {
@@ -475,8 +475,8 @@
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "2.2",
-          "hash": "sha256-bb660849673be040f9c2f5145ac3649c29a6d7c831375c59560061273b3ef9a7",
+          "version": "2.3",
+          "hash": "sha256-1f1617e160f1e93a5237f77c9818abe9a89c43122142f484e2e13223837f47e9",
           "log": false
         },
         {
