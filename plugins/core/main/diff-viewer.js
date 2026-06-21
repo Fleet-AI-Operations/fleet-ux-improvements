@@ -13,8 +13,6 @@ const DV_MAX_SLOTS = 6;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
-const DV_CHAR_DIFF_LIMIT = 15000;
-const DV_WORD_DIFF_TOKEN_LIMIT = 4000;
 const DV_REEL_PEEK_H = 14;
 const DV_REEL_LENS_H = 220; // min height + CSS fallback for --dv-reel-lens-h
 const DV_REEL_ROW_GAP = 10;
@@ -75,89 +73,7 @@ function _dvCreateEmptyDragState() {
 // DvSlot:   { slotId, taskId, key, authorName, authorEmail, createdAt, promptVersions, lensIndex, loading, error }
 // DvStash:  { taskId, key, authorName, authorEmail, createdAt, versionCount? }
 
-// ── LCS diff engine (ported from prompt-diff-highlight.js) ──
-
-function _dvTokenize(text) {
-    const tokens = [];
-    let current = '';
-    for (const char of text) {
-        if (char === '\n') {
-            if (current) tokens.push(current);
-            tokens.push('\n');
-            current = '';
-        } else if (char === ' ' || char === '\t') {
-            current += char;
-        } else {
-            if (current && (current.endsWith(' ') || current.endsWith('\t'))) {
-                tokens.push(current);
-                current = '';
-            }
-            current += char;
-        }
-    }
-    if (current) tokens.push(current);
-    return tokens;
-}
-
-function _dvComputeLCS(a, b) {
-    const m = a.length, n = b.length;
-    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            dp[i][j] = a[i - 1] === b[j - 1]
-                ? dp[i - 1][j - 1] + 1
-                : Math.max(dp[i - 1][j], dp[i][j - 1]);
-        }
-    }
-    return dp;
-}
-
-function _dvBacktrack(dp, a, b) {
-    const diff = [];
-    let i = a.length, j = b.length;
-    while (i > 0 || j > 0) {
-        if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
-            diff.unshift({ type: 'equal', value: a[i - 1] });
-            i--; j--;
-        } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-            diff.unshift({ type: 'add', value: b[j - 1] });
-            j--;
-        } else {
-            diff.unshift({ type: 'remove', value: a[i - 1] });
-            i--;
-        }
-    }
-    return diff;
-}
-
-function _dvComputeWordDiff(oldText, newText) {
-    const a = _dvTokenize(oldText), b = _dvTokenize(newText);
-    return _dvBacktrack(_dvComputeLCS(a, b), a, b);
-}
-
-function _dvComputeCharDiff(oldText, newText) {
-    const a = oldText.split(''), b = newText.split('');
-    return _dvBacktrack(_dvComputeLCS(a, b), a, b);
-}
-
-function _dvGroupConsecutive(diff, includeTypes, highlightType) {
-    const filtered = diff.filter((d) => includeTypes.includes(d.type));
-    const groups = [];
-    for (let i = 0; i < filtered.length; i++) {
-        const item = filtered[i];
-        const nextItem = filtered[i + 1];
-        const lastGroup = groups[groups.length - 1];
-        if (lastGroup && lastGroup.type === item.type && item.value !== '\n' && !lastGroup.values.includes('\n')) {
-            lastGroup.values.push(item.value);
-            if (nextItem && nextItem.type !== item.type && item.type === highlightType) lastGroup.trimTrailing = true;
-        } else {
-            const group = { type: item.type, values: [item.value], trimTrailing: false };
-            if (nextItem && nextItem.type !== item.type && item.type === highlightType) group.trimTrailing = true;
-            groups.push(group);
-        }
-    }
-    return groups;
-}
+// ── Diff engine delegation (Context.diffEngine from diff-engine.js) ──
 
 function _dvEscHtml(value) {
     return String(value == null ? '' : value)
@@ -165,14 +81,25 @@ function _dvEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function _dvTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
-
-function _dvEqualSpanHtml(text) {
-    return `<span class="dv-diff-equal">${_dvEscHtml(text)}</span>`;
+function _dvEngine() {
+    return Context.diffEngine;
 }
 
 function _dvPlainPromptHtml(text) {
-    return _dvEqualSpanHtml(text || '');
+    const eng = _dvEngine();
+    return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
+}
+
+function _dvDiffPair(baseText, compareText, granularity) {
+    const eng = _dvEngine();
+    if (!eng) {
+        return { baseHtml: _dvPlainPromptHtml(baseText), compareHtml: _dvPlainPromptHtml(compareText) };
+    }
+    return eng.diffPair(baseText, compareText, {
+        granularity,
+        showHighlights: _dvState.showHighlights,
+        highlightModality: _dvState.highlightModality
+    });
 }
 
 function _dvFormatCreatedAt(iso) {
@@ -248,119 +175,6 @@ function _dvSlotMetaRowHtml(slot) {
     const versionHtml = _dvSlotVersionCountHtml(slot);
     if (!createdHtml && !versionHtml) return '';
     return `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`;
-}
-
-function _dvHighlightStyles() {
-    const dark = document.documentElement.classList.contains('dark');
-    const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
-    const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
-    const equalBg = 'rgba(250,215,50,0.4)';
-    const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
-    return {
-        remove: `background-color:${removeBg};${span}`,
-        add: `background-color:${addBg};${span}`,
-        equal: `background-color:${equalBg};${span}`
-    };
-}
-
-function _dvRenderBaseHtml(diff, highlightStyle, highlightType) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'remove'], highlightType);
-    let html = '';
-    groups.forEach((group) => {
-        let text = group.values.join('');
-        if (group.type === highlightType) {
-            if (text === '\n') {
-                html += `<span style="${highlightStyle}">↵</span>\n`;
-            } else {
-                const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
-                const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
-            }
-        } else {
-            html += _dvEqualSpanHtml(text);
-        }
-    });
-    return html;
-}
-
-function _dvRenderCompareHtml(diff, highlightStyle, highlightType) {
-    const groups = _dvGroupConsecutive(diff, ['equal', 'add'], highlightType);
-    let html = '';
-    groups.forEach((group) => {
-        let text = group.values.join('');
-        if (group.type === highlightType) {
-            if (text === '\n') {
-                html += `<span style="${highlightStyle}">↵</span>\n`;
-            } else {
-                const trimmed = group.trimTrailing ? _dvTrimTrailing(text) : text;
-                const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${highlightStyle}">${_dvEscHtml(trimmed)}</span>${trail ? _dvEqualSpanHtml(trail) : ''}`;
-            }
-        } else {
-            html += _dvEqualSpanHtml(text);
-        }
-    });
-    return html;
-}
-
-function _dvDiffUnits(baseText, compareText, granularity) {
-    const isChar = granularity === 'char';
-    if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
-        return { a: _dvTokenize(baseText), b: _dvTokenize(compareText), effectiveGranularity: 'word' };
-    }
-    if (isChar) {
-        return { a: baseText.split(''), b: compareText.split(''), effectiveGranularity: 'char' };
-    }
-    const a = _dvTokenize(baseText);
-    const b = _dvTokenize(compareText);
-    if (a.length + b.length > DV_WORD_DIFF_TOKEN_LIMIT) {
-        Logger.debug(`diff-viewer: word token count ${a.length + b.length} > ${DV_WORD_DIFF_TOKEN_LIMIT}; falling back to line diff`);
-        const aLines = baseText.split('\n');
-        const bLines = compareText.split('\n');
-        return { a: aLines, b: bLines, effectiveGranularity: 'line' };
-    }
-    return { a, b, effectiveGranularity: 'word' };
-}
-
-function _dvSimilarityPercent(baseText, compareText, granularity) {
-    const { a, b, effectiveGranularity } = _dvDiffUnits(baseText, compareText, granularity);
-    if (baseText === compareText) {
-        return { percent: 100, noDifference: true, effectiveGranularity };
-    }
-    if (a.length === 0 && b.length === 0) {
-        return { percent: 100, noDifference: true, effectiveGranularity };
-    }
-    const dp = _dvComputeLCS(a, b);
-    const lcs = dp[a.length][b.length];
-    const percent = Math.round((2 * lcs / (a.length + b.length)) * 100);
-    return { percent, noDifference: false, effectiveGranularity };
-}
-
-function _dvDiffPair(baseText, compareText, granularity) {
-    if (!_dvState.showHighlights) {
-        return {
-            baseHtml: _dvPlainPromptHtml(baseText),
-            compareHtml: _dvPlainPromptHtml(compareText)
-        };
-    }
-    const similarities = _dvState.highlightModality === 'similarities';
-    const baseHighlight = similarities ? 'equal' : 'remove';
-    const compareHighlight = similarities ? 'equal' : 'add';
-    const styles = _dvHighlightStyles();
-    const isChar = granularity === 'char';
-    if (isChar && (baseText.length + compareText.length > DV_CHAR_DIFF_LIMIT)) {
-        Logger.warn('diff-viewer: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
-        const diff = _dvComputeWordDiff(baseText, compareText);
-        return {
-            baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
-            compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
-        };
-    }
-    const diff = isChar ? _dvComputeCharDiff(baseText, compareText) : _dvComputeWordDiff(baseText, compareText);
-    return {
-        baseHtml: _dvRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
-        compareHtml: _dvRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
-    };
 }
 
 // ── Stash persistence ──
@@ -1448,16 +1262,15 @@ function _dvAboveLabelInnerHtml() {
     if (!_dvState.showHighlights) return '';
     const pair = _dvActiveCompareTexts();
     if (!pair) return '';
-    const { leftText, rightText } = pair;
-    const { percent, noDifference, effectiveGranularity } = _dvSimilarityPercent(leftText, rightText, _dvState.granularity);
-    const granLabel = effectiveGranularity === 'char' ? 'char' : 'word';
-    if (noDifference) {
-        return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
-    }
-    if (_dvState.highlightModality === 'similarities') {
-        return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' similarity</span>';
-    }
-    return '<span class="dv-slot-above-label-sim">' + (100 - percent) + '% ' + granLabel + ' difference</span>';
+    const eng = _dvEngine();
+    if (!eng) return '';
+    return eng.similarityLabelHtml({
+        leftText: pair.leftText,
+        rightText: pair.rightText,
+        granularity: _dvState.granularity,
+        highlightModality: _dvState.highlightModality,
+        showHighlights: _dvState.showHighlights
+    });
 }
 
 function _dvSetAboveLabelEl(el, inner) {
@@ -2928,7 +2741,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.69',
+    _version: '1.70',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

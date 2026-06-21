@@ -6290,10 +6290,311 @@ const searchOutputMethods = {
             this._state.cardUi[taskId] = {
                 expanded: false,
                 timelineNewestFirst: false,
-                selectedDisplayNo: null
+                selectedDisplayNo: null,
+                rollingUi: {
+                    rollingLeft: 0,
+                    showHighlights: true,
+                    highlightModality: 'differences',
+                    feedbackBulkCollapsed: false,
+                    activationLogged: false,
+                    initialized: false
+                }
+            };
+        }
+        if (!this._state.cardUi[taskId].rollingUi) {
+            this._state.cardUi[taskId].rollingUi = {
+                rollingLeft: 0,
+                showHighlights: true,
+                highlightModality: 'differences',
+                feedbackBulkCollapsed: false,
+                activationLogged: false,
+                initialized: false
             };
         }
         return this._state.cardUi[taskId];
+    },
+
+    _getRollingUi(taskId) {
+        return this._getCardUi(taskId).rollingUi;
+    },
+
+    _ensureRollingUiOnExpand(taskId, versionCount) {
+        const rollingUi = this._getRollingUi(taskId);
+        if (!rollingUi.initialized) {
+            rollingUi.showHighlights = true;
+            rollingUi.highlightModality = 'differences';
+            rollingUi.feedbackBulkCollapsed = false;
+            rollingUi.rollingLeft = 0;
+            rollingUi.initialized = true;
+        }
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        if (versionCount >= 2 && !rollingUi.activationLogged) {
+            rollingUi.activationLogged = true;
+            Logger.log('search-output: rolling diff active for task ' + taskId);
+        }
+    },
+
+    _clampCardRollingLeft(rollingUi, versionCount) {
+        const max = Math.max(0, versionCount - 2);
+        rollingUi.rollingLeft = Math.max(0, Math.min(rollingUi.rollingLeft, max));
+    },
+
+    _rollingSegBtn(attrName, value, label, active, divider) {
+        const divCls = divider ? ' dv-seg-btn--divider' : '';
+        return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
+    },
+
+    _rollingSimilarityLabelHtml(leftText, rightText, rollingUi) {
+        const eng = Context.diffEngine;
+        if (!eng) return '';
+        return eng.similarityLabelHtml({
+            leftText,
+            rightText,
+            granularity: 'word',
+            highlightModality: rollingUi.highlightModality,
+            showHighlights: rollingUi.showHighlights
+        });
+    },
+
+    _expandedRollingToolbarHtml(itemId, taskId, rollingUi, renderedVersions) {
+        const leftIdx = rollingUi.rollingLeft;
+        const rightIdx = leftIdx + 1;
+        const leftVersion = renderedVersions[leftIdx];
+        const rightVersion = renderedVersions[rightIdx];
+        const leftText = (leftVersion && leftVersion.prompt) || '';
+        const rightText = (rightVersion && rightVersion.prompt) || '';
+        const simLabel = this._rollingSimilarityLabelHtml(leftText, rightText, rollingUi);
+        const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
+        const modality = rollingUi.highlightModality;
+        const showHighlights = rollingUi.showHighlights;
+        return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
+            <span data-wf-dash-rolling-sim-label="1" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap;">${simLabel || ''}</span>
+            <button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>
+            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
+            </div>
+            <div class="dv-seg-group" role="group" aria-label="Diff highlights">
+                ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
+            </div>
+        </div>`;
+    },
+
+    _isFeedbackBlockId(blockId) {
+        const id = String(blockId || '');
+        return id.startsWith('qa:') || id.startsWith('dispute:') || id.startsWith('flag:');
+    },
+
+    _collectFeedbackBlockIdsForItem(item) {
+        const ids = [];
+        const task = item.task || {};
+        for (const entry of task.allFeedback || []) {
+            if (entry.id) ids.push('qa:' + entry.id);
+        }
+        if (!ids.length && item.qaFeedback) {
+            ids.push('qa:fallback:' + item.id);
+        }
+        for (const d of item.disputes || []) {
+            if (d.id) {
+                ids.push('dispute:' + d.id);
+                ids.push('dispute-res:' + d.id);
+            }
+        }
+        for (const f of item.flags || []) {
+            if (f.id) {
+                ids.push('flag:' + f.id);
+                ids.push('flag-res:' + f.id);
+            }
+        }
+        return ids;
+    },
+
+    _setFeedbackBulkCollapsed(item, collapsed) {
+        const rollingUi = this._getRollingUi(item.task.id);
+        rollingUi.feedbackBulkCollapsed = collapsed;
+        if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+        for (const blockId of this._collectFeedbackBlockIdsForItem(item)) {
+            if (!this._state.actionBlockUi[blockId]) {
+                this._state.actionBlockUi[blockId] = { collapsed: false };
+            }
+            this._state.actionBlockUi[blockId].collapsed = collapsed;
+        }
+        Logger.log('search-output: feedback bulk ' + (collapsed ? 'collapsed' : 'expanded') + ' — task ' + item.task.id);
+    },
+
+    _rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi) {
+        const text = version.prompt || '';
+        if (!text) return '—';
+        const eng = Context.diffEngine;
+        const leftIdx = rollingUi.rollingLeft;
+        const rightIdx = leftIdx + 1;
+        if (!eng || !rollingUi.showHighlights || versionIdx < leftIdx || versionIdx > rightIdx) {
+            return eng ? eng.plainPromptHtml(text) : dashEscHtml(text);
+        }
+        const leftVersion = renderedVersions[leftIdx];
+        const rightVersion = renderedVersions[rightIdx];
+        const leftText = (leftVersion && leftVersion.prompt) || '';
+        const rightText = (rightVersion && rightVersion.prompt) || '';
+        const pair = eng.diffPair(leftText, rightText, {
+            granularity: 'word',
+            showHighlights: rollingUi.showHighlights,
+            highlightModality: rollingUi.highlightModality
+        });
+        if (versionIdx === leftIdx) return pair.baseHtml;
+        return pair.compareHtml;
+    },
+
+    _ensureRollingDiffStyles() {
+        if (!this._modal) return;
+        if (this._modal.querySelector('#wf-dash-rolling-diff-styles')) return;
+        const style = this._pageWindow().document.createElement('style');
+        style.id = 'wf-dash-rolling-diff-styles';
+        style.textContent = [
+            '#wf-dash-modal .so-versions-rolling-area {',
+            '  position: relative;',
+            '}',
+            '#wf-dash-modal .so-rolling-overlay {',
+            '  position: absolute;',
+            '  pointer-events: none;',
+            '  border: 2px solid var(--brand, #2563eb);',
+            '  border-radius: 10px;',
+            '  z-index: 2;',
+            '  box-sizing: border-box;',
+            '  transition: top 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              height 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              left 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              width 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
+            '}',
+            '#wf-dash-modal .dv-slot-above-label-sim,',
+            '#wf-dash-modal .dv-slot-above-label-nodiff {',
+            '  font-size: 11px;',
+            '  font-weight: 600;',
+            '  color: var(--muted-foreground, #64748b);',
+            '}'
+        ].join('\n');
+        this._modal.appendChild(style);
+    },
+
+    _detachCardRollingListeners(cardEl) {
+        if (!cardEl || !cardEl._soRollingCleanup) return;
+        cardEl._soRollingCleanup();
+        cardEl._soRollingCleanup = null;
+        cardEl.removeAttribute('data-wf-dash-rolling-attached');
+    },
+
+    _removeCardRollingOverlay(cardEl) {
+        if (!cardEl) return;
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const overlay = area.querySelector('.so-rolling-overlay');
+        if (overlay) overlay.remove();
+    },
+
+    _updateCardRollingOverlay(cardEl) {
+        if (!cardEl) return;
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const itemId = area.getAttribute('data-item-id');
+        const taskId = area.getAttribute('data-task-id');
+        const item = itemId ? (this._findCachedItem(itemId) || this._findResultItem(itemId)) : null;
+        if (!item) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        const rollingUi = this._getRollingUi(taskId);
+        const versionBlocks = area.querySelectorAll('[data-wf-dash-version-idx]');
+        const versionCount = versionBlocks.length;
+        if (versionCount < 2 || !rollingUi.showHighlights) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        const leftEl = area.querySelector('[data-wf-dash-version-idx="' + rollingUi.rollingLeft + '"]');
+        const rightEl = area.querySelector('[data-wf-dash-version-idx="' + (rollingUi.rollingLeft + 1) + '"]');
+        if (!leftEl || !rightEl) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        const areaRect = area.getBoundingClientRect();
+        const leftRect = leftEl.getBoundingClientRect();
+        const rightRect = rightEl.getBoundingClientRect();
+        const left = Math.min(leftRect.left, rightRect.left) - areaRect.left + area.scrollLeft;
+        const top = Math.min(leftRect.top, rightRect.top) - areaRect.top + area.scrollTop;
+        const right = Math.max(leftRect.right, rightRect.right) - areaRect.left + area.scrollLeft;
+        const bottom = Math.max(leftRect.bottom, rightRect.bottom) - areaRect.top + area.scrollTop;
+        let overlay = area.querySelector('.so-rolling-overlay');
+        if (!overlay) {
+            overlay = this._pageWindow().document.createElement('div');
+            overlay.className = 'so-rolling-overlay';
+            overlay.setAttribute('aria-hidden', 'true');
+            area.appendChild(overlay);
+        }
+        overlay.style.left = left + 'px';
+        overlay.style.top = top + 'px';
+        overlay.style.width = Math.max(0, right - left) + 'px';
+        overlay.style.height = Math.max(0, bottom - top) + 'px';
+    },
+
+    _attachCardRollingListeners(cardEl, itemId, taskId) {
+        if (!cardEl || cardEl.getAttribute('data-wf-dash-rolling-attached') === '1') return;
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item) return;
+        const versions = item.task.promptVersions || [];
+        if (versions.length < 2) return;
+
+        cardEl.setAttribute('data-wf-dash-rolling-attached', '1');
+        this._ensureRollingDiffStyles();
+
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        const resultsWrap = this._q('#wf-dash-results');
+        const cleanups = [];
+
+        const onScroll = () => this._updateCardRollingOverlay(cardEl);
+        if (area) area.addEventListener('scroll', onScroll, { passive: true });
+        if (resultsWrap) resultsWrap.addEventListener('scroll', onScroll, { passive: true });
+        cleanups.push(() => {
+            if (area) area.removeEventListener('scroll', onScroll);
+            if (resultsWrap) resultsWrap.removeEventListener('scroll', onScroll);
+        });
+
+        if (typeof ResizeObserver !== 'undefined' && area) {
+            const ro = new ResizeObserver(onScroll);
+            ro.observe(area);
+            cleanups.push(() => ro.disconnect());
+        }
+
+        const onMouseOver = (e) => {
+            const block = e.target.closest('[data-wf-dash-version-idx]');
+            if (!block || !cardEl.contains(block)) return;
+            const related = e.relatedTarget;
+            if (related instanceof Node && block.contains(related)) return;
+            const idx = parseInt(block.getAttribute('data-wf-dash-version-idx'), 10);
+            if (!Number.isFinite(idx)) return;
+            this._shiftCardRollingPair(taskId, itemId, idx, versions.length);
+        };
+        cardEl.addEventListener('mouseover', onMouseOver);
+        cleanups.push(() => cardEl.removeEventListener('mouseover', onMouseOver));
+
+        cardEl._soRollingCleanup = () => {
+            for (const fn of cleanups) fn();
+            this._removeCardRollingOverlay(cardEl);
+        };
+
+        requestAnimationFrame(() => this._updateCardRollingOverlay(cardEl));
+    },
+
+    _shiftCardRollingPair(taskId, itemId, idx, versionCount) {
+        const rollingUi = this._getRollingUi(taskId);
+        const rollingRight = rollingUi.rollingLeft + 1;
+        if (idx >= rollingUi.rollingLeft && idx <= rollingRight) return;
+        const prevLeft = rollingUi.rollingLeft;
+        if (idx < rollingUi.rollingLeft) rollingUi.rollingLeft = idx;
+        else if (idx > rollingRight) rollingUi.rollingLeft = idx - 1;
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        if (rollingUi.rollingLeft === prevLeft) return;
+        Logger.debug('search-output: rolling pair → versions ' + rollingUi.rollingLeft + '–' + (rollingUi.rollingLeft + 1));
+        this._patchTaskCard(itemId);
     },
 
     _findResultItem(itemId) {
@@ -6335,11 +6636,12 @@ const searchOutputMethods = {
             + `</div>`;
     },
 
-    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml) {
+    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs) {
         const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
         const escBlockId = dashEscHtml(blockId);
         const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
-        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr} style="${shellStyle}">`
+        const extra = blockExtraAttrs || '';
+        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra} style="${shellStyle}">`
             + headerRowHtml
             + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
             + `</div>`;
@@ -6413,9 +6715,20 @@ const searchOutputMethods = {
         const newCard = temp.firstElementChild;
         if (!newCard) return;
         if (existing) {
+            this._detachCardRollingListeners(existing);
             existing.replaceWith(newCard);
         } else {
             wrap.appendChild(newCard);
+        }
+        const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (item2) {
+            const ui = this._getCardUi(item2.task.id);
+            const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
+            if (ui.expanded && versionCount >= 2) {
+                this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+            } else {
+                this._detachCardRollingListeners(newCard);
+            }
         }
         this._syncResultsHydrateBannerUi();
     },
@@ -8287,15 +8600,25 @@ const searchOutputMethods = {
         return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls, rollingOpts) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
         const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-        const promptBody = version.prompt
-            ? this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx)
-            : '—';
+        let promptBody;
+        if (rollingOpts && rollingOpts.active) {
+            promptBody = this._rollingPromptBodyHtml(
+                version,
+                rollingOpts.versionIdx,
+                rollingOpts.renderedVersions,
+                rollingOpts.rollingUi
+            );
+        } else if (version.prompt) {
+            promptBody = this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx);
+        } else {
+            promptBody = '—';
+        }
         let promptLabel;
         if (versionHeaderControls) {
             promptLabel = versionHeaderControls;
@@ -8316,12 +8639,16 @@ const searchOutputMethods = {
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, versionActionBadge || '');
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
             + taskActionsHtml;
+        const versionIdxAttr = (rollingOpts && rollingOpts.active)
+            ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
+            : '';
         return this._actionBlockShellHtml(
             blockId,
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            bodyHtml
+            bodyHtml,
+            versionIdxAttr
         );
     },
 
@@ -8469,12 +8796,20 @@ const searchOutputMethods = {
 
         let row3Html = '';
         if (expanded) {
+            const rollingUi = this._getRollingUi(task.id);
+            const rollingActive = hasTimeline && totalVersions >= 2;
+            if (rollingActive) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const toolbarRight = rollingActive
+                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi, renderedVersions)
+                : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
+                    ${toolbarRight}
                 </div>`;
         }
 
-        const versionSections = renderedVersions.map((version) => {
+        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const versionSections = renderedVersions.map((version, versionIdx) => {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
@@ -8485,10 +8820,14 @@ const searchOutputMethods = {
             } else if (hasTimeline && expanded) {
                 versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
             }
+            const rollingOpts = rollingUi
+                ? { active: true, versionIdx, renderedVersions, rollingUi }
+                : null;
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes, orphanFlagsForVersion, itemId, highlightRegex, versionHeaderControls
+                orphanDisputes, orphanFlagsForVersion, itemId, highlightRegex, versionHeaderControls,
+                rollingOpts
             );
         }).join('');
 
@@ -8498,6 +8837,10 @@ const searchOutputMethods = {
                 </div>`
             : '';
 
+        const versionsInnerHtml = expanded && hasTimeline && totalVersions >= 2
+            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
+            : versionSections;
+
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
                 ${this._cardHeaderMetaRowHtml(task)}
@@ -8505,7 +8848,7 @@ const searchOutputMethods = {
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
-                    ${versionSections}
+                    ${versionsInnerHtml}
                 </div>
             </article>`;
 
@@ -8865,6 +9208,11 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = showAllBtn.getAttribute('data-task-id');
                 const ui = dash._getCardUi(taskId);
                 ui.expanded = true;
+                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
+                const versionCount = item && item.task && item.task.promptVersions
+                    ? item.task.promptVersions.length
+                    : 0;
+                dash._ensureRollingUiOnExpand(taskId, versionCount);
                 dash._patchTaskCard(itemId);
                 return;
             }
@@ -8885,7 +9233,46 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = timelineToggle.getAttribute('data-task-id');
                 const ui = dash._getCardUi(taskId);
                 ui.timelineNewestFirst = !ui.timelineNewestFirst;
+                const rollingUi = dash._getRollingUi(taskId);
+                rollingUi.rollingLeft = 0;
                 dash._patchTaskCard(itemId);
+                return;
+            }
+            const feedbackBulkBtn = e.target.closest('[data-wf-dash-feedback-bulk]');
+            if (feedbackBulkBtn && modal.contains(feedbackBulkBtn)) {
+                const itemId = feedbackBulkBtn.getAttribute('data-item-id');
+                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
+                if (item) {
+                    const rollingUi = dash._getRollingUi(item.task.id);
+                    dash._setFeedbackBulkCollapsed(item, !rollingUi.feedbackBulkCollapsed);
+                    dash._patchTaskCard(itemId);
+                }
+                return;
+            }
+            const rollingModalityBtn = e.target.closest('[data-wf-dash-rolling-modality]');
+            if (rollingModalityBtn && modal.contains(rollingModalityBtn)) {
+                const card = rollingModalityBtn.closest('[data-wf-dash-task-card]');
+                const itemId = card && card.getAttribute('data-item-id');
+                const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
+                if (item) {
+                    const modality = rollingModalityBtn.getAttribute('data-wf-dash-rolling-modality');
+                    if (modality === 'differences' || modality === 'similarities') {
+                        dash._getRollingUi(item.task.id).highlightModality = modality;
+                        dash._patchTaskCard(itemId);
+                    }
+                }
+                return;
+            }
+            const rollingHighlightsBtn = e.target.closest('[data-wf-dash-rolling-highlights]');
+            if (rollingHighlightsBtn && modal.contains(rollingHighlightsBtn)) {
+                const card = rollingHighlightsBtn.closest('[data-wf-dash-task-card]');
+                const itemId = card && card.getAttribute('data-item-id');
+                const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
+                if (item) {
+                    const val = rollingHighlightsBtn.getAttribute('data-wf-dash-rolling-highlights');
+                    dash._getRollingUi(item.task.id).showHighlights = val === 'on';
+                    dash._patchTaskCard(itemId);
+                }
                 return;
             }
             const openTaskBtn = e.target.closest('[data-wf-dash-open-task]');
@@ -9033,7 +9420,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.19',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
