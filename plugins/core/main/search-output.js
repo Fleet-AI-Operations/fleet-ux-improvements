@@ -6487,9 +6487,19 @@ const searchOutputMethods = {
             '  font-weight: inherit;',
             '  color: inherit;',
             '}',
-            '#wf-dash-modal [data-wf-dash-version-idx].so-rolling-diff-on > [data-wf-dash-action-block-body] > [data-wf-dash-action-block] [data-wf-dash-action-block-body] p,',
-            '#wf-dash-modal [data-wf-dash-version-idx].so-rolling-diff-on > [data-wf-dash-action-block-body] > [data-wf-dash-action-block] [data-wf-dash-action-block-body] .dv-diff-equal {',
-            '  color: var(--muted-foreground, #64748b);',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] span,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] div,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] p,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] div,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] span,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] a,',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] mark {',
+            '  color: var(--muted-foreground, #64748b) !important;',
+            '}',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] a[style*="background"] {',
+            '  color: unset !important;',
             '}',
             '#wf-dash-modal .dv-slot-above-label-sim,',
             '#wf-dash-modal .dv-slot-above-label-nodiff {',
@@ -6551,12 +6561,10 @@ const searchOutputMethods = {
         const overlayRightVp = Math.max(leftRect.right, rightRect.right);
         const expandLeft = Math.max(0, (overlayLeftVp - articleRect.left) / 2);
         const expandRight = Math.max(0, (articleRect.right - overlayRightVp) / 2);
-        const expandTop = Math.max(0, (overlayTopVp - articleRect.top) / 2);
-        const expandBottom = Math.max(0, (articleRect.bottom - overlayBottomVp) / 2);
         let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
-        let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
+        let top = overlayTopVp - areaRect.top + area.scrollTop;
         const width = Math.max(0, overlayRightVp - overlayLeftVp + expandLeft + expandRight);
-        const height = Math.max(0, overlayBottomVp - overlayTopVp + expandTop + expandBottom);
+        const height = Math.max(0, overlayBottomVp - overlayTopVp);
         let overlay = area.querySelector('.so-rolling-overlay');
         if (!overlay) {
             overlay = this._pageWindow().document.createElement('div');
@@ -8697,7 +8705,9 @@ const searchOutputMethods = {
                     ? 'color: var(--muted-foreground, #64748b);'
                     : 'color: var(--foreground, #0f172a);'));
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
-            + taskActionsHtml;
+            + (inActivePair
+                ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
+                : taskActionsHtml);
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
@@ -9481,7 +9491,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
