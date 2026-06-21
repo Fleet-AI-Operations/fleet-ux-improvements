@@ -6431,7 +6431,7 @@ const searchOutputMethods = {
             return dashEscHtml(text);
         }
         if (versionIdx < leftIdx || versionIdx > rightIdx) {
-            return eng.plainPromptHtml(text);
+            return dashEscHtml(text);
         }
         const leftVersion = renderedVersions[leftIdx];
         const rightVersion = renderedVersions[rightIdx];
@@ -6561,10 +6561,20 @@ const searchOutputMethods = {
         const overlayRightVp = Math.max(leftRect.right, rightRect.right);
         const expandLeft = Math.max(0, (overlayLeftVp - articleRect.left) / 2);
         const expandRight = Math.max(0, (articleRect.right - overlayRightVp) / 2);
+        const prevSibling = leftEl.previousElementSibling;
+        const nextSibling = rightEl.nextElementSibling;
+        const topBoundaryVp = prevSibling
+            ? prevSibling.getBoundingClientRect().bottom
+            : areaRect.top;
+        const bottomBoundaryVp = nextSibling
+            ? nextSibling.getBoundingClientRect().top
+            : areaRect.bottom;
+        const expandTop = Math.max(0, (overlayTopVp - topBoundaryVp) / 2);
+        const expandBottom = Math.max(0, (bottomBoundaryVp - overlayBottomVp) / 2);
         let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
-        let top = overlayTopVp - areaRect.top + area.scrollTop;
+        let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
         const width = Math.max(0, overlayRightVp - overlayLeftVp + expandLeft + expandRight);
-        const height = Math.max(0, overlayBottomVp - overlayTopVp);
+        const height = Math.max(0, overlayBottomVp - overlayTopVp + expandTop + expandBottom);
         let overlay = area.querySelector('.so-rolling-overlay');
         if (!overlay) {
             overlay = this._pageWindow().document.createElement('div');
@@ -8697,13 +8707,7 @@ const searchOutputMethods = {
         }
         if (versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
-        const promptColor = (rollingOpts && rollingOpts.active && rollingUi && !rollingUi.showHighlights)
-            ? 'color: var(--foreground, #0f172a);'
-            : (inActivePair
-                ? 'color: var(--foreground, #0f172a);'
-                : (rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
-                    ? 'color: var(--muted-foreground, #64748b);'
-                    : 'color: var(--foreground, #0f172a);'));
+        const promptColor = 'color: var(--foreground, #0f172a);';
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + (inActivePair
                 ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
@@ -9491,7 +9495,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
