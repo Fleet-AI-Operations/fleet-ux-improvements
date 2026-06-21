@@ -6356,19 +6356,17 @@ const searchOutputMethods = {
         });
     },
 
-    _expandedRollingToolbarHtml(itemId, taskId, rollingUi, renderedVersions) {
-        const leftIdx = rollingUi.rollingLeft;
-        const rightIdx = leftIdx + 1;
-        const leftVersion = renderedVersions[leftIdx];
-        const rightVersion = renderedVersions[rightIdx];
-        const leftText = (leftVersion && leftVersion.prompt) || '';
-        const rightText = (rightVersion && rightVersion.prompt) || '';
-        const simLabel = this._rollingSimilarityLabelHtml(leftText, rightText, rollingUi);
+    _rollingSimilarityBadgeHtml(leftText, rightText, rollingUi) {
+        const inner = this._rollingSimilarityLabelHtml(leftText, rightText, rollingUi);
+        if (!inner) return '';
+        return `<span class="so-rolling-sim-badge">${inner}</span>`;
+    },
+
+    _expandedRollingToolbarHtml(itemId, taskId, rollingUi) {
         const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
         const modality = rollingUi.highlightModality;
         const showHighlights = rollingUi.showHighlights;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
-            <span data-wf-dash-rolling-sim-label="1" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap;">${simLabel || ''}</span>
             <button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>
             <div class="dv-seg-group" role="group" aria-label="Diff modality">
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
@@ -6429,8 +6427,11 @@ const searchOutputMethods = {
         const eng = Context.diffEngine;
         const leftIdx = rollingUi.rollingLeft;
         const rightIdx = leftIdx + 1;
-        if (!eng || !rollingUi.showHighlights || versionIdx < leftIdx || versionIdx > rightIdx) {
-            return eng ? eng.plainPromptHtml(text) : dashEscHtml(text);
+        if (!eng || !rollingUi.showHighlights) {
+            return dashEscHtml(text);
+        }
+        if (versionIdx < leftIdx || versionIdx > rightIdx) {
+            return eng.plainPromptHtml(text);
         }
         const leftVersion = renderedVersions[leftIdx];
         const rightVersion = renderedVersions[rightIdx];
@@ -6447,9 +6448,12 @@ const searchOutputMethods = {
 
     _ensureRollingDiffStyles() {
         if (!this._modal) return;
-        if (this._modal.querySelector('#wf-dash-rolling-diff-styles')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-rolling-diff-styles';
+        let style = this._modal.querySelector('#wf-dash-rolling-diff-styles');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-rolling-diff-styles';
+            this._modal.appendChild(style);
+        }
         style.textContent = [
             '#wf-dash-modal .so-versions-rolling-area {',
             '  position: relative;',
@@ -6466,6 +6470,27 @@ const searchOutputMethods = {
             '              left 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
             '              width 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
             '}',
+            '#wf-dash-modal .so-rolling-sim-badge {',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  padding: 2px 8px;',
+            '  border-radius: 6px;',
+            '  font-size: 10px;',
+            '  font-weight: 700;',
+            '  white-space: nowrap;',
+            '  background: #f1f5f9;',
+            '  color: #0f172a;',
+            '}',
+            '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-sim,',
+            '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-nodiff {',
+            '  font-size: inherit;',
+            '  font-weight: inherit;',
+            '  color: inherit;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-version-idx].so-rolling-diff-on > [data-wf-dash-action-block-body] > [data-wf-dash-action-block] [data-wf-dash-action-block-body] p,',
+            '#wf-dash-modal [data-wf-dash-version-idx].so-rolling-diff-on > [data-wf-dash-action-block-body] > [data-wf-dash-action-block] [data-wf-dash-action-block-body] .dv-diff-equal {',
+            '  color: var(--muted-foreground, #64748b);',
+            '}',
             '#wf-dash-modal .dv-slot-above-label-sim,',
             '#wf-dash-modal .dv-slot-above-label-nodiff {',
             '  font-size: 11px;',
@@ -6473,7 +6498,6 @@ const searchOutputMethods = {
             '  color: var(--muted-foreground, #64748b);',
             '}'
         ].join('\n');
-        this._modal.appendChild(style);
     },
 
     _detachCardRollingListeners(cardEl) {
@@ -6519,10 +6543,20 @@ const searchOutputMethods = {
         const areaRect = area.getBoundingClientRect();
         const leftRect = leftEl.getBoundingClientRect();
         const rightRect = rightEl.getBoundingClientRect();
-        const left = Math.min(leftRect.left, rightRect.left) - areaRect.left + area.scrollLeft;
-        const top = Math.min(leftRect.top, rightRect.top) - areaRect.top + area.scrollTop;
-        const right = Math.max(leftRect.right, rightRect.right) - areaRect.left + area.scrollLeft;
-        const bottom = Math.max(leftRect.bottom, rightRect.bottom) - areaRect.top + area.scrollTop;
+        const article = cardEl.querySelector('.wf-dash-task-card-article');
+        const articleRect = article ? article.getBoundingClientRect() : areaRect;
+        const overlayTopVp = Math.min(leftRect.top, rightRect.top);
+        const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
+        const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
+        const overlayRightVp = Math.max(leftRect.right, rightRect.right);
+        const expandLeft = Math.max(0, (overlayLeftVp - articleRect.left) / 2);
+        const expandRight = Math.max(0, (articleRect.right - overlayRightVp) / 2);
+        const expandTop = Math.max(0, (overlayTopVp - articleRect.top) / 2);
+        const expandBottom = Math.max(0, (articleRect.bottom - overlayBottomVp) / 2);
+        let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
+        let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
+        const width = Math.max(0, overlayRightVp - overlayLeftVp + expandLeft + expandRight);
+        const height = Math.max(0, overlayBottomVp - overlayTopVp + expandTop + expandBottom);
         let overlay = area.querySelector('.so-rolling-overlay');
         if (!overlay) {
             overlay = this._pageWindow().document.createElement('div');
@@ -6532,8 +6566,8 @@ const searchOutputMethods = {
         }
         overlay.style.left = left + 'px';
         overlay.style.top = top + 'px';
-        overlay.style.width = Math.max(0, right - left) + 'px';
-        overlay.style.height = Math.max(0, bottom - top) + 'px';
+        overlay.style.width = width + 'px';
+        overlay.style.height = height + 'px';
     },
 
     _attachCardRollingListeners(cardEl, itemId, taskId) {
@@ -6636,12 +6670,13 @@ const searchOutputMethods = {
             + `</div>`;
     },
 
-    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs) {
+    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs, shellClass) {
         const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
         const escBlockId = dashEscHtml(blockId);
         const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
         const extra = blockExtraAttrs || '';
-        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra} style="${shellStyle}">`
+        const classAttr = shellClass ? ` class="${dashEscHtml(shellClass.trim())}"` : '';
+        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra}${classAttr} style="${shellStyle}">`
             + headerRowHtml
             + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
             + `</div>`;
@@ -8636,19 +8671,45 @@ const searchOutputMethods = {
         const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
         const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, versionActionBadge || '');
-        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+        let rightHeader = '';
+        const rollingUi = rollingOpts && rollingOpts.rollingUi;
+        const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
+            && rollingOpts.versionIdx >= rollingUi.rollingLeft
+            && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
+        if (rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
+            && rollingOpts.versionIdx === rollingUi.rollingLeft) {
+            const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
+            const rightVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft + 1];
+            const simBadge = this._rollingSimilarityBadgeHtml(
+                (leftVersion && leftVersion.prompt) || '',
+                (rightVersion && rightVersion.prompt) || '',
+                rollingUi
+            );
+            if (simBadge) rightHeader += simBadge;
+        }
+        if (versionActionBadge) rightHeader += versionActionBadge;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        const promptColor = (rollingOpts && rollingOpts.active && rollingUi && !rollingUi.showHighlights)
+            ? 'color: var(--foreground, #0f172a);'
+            : (inActivePair
+                ? 'color: var(--foreground, #0f172a);'
+                : (rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
+                    ? 'color: var(--muted-foreground, #64748b);'
+                    : 'color: var(--foreground, #0f172a);'));
+        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + taskActionsHtml;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
+        const shellClass = inActivePair ? 'so-rolling-diff-on' : '';
         return this._actionBlockShellHtml(
             blockId,
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml,
-            versionIdxAttr
+            versionIdxAttr,
+            shellClass
         );
     },
 
@@ -8800,7 +8861,7 @@ const searchOutputMethods = {
             const rollingActive = hasTimeline && totalVersions >= 2;
             if (rollingActive) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
             const toolbarRight = rollingActive
-                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi, renderedVersions)
+                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
@@ -9420,7 +9481,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
