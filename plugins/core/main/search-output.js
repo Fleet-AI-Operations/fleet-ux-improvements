@@ -5756,7 +5756,7 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
+                                <p style="${hint} margin: 0;">Refine loaded results. Substring filters apply as you type unless RegEx is enabled; other filters use Apply.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
@@ -7132,6 +7132,30 @@ const searchOutputMethods = {
         if ((applied.manualAndOr || 'and') !== manual.andOr) return true;
         if (!this._manualFilterRowsEqual(applied.manualFilters, manual.rows)) return true;
         return false;
+    },
+
+    _isPromptRegexFilterEnabled() {
+        return Boolean((this._q('#wf-dash-regex') || {}).checked);
+    },
+
+    _maybeLiveApplyPromptFilter() {
+        if (this._state.loading || !this._state.cachedItems) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        if (this._isPromptRegexFilterEnabled()) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
+        const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
+        const lib = dashLib();
+        const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, false);
+        if (filterInvalid.invalid) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        this._applyFiltersAndRender();
     },
 
     _updateApplyFiltersUi() {
@@ -9294,6 +9318,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._syncPromptFilterHeight(prompt);
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
+                dash._maybeLiveApplyPromptFilter();
             });
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -9308,6 +9333,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (prompt) prompt.value = '';
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
+                dash._maybeLiveApplyPromptFilter();
             });
         }
         const fuzzyEl = dash._q('#wf-dash-fuzzy');
@@ -9316,16 +9342,23 @@ function attachSearchOutputListeners(modal, dash) {
             fuzzyEl.addEventListener('change', () => {
                 if (fuzzyEl.checked && regexEl) regexEl.checked = false;
                 dash._updateSubstringErrorUi();
+                dash._maybeLiveApplyPromptFilter();
             });
         }
         if (regexEl) {
             regexEl.addEventListener('change', () => {
                 if (regexEl.checked && fuzzyEl) fuzzyEl.checked = false;
                 dash._updateSubstringErrorUi();
+                if (!regexEl.checked) dash._maybeLiveApplyPromptFilter();
             });
         }
         const caseEl = dash._q('#wf-dash-case');
-        if (caseEl) caseEl.addEventListener('change', () => dash._updateSubstringErrorUi());
+        if (caseEl) {
+            caseEl.addEventListener('change', () => {
+                dash._updateSubstringErrorUi();
+                dash._maybeLiveApplyPromptFilter();
+            });
+        }
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
@@ -9674,7 +9707,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.13',
+    _version: '3.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
