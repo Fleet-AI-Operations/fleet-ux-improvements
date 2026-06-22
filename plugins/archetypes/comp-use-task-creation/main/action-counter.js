@@ -8,7 +8,7 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description: 'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -17,28 +17,46 @@ const plugin = {
     },
 
     initialState: {
-        missingLogged: false,
+        anchorMissingLogged: false,
+        tabBarMissingLogged: false,
         activationLogged: false,
         hadAnchor: false,
         migratedLegacy: false
     },
 
     onMutation(state) {
-        const tabBar = this.findTaskNotesTabBar();
+        const anchor = this.findContentAnchor();
+        if (!anchor) {
+            if (state.hadAnchor) {
+                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
+                state.hadAnchor = false;
+                state.activationLogged = false;
+            }
+            if (!state.anchorMissingLogged) {
+                Logger.debug(`${this.id}: content anchor not found yet`);
+                state.anchorMissingLogged = true;
+            }
+            state.tabBarMissingLogged = false;
+            return;
+        }
+
+        state.anchorMissingLogged = false;
+
+        const tabBar = this.findTaskNotesTabBar(anchor);
         if (!tabBar) {
             if (state.hadAnchor) {
                 Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
-            if (!state.missingLogged) {
-                Logger.debug(`${this.id}: Task/Notes tab bar not found yet`);
-                state.missingLogged = true;
+            if (!state.tabBarMissingLogged) {
+                Logger.debug(`${this.id}: Task/Notes tab bar not found yet (anchor present)`);
+                state.tabBarMissingLogged = true;
             }
             return;
         }
 
-        state.missingLogged = false;
+        state.tabBarMissingLogged = false;
         state.hadAnchor = true;
 
         if (tabBar.querySelector(`[${COUNTER_MARKER}="true"]`)) {
@@ -56,18 +74,45 @@ const plugin = {
         }
     },
 
-    findTaskNotesTabBar() {
-        const form = document.getElementById('problem-form');
-        if (!form) return null;
+    findContentAnchor() {
+        return (
+            document.getElementById('prompt-editor') ||
+            document.getElementById('problem-form') ||
+            document.querySelector('[data-ui="qa-task-detail-panel"]')
+        );
+    },
 
-        const contentPane = form.parentElement;
-        if (!contentPane) return null;
+    isTaskNotesTabBar(el) {
+        if (!el || el.tagName !== 'DIV') return false;
 
-        const tabBar = contentPane.previousElementSibling;
-        if (!tabBar || tabBar.tagName !== 'DIV') return null;
-        if (!tabBar.querySelector('button')) return null;
+        const buttons = el.querySelectorAll(':scope > button');
+        if (buttons.length < 2) return false;
 
-        return tabBar;
+        const labels = [...buttons].map((btn) => (btn.textContent || '').trim().toLowerCase());
+        return labels.some((label) => label.includes('task')) && labels.some((label) => label.includes('notes'));
+    },
+
+    findTaskNotesTabBar(anchor) {
+        if (!anchor) return null;
+
+        let node = anchor;
+        while (node && node !== document.body) {
+            const parent = node.parentElement;
+            if (!parent) break;
+
+            for (const child of parent.children) {
+                if (!this.isTaskNotesTabBar(child)) continue;
+
+                const contentSibling = [...parent.children].some(
+                    (sibling) => sibling !== child && sibling.contains(anchor)
+                );
+                if (contentSibling) return child;
+            }
+
+            node = parent;
+        }
+
+        return null;
     },
 
     migrateLegacyCount(state) {
