@@ -5571,9 +5571,9 @@ const searchOutputMethods = {
         const inner = (highlight && highlight.query)
             ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
             : dashEscHtml(value);
-        return '<button type="button" class="wf-dash-card-key-copy" data-wf-dash-copy="' + dashEscHtml(value) + '"'
+        return '<button type="button" class="wf-dash-card-key-copy" dir="rtl" data-wf-dash-copy="' + dashEscHtml(value) + '"'
             + ' title="Click to copy: ' + dashEscHtml(value) + '" aria-label="Task key: ' + dashEscHtml(value) + '">'
-            + '<span class="wf-dash-card-key-copy-text">' + inner + '</span></button>';
+            + '<span class="wf-dash-card-key-copy-text" dir="ltr">' + inner + '</span></button>';
     },
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
@@ -9707,7 +9707,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.14',
+    _version: '3.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
