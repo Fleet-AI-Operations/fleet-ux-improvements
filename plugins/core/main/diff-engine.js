@@ -155,6 +155,13 @@ function _deRenderCompareHtml(diff, highlightStyle, highlightType) {
     return html;
 }
 
+function _deFormatPercent(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    if (n < 1) return (Math.round(n * 100) / 100).toFixed(2);
+    return String(Math.round(n));
+}
+
 function _deDiffUnits(baseText, compareText, granularity) {
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
@@ -178,7 +185,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -200,7 +207,7 @@ const plugin = {
                 }
                 const dp = _deComputeLCS(a, b);
                 const lcs = dp[a.length][b.length];
-                const percent = Math.round((2 * lcs / (a.length + b.length)) * 100);
+                const percent = (2 * lcs / (a.length + b.length)) * 100;
                 return { percent, noDifference: false, effectiveGranularity };
             },
 
@@ -247,10 +254,12 @@ const plugin = {
                 if (noDifference) {
                     return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
                 }
+                const displayPercent = highlightModality === 'similarities' ? percent : (100 - percent);
+                const formatted = _deFormatPercent(displayPercent);
                 if (highlightModality === 'similarities') {
-                    return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' similarity</span>';
+                    return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' similarity</span>';
                 }
-                return '<span class="dv-slot-above-label-sim">' + (100 - percent) + '% ' + granLabel + ' difference</span>';
+                return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' difference</span>';
             }
         };
         Logger.log('diff-engine: module registered (Context.diffEngine)');
