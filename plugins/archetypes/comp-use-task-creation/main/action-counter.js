@@ -1,5 +1,5 @@
 // ============= action-counter.js =============
-// Persistent +/- counter beside the Verifier tab; click the number to type a value.
+// Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value.
 
 const COUNTER_MARKER = 'data-fleet-action-counter';
 const LEGACY_STORAGE_KEY = 'fleetai_qa_action_counter';
@@ -7,8 +7,8 @@ const LEGACY_STORAGE_KEY = 'fleetai_qa_action_counter';
 const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
-    description: 'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '1.2',
+    description: 'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -24,29 +24,15 @@ const plugin = {
     },
 
     onMutation(state) {
-        const taskCard = document.querySelector('[data-ui="qa-task-card"]');
-        if (!taskCard) {
+        const tabBar = this.findTaskNotesTabBar();
+        if (!tabBar) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: task card left DOM — counter inactive`);
+                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: [data-ui="qa-task-card"] not found yet`);
-                state.missingLogged = true;
-            }
-            return;
-        }
-
-        const verifierTab = this.findVerifierTab();
-        if (!verifierTab) {
-            if (state.hadAnchor) {
-                Logger.debug(`${this.id}: verifier tab left DOM — counter inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-            }
-            if (!state.missingLogged) {
-                Logger.debug(`${this.id}: verifier tab not found yet`);
+                Logger.debug(`${this.id}: Task/Notes tab bar not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -55,24 +41,33 @@ const plugin = {
         state.missingLogged = false;
         state.hadAnchor = true;
 
-        if (verifierTab.nextElementSibling &&
-            verifierTab.nextElementSibling.getAttribute(COUNTER_MARKER) === 'true') {
+        if (tabBar.querySelector(`[${COUNTER_MARKER}="true"]`)) {
             return;
         }
 
         document.querySelectorAll(`[${COUNTER_MARKER}="true"]`).forEach((el) => el.remove());
-        verifierTab.insertAdjacentElement('afterend', this.buildCounter(state));
+        const counter = this.buildCounter(state);
+        counter.style.marginLeft = 'auto';
+        tabBar.appendChild(counter);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: counter injected beside Verifier tab (count=${this.getCount()})`);
+            Logger.log(`${this.id}: counter injected in Task/Notes tab bar (count=${this.getCount()})`);
             state.activationLogged = true;
         }
     },
 
-    findVerifierTab() {
-        const byUi = document.querySelector('[data-ui="qa-verifier-tab"]');
-        if (byUi) return byUi;
-        return document.querySelector('button[role="tab"][aria-controls*="verifier-output"]');
+    findTaskNotesTabBar() {
+        const form = document.getElementById('problem-form');
+        if (!form) return null;
+
+        const contentPane = form.parentElement;
+        if (!contentPane) return null;
+
+        const tabBar = contentPane.previousElementSibling;
+        if (!tabBar || tabBar.tagName !== 'DIV') return null;
+        if (!tabBar.querySelector('button')) return null;
+
+        return tabBar;
     },
 
     migrateLegacyCount(state) {

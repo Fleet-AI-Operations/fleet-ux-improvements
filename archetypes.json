@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.352",
+  "archetypesVersion": "10.353",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -254,9 +254,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.2",
+          "version": "1.3",
           "log": false,
-          "hash": "sha256-cd5ee8b5b4341642cbfe404a65d6ad90d8ad1b191059769d2a28dbcacd983ca9"
+          "hash": "sha256-3c0e4cc6d585fce81d5238d90e75d7a301229c26f6d3113c5988105e95d635ac"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -287,9 +287,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.2",
+          "version": "1.3",
           "log": false,
-          "hash": "sha256-cd5ee8b5b4341642cbfe404a65d6ad90d8ad1b191059769d2a28dbcacd983ca9"
+          "hash": "sha256-3c0e4cc6d585fce81d5238d90e75d7a301229c26f6d3113c5988105e95d635ac"
         },
         {
           "name": "embedded-urlbar-fit.js",
