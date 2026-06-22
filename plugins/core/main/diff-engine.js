@@ -9,25 +9,44 @@ function _deEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function _dePushTokenStr(tokens, token) {
+    if (!token) return;
+    if (token === '\n') {
+        tokens.push('\n');
+        return;
+    }
+    if (/^[ \t]+$/.test(token)) {
+        tokens.push(token);
+        return;
+    }
+    const trailingMatch = token.match(/^(.+?)([ \t]+)$/);
+    if (trailingMatch) {
+        tokens.push(trailingMatch[1]);
+        tokens.push(trailingMatch[2]);
+        return;
+    }
+    tokens.push(token);
+}
+
 function _deTokenize(text) {
     const tokens = [];
     let current = '';
     for (const char of text) {
         if (char === '\n') {
-            if (current) tokens.push(current);
+            if (current) _dePushTokenStr(tokens, current);
             tokens.push('\n');
             current = '';
         } else if (char === ' ' || char === '\t') {
             current += char;
         } else {
             if (current && (current.endsWith(' ') || current.endsWith('\t'))) {
-                tokens.push(current);
+                _dePushTokenStr(tokens, current);
                 current = '';
             }
             current += char;
         }
     }
-    if (current) tokens.push(current);
+    if (current) _dePushTokenStr(tokens, current);
     return tokens;
 }
 
@@ -185,7 +204,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
