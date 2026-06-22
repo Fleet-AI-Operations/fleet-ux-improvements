@@ -6563,14 +6563,18 @@ const searchOutputMethods = {
         const expandRight = Math.max(0, (articleRect.right - overlayRightVp) / 2);
         const prevSibling = leftEl.previousElementSibling;
         const nextSibling = rightEl.nextElementSibling;
-        const topBoundaryVp = prevSibling
-            ? prevSibling.getBoundingClientRect().bottom
-            : areaRect.top;
-        const bottomBoundaryVp = nextSibling
-            ? nextSibling.getBoundingClientRect().top
-            : areaRect.bottom;
-        const expandTop = Math.max(0, (overlayTopVp - topBoundaryVp) / 2);
-        const expandBottom = Math.max(0, (bottomBoundaryVp - overlayBottomVp) / 2);
+        let expandTop;
+        if (prevSibling) {
+            expandTop = Math.max(0, (overlayTopVp - prevSibling.getBoundingClientRect().bottom) / 2);
+        } else {
+            expandTop = expandLeft;
+        }
+        let expandBottom;
+        if (nextSibling) {
+            expandBottom = Math.max(0, (nextSibling.getBoundingClientRect().top - overlayBottomVp) / 2);
+        } else {
+            expandBottom = expandRight;
+        }
         let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
         let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
         const width = Math.max(0, overlayRightVp - overlayLeftVp + expandLeft + expandRight);
@@ -8694,8 +8698,7 @@ const searchOutputMethods = {
         const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
             && rollingOpts.versionIdx >= rollingUi.rollingLeft
             && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
-        if (rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
-            && rollingOpts.versionIdx === rollingUi.rollingLeft) {
+        if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
             const rightVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft + 1];
             const simBadge = this._rollingSimilarityBadgeHtml(
@@ -9495,7 +9498,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
