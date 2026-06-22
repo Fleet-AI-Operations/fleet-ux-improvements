@@ -8286,6 +8286,25 @@ const searchOutputMethods = {
         return this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600');
     },
 
+    _qaAcceptedBadgeStyle(compact) {
+        let style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
+        if (compact) style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        return style;
+    },
+
+    _qaReturnedBadgeStyle(compact) {
+        let style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        if (compact) style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        return style;
+    },
+
+    _qaPromptRatingBadgeStyle(rating) {
+        const label = String(rating || '');
+        if (label === 'Top 10%') return this._qaAcceptedBadgeStyle();
+        if (label === 'Bottom 10%') return this._qaReturnedBadgeStyle();
+        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);';
+    },
+
     _qaAcceptedBlockStyle() {
         return {
             border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
@@ -8346,12 +8365,12 @@ const searchOutputMethods = {
             : (isSystem
             ? ''
             : (positive
-                ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
+                ? `<span style="${this._qaAcceptedBadgeStyle()}">Accepted</span>`
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${alertBadge}">Flagged as Bugged</span>`
-                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
+                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned for Revision</span>`))));
         const issueBadgeStyle = isOther
             ? this._qaAlertIssueBadgeStyle()
             : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
@@ -8374,7 +8393,7 @@ const searchOutputMethods = {
             ? this._fieldGroupHtml('Submitted', dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds))
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
@@ -8425,12 +8444,10 @@ const searchOutputMethods = {
             }
             return `<span style="${style}">${dashEscHtml(label)}</span>`;
         }
-        const pad = compact ? '1px 6px' : '2px 8px';
-        const radius = compact ? '4px' : '6px';
-        const cls = entry.isPositive
-            ? 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);'
-            : 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
-        return `<span style="display: inline-flex; align-items: center; padding: ${pad}; border-radius: ${radius}; font-size: 10px; font-weight: 700; ${cls}">${dashEscHtml(label)}</span>`;
+        const style = entry.isPositive
+            ? this._qaAcceptedBadgeStyle(compact)
+            : this._qaReturnedBadgeStyle(compact);
+        return `<span style="${style}">${dashEscHtml(label)}</span>`;
     },
 
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
@@ -9636,7 +9653,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.10',
+    _version: '3.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
