@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -28,7 +28,10 @@ const plugin = {
         restoreWrapperEl:  null,
         restoreBtnCurrent: null,
         restoreBtnPrevious: null,
-        selectedVersion:      null,  // 'current' | 'previous' — which btn is in confirm state
+        restoreConfirmRowCurrent: null,
+        restoreConfirmRowPrevious: null,
+        selectedVersion:      null,  // 'current' | 'previous' — which slot is in confirm state
+        promptBeforePreview:  null, // textarea value before restore preview
         suppressRestoreCheck: false, // true while plugin-driven paste fires its synthetic input
         restoreActivationLogged: false,
         stylesInjected:    false,
@@ -77,7 +80,10 @@ const plugin = {
         state.restoreWrapperEl  = null;
         state.restoreBtnCurrent = null;
         state.restoreBtnPrevious = null;
+        state.restoreConfirmRowCurrent = null;
+        state.restoreConfirmRowPrevious = null;
         state.selectedVersion   = null;
+        state.promptBeforePreview = null;
         state.restoreActivationLogged = false;
     },
 
@@ -86,6 +92,7 @@ const plugin = {
             if (!state.suppressRestoreCheck) {
                 if (state.selectedVersion) {
                     state.selectedVersion = null;
+                    state.promptBeforePreview = null;
                 }
                 this.refreshRestoreButtons(state, textarea);
             }
@@ -196,41 +203,52 @@ const plugin = {
         wrapperEl.setAttribute('data-fleet-prompt-cache-restore-wrapper', 'true');
         wrapperEl.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:6px;';
 
-        const bindRestoreBtn = (btn, version) => {
-            btn.addEventListener('click', () => {
-                if (btn.disabled) return;
+        const bindRestoreSlot = (slotParts, version) => {
+            const { restoreBtn, cancelBtn, confirmBtn } = slotParts;
 
-                if (state.selectedVersion === version) {
-                    state.selectedVersion = null;
-                    this.refreshRestoreButtons(state, textarea);
-                    Logger.log(`Prompt Cache: confirmed restore of ${version === 'current' ? 'last saved' : 'previous'} prompt`);
-                    return;
-                }
+            restoreBtn.addEventListener('click', () => {
+                if (restoreBtn.disabled) return;
 
                 const text = this.getRestoreText(version);
                 if (!this.hasSavableContent(text)) return;
 
+                state.promptBeforePreview = textarea.value;
                 this.pastePreview(state, textarea, text);
                 state.selectedVersion = version;
                 this.refreshRestoreButtons(state, textarea);
                 Logger.debug(`Prompt Cache: previewing ${version === 'current' ? 'last saved' : 'previous'} prompt`);
             });
+
+            cancelBtn.addEventListener('click', () => {
+                this.cancelRestorePreview(state, textarea);
+                Logger.log(`Prompt Cache: cancelled restore preview (${version})`);
+            });
+
+            confirmBtn.addEventListener('click', () => {
+                state.selectedVersion = null;
+                state.promptBeforePreview = null;
+                this.refreshRestoreButtons(state, textarea);
+                Logger.log(`Prompt Cache: confirmed restore of ${version === 'current' ? 'last saved' : 'previous'} prompt`);
+            });
         };
 
-        const btnCurrent = this.makeRestoreBtn('Restore last saved prompt?', 'current');
-        const btnPrevious = this.makeRestoreBtn('Restore previous to last saved prompt?', 'previous');
-        bindRestoreBtn(btnCurrent, 'current');
-        bindRestoreBtn(btnPrevious, 'previous');
+        const slotCurrent = this.buildRestoreSlot('Restore last saved prompt?', 'current');
+        const slotPrevious = this.buildRestoreSlot('Restore previous to last saved prompt?', 'previous');
+        bindRestoreSlot(slotCurrent, 'current');
+        bindRestoreSlot(slotPrevious, 'previous');
 
-        wrapperEl.appendChild(btnCurrent);
-        wrapperEl.appendChild(btnPrevious);
+        wrapperEl.appendChild(slotCurrent.slot);
+        wrapperEl.appendChild(slotPrevious.slot);
         section.insertBefore(wrapperEl, wrapper);
 
         state.restoreInjected    = true;
         state.restoreWrapperEl   = wrapperEl;
-        state.restoreBtnCurrent  = btnCurrent;
-        state.restoreBtnPrevious = btnPrevious;
+        state.restoreBtnCurrent  = slotCurrent.restoreBtn;
+        state.restoreBtnPrevious = slotPrevious.restoreBtn;
+        state.restoreConfirmRowCurrent  = slotCurrent.confirmRow;
+        state.restoreConfirmRowPrevious = slotPrevious.confirmRow;
         state.selectedVersion    = null;
+        state.promptBeforePreview = null;
 
         this.refreshRestoreButtons(state, textarea);
 
@@ -244,29 +262,63 @@ const plugin = {
         if (!state.restoreBtnCurrent || !state.restoreBtnPrevious || !textarea) return;
 
         const { canCurrent, canPrevious } = this.getRestoreAvailability(textarea);
-        const btnCurrent = state.restoreBtnCurrent;
-        const btnPrevious = state.restoreBtnPrevious;
 
         if (state.selectedVersion === 'current') {
-            this.setBtnConfirm(btnCurrent);
-            this.setBtnDefault(btnPrevious);
-            this.setBtnEnabled(btnCurrent, true);
-            this.setBtnEnabled(btnPrevious, canPrevious);
+            this.showRestoreConfirm(state.restoreBtnCurrent, state.restoreConfirmRowCurrent);
+            this.showRestoreDefault(state.restoreBtnPrevious, state.restoreConfirmRowPrevious, canPrevious);
             return;
         }
 
         if (state.selectedVersion === 'previous') {
-            this.setBtnConfirm(btnPrevious);
-            this.setBtnDefault(btnCurrent);
-            this.setBtnEnabled(btnPrevious, true);
-            this.setBtnEnabled(btnCurrent, canCurrent);
+            this.showRestoreConfirm(state.restoreBtnPrevious, state.restoreConfirmRowPrevious);
+            this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent);
             return;
         }
 
-        this.setBtnDefault(btnCurrent);
-        this.setBtnDefault(btnPrevious);
-        this.setBtnEnabled(btnCurrent, canCurrent);
-        this.setBtnEnabled(btnPrevious, canPrevious);
+        this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent);
+        this.showRestoreDefault(state.restoreBtnPrevious, state.restoreConfirmRowPrevious, canPrevious);
+    },
+
+    buildRestoreSlot(label, version) {
+        const slot = document.createElement('div');
+        slot.className = 'fleet-prompt-cache-restore-slot';
+        slot.setAttribute('data-fleet-restore-version', version);
+
+        const restoreBtn = this.makeRestoreBtn(label, version);
+
+        const confirmRow = document.createElement('div');
+        confirmRow.className = 'fleet-prompt-cache-restore-confirm-row';
+        confirmRow.setAttribute('data-fleet-prompt-cache-confirm-row', 'true');
+        confirmRow.hidden = true;
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--cancel';
+        cancelBtn.textContent = 'Cancel';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--confirm';
+        confirmBtn.textContent = 'Confirm Version';
+
+        confirmRow.append(cancelBtn, confirmBtn);
+        slot.append(restoreBtn, confirmRow);
+
+        return { slot, restoreBtn, confirmRow, cancelBtn, confirmBtn };
+    },
+
+    showRestoreConfirm(restoreBtn, confirmRow) {
+        if (!restoreBtn || !confirmRow) return;
+        restoreBtn.hidden = true;
+        confirmRow.hidden = false;
+    },
+
+    showRestoreDefault(restoreBtn, confirmRow, enabled) {
+        if (!restoreBtn || !confirmRow) return;
+        confirmRow.hidden = true;
+        restoreBtn.hidden = false;
+        this.setBtnDefault(restoreBtn);
+        this.setBtnEnabled(restoreBtn, enabled);
     },
 
     pastePreview(state, textarea, text) {
@@ -288,14 +340,8 @@ const plugin = {
         return btn;
     },
 
-    setBtnConfirm(btn) {
-        btn.disabled    = false;
-        btn.className   = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--confirm';
-        btn.textContent = 'Confirm Version';
-    },
-
     setBtnDefault(btn) {
-        btn.classList.remove('fleet-prompt-cache-restore-btn--confirm');
+        btn.classList.remove('fleet-prompt-cache-restore-btn--confirm', 'fleet-prompt-cache-restore-btn--cancel');
         btn.textContent = btn.getAttribute('data-fleet-restore-label') || btn.textContent;
         if (!btn.classList.contains('fleet-prompt-cache-restore-btn--disabled')) {
             btn.className = 'fleet-prompt-cache-restore-btn';
@@ -305,16 +351,27 @@ const plugin = {
     setBtnEnabled(btn, enabled) {
         if (enabled) {
             btn.disabled = false;
-            if (!btn.classList.contains('fleet-prompt-cache-restore-btn--confirm')) {
+            btn.classList.remove('fleet-prompt-cache-restore-btn--disabled');
+            if (!btn.classList.contains('fleet-prompt-cache-restore-btn--confirm') &&
+                !btn.classList.contains('fleet-prompt-cache-restore-btn--cancel')) {
                 btn.className = 'fleet-prompt-cache-restore-btn';
             }
             return;
         }
 
         btn.disabled = true;
-        btn.classList.remove('fleet-prompt-cache-restore-btn--confirm');
+        btn.classList.remove('fleet-prompt-cache-restore-btn--confirm', 'fleet-prompt-cache-restore-btn--cancel');
         btn.className = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--disabled';
         btn.textContent = btn.getAttribute('data-fleet-restore-label') || btn.textContent;
+    },
+
+    cancelRestorePreview(state, textarea) {
+        if (state.promptBeforePreview !== null && state.promptBeforePreview !== undefined) {
+            this.pastePreview(state, textarea, state.promptBeforePreview);
+        }
+        state.selectedVersion = null;
+        state.promptBeforePreview = null;
+        this.refreshRestoreButtons(state, textarea);
     },
 
     removeRestoreButtons(state) {
@@ -325,7 +382,10 @@ const plugin = {
         state.restoreWrapperEl  = null;
         state.restoreBtnCurrent = null;
         state.restoreBtnPrevious = null;
+        state.restoreConfirmRowCurrent = null;
+        state.restoreConfirmRowPrevious = null;
         state.selectedVersion   = null;
+        state.promptBeforePreview = null;
         state.restoreActivationLogged = false;
     },
 
@@ -419,6 +479,23 @@ const plugin = {
             .fleet-prompt-cache-restore-btn--disabled:hover,
             .fleet-prompt-cache-restore-btn:disabled:hover {
                 background-color: transparent;
+            }
+            .fleet-prompt-cache-restore-confirm-row {
+                display: flex;
+                gap: 4px;
+                width: 100%;
+            }
+            .fleet-prompt-cache-restore-confirm-row .fleet-prompt-cache-restore-btn {
+                flex: 1;
+                width: auto;
+            }
+            .fleet-prompt-cache-restore-btn--cancel {
+                border-color: rgb(220, 38, 38);
+                color: rgb(220, 38, 38);
+                animation: none;
+            }
+            .fleet-prompt-cache-restore-btn--cancel:hover {
+                background-color: rgba(220, 38, 38, 0.08);
             }
             .fleet-prompt-cache-restore-btn--confirm {
                 border-color: rgb(34, 197, 94);
