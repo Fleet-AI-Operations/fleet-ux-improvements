@@ -8,7 +8,7 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description: 'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -153,8 +153,7 @@ const plugin = {
         return next;
     },
 
-    countColor(val) {
-        if (val > 0) return '#059669';
+    countColor() {
         return 'var(--foreground, #111)';
     },
 

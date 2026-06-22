@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.354",
+  "archetypesVersion": "10.355",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -254,9 +254,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.4",
+          "version": "1.5",
           "log": false,
-          "hash": "sha256-58d115751698743154948d706f0834440fd2c8e47302ca7df48a905b1995d7c3"
+          "hash": "sha256-8ea110eb20a8d8a291378fb1ae8f1d9f05a1b9d7acd7c08574ce7d858aabd404"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -287,9 +287,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.4",
+          "version": "1.5",
           "log": false,
-          "hash": "sha256-58d115751698743154948d706f0834440fd2c8e47302ca7df48a905b1995d7c3"
+          "hash": "sha256-8ea110eb20a8d8a291378fb1ae8f1d9f05a1b9d7acd7c08574ce7d858aabd404"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -398,9 +398,9 @@
         },
         {
           "name": "action-counter.js",
-          "version": "1.2",
+          "version": "1.3",
           "log": false,
-          "hash": "sha256-cd5ee8b5b4341642cbfe404a65d6ad90d8ad1b191059769d2a28dbcacd983ca9"
+          "hash": "sha256-08bedda86319d3f68ad6f4f7ab8ce2349ea76de93acd9462c3fc113eb87127bd"
         },
         {
           "name": "auto-start-recording.js",

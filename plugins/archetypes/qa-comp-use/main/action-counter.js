@@ -8,7 +8,7 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description: 'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -113,8 +113,7 @@ const plugin = {
         return next;
     },
 
-    countColor(val) {
-        if (val > 0) return '#059669';
+    countColor() {
         return 'var(--foreground, #111)';
     },
 
