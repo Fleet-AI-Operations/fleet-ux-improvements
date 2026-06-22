@@ -6457,6 +6457,7 @@ const searchOutputMethods = {
         style.textContent = [
             '#wf-dash-modal .so-versions-rolling-area {',
             '  position: relative;',
+            '  overflow: visible;',
             '}',
             '#wf-dash-modal .so-rolling-overlay {',
             '  position: absolute;',
@@ -6555,6 +6556,8 @@ const searchOutputMethods = {
         const rightRect = rightEl.getBoundingClientRect();
         const article = cardEl.querySelector('.wf-dash-task-card-article');
         const articleRect = article ? article.getBoundingClientRect() : areaRect;
+        const padWrap = area.parentElement;
+        const padRect = padWrap ? padWrap.getBoundingClientRect() : areaRect;
         const overlayTopVp = Math.min(leftRect.top, rightRect.top);
         const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
         const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
@@ -6573,7 +6576,7 @@ const searchOutputMethods = {
         if (nextSibling) {
             expandBottom = Math.max(0, (nextSibling.getBoundingClientRect().top - overlayBottomVp) / 2);
         } else {
-            expandBottom = expandRight;
+            expandBottom = Math.max(0, (padRect.bottom - overlayBottomVp) / 2);
         }
         let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
         let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
@@ -9521,7 +9524,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
