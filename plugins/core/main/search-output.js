@@ -5528,9 +5528,12 @@ const searchOutputMethods = {
     _cardTabShellBase(options) {
         const opts = options || {};
         const hPad = opts.noHorizontalPadding ? '0' : '8px';
+        const flexShrink = opts.shrinkable ? '1' : '0';
         let base = 'height: ' + DASH_CARD_TAB_HEIGHT
-            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + '; flex-shrink: ' + flexShrink + ';'
+            + ' border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
             + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+        if (opts.shrinkable) base += ' min-width: 0;';
         return base;
     },
 
@@ -5540,7 +5543,8 @@ const searchOutputMethods = {
             + ' background: var(--card, #ffffff); font-weight: 400;'
             + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
         const label = String(title || '');
-        return '<div style="' + shell + '"'
+        const cls = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
+        return '<div' + cls + ' style="' + shell + '"'
             + (label ? ' title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '"' : '')
             + '>' + innerHtml + '</div>';
     },
@@ -5559,14 +5563,29 @@ const searchOutputMethods = {
         return this._cardSurfaceTabHtml(inner, label);
     },
 
+    _cardKeyCopyHtml(text, highlight) {
+        const value = String(text == null ? '' : text).trim();
+        if (!value) {
+            return '<span class="wf-dash-card-key-copy wf-dash-card-key-copy--empty">—</span>';
+        }
+        const inner = (highlight && highlight.query)
+            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
+            : dashEscHtml(value);
+        return '<button type="button" class="wf-dash-card-key-copy" data-wf-dash-copy="' + dashEscHtml(value) + '"'
+            + ' title="Click to copy: ' + dashEscHtml(value) + '" aria-label="Task key: ' + dashEscHtml(value) + '">'
+            + '<span class="wf-dash-card-key-copy-text">' + inner + '</span></button>';
+    },
+
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: inline-flex; align-items: stretch;">`
-            + this._copyChipHtml(key, highlightOpts || {})
+        const inner = '<span class="wf-dash-card-key-tab-inner">'
+            + this._cardKeyCopyHtml(key, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
-            noHorizontalPadding: true
+            noHorizontalPadding: true,
+            shrinkable: true,
+            shellClass: 'wf-dash-card-key-tab'
         });
     },
 
@@ -8940,10 +8959,10 @@ const searchOutputMethods = {
         if (showHydrateTab) {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
         }
-        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
-                ${hydrateTabHtml}
-            </div>`;
+        const tabsRow = '<div class="wf-dash-card-tabs-row">'
+                + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
+                + hydrateTabHtml
+                + '</div>';
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
@@ -9655,7 +9674,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.12',
+    _version: '3.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
