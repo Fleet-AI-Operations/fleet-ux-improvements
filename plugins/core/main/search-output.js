@@ -6861,6 +6861,7 @@ const searchOutputMethods = {
     },
 
     _patchTaskCard(itemId) {
+        if (this._state.loading) return;
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
@@ -7868,6 +7869,7 @@ const searchOutputMethods = {
     _syncSearchLoadPhaseUi() {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !this._state || !this._state.loading) return;
+        wrap.querySelectorAll('[data-wf-dash-task-card]').forEach((el) => el.remove());
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
         const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
@@ -9653,7 +9655,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.11',
+    _version: '3.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
