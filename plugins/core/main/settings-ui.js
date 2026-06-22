@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '9.5',
+    _version: '10.0',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -16,7 +16,6 @@ const plugin = {
     _modalOpen: false,
     _foreignModalObserver: null,
     _presenceInterval: null,
-    _pulseInterval: null,
     _presenceObserver: null,
     _docPaneCache: {},
     _gearClickHandler: null,
@@ -114,6 +113,20 @@ const plugin = {
             #wf-settings-modal::backdrop {
                 background: rgba(0, 0, 0, 0.45);
             }
+            @keyframes wf-settings-update-flash {
+                0%, 100% {
+                    border-color: rgba(220, 38, 38, 0.9);
+                    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+                }
+                50% {
+                    border-color: rgba(220, 38, 38, 0.25);
+                    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.15);
+                }
+            }
+            #wf-settings-btn.wf-settings-outdated {
+                border: 2px solid rgba(220, 38, 38, 0.9);
+                animation: wf-settings-update-flash 1.2s ease-in-out infinite;
+            }
         `;
         (document.head || document.documentElement).appendChild(style);
     },
@@ -139,50 +152,39 @@ const plugin = {
         if (!settingsBtn) return;
         settingsBtn.type = 'button';
         settingsBtn.title = 'Fleet Enhancer Extension';
-        
-        // Check if we should pulse before setting base styles
+
         const shouldPulse = Context.isOutdated || (Context.isDevBranch && this._getPulseOverrideEnabled());
-        const isAlreadyPulsing = this._pulseInterval !== null;
-        
-        // If button is already bound and pulsing, don't reset styles that interfere with animation
-        const isBound = settingsBtn.dataset.wfSettingsBound === 'true';
-        
-        if (!isBound || !isAlreadyPulsing) {
-            const bgTranslucent = 'color-mix(in srgb, var(--background, white) 30%, transparent)';
-            const bgOpaque = 'var(--background, white)';
-            const baseStyles = `
-                position: fixed;
-                bottom: 20px;
-                left: 20px;
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: ${shouldPulse ? bgOpaque : bgTranslucent};
-                border: 1px solid #60a5fa;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                z-index: 9999;
-                transition: ${shouldPulse ? 'border 1s ease, box-shadow 1s ease' : 'background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease'};
-            `;
-            
-            settingsBtn.style.cssText = baseStyles;
-        } else if (isAlreadyPulsing) {
-            settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
-        }
-        
-        // Add pulsing animation if outdated or simulate update banner is enabled (dev branch only)
+        const bgTranslucent = 'color-mix(in srgb, var(--background, white) 30%, transparent)';
+        const bgOpaque = 'var(--background, white)';
+
+        settingsBtn.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: ${shouldPulse ? bgOpaque : bgTranslucent};
+            border: 1px solid #60a5fa;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 9999;
+            transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        `;
+
+        const wasOutdated = settingsBtn.classList.contains('wf-settings-outdated');
         if (shouldPulse) {
             settingsBtn.classList.add('wf-settings-outdated');
-            if (!isAlreadyPulsing) {
-                this._startPulseAnimation(settingsBtn);
+            if (!wasOutdated) {
+                Logger.log('settings-ui: update indicator pulse started');
             }
         } else {
             settingsBtn.classList.remove('wf-settings-outdated');
-            this._stopPulseAnimation();
         }
+
         settingsBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
@@ -195,13 +197,13 @@ const plugin = {
             settingsBtn.addEventListener('mouseenter', () => {
                 settingsBtn.style.background = 'var(--background, white)';
                 settingsBtn.style.transform = 'scale(1.1)';
-                if (this._pulseInterval === null) {
+                if (!settingsBtn.classList.contains('wf-settings-outdated')) {
                     settingsBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
                 }
             });
             settingsBtn.addEventListener('mouseleave', () => {
                 settingsBtn.style.transform = 'scale(1)';
-                if (this._pulseInterval === null) {
+                if (!settingsBtn.classList.contains('wf-settings-outdated')) {
                     settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
                 }
                 const solidBg =
@@ -225,53 +227,7 @@ const plugin = {
         this._gearClickHandler = () => this.openModal();
         settingsBtn.addEventListener('click', this._gearClickHandler);
     },
-    
-    _startPulseAnimation(settingsBtn) {
-        if (!settingsBtn) return;
 
-        if (this._pulseInterval) {
-            clearInterval(this._pulseInterval);
-            this._pulseInterval = null;
-        }
-
-        settingsBtn.style.transition = 'border 1s ease, box-shadow 1s ease';
-        settingsBtn.style.background = 'var(--background, white)';
-        settingsBtn.style.border = '2px solid #dc2626';
-        settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-
-        let isOn = true;
-        this._pulseInterval = setInterval(() => {
-            isOn = !isOn;
-            if (isOn) {
-                settingsBtn.style.border = '2px solid #dc2626';
-                settingsBtn.style.boxShadow = '0 2px 8px rgba(220, 38, 38, 0.4)';
-            } else {
-                settingsBtn.style.border = '1px solid #60a5fa';
-                settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-            }
-        }, 1000);
-        Logger.log('settings-ui: update indicator pulse started');
-    },
-    
-    _stopPulseAnimation() {
-        if (this._pulseInterval) {
-            clearInterval(this._pulseInterval);
-            this._pulseInterval = null;
-        }
-        const settingsBtn = document.getElementById('wf-settings-btn');
-        if (settingsBtn) {
-            settingsBtn.style.transition = '';
-            settingsBtn.style.border = '1px solid #60a5fa';
-            settingsBtn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-            if (settingsBtn.matches(':hover')) {
-                settingsBtn.style.background = 'var(--background, white)';
-            } else {
-                settingsBtn.style.background =
-                    'color-mix(in srgb, var(--background, white) 30%, transparent)';
-            }
-        }
-    },
-    
     _updatePulseAnimation() {
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (!settingsBtn) {

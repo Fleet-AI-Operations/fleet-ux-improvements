@@ -1,7 +1,7 @@
 {
   "version": "9.5.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.355",
+  "archetypesVersion": "10.356",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "9.5",
-      "hash": "sha256-45416621a0e90ed25960013f2dab81176028439b0114acc066917304ecd2f659",
+      "version": "10.0",
+      "hash": "sha256-2371541f990f2da97d700ba580d6b10e941289063b9ad231418a4cb5cb6e83b2",
       "log": false
     },
     {
@@ -272,8 +272,8 @@
         },
         {
           "name": "prompt-cache.js",
-          "version": "2.3",
-          "hash": "sha256-cca907f4172cddc0291705572d4c16558e3f057c45ce3a1f8f40b38a0a7ad90f",
+          "version": "3.0",
+          "hash": "sha256-fc85f103375888b7f73194f78aa56a30e71b20d1180a673f9436e3a581dfb68b",
           "log": false
         }
       ]

@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '2.3',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -150,16 +150,20 @@ const plugin = {
         const savedInstanceId = Storage.get(this.storageKeys.instanceId,      '');
         const currentId       = this.getCurrentInstanceId();
 
-        if (!savedText || !savedInstanceId || !currentId) {
-            Logger.debug('Prompt Cache: no saved data or missing instance_id, skipping restore');
+        if (!savedInstanceId || !currentId) {
+            Logger.debug('Prompt Cache: missing instance_id, skipping restore');
             return;
         }
         if (savedInstanceId !== currentId) {
             Logger.debug(`Prompt Cache: saved instance (${savedInstanceId}) ≠ current (${currentId}), skipping restore`);
             return;
         }
-        if (savedText === textarea.value) {
-            Logger.debug('Prompt Cache: saved text already matches textarea, skipping restore');
+
+        const hasCurrent  = this.hasSavableContent(savedText) && savedText !== textarea.value;
+        const hasPrevious = this.hasSavableContent(prevText) && prevText !== savedText && prevText !== textarea.value;
+
+        if (!hasCurrent && !hasPrevious) {
+            Logger.debug('Prompt Cache: no restorable cached prompts for current textarea, skipping restore');
             return;
         }
 
@@ -172,62 +176,41 @@ const plugin = {
             return;
         }
 
-        const hasPrevious = this.hasSavableContent(prevText) && prevText !== savedText;
-
         const wrapperEl = document.createElement('div');
         wrapperEl.setAttribute('data-fleet-prompt-cache-restore-wrapper', 'true');
         wrapperEl.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:6px;';
 
-        if (!hasPrevious) {
-            // Single button: no confirm step — click directly restores and dismisses
-            const btn = this.makeRestoreBtn('Restore last saved prompt?');
+        const restoreButtons = [];
+
+        const addRestoreBtn = (label, version, text) => {
+            const btn = this.makeRestoreBtn(label);
             btn.addEventListener('click', () => {
-                this.pastePreview(state, textarea, savedText);
-                this.removeRestoreButtons(state);
-                Logger.log('Prompt Cache: restored last saved prompt (single version)');
+                if (state.selectedVersion === version) {
+                    this.removeRestoreButtons(state);
+                    Logger.log(`Prompt Cache: confirmed restore of ${version === 'current' ? 'last saved' : 'previous'} prompt`);
+                } else {
+                    this.pastePreview(state, textarea, text);
+                    state.selectedVersion = version;
+                    restoreButtons.forEach((restoreBtn) => {
+                        if (restoreBtn === btn) this.setBtnConfirm(restoreBtn);
+                        else this.setBtnDefault(restoreBtn);
+                    });
+                    Logger.debug(`Prompt Cache: previewing ${version === 'current' ? 'last saved' : 'previous'} prompt`);
+                }
             });
             wrapperEl.appendChild(btn);
-        } else {
-            // Two buttons: toggle-select → confirm pattern
-            const btn1 = this.makeRestoreBtn('Restore last saved prompt?');
-            const btn2 = this.makeRestoreBtn('Restore previous to last saved prompt?');
+            restoreButtons.push(btn);
+        };
 
-            btn1.addEventListener('click', () => {
-                if (state.selectedVersion === 'current') {
-                    this.removeRestoreButtons(state);
-                    Logger.log('Prompt Cache: confirmed restore of last saved prompt');
-                } else {
-                    this.pastePreview(state, textarea, savedText);
-                    state.selectedVersion = 'current';
-                    this.setBtnConfirm(btn1);
-                    this.setBtnDefault(btn2);
-                    Logger.debug('Prompt Cache: previewing last saved prompt');
-                }
-            });
-
-            btn2.addEventListener('click', () => {
-                if (state.selectedVersion === 'previous') {
-                    this.removeRestoreButtons(state);
-                    Logger.log('Prompt Cache: confirmed restore of previous prompt');
-                } else {
-                    this.pastePreview(state, textarea, prevText);
-                    state.selectedVersion = 'previous';
-                    this.setBtnConfirm(btn2);
-                    this.setBtnDefault(btn1);
-                    Logger.debug('Prompt Cache: previewing previous prompt');
-                }
-            });
-
-            wrapperEl.appendChild(btn1);
-            wrapperEl.appendChild(btn2);
-        }
+        if (hasCurrent) addRestoreBtn('Restore last saved prompt?', 'current', savedText);
+        if (hasPrevious) addRestoreBtn('Restore previous to last saved prompt?', 'previous', prevText);
 
         section.insertBefore(wrapperEl, wrapper);
         state.restoreInjected    = true;
         state.restoreWrapperEl   = wrapperEl;
         state.restoreInitialText = textarea.value;
         state.selectedVersion    = null;
-        Logger.info(`Prompt Cache: restore button(s) shown (hasPrev: ${hasPrevious}) for instance ${currentId}`);
+        Logger.info(`Prompt Cache: restore button(s) shown (current: ${hasCurrent}, previous: ${hasPrevious}) for instance ${currentId}`);
     },
 
     pastePreview(state, textarea, text) {
@@ -339,16 +322,6 @@ const plugin = {
                 animation: fleet-prompt-cache-spin 1s linear infinite;
                 display: block;
             }
-            @keyframes fleet-prompt-cache-flash-yellow {
-                0%, 100% {
-                    border-color: rgba(234, 179, 8, 0.9);
-                    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4);
-                }
-                50% {
-                    border-color: rgba(234, 179, 8, 0.25);
-                    box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.15);
-                }
-            }
             .fleet-prompt-cache-restore-btn {
                 display: block;
                 width: 100%;
@@ -360,12 +333,12 @@ const plugin = {
                 cursor: pointer;
                 background-color: transparent;
                 color: inherit;
-                border: 2px solid rgba(234, 179, 8, 0.9);
-                animation: fleet-prompt-cache-flash-yellow 1.2s ease-in-out infinite;
+                border: 1px solid var(--border, #e2e8f0);
+                animation: none;
                 transition: background-color 0.15s, color 0.15s, border-color 0.15s;
             }
             .fleet-prompt-cache-restore-btn:hover {
-                background-color: rgba(234, 179, 8, 0.08);
+                background-color: color-mix(in srgb, var(--foreground, #111) 6%, transparent);
             }
             .fleet-prompt-cache-restore-btn--confirm {
                 border-color: rgb(34, 197, 94);
