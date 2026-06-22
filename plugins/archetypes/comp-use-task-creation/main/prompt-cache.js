@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -75,13 +75,18 @@ const plugin = {
         state.statusCurrent     = null;
         state.restoreInjected   = false;
         state.restoreWrapperEl  = null;
-        state.restoreInitialText = '';
+        state.restoreBtnCurrent = null;
+        state.restoreBtnPrevious = null;
         state.selectedVersion   = null;
+        state.restoreActivationLogged = false;
     },
 
     setup(state, textarea) {
         const onInput = () => {
             if (!state.suppressRestoreCheck) {
+                if (state.selectedVersion) {
+                    state.selectedVersion = null;
+                }
                 this.refreshRestoreButtons(state, textarea);
             }
             this.setStatus(state, 'pending');
