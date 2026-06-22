@@ -8049,14 +8049,18 @@ const searchOutputMethods = {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
-    _plainTimestampHtml(iso, prefixLabel) {
+    _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
+        const muted = Boolean(opts && opts.muted);
+        const dateColor = muted
+            ? 'color: var(--muted-foreground, #64748b);'
+            : 'color: var(--foreground, #0f172a);';
         const parts = [];
         if (prefixLabel) {
             parts.push(`<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span>`);
         }
-        parts.push(`<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`);
+        parts.push(`<span style="${dateColor}">${dashEscHtml(formatted)}</span>`);
         if (ago) {
             parts.push(`<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`);
         }
@@ -8690,14 +8694,17 @@ const searchOutputMethods = {
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
         );
-        const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
-        const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
-        let rightHeader = '';
         const rollingUi = rollingOpts && rollingOpts.rollingUi;
         const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
             && rollingOpts.versionIdx >= rollingUi.rollingLeft
             && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
+        const submittedHtml = this._fieldGroupHtml(
+            'Submitted',
+            this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
+        );
+        const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
+        let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
             const rightVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft + 1];
@@ -9498,7 +9505,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
