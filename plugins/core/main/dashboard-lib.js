@@ -22,10 +22,11 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     dispute: 'Disputes',
     senior_review: 'Sr Review'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'qa_edited', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
+    qa_edited: 'QA Edited',
     disputed: 'Disputed',
     flagged: 'Flagged',
     senior_review_flagged: 'Flagged for Senior Review',
@@ -338,7 +339,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.19',
+    _version: '2.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -787,6 +788,25 @@ const plugin = {
         return dashLibPassesDimension(this._itemOutputKinds(item), effective, count);
     },
 
+    _taskHasQaEditedVersion(task) {
+        const versions = task.promptVersions || [];
+        if (versions.length < 2) return false;
+        const maxDisplayVersionNo = Math.max(...versions.map((v) => v.displayVersionNo));
+        const feedbackByDisplayNo = new Map();
+        for (const entry of task.allFeedback || []) {
+            const displayNo = entry.linkedDisplayVersionNo;
+            if (displayNo == null) continue;
+            const list = feedbackByDisplayNo.get(displayNo) || [];
+            list.push(entry);
+            feedbackByDisplayNo.set(displayNo, list);
+        }
+        for (const version of versions) {
+            if (version.displayVersionNo >= maxDisplayVersionNo) continue;
+            if (!(feedbackByDisplayNo.get(version.displayVersionNo) || []).length) return true;
+        }
+        return false;
+    },
+
     _itemPromptHistory(item) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
@@ -798,6 +818,7 @@ const plugin = {
         }
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
+        if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         return [...flags];
     },
 

@@ -43,6 +43,7 @@ const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags',
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
+const SO_ROLLING_OVERLAY_OUTSET = 6;
 
 const DASH_KIND_LABELS = {
     task_creation: 'Task Creation',
@@ -127,14 +128,23 @@ const DASH_FILTER_SCOPES = [
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
-    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
+    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
-    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true },
-    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true }
+    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
+const DASH_MANUAL_FILTER_DEFAULT_COMPARATOR = 'gte';
+
+function dashDefaultManualFilterStageRows() {
+    return DASH_OUTPUT_MANUAL_FILTER_FIELDS.map((field) => ({
+        field: field.id,
+        comparator: DASH_MANUAL_FILTER_DEFAULT_COMPARATOR,
+        value: ''
+    }));
+}
 
 const DASH_OUTPUT_NUM_COMPARATORS = [
     { id: 'gt', label: '>' },
@@ -4139,7 +4149,9 @@ const searchOutputMethods = {
         if (rowsEl) rowsEl.innerHTML = '';
         const andOrToggle = this._q('#wf-dash-manual-andor');
         if (andOrToggle) andOrToggle.checked = false;
-        this._buildManualFilterRow({ field: DASH_MANUAL_FILTER_DEFAULT_FIELD });
+        for (const row of dashDefaultManualFilterStageRows()) {
+            this._buildManualFilterRow(row);
+        }
     },
 
     _readSearchOutputManualFilters() {
@@ -6290,10 +6302,462 @@ const searchOutputMethods = {
             this._state.cardUi[taskId] = {
                 expanded: false,
                 timelineNewestFirst: false,
-                selectedDisplayNo: null
+                selectedDisplayNo: null,
+                rollingUi: {
+                    rollingLeft: 0,
+                    showHighlights: true,
+                    highlightModality: 'differences',
+                    feedbackBulkCollapsed: false,
+                    activationLogged: false,
+                    initialized: false
+                }
+            };
+        }
+        if (!this._state.cardUi[taskId].rollingUi) {
+            this._state.cardUi[taskId].rollingUi = {
+                rollingLeft: 0,
+                showHighlights: true,
+                highlightModality: 'differences',
+                feedbackBulkCollapsed: false,
+                activationLogged: false,
+                initialized: false
             };
         }
         return this._state.cardUi[taskId];
+    },
+
+    _getRollingUi(taskId) {
+        return this._getCardUi(taskId).rollingUi;
+    },
+
+    _ensureRollingUiOnExpand(taskId, versionCount) {
+        const rollingUi = this._getRollingUi(taskId);
+        if (!rollingUi.initialized) {
+            rollingUi.showHighlights = true;
+            rollingUi.highlightModality = 'differences';
+            rollingUi.feedbackBulkCollapsed = false;
+            rollingUi.rollingLeft = 0;
+            rollingUi.initialized = true;
+        }
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        if (versionCount >= 2 && !rollingUi.activationLogged) {
+            rollingUi.activationLogged = true;
+            Logger.log('search-output: rolling diff active for task ' + taskId);
+        }
+    },
+
+    _clampCardRollingLeft(rollingUi, versionCount) {
+        const max = Math.max(0, versionCount - 2);
+        rollingUi.rollingLeft = Math.max(0, Math.min(rollingUi.rollingLeft, max));
+    },
+
+    _rollingSegBtn(attrName, value, label, active, divider) {
+        const divCls = divider ? ' dv-seg-btn--divider' : '';
+        return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
+    },
+
+    _rollingSimilarityLabelHtml(leftText, rightText, rollingUi) {
+        const eng = Context.diffEngine;
+        if (!eng) return '';
+        return eng.similarityLabelHtml({
+            leftText,
+            rightText,
+            granularity: 'word',
+            highlightModality: rollingUi.highlightModality,
+            showHighlights: rollingUi.showHighlights
+        });
+    },
+
+    _rollingSimilarityBadgeHtml(leftText, rightText, rollingUi) {
+        const inner = this._rollingSimilarityLabelHtml(leftText, rightText, rollingUi);
+        if (!inner) return '';
+        return `<span class="so-rolling-sim-badge">${inner}</span>`;
+    },
+
+    _expandedRollingToolbarHtml(itemId, taskId, rollingUi) {
+        const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
+        const modality = rollingUi.highlightModality;
+        const showHighlights = rollingUi.showHighlights;
+        return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
+            <button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>
+            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
+            </div>
+            <div class="dv-seg-group" role="group" aria-label="Diff highlights">
+                ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
+            </div>
+        </div>`;
+    },
+
+    _isFeedbackBlockId(blockId) {
+        const id = String(blockId || '');
+        return id.startsWith('qa:') || id.startsWith('dispute:') || id.startsWith('flag:');
+    },
+
+    _collectFeedbackBlockIdsForItem(item) {
+        const ids = [];
+        const task = item.task || {};
+        for (const entry of task.allFeedback || []) {
+            if (entry.id) ids.push('qa:' + entry.id);
+        }
+        if (!ids.length && item.qaFeedback) {
+            ids.push('qa:fallback:' + item.id);
+        }
+        for (const d of item.disputes || []) {
+            if (d.id) {
+                ids.push('dispute:' + d.id);
+                ids.push('dispute-res:' + d.id);
+            }
+        }
+        for (const f of item.flags || []) {
+            if (f.id) {
+                ids.push('flag:' + f.id);
+                ids.push('flag-res:' + f.id);
+            }
+        }
+        return ids;
+    },
+
+    _setFeedbackBulkCollapsed(item, collapsed) {
+        const rollingUi = this._getRollingUi(item.task.id);
+        rollingUi.feedbackBulkCollapsed = collapsed;
+        if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+        for (const blockId of this._collectFeedbackBlockIdsForItem(item)) {
+            if (!this._state.actionBlockUi[blockId]) {
+                this._state.actionBlockUi[blockId] = { collapsed: false };
+            }
+            this._state.actionBlockUi[blockId].collapsed = collapsed;
+        }
+        Logger.log('search-output: feedback bulk ' + (collapsed ? 'collapsed' : 'expanded') + ' — task ' + item.task.id);
+    },
+
+    _rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi) {
+        const text = version.prompt || '';
+        if (!text) return '—';
+        const eng = Context.diffEngine;
+        const leftIdx = rollingUi.rollingLeft;
+        const rightIdx = leftIdx + 1;
+        if (!eng || !rollingUi.showHighlights) {
+            return dashEscHtml(text);
+        }
+        if (versionIdx < leftIdx || versionIdx > rightIdx) {
+            return dashEscHtml(text);
+        }
+        const leftVersion = renderedVersions[leftIdx];
+        const rightVersion = renderedVersions[rightIdx];
+        const leftText = (leftVersion && leftVersion.prompt) || '';
+        const rightText = (rightVersion && rightVersion.prompt) || '';
+        const pair = eng.diffPair(leftText, rightText, {
+            granularity: 'word',
+            showHighlights: rollingUi.showHighlights,
+            highlightModality: rollingUi.highlightModality
+        });
+        if (versionIdx === leftIdx) return pair.baseHtml;
+        return pair.compareHtml;
+    },
+
+    _ensureRollingDiffStyles() {
+        if (!this._modal) return;
+        let style = this._modal.querySelector('#wf-dash-rolling-diff-styles');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-rolling-diff-styles';
+            this._modal.appendChild(style);
+        }
+        style.textContent = [
+            '#wf-dash-modal .so-versions-rolling-area {',
+            '  position: relative;',
+            '  overflow: visible;',
+            '}',
+            '#wf-dash-modal .so-rolling-overlay {',
+            '  position: absolute;',
+            '  pointer-events: none;',
+            '  border: 2px solid var(--brand, #2563eb);',
+            '  border-radius: 10px;',
+            '  z-index: 2;',
+            '  box-sizing: border-box;',
+            '  transition: top 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              height 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              left 0.25s cubic-bezier(0.37, 0, 0.63, 1),',
+            '              width 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
+            '}',
+            '#wf-dash-modal .so-rolling-sim-badge {',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  padding: 2px 8px;',
+            '  border-radius: 6px;',
+            '  font-size: 10px;',
+            '  font-weight: 700;',
+            '  white-space: nowrap;',
+            '  background: #f1f5f9;',
+            '  color: #0f172a;',
+            '}',
+            '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-sim,',
+            '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-nodiff {',
+            '  font-size: inherit;',
+            '  font-weight: inherit;',
+            '  color: inherit;',
+            '}',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] span,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] div,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] p,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] div,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] span,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] a,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] mark {',
+            '  color: var(--muted-foreground, #64748b) !important;',
+            '}',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] a[style*="background"] {',
+            '  color: unset !important;',
+            '}',
+            '#wf-dash-modal .dv-slot-above-label-sim,',
+            '#wf-dash-modal .dv-slot-above-label-nodiff {',
+            '  font-size: 11px;',
+            '  font-weight: 600;',
+            '  color: var(--muted-foreground, #64748b);',
+            '}'
+        ].join('\n');
+    },
+
+    _detachCardRollingListeners(cardEl) {
+        if (!cardEl || !cardEl._soRollingCleanup) return;
+        cardEl._soRollingCleanup();
+        cardEl._soRollingCleanup = null;
+        cardEl.removeAttribute('data-wf-dash-rolling-attached');
+    },
+
+    _removeCardRollingOverlay(cardEl) {
+        if (!cardEl) return;
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const overlay = area.querySelector('.so-rolling-overlay');
+        if (overlay) overlay.remove();
+    },
+
+    _updateCardRollingOverlay(cardEl) {
+        if (!cardEl) return;
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const itemId = area.getAttribute('data-item-id');
+        const taskId = area.getAttribute('data-task-id');
+        const item = itemId ? (this._findCachedItem(itemId) || this._findResultItem(itemId)) : null;
+        if (!item) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        const rollingUi = this._getRollingUi(taskId);
+        const versionBlocks = area.querySelectorAll('[data-wf-dash-version-idx]');
+        const versionCount = versionBlocks.length;
+        if (versionCount < 2 || !rollingUi.showHighlights) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        const leftEl = area.querySelector('[data-wf-dash-version-idx="' + rollingUi.rollingLeft + '"]');
+        const rightEl = area.querySelector('[data-wf-dash-version-idx="' + (rollingUi.rollingLeft + 1) + '"]');
+        if (!leftEl || !rightEl) {
+            this._removeCardRollingOverlay(cardEl);
+            return;
+        }
+        const areaRect = area.getBoundingClientRect();
+        const leftRect = leftEl.getBoundingClientRect();
+        const rightRect = rightEl.getBoundingClientRect();
+        const padWrap = area.parentElement;
+        const padRect = padWrap ? padWrap.getBoundingClientRect() : areaRect;
+        const overlayTopVp = Math.min(leftRect.top, rightRect.top);
+        const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
+        const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
+        const overlayRightVp = Math.max(leftRect.right, rightRect.right);
+        const outset = SO_ROLLING_OVERLAY_OUTSET;
+        let outLeftVp = overlayLeftVp - outset;
+        let outTopVp = overlayTopVp - outset;
+        let outRightVp = overlayRightVp + outset;
+        let outBottomVp = overlayBottomVp + outset;
+        outLeftVp = Math.max(padRect.left, outLeftVp);
+        outTopVp = Math.max(padRect.top, outTopVp);
+        outRightVp = Math.min(padRect.right, outRightVp);
+        outBottomVp = Math.min(padRect.bottom, outBottomVp);
+        const left = outLeftVp - areaRect.left + area.scrollLeft;
+        const top = outTopVp - areaRect.top + area.scrollTop;
+        const width = Math.max(0, outRightVp - outLeftVp);
+        const height = Math.max(0, outBottomVp - outTopVp);
+        let overlay = area.querySelector('.so-rolling-overlay');
+        if (!overlay) {
+            overlay = this._pageWindow().document.createElement('div');
+            overlay.className = 'so-rolling-overlay';
+            overlay.setAttribute('aria-hidden', 'true');
+            area.appendChild(overlay);
+        }
+        overlay.style.left = left + 'px';
+        overlay.style.top = top + 'px';
+        overlay.style.width = width + 'px';
+        overlay.style.height = height + 'px';
+    },
+
+    _attachCardRollingListeners(cardEl, itemId, taskId) {
+        if (!cardEl || cardEl.getAttribute('data-wf-dash-rolling-attached') === '1') return;
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item) return;
+        const versions = item.task.promptVersions || [];
+        if (versions.length < 2) return;
+
+        cardEl.setAttribute('data-wf-dash-rolling-attached', '1');
+        this._ensureRollingDiffStyles();
+
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        const resultsWrap = this._q('#wf-dash-results');
+        const cleanups = [];
+
+        const onScroll = () => this._updateCardRollingOverlay(cardEl);
+        if (area) area.addEventListener('scroll', onScroll, { passive: true });
+        if (resultsWrap) resultsWrap.addEventListener('scroll', onScroll, { passive: true });
+        cleanups.push(() => {
+            if (area) area.removeEventListener('scroll', onScroll);
+            if (resultsWrap) resultsWrap.removeEventListener('scroll', onScroll);
+        });
+
+        if (typeof ResizeObserver !== 'undefined' && area) {
+            const ro = new ResizeObserver(onScroll);
+            ro.observe(area);
+            cleanups.push(() => ro.disconnect());
+        }
+
+        const onMouseOver = (e) => {
+            const block = e.target.closest('[data-wf-dash-version-idx]');
+            if (!block || !cardEl.contains(block)) return;
+            const related = e.relatedTarget;
+            if (related instanceof Node && block.contains(related)) return;
+            const idx = parseInt(block.getAttribute('data-wf-dash-version-idx'), 10);
+            if (!Number.isFinite(idx)) return;
+            this._shiftCardRollingPair(taskId, itemId, idx, versions.length);
+        };
+        cardEl.addEventListener('mouseover', onMouseOver);
+        cleanups.push(() => cardEl.removeEventListener('mouseover', onMouseOver));
+
+        cardEl._soRollingCleanup = () => {
+            for (const fn of cleanups) fn();
+            this._removeCardRollingOverlay(cardEl);
+        };
+
+        requestAnimationFrame(() => this._updateCardRollingOverlay(cardEl));
+    },
+
+    _renderedVersionsForItem(item) {
+        const task = item.task;
+        const ui = this._getCardUi(task.id);
+        const versions = task.promptVersions && task.promptVersions.length
+            ? task.promptVersions
+            : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
+        return [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
+    },
+
+    _versionRollingHeaderRightHtml(version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions) {
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
+        }
+        const inActivePair = rollingUi.showHighlights
+            && versionIdx >= rollingUi.rollingLeft
+            && versionIdx <= rollingUi.rollingLeft + 1;
+        let rightHeader = '';
+        if (inActivePair) {
+            const leftVersion = renderedVersions[rollingUi.rollingLeft];
+            const rightVersion = renderedVersions[rollingUi.rollingLeft + 1];
+            const simBadge = this._rollingSimilarityBadgeHtml(
+                (leftVersion && leftVersion.prompt) || '',
+                (rightVersion && rightVersion.prompt) || '',
+                rollingUi
+            );
+            if (simBadge) rightHeader += simBadge;
+        }
+        if (versionActionBadge) rightHeader += versionActionBadge;
+        return rightHeader;
+    },
+
+    _updateRollingPairInCard(cardEl, itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !cardEl) return;
+        const task = item.task;
+        const rollingUi = this._getRollingUi(task.id);
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const renderedVersions = this._renderedVersionsForItem(item);
+        const maxDisplayVersionNo = Math.max(...renderedVersions.map((v) => v.displayVersionNo));
+        const allFeedback = task.allFeedback || [];
+        const feedbackByDisplayNo = new Map();
+        for (const entry of allFeedback) {
+            const list = feedbackByDisplayNo.get(entry.linkedDisplayVersionNo) || [];
+            list.push(entry);
+            feedbackByDisplayNo.set(entry.linkedDisplayVersionNo, list);
+        }
+        const blocks = area.querySelectorAll('[data-wf-dash-version-idx]');
+        for (const block of blocks) {
+            const versionIdx = parseInt(block.getAttribute('data-wf-dash-version-idx'), 10);
+            if (!Number.isFinite(versionIdx)) continue;
+            const version = renderedVersions[versionIdx];
+            if (!version) continue;
+            const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
+            const hasSubsequentVersions = version.displayVersionNo < maxDisplayVersionNo;
+            const inActivePair = rollingUi.showHighlights
+                && versionIdx >= rollingUi.rollingLeft
+                && versionIdx <= rollingUi.rollingLeft + 1;
+            block.classList.toggle('so-rolling-diff-on', inActivePair);
+            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > p');
+            if (promptP) {
+                promptP.innerHTML = this._rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi);
+            }
+            const submittedEl = block.querySelector('[data-wf-dash-version-submitted]');
+            if (submittedEl) {
+                submittedEl.innerHTML = this._fieldGroupHtml(
+                    'Submitted',
+                    this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
+                );
+            }
+            const headerRight = block.querySelector('[data-wf-dash-version-header-right]');
+            if (headerRight) {
+                headerRight.innerHTML = this._versionRollingHeaderRightHtml(
+                    version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions
+                );
+            }
+        }
+    },
+
+    _shiftCardRollingPair(taskId, itemId, idx, versionCount) {
+        const rollingUi = this._getRollingUi(taskId);
+        const rollingRight = rollingUi.rollingLeft + 1;
+        if (idx >= rollingUi.rollingLeft && idx <= rollingRight) return;
+        const prevLeft = rollingUi.rollingLeft;
+        if (idx < rollingUi.rollingLeft) rollingUi.rollingLeft = idx;
+        else if (idx > rollingRight) rollingUi.rollingLeft = idx - 1;
+        this._clampCardRollingLeft(rollingUi, versionCount);
+        if (rollingUi.rollingLeft === prevLeft) return;
+        Logger.debug('search-output: rolling pair → versions ' + rollingUi.rollingLeft + '–' + (rollingUi.rollingLeft + 1));
+        const wrap = this._q('#wf-dash-results');
+        let cardEl = null;
+        if (wrap) {
+            for (const el of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+                if (el.getAttribute('data-item-id') === itemId) {
+                    cardEl = el;
+                    break;
+                }
+            }
+        }
+        if (cardEl) {
+            this._updateRollingPairInCard(cardEl, itemId);
+            this._updateCardRollingOverlay(cardEl);
+        } else {
+            this._patchTaskCard(itemId);
+        }
     },
 
     _findResultItem(itemId) {
@@ -6324,9 +6788,10 @@ const searchOutputMethods = {
         return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
     },
 
-    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml) {
-        const rightSection = rightHtml
-            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml}</div>`
+    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
+        const forceRight = opts && opts.forceRightSection;
+        const rightSection = (rightHtml || forceRight)
+            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; align-items: stretch; gap: 0; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; flex-shrink: 0;">${leftHtml}</div>`
@@ -6335,11 +6800,13 @@ const searchOutputMethods = {
             + `</div>`;
     },
 
-    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml) {
+    _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs, shellClass) {
         const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
         const escBlockId = dashEscHtml(blockId);
         const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
-        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr} style="${shellStyle}">`
+        const extra = blockExtraAttrs || '';
+        const classAttr = shellClass ? ` class="${dashEscHtml(shellClass.trim())}"` : '';
+        return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra}${classAttr} style="${shellStyle}">`
             + headerRowHtml
             + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
             + `</div>`;
@@ -6413,9 +6880,20 @@ const searchOutputMethods = {
         const newCard = temp.firstElementChild;
         if (!newCard) return;
         if (existing) {
+            this._detachCardRollingListeners(existing);
             existing.replaceWith(newCard);
         } else {
             wrap.appendChild(newCard);
+        }
+        const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (item2) {
+            const ui = this._getCardUi(item2.task.id);
+            const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
+            if (ui.expanded && versionCount >= 2) {
+                this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+            } else {
+                this._detachCardRollingListeners(newCard);
+            }
         }
         this._syncResultsHydrateBannerUi();
     },
@@ -7679,14 +8157,18 @@ const searchOutputMethods = {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
-    _plainTimestampHtml(iso, prefixLabel) {
+    _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
+        const muted = Boolean(opts && opts.muted);
+        const dateColor = muted
+            ? 'color: var(--muted-foreground, #64748b);'
+            : 'color: var(--foreground, #0f172a);';
         const parts = [];
         if (prefixLabel) {
             parts.push(`<span style="${this._labelStyle()}">${dashEscHtml(prefixLabel)}</span>`);
         }
-        parts.push(`<span style="color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</span>`);
+        parts.push(`<span style="${dateColor}">${dashEscHtml(formatted)}</span>`);
         if (ago) {
             parts.push(`<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`);
         }
@@ -7790,6 +8272,14 @@ const searchOutputMethods = {
 
     _qaAlertBadgeStyle() {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
+    },
+
+    _qaEditedBadgeHtml(compact) {
+        let style = this._qaAlertBadgeStyle();
+        if (compact) {
+            style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        }
+        return `<span style="${style}">QA Edited</span>`;
     },
 
     _qaAlertIssueBadgeStyle() {
@@ -8287,15 +8777,25 @@ const searchOutputMethods = {
         return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls, hasSubsequentVersions, rollingOpts) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
         const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-        const promptBody = version.prompt
-            ? this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx)
-            : '—';
+        let promptBody;
+        if (rollingOpts && rollingOpts.active) {
+            promptBody = this._rollingPromptBodyHtml(
+                version,
+                rollingOpts.versionIdx,
+                rollingOpts.renderedVersions,
+                rollingOpts.rollingUi
+            );
+        } else if (version.prompt) {
+            promptBody = this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx);
+        } else {
+            promptBody = '—';
+        }
         let promptLabel;
         if (versionHeaderControls) {
             promptLabel = versionHeaderControls;
@@ -8305,23 +8805,56 @@ const searchOutputMethods = {
             promptLabel = this._labelSpan('Prompt');
         }
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-        const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
+        }
         const taskActionsHtml = this._versionTaskActionsHtml(
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
         );
-        const submittedHtml = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(version.createdAt));
+        const rollingUi = rollingOpts && rollingOpts.rollingUi;
+        const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
+            && rollingOpts.versionIdx >= rollingUi.rollingLeft
+            && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
+        const submittedHtml = `<span data-wf-dash-version-submitted="1">${this._fieldGroupHtml(
+            'Submitted',
+            this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
+        )}</span>`;
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
         const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, versionActionBadge || '');
-        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
-            + taskActionsHtml;
+        let rightHeader = '';
+        if (inActivePair) {
+            const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
+            const rightVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft + 1];
+            const simBadge = this._rollingSimilarityBadgeHtml(
+                (leftVersion && leftVersion.prompt) || '',
+                (rightVersion && rightVersion.prompt) || '',
+                rollingUi
+            );
+            if (simBadge) rightHeader += simBadge;
+        }
+        if (versionActionBadge) rightHeader += versionActionBadge;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
+            forceRightSection: !!(rollingOpts && rollingOpts.active)
+        });
+        const promptColor = 'color: var(--foreground, #0f172a);';
+        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
+            + (rollingOpts && rollingOpts.active
+                ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
+                : taskActionsHtml);
+        const versionIdxAttr = (rollingOpts && rollingOpts.active)
+            ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
+            : '';
+        const shellClass = inActivePair ? 'so-rolling-diff-on' : '';
         return this._actionBlockShellHtml(
             blockId,
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            bodyHtml
+            bodyHtml,
+            versionIdxAttr,
+            shellClass
         );
     },
 
@@ -8469,26 +9002,43 @@ const searchOutputMethods = {
 
         let row3Html = '';
         if (expanded) {
+            const rollingUi = this._getRollingUi(task.id);
+            const rollingActive = hasTimeline && totalVersions >= 2;
+            if (rollingActive) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const toolbarRight = rollingActive
+                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi)
+                : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
+                    ${toolbarRight}
                 </div>`;
         }
 
-        const versionSections = renderedVersions.map((version) => {
+        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const maxDisplayVersionNo = hasTimeline
+            ? Math.max(...versions.map((v) => v.displayVersionNo))
+            : 0;
+        const versionSections = renderedVersions.map((version, versionIdx) => {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = version.displayVersionNo === orphanFallbackDisplayNo ? orphanFlags : [];
+            const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
             let versionHeaderControls = '';
             if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
                 versionHeaderControls = this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
             } else if (hasTimeline && expanded) {
                 versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
             }
+            const rollingOpts = rollingUi
+                ? { active: true, versionIdx, renderedVersions, rollingUi }
+                : null;
             return this._versionSectionHtml(
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
-                orphanDisputes, orphanFlagsForVersion, itemId, highlightRegex, versionHeaderControls
+                orphanDisputes, orphanFlagsForVersion, itemId, highlightRegex, versionHeaderControls,
+                hasSubsequentVersions,
+                rollingOpts
             );
         }).join('');
 
@@ -8498,6 +9048,10 @@ const searchOutputMethods = {
                 </div>`
             : '';
 
+        const versionsInnerHtml = expanded && hasTimeline && totalVersions >= 2
+            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
+            : versionSections;
+
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
                 ${this._cardHeaderMetaRowHtml(task)}
@@ -8505,7 +9059,7 @@ const searchOutputMethods = {
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
-                    ${versionSections}
+                    ${versionsInnerHtml}
                 </div>
             </article>`;
 
@@ -8592,6 +9146,11 @@ function attachSearchOutputListeners(modal, dash) {
     if (!modal || !dash) return;
     if (modal.dataset.wfSearchOutputListenersAttached === '1') return;
     modal.dataset.wfSearchOutputListenersAttached = '1';
+
+        const manualRowsSeed = dash._q('#wf-dash-manual-rows');
+        if (manualRowsSeed && !manualRowsSeed.querySelector('[data-wf-dash-manual-row]')) {
+            dash._resetManualFilters();
+        }
 
         const depthQuick = dash._q('#wf-dash-depth-quick');
         const depthDeep = dash._q('#wf-dash-depth-deep');
@@ -8865,6 +9424,11 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = showAllBtn.getAttribute('data-task-id');
                 const ui = dash._getCardUi(taskId);
                 ui.expanded = true;
+                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
+                const versionCount = item && item.task && item.task.promptVersions
+                    ? item.task.promptVersions.length
+                    : 0;
+                dash._ensureRollingUiOnExpand(taskId, versionCount);
                 dash._patchTaskCard(itemId);
                 return;
             }
@@ -8885,7 +9449,46 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = timelineToggle.getAttribute('data-task-id');
                 const ui = dash._getCardUi(taskId);
                 ui.timelineNewestFirst = !ui.timelineNewestFirst;
+                const rollingUi = dash._getRollingUi(taskId);
+                rollingUi.rollingLeft = 0;
                 dash._patchTaskCard(itemId);
+                return;
+            }
+            const feedbackBulkBtn = e.target.closest('[data-wf-dash-feedback-bulk]');
+            if (feedbackBulkBtn && modal.contains(feedbackBulkBtn)) {
+                const itemId = feedbackBulkBtn.getAttribute('data-item-id');
+                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
+                if (item) {
+                    const rollingUi = dash._getRollingUi(item.task.id);
+                    dash._setFeedbackBulkCollapsed(item, !rollingUi.feedbackBulkCollapsed);
+                    dash._patchTaskCard(itemId);
+                }
+                return;
+            }
+            const rollingModalityBtn = e.target.closest('[data-wf-dash-rolling-modality]');
+            if (rollingModalityBtn && modal.contains(rollingModalityBtn)) {
+                const card = rollingModalityBtn.closest('[data-wf-dash-task-card]');
+                const itemId = card && card.getAttribute('data-item-id');
+                const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
+                if (item) {
+                    const modality = rollingModalityBtn.getAttribute('data-wf-dash-rolling-modality');
+                    if (modality === 'differences' || modality === 'similarities') {
+                        dash._getRollingUi(item.task.id).highlightModality = modality;
+                        dash._patchTaskCard(itemId);
+                    }
+                }
+                return;
+            }
+            const rollingHighlightsBtn = e.target.closest('[data-wf-dash-rolling-highlights]');
+            if (rollingHighlightsBtn && modal.contains(rollingHighlightsBtn)) {
+                const card = rollingHighlightsBtn.closest('[data-wf-dash-task-card]');
+                const itemId = card && card.getAttribute('data-item-id');
+                const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
+                if (item) {
+                    const val = rollingHighlightsBtn.getAttribute('data-wf-dash-rolling-highlights');
+                    dash._getRollingUi(item.task.id).showHighlights = val === 'on';
+                    dash._patchTaskCard(itemId);
+                }
                 return;
             }
             const openTaskBtn = e.target.closest('[data-wf-dash-open-task]');
@@ -9033,7 +9636,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '2.19',
+    _version: '3.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
