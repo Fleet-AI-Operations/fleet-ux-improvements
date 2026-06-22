@@ -43,6 +43,7 @@ const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags',
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
+const SO_ROLLING_OVERLAY_OUTSET = 6;
 
 const DASH_KIND_LABELS = {
     task_creation: 'Task Creation',
@@ -6488,18 +6489,18 @@ const searchOutputMethods = {
             '  font-weight: inherit;',
             '  color: inherit;',
             '}',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] span,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] div,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] p,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] div,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] span,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] a,',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] mark {',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] span,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] div,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] p,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] div,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] span,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] a,',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] mark {',
             '  color: var(--muted-foreground, #64748b) !important;',
             '}',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-header] span[style*="background"],',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] span[style*="background"],',
-            '#wf-dash-modal .so-rolling-muted-feedback [data-wf-dash-action-block-body] a[style*="background"] {',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-header] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] span[style*="background"],',
+            '#wf-dash-modal .so-rolling-diff-on .so-rolling-muted-feedback [data-wf-dash-action-block-body] a[style*="background"] {',
             '  color: unset !important;',
             '}',
             '#wf-dash-modal .dv-slot-above-label-sim,',
@@ -6554,34 +6555,25 @@ const searchOutputMethods = {
         const areaRect = area.getBoundingClientRect();
         const leftRect = leftEl.getBoundingClientRect();
         const rightRect = rightEl.getBoundingClientRect();
-        const article = cardEl.querySelector('.wf-dash-task-card-article');
-        const articleRect = article ? article.getBoundingClientRect() : areaRect;
         const padWrap = area.parentElement;
         const padRect = padWrap ? padWrap.getBoundingClientRect() : areaRect;
         const overlayTopVp = Math.min(leftRect.top, rightRect.top);
         const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
         const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
         const overlayRightVp = Math.max(leftRect.right, rightRect.right);
-        const expandLeft = Math.max(0, (overlayLeftVp - articleRect.left) / 2);
-        const expandRight = Math.max(0, (articleRect.right - overlayRightVp) / 2);
-        const prevSibling = leftEl.previousElementSibling;
-        const nextSibling = rightEl.nextElementSibling;
-        let expandTop;
-        if (prevSibling) {
-            expandTop = Math.max(0, (overlayTopVp - prevSibling.getBoundingClientRect().bottom) / 2);
-        } else {
-            expandTop = expandLeft;
-        }
-        let expandBottom;
-        if (nextSibling) {
-            expandBottom = Math.max(0, (nextSibling.getBoundingClientRect().top - overlayBottomVp) / 2);
-        } else {
-            expandBottom = Math.max(0, (padRect.bottom - overlayBottomVp) / 2);
-        }
-        let left = overlayLeftVp - areaRect.left + area.scrollLeft - expandLeft;
-        let top = overlayTopVp - areaRect.top + area.scrollTop - expandTop;
-        const width = Math.max(0, overlayRightVp - overlayLeftVp + expandLeft + expandRight);
-        const height = Math.max(0, overlayBottomVp - overlayTopVp + expandTop + expandBottom);
+        const outset = SO_ROLLING_OVERLAY_OUTSET;
+        let outLeftVp = overlayLeftVp - outset;
+        let outTopVp = overlayTopVp - outset;
+        let outRightVp = overlayRightVp + outset;
+        let outBottomVp = overlayBottomVp + outset;
+        outLeftVp = Math.max(padRect.left, outLeftVp);
+        outTopVp = Math.max(padRect.top, outTopVp);
+        outRightVp = Math.min(padRect.right, outRightVp);
+        outBottomVp = Math.min(padRect.bottom, outBottomVp);
+        const left = outLeftVp - areaRect.left + area.scrollLeft;
+        const top = outTopVp - areaRect.top + area.scrollTop;
+        const width = Math.max(0, outRightVp - outLeftVp);
+        const height = Math.max(0, outBottomVp - outTopVp);
         let overlay = area.querySelector('.so-rolling-overlay');
         if (!overlay) {
             overlay = this._pageWindow().document.createElement('div');
@@ -6643,6 +6635,92 @@ const searchOutputMethods = {
         requestAnimationFrame(() => this._updateCardRollingOverlay(cardEl));
     },
 
+    _renderedVersionsForItem(item) {
+        const task = item.task;
+        const ui = this._getCardUi(task.id);
+        const versions = task.promptVersions && task.promptVersions.length
+            ? task.promptVersions
+            : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
+        return [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
+    },
+
+    _versionRollingHeaderRightHtml(version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions) {
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
+        }
+        const inActivePair = rollingUi.showHighlights
+            && versionIdx >= rollingUi.rollingLeft
+            && versionIdx <= rollingUi.rollingLeft + 1;
+        let rightHeader = '';
+        if (inActivePair) {
+            const leftVersion = renderedVersions[rollingUi.rollingLeft];
+            const rightVersion = renderedVersions[rollingUi.rollingLeft + 1];
+            const simBadge = this._rollingSimilarityBadgeHtml(
+                (leftVersion && leftVersion.prompt) || '',
+                (rightVersion && rightVersion.prompt) || '',
+                rollingUi
+            );
+            if (simBadge) rightHeader += simBadge;
+        }
+        if (versionActionBadge) rightHeader += versionActionBadge;
+        return rightHeader;
+    },
+
+    _updateRollingPairInCard(cardEl, itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !cardEl) return;
+        const task = item.task;
+        const rollingUi = this._getRollingUi(task.id);
+        const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+        if (!area) return;
+        const renderedVersions = this._renderedVersionsForItem(item);
+        const maxDisplayVersionNo = Math.max(...renderedVersions.map((v) => v.displayVersionNo));
+        const allFeedback = task.allFeedback || [];
+        const feedbackByDisplayNo = new Map();
+        for (const entry of allFeedback) {
+            const list = feedbackByDisplayNo.get(entry.linkedDisplayVersionNo) || [];
+            list.push(entry);
+            feedbackByDisplayNo.set(entry.linkedDisplayVersionNo, list);
+        }
+        const blocks = area.querySelectorAll('[data-wf-dash-version-idx]');
+        for (const block of blocks) {
+            const versionIdx = parseInt(block.getAttribute('data-wf-dash-version-idx'), 10);
+            if (!Number.isFinite(versionIdx)) continue;
+            const version = renderedVersions[versionIdx];
+            if (!version) continue;
+            const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
+            const hasSubsequentVersions = version.displayVersionNo < maxDisplayVersionNo;
+            const inActivePair = rollingUi.showHighlights
+                && versionIdx >= rollingUi.rollingLeft
+                && versionIdx <= rollingUi.rollingLeft + 1;
+            block.classList.toggle('so-rolling-diff-on', inActivePair);
+            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > p');
+            if (promptP) {
+                promptP.innerHTML = this._rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi);
+            }
+            const submittedEl = block.querySelector('[data-wf-dash-version-submitted]');
+            if (submittedEl) {
+                submittedEl.innerHTML = this._fieldGroupHtml(
+                    'Submitted',
+                    this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
+                );
+            }
+            const headerRight = block.querySelector('[data-wf-dash-version-header-right]');
+            if (headerRight) {
+                headerRight.innerHTML = this._versionRollingHeaderRightHtml(
+                    version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions
+                );
+            }
+        }
+    },
+
     _shiftCardRollingPair(taskId, itemId, idx, versionCount) {
         const rollingUi = this._getRollingUi(taskId);
         const rollingRight = rollingUi.rollingLeft + 1;
@@ -6653,7 +6731,22 @@ const searchOutputMethods = {
         this._clampCardRollingLeft(rollingUi, versionCount);
         if (rollingUi.rollingLeft === prevLeft) return;
         Logger.debug('search-output: rolling pair → versions ' + rollingUi.rollingLeft + '–' + (rollingUi.rollingLeft + 1));
-        this._patchTaskCard(itemId);
+        const wrap = this._q('#wf-dash-results');
+        let cardEl = null;
+        if (wrap) {
+            for (const el of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+                if (el.getAttribute('data-item-id') === itemId) {
+                    cardEl = el;
+                    break;
+                }
+            }
+        }
+        if (cardEl) {
+            this._updateRollingPairInCard(cardEl, itemId);
+            this._updateCardRollingOverlay(cardEl);
+        } else {
+            this._patchTaskCard(itemId);
+        }
     },
 
     _findResultItem(itemId) {
@@ -6684,9 +6777,10 @@ const searchOutputMethods = {
         return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
     },
 
-    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml) {
-        const rightSection = rightHtml
-            ? `<div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml}</div>`
+    _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
+        const forceRight = opts && opts.forceRightSection;
+        const rightSection = (rightHtml || forceRight)
+            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; align-items: stretch; gap: 0; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; flex-shrink: 0;">${leftHtml}</div>`
@@ -8712,10 +8806,10 @@ const searchOutputMethods = {
         const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
             && rollingOpts.versionIdx >= rollingUi.rollingLeft
             && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
-        const submittedHtml = this._fieldGroupHtml(
+        const submittedHtml = `<span data-wf-dash-version-submitted="1">${this._fieldGroupHtml(
             'Submitted',
             this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
-        );
+        )}</span>`;
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
         const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
         let rightHeader = '';
@@ -8730,10 +8824,12 @@ const searchOutputMethods = {
             if (simBadge) rightHeader += simBadge;
         }
         if (versionActionBadge) rightHeader += versionActionBadge;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
+            forceRightSection: !!(rollingOpts && rollingOpts.active)
+        });
         const promptColor = 'color: var(--foreground, #0f172a);';
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
-            + (inActivePair
+            + (rollingOpts && rollingOpts.active
                 ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
                 : taskActionsHtml);
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
@@ -9524,7 +9620,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
