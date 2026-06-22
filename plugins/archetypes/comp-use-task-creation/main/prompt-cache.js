@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '3.3',
+    _version: '3.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -289,7 +289,7 @@ const plugin = {
         const confirmRow = document.createElement('div');
         confirmRow.className = 'fleet-prompt-cache-restore-confirm-row';
         confirmRow.setAttribute('data-fleet-prompt-cache-confirm-row', 'true');
-        confirmRow.hidden = true;
+        confirmRow.style.display = 'none';
 
         const cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
@@ -309,14 +309,14 @@ const plugin = {
 
     showRestoreConfirm(restoreBtn, confirmRow) {
         if (!restoreBtn || !confirmRow) return;
-        restoreBtn.hidden = true;
-        confirmRow.hidden = false;
+        restoreBtn.style.display = 'none';
+        confirmRow.style.display = 'flex';
     },
 
     showRestoreDefault(restoreBtn, confirmRow, enabled) {
         if (!restoreBtn || !confirmRow) return;
-        confirmRow.hidden = true;
-        restoreBtn.hidden = false;
+        confirmRow.style.display = 'none';
+        restoreBtn.style.display = 'block';
         this.setBtnDefault(restoreBtn);
         this.setBtnEnabled(restoreBtn, enabled);
     },
@@ -481,7 +481,7 @@ const plugin = {
                 background-color: transparent;
             }
             .fleet-prompt-cache-restore-confirm-row {
-                display: flex;
+                display: none;
                 gap: 4px;
                 width: 100%;
             }
