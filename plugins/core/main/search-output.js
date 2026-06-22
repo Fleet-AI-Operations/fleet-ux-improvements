@@ -8166,6 +8166,14 @@ const searchOutputMethods = {
         return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
     },
 
+    _qaEditedBadgeHtml(compact) {
+        let style = this._qaAlertBadgeStyle();
+        if (compact) {
+            style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        }
+        return `<span style="${style}">QA Edited</span>`;
+    },
+
     _qaAlertIssueBadgeStyle() {
         return this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600');
     },
@@ -8661,7 +8669,7 @@ const searchOutputMethods = {
         return this._sortTaskActionBlocksByDate(blocks).map((block) => block.html).join('');
     },
 
-    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls, rollingOpts) {
+    _versionSectionHtml(taskId, version, totalVersions, feedbackEntries, highlightQuery, caseSensitive, highlightFuzzy, showVersionLabel, fallbackFeedback, orphanDisputes, orphanFlags, itemId, highlightRegex, versionHeaderControls, hasSubsequentVersions, rollingOpts) {
         const hq = highlightQuery || '';
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
@@ -8689,7 +8697,10 @@ const searchOutputMethods = {
             promptLabel = this._labelSpan('Prompt');
         }
         const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-        const versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
+        }
         const taskActionsHtml = this._versionTaskActionsHtml(
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
@@ -8894,11 +8905,15 @@ const searchOutputMethods = {
         }
 
         const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const maxDisplayVersionNo = hasTimeline
+            ? Math.max(...versions.map((v) => v.displayVersionNo))
+            : 0;
         const versionSections = renderedVersions.map((version, versionIdx) => {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = version.displayVersionNo === orphanFallbackDisplayNo ? orphanFlags : [];
+            const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
             let versionHeaderControls = '';
             if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
                 versionHeaderControls = this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
@@ -8912,6 +8927,7 @@ const searchOutputMethods = {
                 task.id, version, totalVersions, feedbackEntries,
                 highlightQuery, caseSensitive, highlightFuzzy, hasTimeline, fallback,
                 orphanDisputes, orphanFlagsForVersion, itemId, highlightRegex, versionHeaderControls,
+                hasSubsequentVersions,
                 rollingOpts
             );
         }).join('');
@@ -9505,7 +9521,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
