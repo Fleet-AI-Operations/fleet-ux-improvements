@@ -128,14 +128,23 @@ const DASH_FILTER_SCOPES = [
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
-    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
+    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
-    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true },
-    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true }
+    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
 
 const DASH_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
+const DASH_MANUAL_FILTER_DEFAULT_COMPARATOR = 'gte';
+
+function dashDefaultManualFilterStageRows() {
+    return DASH_OUTPUT_MANUAL_FILTER_FIELDS.map((field) => ({
+        field: field.id,
+        comparator: DASH_MANUAL_FILTER_DEFAULT_COMPARATOR,
+        value: ''
+    }));
+}
 
 const DASH_OUTPUT_NUM_COMPARATORS = [
     { id: 'gt', label: '>' },
@@ -4140,7 +4149,9 @@ const searchOutputMethods = {
         if (rowsEl) rowsEl.innerHTML = '';
         const andOrToggle = this._q('#wf-dash-manual-andor');
         if (andOrToggle) andOrToggle.checked = false;
-        this._buildManualFilterRow({ field: DASH_MANUAL_FILTER_DEFAULT_FIELD });
+        for (const row of dashDefaultManualFilterStageRows()) {
+            this._buildManualFilterRow(row);
+        }
     },
 
     _readSearchOutputManualFilters() {
@@ -9136,6 +9147,11 @@ function attachSearchOutputListeners(modal, dash) {
     if (modal.dataset.wfSearchOutputListenersAttached === '1') return;
     modal.dataset.wfSearchOutputListenersAttached = '1';
 
+        const manualRowsSeed = dash._q('#wf-dash-manual-rows');
+        if (manualRowsSeed && !manualRowsSeed.querySelector('[data-wf-dash-manual-row]')) {
+            dash._resetManualFilters();
+        }
+
         const depthQuick = dash._q('#wf-dash-depth-quick');
         const depthDeep = dash._q('#wf-dash-depth-deep');
         if (depthQuick) depthQuick.addEventListener('click', () => dash._setSearchDepth('quick'));
@@ -9620,7 +9636,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.8',
+    _version: '3.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
