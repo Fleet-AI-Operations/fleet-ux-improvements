@@ -17,12 +17,13 @@ const COPY_ICON_SVG =
     '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>' +
     '</svg>';
 const VERIFIER_CODE_STYLE_ID = 'wf-fleet-verifier-code-block-styles';
+const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -30,11 +31,14 @@ const plugin = {
         missingLogged: false,
         fetchStarted: false,
         fetchDone: false,
+        bundleWaitStarted: false,
+        bundleUnavailable: false,
         taskKey: ''
     },
 
     onMutation(state, context) {
-        if (state.fetchDone || state.fetchStarted) return;
+        if (state.fetchDone || state.bundleUnavailable) return;
+        if (state.fetchStarted && !state.bundleWaitStarted) return;
 
         const slot = this._findNoVerifierSlot();
         if (!slot) {
@@ -60,9 +64,42 @@ const plugin = {
             return;
         }
 
+        if (!this._ensureOpsBundleReady(state)) return;
+        if (state.fetchStarted) return;
+
         state.fetchStarted = true;
         state.taskKey = taskKey;
         void this._fetchAndRender(state, slot, taskKey);
+    },
+
+    _ensureOpsBundleReady(state) {
+        const opsTab = Context.opsTab;
+        if (!opsTab) return false;
+        if (typeof opsTab.isOpsBundleReady === 'function' && opsTab.isOpsBundleReady()) {
+            return true;
+        }
+        if (state.bundleWaitStarted) return false;
+        if (typeof opsTab.whenOpsBundleReady !== 'function') {
+            state.bundleUnavailable = true;
+            return false;
+        }
+        state.bundleWaitStarted = true;
+        void opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS })
+            .then(() => {
+                state.bundleWaitStarted = false;
+            })
+            .catch((err) => {
+                state.bundleWaitStarted = false;
+                state.bundleUnavailable = true;
+                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+            });
+        return false;
+    },
+
+    _isTransientBundleError(err) {
+        const opsTab = Context.opsTab;
+        return !!(opsTab && typeof opsTab.isOpsBundleNotLoadedError === 'function'
+            && opsTab.isOpsBundleNotLoadedError(err));
     },
 
     _ensureVerifierCodeStyles() {
@@ -310,9 +347,16 @@ const plugin = {
 
         Logger.log(PLUGIN_ID + ': fetching verifier for ' + taskKey);
         try {
+            if (typeof opsTab.whenOpsBundleReady === 'function') {
+                await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
+            }
             const result = await opsTab.fetchVerifierCode({ taskKey });
             const source = result && result.source;
             if (!source) {
+                if (typeof opsTab.isOpsBundleReady === 'function' && !opsTab.isOpsBundleReady()) {
+                    state.fetchStarted = false;
+                    return;
+                }
                 Logger.warn(PLUGIN_ID + ': fetch returned no source for ' + taskKey);
                 state.fetchStarted = false;
                 return;
@@ -356,6 +400,10 @@ const plugin = {
             state.fetchDone = true;
             Logger.log(PLUGIN_ID + ': rendered verifier (' + source.length + ' chars) for ' + taskKey);
         } catch (err) {
+            if (this._isTransientBundleError(err)) {
+                state.fetchStarted = false;
+                return;
+            }
             Logger.warn(PLUGIN_ID + ': verifier fetch failed for ' + taskKey, err);
             state.fetchStarted = false;
         }

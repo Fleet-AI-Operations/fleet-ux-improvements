@@ -16,12 +16,13 @@ const COPY_ICON_SVG =
     '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>' +
     '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>' +
     '</svg>';
+const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -29,6 +30,8 @@ const plugin = {
         taskKey: '',
         fetchStarted: false,
         fetchDone: false,
+        bundleWaitStarted: false,
+        bundleUnavailable: false,
         missingAnchorLogged: false,
         activationLogged: false
     },
@@ -42,11 +45,13 @@ const plugin = {
             state.taskKey = taskKey;
             state.fetchStarted = false;
             state.fetchDone = false;
+            state.bundleWaitStarted = false;
+            state.bundleUnavailable = false;
             state.missingAnchorLogged = false;
             state.activationLogged = false;
         }
 
-        if (state.fetchDone) return;
+        if (state.fetchDone || state.bundleUnavailable) return;
 
         const anchor = this._findInsertAnchor();
         if (!anchor) {
@@ -63,12 +68,45 @@ const plugin = {
             return;
         }
 
-        if (state.fetchStarted) return;
+        if (state.fetchStarted || state.bundleWaitStarted) return;
+
+        if (!this._ensureOpsBundleReady(state)) return;
+
         state.fetchStarted = true;
 
         const shell = this._createSectionShell(taskKey);
         anchor.insertBefore.parentElement.insertBefore(shell, anchor.insertBefore);
         void this._fetchAndRender(state, shell, taskKey);
+    },
+
+    _ensureOpsBundleReady(state) {
+        const opsTab = Context.opsTab;
+        if (!opsTab) return false;
+        if (typeof opsTab.isOpsBundleReady === 'function' && opsTab.isOpsBundleReady()) {
+            return true;
+        }
+        if (state.bundleWaitStarted) return false;
+        if (typeof opsTab.whenOpsBundleReady !== 'function') {
+            state.bundleUnavailable = true;
+            return false;
+        }
+        state.bundleWaitStarted = true;
+        void opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS })
+            .then(() => {
+                state.bundleWaitStarted = false;
+            })
+            .catch((err) => {
+                state.bundleWaitStarted = false;
+                state.bundleUnavailable = true;
+                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+            });
+        return false;
+    },
+
+    _isTransientBundleError(err) {
+        const opsTab = Context.opsTab;
+        return !!(opsTab && typeof opsTab.isOpsBundleNotLoadedError === 'function'
+            && opsTab.isOpsBundleNotLoadedError(err));
     },
 
     _extractTaskKeyFromPath() {
@@ -354,6 +392,9 @@ const plugin = {
 
         Logger.log(PLUGIN_ID + ': fetching user story for ' + taskKey);
         try {
+            if (typeof opsTab.whenOpsBundleReady === 'function') {
+                await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
+            }
             const result = await opsTab.fetchTaskUserStory({ taskKey });
             if (!shell.isConnected) {
                 Logger.debug(PLUGIN_ID + ': section removed before render');
@@ -384,6 +425,11 @@ const plugin = {
             }
             Logger.log(PLUGIN_ID + ': rendered user story (' + userStory.length + ' chars) for ' + taskKey);
         } catch (err) {
+            if (this._isTransientBundleError(err)) {
+                state.fetchStarted = false;
+                if (shell.isConnected) shell.remove();
+                return;
+            }
             if (shell.isConnected) {
                 const msg = opsTab.isSessionRefreshRequiredError && opsTab.isSessionRefreshRequiredError(err)
                     ? 'Session expired — refresh Fleet and unlock Ops, then reload.'

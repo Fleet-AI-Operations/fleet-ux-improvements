@@ -11,12 +11,13 @@ const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const EXTERNAL_LINK_PATH_SNIPPET = 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6';
+const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -26,6 +27,8 @@ const plugin = {
         versionRows: null,
         fetchStarted: false,
         fetchFailed: false,
+        bundleWaitStarted: false,
+        bundleUnavailable: false,
         missingHistoryLogged: false,
         missingVersionsLogged: false,
         activationLogged: false,
@@ -47,9 +50,8 @@ const plugin = {
             this._resetTaskState(state, taskKey);
         }
 
-        if (!state.fetchStarted) {
-            state.fetchStarted = true;
-            void this._fetchVersionRows(state, taskKey);
+        if (!state.fetchStarted && !state.bundleUnavailable) {
+            this._startVersionFetchWhenBundleReady(state, taskKey);
         }
 
         const cards = this._findPromptHistoryCards();
@@ -68,7 +70,7 @@ const plugin = {
         state.missingHistoryLogged = false;
 
         if (!state.versionRows || !state.evalTaskId) {
-            if (state.fetchFailed) return;
+            if (state.fetchFailed || state.bundleUnavailable) return;
             if (!state.missingVersionsLogged) {
                 Logger.debug(PLUGIN_ID + ': waiting for prompt version fetch');
                 state.missingVersionsLogged = true;
@@ -101,6 +103,8 @@ const plugin = {
         state.versionRows = null;
         state.fetchStarted = false;
         state.fetchFailed = false;
+        state.bundleWaitStarted = false;
+        state.bundleUnavailable = false;
         state.missingHistoryLogged = false;
         state.missingVersionsLogged = false;
         state.activationLogged = false;
@@ -116,6 +120,43 @@ const plugin = {
         return /^task_/i.test(last) ? last : '';
     },
 
+    _startVersionFetchWhenBundleReady(state, taskKey) {
+        const opsTab = Context.opsTab;
+        if (!opsTab) {
+            state.fetchFailed = true;
+            return;
+        }
+        if (typeof opsTab.isOpsBundleReady === 'function' && opsTab.isOpsBundleReady()) {
+            state.fetchStarted = true;
+            void this._fetchVersionRows(state, taskKey);
+            return;
+        }
+        if (state.bundleWaitStarted) return;
+        if (typeof opsTab.whenOpsBundleReady !== 'function') {
+            state.bundleUnavailable = true;
+            return;
+        }
+        state.bundleWaitStarted = true;
+        void opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS })
+            .then(() => {
+                state.bundleWaitStarted = false;
+                if (state.taskKey !== taskKey || state.fetchStarted) return;
+                state.fetchStarted = true;
+                void this._fetchVersionRows(state, taskKey);
+            })
+            .catch((err) => {
+                state.bundleWaitStarted = false;
+                state.bundleUnavailable = true;
+                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+            });
+    },
+
+    _isTransientBundleError(err) {
+        const opsTab = Context.opsTab;
+        return !!(opsTab && typeof opsTab.isOpsBundleNotLoadedError === 'function'
+            && opsTab.isOpsBundleNotLoadedError(err));
+    },
+
     async _fetchVersionRows(state, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab) {
@@ -126,6 +167,9 @@ const plugin = {
 
         Logger.log(PLUGIN_ID + ': fetching prompt versions for ' + taskKey);
         try {
+            if (typeof opsTab.whenOpsBundleReady === 'function') {
+                await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
+            }
             const taskRow = await this._lookupTaskRow(opsTab, taskKey);
             if (!taskRow || !taskRow.id) {
                 Logger.warn(PLUGIN_ID + ': task not found for key ' + taskKey);
@@ -144,6 +188,12 @@ const plugin = {
             Logger.log(PLUGIN_ID + ': eval task id captured for view links');
         } catch (err) {
             if (state.taskKey !== taskKey) return;
+            if (this._isTransientBundleError(err)) {
+                state.versionRows = null;
+                state.fetchStarted = false;
+                state.fetchFailed = false;
+                return;
+            }
             state.versionRows = null;
             state.fetchFailed = true;
             const refresh = opsTab.isSessionRefreshRequiredError && opsTab.isSessionRefreshRequiredError(err);
