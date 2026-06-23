@@ -5922,6 +5922,29 @@ const searchOutputMethods = {
         }
     },
 
+    _setOutputTypesExclusive(kind) {
+        if (!DASH_KIND_LABELS[kind]) {
+            Logger.warn('dashboard: setOutputTypesExclusive skipped — unknown kind ' + kind);
+            return;
+        }
+        this._state.includeTasks = kind === 'task_creation';
+        this._state.includeQa = kind === 'qa';
+        this._state.includeDisputes = kind === 'dispute';
+        this._state.includeSeniorReview = kind === 'senior_review';
+        this._syncOutputToggleUi();
+    },
+
+    _resetSearchScopeToUniversal() {
+        ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            this._setMsBulkToggleMode(key, 'all');
+            this._applyMsBulkToggleLabel(key);
+            this._updateMsCount(key);
+        });
+        this._renderSearchProjectsList();
+    },
+
     _syncOutputToggleUi() {
         const tasksBtn = this._q('#wf-dash-toggle-tasks');
         const qaBtn = this._q('#wf-dash-toggle-qa');
@@ -6055,6 +6078,38 @@ const searchOutputMethods = {
         this._renderAuthorTokens();
         this._validateRangeUi();
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
+    },
+
+    async _runContributorHistoryDeepDive(person, historyKind) {
+        if (!this._modal) {
+            Logger.warn('dashboard: contributor deep dive skipped — modal not open');
+            return;
+        }
+        const normalized = this._normalizeAuthorPerson(person);
+        if (!normalized || !normalized.id) {
+            Logger.warn('dashboard: contributor deep dive skipped — missing person id');
+            return;
+        }
+        if (!DASH_KIND_LABELS[historyKind]) {
+            Logger.warn('dashboard: contributor deep dive skipped — unknown history kind ' + historyKind);
+            return;
+        }
+        if (this._state.loading) {
+            Logger.warn('dashboard: contributor deep dive skipped — search in progress');
+            return;
+        }
+        this._setLeftTab('search');
+        this._setAuthorTokens([normalized], { replace: true });
+        this._setOutputTypesExclusive(historyKind);
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        this._resetSearchScopeToUniversal();
+        this._setSearchDepth('deep');
+        this._setResultsMode('clear');
+        this._setSearchError('');
+        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time · deep');
+        await this._submitSearch();
     },
 
     _removeAuthorToken(id) {
@@ -8321,7 +8376,7 @@ const searchOutputMethods = {
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation'))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
@@ -8335,12 +8390,26 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
 
-    _personChipsHtml(name, email, id, linkTitle) {
+    _contributorDeepDiveTitle(historyKind) {
+        const label = DASH_KIND_LABELS[historyKind] || historyKind;
+        return 'Deep dive ' + label + ' history';
+    },
+
+    _contributorDeepDiveBtnHtml(name, email, id, historyKind) {
+        const personId = String(id || '').trim();
+        if (!personId || !historyKind || !DASH_KIND_LABELS[historyKind]) return '';
+        const title = this._contributorDeepDiveTitle(historyKind);
+        const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">🔦</button>`;
+    },
+
+    _personChipsHtml(name, email, id, linkTitle, historyKind) {
         if (!name && !email) return this._dismissedBadgeHtml();
         const nameChip = name ? this._copyChipHtml(name) : '';
         const emailChip = email ? this._copyChipHtml(email) : '';
+        const deepDive = this._contributorDeepDiveBtnHtml(name, email, id, historyKind);
         const link = this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
-        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${link}</span>`;
+        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${deepDive}${link}</span>`;
     },
 
     _statusDisplayMeta(status) {
@@ -8486,7 +8555,7 @@ const searchOutputMethods = {
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
             : '';
         const helpfulnessHtml = this._shouldShowHelpfulness(qa, feedbackId)
             ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
@@ -8617,7 +8686,7 @@ const searchOutputMethods = {
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
-                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'dispute')}</div>`
                 : '';
             const resBlockId = display.id ? ('dispute-res:' + display.id) : ('dispute-res:unknown:' + itemId);
             const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
@@ -8678,7 +8747,7 @@ const searchOutputMethods = {
             : '';
         const reasonLabel = display.reason || display.reasonKey || 'Unknown';
         const flaggerHtml = (display.flaggerId || display.flaggerName || display.flaggerEmail)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet')}</div>`
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet', 'senior_review')}</div>`
             : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
         const noteText = String(display.note || '').trim();
@@ -8711,7 +8780,7 @@ const searchOutputMethods = {
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
-                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'senior_review')}</div>`
                 : '';
             const resBlockId = display.id ? ('flag-res:' + display.id) : ('flag-res:unknown:' + itemId);
             const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
@@ -9516,6 +9585,17 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._requestStopSearchFetches();
                 return;
             }
+            const deepDiveBtn = e.target.closest('[data-wf-dash-contributor-deep-dive]');
+            if (deepDiveBtn && modal.contains(deepDiveBtn)) {
+                const person = {
+                    id: deepDiveBtn.getAttribute('data-wf-dash-person-id'),
+                    full_name: deepDiveBtn.getAttribute('data-wf-dash-person-name'),
+                    email: deepDiveBtn.getAttribute('data-wf-dash-person-email')
+                };
+                const historyKind = deepDiveBtn.getAttribute('data-wf-dash-history-kind');
+                void dash._runContributorHistoryDeepDive(person, historyKind);
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -9769,7 +9849,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.17',
+    _version: '3.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
