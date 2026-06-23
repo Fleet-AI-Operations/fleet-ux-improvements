@@ -8835,11 +8835,14 @@ const searchOutputMethods = {
         );
     },
 
-    _orphanFallbackDisplayNo(allFeedback, promptVersions) {
-        const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback && !f.isVerifierFailure);
-        if (firstNegative) return firstNegative.linkedDisplayVersionNo;
-        const vers = promptVersions || [];
-        return vers.length ? vers[vers.length - 1].displayVersionNo : 1;
+    _promptVersionsRawLike(promptVersions) {
+        return (promptVersions || []).map((v) => ({
+            id: v.id,
+            version_no: v.versionNo,
+            created_at: v.createdAt,
+            prompt: v.prompt,
+            env_key: v.envKey
+        }));
     },
 
     _orphanDisputesByDisplayNo(disputes, allFeedback, promptVersions) {
@@ -8848,13 +8851,7 @@ const searchOutputMethods = {
         const orphans = (disputes || []).filter((d) => !d.feedbackId || !feedbackIds.has(d.feedbackId));
         const byDisplayNo = new Map();
         if (orphans.length === 0) return byDisplayNo;
-        const rawLike = (promptVersions || []).map((v) => ({
-            id: v.id,
-            version_no: v.versionNo,
-            created_at: v.createdAt,
-            prompt: v.prompt,
-            env_key: v.envKey
-        }));
+        const rawLike = this._promptVersionsRawLike(promptVersions);
         const firstNegative = allFeedback.find((f) => !f.isPositive && !f.isSystemFeedback && !f.isVerifierFailure);
         const fallbackNo = firstNegative
             ? firstNegative.linkedDisplayVersionNo
@@ -8867,6 +8864,26 @@ const searchOutputMethods = {
             }
             const list = byDisplayNo.get(displayNo) || [];
             list.push(dispute);
+            byDisplayNo.set(displayNo, list);
+        }
+        return byDisplayNo;
+    },
+
+    _orphanFlagsByDisplayNo(flags, promptVersions) {
+        const lib = dashLib();
+        const byDisplayNo = new Map();
+        const vers = promptVersions || [];
+        if (!flags || flags.length === 0) return byDisplayNo;
+        const rawLike = this._promptVersionsRawLike(vers);
+        const fallbackNo = vers.length ? vers[vers.length - 1].displayVersionNo : 1;
+        for (const flag of flags) {
+            let displayNo = fallbackNo;
+            if (flag.createdAt && rawLike.length) {
+                const versionInfo = lib.resolveVersionAtFeedback(rawLike, flag.createdAt);
+                if (versionInfo && versionInfo.displayVersionNo) displayNo = versionInfo.displayVersionNo;
+            }
+            const list = byDisplayNo.get(displayNo) || [];
+            list.push(flag);
             byDisplayNo.set(displayNo, list);
         }
         return byDisplayNo;
@@ -9167,8 +9184,7 @@ const searchOutputMethods = {
             allFeedback,
             task.promptVersions || versions
         );
-        const orphanFallbackDisplayNo = this._orphanFallbackDisplayNo(allFeedback, task.promptVersions || versions);
-        const orphanFlags = item.flags || [];
+        const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
 
         let renderedVersions;
         if (expanded) {
@@ -9211,7 +9227,7 @@ const searchOutputMethods = {
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
-            const orphanFlagsForVersion = version.displayVersionNo === orphanFallbackDisplayNo ? orphanFlags : [];
+            const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
             const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
             let versionHeaderControls = '';
             if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
@@ -9863,7 +9879,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.21',
+    _version: '3.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
