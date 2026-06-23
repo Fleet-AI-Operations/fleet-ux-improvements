@@ -3,6 +3,7 @@
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Same behavior as QA archetypes; shared verifier panel DOM.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
+// If the main copy finds no text and Raw Output is collapsed, expands it and retries before failing.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
@@ -28,7 +29,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -102,6 +103,114 @@ const plugin = {
         return block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre');
     },
 
+    findRawOutputToggle(block) {
+        if (!block) return null;
+        return Array.from(block.querySelectorAll('button')).find(
+            (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
+        );
+    },
+
+    isRawOutputCollapsed(block) {
+        const pre = this.findRawOutputPre(block);
+        if (pre && pre.textContent.trim()) {
+            return false;
+        }
+        const toggle = this.findRawOutputToggle(block);
+        if (!toggle) {
+            return false;
+        }
+        const chevron = toggle.querySelector('svg.transition-transform');
+        if (chevron) {
+            return chevron.classList.contains('-rotate-90');
+        }
+        return !pre || !pre.textContent.trim();
+    },
+
+    expandRawOutputToggle(block) {
+        const toggle = this.findRawOutputToggle(block);
+        if (!toggle) {
+            return false;
+        }
+        toggle.click();
+        Logger.debug('Copy Verifier Output: Expanded Raw Output dropdown');
+        return true;
+    },
+
+    waitForVerifierTextAfterExpand(container, block, onReady, onFail) {
+        let settled = false;
+        const tryText = () => this.getVerifierOutputText(container);
+        const finish = (text) => {
+            if (settled) return;
+            settled = true;
+            observer.disconnect();
+            clearTimeout(timeoutId);
+            if (text) {
+                onReady(text);
+            } else {
+                onFail();
+            }
+        };
+        const observer = new MutationObserver(() => {
+            const next = tryText();
+            if (next) {
+                finish(next);
+            }
+        });
+        observer.observe(block, { childList: true, subtree: true, characterData: true });
+        const timeoutId = setTimeout(() => finish(null), 3000);
+    },
+
+    attemptCopyVerifierOutput(button, container) {
+        const text = this.getVerifierOutputText(container);
+        if (text) {
+            this.copyVerifierTextWithFeedback(button, text);
+            return;
+        }
+
+        const block = this.findRawOutputBlock(container);
+        if (!block || !this.isRawOutputCollapsed(block)) {
+            Logger.warn('Copy Verifier Output: No verifier output to copy');
+            this.showVerifierCopyFailurePulse(button);
+            return;
+        }
+        if (button._fleetCopyExpandPending) {
+            return;
+        }
+        button._fleetCopyExpandPending = true;
+
+        if (!this.expandRawOutputToggle(block)) {
+            button._fleetCopyExpandPending = false;
+            Logger.warn('Copy Verifier Output: No verifier output to copy');
+            this.showVerifierCopyFailurePulse(button);
+            return;
+        }
+
+        const afterExpand = (retryText) => {
+            button._fleetCopyExpandPending = false;
+            if (retryText) {
+                this.syncRawOutputCopyButton(container);
+                Logger.log('Copy Verifier Output: Copy succeeded after expanding Raw Output');
+                this.copyVerifierTextWithFeedback(button, retryText);
+                return;
+            }
+            Logger.warn('Copy Verifier Output: No verifier output to copy after expanding Raw Output');
+            this.showVerifierCopyFailurePulse(button);
+        };
+
+        const immediate = this.getVerifierOutputText(container);
+        if (immediate) {
+            afterExpand(immediate);
+            return;
+        }
+
+        this.waitForVerifierTextAfterExpand(
+            container,
+            block,
+            (retryText) => afterExpand(retryText),
+            () => afterExpand(null)
+        );
+    },
+
     unwrapRawOutputCopyRow(block) {
         const wrapper = block.querySelector(`:scope > [${RAW_OUTPUT_ROW_MARKER}="true"]`);
         if (!wrapper) return;
@@ -126,9 +235,7 @@ const plugin = {
             copyBtn._fleetCopyRawPre = pre;
             return;
         }
-        const toggleBtn = Array.from(block.querySelectorAll('button')).find(
-            (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
-        );
+        const toggleBtn = this.findRawOutputToggle(block);
         if (!toggleBtn) return;
         const wrapper = document.createElement('div');
         wrapper.className = 'flex items-center gap-2 mb-1';
@@ -429,13 +536,7 @@ const plugin = {
             e.stopImmediatePropagation();
             e.stopPropagation();
             e.preventDefault();
-            const text = this.getVerifierOutputText(cont);
-            if (!text) {
-                Logger.warn('Copy Verifier Output: No verifier output to copy');
-                this.showVerifierCopyFailurePulse(btn);
-                return;
-            }
-            this.copyVerifierTextWithFeedback(btn, text);
+            this.attemptCopyVerifierOutput(btn, cont);
         };
         win.addEventListener('pointerdown', handler, true);
         win.addEventListener('click', handler, true);
@@ -554,13 +655,7 @@ const plugin = {
                 return;
             }
             button._fleetCopyHandledAt = Date.now();
-            const text = this.getVerifierOutputText(container);
-            if (!text) {
-                Logger.warn('Copy Verifier Output: No verifier output to copy');
-                this.showVerifierCopyFailurePulse(button);
-                return;
-            }
-            this.copyVerifierTextWithFeedback(button, text);
+            this.attemptCopyVerifierOutput(button, container);
         };
 
         button.addEventListener('pointerdown', (e) => {
