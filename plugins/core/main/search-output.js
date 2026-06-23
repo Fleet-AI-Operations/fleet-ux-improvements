@@ -986,9 +986,15 @@ const searchOutputMethods = {
 
     async _handleThumbClick(feedbackId, direction) {
         const fid = String(feedbackId || '').trim();
-        if (!fid || (direction !== 'up' && direction !== 'down')) return;
+        if (!fid || (direction !== 'up' && direction !== 'down')) {
+            this._logDashApiSkip('helpfulness-thumb', 'invalid feedback or direction');
+            return;
+        }
         const ui = this._getHelpfulnessUi(fid);
-        if (ui.submitting) return;
+        if (ui.submitting) {
+            this._logDashApiSkip('helpfulness-thumb', 'already submitting', fid);
+            return;
+        }
 
         const wantHelpful = direction === 'up';
         const prev = ui.isHelpful;
@@ -996,6 +1002,7 @@ const searchOutputMethods = {
         if (prev === wantHelpful) next = null;
         else next = wantHelpful;
 
+        this._logDashApiClick('helpfulness-thumb', 'feedback ' + fid + ' → ' + (next === true ? 'up' : next === false ? 'down' : 'clear'));
         ui.isHelpful = next;
         ui.submitting = true;
         this._patchHelpfulnessBlock(fid);
@@ -1027,12 +1034,28 @@ const searchOutputMethods = {
 
     async _handleQaReviewSubmit(feedbackId) {
         const fid = String(feedbackId || '').trim();
-        if (!fid) return;
+        if (!fid) {
+            this._logDashApiSkip('qa-review-submit', 'missing feedback id');
+            return;
+        }
         const ui = this._getHelpfulnessUi(fid);
-        const text = String(ui.localText || '').trim();
+        const text = this._readQaReviewTextFromDom(fid);
+        ui.localText = text;
         const submittedText = ui.reportText != null ? String(ui.reportText) : '';
-        if (!text || text === submittedText || ui.submitting) return;
+        if (!text) {
+            this._logDashApiSkip('qa-review-submit', 'empty review text', fid);
+            return;
+        }
+        if (text === submittedText) {
+            this._logDashApiSkip('qa-review-submit', 'unchanged review text', fid);
+            return;
+        }
+        if (ui.submitting) {
+            this._logDashApiSkip('qa-review-submit', 'already submitting', fid);
+            return;
+        }
 
+        this._logDashApiClick('qa-review-submit', 'feedback ' + fid + ' (' + text.length + ' chars)');
         ui.submitting = true;
         this._patchHelpfulnessBlock(fid);
         try {
@@ -1075,10 +1098,17 @@ const searchOutputMethods = {
 
     async _handleQaReviewRemoveConfirm(feedbackId) {
         const fid = String(feedbackId || '').trim();
-        if (!fid) return;
+        if (!fid) {
+            this._logDashApiSkip('qa-review-remove', 'missing feedback id');
+            return;
+        }
         const ui = this._getHelpfulnessUi(fid);
-        if (ui.submitting) return;
+        if (ui.submitting) {
+            this._logDashApiSkip('qa-review-remove', 'already submitting', fid);
+            return;
+        }
 
+        this._logDashApiClick('qa-review-remove', 'feedback ' + fid);
         ui.submitting = true;
         this._patchHelpfulnessBlock(fid);
         try {
@@ -1241,6 +1271,9 @@ const searchOutputMethods = {
         const reason = String(ui.reason || '').trim();
         const note = ui.note != null ? String(ui.note) : '';
         const disabled = ui.submitting ? ' disabled' : '';
+        const canSubmit = reason && DASH_FLAG_CREATE_REASON_KEYS.includes(reason) && !ui.submitting;
+        const submitDisabled = !canSubmit ? ' disabled' : '';
+        const submitStyle = !canSubmit ? ' opacity: 0.45; cursor: not-allowed;' : '';
         const cancelClass = this._dashBtnClass('basic', 'compact');
         const submitClass = this._dashBtnClass('primary', 'compact');
         const selectStyle = this._inputStyle()
@@ -1256,7 +1289,7 @@ const searchOutputMethods = {
                 <textarea data-wf-dash-flag-create-note="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" rows="2" placeholder="Explain why this task should be reviewed…" style="${textareaStyle}"${disabled}>${dashEscHtml(note)}</textarea>
                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
                     <button type="button" data-wf-dash-flag-create-cancel="1" data-item-id="${escItemId}" class="${cancelClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Cancel</button>
-                    <button type="button" data-wf-dash-flag-create-submit="1" data-item-id="${escItemId}" class="${submitClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Submit</button>
+                    <button type="button" data-wf-dash-flag-create-submit="1" data-item-id="${escItemId}" class="${submitClass}" style="flex-shrink: 0; white-space: nowrap;${submitStyle}"${submitDisabled}${disabled}>Submit</button>
                 </div>
             </div>`;
     },
@@ -1302,6 +1335,51 @@ const searchOutputMethods = {
         }
     },
 
+    _readFlagCreateFormFromDom(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid || !this._modal) {
+            const ui = this._getFlagCreateUi(iid);
+            return {
+                reason: String(ui.reason || '').trim(),
+                note: String(ui.note || '')
+            };
+        }
+        let wrap = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-flag-create-panel]')) {
+            if (el.getAttribute('data-item-id') === iid) {
+                wrap = el;
+                break;
+            }
+        }
+        if (!wrap) {
+            const ui = this._getFlagCreateUi(iid);
+            return {
+                reason: String(ui.reason || '').trim(),
+                note: String(ui.note || '')
+            };
+        }
+        const sel = wrap.querySelector('[data-wf-dash-flag-create-reason]');
+        const ta = wrap.querySelector('[data-wf-dash-flag-create-note]');
+        return {
+            reason: String(sel ? sel.value : '').trim(),
+            note: String(ta ? ta.value : '')
+        };
+    },
+
+    _readQaReviewTextFromDom(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid || !this._modal) {
+            return String(this._getHelpfulnessUi(fid).localText || '').trim();
+        }
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-helpfulness]')) {
+            if (el.getAttribute('data-wf-dash-helpfulness') === fid) {
+                const ta = el.querySelector('[data-wf-dash-qa-review-input]');
+                return String(ta ? ta.value : '').trim();
+            }
+        }
+        return String(this._getHelpfulnessUi(fid).localText || '').trim();
+    },
+
     _handleFlagCreateInput(itemId, patch) {
         const iid = String(itemId || '').trim();
         if (!iid) return;
@@ -1319,18 +1397,34 @@ const searchOutputMethods = {
 
     async _handleFlagCreateSubmit(itemId) {
         const iid = String(itemId || '').trim();
-        if (!iid) return;
+        if (!iid) {
+            this._logDashApiSkip('flag-create', 'missing item id');
+            return;
+        }
         const item = this._findCachedItem(iid) || this._findResultItem(iid);
-        if (!item || !item.task || !item.task.id) return;
-        if (!this._isCurrentUserTaskAuthor(item.task)) return;
+        if (!item || !item.task || !item.task.id) {
+            this._logDashApiSkip('flag-create', 'task not found', iid);
+            return;
+        }
+        if (this._isCurrentUserTaskAuthor(item.task)) {
+            this._logDashApiSkip('flag-create', 'cannot flag own task', iid);
+            return;
+        }
         const ui = this._getFlagCreateUi(iid);
-        if (ui.submitting) return;
-        const reason = String(ui.reason || '').trim();
+        if (ui.submitting) {
+            this._logDashApiSkip('flag-create', 'already submitting', iid);
+            return;
+        }
+        const form = this._readFlagCreateFormFromDom(iid);
+        ui.reason = form.reason;
+        ui.note = form.note;
+        const reason = form.reason;
         if (!reason || !DASH_FLAG_CREATE_REASON_KEYS.includes(reason)) {
-            Logger.warn('search-output: flag create skipped — no reason selected');
+            this._logDashApiSkip('flag-create', 'no reason selected', iid);
             return;
         }
         const taskId = String(item.task.id).trim();
+        this._logDashApiClick('flag-create', 'task ' + taskId.slice(0, 8) + '… reason ' + reason);
         ui.submitting = true;
         this._patchFlagCreatePanel(iid, taskId);
         try {
@@ -1338,7 +1432,7 @@ const searchOutputMethods = {
                 body: {
                     task_id: taskId,
                     reason,
-                    note: String(ui.note || '').trim()
+                    note: String(form.note || '').trim()
                 },
                 referer: this._dashFleetQaReferer(taskId)
             });
@@ -1411,10 +1505,17 @@ const searchOutputMethods = {
     async _handleFlagResolution(flagId, itemId, resolution) {
         const fid = String(flagId || '').trim();
         const iid = String(itemId || '').trim();
-        if (!fid || !iid || (resolution !== 'confirmed' && resolution !== 'dismissed')) return;
+        if (!fid || !iid || (resolution !== 'confirmed' && resolution !== 'dismissed')) {
+            this._logDashApiSkip('flag-resolve', 'invalid flag, item, or resolution');
+            return;
+        }
         const ui = this._getFlagResolutionUi(fid);
-        if (ui.submitting) return;
+        if (ui.submitting) {
+            this._logDashApiSkip('flag-resolve', 'already submitting', fid);
+            return;
+        }
 
+        this._logDashApiClick('flag-resolve', resolution + ' — flag ' + fid);
         ui.submitting = true;
         this._patchFlagResolutionBlock(fid);
         try {
@@ -1471,9 +1572,15 @@ const searchOutputMethods = {
     async _openTaskInFleet(taskId, teamId, itemId) {
         const id = String(taskId || '').trim();
         const url = dashFleetTaskUrl(id);
-        if (!url) return;
+        if (!url) {
+            this._logDashApiSkip('open-task', 'invalid task url', id);
+            return;
+        }
         const ui = this._getTaskOpenUi(id);
-        if (ui.status === 'switching') return;
+        if (ui.status === 'switching') {
+            this._logDashApiSkip('open-task', 'team switch in progress', id.slice(0, 8) + '…');
+            return;
+        }
 
         const targetTeamId = String(teamId || '').trim();
         const currentTeamId = this._dashGetCookie('current-team-id');
@@ -1483,6 +1590,7 @@ const searchOutputMethods = {
             return;
         }
 
+        this._logDashApiClick('open-task', 'switch team then open ' + id.slice(0, 8) + '…');
         ui.status = 'switching';
         this._patchTaskCard(itemId);
         try {
@@ -5124,28 +5232,31 @@ const searchOutputMethods = {
 
     async _getVerifierFromCard(itemId) {
         const id = String(itemId || '').trim();
-        if (!id) return;
+        if (!id) {
+            this._logDashApiSkip('get-verifier', 'missing item id');
+            return;
+        }
         const item = this._findCachedItem(id) || this._findResultItem(id);
         if (!item || !item.task) {
-            Logger.warn('dashboard: get verifier — no task on card ' + id);
+            this._logDashApiSkip('get-verifier', 'no task on card', id);
             return;
         }
         const taskKey = String(item.task.key || '').trim();
         const taskId = String(item.task.id || '').trim();
         const inputValue = taskKey || taskId;
         if (!inputValue) {
-            Logger.warn('dashboard: get verifier — missing task key/id on card ' + id);
+            this._logDashApiSkip('get-verifier', 'missing task key/id', id);
             return;
         }
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.handleVerifierFetch !== 'function') {
-            Logger.warn('dashboard: get verifier unavailable — ops module missing');
+            this._logDashApiSkip('get-verifier', 'ops module missing');
             return;
         }
+        this._logDashApiClick('get-verifier', taskKey || taskId.slice(0, 8) + '…');
         this._setActiveTab('verifier-fetcher');
         const input = this._q('#wf-ops-verifier-input');
         if (input) input.value = inputValue;
-        Logger.log('dashboard: get verifier from card — ' + (taskKey || taskId.slice(0, 8) + '…'));
         await opsTab.handleVerifierFetch(this._modal);
     },
 
@@ -5163,24 +5274,27 @@ const searchOutputMethods = {
             if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
             return;
         }
-        if (ui.status === 'loading') return;
+        if (ui.status === 'loading') {
+            this._logDashApiSkip('user-story-fetch', 'already loading', id);
+            return;
+        }
 
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
             ui.status = 'error';
             ui.message = 'User story unavailable (ops module not loaded).';
             ui.visible = false;
-            Logger.warn('dashboard: user story fetch unavailable — ops module missing');
+            this._logDashApiSkip('user-story-fetch', 'ops module missing', id);
             this._patchTaskCard(id);
             return;
         }
 
+        const taskKey = String(item.task.key || '').trim();
+        const taskId = String(item.task.id || '').trim();
+        this._logDashApiClick('user-story-fetch', taskKey || taskId.slice(0, 8) + '…');
         ui.status = 'loading';
         if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
 
-        const taskKey = String(item.task.key || '').trim();
-        const taskId = String(item.task.id || '').trim();
-        Logger.log('dashboard: fetching user story — ' + (taskKey || taskId.slice(0, 8) + '…'));
         try {
             const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
             const userStory = result && result.userStory != null ? String(result.userStory) : '';
@@ -5397,13 +5511,20 @@ const searchOutputMethods = {
 
     async _hydrateCard(itemId) {
         const item = this._findCachedItem(itemId);
-        if (!item || item.hydrated) return;
+        if (!item || item.hydrated) {
+            this._logDashApiSkip('hydrate-card', item && item.hydrated ? 'already hydrated' : 'item not found', String(itemId || ''));
+            return;
+        }
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('dashboard: card hydrate skipped — dashboardData not loaded');
+            this._logDashApiSkip('hydrate-card', 'dashboardData not loaded', String(itemId || ''));
             return;
         }
         const ui = this._getHydrateUi(itemId);
-        if (ui.status === 'loading') return;
+        if (ui.status === 'loading') {
+            this._logDashApiSkip('hydrate-card', 'already loading', String(itemId || ''));
+            return;
+        }
+        this._logDashApiClick('hydrate-card', String(itemId || ''));
         ui.status = 'loading';
         this._patchTaskCard(itemId);
         try {
@@ -5648,14 +5769,21 @@ const searchOutputMethods = {
     },
 
     async _bulkHydrateVisible() {
-        if (!this._bulkHydrateShowable() || this._state.hydrateBulkActive || this._state.autoHydrateActive) return;
+        if (!this._bulkHydrateShowable() || this._state.hydrateBulkActive || this._state.autoHydrateActive) {
+            this._logDashApiSkip('bulk-hydrate', 'not available or already active');
+            return;
+        }
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('dashboard: bulk hydrate skipped — dashboardData not loaded');
+            this._logDashApiSkip('bulk-hydrate', 'dashboardData not loaded');
             return;
         }
         const toHydrate = this._getUnhydratedInView();
-        if (toHydrate.length === 0) return;
+        if (toHydrate.length === 0) {
+            this._logDashApiSkip('bulk-hydrate', 'nothing to hydrate');
+            return;
+        }
 
+        this._logDashApiClick('bulk-hydrate', toHydrate.length + ' card(s)');
         this._state.hydrateBulkActive = true;
         this._syncBulkHydrateUi();
         this._setBulkHydrateProgress(0, toHydrate.length);
@@ -7134,9 +7262,16 @@ const searchOutputMethods = {
 
     async _claimDispute(disputeId, itemId) {
         const id = String(disputeId || '').trim();
-        if (!id || !itemId) return;
+        if (!id || !itemId) {
+            this._logDashApiSkip('dispute-claim', 'missing dispute or item id');
+            return;
+        }
         const ui = this._getDisputeClaimUi(id);
-        if (ui.status === 'claiming' || ui.status === 'claimed') return;
+        if (ui.status === 'claiming' || ui.status === 'claimed') {
+            this._logDashApiSkip('dispute-claim', 'already ' + ui.status, id);
+            return;
+        }
+        this._logDashApiClick('dispute-claim', id);
         ui.status = 'claiming';
         this._patchTaskCard(itemId);
         try {
@@ -7596,6 +7731,7 @@ const searchOutputMethods = {
         this._state.retrieveInput = String(raw || '').trim();
         const parsed = this._parseRetrieveInput(raw);
         if (!parsed) {
+            this._logDashApiSkip('retrieve-task', 'invalid input');
             this._setRetrieveError('Enter a valid task ID, version ID, task key, or Fleet URL.');
             return;
         }
@@ -7626,7 +7762,7 @@ const searchOutputMethods = {
 
         this._state.searchFetchActive = true;
         try {
-            Logger.info('search-output: retrieve task started — ' + parsed.kind + ' ' + parsed.value);
+            this._logDashApiClick('retrieve-task', parsed.kind + ' ' + parsed.value);
             const { row, versionOverride } = await this._fetchTaskRowForRetrieve(parsed);
             if (!row) {
                 this._setRetrieveError('No task found for that identifier.');
@@ -7679,6 +7815,7 @@ const searchOutputMethods = {
         try {
             const authorFlushError = await this._flushPendingAuthorInput();
             if (authorFlushError) {
+                this._logDashApiSkip('search', 'author input error');
                 this._setSearchError(authorFlushError);
                 return;
             }
@@ -7688,6 +7825,7 @@ const searchOutputMethods = {
             const includeDisputes = this._state.includeDisputes;
             const includeSeniorReview = this._state.includeSeniorReview;
             if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview) {
+                this._logDashApiSkip('search', 'no contributor areas enabled');
                 this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
                 return;
             }
@@ -7698,11 +7836,13 @@ const searchOutputMethods = {
             const before = (this._q('#wf-dash-before') || {}).value || '';
             const rangeCheck = dashValidateCreatedAtRange(after, before);
             if (!rangeCheck.valid) {
+                this._logDashApiSkip('search', 'invalid date range');
                 this._setSearchError(rangeCheck.error);
                 return;
             }
             const lib = dashLib();
             if (!lib) {
+                this._logDashApiSkip('search', 'dashboard helpers not loaded');
                 this._setSearchError('Dashboard helpers not loaded. Reload the page and try again.');
                 return;
             }
@@ -7751,8 +7891,8 @@ const searchOutputMethods = {
                     return;
                 }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
-                Logger.info('dashboard: search started — '
-                    + (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
+                this._logDashApiClick('search',
+                    (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
                     + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null].filter(Boolean).join('+')
                     + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
                 const searchResult = await this._fetchWorkerOutputSearch({
@@ -10129,7 +10269,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.27',
+    _version: '3.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

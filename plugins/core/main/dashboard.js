@@ -101,7 +101,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.65',
+    _version: '5.66',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -149,6 +149,8 @@ const plugin = {
             navBtnStyle: () => self._navBtnStyle(),
             navBtnPrimaryStyle: () => self._navBtnPrimaryStyle(),
             dashBtnClass: (variant, size) => self._dashBtnClass(variant, size),
+            logApiClick: (action, detail) => self._logDashApiClick(action, detail),
+            logApiSkip: (action, reason, detail) => self._logDashApiSkip(action, reason, detail),
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => self._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
@@ -285,6 +287,19 @@ const plugin = {
             }
         } catch (_e) { /* fall through */ }
         return window;
+    },
+
+    _logDashApiClick(action, detail) {
+        const label = String(action || 'unknown').trim();
+        const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
+        Logger.log('dashboard: api ' + label + suffix);
+    },
+
+    _logDashApiSkip(action, reason, detail) {
+        const label = String(action || 'unknown').trim();
+        const why = String(reason || 'blocked').trim();
+        const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
+        Logger.warn('dashboard: api ' + label + ' skipped — ' + why + suffix);
     },
 
     _isOpen() {

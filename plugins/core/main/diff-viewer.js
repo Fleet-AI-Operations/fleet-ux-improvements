@@ -2253,11 +2253,17 @@ function _dvAttachListeners(modal, dash) {
     const searchInput = _dvQ(modal, 'dv-search-input');
     const doSearch = () => {
         const val = searchInput ? searchInput.value.trim() : '';
-        if (!val) return;
+        const dashLog = Context.dashboard;
+        if (!val) {
+            if (dashLog && typeof dashLog.logApiSkip === 'function') dashLog.logApiSkip('diff-add-task', 'empty input');
+            return;
+        }
         if (!_dvParseInput(val)) {
+            if (dashLog && typeof dashLog.logApiSkip === 'function') dashLog.logApiSkip('diff-add-task', 'invalid input', val);
             _dvSetSearchLoading(modal, false, 'Not a valid task ID, key, version ID, or URL');
             return;
         }
+        if (dashLog && typeof dashLog.logApiClick === 'function') dashLog.logApiClick('diff-add-task', val);
         _dvSetSearchLoading(modal, false, null);
         if (searchInput) searchInput.value = '';
         _dvAddSlot({ raw: val }, modal);
@@ -2932,7 +2938,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.73',
+    _version: '1.74',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

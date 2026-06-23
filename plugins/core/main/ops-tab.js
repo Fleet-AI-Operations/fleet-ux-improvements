@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.22',
+    _version: '7.23',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2882,6 +2882,9 @@ const plugin = {
             return;
         }
         const dash = Context.dashboard;
+        if (dash && typeof dash.logApiClick === 'function') {
+            dash.logApiClick('team-filters-apply');
+        }
         const numeric = dash && typeof dash.readTeamMembersNumericFilters === 'function'
             ? dash.readTeamMembersNumericFilters(modal)
             : { rows: [], andOr: 'and' };
@@ -3552,9 +3555,11 @@ const plugin = {
         const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInput');
         const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
         const query = input ? input.value.trim() : '';
+        const dashLog = Context.dashboard;
 
         const userId = this._getOpsCurrentUserId();
         if (!userId) {
+            if (dashLog && typeof dashLog.logApiSkip === 'function') dashLog.logApiSkip('team-search', 'no user id');
             this._setOpsTeamSearchStatus(modal, 'No user ID found. Open Fleet while logged in and try again.', true);
             return;
         }
@@ -3616,6 +3621,10 @@ const plugin = {
         let staleActionDetected = false;
 
         this._opsFellowsSearchComplete = true;
+
+        if (dashLog && typeof dashLog.logApiClick === 'function') {
+            dashLog.logApiClick('team-search', (query ? '"' + query + '" · ' : '') + allTeams.length + ' team(s)');
+        }
 
         const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
@@ -4509,13 +4518,21 @@ const plugin = {
     async _handleOpsVerifierFetch(modal) {
         const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
         const fetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetch');
+        const dashLog = Context.dashboard;
         if (!input) return;
         const parsed = this._parseOpsVerifierInput(input.value);
         if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
+            if (dashLog && typeof dashLog.logApiSkip === 'function') {
+                dashLog.logApiSkip('verifier-fetch', 'empty or invalid input');
+            }
             this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
             void this._setOpsVerifierOutput(modal, '');
             this._captureOpsTabState(modal);
             return;
+        }
+        if (dashLog && typeof dashLog.logApiClick === 'function') {
+            const detail = parsed.taskKey || parsed.taskId || parsed.verifierKey || parsed.verifierId || '';
+            dashLog.logApiClick('verifier-fetch', String(detail).slice(0, 80));
         }
         if (fetchBtn) {
             fetchBtn.disabled = true;
