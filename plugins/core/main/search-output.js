@@ -1192,12 +1192,12 @@ const searchOutputMethods = {
     _getFlagCreateUi(itemId) {
         const id = String(itemId || '').trim();
         if (!id) {
-            return { open: false, reason: 'other', note: '', submitting: false };
+            return { open: false, reason: '', note: '', submitting: false };
         }
         if (!this._state.flagCreateUi[id]) {
             this._state.flagCreateUi[id] = {
                 open: false,
-                reason: 'other',
+                reason: '',
                 note: '',
                 submitting: false
             };
@@ -1212,7 +1212,7 @@ const searchOutputMethods = {
         ui.open = Boolean(open);
         if (!ui.open) {
             ui.note = '';
-            ui.reason = 'other';
+            ui.reason = '';
             ui.submitting = false;
         }
         Logger.log('search-output: flag create panel ' + (ui.open ? 'opened' : 'closed') + ' — ' + iid);
@@ -1221,12 +1221,15 @@ const searchOutputMethods = {
 
     _flagCreateReasonOptionsHtml(selectedReason) {
         const lib = dashLib();
-        const selected = String(selectedReason || 'other').trim();
-        return DASH_FLAG_CREATE_REASON_KEYS.map((key) => {
+        const selected = String(selectedReason || '').trim();
+        const hasReason = DASH_FLAG_CREATE_REASON_KEYS.includes(selected);
+        const placeholderSel = hasReason ? '' : ' selected';
+        let html = `<option value="" disabled${placeholderSel}>Select a flag reason...</option>`;
+        for (const key of DASH_FLAG_CREATE_REASON_KEYS) {
             const sel = key === selected ? ' selected' : '';
-            const label = lib.flagReasonLabel(key);
-            return `<option value="${dashEscHtml(key)}"${sel}>${dashEscHtml(label)}</option>`;
-        }).join('');
+            html += `<option value="${dashEscHtml(key)}"${sel}>${dashEscHtml(lib.flagReasonLabel(key))}</option>`;
+        }
+        return html;
     },
 
     _flagCreateFormInnerHtml(itemId, taskId) {
@@ -1235,21 +1238,26 @@ const searchOutputMethods = {
         const escItemId = dashEscHtml(iid);
         const escTaskId = dashEscHtml(tid);
         const ui = this._getFlagCreateUi(iid);
-        const reason = String(ui.reason || 'other').trim();
+        const reason = String(ui.reason || '').trim();
         const note = ui.note != null ? String(ui.note) : '';
         const disabled = ui.submitting ? ' disabled' : '';
         const cancelClass = this._dashBtnClass('basic', 'compact');
         const submitClass = this._dashBtnClass('primary', 'compact');
-        const selectStyle = this._inputStyle() + ' flex-shrink: 0; max-width: 100%; padding: 4px 8px; font-size: 12px;';
+        const selectStyle = this._inputStyle()
+            + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
         const textareaStyle = this._inputStyle()
-            + ' flex: 1; min-width: 120px; height: 28px; min-height: 28px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+            + ' display: block; width: 100%; box-sizing: border-box; min-height: 48px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
         return `
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Flag for Senior Review</span>
-                <select data-wf-dash-flag-create-reason="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" style="${selectStyle}"${disabled}>${this._flagCreateReasonOptionsHtml(reason)}</select>
-                <textarea data-wf-dash-flag-create-note="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" rows="1" placeholder="Explain why this task should be reviewed…" style="${textareaStyle}"${disabled}>${dashEscHtml(note)}</textarea>
-                <button type="button" data-wf-dash-flag-create-cancel="1" data-item-id="${escItemId}" class="${cancelClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Cancel</button>
-                <button type="button" data-wf-dash-flag-create-submit="1" data-item-id="${escItemId}" class="${submitClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Submit</button>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Flag for Senior Review</span>
+                    <select data-wf-dash-flag-create-reason="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" style="${selectStyle}"${disabled}>${this._flagCreateReasonOptionsHtml(reason)}</select>
+                </div>
+                <textarea data-wf-dash-flag-create-note="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" rows="2" placeholder="Explain why this task should be reviewed…" style="${textareaStyle}"${disabled}>${dashEscHtml(note)}</textarea>
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
+                    <button type="button" data-wf-dash-flag-create-cancel="1" data-item-id="${escItemId}" class="${cancelClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Cancel</button>
+                    <button type="button" data-wf-dash-flag-create-submit="1" data-item-id="${escItemId}" class="${submitClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Submit</button>
+                </div>
             </div>`;
     },
 
@@ -1317,6 +1325,11 @@ const searchOutputMethods = {
         if (!this._isCurrentUserTaskAuthor(item.task)) return;
         const ui = this._getFlagCreateUi(iid);
         if (ui.submitting) return;
+        const reason = String(ui.reason || '').trim();
+        if (!reason || !DASH_FLAG_CREATE_REASON_KEYS.includes(reason)) {
+            Logger.warn('search-output: flag create skipped — no reason selected');
+            return;
+        }
         const taskId = String(item.task.id).trim();
         ui.submitting = true;
         this._patchFlagCreatePanel(iid, taskId);
@@ -1324,7 +1337,7 @@ const searchOutputMethods = {
             await this._fleetWebPost(DASH_FLEET_FLAGS_PATH, {
                 body: {
                     task_id: taskId,
-                    reason: String(ui.reason || 'other').trim(),
+                    reason,
                     note: String(ui.note || '').trim()
                 },
                 referer: this._dashFleetQaReferer(taskId)
@@ -10106,7 +10119,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.24',
+    _version: '3.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
