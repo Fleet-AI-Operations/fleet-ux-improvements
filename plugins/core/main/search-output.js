@@ -5783,7 +5783,7 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${hint} margin: 0;">Refine loaded results. Substring filters apply as you type unless RegEx is enabled; other filters use Apply.</p>
+                                <p style="${hint} margin: 0;">Refine loaded results. Substring and dropdown filters apply immediately unless RegEx is enabled on substring; manual filters use Apply.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
@@ -7178,6 +7178,23 @@ const searchOutputMethods = {
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
         const lib = dashLib();
         const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, false);
+        if (filterInvalid.invalid) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        this._applyFiltersAndRender();
+    },
+
+    _maybeLiveApplyFilterMsChange(_msKey) {
+        if (this._state.loading || !this._state.cachedItems) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
+        const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
+        const regex = Boolean((this._q('#wf-dash-regex') || {}).checked);
+        const lib = dashLib();
+        const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, regex);
         if (filterInvalid.invalid) {
             this._updateApplyFiltersUi();
             return;
@@ -9391,6 +9408,24 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
 
+        const deferLiveFilterApply = (msKey) => {
+            queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
+        };
+        modal.addEventListener('change', (e) => {
+            const cb = e.target;
+            if (!cb || cb.type !== 'checkbox') return;
+            const msKey = cb.getAttribute('data-wf-dash-ms');
+            if (!msKey || !msKey.startsWith('filter-')) return;
+            deferLiveFilterApply(msKey);
+        });
+        modal.addEventListener('click', (e) => {
+            const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
+            if (!msBulkToggle || !modal.contains(msBulkToggle)) return;
+            const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
+            if (!key || !key.startsWith('filter-')) return;
+            deferLiveFilterApply(key);
+        });
+
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -9734,7 +9769,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.16',
+    _version: '3.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
