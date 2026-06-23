@@ -8208,12 +8208,12 @@ const searchOutputMethods = {
     _copyChipHtml(text, highlight) {
         const value = String(text == null ? '' : text).trim();
         if (!value) {
-            return `<span style="display: inline-block; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
+            return `<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
         }
         const inner = (highlight && highlight.query)
             ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
             : dashEscHtml(value);
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
+        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
     },
 
     _copyIconHtml(text) {
@@ -8379,9 +8379,9 @@ const searchOutputMethods = {
                         ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation'))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                        ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
                     </div>
                 </div>`;
     },
@@ -9849,7 +9849,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.18',
+    _version: '3.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
