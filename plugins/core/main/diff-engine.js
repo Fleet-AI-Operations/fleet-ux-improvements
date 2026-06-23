@@ -9,25 +9,44 @@ function _deEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function _dePushTokenStr(tokens, token) {
+    if (!token) return;
+    if (token === '\n') {
+        tokens.push('\n');
+        return;
+    }
+    if (/^[ \t]+$/.test(token)) {
+        tokens.push(token);
+        return;
+    }
+    const trailingMatch = token.match(/^(.+?)([ \t]+)$/);
+    if (trailingMatch) {
+        tokens.push(trailingMatch[1]);
+        tokens.push(trailingMatch[2]);
+        return;
+    }
+    tokens.push(token);
+}
+
 function _deTokenize(text) {
     const tokens = [];
     let current = '';
     for (const char of text) {
         if (char === '\n') {
-            if (current) tokens.push(current);
+            if (current) _dePushTokenStr(tokens, current);
             tokens.push('\n');
             current = '';
         } else if (char === ' ' || char === '\t') {
             current += char;
         } else {
             if (current && (current.endsWith(' ') || current.endsWith('\t'))) {
-                tokens.push(current);
+                _dePushTokenStr(tokens, current);
                 current = '';
             }
             current += char;
         }
     }
-    if (current) tokens.push(current);
+    if (current) _dePushTokenStr(tokens, current);
     return tokens;
 }
 
@@ -77,6 +96,44 @@ function _deComputeCharDiff(oldText, newText) {
     return _deBacktrack(_deComputeLCS(a, b), a, b);
 }
 
+function _deIsWhitespaceOnlyValues(values) {
+    return values.length > 0 && values.every((v) => /^[ \t]+$/.test(v));
+}
+
+function _deCoalesceHighlightGroups(groups, highlightType) {
+    if (!groups.length) return groups;
+    const out = [];
+    let i = 0;
+    while (i < groups.length) {
+        const group = groups[i];
+        if (group.type !== highlightType) {
+            out.push(group);
+            i++;
+            continue;
+        }
+        const values = group.values.slice();
+        let trimTrailing = group.trimTrailing;
+        i++;
+        while (i < groups.length) {
+            const sep = groups[i];
+            if (sep.type === highlightType) break;
+            if (!_deIsWhitespaceOnlyValues(sep.values)) break;
+            values.push(...sep.values);
+            trimTrailing = sep.trimTrailing;
+            i++;
+            if (i < groups.length && groups[i].type === highlightType) {
+                values.push(...groups[i].values);
+                trimTrailing = groups[i].trimTrailing;
+                i++;
+                continue;
+            }
+            break;
+        }
+        out.push({ type: highlightType, values, trimTrailing });
+    }
+    return out;
+}
+
 function _deGroupConsecutive(diff, includeTypes, highlightType) {
     const filtered = diff.filter((d) => includeTypes.includes(d.type));
     const groups = [];
@@ -93,7 +150,7 @@ function _deGroupConsecutive(diff, includeTypes, highlightType) {
             groups.push(group);
         }
     }
-    return groups;
+    return _deCoalesceHighlightGroups(groups, highlightType);
 }
 
 function _deTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
@@ -155,6 +212,13 @@ function _deRenderCompareHtml(diff, highlightStyle, highlightType) {
     return html;
 }
 
+function _deFormatPercent(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    if (n < 1) return (Math.round(n * 100) / 100).toFixed(2);
+    return String(Math.round(n));
+}
+
 function _deDiffUnits(baseText, compareText, granularity) {
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
@@ -178,7 +242,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.0',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -200,7 +264,7 @@ const plugin = {
                 }
                 const dp = _deComputeLCS(a, b);
                 const lcs = dp[a.length][b.length];
-                const percent = Math.round((2 * lcs / (a.length + b.length)) * 100);
+                const percent = (2 * lcs / (a.length + b.length)) * 100;
                 return { percent, noDifference: false, effectiveGranularity };
             },
 
@@ -247,10 +311,12 @@ const plugin = {
                 if (noDifference) {
                     return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
                 }
+                const displayPercent = highlightModality === 'similarities' ? percent : (100 - percent);
+                const formatted = _deFormatPercent(displayPercent);
                 if (highlightModality === 'similarities') {
-                    return '<span class="dv-slot-above-label-sim">' + percent + '% ' + granLabel + ' similarity</span>';
+                    return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' similarity</span>';
                 }
-                return '<span class="dv-slot-above-label-sim">' + (100 - percent) + '% ' + granLabel + ' difference</span>';
+                return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' difference</span>';
             }
         };
         Logger.log('diff-engine: module registered (Context.diffEngine)');

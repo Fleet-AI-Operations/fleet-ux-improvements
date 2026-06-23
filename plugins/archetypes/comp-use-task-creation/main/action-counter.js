@@ -1,5 +1,5 @@
 // ============= action-counter.js =============
-// Persistent +/- counter beside the Verifier tab; click the number to type a value.
+// Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value.
 
 const COUNTER_MARKER = 'data-fleet-action-counter';
 const LEGACY_STORAGE_KEY = 'fleetai_qa_action_counter';
@@ -7,8 +7,8 @@ const LEGACY_STORAGE_KEY = 'fleetai_qa_action_counter';
 const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
-    description: 'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '1.2',
+    description: 'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -17,62 +17,102 @@ const plugin = {
     },
 
     initialState: {
-        missingLogged: false,
+        anchorMissingLogged: false,
+        tabBarMissingLogged: false,
         activationLogged: false,
         hadAnchor: false,
         migratedLegacy: false
     },
 
     onMutation(state) {
-        const taskCard = document.querySelector('[data-ui="qa-task-card"]');
-        if (!taskCard) {
+        const anchor = this.findContentAnchor();
+        if (!anchor) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: task card left DOM — counter inactive`);
+                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
-            if (!state.missingLogged) {
-                Logger.debug(`${this.id}: [data-ui="qa-task-card"] not found yet`);
-                state.missingLogged = true;
+            if (!state.anchorMissingLogged) {
+                Logger.debug(`${this.id}: content anchor not found yet`);
+                state.anchorMissingLogged = true;
+            }
+            state.tabBarMissingLogged = false;
+            return;
+        }
+
+        state.anchorMissingLogged = false;
+
+        const tabBar = this.findTaskNotesTabBar(anchor);
+        if (!tabBar) {
+            if (state.hadAnchor) {
+                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
+                state.hadAnchor = false;
+                state.activationLogged = false;
+            }
+            if (!state.tabBarMissingLogged) {
+                Logger.debug(`${this.id}: Task/Notes tab bar not found yet (anchor present)`);
+                state.tabBarMissingLogged = true;
             }
             return;
         }
 
-        const verifierTab = this.findVerifierTab();
-        if (!verifierTab) {
-            if (state.hadAnchor) {
-                Logger.debug(`${this.id}: verifier tab left DOM — counter inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-            }
-            if (!state.missingLogged) {
-                Logger.debug(`${this.id}: verifier tab not found yet`);
-                state.missingLogged = true;
-            }
-            return;
-        }
-
-        state.missingLogged = false;
+        state.tabBarMissingLogged = false;
         state.hadAnchor = true;
 
-        if (verifierTab.nextElementSibling &&
-            verifierTab.nextElementSibling.getAttribute(COUNTER_MARKER) === 'true') {
+        if (tabBar.querySelector(`[${COUNTER_MARKER}="true"]`)) {
             return;
         }
 
         document.querySelectorAll(`[${COUNTER_MARKER}="true"]`).forEach((el) => el.remove());
-        verifierTab.insertAdjacentElement('afterend', this.buildCounter(state));
+        const counter = this.buildCounter(state);
+        counter.style.marginLeft = 'auto';
+        tabBar.appendChild(counter);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: counter injected beside Verifier tab (count=${this.getCount()})`);
+            Logger.log(`${this.id}: counter injected in Task/Notes tab bar (count=${this.getCount()})`);
             state.activationLogged = true;
         }
     },
 
-    findVerifierTab() {
-        const byUi = document.querySelector('[data-ui="qa-verifier-tab"]');
-        if (byUi) return byUi;
-        return document.querySelector('button[role="tab"][aria-controls*="verifier-output"]');
+    findContentAnchor() {
+        return (
+            document.getElementById('prompt-editor') ||
+            document.getElementById('problem-form') ||
+            document.querySelector('[data-ui="qa-task-detail-panel"]')
+        );
+    },
+
+    isTaskNotesTabBar(el) {
+        if (!el || el.tagName !== 'DIV') return false;
+
+        const buttons = el.querySelectorAll(':scope > button');
+        if (buttons.length < 2) return false;
+
+        const labels = [...buttons].map((btn) => (btn.textContent || '').trim().toLowerCase());
+        return labels.some((label) => label.includes('task')) && labels.some((label) => label.includes('notes'));
+    },
+
+    findTaskNotesTabBar(anchor) {
+        if (!anchor) return null;
+
+        let node = anchor;
+        while (node && node !== document.body) {
+            const parent = node.parentElement;
+            if (!parent) break;
+
+            for (const child of parent.children) {
+                if (!this.isTaskNotesTabBar(child)) continue;
+
+                const contentSibling = [...parent.children].some(
+                    (sibling) => sibling !== child && sibling.contains(anchor)
+                );
+                if (contentSibling) return child;
+            }
+
+            node = parent;
+        }
+
+        return null;
     },
 
     migrateLegacyCount(state) {
@@ -113,8 +153,7 @@ const plugin = {
         return next;
     },
 
-    countColor(val) {
-        if (val > 0) return '#059669';
+    countColor() {
         return 'var(--foreground, #111)';
     },
 

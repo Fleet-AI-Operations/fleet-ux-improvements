@@ -5528,9 +5528,12 @@ const searchOutputMethods = {
     _cardTabShellBase(options) {
         const opts = options || {};
         const hPad = opts.noHorizontalPadding ? '0' : '8px';
+        const flexShrink = opts.shrinkable ? '1' : '0';
         let base = 'height: ' + DASH_CARD_TAB_HEIGHT
-            + '; flex-shrink: 0; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
+            + '; flex-shrink: ' + flexShrink + ';'
+            + ' border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; justify-content: center;'
             + ' font-size: 10px; font-weight: 600; padding: 0 ' + hPad + '; box-sizing: border-box; overflow: hidden; white-space: nowrap;';
+        if (opts.shrinkable) base += ' min-width: 0;';
         return base;
     },
 
@@ -5540,7 +5543,8 @@ const searchOutputMethods = {
             + ' background: var(--card, #ffffff); font-weight: 400;'
             + ' border: ' + DASH_CARD_TAB_BORDER + '; border-bottom: none;';
         const label = String(title || '');
-        return '<div style="' + shell + '"'
+        const cls = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
+        return '<div' + cls + ' style="' + shell + '"'
             + (label ? ' title="' + dashEscHtml(label) + '" aria-label="' + dashEscHtml(label) + '"' : '')
             + '>' + innerHtml + '</div>';
     },
@@ -5559,14 +5563,29 @@ const searchOutputMethods = {
         return this._cardSurfaceTabHtml(inner, label);
     },
 
+    _cardKeyCopyHtml(text, highlight) {
+        const value = String(text == null ? '' : text).trim();
+        if (!value) {
+            return '<span class="wf-dash-card-key-copy wf-dash-card-key-copy--empty">—</span>';
+        }
+        const inner = (highlight && highlight.query)
+            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
+            : dashEscHtml(value);
+        return '<button type="button" class="wf-dash-card-key-copy" dir="rtl" data-wf-dash-copy="' + dashEscHtml(value) + '"'
+            + ' title="Click to copy: ' + dashEscHtml(value) + '" aria-label="Task key: ' + dashEscHtml(value) + '">'
+            + '<span class="wf-dash-card-key-copy-text" dir="ltr">' + inner + '</span></button>';
+    },
+
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
-        const inner = `<span style="display: inline-flex; align-items: stretch;">`
-            + this._copyChipHtml(key, highlightOpts || {})
+        const inner = '<span class="wf-dash-card-key-tab-inner">'
+            + this._cardKeyCopyHtml(key, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
-            noHorizontalPadding: true
+            noHorizontalPadding: true,
+            shrinkable: true,
+            shellClass: 'wf-dash-card-key-tab'
         });
     },
 
@@ -5737,7 +5756,7 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${hint} margin: 0;">Refine loaded results. Press Apply to update the results pane.</p>
+                                <p style="${hint} margin: 0;">Refine loaded results. Substring filters apply as you type unless RegEx is enabled; other filters use Apply.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
@@ -6861,6 +6880,7 @@ const searchOutputMethods = {
     },
 
     _patchTaskCard(itemId) {
+        if (this._state.loading) return;
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
@@ -7112,6 +7132,30 @@ const searchOutputMethods = {
         if ((applied.manualAndOr || 'and') !== manual.andOr) return true;
         if (!this._manualFilterRowsEqual(applied.manualFilters, manual.rows)) return true;
         return false;
+    },
+
+    _isPromptRegexFilterEnabled() {
+        return Boolean((this._q('#wf-dash-regex') || {}).checked);
+    },
+
+    _maybeLiveApplyPromptFilter() {
+        if (this._state.loading || !this._state.cachedItems) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        if (this._isPromptRegexFilterEnabled()) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
+        const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
+        const lib = dashLib();
+        const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, false);
+        if (filterInvalid.invalid) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        this._applyFiltersAndRender();
     },
 
     _updateApplyFiltersUi() {
@@ -7868,6 +7912,7 @@ const searchOutputMethods = {
     _syncSearchLoadPhaseUi() {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !this._state || !this._state.loading) return;
+        wrap.querySelectorAll('[data-wf-dash-task-card]').forEach((el) => el.remove());
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
         const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
@@ -8286,6 +8331,25 @@ const searchOutputMethods = {
         return this._qaAlertBadgeStyle().replace('font-weight: 700', 'font-weight: 600');
     },
 
+    _qaAcceptedBadgeStyle(compact) {
+        let style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
+        if (compact) style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        return style;
+    },
+
+    _qaReturnedBadgeStyle(compact) {
+        let style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        if (compact) style = style.replace('padding: 2px 8px', 'padding: 1px 6px').replace('border-radius: 6px', 'border-radius: 4px');
+        return style;
+    },
+
+    _qaPromptRatingBadgeStyle(rating) {
+        const label = String(rating || '');
+        if (label === 'Top 10%') return this._qaAcceptedBadgeStyle();
+        if (label === 'Bottom 10%') return this._qaReturnedBadgeStyle();
+        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);';
+    },
+
     _qaAcceptedBlockStyle() {
         return {
             border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
@@ -8346,12 +8410,12 @@ const searchOutputMethods = {
             : (isSystem
             ? ''
             : (positive
-                ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Accepted</span>`
+                ? `<span style="${this._qaAcceptedBadgeStyle()}">Accepted</span>`
                 : (qa.isEscalated
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${alertBadge}">Flagged as Bugged</span>`
-                        : `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Returned for Revision</span>`))));
+                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned for Revision</span>`))));
         const issueBadgeStyle = isOther
             ? this._qaAlertIssueBadgeStyle()
             : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
@@ -8374,7 +8438,7 @@ const searchOutputMethods = {
             ? this._fieldGroupHtml('Submitted', dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds))
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(qa.qualityRating)}</span></div>`
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
@@ -8425,12 +8489,10 @@ const searchOutputMethods = {
             }
             return `<span style="${style}">${dashEscHtml(label)}</span>`;
         }
-        const pad = compact ? '1px 6px' : '2px 8px';
-        const radius = compact ? '4px' : '6px';
-        const cls = entry.isPositive
-            ? 'color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);'
-            : 'color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
-        return `<span style="display: inline-flex; align-items: center; padding: ${pad}; border-radius: ${radius}; font-size: 10px; font-weight: 700; ${cls}">${dashEscHtml(label)}</span>`;
+        const style = entry.isPositive
+            ? this._qaAcceptedBadgeStyle(compact)
+            : this._qaReturnedBadgeStyle(compact);
+        return `<span style="${style}">${dashEscHtml(label)}</span>`;
     },
 
     _reviewerBadgeHtml(entry, active, taskId, itemId) {
@@ -8921,10 +8983,10 @@ const searchOutputMethods = {
         if (showHydrateTab) {
             hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
         }
-        const tabsRow = `<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 8px; margin-bottom: 0;">
-                <div style="display: flex; align-items: flex-end; gap: 4px; min-width: 0;">${statusTabHtml}${createdTabHtml}${keyTabHtml}</div>
-                ${hydrateTabHtml}
-            </div>`;
+        const tabsRow = '<div class="wf-dash-card-tabs-row">'
+                + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
+                + hydrateTabHtml
+                + '</div>';
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
@@ -9256,6 +9318,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._syncPromptFilterHeight(prompt);
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
+                dash._maybeLiveApplyPromptFilter();
             });
             prompt.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -9270,6 +9333,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (prompt) prompt.value = '';
                 dash._updateSubstringErrorUi();
                 dash._syncFieldClearButtons();
+                dash._maybeLiveApplyPromptFilter();
             });
         }
         const fuzzyEl = dash._q('#wf-dash-fuzzy');
@@ -9278,16 +9342,23 @@ function attachSearchOutputListeners(modal, dash) {
             fuzzyEl.addEventListener('change', () => {
                 if (fuzzyEl.checked && regexEl) regexEl.checked = false;
                 dash._updateSubstringErrorUi();
+                dash._maybeLiveApplyPromptFilter();
             });
         }
         if (regexEl) {
             regexEl.addEventListener('change', () => {
                 if (regexEl.checked && fuzzyEl) fuzzyEl.checked = false;
                 dash._updateSubstringErrorUi();
+                if (!regexEl.checked) dash._maybeLiveApplyPromptFilter();
             });
         }
         const caseEl = dash._q('#wf-dash-case');
-        if (caseEl) caseEl.addEventListener('change', () => dash._updateSubstringErrorUi());
+        if (caseEl) {
+            caseEl.addEventListener('change', () => {
+                dash._updateSubstringErrorUi();
+                dash._maybeLiveApplyPromptFilter();
+            });
+        }
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
@@ -9636,7 +9707,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.10',
+    _version: '3.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,18 +1,33 @@
 // ============= copy-verifier-output.js =============
-// Adds a copy button in the Verifier Output panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies failures/successes as markdown with separate code fences per section.
+// Adds a copy button in the Verifier Output panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies failures/successes as markdown with separate code fences per section. Epic-style stdout ([C] Rubric / MUST-NICE criteria) is formatted into Must/Nice Haves sections.
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
 const RAW_OUTPUT_ROW_MARKER = 'data-fleet-copy-verifier-raw-row';
+const EPIC_CRITERION_LINE_RE = /^\[C\]\s+((?:\[NICE\]\s+)?.+:\s+(0\.0|1\.0)\/1\.0\s+—\s+.+)$/;
+
+function markdownFenceFor(content) {
+    let maxRun = 0;
+    let run = 0;
+    for (let i = 0; i < content.length; i++) {
+        if (content[i] === '`') {
+            run++;
+            if (run > maxRun) maxRun = run;
+        } else {
+            run = 0;
+        }
+    }
+    return '`'.repeat(Math.max(3, maxRun + 1));
+}
 
 const plugin = {
     id: 'copyVerifierOutput',
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '3.3',
+    _version: '3.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -202,6 +217,114 @@ const plugin = {
         return null;
     },
 
+    looksLikeEpicVerifierOutput(raw) {
+        if (!raw) {
+            return false;
+        }
+        const text = String(raw);
+        return /\[C\]\s+Rubric:[^\n]*\[MUST\]/i.test(text) && /:\s+(?:0\.0|1\.0)\/1\.0\s+—/.test(text);
+    },
+
+    parseEpicVerifierCriteria(raw) {
+        const must = [];
+        const nice = [];
+        let scoreIndex = 0;
+        let inCriteriaBlock = false;
+        for (const line of String(raw || '').split('\n')) {
+            if (/^\[C\]\s+Score:/.test(line)) {
+                scoreIndex++;
+                inCriteriaBlock = true;
+                continue;
+            }
+            if (
+                /^\[C\]\s+(?:Feedback:|Rubric:|Grading|Judge call|Calling judge|No images)/.test(line) ||
+                line.startsWith('>>>') ||
+                line.startsWith('<<<')
+            ) {
+                inCriteriaBlock = false;
+                continue;
+            }
+            const match = line.match(EPIC_CRITERION_LINE_RE);
+            if (!match || !inCriteriaBlock || scoreIndex <= 0) {
+                continue;
+            }
+            const entry = { line: match[1], score: match[2] };
+            if (scoreIndex === 1) {
+                must.push(entry);
+            } else if (scoreIndex === 2) {
+                nice.push(entry);
+            }
+        }
+        return { must, nice };
+    },
+
+    appendEpicSectionMarkdown(lines, label, criteria) {
+        if (!criteria.length) {
+            return;
+        }
+        const passCount = criteria.filter((c) => c.score === '1.0').length;
+        const total = criteria.length;
+        const pct = total ? Math.round((passCount / total) * 100) : 0;
+        lines.push(`## ${label}: ${passCount}/${total} (${pct}%)`);
+        const sections = [];
+        const failures = criteria.filter((c) => c.score === '0.0').map((c) => `❌ ${c.line}`);
+        const successes = criteria.filter((c) => c.score === '1.0').map((c) => `✅ ${c.line}`);
+        if (failures.length > 0) {
+            sections.push({ label: 'Failures', items: failures });
+        }
+        if (successes.length > 0) {
+            sections.push({ label: 'Successes', items: successes });
+        }
+        for (let i = 0; i < sections.length; i++) {
+            if (i > 0) {
+                lines.push('');
+            }
+            const { label: sectionLabel, items } = sections[i];
+            const body = items.join('\n');
+            const fence = markdownFenceFor(body);
+            lines.push(sectionLabel);
+            lines.push(`${fence}\n${body}\n${fence}`);
+        }
+    },
+
+    buildEpicVerifierMarkdown(raw) {
+        if (!this.looksLikeEpicVerifierOutput(raw)) {
+            return null;
+        }
+        const { must, nice } = this.parseEpicVerifierCriteria(raw);
+        if (!must.length && !nice.length) {
+            return null;
+        }
+        const lines = ['## Verifier'];
+        this.appendEpicSectionMarkdown(lines, 'Must Haves', must);
+        if (nice.length) {
+            lines.push('');
+            this.appendEpicSectionMarkdown(lines, 'Nice to Haves', nice);
+        }
+        return lines.join('\n');
+    },
+
+    formatRawVerifierText(raw) {
+        if (!raw) {
+            return null;
+        }
+        const epicMd = this.buildEpicVerifierMarkdown(raw);
+        return epicMd || raw;
+    },
+
+    getRawVerifierText(container) {
+        const rawBlock = this.findRawOutputBlock(container);
+        const rawPre = rawBlock ? this.findRawOutputPre(rawBlock) : null;
+        if (rawPre && rawPre.textContent.trim()) {
+            return rawPre.textContent.trim();
+        }
+        const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
+        if (pre && pre.textContent.trim()) {
+            return pre.textContent.trim();
+        }
+        return null;
+    },
+
     buildScoreVerifierMarkdown(container) {
         const list = container.querySelector('div.text-xs.mb-3.space-y-0\\.5');
         if (!list) {
@@ -226,19 +349,6 @@ const plugin = {
         if (successes.length === 0 && failures.length === 0) {
             return null;
         }
-        const fenceFor = (content) => {
-            let maxRun = 0;
-            let run = 0;
-            for (let i = 0; i < content.length; i++) {
-                if (content[i] === '`') {
-                    run++;
-                    if (run > maxRun) maxRun = run;
-                } else {
-                    run = 0;
-                }
-            }
-            return '`'.repeat(Math.max(3, maxRun + 1));
-        };
         const lines = ['## Verifier'];
         const sections = [];
         if (failures.length > 0) {
@@ -253,7 +363,7 @@ const plugin = {
             }
             const { label, items } = sections[i];
             const body = items.join('\n');
-            const fence = fenceFor(body);
+            const fence = markdownFenceFor(body);
             lines.push(label);
             lines.push(`${fence}\n${body}\n${fence}`);
         }
@@ -261,15 +371,18 @@ const plugin = {
     },
 
     getVerifierOutputText(container) {
+        const raw = this.getRawVerifierText(container);
+        if (raw) {
+            const epicMd = this.buildEpicVerifierMarkdown(raw);
+            if (epicMd) {
+                return epicMd;
+            }
+        }
         const scoreMd = this.buildScoreVerifierMarkdown(container);
         if (scoreMd) {
             return scoreMd;
         }
-        const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
-        if (pre && pre.textContent.trim()) {
-            return pre.textContent.trim();
-        }
-        return null;
+        return raw;
     },
 
     ensureWindowCopyCapture() {
@@ -295,7 +408,8 @@ const plugin = {
                     this.showVerifierCopyFailurePulse(rawBtn);
                     return;
                 }
-                this.copyVerifierTextWithFeedback(rawBtn, rawText, ' (raw output)');
+                const text = this.formatRawVerifierText(rawText);
+                this.copyVerifierTextWithFeedback(rawBtn, text, ' (raw output)');
                 return;
             }
 
@@ -496,12 +610,13 @@ const plugin = {
                 return;
             }
             button._fleetCopyHandledAt = Date.now();
-            const text = pre && pre.textContent.trim();
-            if (!text) {
+            const rawText = pre && pre.textContent.trim();
+            if (!rawText) {
                 Logger.warn('Copy Verifier Output: No raw output to copy');
                 this.showVerifierCopyFailurePulse(button);
                 return;
             }
+            const text = this.formatRawVerifierText(rawText);
             this.copyVerifierTextWithFeedback(button, text, ' (raw output)');
         };
 
