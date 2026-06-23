@@ -2,7 +2,7 @@
 // Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies failures/successes as markdown with separate code fences per section. Epic-style stdout ([C] Rubric / MUST-NICE criteria) is formatted into Must/Nice Haves sections.
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
-// If the main copy finds no text and the Stdout section is collapsed, expands it and retries before failing.
+// If the score card has a collapsible Stdout section, expand it before copying; only read stdout pre when open.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
@@ -28,7 +28,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.6',
+    _version: '2.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -177,9 +177,20 @@ const plugin = {
         );
     },
 
-    waitForVerifierTextAfterExpand(container, block, onReady, onFail) {
+    getStdoutBlockText(block) {
+        if (!block || this.isStdoutCollapsed(block)) {
+            return null;
+        }
+        const pre = this.findStdoutPre(block);
+        const raw = pre && pre.textContent.trim();
+        if (!raw) {
+            return null;
+        }
+        return this.formatRawVerifierText(raw);
+    },
+
+    waitForStdoutExpanded(block, onReady, onFail) {
         let settled = false;
-        const tryText = () => this.getVerifierOutputText(container);
         const finish = (text) => {
             if (settled) return;
             settled = true;
@@ -191,29 +202,46 @@ const plugin = {
                 onFail();
             }
         };
+        const tryText = () => this.getStdoutBlockText(block);
+        const immediate = tryText();
+        if (immediate) {
+            onReady(immediate);
+            return;
+        }
         const observer = new MutationObserver(() => {
             const next = tryText();
             if (next) {
                 finish(next);
             }
         });
-        observer.observe(block, { childList: true, subtree: true, characterData: true });
+        observer.observe(block, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
         const timeoutId = setTimeout(() => finish(null), 3000);
     },
 
-    attemptCopyVerifierOutput(button, container) {
-        const text = this.getVerifierOutputText(container);
-        if (text) {
-            this.copyVerifierTextWithFeedback(button, text);
+    attemptCopyFromStdoutSection(button, block) {
+        const copyOrFail = (text, logSuffix) => {
+            if (text) {
+                if (logSuffix) {
+                    Logger.log(`Copy Verifier Output: Copy succeeded after expanding Stdout`);
+                }
+                this.copyVerifierTextWithFeedback(button, text, logSuffix);
+                return;
+            }
+            Logger.warn('Copy Verifier Output: No verifier output to copy from Stdout');
+            this.showVerifierCopyFailurePulse(button);
+        };
+
+        const openText = this.getStdoutBlockText(block);
+        if (openText) {
+            copyOrFail(openText, '');
             return;
         }
 
-        const block = this.findStdoutBlock(container);
-        if (!block || !this.isStdoutCollapsed(block)) {
-            Logger.warn('Copy Verifier Output: No verifier output to copy');
-            this.showVerifierCopyFailurePulse(button);
+        if (!this.isStdoutCollapsed(block)) {
+            copyOrFail(null);
             return;
         }
+
         if (button._fleetCopyExpandPending) {
             return;
         }
@@ -221,34 +249,38 @@ const plugin = {
 
         if (!this.expandStdoutSection(block)) {
             button._fleetCopyExpandPending = false;
-            Logger.warn('Copy Verifier Output: No verifier output to copy');
-            this.showVerifierCopyFailurePulse(button);
+            copyOrFail(null);
             return;
         }
 
-        const afterExpand = (retryText) => {
+        const afterExpand = (text) => {
             button._fleetCopyExpandPending = false;
-            if (retryText) {
-                Logger.log('Copy Verifier Output: Copy succeeded after expanding Stdout');
-                this.copyVerifierTextWithFeedback(button, retryText);
-                return;
-            }
-            Logger.warn('Copy Verifier Output: No verifier output to copy after expanding Stdout');
-            this.showVerifierCopyFailurePulse(button);
+            copyOrFail(text, text ? ' (stdout)' : '');
         };
 
-        const immediate = this.getVerifierOutputText(container);
+        const immediate = this.getStdoutBlockText(block);
         if (immediate) {
             afterExpand(immediate);
             return;
         }
 
-        this.waitForVerifierTextAfterExpand(
-            container,
-            block,
-            (retryText) => afterExpand(retryText),
-            () => afterExpand(null)
-        );
+        this.waitForStdoutExpanded(block, (text) => afterExpand(text), () => afterExpand(null));
+    },
+
+    attemptCopyVerifierOutput(button, container) {
+        const stdoutBlock = this.findStdoutBlock(container);
+        if (stdoutBlock) {
+            this.attemptCopyFromStdoutSection(button, stdoutBlock);
+            return;
+        }
+
+        const text = this.getVerifierOutputText(container);
+        if (!text) {
+            Logger.warn('Copy Verifier Output: No verifier output to copy');
+            this.showVerifierCopyFailurePulse(button);
+            return;
+        }
+        this.copyVerifierTextWithFeedback(button, text);
     },
 
     unwrapRawOutputCopyRow(block) {
