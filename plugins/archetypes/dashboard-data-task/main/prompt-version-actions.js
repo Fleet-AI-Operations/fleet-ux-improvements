@@ -17,7 +17,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -233,7 +233,7 @@ const plugin = {
             rows = await opsTab.postgrestQuery('task_versions.select_history', params);
         } catch (_e) {
             rows = await opsTab.postgrestGet('task_versions', Object.assign({
-                select: 'id,task_id,version_no,created_at,prompt,env_key'
+                select: 'id,task_id,version_no,created_at,prompt,env_key,resubmission_notes'
             }, params));
         }
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
