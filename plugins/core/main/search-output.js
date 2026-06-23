@@ -20,9 +20,8 @@ const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_TASK_CARD_BG = '#121212';
-const DASH_HYDRATE_TASK_CHUNK = 25;
-const DASH_HYDRATE_BATCH_CONCURRENCY = 3;
 const DASH_HYDRATE_BATCH_MAX = 100;
+const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
 const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
@@ -4591,14 +4590,6 @@ const searchOutputMethods = {
         return Number.isFinite(n) && n > 0 ? n : DASH_RESULTS_PAGE_SIZE_DEFAULT;
     },
 
-    _getQuickHydrateBatchSize() {
-        const ps = this._state.resultsPageSize;
-        if (ps === 'all') return DASH_HYDRATE_BATCH_MAX;
-        const n = Number(ps);
-        const display = Number.isFinite(n) && n > 0 ? n : DASH_RESULTS_PAGE_SIZE_DEFAULT;
-        return Math.min(display, DASH_HYDRATE_BATCH_MAX);
-    },
-
     _applyResultsPageSizeForNewSearch() {
         const pref = this._readResultsPageSizePref();
         if (pref === 'all') {
@@ -5130,6 +5121,63 @@ const searchOutputMethods = {
         }
     },
 
+    async _hydrateItemsInBulkBatches(items, options) {
+        const opts = options || {};
+        const toHydrate = (items || []).filter((it) => it && !it.hydrated);
+        if (toHydrate.length === 0) return 0;
+
+        const enrichOptions = {
+            prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
+            skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
+        };
+        const total = toHydrate.length;
+        let hydratedTotal = 0;
+        let completedCards = 0;
+
+        for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_BATCH_MAX) {
+            if (typeof opts.shouldCancel === 'function' && opts.shouldCancel()) break;
+            if (this._shouldStopSearch && this._shouldStopSearch()) break;
+
+            const chunk = toHydrate.slice(i, i + DASH_HYDRATE_BATCH_MAX);
+            if (typeof opts.onChunkStart === 'function') {
+                opts.onChunkStart(chunk, i);
+            }
+
+            const subBatches = [];
+            const subSize = Math.ceil(chunk.length / DASH_HYDRATE_BATCH_CONCURRENCY);
+            for (let j = 0; j < chunk.length; j += subSize) {
+                subBatches.push({
+                    items: chunk.slice(j, j + subSize),
+                    batchIndex: subBatches.length
+                });
+            }
+
+            const subResults = new Array(subBatches.length).fill(0);
+            await this._runConcurrentWorkers(subBatches, DASH_HYDRATE_BATCH_CONCURRENCY, async (batch) => {
+                if (typeof opts.shouldCancel === 'function' && opts.shouldCancel()) return;
+                if (this._shouldStopSearch && this._shouldStopSearch()) return;
+                subResults[batch.batchIndex] = await this._hydrateItems(batch.items, enrichOptions);
+            });
+
+            const chunkHydrated = subResults.reduce((sum, count) => sum + count, 0);
+            hydratedTotal += chunkHydrated;
+            completedCards += chunk.length;
+            if (typeof opts.onProgress === 'function') {
+                opts.onProgress(completedCards, total);
+            }
+            if (typeof opts.onChunkComplete === 'function') {
+                opts.onChunkComplete(chunk, i + chunk.length);
+            }
+        }
+
+        if (typeof opts.onProgress === 'function'
+            && !(typeof opts.shouldCancel === 'function' && opts.shouldCancel())
+            && !(this._shouldStopSearch && this._shouldStopSearch())) {
+            opts.onProgress(total, total);
+        }
+        return hydratedTotal;
+    },
+
     async _hydrateAllSearchResults(items, options) {
         const opts = options || {};
         const toHydrate = (items || []).filter((it) => it && !it.hydrated);
@@ -5139,35 +5187,13 @@ const searchOutputMethods = {
             throw new Error('Dashboard helpers not loaded. Reload the page and try again.');
         }
 
-        const enrichOptions = {
+        Logger.log('dashboard: deep search hydrating all results — ' + toHydrate.length + ' card(s)');
+        const hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
             prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
-            skipFeedbackFetch: Boolean(opts.skipFeedbackFetch)
-        };
-        const total = toHydrate.length;
-        let hydratedTotal = 0;
-        Logger.log('dashboard: deep search hydrating all results — ' + total + ' card(s)');
-
-        const batches = [];
-        for (let i = 0; i < toHydrate.length; i += DASH_HYDRATE_TASK_CHUNK) {
-            batches.push({
-                items: toHydrate.slice(i, i + DASH_HYDRATE_TASK_CHUNK),
-                batchIndex: batches.length
-            });
-        }
-        const batchResults = new Array(batches.length).fill(0);
-        let completedCards = 0;
-        await this._runConcurrentWorkers(batches, DASH_HYDRATE_BATCH_CONCURRENCY, async (batch) => {
-            if (this._shouldStopSearch()) return;
-            batchResults[batch.batchIndex] = await this._hydrateItems(batch.items, enrichOptions);
-            completedCards += batch.items.length;
-            if (typeof opts.onProgress === 'function') {
-                opts.onProgress(completedCards, total);
-            }
+            skipFeedbackFetch: Boolean(opts.skipFeedbackFetch),
+            shouldCancel: () => this._shouldStopSearch(),
+            onProgress: opts.onProgress
         });
-        hydratedTotal = batchResults.reduce((sum, count) => sum + count, 0);
-        if (!this._shouldStopSearch() && typeof opts.onProgress === 'function') {
-            opts.onProgress(total, total);
-        }
         if (hydratedTotal > 0) {
             this._onScopeDataEnriched();
         }
@@ -5260,23 +5286,24 @@ const searchOutputMethods = {
 
         this._state.autoHydrateActive = true;
         let hydratedTotal = 0;
-        const batchSize = this._getQuickHydrateBatchSize();
         try {
-            for (let i = 0; i < toHydrate.length; i += batchSize) {
-                if (this._autoHydrateContextKey() !== contextKey) {
-                    Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
-                    break;
+            hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
+                onChunkStart: (chunk) => {
+                    for (const item of chunk) {
+                        this._getHydrateUi(item.id).status = 'loading';
+                        this._patchTaskCard(item.id);
+                    }
+                },
+                onChunkComplete: (chunk) => {
+                    for (const item of chunk) {
+                        this._getHydrateUi(item.id).status = 'idle';
+                        this._patchTaskCard(item.id);
+                    }
                 }
-                const chunk = toHydrate.slice(i, i + batchSize);
-                for (const item of chunk) {
-                    this._getHydrateUi(item.id).status = 'loading';
-                    this._patchTaskCard(item.id);
-                }
-                hydratedTotal += await this._hydrateItems(chunk);
-                for (const item of chunk) {
-                    this._getHydrateUi(item.id).status = 'idle';
-                    this._patchTaskCard(item.id);
-                }
+            });
+            if (this._autoHydrateContextKey() !== contextKey) {
+                Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
             }
             if (hydratedTotal > 0) {
                 this._onScopeDataEnriched();
@@ -5439,23 +5466,23 @@ const searchOutputMethods = {
         this._syncBulkHydrateUi();
         this._setBulkHydrateProgress(0, toHydrate.length);
         let hydratedTotal = 0;
-        const batchSize = this._getQuickHydrateBatchSize();
         try {
-            for (let i = 0; i < toHydrate.length; i += batchSize) {
-                const chunk = toHydrate.slice(i, i + batchSize);
-                for (const item of chunk) {
-                    this._getHydrateUi(item.id).status = 'loading';
-                    this._patchTaskCard(item.id);
+            hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
+                onChunkStart: (chunk, offset) => {
+                    this._setBulkHydrateProgress(offset, toHydrate.length);
+                    for (const item of chunk) {
+                        this._getHydrateUi(item.id).status = 'loading';
+                        this._patchTaskCard(item.id);
+                    }
+                },
+                onChunkComplete: (chunk, doneCount) => {
+                    for (const item of chunk) {
+                        this._getHydrateUi(item.id).status = 'idle';
+                        this._patchTaskCard(item.id);
+                    }
+                    this._setBulkHydrateProgress(doneCount, toHydrate.length);
                 }
-                const doneBefore = i;
-                this._setBulkHydrateProgress(doneBefore, toHydrate.length);
-                hydratedTotal += await this._hydrateItems(chunk);
-                for (const item of chunk) {
-                    this._getHydrateUi(item.id).status = 'idle';
-                    this._patchTaskCard(item.id);
-                }
-                this._setBulkHydrateProgress(Math.min(i + chunk.length, toHydrate.length), toHydrate.length);
-            }
+            });
             this._onScopeDataEnriched();
             const meta = this._getResultsPaginationMeta();
             if (meta && meta.page >= meta.totalPages) {
@@ -9707,7 +9734,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.15',
+    _version: '3.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
