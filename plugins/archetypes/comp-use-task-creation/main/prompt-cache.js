@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '3.4',
+    _version: '3.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -169,10 +169,13 @@ const plugin = {
         const currentId       = this.getCurrentInstanceId();
         const instanceOk      = Boolean(savedInstanceId && currentId && savedInstanceId === currentId);
 
+        const currentMatchesTextbox = instanceOk && this.hasSavableContent(savedText) && savedText === textarea.value;
+
         return {
             instanceOk,
             savedText,
             prevText,
+            currentMatchesTextbox,
             canCurrent: instanceOk && this.hasSavableContent(savedText) && savedText !== textarea.value,
             canPrevious: instanceOk && this.hasSavableContent(prevText) && prevText !== savedText && prevText !== textarea.value
         };
@@ -261,7 +264,10 @@ const plugin = {
     refreshRestoreButtons(state, textarea) {
         if (!state.restoreBtnCurrent || !state.restoreBtnPrevious || !textarea) return;
 
-        const { canCurrent, canPrevious } = this.getRestoreAvailability(textarea);
+        const { canCurrent, canPrevious, currentMatchesTextbox } = this.getRestoreAvailability(textarea);
+        const currentDisabledHint = currentMatchesTextbox
+            ? 'Cannot restore: saved version matches textbox'
+            : null;
 
         if (state.selectedVersion === 'current') {
             this.showRestoreConfirm(state.restoreBtnCurrent, state.restoreConfirmRowCurrent);
@@ -271,11 +277,11 @@ const plugin = {
 
         if (state.selectedVersion === 'previous') {
             this.showRestoreConfirm(state.restoreBtnPrevious, state.restoreConfirmRowPrevious);
-            this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent);
+            this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent, currentDisabledHint);
             return;
         }
 
-        this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent);
+        this.showRestoreDefault(state.restoreBtnCurrent, state.restoreConfirmRowCurrent, canCurrent, currentDisabledHint);
         this.showRestoreDefault(state.restoreBtnPrevious, state.restoreConfirmRowPrevious, canPrevious);
     },
 
@@ -285,6 +291,22 @@ const plugin = {
         slot.setAttribute('data-fleet-restore-version', version);
 
         const restoreBtn = this.makeRestoreBtn(label, version);
+
+        const restoreBtnWrap = document.createElement('div');
+        restoreBtnWrap.className = 'fleet-prompt-cache-restore-btn-wrap';
+        restoreBtnWrap.appendChild(restoreBtn);
+
+        if (version === 'current') {
+            restoreBtnWrap.addEventListener('mouseenter', () => {
+                const hint = restoreBtn.getAttribute('data-fleet-disabled-hover-hint');
+                if (restoreBtn.disabled && hint) restoreBtn.textContent = hint;
+            });
+            restoreBtnWrap.addEventListener('mouseleave', () => {
+                if (restoreBtn.disabled) {
+                    restoreBtn.textContent = restoreBtn.getAttribute('data-fleet-restore-label') || restoreBtn.textContent;
+                }
+            });
+        }
 
         const confirmRow = document.createElement('div');
         confirmRow.className = 'fleet-prompt-cache-restore-confirm-row';
@@ -302,23 +324,25 @@ const plugin = {
         confirmBtn.textContent = 'Confirm Version';
 
         confirmRow.append(cancelBtn, confirmBtn);
-        slot.append(restoreBtn, confirmRow);
+        slot.append(restoreBtnWrap, confirmRow);
 
-        return { slot, restoreBtn, confirmRow, cancelBtn, confirmBtn };
+        return { slot, restoreBtn, restoreBtnWrap, confirmRow, cancelBtn, confirmBtn };
     },
 
     showRestoreConfirm(restoreBtn, confirmRow) {
         if (!restoreBtn || !confirmRow) return;
-        restoreBtn.style.display = 'none';
+        const wrap = restoreBtn.closest('.fleet-prompt-cache-restore-btn-wrap');
+        if (wrap) wrap.style.display = 'none';
         confirmRow.style.display = 'flex';
     },
 
-    showRestoreDefault(restoreBtn, confirmRow, enabled) {
+    showRestoreDefault(restoreBtn, confirmRow, enabled, disabledHoverHint) {
         if (!restoreBtn || !confirmRow) return;
         confirmRow.style.display = 'none';
-        restoreBtn.style.display = 'block';
+        const wrap = restoreBtn.closest('.fleet-prompt-cache-restore-btn-wrap');
+        if (wrap) wrap.style.display = 'block';
         this.setBtnDefault(restoreBtn);
-        this.setBtnEnabled(restoreBtn, enabled);
+        this.setBtnEnabled(restoreBtn, enabled, disabledHoverHint);
     },
 
     pastePreview(state, textarea, text) {
@@ -348,10 +372,11 @@ const plugin = {
         }
     },
 
-    setBtnEnabled(btn, enabled) {
+    setBtnEnabled(btn, enabled, disabledHoverHint) {
         if (enabled) {
             btn.disabled = false;
-            btn.classList.remove('fleet-prompt-cache-restore-btn--disabled');
+            btn.removeAttribute('data-fleet-disabled-hover-hint');
+            btn.classList.remove('fleet-prompt-cache-restore-btn--disabled', 'fleet-prompt-cache-restore-btn--no-pointer');
             if (!btn.classList.contains('fleet-prompt-cache-restore-btn--confirm') &&
                 !btn.classList.contains('fleet-prompt-cache-restore-btn--cancel')) {
                 btn.className = 'fleet-prompt-cache-restore-btn';
@@ -362,6 +387,13 @@ const plugin = {
         btn.disabled = true;
         btn.classList.remove('fleet-prompt-cache-restore-btn--confirm', 'fleet-prompt-cache-restore-btn--cancel');
         btn.className = 'fleet-prompt-cache-restore-btn fleet-prompt-cache-restore-btn--disabled';
+        if (disabledHoverHint) {
+            btn.setAttribute('data-fleet-disabled-hover-hint', disabledHoverHint);
+            btn.classList.add('fleet-prompt-cache-restore-btn--no-pointer');
+        } else {
+            btn.removeAttribute('data-fleet-disabled-hover-hint');
+            btn.classList.remove('fleet-prompt-cache-restore-btn--no-pointer');
+        }
         btn.textContent = btn.getAttribute('data-fleet-restore-label') || btn.textContent;
     },
 
@@ -450,6 +482,13 @@ const plugin = {
             .fleet-prompt-cache-spinner {
                 animation: fleet-prompt-cache-spin 1s linear infinite;
                 display: block;
+            }
+            .fleet-prompt-cache-restore-btn-wrap {
+                display: block;
+                width: 100%;
+            }
+            .fleet-prompt-cache-restore-btn--no-pointer {
+                pointer-events: none;
             }
             .fleet-prompt-cache-restore-btn {
                 display: block;
