@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.5.3
+// @version      9.5.4
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -30,7 +30,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.5.3';
+    const VERSION = '9.5.4';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -793,6 +793,8 @@
      * All consumers use NetworkObserver.getFleetUserJwt() / refreshFromPage().
      */
     const FleetSessionAuth = {
+        _refreshFromPageLogSeen: false,
+
         _decodeJwtPayload(jwt) {
             if (!jwt || typeof jwt !== 'string') return null;
             const parts = jwt.split('.');
@@ -988,11 +990,15 @@
             } else if (observer._runtimeAccess.supabaseAccessToken) {
                 observer._clearRuntimeAccessToken(pageWindow);
             }
+            const hasAccessToken = !!best;
             const exp = best ? this._jwtExpSeconds(best) : null;
-            Logger.debug('FleetSessionAuth: refreshFromPage', {
-                hasAccessToken: !!best,
-                exp: exp != null ? exp : '(none)'
-            });
+            if (!this._refreshFromPageLogSeen || !hasAccessToken) {
+                Logger.debug('FleetSessionAuth: refreshFromPage', {
+                    hasAccessToken,
+                    exp: exp != null ? exp : '(none)'
+                });
+                this._refreshFromPageLogSeen = true;
+            }
         },
 
         getFleetUserJwt(observer, pageWindow) {
