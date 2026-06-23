@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.21',
+    _version: '7.22',
     phase: 'core',
     enabledByDefault: true,
 
@@ -310,6 +310,7 @@ const plugin = {
             postgrestGet: (tableKey, params) => this._opsPostgrestGetByKey(tableKey, params),
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
             getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow),
+            getCurrentUserId: () => this._getOpsCurrentUserId(),
             getTaskDataActionCache: () => this._opsTaskDataActionCache,
             fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
             fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),

@@ -646,6 +646,11 @@ const searchOutputMethods = {
     },
 
     _dashGetCurrentUserId() {
+        const ops = this._dashOpsTab();
+        if (ops && typeof ops.getCurrentUserId === 'function') {
+            const fromOps = String(ops.getCurrentUserId() || '').trim();
+            if (fromOps && DASH_UUID_RE.test(fromOps)) return fromOps;
+        }
         const fromCookie = this._dashGetCookie('current-user-id');
         if (fromCookie && DASH_UUID_RE.test(fromCookie)) return fromCookie;
         try {
@@ -1172,6 +1177,12 @@ const searchOutputMethods = {
         if (!userId || !authorId) return false;
         return userId === authorId
             || this._dashNormProfileId(userId) === this._dashNormProfileId(authorId);
+    },
+
+    _shouldShowFlagCreateBtn(task) {
+        const authorId = String((task && task.author && task.author.id) || '').trim();
+        if (!authorId) return true;
+        return !this._isCurrentUserTaskAuthor(task);
     },
 
     _dashFleetQaReferer(taskId) {
@@ -8584,14 +8595,14 @@ const searchOutputMethods = {
     },
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
-        if (!this._isCurrentUserTaskAuthor(task)) return '';
+        if (!this._shouldShowFlagCreateBtn(task)) return '';
         const escItemId = dashEscHtml(String(itemId || '').trim());
         const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
         return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${btnStyle}">🚩</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive) {
-        if (!name && !email) return this._dismissedBadgeHtml();
+        if (!name && !email) return this._dismissedBadgeHtml() + (extraAfterDeepDive || '');
         const nameChip = name ? this._copyChipHtml(name) : '';
         const emailChip = email ? this._copyChipHtml(email) : '';
         const deepDive = this._contributorDeepDiveBtnHtml(name, email, id, historyKind);
@@ -10095,7 +10106,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.23',
+    _version: '3.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
