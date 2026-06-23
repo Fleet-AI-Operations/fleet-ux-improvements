@@ -96,6 +96,44 @@ function _deComputeCharDiff(oldText, newText) {
     return _deBacktrack(_deComputeLCS(a, b), a, b);
 }
 
+function _deIsWhitespaceOnlyValues(values) {
+    return values.length > 0 && values.every((v) => /^[ \t]+$/.test(v));
+}
+
+function _deCoalesceHighlightGroups(groups, highlightType) {
+    if (!groups.length) return groups;
+    const out = [];
+    let i = 0;
+    while (i < groups.length) {
+        const group = groups[i];
+        if (group.type !== highlightType) {
+            out.push(group);
+            i++;
+            continue;
+        }
+        const values = group.values.slice();
+        let trimTrailing = group.trimTrailing;
+        i++;
+        while (i < groups.length) {
+            const sep = groups[i];
+            if (sep.type === highlightType) break;
+            if (!_deIsWhitespaceOnlyValues(sep.values)) break;
+            values.push(...sep.values);
+            trimTrailing = sep.trimTrailing;
+            i++;
+            if (i < groups.length && groups[i].type === highlightType) {
+                values.push(...groups[i].values);
+                trimTrailing = groups[i].trimTrailing;
+                i++;
+                continue;
+            }
+            break;
+        }
+        out.push({ type: highlightType, values, trimTrailing });
+    }
+    return out;
+}
+
 function _deGroupConsecutive(diff, includeTypes, highlightType) {
     const filtered = diff.filter((d) => includeTypes.includes(d.type));
     const groups = [];
@@ -112,7 +150,7 @@ function _deGroupConsecutive(diff, includeTypes, highlightType) {
             groups.push(group);
         }
     }
-    return groups;
+    return _deCoalesceHighlightGroups(groups, highlightType);
 }
 
 function _deTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
@@ -204,7 +242,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
