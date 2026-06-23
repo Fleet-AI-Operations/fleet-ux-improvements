@@ -38,6 +38,12 @@ const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
 const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
+const DASH_FLAG_CREATE_REASON_KEYS = [
+    'ai_generated',
+    'poor_feedback_from_previous_qa',
+    'possible_duplicate',
+    'other'
+];
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
@@ -1158,6 +1164,169 @@ const searchOutputMethods = {
         const ui = this._getFlagResolutionUi(fid);
         ui.localNote = String(value || '');
         this._patchFlagResolutionBlock(fid);
+    },
+
+    _isCurrentUserTaskAuthor(task) {
+        const userId = this._dashGetCurrentUserId();
+        const authorId = String((task && task.author && task.author.id) || '').trim();
+        if (!userId || !authorId) return false;
+        return userId === authorId
+            || this._dashNormProfileId(userId) === this._dashNormProfileId(authorId);
+    },
+
+    _dashFleetQaReferer(taskId) {
+        return DASH_FLEET_ORIGIN + '/work/problems/qa/' + encodeURIComponent(String(taskId || '').trim());
+    },
+
+    _getFlagCreateUi(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) {
+            return { open: false, reason: 'other', note: '', submitting: false };
+        }
+        if (!this._state.flagCreateUi[id]) {
+            this._state.flagCreateUi[id] = {
+                open: false,
+                reason: 'other',
+                note: '',
+                submitting: false
+            };
+        }
+        return this._state.flagCreateUi[id];
+    },
+
+    _toggleFlagCreatePanel(itemId, open) {
+        const iid = String(itemId || '').trim();
+        if (!iid) return;
+        const ui = this._getFlagCreateUi(iid);
+        ui.open = Boolean(open);
+        if (!ui.open) {
+            ui.note = '';
+            ui.reason = 'other';
+            ui.submitting = false;
+        }
+        Logger.log('search-output: flag create panel ' + (ui.open ? 'opened' : 'closed') + ' — ' + iid);
+        this._patchTaskCard(iid);
+    },
+
+    _flagCreateReasonOptionsHtml(selectedReason) {
+        const lib = dashLib();
+        const selected = String(selectedReason || 'other').trim();
+        return DASH_FLAG_CREATE_REASON_KEYS.map((key) => {
+            const sel = key === selected ? ' selected' : '';
+            const label = lib.flagReasonLabel(key);
+            return `<option value="${dashEscHtml(key)}"${sel}>${dashEscHtml(label)}</option>`;
+        }).join('');
+    },
+
+    _flagCreateFormInnerHtml(itemId, taskId) {
+        const iid = String(itemId || '').trim();
+        const tid = String(taskId || '').trim();
+        const escItemId = dashEscHtml(iid);
+        const escTaskId = dashEscHtml(tid);
+        const ui = this._getFlagCreateUi(iid);
+        const reason = String(ui.reason || 'other').trim();
+        const note = ui.note != null ? String(ui.note) : '';
+        const disabled = ui.submitting ? ' disabled' : '';
+        const cancelClass = this._dashBtnClass('basic', 'compact');
+        const submitClass = this._dashBtnClass('primary', 'compact');
+        const selectStyle = this._inputStyle() + ' flex-shrink: 0; max-width: 100%; padding: 4px 8px; font-size: 12px;';
+        const textareaStyle = this._inputStyle()
+            + ' flex: 1; min-width: 120px; height: 28px; min-height: 28px; max-height: 200px; resize: vertical; overflow-y: auto; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+        return `
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Flag for Senior Review</span>
+                <select data-wf-dash-flag-create-reason="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" style="${selectStyle}"${disabled}>${this._flagCreateReasonOptionsHtml(reason)}</select>
+                <textarea data-wf-dash-flag-create-note="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" rows="1" placeholder="Explain why this task should be reviewed…" style="${textareaStyle}"${disabled}>${dashEscHtml(note)}</textarea>
+                <button type="button" data-wf-dash-flag-create-cancel="1" data-item-id="${escItemId}" class="${cancelClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Cancel</button>
+                <button type="button" data-wf-dash-flag-create-submit="1" data-item-id="${escItemId}" class="${submitClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Submit</button>
+            </div>`;
+    },
+
+    _flagCreatePanelHtml(itemId, taskId) {
+        const iid = String(itemId || '').trim();
+        const tid = String(taskId || '').trim();
+        if (!iid || !tid) return '';
+        const ui = this._getFlagCreateUi(iid);
+        if (!ui.open) return '';
+        const escItemId = dashEscHtml(iid);
+        const escTaskId = dashEscHtml(tid);
+        return `<div data-wf-dash-flag-create-panel="1" data-item-id="${escItemId}" data-task-id="${escTaskId}" style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">${this._flagCreateFormInnerHtml(iid, tid)}</div>`;
+    },
+
+    _patchFlagCreatePanel(itemId, taskId) {
+        const iid = String(itemId || '').trim();
+        if (!iid || !this._modal) return;
+        const ui = this._getFlagCreateUi(iid);
+        if (!ui.open) return;
+        let wrap = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-flag-create-panel]')) {
+            if (el.getAttribute('data-item-id') === iid) {
+                wrap = el;
+                break;
+            }
+        }
+        if (!wrap) return;
+        const tid = taskId || wrap.getAttribute('data-task-id') || '';
+        const ta = wrap.querySelector('[data-wf-dash-flag-create-note]');
+        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
+        const selStart = hadFocus ? ta.selectionStart : null;
+        const selEnd = hadFocus ? ta.selectionEnd : null;
+        wrap.innerHTML = this._flagCreateFormInnerHtml(iid, tid);
+        if (hadFocus) {
+            const newTa = wrap.querySelector('[data-wf-dash-flag-create-note]');
+            if (newTa) {
+                newTa.focus();
+                try {
+                    if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
+                } catch (_e) { /* ignore */ }
+            }
+        }
+    },
+
+    _handleFlagCreateInput(itemId, patch) {
+        const iid = String(itemId || '').trim();
+        if (!iid) return;
+        const ui = this._getFlagCreateUi(iid);
+        if (patch && Object.prototype.hasOwnProperty.call(patch, 'reason')) {
+            ui.reason = String(patch.reason || 'other').trim();
+        }
+        if (patch && Object.prototype.hasOwnProperty.call(patch, 'note')) {
+            ui.note = String(patch.note || '');
+        }
+        const item = this._findCachedItem(iid) || this._findResultItem(iid);
+        const taskId = item && item.task ? item.task.id : '';
+        this._patchFlagCreatePanel(iid, taskId);
+    },
+
+    async _handleFlagCreateSubmit(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid) return;
+        const item = this._findCachedItem(iid) || this._findResultItem(iid);
+        if (!item || !item.task || !item.task.id) return;
+        if (!this._isCurrentUserTaskAuthor(item.task)) return;
+        const ui = this._getFlagCreateUi(iid);
+        if (ui.submitting) return;
+        const taskId = String(item.task.id).trim();
+        ui.submitting = true;
+        this._patchFlagCreatePanel(iid, taskId);
+        try {
+            await this._fleetWebPost(DASH_FLEET_FLAGS_PATH, {
+                body: {
+                    task_id: taskId,
+                    reason: String(ui.reason || 'other').trim(),
+                    note: String(ui.note || '').trim()
+                },
+                referer: this._dashFleetQaReferer(taskId)
+            });
+            Logger.log('search-output: flag created — task ' + taskId.slice(0, 8));
+            delete this._state.flagCreateUi[iid];
+            await this._refreshFlagPrefetchCaches();
+            await this._rehydrateCard(iid);
+        } catch (e) {
+            Logger.warn('search-output: flag create failed — task ' + taskId.slice(0, 8), e);
+            ui.submitting = false;
+            this._patchFlagCreatePanel(iid, taskId);
+        }
     },
 
     async _refreshFlagPrefetchCaches() {
@@ -8380,13 +8549,14 @@ const searchOutputMethods = {
         return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
     },
 
-    _cardHeaderMetaRowHtml(task) {
+    _cardHeaderMetaRowHtml(task, itemId) {
         const projectLink = task.projectId
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
             : '';
+        const flagBtn = this._flagForSeniorReviewBtnHtml(task, itemId);
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation'))}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation', flagBtn))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
@@ -8413,13 +8583,20 @@ const searchOutputMethods = {
         return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">🔦</button>`;
     },
 
-    _personChipsHtml(name, email, id, linkTitle, historyKind) {
+    _flagForSeniorReviewBtnHtml(task, itemId) {
+        if (!this._isCurrentUserTaskAuthor(task)) return '';
+        const escItemId = dashEscHtml(String(itemId || '').trim());
+        const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${btnStyle}">🚩</button>`;
+    },
+
+    _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive) {
         if (!name && !email) return this._dismissedBadgeHtml();
         const nameChip = name ? this._copyChipHtml(name) : '';
         const emailChip = email ? this._copyChipHtml(email) : '';
         const deepDive = this._contributorDeepDiveBtnHtml(name, email, id, historyKind);
         const link = this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
-        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${deepDive}${link}</span>`;
+        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${deepDive}${extraAfterDeepDive || ''}${link}</span>`;
     },
 
     _statusDisplayMeta(status) {
@@ -9101,7 +9278,8 @@ const searchOutputMethods = {
         }
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                ${this._cardHeaderMetaRowHtml(task)}
+                ${this._cardHeaderMetaRowHtml(task, itemId)}
+                ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${this._userStorySectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
@@ -9259,7 +9437,8 @@ const searchOutputMethods = {
 
         const cardHtml = `
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
-                ${this._cardHeaderMetaRowHtml(task)}
+                ${this._cardHeaderMetaRowHtml(task, itemId)}
+                ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${row2Html}
                 ${this._userStorySectionHtml(itemId)}
                 ${row3Html}
@@ -9808,6 +9987,30 @@ function attachSearchOutputListeners(modal, dash) {
                 if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'dismissed');
                 return;
             }
+            const flagCreateToggleBtn = e.target.closest('[data-wf-dash-flag-create-toggle]');
+            if (flagCreateToggleBtn && modal.contains(flagCreateToggleBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = flagCreateToggleBtn.getAttribute('data-item-id');
+                if (itemId) dash._toggleFlagCreatePanel(itemId, true);
+                return;
+            }
+            const flagCreateCancelBtn = e.target.closest('[data-wf-dash-flag-create-cancel]');
+            if (flagCreateCancelBtn && modal.contains(flagCreateCancelBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = flagCreateCancelBtn.getAttribute('data-item-id');
+                if (itemId) dash._toggleFlagCreatePanel(itemId, false);
+                return;
+            }
+            const flagCreateSubmitBtn = e.target.closest('[data-wf-dash-flag-create-submit]');
+            if (flagCreateSubmitBtn && modal.contains(flagCreateSubmitBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = flagCreateSubmitBtn.getAttribute('data-item-id');
+                if (itemId) void dash._handleFlagCreateSubmit(itemId);
+                return;
+            }
             const addToDiffBtn = e.target.closest('[data-wf-dash-add-to-diff]');
             if (addToDiffBtn && modal.contains(addToDiffBtn)) {
                 e.stopPropagation();
@@ -9871,6 +10074,19 @@ function attachSearchOutputListeners(modal, dash) {
             if (flagTa && modal.contains(flagTa)) {
                 const flagId = flagTa.getAttribute('data-wf-dash-flag-id');
                 if (flagId) dash._handleFlagResolutionInput(flagId, flagTa.value);
+                return;
+            }
+            const flagCreateNote = e.target.closest('[data-wf-dash-flag-create-note]');
+            if (flagCreateNote && modal.contains(flagCreateNote)) {
+                const itemId = flagCreateNote.getAttribute('data-item-id');
+                if (itemId) dash._handleFlagCreateInput(itemId, { note: flagCreateNote.value });
+            }
+        });
+        modal.addEventListener('change', (e) => {
+            const flagCreateReason = e.target.closest('[data-wf-dash-flag-create-reason]');
+            if (flagCreateReason && modal.contains(flagCreateReason)) {
+                const itemId = flagCreateReason.getAttribute('data-item-id');
+                if (itemId) dash._handleFlagCreateInput(itemId, { reason: flagCreateReason.value });
             }
         });
 }
@@ -9879,7 +10095,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.22',
+    _version: '3.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
