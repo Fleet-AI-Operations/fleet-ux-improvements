@@ -5009,8 +5009,9 @@ const searchOutputMethods = {
     },
 
     _userStoryBodyText(ui) {
-        return ui.userStory != null && String(ui.userStory).trim()
-            ? dashEscHtml(String(ui.userStory))
+        const story = this._dashQuotedText(ui.userStory);
+        return story
+            ? dashEscHtml(story)
             : dashEscHtml(ui.message || 'No user story for this task.');
     },
 
@@ -6728,7 +6729,7 @@ const searchOutputMethods = {
     },
 
     _rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi) {
-        const text = version.prompt || '';
+        const text = this._dashQuotedText(version.prompt);
         if (!text) return '—';
         const eng = Context.diffEngine;
         const leftIdx = rollingUi.rollingLeft;
@@ -6741,8 +6742,8 @@ const searchOutputMethods = {
         }
         const leftVersion = renderedVersions[leftIdx];
         const rightVersion = renderedVersions[rightIdx];
-        const leftText = (leftVersion && leftVersion.prompt) || '';
-        const rightText = (rightVersion && rightVersion.prompt) || '';
+        const leftText = this._dashQuotedText(leftVersion && leftVersion.prompt);
+        const rightText = this._dashQuotedText(rightVersion && rightVersion.prompt);
         const pair = eng.diffPair(leftText, rightText, {
             granularity: 'word',
             showHighlights: rollingUi.showHighlights,
@@ -8495,9 +8496,9 @@ const searchOutputMethods = {
     },
 
     _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
-        const text = String(notes || '').trim();
+        const text = this._dashQuotedText(notes);
         if (!text) return '';
-        const body = this._dashHighlightedHtml(text, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
+        const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
         return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">`
             + `<div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
             + `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
@@ -8566,6 +8567,14 @@ const searchOutputMethods = {
             }
             return this._dashHighlightSegmentsHtml(part.value, query, caseSensitive, fuzzy, regex);
         }).join('');
+    },
+
+    _dashQuotedText(text) {
+        return String(text ?? '').trim();
+    },
+
+    _dashQuotedHighlightedHtml(text, query, caseSensitive, fuzzy, regex) {
+        return this._dashHighlightedHtml(this._dashQuotedText(text), query, caseSensitive, fuzzy, regex);
     },
 
     _dataValueHtml(text) {
@@ -8749,12 +8758,13 @@ const searchOutputMethods = {
             : '';
         const blocks = (qa.textBlocks || []).map((b) => {
             const blockLabel = (isSystem || isVerifierFailure) ? b.label : dashQaTextBlockLabel(b.label, positive);
-            const body = b.text
-                ? this._dashHighlightedHtml(b.text, hq, cs, fz, rx)
+            const quotedText = this._dashQuotedText(b.text);
+            const body = quotedText
+                ? this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx)
                 : '—';
             return `
             <div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(blockLabel)}${this._copyIconHtml(b.text)}</div>
+                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(blockLabel)}${this._copyIconHtml(quotedText)}</div>
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>
             </div>`;
         }).join('');
@@ -8868,7 +8878,7 @@ const searchOutputMethods = {
         const border = purple.border;
         const bg = purple.background;
         const reasonBody = display.reason
-            ? this._dashHighlightedHtml(display.reason, hq, cs, fz, rx)
+            ? this._dashQuotedHighlightedHtml(display.reason, hq, cs, fz, rx)
             : '—';
         const submittedHtml = display.submittedAt
             ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
@@ -8893,7 +8903,7 @@ const searchOutputMethods = {
                 statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
             }
             const resolutionBody = display.resolutionText
-                ? this._dashHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
+                ? this._dashQuotedHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
@@ -8904,7 +8914,7 @@ const searchOutputMethods = {
             const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
             const resBodyHtml = `${resolverHtml}
                         <div>
-                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.resolutionText)}</div>
+                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(this._dashQuotedText(display.resolutionText))}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
                         </div>`;
             resolutionHtml = `
@@ -8926,7 +8936,7 @@ const searchOutputMethods = {
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>${submittedHtml}`;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
         const bodyHtml = `<div>
-                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(display.reason)}</div>
+                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(this._dashQuotedText(display.reason))}</div>
                     <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
                 </div>
                 ${resolutionHtml}`;
@@ -8961,11 +8971,11 @@ const searchOutputMethods = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet', 'senior_review')}</div>`
             : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
-        const noteText = String(display.note || '').trim();
+        const noteText = this._dashQuotedText(display.note);
         const reviewerNoteHtml = noteText
             ? `<div>
                 <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._copyIconHtml(noteText)}</div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${this._dashHighlightedHtml(noteText, hq, cs, fz, rx)}</p>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${this._dashQuotedHighlightedHtml(display.note, hq, cs, fz, rx)}</p>
             </div>`
             : `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._noneProvidedBadgeHtml()}</div>`;
         let resolutionHtml = '';
@@ -8987,7 +8997,7 @@ const searchOutputMethods = {
                 statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
             }
             const resolutionBody = display.resolutionNote
-                ? this._dashHighlightedHtml(display.resolutionNote, hq, cs, fz, rx)
+                ? this._dashQuotedHighlightedHtml(display.resolutionNote, hq, cs, fz, rx)
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
@@ -8998,7 +9008,7 @@ const searchOutputMethods = {
             const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
             const resBodyHtml = `${resolverHtml}
                         <div>
-                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Resolution Note')}${this._copyIconHtml(display.resolutionNote)}</div>
+                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Resolution Note')}${this._copyIconHtml(this._dashQuotedText(display.resolutionNote))}</div>
                             <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
                         </div>`;
             resolutionHtml = `
@@ -9195,7 +9205,7 @@ const searchOutputMethods = {
                 rollingOpts.rollingUi
             );
         } else if (version.prompt) {
-            promptBody = this._dashHighlightedHtml(version.prompt, hq, cs, fz, rx);
+            promptBody = this._dashQuotedHighlightedHtml(version.prompt, hq, cs, fz, rx);
         } else {
             promptBody = '—';
         }
@@ -9225,7 +9235,7 @@ const searchOutputMethods = {
             this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
         )}</span>`;
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(version.prompt)}${submittedHtml}`;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(this._dashQuotedText(version.prompt))}${submittedHtml}`;
         let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
@@ -9278,9 +9288,9 @@ const searchOutputMethods = {
         const cs = Boolean(item.highlightCaseSensitive);
         const fz = Boolean(item.highlightFuzzy);
         const rx = Boolean(item.highlightRegex);
-        const promptText = task.prompt || '';
+        const promptText = this._dashQuotedText(task.prompt);
         const promptBody = promptText
-            ? this._dashHighlightedHtml(promptText, hq, cs, fz, rx)
+            ? this._dashQuotedHighlightedHtml(task.prompt, hq, cs, fz, rx)
             : '—';
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         const blockId = 'version:' + itemId + ':quick';
@@ -10119,7 +10129,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.26',
+    _version: '3.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
