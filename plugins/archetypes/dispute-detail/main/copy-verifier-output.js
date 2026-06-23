@@ -3,7 +3,7 @@
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Same behavior as QA archetypes; shared verifier panel DOM.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
-// If the main copy finds no text and Raw Output is collapsed, expands it and retries before failing.
+// If the main copy finds no text and the Stdout section is collapsed, expands it and retries before failing.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
@@ -29,7 +29,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.5',
+    _version: '2.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -99,6 +99,74 @@ const plugin = {
         return null;
     },
 
+    findStdoutBlock(container) {
+        if (!container) return null;
+        for (const block of container.querySelectorAll(':scope > div.mb-3.text-xs, :scope > div.text-xs.mb-3')) {
+            if (block.querySelector('[class*="group/stdout"]')) {
+                return block;
+            }
+            for (const el of block.querySelectorAll(
+                'div.text-sm.text-muted-foreground.font-medium, div.text-sm.font-medium'
+            )) {
+                if (el.textContent.trim() === 'Stdout') {
+                    return block;
+                }
+            }
+        }
+        return null;
+    },
+
+    findStdoutHeader(block) {
+        if (!block) return null;
+        return (
+            block.querySelector('[class*="group/stdout"]') ||
+            Array.from(block.querySelectorAll('div.cursor-pointer')).find((row) => {
+                for (const el of row.querySelectorAll(
+                    'div.text-sm.text-muted-foreground.font-medium, div.text-sm.font-medium'
+                )) {
+                    if (el.textContent.trim() === 'Stdout') {
+                        return true;
+                    }
+                }
+                return false;
+            }) ||
+            null
+        );
+    },
+
+    findStdoutPre(block) {
+        if (!block) return null;
+        return (
+            block.querySelector(':scope > div.border.bg-background pre') ||
+            block.querySelector(':scope > div.rounded.border.bg-background pre') ||
+            block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre') ||
+            block.querySelector('pre')
+        );
+    },
+
+    isStdoutCollapsed(block) {
+        const header = this.findStdoutHeader(block);
+        if (!header) {
+            return false;
+        }
+        const chevron = header.querySelector('svg.transition-transform');
+        if (chevron) {
+            return chevron.classList.contains('-rotate-90');
+        }
+        const pre = this.findStdoutPre(block);
+        return !pre || !pre.textContent.trim();
+    },
+
+    expandStdoutSection(block) {
+        const header = this.findStdoutHeader(block);
+        if (!header) {
+            return false;
+        }
+        header.click();
+        Logger.debug('Copy Verifier Output: Expanded Stdout section');
+        return true;
+    },
+
     findRawOutputPre(block) {
         return block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre');
     },
@@ -108,32 +176,6 @@ const plugin = {
         return Array.from(block.querySelectorAll('button')).find(
             (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
         );
-    },
-
-    isRawOutputCollapsed(block) {
-        const pre = this.findRawOutputPre(block);
-        if (pre && pre.textContent.trim()) {
-            return false;
-        }
-        const toggle = this.findRawOutputToggle(block);
-        if (!toggle) {
-            return false;
-        }
-        const chevron = toggle.querySelector('svg.transition-transform');
-        if (chevron) {
-            return chevron.classList.contains('-rotate-90');
-        }
-        return !pre || !pre.textContent.trim();
-    },
-
-    expandRawOutputToggle(block) {
-        const toggle = this.findRawOutputToggle(block);
-        if (!toggle) {
-            return false;
-        }
-        toggle.click();
-        Logger.debug('Copy Verifier Output: Expanded Raw Output dropdown');
-        return true;
     },
 
     waitForVerifierTextAfterExpand(container, block, onReady, onFail) {
@@ -167,8 +209,8 @@ const plugin = {
             return;
         }
 
-        const block = this.findRawOutputBlock(container);
-        if (!block || !this.isRawOutputCollapsed(block)) {
+        const block = this.findStdoutBlock(container);
+        if (!block || !this.isStdoutCollapsed(block)) {
             Logger.warn('Copy Verifier Output: No verifier output to copy');
             this.showVerifierCopyFailurePulse(button);
             return;
@@ -178,7 +220,7 @@ const plugin = {
         }
         button._fleetCopyExpandPending = true;
 
-        if (!this.expandRawOutputToggle(block)) {
+        if (!this.expandStdoutSection(block)) {
             button._fleetCopyExpandPending = false;
             Logger.warn('Copy Verifier Output: No verifier output to copy');
             this.showVerifierCopyFailurePulse(button);
@@ -188,12 +230,11 @@ const plugin = {
         const afterExpand = (retryText) => {
             button._fleetCopyExpandPending = false;
             if (retryText) {
-                this.syncRawOutputCopyButton(container);
-                Logger.log('Copy Verifier Output: Copy succeeded after expanding Raw Output');
+                Logger.log('Copy Verifier Output: Copy succeeded after expanding Stdout');
                 this.copyVerifierTextWithFeedback(button, retryText);
                 return;
             }
-            Logger.warn('Copy Verifier Output: No verifier output to copy after expanding Raw Output');
+            Logger.warn('Copy Verifier Output: No verifier output to copy after expanding Stdout');
             this.showVerifierCopyFailurePulse(button);
         };
 
@@ -426,7 +467,14 @@ const plugin = {
         if (rawPre && rawPre.textContent.trim()) {
             return rawPre.textContent.trim();
         }
-        const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
+        const stdoutBlock = this.findStdoutBlock(container);
+        const stdoutPre = stdoutBlock ? this.findStdoutPre(stdoutBlock) : null;
+        if (stdoutPre && stdoutPre.textContent.trim()) {
+            return stdoutPre.textContent.trim();
+        }
+        const pre =
+            container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre') ||
+            container.querySelector('div.border.bg-background pre');
         if (pre && pre.textContent.trim()) {
             return pre.textContent.trim();
         }
