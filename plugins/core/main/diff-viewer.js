@@ -38,6 +38,8 @@ const _dvState = {
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
     highlightModality: 'differences', // 'differences' | 'similarities'
+    highlightMinLength: null,   // null = use highlightLengthRange.min
+    highlightLengthRange: { min: 0, max: 0 },
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -81,6 +83,13 @@ function _dvEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function _dvCopyIconHtml(text) {
+    const value = String(text == null ? '' : text);
+    return '<button type="button" data-wf-dash-copy="' + _dvEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+        + '</button>';
+}
+
 function _dvEngine() {
     return Context.diffEngine;
 }
@@ -88,6 +97,79 @@ function _dvEngine() {
 function _dvPlainPromptHtml(text) {
     const eng = _dvEngine();
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
+}
+
+function _dvEffectiveHighlightMinLength() {
+    if (!_dvState.showHighlights) return 0;
+    const range = _dvState.highlightLengthRange;
+    if (!range || range.max === 0) return 0;
+    return _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
+}
+
+function _dvHighlightLengthUnitLabel() {
+    return _dvState.granularity === 'char' ? 'chars' : 'words';
+}
+
+function _dvComparisonPairsForLengthRange(modal) {
+    if (_dvState.mode === 'free-text') {
+        const baseInput = _dvQ(modal, 'dv-free-base-input');
+        const compareInput = _dvQ(modal, 'dv-free-compare-input');
+        return [{
+            baseText: (baseInput && baseInput.value) || '',
+            compareText: (compareInput && compareInput.value) || ''
+        }];
+    }
+    const pairs = [];
+    if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) return pairs;
+    if (_dvState.compMode === 'rolling') {
+        _dvClampRollingLeft();
+        const left = _dvState.slots[_dvState.rollingLeft];
+        const right = _dvState.slots[_dvState.rollingLeft + 1];
+        if (left && right) {
+            pairs.push({ baseText: _dvSlotPromptText(left), compareText: _dvSlotPromptText(right) });
+        }
+        return pairs;
+    }
+    const baseText = _dvSlotPromptText(_dvState.slots[0]);
+    for (let i = 1; i < _dvState.slots.length; i++) {
+        pairs.push({ baseText, compareText: _dvSlotPromptText(_dvState.slots[i]) });
+    }
+    return pairs;
+}
+
+function _dvRefreshHighlightLengthRange(modal) {
+    const eng = _dvEngine();
+    if (!eng || !_dvState.showHighlights) {
+        _dvState.highlightLengthRange = { min: 0, max: 0 };
+        _dvState.highlightMinLength = null;
+        _dvSyncHighlightLengthUi(modal);
+        return;
+    }
+    const pairs = _dvComparisonPairsForLengthRange(modal);
+    let globalMin = Infinity;
+    let globalMax = 0;
+    const allLengths = [];
+    const opts = { granularity: _dvState.granularity, highlightModality: _dvState.highlightModality };
+    for (const pair of pairs) {
+        const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
+        if (range.lengths.length) {
+            globalMin = Math.min(globalMin, range.min);
+            globalMax = Math.max(globalMax, range.max);
+            allLengths.push(...range.lengths);
+        }
+    }
+    if (!allLengths.length) {
+        _dvState.highlightLengthRange = { min: 0, max: 0 };
+        _dvState.highlightMinLength = null;
+    } else {
+        _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
+        if (_dvState.highlightMinLength == null || _dvState.highlightMinLength < globalMin) {
+            _dvState.highlightMinLength = globalMin;
+        } else if (_dvState.highlightMinLength > globalMax) {
+            _dvState.highlightMinLength = globalMax;
+        }
+    }
+    _dvSyncHighlightLengthUi(modal);
 }
 
 function _dvDiffPair(baseText, compareText, granularity) {
@@ -98,7 +180,8 @@ function _dvDiffPair(baseText, compareText, granularity) {
     return eng.diffPair(baseText, compareText, {
         granularity,
         showHighlights: _dvState.showHighlights,
-        highlightModality: _dvState.highlightModality
+        highlightModality: _dvState.highlightModality,
+        minHighlightLength: _dvEffectiveHighlightMinLength()
     });
 }
 
@@ -1075,6 +1158,14 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
             ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            <div id="dv-highlight-length-wrap" class="dv-highlight-length-wrap" style="display:${showHighlights ? 'flex' : 'none'};">
+                <div style="${label}margin-bottom:6px;">Min Highlight Length</div>
+                <div class="dv-highlight-length-row">
+                    <input type="range" id="dv-highlight-length-slider" min="0" max="0" step="1" value="0"
+                           aria-label="Minimum highlight section length" disabled />
+                    <span id="dv-highlight-length-readout" class="dv-highlight-length-readout"></span>
+                </div>
+            </div>
         </div>
         <div id="dv-tasks-controls" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;">
             <div id="dv-comp-mode-section" style="flex-shrink:0;">
@@ -1269,7 +1360,9 @@ function _dvAboveLabelInnerHtml() {
         rightText: pair.rightText,
         granularity: _dvState.granularity,
         highlightModality: _dvState.highlightModality,
-        showHighlights: _dvState.showHighlights
+        showHighlights: _dvState.showHighlights,
+        minHighlightLength: _dvEffectiveHighlightMinLength(),
+        lengthRange: _dvState.highlightLengthRange
     });
 }
 
@@ -1389,10 +1482,18 @@ function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
         ? _dvTimestampLineHtml('', version.createdAt)
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
+    const notesRaw = version ? String(version.resubmissionNotes || '').trim() : '';
+    const notesHtml = notesRaw
+        ? '<div class="dv-reel-notes-to-qa"><div class="dv-reel-notes-to-qa-header"><span class="dv-reel-notes-to-qa-label">Notes to QA</span>'
+            + _dvCopyIconHtml(notesRaw) + '</div><pre>'
+            + _dvEscHtml(notesRaw) + '</pre></div>'
+        : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
     return '<div class="dv-reel-card-body">'
         + '<div class="dv-version-submitted">' + submittedInner + '</div>'
-        + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div></div>'
+        + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div>'
+        + notesHtml
+        + '</div>'
         + '</div>';
 }
 
@@ -1552,6 +1653,7 @@ function _dvSlotPromptText(slot) {
 
 function _dvRenderDiffs(modal) {
     if (_dvState.mode !== 'tasks') return;
+    _dvRefreshHighlightLengthRange(modal);
     if (_dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
         const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
@@ -1847,6 +1949,7 @@ function _dvRenderFreeTextDiff(modal) {
     const baseDiff = _dvQ(modal, 'dv-free-base-diff');
     const compareDiff = _dvQ(modal, 'dv-free-compare-diff');
     if (!baseInput || !compareInput || !baseDiff || !compareDiff) return;
+    _dvRefreshHighlightLengthRange(modal);
     const baseText = baseInput.value || '';
     const compareText = compareInput.value || '';
     if (!baseText && !compareText) {
@@ -1904,6 +2007,35 @@ function _dvSyncCompModeUi(modal) {
     if (_dvState.compMode !== 'rolling') _dvRemoveRollingOverlay(modal);
 }
 
+function _dvSyncHighlightLengthUi(modal) {
+    if (!modal) return;
+    const wrap = _dvQ(modal, 'dv-highlight-length-wrap');
+    const slider = _dvQ(modal, 'dv-highlight-length-slider');
+    const readout = _dvQ(modal, 'dv-highlight-length-readout');
+    if (!wrap || !slider) return;
+    if (!_dvState.showHighlights) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = 'flex';
+    const range = _dvState.highlightLengthRange;
+    const unit = _dvHighlightLengthUnitLabel();
+    if (!range || range.max === 0) {
+        slider.disabled = true;
+        slider.min = '0';
+        slider.max = '0';
+        slider.value = '0';
+        if (readout) readout.textContent = 'No highlight sections';
+        return;
+    }
+    const current = _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
+    slider.min = String(range.min);
+    slider.max = String(range.max);
+    slider.value = String(current);
+    slider.disabled = range.min === range.max;
+    if (readout) readout.textContent = '≥ ' + current + ' ' + unit;
+}
+
 function _dvSyncHighlightsUi(modal) {
     if (!modal) return;
     const right = _dvQ(modal, 'dv-right');
@@ -1912,6 +2044,7 @@ function _dvSyncHighlightsUi(modal) {
         const on = btn.getAttribute('data-dv-highlights') === 'on';
         btn.setAttribute('aria-pressed', on === _dvState.showHighlights ? 'true' : 'false');
     });
+    _dvSyncHighlightLengthUi(modal);
     if (!_dvState.showHighlights) _dvRemoveRollingOverlay(modal);
 }
 
@@ -2146,6 +2279,21 @@ function _dvAttachListeners(modal, dash) {
     if (freeBaseInput) freeBaseInput.addEventListener('input', onFreeInput);
     if (freeCompareInput) freeCompareInput.addEventListener('input', onFreeInput);
 
+    const lengthSlider = _dvQ(modal, 'dv-highlight-length-slider');
+    if (lengthSlider && !modal._dvLengthSliderAttached) {
+        modal._dvLengthSliderAttached = true;
+        lengthSlider.addEventListener('input', () => {
+            const val = parseInt(lengthSlider.value, 10);
+            if (!Number.isFinite(val)) return;
+            _dvState.highlightMinLength = val;
+            _dvSyncHighlightLengthUi(modal);
+            _dvRenderDiffs(modal);
+            _dvUpdateAboveLabels(modal);
+            if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+            Logger.log('diff-viewer: highlight min length → ' + val);
+        });
+    }
+
     // ── Drag & swap (ghost UX) ──
     _dvAttachDragListeners(modal);
 
@@ -2236,6 +2384,29 @@ function _dvInjectStyles() {
         '  flex-wrap: wrap;',
         '  gap: 12px;',
         '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-highlight-length-wrap {',
+        '  flex-basis: 100%;',
+        '  flex-direction: column;',
+        '  gap: 0;',
+        '}',
+        '#wf-dash-modal .dv-highlight-length-row {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  gap: 10px;',
+        '}',
+        '#wf-dash-modal .dv-highlight-length-row input[type="range"] {',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '  accent-color: var(--brand, #2563eb);',
+        '}',
+        '#wf-dash-modal .dv-highlight-length-readout {',
+        '  flex-shrink: 0;',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  min-width: 72px;',
+        '  text-align: right;',
         '}',
         '#wf-dash-modal .dv-toggle-cell {',
         '  flex-shrink: 0;',
@@ -2617,6 +2788,26 @@ function _dvInjectStyles() {
         '  line-height: 1.5;',
         '  word-break: break-word;',
         '}',
+        '#wf-dash-modal .dv-reel-notes-to-qa {',
+        '  flex-shrink: 0;',
+        '  margin-top: 8px;',
+        '  padding-top: 8px;',
+        '  border-top: 1px solid var(--border, #e2e8f0);',
+        '}',
+        '#wf-dash-modal .dv-reel-notes-to-qa-header {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  gap: 6px;',
+        '  margin-bottom: 4px;',
+        '}',
+        '#wf-dash-modal .dv-reel-notes-to-qa-label {',
+        '  font-size: 10px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        '#wf-dash-modal .dv-reel-notes-to-qa pre {',
+        '  color: var(--foreground, #0f172a);',
+        '}',
         '#wf-dash-modal .dv-reel-empty-mark {',
         '  font-size: 11px;',
         '  color: var(--muted-foreground, #64748b);',
@@ -2741,7 +2932,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.70',
+    _version: '1.73',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2804,6 +2995,7 @@ const plugin = {
                 _dvSyncHighlightsUi(modal);
                 _dvSyncHighlightModalityUi(modal);
                 _dvSyncCompModeUi(modal);
+                _dvSyncHighlightLengthUi(modal);
                 // Restore session slots (if any were captured)
                 if (_dvState.slots.length > 0) _dvRenderAll(modal);
             },

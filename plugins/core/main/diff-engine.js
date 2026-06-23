@@ -155,6 +155,86 @@ function _deGroupConsecutive(diff, includeTypes, highlightType) {
 
 function _deTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
 
+function _deSectionUnitLength(group, granularity) {
+    const values = group.values || [];
+    if (granularity === 'line') {
+        return values.join('').split('\n').filter((line) => line.trim().length > 0).length;
+    }
+    if (granularity === 'char') {
+        return values.join('').replace(/[\s\n\r\t]/g, '').length;
+    }
+    return values.filter((v) => v !== '\n' && !/^[ \t]+$/.test(v)).length;
+}
+
+function _deHighlightTypes(highlightModality) {
+    const similarities = highlightModality === 'similarities';
+    return {
+        baseHighlight: similarities ? 'equal' : 'remove',
+        compareHighlight: similarities ? 'equal' : 'add'
+    };
+}
+
+function _deComputeDiff(baseText, compareText, granularity) {
+    const isChar = granularity === 'char';
+    if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
+        Logger.warn('diff-engine: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
+        return { diff: _deComputeWordDiff(baseText, compareText), effectiveGranularity: 'word' };
+    }
+    if (isChar) {
+        return { diff: _deComputeCharDiff(baseText, compareText), effectiveGranularity: 'char' };
+    }
+    const { a, b, effectiveGranularity } = _deDiffUnits(baseText, compareText, granularity);
+    if (effectiveGranularity === 'line') {
+        return { diff: _deBacktrack(_deComputeLCS(a, b), a, b), effectiveGranularity: 'line' };
+    }
+    return { diff: _deComputeWordDiff(baseText, compareText), effectiveGranularity: effectiveGranularity };
+}
+
+function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity) {
+    const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
+    const lengths = [];
+    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
+    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight);
+    for (const group of baseGroups) {
+        if (group.type !== baseHighlight) continue;
+        const len = _deSectionUnitLength(group, effectiveGranularity);
+        if (len > 0) lengths.push(len);
+    }
+    for (const group of compareGroups) {
+        if (group.type !== compareHighlight) continue;
+        const len = _deSectionUnitLength(group, effectiveGranularity);
+        if (len > 0) lengths.push(len);
+    }
+    if (!lengths.length) return { min: 0, max: 0, lengths: [] };
+    return { min: Math.min(...lengths), max: Math.max(...lengths), lengths };
+}
+
+function _deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength) {
+    if (group.type !== highlightType) return false;
+    if (!minHighlightLength) return true;
+    const len = _deSectionUnitLength(group, effectiveGranularity);
+    return len > 0 && len >= minHighlightLength;
+}
+
+function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranularity, minHighlightLength) {
+    const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
+    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
+    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight);
+    const baseParts = [];
+    const compareParts = [];
+    for (const group of baseGroups) {
+        if (_deShouldHighlightGroup(group, baseHighlight, effectiveGranularity, minHighlightLength)) {
+            baseParts.push(group.values.join(''));
+        }
+    }
+    for (const group of compareGroups) {
+        if (_deShouldHighlightGroup(group, compareHighlight, effectiveGranularity, minHighlightLength)) {
+            compareParts.push(group.values.join(''));
+        }
+    }
+    return { baseSubset: baseParts.join(''), compareSubset: compareParts.join('') };
+}
+
 function _deEqualSpanHtml(text) {
     return `<span class="dv-diff-equal">${_deEscHtml(text)}</span>`;
 }
@@ -172,19 +252,24 @@ function _deHighlightStyles() {
     };
 }
 
-function _deRenderBaseHtml(diff, highlightStyle, highlightType) {
+function _deRenderHighlightGroupHtml(group, highlightStyle, text) {
+    if (text === '\n') {
+        return `<span style="${highlightStyle}">↵</span>\n`;
+    }
+    const trimmed = group.trimTrailing ? _deTrimTrailing(text) : text;
+    const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
+    return `<span style="${highlightStyle}">${_deEscHtml(trimmed)}</span>${trail ? _deEqualSpanHtml(trail) : ''}`;
+}
+
+function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
+    const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
+    const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const groups = _deGroupConsecutive(diff, ['equal', 'remove'], highlightType);
     let html = '';
     groups.forEach((group) => {
         const text = group.values.join('');
-        if (group.type === highlightType) {
-            if (text === '\n') {
-                html += `<span style="${highlightStyle}">↵</span>\n`;
-            } else {
-                const trimmed = group.trimTrailing ? _deTrimTrailing(text) : text;
-                const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${highlightStyle}">${_deEscHtml(trimmed)}</span>${trail ? _deEqualSpanHtml(trail) : ''}`;
-            }
+        if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
+            html += _deRenderHighlightGroupHtml(group, highlightStyle, text);
         } else {
             html += _deEqualSpanHtml(text);
         }
@@ -192,19 +277,15 @@ function _deRenderBaseHtml(diff, highlightStyle, highlightType) {
     return html;
 }
 
-function _deRenderCompareHtml(diff, highlightStyle, highlightType) {
+function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
+    const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
+    const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const groups = _deGroupConsecutive(diff, ['equal', 'add'], highlightType);
     let html = '';
     groups.forEach((group) => {
         const text = group.values.join('');
-        if (group.type === highlightType) {
-            if (text === '\n') {
-                html += `<span style="${highlightStyle}">↵</span>\n`;
-            } else {
-                const trimmed = group.trimTrailing ? _deTrimTrailing(text) : text;
-                const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
-                html += `<span style="${highlightStyle}">${_deEscHtml(trimmed)}</span>${trail ? _deEqualSpanHtml(trail) : ''}`;
-            }
+        if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
+            html += _deRenderHighlightGroupHtml(group, highlightStyle, text);
         } else {
             html += _deEqualSpanHtml(text);
         }
@@ -242,7 +323,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -268,33 +349,32 @@ const plugin = {
                 return { percent, noDifference: false, effectiveGranularity };
             },
 
+            highlightSectionLengthRange(baseText, compareText, opts) {
+                const granularity = (opts && opts.granularity) || 'word';
+                const highlightModality = (opts && opts.highlightModality) || 'differences';
+                if (!baseText && !compareText) return { min: 0, max: 0, lengths: [] };
+                const { diff, effectiveGranularity } = _deComputeDiff(baseText || '', compareText || '', granularity);
+                return _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity);
+            },
+
             diffPair(baseText, compareText, opts) {
                 const granularity = (opts && opts.granularity) || 'word';
                 const showHighlights = opts && opts.showHighlights !== false;
                 const highlightModality = (opts && opts.highlightModality) || 'differences';
+                const minHighlightLength = (opts && opts.minHighlightLength) || 0;
                 if (!showHighlights) {
                     return {
                         baseHtml: _deEqualSpanHtml(baseText || ''),
                         compareHtml: _deEqualSpanHtml(compareText || '')
                     };
                 }
-                const similarities = highlightModality === 'similarities';
-                const baseHighlight = similarities ? 'equal' : 'remove';
-                const compareHighlight = similarities ? 'equal' : 'add';
+                const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
                 const styles = _deHighlightStyles();
-                const isChar = granularity === 'char';
-                if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
-                    Logger.warn('diff-engine: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
-                    const diff = _deComputeWordDiff(baseText, compareText);
-                    return {
-                        baseHtml: _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
-                        compareHtml: _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
-                    };
-                }
-                const diff = isChar ? _deComputeCharDiff(baseText, compareText) : _deComputeWordDiff(baseText, compareText);
+                const { diff, effectiveGranularity } = _deComputeDiff(baseText || '', compareText || '', granularity);
+                const renderOpts = { minHighlightLength, effectiveGranularity };
                 return {
-                    baseHtml: _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight),
-                    compareHtml: _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight)
+                    baseHtml: _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight, renderOpts),
+                    compareHtml: _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight, renderOpts)
                 };
             },
 
@@ -306,17 +386,34 @@ const plugin = {
                 if (!leftText && !rightText) return '';
                 const granularity = (opts && opts.granularity) || 'word';
                 const highlightModality = (opts && opts.highlightModality) || 'differences';
+                const minHighlightLength = (opts && opts.minHighlightLength) || 0;
+                const lengthRange = (opts && opts.lengthRange) || null;
                 const { percent, noDifference, effectiveGranularity } = this.similarityPercent(leftText, rightText, { granularity });
-                const granLabel = effectiveGranularity === 'char' ? 'char' : 'word';
+                const granLabel = effectiveGranularity === 'char' ? 'char' : (effectiveGranularity === 'line' ? 'line' : 'word');
                 if (noDifference) {
                     return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
                 }
                 const displayPercent = highlightModality === 'similarities' ? percent : (100 - percent);
                 const formatted = _deFormatPercent(displayPercent);
-                if (highlightModality === 'similarities') {
-                    return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' similarity</span>';
+                const metricWord = highlightModality === 'similarities' ? 'similarity' : 'difference';
+                let html = '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' ' + metricWord;
+                const rangeMin = lengthRange ? lengthRange.min : 0;
+                const subsetActive = minHighlightLength > 0 && lengthRange && minHighlightLength > rangeMin;
+                if (subsetActive) {
+                    const { diff } = _deComputeDiff(leftText, rightText, granularity);
+                    const { baseSubset, compareSubset } = _deJoinQualifyingSubsetTexts(
+                        diff, highlightModality, effectiveGranularity, minHighlightLength
+                    );
+                    if (baseSubset || compareSubset) {
+                        const subsetResult = this.similarityPercent(baseSubset, compareSubset, { granularity });
+                        const subsetDisplay = highlightModality === 'similarities'
+                            ? subsetResult.percent
+                            : (100 - subsetResult.percent);
+                        html += ' (' + _deFormatPercent(subsetDisplay) + '% subset ' + granLabel + ' ' + metricWord + ')';
+                    }
                 }
-                return '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' difference</span>';
+                html += '</span>';
+                return html;
             }
         };
         Logger.log('diff-engine: module registered (Context.diffEngine)');

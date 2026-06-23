@@ -22,10 +22,11 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     dispute: 'Disputes',
     senior_review: 'Sr Review'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'qa_edited', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
+    notes_to_qa: 'Submitted with Notes to QA',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
     flagged: 'Flagged',
@@ -339,7 +340,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.20',
+    _version: '2.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -470,6 +471,7 @@ const plugin = {
         let displayNo = 0;
         for (const v of sorted) {
             const prompt = String(v.prompt ?? '');
+            const notes = String(v.resubmission_notes ?? '').trim();
             if (prompt !== prevPrompt) {
                 displayNo += 1;
                 result.push({
@@ -478,9 +480,17 @@ const plugin = {
                     displayVersionNo: displayNo,
                     prompt,
                     envKey: String(v.env_key ?? ''),
-                    createdAt: String(v.created_at ?? '')
+                    createdAt: String(v.created_at ?? ''),
+                    resubmissionNotes: notes
                 });
                 prevPrompt = prompt;
+            } else if (notes && result.length) {
+                const last = result[result.length - 1];
+                if (!last.resubmissionNotes) {
+                    last.resubmissionNotes = notes;
+                } else if (last.resubmissionNotes !== notes) {
+                    last.resubmissionNotes += '\n\n' + notes;
+                }
             }
         }
         return result;
@@ -807,6 +817,10 @@ const plugin = {
         return false;
     },
 
+    _taskHasNotesToQa(task) {
+        return (task.promptVersions || []).some((v) => String(v.resubmissionNotes || '').trim());
+    },
+
     _itemPromptHistory(item) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
@@ -819,6 +833,7 @@ const plugin = {
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
+        if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
         return [...flags];
     },
 

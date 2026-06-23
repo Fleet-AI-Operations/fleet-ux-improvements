@@ -54,6 +54,11 @@ const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
 const OPS_DASHBOARD_OPEN_ON_SETTINGS_KEY = 'ops-dashboard-open-on-settings';
+/** GM storage: last seen opsAccess.passwordHash (invalidate stored password on rotation) */
+const OPS_PASSWORD_HASH_SEEN_STORAGE_KEY = 'ops-tab-password-hash-seen';
+const OPS_BUNDLE_NOT_LOADED_MESSAGE =
+    'Ops bundle not loaded. Unlock the Ops dashboard and ensure ops-secrets.enc.json is available on this branch.';
+const OPS_BUNDLE_READY_DEFAULT_TIMEOUT_MS = 30000;
 /** localStorage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
 const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 /** Matches `"user":{"id":"<uuid>"` in Next.js RSC flight payloads */
@@ -187,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.20',
+    _version: '7.21',
     phase: 'core',
     enabledByDefault: true,
 
@@ -225,8 +230,11 @@ const plugin = {
         json: null,
         loadError: null,
         loading: false,
-        missingLogged: false
+        missingLogged: false,
+        loadPromise: null,
+        decryptMismatchLogged: false
     },
+    _opsBundleNotLoadedLogged: false,
     _opsTabState: {
         taskInput: '',
         verifierInput: '',
@@ -277,6 +285,10 @@ const plugin = {
             captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
             revalidateOnDashboardTabActivated: (dashModal) => this._revalidateOnDashboardTabActivated(dashModal),
+            ensureOpsSessionReady: (dashModal) => this._ensureOpsSessionReady(dashModal),
+            isOpsBundleReady: () => this._isOpsBundleReady(),
+            isOpsBundleNotLoadedError: (err) => this._isOpsBundleNotLoadedError(err),
+            whenOpsBundleReady: (options) => this._whenOpsBundleReady(options),
             onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
@@ -319,6 +331,7 @@ const plugin = {
         this._subscribeOpsExpertActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
         this._subscribeOpsTeamDashboardActionStorageSync();
+        this._invalidateOpsPasswordOnHashRotation();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
         }
@@ -332,6 +345,29 @@ const plugin = {
     _getOpsPasswordHash() {
         const hash = Context.opsAccess && Context.opsAccess.passwordHash;
         return typeof hash === 'string' && hash.length > 0 ? hash : null;
+    },
+
+    _persistOpsPasswordHashSeen(hash) {
+        const value = String(hash || '').trim();
+        if (value) {
+            Storage.set(OPS_PASSWORD_HASH_SEEN_STORAGE_KEY, value);
+        }
+    },
+
+    _invalidateOpsPasswordOnHashRotation() {
+        const currentHash = this._getOpsPasswordHash();
+        if (!currentHash) return;
+        const seen = String(Storage.get(OPS_PASSWORD_HASH_SEEN_STORAGE_KEY, '') || '').trim();
+        if (seen && seen !== currentHash && this._hasOpsStoredPassword()) {
+            this._clearOpsStoredPassword();
+            Logger.info('ops-tab: stored password cleared — opsAccess.passwordHash changed');
+            if (Context.dashboard && typeof Context.dashboard.isOpen === 'function'
+                && Context.dashboard.isOpen()
+                && typeof Context.dashboard.close === 'function') {
+                Context.dashboard.close();
+            }
+        }
+        this._persistOpsPasswordHashSeen(currentHash);
     },
 
     _getOpsTabWanted() {
@@ -425,16 +461,61 @@ const plugin = {
         this._opsSecretsCache.loadError = null;
         this._opsSecretsCache.loading = false;
         this._opsSecretsCache.missingLogged = false;
+        this._opsSecretsCache.loadPromise = null;
+        this._opsSecretsCache.decryptMismatchLogged = false;
     },
 
     _getOpsSecretsJson() {
         return this._opsSecretsCache.json;
     },
 
+    _isOpsBundleReady() {
+        const json = this._getOpsSecretsJson();
+        return !!(json && typeof json === 'object' && json.postgrest);
+    },
+
+    _isOpsBundleNotLoadedError(err) {
+        return !!(err && typeof err.message === 'string'
+            && err.message.indexOf('Ops bundle not loaded') >= 0);
+    },
+
+    _logOpsBundleNotLoadedOnce(context) {
+        if (this._opsBundleNotLoadedLogged) return;
+        this._opsBundleNotLoadedLogged = true;
+        Logger.debug('ops-tab: ' + (context || 'request') + ' skipped — ' + OPS_BUNDLE_NOT_LOADED_MESSAGE);
+    },
+
+    async _whenOpsBundleReady(options) {
+        const opts = options || {};
+        const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : OPS_BUNDLE_READY_DEFAULT_TIMEOUT_MS;
+        if (this._isOpsBundleReady()) return;
+
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (this._isOpsBundleReady()) return;
+            if (this._getOpsTabEnabled()) {
+                await this._loadOpsSecrets(!this._opsSecretsCache.loadPromise);
+            } else if (this._opsSecretsCache.loadPromise) {
+                await this._opsSecretsCache.loadPromise;
+            } else {
+                break;
+            }
+            if (this._isOpsBundleReady()) return;
+            if (!this._opsSecretsCache.loading && !this._opsSecretsCache.loadPromise) {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        }
+
+        if (this._isOpsBundleReady()) return;
+        const err = this._opsSecretsCache.loadError
+            || new Error(OPS_BUNDLE_NOT_LOADED_MESSAGE);
+        throw err;
+    },
+
     _getOpsBundle() {
         const json = this._getOpsSecretsJson();
         if (!json || typeof json !== 'object' || !json.postgrest) {
-            throw new Error('Ops bundle not loaded. Unlock the Ops dashboard and ensure ops-secrets.enc.json is available on this branch.');
+            throw new Error(OPS_BUNDLE_NOT_LOADED_MESSAGE);
         }
         return json;
     },
@@ -522,37 +603,56 @@ const plugin = {
             this._clearOpsSecretsCache();
             return;
         }
-        if (this._opsSecretsCache.loading && !force) {
+        if (!force && this._isOpsBundleReady()) {
             return;
         }
-        if (this._opsSecretsCache.json && !force) {
-            return;
+        if (!force && this._opsSecretsCache.loadPromise) {
+            return this._opsSecretsCache.loadPromise;
         }
 
-        this._opsSecretsCache.loading = true;
-        this._opsSecretsCache.loadError = null;
-        try {
-            const wrapped = await this._fetchOpsSecretsEncryptedWrapper();
-            if (!wrapped || typeof wrapped.encrypted !== 'string' || !wrapped.encrypted) {
-                if (!this._opsSecretsCache.missingLogged) {
-                    Logger.debug('ops-tab: no encrypted secrets file on branch');
-                    this._opsSecretsCache.missingLogged = true;
+        const self = this;
+        const run = async () => {
+            self._opsSecretsCache.loading = true;
+            self._opsSecretsCache.loadError = null;
+            try {
+                const wrapped = await self._fetchOpsSecretsEncryptedWrapper();
+                if (!wrapped || typeof wrapped.encrypted !== 'string' || !wrapped.encrypted) {
+                    if (!self._opsSecretsCache.missingLogged) {
+                        Logger.debug('ops-tab: no encrypted secrets file on branch');
+                        self._opsSecretsCache.missingLogged = true;
+                    }
+                    self._opsSecretsCache.json = null;
+                    return;
                 }
-                this._opsSecretsCache.json = null;
-                return;
+                const plaintext = await opsDecryptWithPassword(wrapped.encrypted, password);
+                const parsed = JSON.parse(plaintext);
+                self._opsSecretsCache.json = parsed;
+                self._opsBundleNotLoadedLogged = false;
+                const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
+                Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
+            } catch (e) {
+                self._opsSecretsCache.json = null;
+                self._opsSecretsCache.loadError = e;
+                Logger.warn('ops-tab: secrets decrypt failed', e);
+                try {
+                    const ok = await self._verifyOpsPassword(password);
+                    if (ok && !self._opsSecretsCache.decryptMismatchLogged) {
+                        self._opsSecretsCache.decryptMismatchLogged = true;
+                        Logger.warn(
+                            'ops-tab: password accepted but decrypt failed — pull latest ops-secrets.enc.json or re-save password after branch sync'
+                        );
+                    }
+                } catch (_verifyErr) {
+                    Logger.debug('ops-tab: decrypt failure password check skipped', _verifyErr);
+                }
+            } finally {
+                self._opsSecretsCache.loading = false;
+                self._opsSecretsCache.loadPromise = null;
             }
-            const plaintext = await opsDecryptWithPassword(wrapped.encrypted, password);
-            const parsed = JSON.parse(plaintext);
-            this._opsSecretsCache.json = parsed;
-            const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
-            Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
-        } catch (e) {
-            this._opsSecretsCache.json = null;
-            this._opsSecretsCache.loadError = e;
-            Logger.warn('ops-tab: secrets decrypt failed', e);
-        } finally {
-            this._opsSecretsCache.loading = false;
-        }
+        };
+
+        this._opsSecretsCache.loadPromise = run();
+        return this._opsSecretsCache.loadPromise;
     },
 
     _hasOpsStoredPassword() {
@@ -868,10 +968,17 @@ const plugin = {
                 ' team_id=' + (taskRow && taskRow.team_id || '(none)')
             );
         } catch (e) {
+            if (this._isOpsBundleNotLoadedError(e)) {
+                this._logOpsBundleNotLoadedOnce('tasks lookup');
+                throw e;
+            }
             Logger.debug('ops-tab: tasks lookup failed', e);
         }
 
         if (!taskRow) {
+            if (!this._isOpsBundleReady()) {
+                throw new Error(OPS_BUNDLE_NOT_LOADED_MESSAGE);
+            }
             Logger.debug('ops-tab: tasks no row for ' + (parsed.taskKey || parsed.taskId) + ' — treating input as verifier ID');
             return parsed;
         }
@@ -4224,6 +4331,7 @@ const plugin = {
             }
         }
         Logger.log('ops-tab: password saved on device');
+        this._persistOpsPasswordHashSeen(this._getOpsPasswordHash());
         void this._loadOpsSecrets(true);
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
@@ -4728,13 +4836,16 @@ const plugin = {
         });
     },
 
+    async _ensureOpsSessionReady(dashModal) {
+        await this._revalidateOpsStoredPassword(dashModal, null);
+        if (this._getOpsTabEnabled()) {
+            await this._loadOpsSecrets(true);
+        }
+    },
+
     _revalidateOnDashboardTabActivated(dashModal) {
         if (!dashModal) return;
-        void this._revalidateOpsStoredPassword(dashModal, null).then(() => {
-            if (this._getOpsTabEnabled()) {
-                void this._loadOpsSecrets(false);
-            }
-        });
+        void this._ensureOpsSessionReady(dashModal);
     },
 
     _attachOpsTaskLinkListeners(dashModal) {

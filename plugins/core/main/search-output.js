@@ -5783,7 +5783,7 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${hint} margin: 0;">Refine loaded results. Substring filters apply as you type unless RegEx is enabled; other filters use Apply.</p>
+                                <p style="${hint} margin: 0;">Refine loaded results. Substring and dropdown filters apply immediately unless RegEx is enabled on substring; manual filters use Apply.</p>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
@@ -5922,6 +5922,29 @@ const searchOutputMethods = {
         }
     },
 
+    _setOutputTypesExclusive(kind) {
+        if (!DASH_KIND_LABELS[kind]) {
+            Logger.warn('dashboard: setOutputTypesExclusive skipped — unknown kind ' + kind);
+            return;
+        }
+        this._state.includeTasks = kind === 'task_creation';
+        this._state.includeQa = kind === 'qa';
+        this._state.includeDisputes = kind === 'dispute';
+        this._state.includeSeniorReview = kind === 'senior_review';
+        this._syncOutputToggleUi();
+    },
+
+    _resetSearchScopeToUniversal() {
+        ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
+            const itemsEl = this._msItemsEl(key);
+            if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+            this._setMsBulkToggleMode(key, 'all');
+            this._applyMsBulkToggleLabel(key);
+            this._updateMsCount(key);
+        });
+        this._renderSearchProjectsList();
+    },
+
     _syncOutputToggleUi() {
         const tasksBtn = this._q('#wf-dash-toggle-tasks');
         const qaBtn = this._q('#wf-dash-toggle-qa');
@@ -6055,6 +6078,38 @@ const searchOutputMethods = {
         this._renderAuthorTokens();
         this._validateRangeUi();
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
+    },
+
+    async _runContributorHistoryDeepDive(person, historyKind) {
+        if (!this._modal) {
+            Logger.warn('dashboard: contributor deep dive skipped — modal not open');
+            return;
+        }
+        const normalized = this._normalizeAuthorPerson(person);
+        if (!normalized || !normalized.id) {
+            Logger.warn('dashboard: contributor deep dive skipped — missing person id');
+            return;
+        }
+        if (!DASH_KIND_LABELS[historyKind]) {
+            Logger.warn('dashboard: contributor deep dive skipped — unknown history kind ' + historyKind);
+            return;
+        }
+        if (this._state.loading) {
+            Logger.warn('dashboard: contributor deep dive skipped — search in progress');
+            return;
+        }
+        this._setLeftTab('search');
+        this._setAuthorTokens([normalized], { replace: true });
+        this._setOutputTypesExclusive(historyKind);
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        this._resetSearchScopeToUniversal();
+        this._setSearchDepth('deep');
+        this._setResultsMode('clear');
+        this._setSearchError('');
+        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time · deep');
+        await this._submitSearch();
     },
 
     _removeAuthorToken(id) {
@@ -7185,6 +7240,23 @@ const searchOutputMethods = {
         this._applyFiltersAndRender();
     },
 
+    _maybeLiveApplyFilterMsChange(_msKey) {
+        if (this._state.loading || !this._state.cachedItems) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
+        const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
+        const regex = Boolean((this._q('#wf-dash-regex') || {}).checked);
+        const lib = dashLib();
+        const filterInvalid = lib.isPromptFilterInvalid(promptText, caseSensitive, regex);
+        if (filterInvalid.invalid) {
+            this._updateApplyFiltersUi();
+            return;
+        }
+        this._applyFiltersAndRender();
+    },
+
     _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
@@ -8136,12 +8208,12 @@ const searchOutputMethods = {
     _copyChipHtml(text, highlight) {
         const value = String(text == null ? '' : text).trim();
         if (!value) {
-            return `<span style="display: inline-block; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
+            return `<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
         }
         const inner = (highlight && highlight.query)
             ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
             : dashEscHtml(value);
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
+        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
     },
 
     _copyIconHtml(text) {
@@ -8229,6 +8301,16 @@ const searchOutputMethods = {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
+    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+        const text = String(notes || '').trim();
+        if (!text) return '';
+        const body = this._dashHighlightedHtml(text, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
+        return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0);">`
+            + `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
+            + `<p style="margin: 0; white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
+            + `</div>`;
+    },
+
     _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
         const ago = dashRelativeAgo(iso);
@@ -8304,12 +8386,12 @@ const searchOutputMethods = {
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet'))}
+                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation'))}
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
-                        ${this._fieldGroupHtml('Team', this._dataValueHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._dataValueHtml(task.project) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._dataValueHtml(task.environment))}
+                        ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
+                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
                     </div>
                 </div>`;
     },
@@ -8318,12 +8400,26 @@ const searchOutputMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #7c3aed; background: color-mix(in srgb, #7c3aed 12%, transparent); letter-spacing: 0.04em;">DISMISSED FROM FLEET</span>`;
     },
 
-    _personChipsHtml(name, email, id, linkTitle) {
+    _contributorDeepDiveTitle(historyKind) {
+        const label = DASH_KIND_LABELS[historyKind] || historyKind;
+        return 'Deep dive ' + label + ' history';
+    },
+
+    _contributorDeepDiveBtnHtml(name, email, id, historyKind) {
+        const personId = String(id || '').trim();
+        if (!personId || !historyKind || !DASH_KIND_LABELS[historyKind]) return '';
+        const title = this._contributorDeepDiveTitle(historyKind);
+        const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">🔦</button>`;
+    },
+
+    _personChipsHtml(name, email, id, linkTitle, historyKind) {
         if (!name && !email) return this._dismissedBadgeHtml();
         const nameChip = name ? this._copyChipHtml(name) : '';
         const emailChip = email ? this._copyChipHtml(email) : '';
+        const deepDive = this._contributorDeepDiveBtnHtml(name, email, id, historyKind);
         const link = this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
-        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${link}</span>`;
+        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${deepDive}${link}</span>`;
     },
 
     _statusDisplayMeta(status) {
@@ -8469,7 +8565,7 @@ const searchOutputMethods = {
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet')}</div>`
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
             : '';
         const helpfulnessHtml = this._shouldShowHelpfulness(qa, feedbackId)
             ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
@@ -8600,7 +8696,7 @@ const searchOutputMethods = {
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
-                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'dispute')}</div>`
                 : '';
             const resBlockId = display.id ? ('dispute-res:' + display.id) : ('dispute-res:unknown:' + itemId);
             const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
@@ -8661,7 +8757,7 @@ const searchOutputMethods = {
             : '';
         const reasonLabel = display.reason || display.reasonKey || 'Unknown';
         const flaggerHtml = (display.flaggerId || display.flaggerName || display.flaggerEmail)
-            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet')}</div>`
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet', 'senior_review')}</div>`
             : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
         const noteText = String(display.note || '').trim();
@@ -8694,7 +8790,7 @@ const searchOutputMethods = {
                 : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
-                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet')}</div>`
+                ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'senior_review')}</div>`
                 : '';
             const resBlockId = display.id ? ('flag-res:' + display.id) : ('flag-res:unknown:' + itemId);
             const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
@@ -8928,7 +9024,11 @@ const searchOutputMethods = {
             forceRightSection: !!(rollingOpts && rollingOpts.active)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
+        const notesToQaHtml = this._notesToQaSectionHtml(
+            version.resubmissionNotes, hq, cs, fz, rx
+        );
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
+            + notesToQaHtml
             + (rollingOpts && rollingOpts.active
                 ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
                 : taskActionsHtml);
@@ -9391,6 +9491,24 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
 
+        const deferLiveFilterApply = (msKey) => {
+            queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
+        };
+        modal.addEventListener('change', (e) => {
+            const cb = e.target;
+            if (!cb || cb.type !== 'checkbox') return;
+            const msKey = cb.getAttribute('data-wf-dash-ms');
+            if (!msKey || !msKey.startsWith('filter-')) return;
+            deferLiveFilterApply(msKey);
+        });
+        modal.addEventListener('click', (e) => {
+            const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
+            if (!msBulkToggle || !modal.contains(msBulkToggle)) return;
+            const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
+            if (!key || !key.startsWith('filter-')) return;
+            deferLiveFilterApply(key);
+        });
+
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -9479,6 +9597,17 @@ function attachSearchOutputListeners(modal, dash) {
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
             if (stopSearchBtn && modal.contains(stopSearchBtn)) {
                 dash._requestStopSearchFetches();
+                return;
+            }
+            const deepDiveBtn = e.target.closest('[data-wf-dash-contributor-deep-dive]');
+            if (deepDiveBtn && modal.contains(deepDiveBtn)) {
+                const person = {
+                    id: deepDiveBtn.getAttribute('data-wf-dash-person-id'),
+                    full_name: deepDiveBtn.getAttribute('data-wf-dash-person-name'),
+                    email: deepDiveBtn.getAttribute('data-wf-dash-person-email')
+                };
+                const historyKind = deepDiveBtn.getAttribute('data-wf-dash-history-kind');
+                void dash._runContributorHistoryDeepDive(person, historyKind);
                 return;
             }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
@@ -9734,7 +9863,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.16',
+    _version: '3.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

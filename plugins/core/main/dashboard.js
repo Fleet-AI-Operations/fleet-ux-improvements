@@ -101,7 +101,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.61',
+    _version: '5.63',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -296,48 +296,56 @@ const plugin = {
     },
 
     open() {
-        try {
+        const doOpen = () => {
             try {
-                if (Context.networkObserver && typeof Context.networkObserver.refreshFromPage === 'function') {
-                    Context.networkObserver.refreshFromPage(this._pageWindow());
+                try {
+                    if (Context.networkObserver && typeof Context.networkObserver.refreshFromPage === 'function') {
+                        Context.networkObserver.refreshFromPage(this._pageWindow());
+                    }
+                } catch (e) {
+                    Logger.debug('dashboard: refreshFromPage on open failed', e);
                 }
-            } catch (e) {
-                Logger.debug('dashboard: refreshFromPage on open failed', e);
-            }
-            this._ensureBuilt();
-            if (!this._overlay) {
-                throw new Error('dashboard overlay missing after build');
-            }
-            this._overlay.style.display = 'flex';
-            try {
-                const doc = this._pageWindow().document;
-                const settingsModal = doc.getElementById('wf-settings-modal');
-                if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
-                    settingsModal.close();
-                    Logger.log('dashboard: closed settings modal on dashboard open');
+                this._ensureBuilt();
+                if (!this._overlay) {
+                    throw new Error('dashboard overlay missing after build');
                 }
-            } catch (e) {
-                Logger.debug('dashboard: could not close settings modal', e);
-            }
-            this._syncDashboardUpdateMode();
-            for (const tab of this._tabs) {
-                if (typeof tab.onOpen === 'function') {
-                    try {
-                        tab.onOpen(this);
-                    } catch (e) {
-                        Logger.error('dashboard: onOpen failed for tab ' + tab.id, e);
+                this._overlay.style.display = 'flex';
+                try {
+                    const doc = this._pageWindow().document;
+                    const settingsModal = doc.getElementById('wf-settings-modal');
+                    if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
+                        settingsModal.close();
+                        Logger.log('dashboard: closed settings modal on dashboard open');
+                    }
+                } catch (e) {
+                    Logger.debug('dashboard: could not close settings modal', e);
+                }
+                this._syncDashboardUpdateMode();
+                for (const tab of this._tabs) {
+                    if (typeof tab.onOpen === 'function') {
+                        try {
+                            tab.onOpen(this);
+                        } catch (e) {
+                            Logger.error('dashboard: onOpen failed for tab ' + tab.id, e);
+                        }
                     }
                 }
+                requestAnimationFrame(() => {
+                    this._applyAllSidePanelWidths();
+                    this._applyAllResultsPanelMaxWidths();
+                });
+                Logger.log('dashboard: opened');
+            } catch (e) {
+                Logger.error('dashboard: open failed', e);
+                throw e;
             }
-            requestAnimationFrame(() => {
-                this._applyAllSidePanelWidths();
-                this._applyAllResultsPanelMaxWidths();
-            });
-            Logger.log('dashboard: opened');
-        } catch (e) {
-            Logger.error('dashboard: open failed', e);
-            throw e;
+        };
+
+        if (Context.opsTab && typeof Context.opsTab.ensureOpsSessionReady === 'function') {
+            void Context.opsTab.ensureOpsSessionReady(this._modal).finally(doOpen);
+            return;
         }
+        doOpen();
     },
 
     close() {
@@ -1455,7 +1463,7 @@ const plugin = {
             '  flex: 0 1 auto;',
             '  max-width: 100%;',
             '  padding: 3px 8px;',
-            '  border: 1px solid var(--border, #e2e8f0);',
+            '  border: none;',
             '  border-radius: 6px;',
             '  font-size: 11px;',
             '  color: var(--foreground, #0f172a);',
@@ -1472,7 +1480,7 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-key-copy--empty {',
             '  display: inline-block;',
             '  padding: 3px 8px;',
-            '  border: 1px solid var(--border, #e2e8f0);',
+            '  border: none;',
             '  border-radius: 6px;',
             '  font-size: 11px;',
             '  color: var(--muted-foreground, #64748b);',
