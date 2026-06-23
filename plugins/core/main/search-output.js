@@ -8498,9 +8498,9 @@ const searchOutputMethods = {
         const text = String(notes || '').trim();
         if (!text) return '';
         const body = this._dashHighlightedHtml(text, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0);">`
-            + `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
-            + `<p style="margin: 0; white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
+        return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">`
+            + `<div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
+            + `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
             + `</div>`;
     },
 
@@ -10119,7 +10119,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.25',
+    _version: '3.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
