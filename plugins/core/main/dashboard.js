@@ -20,7 +20,8 @@ const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
-const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
+const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions', 'team-members-badges'];
+const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_FILTER_SCOPES = [
@@ -44,6 +45,10 @@ const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
 function dashIsTeamMembersMsKey(scopeKey) {
     return DASH_TEAM_MEMBERS_MS_KEYS.includes(scopeKey);
+}
+
+function dashIsTeamMembersDualConstraintMsKey(scopeKey) {
+    return DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS.includes(scopeKey);
 }
 
 function dashIsFilterMsKey(scopeKey) {
@@ -96,7 +101,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.60',
+    _version: '5.61',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1777,13 +1782,13 @@ const plugin = {
             if (!cb || cb.type !== 'checkbox') return;
             const msKey = cb.getAttribute('data-wf-dash-ms');
             if (!msKey) return;
-            if (msKey.startsWith('team-members-') && cb.checked) {
+            if (dashIsTeamMembersDualConstraintMsKey(msKey) && cb.checked) {
                 this._enforceDualConstraintPolarity(msKey, cb);
             }
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
             if (msKey.startsWith('search-')) this._validateRangeUi();
-            if (msKey.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
+            if (dashIsTeamMembersMsKey(msKey) && typeof this._onTeamMemberMsChange === 'function') {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
@@ -1808,7 +1813,7 @@ const plugin = {
                 if (key.startsWith('search-')) this._validateRangeUi();
                 if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
-                if (key.startsWith('team-members-') && typeof this._onTeamMemberMsChange === 'function') {
+                if (dashIsTeamMembersMsKey(key) && typeof this._onTeamMemberMsChange === 'function') {
                     this._onTeamMemberMsChange(this._modal);
                 }
                 return;
@@ -2023,7 +2028,7 @@ const plugin = {
     _msOptionCount(scopeKey) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return 0;
-        if (scopeKey.startsWith('team-members-')) {
+        if (dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
             return itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length;
         }
         return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
@@ -2082,7 +2087,7 @@ const plugin = {
         if (bulkToggle) bulkToggle.style.display = showBulkToggle ? '' : 'none';
         if (showBulkToggle) this._applyMsBulkToggleLabel(scopeKey);
         const itemsEl = this._msItemsEl(scopeKey);
-        if (itemsEl && !scopeKey.startsWith('team-members-')) {
+        if (itemsEl && !dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
             const singleOption = optionCount === 1;
             itemsEl.querySelectorAll('label[data-wf-dash-ms-option]').forEach((label) => {
                 const cb = label.querySelector('input[type="checkbox"]');
@@ -2557,7 +2562,7 @@ const plugin = {
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
-        const singleOption = items.length === 1 && !scopeKey.startsWith('team-members-');
+        const singleOption = items.length === 1 && !dashIsTeamMembersMsKey(scopeKey);
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
@@ -2588,7 +2593,7 @@ const plugin = {
     _msOptionCount(scopeKey) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return 0;
-        if (scopeKey.startsWith('team-members-')) {
+        if (dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
             return itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length;
         }
         return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
@@ -2680,9 +2685,16 @@ const plugin = {
     _updateMsCount(scopeKey) {
         const countEl = this._q('#wf-dash-' + scopeKey + '-count');
         if (!countEl) return;
-        if (scopeKey.startsWith('team-members-')) {
+        if (dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
             const sel = this._readDualConstraintSelection(scopeKey);
             const n = sel.include.size + sel.exclude.size;
+            countEl.textContent = String(n);
+            countEl.style.display = n > 0 ? 'inline' : 'none';
+            this._syncMsDropdownChrome(scopeKey);
+            return;
+        }
+        if (scopeKey === 'team-members-badges') {
+            const n = this._selectedFromList(scopeKey).length;
             countEl.textContent = String(n);
             countEl.style.display = n > 0 ? 'inline' : 'none';
             this._syncMsDropdownChrome(scopeKey);

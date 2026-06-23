@@ -11,7 +11,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -444,7 +444,7 @@ const plugin = {
             const side = btn.getAttribute('data-fleet-pane');
             const collapsed = state.hiddenPane === side;
             const paneName = side === 'left' ? 'task detail' : 'environment';
-            btn.textContent = collapsed ? 'Unhide' : 'Hide';
+            btn.textContent = collapsed ? 'Unhide' : 'Hide Panel';
             btn.title = collapsed ? 'Show the ' + paneName + ' pane' : 'Hide the ' + paneName + ' pane';
         });
     }

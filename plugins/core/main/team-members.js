@@ -21,6 +21,13 @@ const TEAM_MEMBERS_COMPARATORS = [
 
 const TEAM_MEMBERS_PAGE_SIZE_KEY = 'fleet-ux:team-members-page-size';
 const TEAM_MEMBERS_PAGE_SIZE_DEFAULT = 25;
+const TEAM_MEMBERS_BADGE_SCOPE = 'team-members-badges';
+const TEAM_MEMBERS_BADGE_FILTER_ITEMS = [
+    { id: 'ui', label: 'UI' },
+    { id: 'verticals', label: 'Verticals' },
+    { id: 'epic', label: 'Epic' },
+    { id: 'fellows', label: 'Fellows' }
+];
 
 function dashEscHtml(value) {
     return String(value == null ? '' : value)
@@ -73,6 +80,7 @@ function teamMembersPagerChevronSvg(dir) {
 }
 
 const TEAM_MEMBERS_CONSTRAINT_SCOPES = ['team-members-teams', 'team-members-permissions'];
+const TEAM_MEMBERS_MS_SCOPES = TEAM_MEMBERS_CONSTRAINT_SCOPES.concat([TEAM_MEMBERS_BADGE_SCOPE]);
 
 const teamMembersMethods = {
     _teamMembersPage: 0,
@@ -114,14 +122,18 @@ const teamMembersMethods = {
     _resetTeamMemberConstraintState(modal) {
         this._withTeamMembersModal(modal, (root) => {
             if (!this._state) return;
-            TEAM_MEMBERS_CONSTRAINT_SCOPES.forEach((scopeKey) => {
+            TEAM_MEMBERS_MS_SCOPES.forEach((scopeKey) => {
                 delete this._state.msDropdownOpen[scopeKey];
                 delete this._state.msDropdownToggled[scopeKey];
                 const wrap = root.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
                 const panel = root.querySelector('#wf-dash-' + scopeKey + '-list');
                 const itemsEl = panel ? panel.querySelector('[data-wf-dash-ms-items]') : null;
                 const emptyHint = panel ? (panel.getAttribute('data-wf-dash-empty') || 'Run a search first') : 'Run a search first';
-                if (itemsEl) {
+                if (scopeKey === TEAM_MEMBERS_BADGE_SCOPE) {
+                    if (typeof this._renderTeamMemberBadgeFilter === 'function') {
+                        this._renderTeamMemberBadgeFilter(modal);
+                    }
+                } else if (itemsEl) {
                     itemsEl.innerHTML = '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">'
                         + dashEscHtml(emptyHint) + '</p>';
                 }
@@ -143,6 +155,12 @@ const teamMembersMethods = {
             });
             Logger.debug('team-members: constraint filter state reset');
         });
+    },
+
+    _renderTeamMemberBadgeFilter(modal) {
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.renderMsList !== 'function') return;
+        dash.renderMsList(TEAM_MEMBERS_BADGE_SCOPE, TEAM_MEMBERS_BADGE_FILTER_ITEMS, '', new Set());
     },
 
     _syncTeamMemberConstraintListsUi(modal) {
@@ -427,6 +445,7 @@ function teamMembersPanelHtml(_loader) {
                                     <div style="${label} font-weight: 600; margin-bottom: 8px; color: var(--foreground, #0f172a);">Narrow results</div>
                                     <p style="${hint} margin: 0 0 8px 0;">Include requires a match; exclude removes matches. None selected = all.</p>
                                     <div style="display: flex; flex-direction: column; gap: 12px;">
+                                        ${dash.multiSelectHtml(TEAM_MEMBERS_BADGE_SCOPE, 'Member badge', '', false)}
                                         ${dash.multiSelectHtml('team-members-teams', 'Team', 'Run a search first', false)}
                                         ${dash.multiSelectHtml('team-members-permissions', 'Permission', 'Run a search first', false)}
                                     </div>
@@ -492,6 +511,9 @@ function attachTeamMembersListeners(modal, dash) {
         return;
     }
     modal.dataset.wfTeamMembersListenersAttached = '1';
+    if (typeof dash._renderTeamMemberBadgeFilter === 'function') {
+        dash._renderTeamMemberBadgeFilter(modal);
+    }
     if (typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
 
     const teamSearchBtn = modal.querySelector('#wf-ops-team-search-btn');
@@ -571,7 +593,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

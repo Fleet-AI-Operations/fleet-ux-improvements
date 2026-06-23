@@ -65,6 +65,10 @@ const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
 /** Display labels that alone do not qualify a member for the UI badge. */
 const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
 const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', OPS_FLEET_FELLOWS_TEAM_LABEL]);
+const OPS_TEAM_VERTICALS_ONLY_LABEL = 'Fellows - SMB Banking Project';
+const OPS_TEAM_EPIC_EXPERTS_LABEL = 'Fleet: Epic Experts';
+const OPS_TEAM_EPIC_TRYOUTS_LABEL = 'Fleet: Epic Tryouts';
+const OPS_TEAM_EPIC_LABELS = new Set([OPS_TEAM_EPIC_EXPERTS_LABEL, OPS_TEAM_EPIC_TRYOUTS_LABEL]);
 
 function opsIsTaskDesignersTeamName(name) {
     return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
@@ -183,7 +187,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.19',
+    _version: '7.20',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2683,7 +2687,9 @@ const plugin = {
         if (active && active.numericFilters && active.numericFilters.length > 0) return true;
         const tc = this._getOpsTeamMemberTeamConstraints();
         const pc = this._getOpsTeamMemberPermConstraints();
-        return (tc.include.size > 0 || tc.exclude.size > 0 || pc.include.size > 0 || pc.exclude.size > 0);
+        const bc = this._getOpsTeamMemberBadgeConstraints();
+        return (tc.include.size > 0 || tc.exclude.size > 0 || pc.include.size > 0 || pc.exclude.size > 0
+            || bc.size > 0);
     },
 
     _opsTeamMemberNumericFieldValue(memberId, field) {
@@ -2804,6 +2810,50 @@ const plugin = {
             if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
         }
         return false;
+    },
+
+    _opsMemberBadgeCategory(member) {
+        const teamLabels = member.teamLabels || new Set();
+        for (const label of teamLabels) {
+            if (OPS_TEAM_EPIC_LABELS.has(label)) return 'epic';
+        }
+        if (teamLabels.size === 1 && teamLabels.has(OPS_TEAM_VERTICALS_ONLY_LABEL)) return 'verticals';
+        if (this._opsMemberQualifiesForUiBadge(member)) return 'ui';
+        return 'fellows';
+    },
+
+    _opsMemberBadgeHtml(category) {
+        const styles = {
+            ui: 'background:var(--brand,#4f46e5);color:#fff;',
+            verticals: 'background:#0d9488;color:#fff;',
+            epic: 'background:#7c3aed;color:#fff;',
+            fellows: 'background:#64748b;color:#fff;'
+        };
+        const labels = {
+            ui: 'UI',
+            verticals: 'VERTICALS',
+            epic: 'EPIC',
+            fellows: 'FELLOWS'
+        };
+        const key = labels[category] ? category : 'fellows';
+        return '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;'
+            + (styles[key] || styles.fellows)
+            + 'line-height:1.4;flex-shrink:0;">'
+            + labels[key] + '</span>';
+    },
+
+    _getOpsTeamMemberBadgeConstraints() {
+        const dash = Context.dashboard;
+        if (dash && typeof dash.selectedMsValues === 'function') {
+            return new Set(dash.selectedMsValues('team-members-badges'));
+        }
+        return new Set();
+    },
+
+    _opsMemberMatchesBadgeConstraints(member, selectedBadges) {
+        const selected = selectedBadges || new Set();
+        if (selected.size === 0) return true;
+        return selected.has(this._opsMemberBadgeCategory(member));
     },
 
     _opsMemberEditStateMap() {
@@ -3250,9 +3300,8 @@ const plugin = {
         const displayTeamLabels = session ? session.stagedTeams : teamLabels;
         const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
         const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
-        const showUiBadge = teamsSearchComplete && this._opsMemberQualifiesForUiBadge(member);
-        const uiBadgeHtml = showUiBadge
-            ? '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;background:var(--brand,#4f46e5);color:#fff;line-height:1.4;flex-shrink:0;">UI</span>'
+        const memberBadgeHtml = teamsSearchComplete
+            ? this._opsMemberBadgeHtml(this._opsMemberBadgeCategory(member))
             : '';
 
         const teamsColHtml = allTeams.map(([, label]) =>
@@ -3273,7 +3322,7 @@ const plugin = {
         return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
                 '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">' +
-                    uiBadgeHtml +
+                    memberBadgeHtml +
                     personChipsHtml +
                 '</div>' +
                 this._opsSearchWorkerOutputBtnHtml(memberId) +
@@ -3315,8 +3364,10 @@ const plugin = {
 
         const teamC = this._getOpsTeamMemberTeamConstraints();
         const permC = this._getOpsTeamMemberPermConstraints();
+        const badgeC = this._getOpsTeamMemberBadgeConstraints();
         members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamC));
         members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permC));
+        members = members.filter((m) => this._opsMemberMatchesBadgeConstraints(m, badgeC));
 
         let resolvedOpenIds;
         if (this._opsMemberDetailsOpenIds !== null) {
@@ -3337,7 +3388,7 @@ const plugin = {
                 let msg = 'No members found.';
                 const hasNumericFilters = numericRows && numericRows.length > 0;
                 const hasConstraintFilters = (teamC.include.size > 0 || teamC.exclude.size > 0
-                    || permC.include.size > 0 || permC.exclude.size > 0);
+                    || permC.include.size > 0 || permC.exclude.size > 0 || badgeC.size > 0);
                 if (hasNumericFilters || hasConstraintFilters) msg = 'No results match filters.';
                 cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
             }

@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.368",
+  "archetypesVersion": "10.374",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.19",
-      "hash": "sha256-3b2f8689b994bdbce10033431086f86a02f0cdff2ef1db6b3738e4fa12e94f58",
+      "version": "7.20",
+      "hash": "sha256-541762059c240410f2b4e905ea769a97d43d0d217e853fd47e8148a8ae50631d",
       "log": false
     },
     {
@@ -46,8 +46,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "5.60",
-      "hash": "sha256-83afc394b0bbf60a5b809f8bf6f83ad0a04f76b54655357e811ae369e6e1f424",
+      "version": "5.61",
+      "hash": "sha256-a0076e7fa0adc609527507a03852f9cc8f367ee029fb1a172f03813b2c4ae21e",
       "log": false
     },
     {
@@ -58,8 +58,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "3.15",
-      "hash": "sha256-1c2f355799543f7926b99e62b0cd439ebefc1a782d04701d3241b284189aa346",
+      "version": "3.16",
+      "hash": "sha256-30be82aa4521a8aba2ede910f5add01525889cae04db4ef92860cb23a9ea3a39",
       "log": false
     },
     {
@@ -70,8 +70,8 @@
     },
     {
       "name": "team-members.js",
-      "version": "2.5",
-      "hash": "sha256-098f7084f90ed19143f06f44e5efc1d2dfbd5baa95cae1b69b0269d069c84296",
+      "version": "2.6",
+      "hash": "sha256-166fd03f6d4bb1bc544d931e53306022cb6f477bbc9fc637a3a85ec77e8bb430",
       "log": false
     },
     {
@@ -320,8 +320,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "3.4",
-          "hash": "sha256-26757336a3cae64ba70d424b943c10e50770d377c3cb8e316282fba8cc579ef5",
+          "version": "3.7",
+          "hash": "sha256-79e65bdddbb652e4482127df7d6be6221461502241d6492f9af122021062346a",
           "log": false
         },
         {
@@ -416,8 +416,8 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "2.4",
-          "hash": "sha256-819bf9e7095cb685242114f4ed39a84e839d4404589c10f557f985ebbd09b80d",
+          "version": "2.7",
+          "hash": "sha256-996ef1ae0a16bab83e30e50dd6c818be70c01111b32356416dbc8fd70672b607",
           "log": false
         },
         {
@@ -458,9 +458,9 @@
         },
         {
           "name": "toggle-main-panels.js",
-          "version": "1.8",
+          "version": "1.9",
           "log": false,
-          "hash": "sha256-8bb91912590ceff0ea7604e7b67326cbe72a3642dd2d447fa38473acc79803d7"
+          "hash": "sha256-96e76698cdc83a6539a60fa1586d144d1873931df2434eb21066071afad15a38"
         }
       ]
     },
@@ -481,8 +481,8 @@
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "2.4",
-          "hash": "sha256-a8aed2db59cb107dfee00882daf4c743727b8e7ba5829cd786501cd2921b13b2",
+          "version": "2.7",
+          "hash": "sha256-2bfa7625b681af7e4e4daa8b687e82cbefcada53ecae9b7678d5e7104fe7a047",
           "log": false
         },
         {

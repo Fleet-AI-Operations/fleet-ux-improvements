@@ -2,6 +2,7 @@
 // Adds a copy button in the Grading/verifier panel: after "Stdout" (classic output) or after "Score: #" (checklist verifier). Stdout copies raw pre text; checklist copies failures/successes as markdown with separate code fences per section. Epic-style stdout ([C] Rubric / MUST-NICE criteria) is formatted into Must/Nice Haves sections.
 // Checklist score row: legacy `gap-2` header or card layout (`justify-between`, sticky) inside `div.p-3` or `div.p-2`.
 // Checklist cards: when "Raw Output" is expanded, a second copy icon copies only the <pre> body.
+// If the score card has a collapsible Stdout section, expand it before copying; only read stdout pre when open.
 
 const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
@@ -27,7 +28,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '2.4',
+    _version: '2.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -97,8 +98,189 @@ const plugin = {
         return null;
     },
 
+    findStdoutBlock(container) {
+        if (!container) return null;
+        for (const block of container.querySelectorAll(':scope > div.mb-3.text-xs, :scope > div.text-xs.mb-3')) {
+            if (block.querySelector('[class*="group/stdout"]')) {
+                return block;
+            }
+            for (const el of block.querySelectorAll(
+                'div.text-sm.text-muted-foreground.font-medium, div.text-sm.font-medium'
+            )) {
+                if (el.textContent.trim() === 'Stdout') {
+                    return block;
+                }
+            }
+        }
+        return null;
+    },
+
+    findStdoutHeader(block) {
+        if (!block) return null;
+        return (
+            block.querySelector('[class*="group/stdout"]') ||
+            Array.from(block.querySelectorAll('div.cursor-pointer')).find((row) => {
+                for (const el of row.querySelectorAll(
+                    'div.text-sm.text-muted-foreground.font-medium, div.text-sm.font-medium'
+                )) {
+                    if (el.textContent.trim() === 'Stdout') {
+                        return true;
+                    }
+                }
+                return false;
+            }) ||
+            null
+        );
+    },
+
+    findStdoutPre(block) {
+        if (!block) return null;
+        return (
+            block.querySelector(':scope > div.border.bg-background pre') ||
+            block.querySelector(':scope > div.rounded.border.bg-background pre') ||
+            block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre') ||
+            block.querySelector('pre')
+        );
+    },
+
+    isStdoutCollapsed(block) {
+        const header = this.findStdoutHeader(block);
+        if (!header) {
+            return false;
+        }
+        const chevron = header.querySelector('svg.transition-transform');
+        if (chevron) {
+            return chevron.classList.contains('-rotate-90');
+        }
+        const pre = this.findStdoutPre(block);
+        return !pre || !pre.textContent.trim();
+    },
+
+    expandStdoutSection(block) {
+        const header = this.findStdoutHeader(block);
+        if (!header) {
+            return false;
+        }
+        header.click();
+        Logger.debug('Copy Verifier Output: Expanded Stdout section');
+        return true;
+    },
+
     findRawOutputPre(block) {
         return block.querySelector(':scope > div.overflow-x-auto.bg-background.border.rounded pre');
+    },
+
+    findRawOutputToggle(block) {
+        if (!block) return null;
+        return Array.from(block.querySelectorAll('button')).find(
+            (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
+        );
+    },
+
+    getStdoutBlockText(block) {
+        if (!block || this.isStdoutCollapsed(block)) {
+            return null;
+        }
+        const pre = this.findStdoutPre(block);
+        const raw = pre && pre.textContent.trim();
+        if (!raw) {
+            return null;
+        }
+        return this.formatRawVerifierText(raw);
+    },
+
+    waitForStdoutExpanded(block, onReady, onFail) {
+        let settled = false;
+        const finish = (text) => {
+            if (settled) return;
+            settled = true;
+            observer.disconnect();
+            clearTimeout(timeoutId);
+            if (text) {
+                onReady(text);
+            } else {
+                onFail();
+            }
+        };
+        const tryText = () => this.getStdoutBlockText(block);
+        const immediate = tryText();
+        if (immediate) {
+            onReady(immediate);
+            return;
+        }
+        const observer = new MutationObserver(() => {
+            const next = tryText();
+            if (next) {
+                finish(next);
+            }
+        });
+        observer.observe(block, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+        const timeoutId = setTimeout(() => finish(null), 3000);
+    },
+
+    attemptCopyFromStdoutSection(button, block) {
+        const copyOrFail = (text, logSuffix) => {
+            if (text) {
+                if (logSuffix) {
+                    Logger.log(`Copy Verifier Output: Copy succeeded after expanding Stdout`);
+                }
+                this.copyVerifierTextWithFeedback(button, text, logSuffix);
+                return;
+            }
+            Logger.warn('Copy Verifier Output: No verifier output to copy from Stdout');
+            this.showVerifierCopyFailurePulse(button);
+        };
+
+        const openText = this.getStdoutBlockText(block);
+        if (openText) {
+            copyOrFail(openText, '');
+            return;
+        }
+
+        if (!this.isStdoutCollapsed(block)) {
+            copyOrFail(null);
+            return;
+        }
+
+        if (button._fleetCopyExpandPending) {
+            return;
+        }
+        button._fleetCopyExpandPending = true;
+
+        if (!this.expandStdoutSection(block)) {
+            button._fleetCopyExpandPending = false;
+            copyOrFail(null);
+            return;
+        }
+
+        const afterExpand = (text) => {
+            button._fleetCopyExpandPending = false;
+            copyOrFail(text, text ? ' (stdout)' : '');
+        };
+
+        const immediate = this.getStdoutBlockText(block);
+        if (immediate) {
+            afterExpand(immediate);
+            return;
+        }
+
+        this.waitForStdoutExpanded(block, (text) => afterExpand(text), () => afterExpand(null));
+    },
+
+    attemptCopyVerifierOutput(button, container) {
+        const stdoutBlock = this.findStdoutBlock(container);
+        if (stdoutBlock) {
+            this.attemptCopyFromStdoutSection(button, stdoutBlock);
+            return;
+        }
+
+        const text = this.getVerifierOutputText(container);
+        if (!text) {
+            Logger.warn('Copy Verifier Output: No verifier output to copy');
+            this.showVerifierCopyFailurePulse(button);
+            return;
+        }
+        this.copyVerifierTextWithFeedback(button, text);
     },
 
     unwrapRawOutputCopyRow(block) {
@@ -125,9 +307,7 @@ const plugin = {
             copyBtn._fleetCopyRawPre = pre;
             return;
         }
-        const toggleBtn = Array.from(block.querySelectorAll('button')).find(
-            (b) => (b.textContent || '').includes('Raw Output') && !b.hasAttribute(COPY_RAW_OUTPUT_MARKER)
-        );
+        const toggleBtn = this.findRawOutputToggle(block);
         if (!toggleBtn) return;
         const wrapper = document.createElement('div');
         wrapper.className = 'flex items-center gap-2 mb-1';
@@ -318,7 +498,14 @@ const plugin = {
         if (rawPre && rawPre.textContent.trim()) {
             return rawPre.textContent.trim();
         }
-        const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
+        const stdoutBlock = this.findStdoutBlock(container);
+        const stdoutPre = stdoutBlock ? this.findStdoutPre(stdoutBlock) : null;
+        if (stdoutPre && stdoutPre.textContent.trim()) {
+            return stdoutPre.textContent.trim();
+        }
+        const pre =
+            container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre') ||
+            container.querySelector('div.border.bg-background pre');
         if (pre && pre.textContent.trim()) {
             return pre.textContent.trim();
         }
@@ -428,13 +615,7 @@ const plugin = {
             e.stopImmediatePropagation();
             e.stopPropagation();
             e.preventDefault();
-            const text = this.getVerifierOutputText(cont);
-            if (!text) {
-                Logger.warn('Copy Verifier Output: No verifier output to copy');
-                this.showVerifierCopyFailurePulse(btn);
-                return;
-            }
-            this.copyVerifierTextWithFeedback(btn, text);
+            this.attemptCopyVerifierOutput(btn, cont);
         };
         win.addEventListener('pointerdown', handler, true);
         win.addEventListener('click', handler, true);
@@ -553,13 +734,7 @@ const plugin = {
                 return;
             }
             button._fleetCopyHandledAt = Date.now();
-            const text = this.getVerifierOutputText(container);
-            if (!text) {
-                Logger.warn('Copy Verifier Output: No verifier output to copy');
-                this.showVerifierCopyFailurePulse(button);
-                return;
-            }
-            this.copyVerifierTextWithFeedback(button, text);
+            this.attemptCopyVerifierOutput(button, container);
         };
 
         button.addEventListener('pointerdown', (e) => {
