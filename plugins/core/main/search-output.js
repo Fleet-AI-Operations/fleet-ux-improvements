@@ -8301,12 +8301,12 @@ const searchOutputMethods = {
         return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
-    _resubmissionNotesSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
         const text = String(notes || '').trim();
         if (!text) return '';
         const body = this._dashHighlightedHtml(text, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        return `<div data-wf-dash-resubmission-notes="1" style="margin: 8px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, #94a3b8);">`
-            + `<div style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); margin-bottom: 4px;">Resubmission notes</div>`
+        return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0);">`
+            + `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
             + `<p style="margin: 0; white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
             + `</div>`;
     },
@@ -9024,11 +9024,11 @@ const searchOutputMethods = {
             forceRightSection: !!(rollingOpts && rollingOpts.active)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
-        const resubmissionNotesHtml = this._resubmissionNotesSectionHtml(
+        const notesToQaHtml = this._notesToQaSectionHtml(
             version.resubmissionNotes, hq, cs, fz, rx
         );
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
-            + resubmissionNotesHtml
+            + notesToQaHtml
             + (rollingOpts && rollingOpts.active
                 ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
                 : taskActionsHtml);
@@ -9863,7 +9863,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.20',
+    _version: '3.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

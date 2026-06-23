@@ -83,6 +83,13 @@ function _dvEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function _dvCopyIconHtml(text) {
+    const value = String(text == null ? '' : text);
+    return '<button type="button" data-wf-dash-copy="' + _dvEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+        + '</button>';
+}
+
 function _dvEngine() {
     return Context.diffEngine;
 }
@@ -1477,7 +1484,8 @@ function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
     const notesRaw = version ? String(version.resubmissionNotes || '').trim() : '';
     const notesHtml = notesRaw
-        ? '<div class="dv-reel-resubmission-notes"><div class="dv-reel-resubmission-notes-label">Resubmission notes</div><pre>'
+        ? '<div class="dv-reel-notes-to-qa"><div class="dv-reel-notes-to-qa-header"><span class="dv-reel-notes-to-qa-label">Notes to QA</span>'
+            + _dvCopyIconHtml(notesRaw) + '</div><pre>'
             + _dvEscHtml(notesRaw) + '</pre></div>'
         : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
@@ -2780,19 +2788,24 @@ function _dvInjectStyles() {
         '  line-height: 1.5;',
         '  word-break: break-word;',
         '}',
-        '#wf-dash-modal .dv-reel-resubmission-notes {',
+        '#wf-dash-modal .dv-reel-notes-to-qa {',
         '  flex-shrink: 0;',
         '  margin-top: 8px;',
         '  padding-top: 8px;',
         '  border-top: 1px solid var(--border, #e2e8f0);',
         '}',
-        '#wf-dash-modal .dv-reel-resubmission-notes-label {',
+        '#wf-dash-modal .dv-reel-notes-to-qa-header {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  gap: 6px;',
+        '  margin-bottom: 4px;',
+        '}',
+        '#wf-dash-modal .dv-reel-notes-to-qa-label {',
         '  font-size: 10px;',
         '  font-weight: 600;',
         '  color: var(--muted-foreground, #64748b);',
-        '  margin-bottom: 4px;',
         '}',
-        '#wf-dash-modal .dv-reel-resubmission-notes pre {',
+        '#wf-dash-modal .dv-reel-notes-to-qa pre {',
         '  color: var(--foreground, #0f172a);',
         '}',
         '#wf-dash-modal .dv-reel-empty-mark {',
@@ -2919,7 +2932,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.72',
+    _version: '1.73',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
