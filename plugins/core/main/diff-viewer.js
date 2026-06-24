@@ -1482,17 +1482,10 @@ function _dvReelCardInnerHtml(slotIdx, version, isCurrent) {
         ? _dvTimestampLineHtml('', version.createdAt)
         : '';
     const prompt = version ? _dvEscHtml(version.prompt || '') : '';
-    const notesRaw = version ? String(version.resubmissionNotes || '').trim() : '';
-    const notesHtml = notesRaw
-        ? '<div class="dv-reel-notes-to-qa"><div class="dv-reel-notes-to-qa-header"><span class="dv-reel-notes-to-qa-label">Notes to QA</span>'
-            + _dvCopyIconHtml(notesRaw) + '</div><pre>'
-            + _dvEscHtml(notesRaw) + '</pre></div>'
-        : '';
     const preAttr = isCurrent ? ' data-dv-lens-pre="' + slotIdx + '"' : '';
     return '<div class="dv-reel-card-body">'
         + '<div class="dv-version-submitted">' + submittedInner + '</div>'
         + '<div class="dv-reel-card-prompt"><div class="dv-reel-card-content"><pre' + preAttr + '>' + prompt + '</pre></div>'
-        + notesHtml
         + '</div>'
         + '</div>';
 }
@@ -2794,26 +2787,6 @@ function _dvInjectStyles() {
         '  line-height: 1.5;',
         '  word-break: break-word;',
         '}',
-        '#wf-dash-modal .dv-reel-notes-to-qa {',
-        '  flex-shrink: 0;',
-        '  margin-top: 8px;',
-        '  padding-top: 8px;',
-        '  border-top: 1px solid var(--border, #e2e8f0);',
-        '}',
-        '#wf-dash-modal .dv-reel-notes-to-qa-header {',
-        '  display: flex;',
-        '  align-items: center;',
-        '  gap: 6px;',
-        '  margin-bottom: 4px;',
-        '}',
-        '#wf-dash-modal .dv-reel-notes-to-qa-label {',
-        '  font-size: 10px;',
-        '  font-weight: 600;',
-        '  color: var(--muted-foreground, #64748b);',
-        '}',
-        '#wf-dash-modal .dv-reel-notes-to-qa pre {',
-        '  color: var(--foreground, #0f172a);',
-        '}',
         '#wf-dash-modal .dv-reel-empty-mark {',
         '  font-size: 11px;',
         '  color: var(--muted-foreground, #64748b);',
@@ -2938,7 +2911,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.74',
+    _version: '1.75',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

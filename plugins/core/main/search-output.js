@@ -58,6 +58,7 @@ const DASH_DISPUTE_RESOLUTION_OPTIONS = [
     { key: 'approved_and_accepted', label: 'Approve & Accept Task', status: 'approved_and_accepted' }
 ];
 const DASH_AUTO_GROW_TEXTAREA_MIN_PX = 48;
+const DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS = 50;
 const DASH_AUTO_GROW_TEXTAREA_ATTR = 'data-wf-dash-auto-grow';
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
@@ -7537,6 +7538,10 @@ const searchOutputMethods = {
         return body;
     },
 
+    _disputeResolutionReasonLength(reason) {
+        return String(reason || '').trim().length;
+    },
+
     _disputeResolutionPanelHtml(display, itemId) {
         const disputeId = String(display.id || '').trim();
         if (!disputeId) return '';
@@ -7551,9 +7556,15 @@ const searchOutputMethods = {
         const basicClass = this._dashBtnClass('basic', 'compact');
         const reason = ui.resolutionReason != null ? String(ui.resolutionReason) : '';
         const resolutionKey = ui.resolutionKey != null ? String(ui.resolutionKey) : '';
-        const canResolve = reason.trim().length > 0 && resolutionKey && !ui.submitting;
+        const reasonLen = this._disputeResolutionReasonLength(reason);
+        const reasonMeetsMin = reasonLen >= DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS;
+        const canResolve = reasonMeetsMin && resolutionKey && !ui.submitting;
         const resolveDisabled = !canResolve ? ' disabled' : '';
         const resolveStyle = !canResolve ? ' opacity: 0.45; cursor: not-allowed;' : '';
+        const resolveBtnHtml = `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>Resolve</button>`;
+        const resolveCharHint = !ui.submitting && !reasonMeetsMin
+            ? `<span title="${dashEscHtml(reasonLen + '/' + DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS + ' chars')}" style="display: inline-flex; flex-shrink: 0;">${resolveBtnHtml}</span>`
+            : resolveBtnHtml;
         const selectStyle = this._inputStyle()
             + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
         const textareaStyle = this._inputStyle()
@@ -7577,7 +7588,7 @@ const searchOutputMethods = {
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto;">`
             + envBtn
             + releaseHtml
-            + `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>Resolve</button>`
+            + resolveCharHint
             + `</div></div></div>`;
     },
 
@@ -7670,8 +7681,13 @@ const searchOutputMethods = {
         const ui = this._getDisputeClaimUi(id);
         const reason = String(ui.resolutionReason || '').trim();
         const option = this._disputeResolutionOptionByKey(ui.resolutionKey);
-        if (!reason || !option) {
-            this._logDashApiSkip('dispute-resolve', 'missing reason or resolution', id);
+        if (!option) {
+            this._logDashApiSkip('dispute-resolve', 'missing resolution', id);
+            return;
+        }
+        if (reason.length < DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS) {
+            this._logDashApiSkip('dispute-resolve', 'reason under '
+                + DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS + ' chars', id);
             return;
         }
         if (ui.submitting) {
@@ -10869,7 +10885,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.36',
+    _version: '3.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
