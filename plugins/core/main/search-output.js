@@ -9045,7 +9045,10 @@ const searchOutputMethods = {
             const resolutionBody = display.resolutionText
                 ? this._dashQuotedHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
                 : '—';
-            const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
+            const resolvedHtml = this._fieldGroupHtml(
+                'Resolved',
+                dashTimestampWithDurationHtml(display.resolutionAt, display.reviewDurationSeconds)
+            );
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'dispute')}</div>`
                 : '';
@@ -10269,7 +10272,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.28',
+    _version: '3.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -340,7 +340,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.22',
+    _version: '2.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1489,7 +1489,11 @@ const plugin = {
         const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
         const resolverId = disputeRow && disputeRow.resolved_by ? String(disputeRow.resolved_by) : '';
         const resolverProfile = resolverId && profilesMap ? profilesMap.get(resolverId) : null;
-        return {
+        const reviewDurationRaw = Number(data && data.dispute_review_duration_seconds);
+        const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
+            ? reviewDurationRaw
+            : null;
+        const display = {
             id: String((disputeRow && disputeRow.id) || ''),
             submittedAt: String((disputeRow && disputeRow.created_at) || ''),
             reason: dashLibNormalizeNewlines((disputeRow && disputeRow.dispute_reason) || ''),
@@ -1509,6 +1513,8 @@ const plugin = {
                 ? String(disputeRow.original_feedback_created_at)
                 : null
         };
+        if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        return display;
     },
 
     _isVerifierFailedTaskEvent(event) {
