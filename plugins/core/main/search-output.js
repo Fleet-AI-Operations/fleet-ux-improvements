@@ -7561,10 +7561,10 @@ const searchOutputMethods = {
         const canResolve = reasonMeetsMin && resolutionKey && !ui.submitting;
         const resolveDisabled = !canResolve ? ' disabled' : '';
         const resolveStyle = !canResolve ? ' opacity: 0.45; cursor: not-allowed;' : '';
-        const resolveBtnHtml = `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>Resolve</button>`;
-        const resolveCharHint = !ui.submitting && !reasonMeetsMin
-            ? `<span title="${dashEscHtml(reasonLen + '/' + DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS + ' chars')}" style="display: inline-flex; flex-shrink: 0;">${resolveBtnHtml}</span>`
-            : resolveBtnHtml;
+        const resolveLabel = !ui.submitting && !reasonMeetsMin
+            ? (reasonLen + '/' + DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS + ' chars')
+            : 'Resolve';
+        const resolveBtnHtml = `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>${dashEscHtml(resolveLabel)}</button>`;
         const selectStyle = this._inputStyle()
             + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
         const textareaStyle = this._inputStyle()
@@ -7588,7 +7588,7 @@ const searchOutputMethods = {
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto;">`
             + envBtn
             + releaseHtml
-            + resolveCharHint
+            + resolveBtnHtml
             + `</div></div></div>`;
     },
 
@@ -10885,7 +10885,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.37',
+    _version: '3.38',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
