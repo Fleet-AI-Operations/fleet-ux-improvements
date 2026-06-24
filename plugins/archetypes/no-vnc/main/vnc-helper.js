@@ -13,7 +13,7 @@ const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
 const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
-const PROMPT_MAX_VISIBLE_LINES = 5;
+const PROMPT_DEFAULT_LINES = 5;
 
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
@@ -27,7 +27,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -97,28 +97,16 @@ const plugin = {
         }
     },
 
-    lineCountForText(text) {
-        if (!text) {
-            return DEFAULT_LINES;
-        }
-        return Math.max(1, String(text).split('\n').length);
-    },
-
     textareaHeightForLines(lineCount) {
         const lines = Math.max(DEFAULT_LINES, lineCount);
         return `${lines * LINE_HEIGHT_PX + 16}px`;
     },
 
     applyPromptTextareaSizing(textarea, promptText) {
-        const visibleLines = promptText
-            ? Math.min(PROMPT_MAX_VISIBLE_LINES, this.lineCountForText(promptText))
-            : DEFAULT_LINES;
-        textarea.style.height = this.textareaHeightForLines(visibleLines);
+        const initialLines = promptText ? PROMPT_DEFAULT_LINES : DEFAULT_LINES;
+        textarea.style.height = this.textareaHeightForLines(initialLines);
         textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
-        textarea.style.maxHeight = this.textareaHeightForLines(PROMPT_MAX_VISIBLE_LINES);
-        textarea.style.overflowY = promptText && this.lineCountForText(promptText) > PROMPT_MAX_VISIBLE_LINES
-            ? 'auto'
-            : 'auto';
+        textarea.style.overflowY = 'auto';
         textarea.style.resize = 'vertical';
         textarea.style.boxSizing = 'border-box';
         textarea.style.width = '100%';
