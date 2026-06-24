@@ -624,6 +624,34 @@ const searchOutputMethods = {
         return null;
     },
 
+    _parseFleetWebPostErrorBody(err) {
+        const msg = err && err.message != null ? String(err.message) : '';
+        const prefix = msg.match(/^Fleet web API \d+: (.+)$/s);
+        const raw = prefix ? prefix[1].trim() : msg.trim();
+        if (!raw) return null;
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (_e) {
+            return null;
+        }
+    },
+
+    _patchCardsForDisputeId(disputeId) {
+        const did = String(disputeId || '').trim();
+        if (!did) return;
+        const seen = new Set();
+        const lists = [this._state.filteredItems, this._state.cachedItems];
+        for (const list of lists) {
+            for (const item of list || []) {
+                if (!item || !item.id || seen.has(item.id)) continue;
+                if (!(item.disputes || []).some((d) => String(d.id || '').trim() === did)) continue;
+                seen.add(item.id);
+                this._patchTaskCard(item.id);
+            }
+        }
+    },
+
     _flagResolveApiPath(flagId) {
         return DASH_FLEET_FLAGS_PATH + '/' + encodeURIComponent(String(flagId)) + '/resolve';
     },
@@ -7539,17 +7567,49 @@ const searchOutputMethods = {
         this._logDashApiClick('dispute-claim', id);
         ui.status = 'claiming';
         this._patchTaskCard(itemId);
+
+        const attemptClaim = async (retriedAfterRelease) => {
+            try {
+                await this._fleetWebPost(this._disputeClaimApiPath(id));
+                ui.status = 'claimed';
+                ui.claimedAt = Date.now();
+                ui.resolutionReason = '';
+                ui.resolutionKey = '';
+                ui.submitting = false;
+                Logger.log('search-output: dispute claimed — ' + id
+                    + (retriedAfterRelease ? ' (after releasing prior lease)' : ''));
+                return;
+            } catch (e) {
+                if (!retriedAfterRelease) {
+                    const body = this._parseFleetWebPostErrorBody(e);
+                    const activeId = body && body.activeDisputeId != null
+                        ? String(body.activeDisputeId).trim()
+                        : '';
+                    const errMsg = body && body.error != null ? String(body.error) : '';
+                    if (activeId && activeId !== id && /active dispute claimed/i.test(errMsg)) {
+                        Logger.log('search-output: dispute claim blocked by active lease '
+                            + activeId + ' — releasing and retrying ' + id);
+                        try {
+                            await this._fleetWebPost(this._disputeReleaseApiPath(activeId), {
+                                referer: this._disputeResolveReferer(activeId)
+                            });
+                            delete this._state.disputeClaimUi[activeId];
+                            this._patchCardsForDisputeId(activeId);
+                            await attemptClaim(true);
+                            return;
+                        } catch (releaseErr) {
+                            Logger.warn('search-output: release active dispute ' + activeId
+                                + ' failed before reclaim — ' + id, releaseErr);
+                        }
+                    }
+                }
+                ui.status = 'idle';
+                Logger.warn('search-output: dispute claim failed — ' + id, e);
+            }
+        };
+
         try {
-            await this._fleetWebPost(this._disputeClaimApiPath(id));
-            ui.status = 'claimed';
-            ui.claimedAt = Date.now();
-            ui.resolutionReason = '';
-            ui.resolutionKey = '';
-            ui.submitting = false;
-            Logger.log('search-output: dispute claimed — ' + id);
-        } catch (e) {
-            ui.status = 'idle';
-            Logger.warn('dashboard: dispute claim failed — ' + id, e);
+            await attemptClaim(false);
         } finally {
             this._patchTaskCard(itemId);
         }
@@ -10601,7 +10661,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.32',
+    _version: '3.33',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
