@@ -8,8 +8,8 @@ const TAB_ID = 'fleet-vnc-helper-tab';
 const Z_INDEX = '2147483646';
 const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
 const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
-const PROMPT_STORAGE_KEY = 'fleet-vnc-helper-prompt';
-const PROMPT_TS_STORAGE_KEY = 'fleet-vnc-helper-prompt-ts';
+const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
+const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
 const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
@@ -27,7 +27,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -76,18 +76,20 @@ const plugin = {
 
     readCachedPrompt() {
         try {
-            const text = localStorage.getItem(PROMPT_STORAGE_KEY);
-            const tsRaw = localStorage.getItem(PROMPT_TS_STORAGE_KEY);
+            const text = Storage.get(PROMPT_STORAGE_KEY, '');
+            const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
+                Logger.log('vncHelper: no cached prompt in storage');
                 return '';
             }
             const ts = parseInt(tsRaw, 10);
             if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
-                localStorage.removeItem(PROMPT_STORAGE_KEY);
-                localStorage.removeItem(PROMPT_TS_STORAGE_KEY);
-                Logger.debug('vncHelper: cached prompt expired or invalid, cleared');
+                Storage.delete(PROMPT_STORAGE_KEY);
+                Storage.delete(PROMPT_TS_STORAGE_KEY);
+                Logger.log('vncHelper: cached prompt expired, cleared');
                 return '';
             }
+            Logger.log(`vncHelper: loaded cached prompt (${text.length} chars)`);
             return text;
         } catch (e) {
             Logger.warn('vncHelper: failed to read cached prompt', e);
@@ -295,7 +297,6 @@ const plugin = {
             const cachedPrompt = this.readCachedPrompt();
             if (cachedPrompt) {
                 promptTextarea.value = cachedPrompt;
-                Logger.log(`vncHelper: loaded cached prompt (${cachedPrompt.length} chars)`);
             }
             this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
             promptBody.appendChild(promptTextarea);
