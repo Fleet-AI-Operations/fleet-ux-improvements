@@ -4,7 +4,7 @@
 //
 // Password (first match): --password, OPS_PASSWORD env, local/PostgREST/password, prompt
 //
-// Plaintext (gitignored):  local/ops-bundle.json  (fallback: local/ops-secrets.json)
+// Plaintext (gitignored):  local/ops-bundle.json
 // Committed ciphertext:    ops-secrets.enc.json
 
 import fs from 'fs';
@@ -16,7 +16,6 @@ import { decryptWithPassword, encryptWithPassword, FORMAT_PREFIX } from './ops-p
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../..');
 const BUNDLE_PATH = path.join(root, 'local', 'ops-bundle.json');
-const LEGACY_PATH = path.join(root, 'local', 'ops-secrets.json');
 const PASSWORD_PATH = path.join(root, 'local', 'PostgREST', 'password');
 const ENCRYPTED_PATH = path.join(root, 'ops-secrets.enc.json');
 
@@ -25,7 +24,7 @@ function usage() {
   node dev/utils/encrypt-ops-bundle.mjs encrypt [--password '...']
   node dev/utils/encrypt-ops-bundle.mjs decrypt [--password '...']
 
-  Plaintext:  ${BUNDLE_PATH} (or ${LEGACY_PATH})
+  Plaintext:  ${BUNDLE_PATH}
   Password:   ${PASSWORD_PATH}
   Encrypted:  ${ENCRYPTED_PATH}`);
 }
@@ -98,20 +97,15 @@ async function resolvePassword(flagPassword) {
 }
 
 function readPlaintextJson() {
-    let pathUsed = BUNDLE_PATH;
     if (!fs.existsSync(BUNDLE_PATH)) {
-        if (fs.existsSync(LEGACY_PATH)) {
-            pathUsed = LEGACY_PATH;
-        } else {
-            throw new Error(
-                'Plaintext not found. Create ' + BUNDLE_PATH
-                + ' (see dev/ops-bundle.example.json)'
-            );
-        }
+        throw new Error(
+            'Plaintext not found. Create ' + BUNDLE_PATH
+            + ' (see dev/ops-bundle.example.json)'
+        );
     }
-    const text = fs.readFileSync(pathUsed, 'utf8');
+    const text = fs.readFileSync(BUNDLE_PATH, 'utf8');
     JSON.parse(text);
-    return { text, pathUsed };
+    return { text, pathUsed: BUNDLE_PATH };
 }
 
 async function cmdEncrypt(password) {
