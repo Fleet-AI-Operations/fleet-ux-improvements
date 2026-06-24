@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '7.23',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
 

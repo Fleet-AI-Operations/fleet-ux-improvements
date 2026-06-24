@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.402",
+  "archetypesVersion": "11.0",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "7.23",
-      "hash": "sha256-648f3b05824453b473c6ffba6aa9cc09c404a211a497fdf616fdab450d108742",
+      "version": "8.0",
+      "hash": "sha256-7774705edfb574d10736edc510e4ccad0a2b0d178c9927aa40d730c4cb4eb16b",
       "log": false
     },
     {
@@ -34,50 +34,50 @@
     },
     {
       "name": "dashboard-lib.js",
-      "version": "2.25",
-      "hash": "sha256-cc9e681f2d09bdec9413dfb41734dc05f637f0e5960209d09966d22217820a1b",
+      "version": "3.0",
+      "hash": "sha256-a09285c23632b18f781c68ea8c1fb45fedf4c5e121879024e3e278b2341a911b",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "2.5",
-      "hash": "sha256-3b90500d7bd29a29e29f590b811ae91a09fa496f818d630960d11cb6d9c30f54",
+      "version": "3.0",
+      "hash": "sha256-34c35dbb0701ef969394732c5bffc0ed6ce471914aa7b7389c1c9965782c60d7",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "5.69",
-      "hash": "sha256-589ef610353bb771daef52d08e92f8f37041439973eb9a2caff0a1fb66d16920",
+      "version": "6.0",
+      "hash": "sha256-d3d44dc82e10594f35335629e3a23b6221bb03eeb61d7edb653aa5f01be144ce",
       "log": false
     },
     {
       "name": "diff-engine.js",
-      "version": "1.5",
-      "hash": "sha256-3cdb9c7ae7453b1bc64354664cc1428d5bdf8a579a298f83f83a87b2cb3821a0",
+      "version": "2.0",
+      "hash": "sha256-25d98aa55c11fb16f57077a34b19c8dd0edef97f4091e335036a942e0461e262",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "3.38",
-      "hash": "sha256-fc257ee07f3abda4b057a08b98325c169dbf9d3ebc66f91b2b38d2296db59513",
+      "version": "4.0",
+      "hash": "sha256-fba00087baa7c99d10c25c25d37ba7e60e8d37538f2796bb19bb924c7808e803",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "1.75",
-      "hash": "sha256-d9bded1825df639d142078de1bb54eae6d8caefc1797b596aac5289c09fc9d26",
+      "version": "2.0",
+      "hash": "sha256-73db301cc3cbc7bab8e7dc954878690588d7dc3566dac2c0c8c00a1a585e100f",
       "log": false
     },
     {
       "name": "team-members.js",
-      "version": "2.6",
-      "hash": "sha256-166fd03f6d4bb1bc544d931e53306022cb6f477bbc9fc637a3a85ec77e8bb430",
+      "version": "3.0",
+      "hash": "sha256-e773bd98322521797d22dbccd14c25993ae46ad6b2900b3d311559bf03c1e311",
       "log": false
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "1.6",
-      "hash": "sha256-8ef4909d467001e766c36ff6d3a93d18baf1ecc8648bf03b419ccaa2392c9852",
+      "version": "2.0",
+      "hash": "sha256-e718f83998625396d675b4fe140088f3cb96fd2a36dbab6ebc37f9c8adf9b3bd",
       "log": false
     }
   ],

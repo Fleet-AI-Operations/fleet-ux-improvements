@@ -344,7 +344,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.5',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

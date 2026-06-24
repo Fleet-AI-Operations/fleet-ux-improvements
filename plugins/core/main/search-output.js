@@ -37,6 +37,7 @@ const DASH_DISPUTES_PAGE_SIZE = 100;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
+const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
 const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
     'ai_generated',
@@ -5392,6 +5393,199 @@ const searchOutputMethods = {
         return this._state.userStoryUi[id];
     },
 
+    _screenshotUiKey(kind, id) {
+        return String(kind || '') + ':' + String(id || '');
+    },
+
+    _getScreenshotUi(key) {
+        if (!this._state.screenshotUi) this._state.screenshotUi = {};
+        if (!this._state.screenshotUi[key]) {
+            this._state.screenshotUi[key] = { status: 'idle', urls: [], message: null };
+        }
+        return this._state.screenshotUi[key];
+    },
+
+    _qaScreenshotViewUrlsPath() {
+        try {
+            const path = this._dashFleetWebPath('qa_feedback_screenshot_view_urls');
+            if (path) return path.startsWith('/') ? path : '/' + path;
+        } catch (e) {
+            Logger.debug('search-output: qa_feedback_screenshot_view_urls path fallback', e);
+        }
+        return DASH_QA_SCREENSHOT_VIEW_URLS_PATH;
+    },
+
+    _taskViewReferer(taskId) {
+        const tid = String(taskId || '').trim();
+        return DASH_FLEET_ORIGIN + '/work/problems/view-task/' + encodeURIComponent(tid);
+    },
+
+    async _fetchScreenshotViewUrls(taskId, s3Keys) {
+        const keys = (Array.isArray(s3Keys) ? s3Keys : []).filter(Boolean);
+        if (keys.length === 0) throw new Error('No screenshot keys');
+        const json = await this._fleetWebPost(this._qaScreenshotViewUrlsPath(), {
+            body: { s3_keys: keys },
+            referer: this._taskViewReferer(taskId)
+        });
+        const urls = json && Array.isArray(json.urls) ? json.urls : [];
+        if (urls.length !== keys.length) {
+            throw new Error('Screenshot URL count mismatch');
+        }
+        return urls;
+    },
+
+    _findScreenshotKeys(kind, entityId, itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item) return [];
+        if (kind === 'qa') {
+            const fid = String(entityId || '');
+            for (const entry of (item.task && item.task.allFeedback) || []) {
+                if (String(entry.id) === fid && entry.display && entry.display.screenshotKeys) {
+                    return entry.display.screenshotKeys;
+                }
+            }
+            if (item.qaFeedback && String(item.selectedFeedbackId) === fid && item.qaFeedback.screenshotKeys) {
+                return item.qaFeedback.screenshotKeys;
+            }
+            return [];
+        }
+        if (kind === 'dispute') {
+            const did = String(entityId || '');
+            for (const d of item.disputes || []) {
+                if (String(d.id) === did && d.screenshotKeys) return d.screenshotKeys;
+            }
+        }
+        return [];
+    },
+
+    _screenshotBlockHtml(kind, entityId, itemId, screenshotKeys) {
+        if (!Array.isArray(screenshotKeys) || screenshotKeys.length === 0) return '';
+        const uiKey = this._screenshotUiKey(kind, entityId);
+        const ui = this._getScreenshotUi(uiKey);
+        const escKey = dashEscHtml(uiKey);
+        const escKind = dashEscHtml(String(kind || ''));
+        const escId = dashEscHtml(String(entityId || ''));
+        const escItemId = dashEscHtml(String(itemId || ''));
+        const btnClass = this._dashBtnClass('secondary', 'nav');
+
+        let buttonHtml = '';
+        if (ui.status !== 'loaded') {
+            const disabled = ui.status === 'loading' ? ' disabled aria-busy="true"' : '';
+            const label = ui.status === 'loading' ? 'Loading…' : 'Load Screenshots';
+            const spinner = ui.status === 'loading' ? this._loadingSpinnerHtml(14) + ' ' : '';
+            buttonHtml = `<button type="button" class="${btnClass}" data-wf-dash-load-screenshots="1" data-screenshot-kind="${escKind}" data-screenshot-id="${escId}" data-item-id="${escItemId}"${disabled}>${spinner}${dashEscHtml(label)}</button>`;
+        }
+
+        let galleryHtml = '';
+        if (ui.status === 'loaded' && ui.urls && ui.urls.length) {
+            galleryHtml = `<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: ${buttonHtml ? '8px' : '0'};">`
+                + ui.urls.map((url, i) => {
+                    const escUrl = dashEscHtml(url);
+                    return `<button type="button" data-wf-dash-screenshot-thumb="1" data-screenshot-url="${escUrl}" title="View screenshot ${i + 1}" style="padding: 0; border: none; background: none; cursor: pointer;">`
+                        + `<img src="${escUrl}" alt="Screenshot ${i + 1}" loading="lazy" style="max-height: 120px; max-width: 180px; object-fit: contain; border-radius: 4px; border: 1px solid var(--border, #e2e8f0); display: block;">`
+                        + '</button>';
+                }).join('')
+                + '</div>';
+        }
+
+        let errorHtml = '';
+        if (ui.status === 'error' && ui.message) {
+            errorHtml = `<p style="margin: 6px 0 0; font-size: 11px; color: #b91c1c;">${dashEscHtml(ui.message)}</p>`;
+        }
+
+        return `<div data-wf-dash-screenshots="${escKey}" data-item-id="${escItemId}" style="margin-top: 8px;">${buttonHtml}${galleryHtml}${errorHtml}</div>`;
+    },
+
+    _patchScreenshotBlock(kind, entityId, itemId, screenshotKeys) {
+        if (!this._modal) return false;
+        const uiKey = this._screenshotUiKey(kind, entityId);
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-screenshots]')) {
+            if (el.getAttribute('data-wf-dash-screenshots') !== uiKey) continue;
+            const newHtml = this._screenshotBlockHtml(kind, entityId, itemId, screenshotKeys);
+            const tmp = document.createElement('div');
+            tmp.innerHTML = newHtml;
+            const newEl = tmp.firstElementChild;
+            if (newEl) el.replaceWith(newEl);
+            return true;
+        }
+        return false;
+    },
+
+    _closeScreenshotLightbox() {
+        if (this._screenshotLightboxEl && this._screenshotLightboxEl.parentNode) {
+            this._screenshotLightboxEl.parentNode.removeChild(this._screenshotLightboxEl);
+        }
+        this._screenshotLightboxEl = null;
+        if (this._screenshotLightboxKeyHandler) {
+            document.removeEventListener('keydown', this._screenshotLightboxKeyHandler);
+            this._screenshotLightboxKeyHandler = null;
+        }
+    },
+
+    _openScreenshotLightbox(url, alt) {
+        this._closeScreenshotLightbox();
+        const modal = this._modal;
+        const imageUrl = String(url || '').trim();
+        if (!modal || !imageUrl) return;
+        const overlay = document.createElement('div');
+        overlay.setAttribute('data-wf-dash-screenshot-lightbox', '1');
+        overlay.style.cssText = 'position: fixed; inset: 0; z-index: 100000; background: rgba(0, 0, 0, 0.85); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;';
+        const escUrl = dashEscHtml(imageUrl);
+        const escAlt = dashEscHtml(String(alt || 'Screenshot'));
+        overlay.innerHTML = `<button type="button" data-wf-dash-screenshot-lightbox-close="1" aria-label="Close" style="position: absolute; top: 16px; right: 16px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.45); color: #fff; font-size: 12px; cursor: pointer;">Close</button>`
+            + `<img src="${escUrl}" alt="${escAlt}" style="max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 4px;">`;
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay || e.target.closest('[data-wf-dash-screenshot-lightbox-close]')) {
+                this._closeScreenshotLightbox();
+            }
+        });
+        this._screenshotLightboxKeyHandler = (e) => {
+            if (e.key === 'Escape') this._closeScreenshotLightbox();
+        };
+        document.addEventListener('keydown', this._screenshotLightboxKeyHandler);
+        modal.appendChild(overlay);
+        this._screenshotLightboxEl = overlay;
+    },
+
+    async _handleLoadScreenshots(kind, entityId, itemId) {
+        const uiKey = this._screenshotUiKey(kind, entityId);
+        const ui = this._getScreenshotUi(uiKey);
+        if (ui.status === 'loading' || ui.status === 'loaded') return;
+
+        const keys = this._findScreenshotKeys(kind, entityId, itemId);
+        if (keys.length === 0) {
+            Logger.warn('search-output: load screenshots skipped — no keys for ' + uiKey);
+            return;
+        }
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        const taskId = item && item.task && item.task.id;
+        if (!taskId) {
+            Logger.warn('search-output: load screenshots skipped — no task id for ' + uiKey);
+            return;
+        }
+
+        this._logDashApiClick('load-screenshots', uiKey);
+        ui.status = 'loading';
+        ui.message = null;
+        if (!this._patchScreenshotBlock(kind, entityId, itemId, keys)) this._patchTaskCard(itemId);
+
+        try {
+            const urls = await this._fetchScreenshotViewUrls(taskId, keys);
+            ui.urls = urls;
+            ui.status = 'loaded';
+            ui.message = null;
+            Logger.log('search-output: loaded ' + urls.length + ' screenshot(s) — ' + uiKey);
+        } catch (err) {
+            ui.status = 'error';
+            ui.urls = [];
+            ui.message = this._isDashSessionRefreshError(err)
+                ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
+                : 'Could not load screenshots.';
+            Logger.warn('search-output: screenshot load failed — ' + uiKey, err);
+        }
+        if (!this._patchScreenshotBlock(kind, entityId, itemId, keys)) this._patchTaskCard(itemId);
+    },
+
     _userStoryEmptyMessage(reason) {
         if (reason === 'no_scenario_id') return 'No scenario linked to this task.';
         if (reason === 'scenario_not_found') return 'Scenario not found.';
@@ -8616,6 +8810,7 @@ const searchOutputMethods = {
         this._state.hydrateUi = {};
         this._state.actionBlockUi = {};
         this._state.userStoryUi = {};
+        this._state.screenshotUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
         this._state.resultsPage = 0;
@@ -9491,6 +9686,9 @@ const searchOutputMethods = {
                 </div>
             </div>`
             : '';
+        const screenshotHtml = feedbackId && qa.screenshotKeys && qa.screenshotKeys.length
+            ? this._screenshotBlockHtml('qa', feedbackId, itemId, qa.screenshotKeys)
+            : '';
         const blockId = feedbackId
             ? ('qa:' + feedbackId)
             : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
@@ -9501,6 +9699,7 @@ const searchOutputMethods = {
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
             + blocks
+            + screenshotHtml
             + helpfulnessHtml;
         return this._actionBlockShellHtml(
             blockId,
@@ -9643,12 +9842,16 @@ const searchOutputMethods = {
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
             : '';
-        const bodyHtml = `<div>
+        const screenshotHtml = display.id && display.screenshotKeys && display.screenshotKeys.length
+            ? this._screenshotBlockHtml('dispute', display.id, itemId, display.screenshotKeys)
+            : '';
+        const reasonHtml = `<div>
                     <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(this._dashQuotedText(display.reason))}</div>
                     <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
-                </div>
-                ${resolutionPanelHtml}
-                ${resolutionHtml}`;
+                </div>`;
+        const bodyHtml = display.resolutionAt
+            ? `${reasonHtml}${resolutionHtml}${screenshotHtml}`
+            : `${reasonHtml}${screenshotHtml}${resolutionPanelHtml}`;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -10819,6 +11022,26 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._toggleUserStory(itemId);
                 return;
             }
+            const loadScreenshotsBtn = e.target.closest('[data-wf-dash-load-screenshots]');
+            if (loadScreenshotsBtn && modal.contains(loadScreenshotsBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const kind = loadScreenshotsBtn.getAttribute('data-screenshot-kind');
+                const entityId = loadScreenshotsBtn.getAttribute('data-screenshot-id');
+                const itemId = loadScreenshotsBtn.getAttribute('data-item-id');
+                if (kind && entityId && itemId) void dash._handleLoadScreenshots(kind, entityId, itemId);
+                return;
+            }
+            const screenshotThumb = e.target.closest('[data-wf-dash-screenshot-thumb]');
+            if (screenshotThumb && modal.contains(screenshotThumb)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const url = screenshotThumb.getAttribute('data-screenshot-url');
+                const img = screenshotThumb.querySelector('img');
+                const alt = img && img.getAttribute('alt');
+                if (url) dash._openScreenshotLightbox(url, alt);
+                return;
+            }
     });
         modal.addEventListener('change', (e) => {
             const sel = e.target;
@@ -10885,7 +11108,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.38',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

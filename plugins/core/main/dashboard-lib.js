@@ -164,6 +164,22 @@ function dashLibNormalizeNewlines(text) {
     return String(text).replace(/\\n/g, '\n');
 }
 
+function dashLibNormalizeScreenshotKeys(...sources) {
+    const out = [];
+    const seen = new Set();
+    for (const src of sources) {
+        if (!Array.isArray(src)) continue;
+        for (const k of src) {
+            const key = String(k || '').trim();
+            if (key && !seen.has(key)) {
+                seen.add(key);
+                out.push(key);
+            }
+        }
+    }
+    return out;
+}
+
 function dashLibIsQaEscalatedForFleetReview(data) {
     if (!data || typeof data !== 'object') return false;
     if (data.is_escalation === true) return true;
@@ -341,7 +357,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.25',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1600,7 +1616,12 @@ const plugin = {
                 ? String(disputeRow.original_feedback_created_at)
                 : null
         };
+        const screenshotKeys = dashLibNormalizeScreenshotKeys(
+            data && data.screenshotKeys,
+            data && data.resolutionScreenshotKeys
+        );
         if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        if (screenshotKeys.length) display.screenshotKeys = screenshotKeys;
         return display;
     },
 
@@ -1854,7 +1875,9 @@ const plugin = {
             qaReviewerName: String((qaReviewer && qaReviewer.name) || ''),
             qaReviewerEmail: String((qaReviewer && qaReviewer.email) || '')
         };
+        const screenshotKeys = dashLibNormalizeScreenshotKeys(data.screenshots);
         if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        if (screenshotKeys.length) display.screenshotKeys = screenshotKeys;
         return display;
     },
 

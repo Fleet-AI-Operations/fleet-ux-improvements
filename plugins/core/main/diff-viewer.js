@@ -2911,7 +2911,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '1.75',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
