@@ -22,16 +22,18 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     dispute: 'Disputes',
     senior_review: 'Sr Review'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'flagged', 'senior_review_flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated', 'screenshots'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
     notes_to_qa: 'Submitted with Notes to QA',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
+    dispute_resolved: 'Dispute Resolved',
     flagged: 'Flagged',
     senior_review_flagged: 'Flagged for Senior Review',
-    escalated: 'Escalated'
+    escalated: 'Escalated',
+    screenshots: 'Screenshots associated with task'
 };
 const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
 const DASH_LIB_QA_HELPFULNESS_LABELS = {
@@ -161,6 +163,22 @@ function dashLibMapPromptQualityRating(rating) {
 
 function dashLibNormalizeNewlines(text) {
     return String(text).replace(/\\n/g, '\n');
+}
+
+function dashLibNormalizeScreenshotKeys(...sources) {
+    const out = [];
+    const seen = new Set();
+    for (const src of sources) {
+        if (!Array.isArray(src)) continue;
+        for (const k of src) {
+            const key = String(k || '').trim();
+            if (key && !seen.has(key)) {
+                seen.add(key);
+                out.push(key);
+            }
+        }
+    }
+    return out;
 }
 
 function dashLibIsQaEscalatedForFleetReview(data) {
@@ -340,7 +358,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.22',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -458,7 +476,9 @@ const plugin = {
             itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
             itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets),
             itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
-            itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets)
+            itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets),
+            itemDisputeResolutionTimeMinutes: bind(self._itemDisputeResolutionTimeMinutes),
+            itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -821,6 +841,24 @@ const plugin = {
         return (task.promptVersions || []).some((v) => String(v.resubmissionNotes || '').trim());
     },
 
+    _itemHasAssociatedScreenshots(item) {
+        if (!item) return false;
+        const task = item.task;
+        if (task && Array.isArray(task.allFeedback)) {
+            for (const entry of task.allFeedback) {
+                const keys = entry.display && entry.display.screenshotKeys;
+                if (Array.isArray(keys) && keys.length > 0) return true;
+            }
+        }
+        if (item.qaFeedback && item.qaFeedback.screenshotKeys && item.qaFeedback.screenshotKeys.length) {
+            return true;
+        }
+        for (const dispute of item.disputes || []) {
+            if (dispute.screenshotKeys && dispute.screenshotKeys.length) return true;
+        }
+        return false;
+    },
+
     _itemPromptHistory(item) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
@@ -831,9 +869,11 @@ const plugin = {
             else if (rt === 'bugged') flags.add('flagged');
         }
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
+        if ((item.disputes || []).some((d) => d.resolutionAt)) flags.add('dispute_resolved');
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];
     },
 
@@ -981,6 +1021,44 @@ const plugin = {
         return dashLibPassesDimension(this._itemQaTimeMinutesBuckets(item), effective, count);
     },
 
+    _collectItemDisputeResolutionDurationSeconds(item) {
+        const seconds = [];
+        for (const dispute of (item && item.disputes) || []) {
+            if (!dispute.resolutionAt) continue;
+            const sec = dispute.reviewDurationSeconds;
+            if (sec == null || !Number.isFinite(Number(sec)) || Number(sec) < 0) continue;
+            seconds.push(Number(sec));
+        }
+        return seconds;
+    },
+
+    _itemDisputeResolutionTimeMinutes(item) {
+        const seconds = this._collectItemDisputeResolutionDurationSeconds(item);
+        if (seconds.length === 0) return null;
+        return dashLibV1CreationTimeMinutes(Math.max(...seconds));
+    },
+
+    _itemDisputeResolutionTimeMinutesBuckets(item) {
+        const buckets = new Set();
+        for (const sec of this._collectItemDisputeResolutionDurationSeconds(item)) {
+            const minutes = dashLibV1CreationTimeMinutes(sec);
+            const bucketId = dashLibV1CreationTimeBucketId(minutes);
+            if (bucketId) buckets.add(bucketId);
+        }
+        return [...buckets];
+    },
+
+    _itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.disputeResolutionTimeMinutes || [];
+        const count = (listBounds.disputeResolutionTimeMinutes || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemDisputeResolutionTimeMinutesBuckets(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
@@ -1014,6 +1092,10 @@ const plugin = {
         const qaTimeCount = (bounds.qaTimeMinutes || []).length;
         if (qaTimeCount > 0) {
             passed = passed.filter((item) => this._itemPassesQaTimeFilter(item, f, bounds));
+        }
+        const disputeResolutionTimeCount = (bounds.disputeResolutionTimeMinutes || []).length;
+        if (disputeResolutionTimeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesDisputeResolutionTimeFilter(item, f, bounds));
         }
         const queryActive = regex
             ? lib.isRegexQueryActive(promptText)
@@ -1251,6 +1333,7 @@ const plugin = {
         result.qaHelpfulness = new Set();
         result.v1CreationTimeMinutes = new Set();
         result.qaTimeMinutes = new Set();
+        result.disputeResolutionTimeMinutes = new Set();
         return result;
     },
 
@@ -1289,6 +1372,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
@@ -1302,6 +1386,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, id)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantV1CreationTime.add(id);
         }
@@ -1315,8 +1400,23 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, id)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantQaTime.add(id);
+        }
+        const disputeResolutionTimeOptions = (options && options.disputeResolutionTimeMinutes) || [];
+        const irrelevantDisputeResolutionTime = result.disputeResolutionTimeMinutes;
+        for (const { id } of disputeResolutionTimeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantDisputeResolutionTime.add(id);
         }
         return result;
     },
@@ -1329,6 +1429,7 @@ const plugin = {
         result.qaHelpfulness = new Map();
         result.v1CreationTimeMinutes = new Map();
         result.qaTimeMinutes = new Map();
+        result.disputeResolutionTimeMinutes = new Map();
         return result;
     },
 
@@ -1362,6 +1463,11 @@ const plugin = {
         const selectedQaTime = effective.qaTimeMinutes || [];
         if (allQaTime.length > 0 && selectedQaTime.length === 0) {
             effective.qaTimeMinutes = [...allQaTime];
+        }
+        const allDisputeResolutionTime = bounds.disputeResolutionTimeMinutes || [];
+        const selectedDisputeResolutionTime = effective.disputeResolutionTimeMinutes || [];
+        if (allDisputeResolutionTime.length > 0 && selectedDisputeResolutionTime.length === 0) {
+            effective.disputeResolutionTimeMinutes = [...allDisputeResolutionTime];
         }
         return effective;
     },
@@ -1402,6 +1508,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             helpfulnessCounts.set(id, count);
         }
@@ -1415,6 +1522,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, id)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             v1CreationTimeCounts.set(id, count);
         }
@@ -1428,8 +1536,23 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, id)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             qaTimeCounts.set(id, count);
+        }
+        const disputeResolutionTimeOptions = (options && options.disputeResolutionTimeMinutes) || [];
+        const disputeResolutionTimeCounts = result.disputeResolutionTimeMinutes;
+        for (const { id } of disputeResolutionTimeOptions) {
+            const count = items.filter((item) => (
+                this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, id)
+            )).length;
+            disputeResolutionTimeCounts.set(id, count);
         }
         return result;
     },
@@ -1489,7 +1612,11 @@ const plugin = {
         const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
         const resolverId = disputeRow && disputeRow.resolved_by ? String(disputeRow.resolved_by) : '';
         const resolverProfile = resolverId && profilesMap ? profilesMap.get(resolverId) : null;
-        return {
+        const reviewDurationRaw = Number(data && data.dispute_review_duration_seconds);
+        const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
+            ? reviewDurationRaw
+            : null;
+        const display = {
             id: String((disputeRow && disputeRow.id) || ''),
             submittedAt: String((disputeRow && disputeRow.created_at) || ''),
             reason: dashLibNormalizeNewlines((disputeRow && disputeRow.dispute_reason) || ''),
@@ -1509,6 +1636,13 @@ const plugin = {
                 ? String(disputeRow.original_feedback_created_at)
                 : null
         };
+        const screenshotKeys = dashLibNormalizeScreenshotKeys(
+            data && data.screenshotKeys,
+            data && data.resolutionScreenshotKeys
+        );
+        if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        if (screenshotKeys.length) display.screenshotKeys = screenshotKeys;
+        return display;
     },
 
     _isVerifierFailedTaskEvent(event) {
@@ -1761,7 +1895,9 @@ const plugin = {
             qaReviewerName: String((qaReviewer && qaReviewer.name) || ''),
             qaReviewerEmail: String((qaReviewer && qaReviewer.email) || '')
         };
+        const screenshotKeys = dashLibNormalizeScreenshotKeys(data.screenshots);
         if (reviewDurationSeconds != null) display.reviewDurationSeconds = reviewDurationSeconds;
+        if (screenshotKeys.length) display.screenshotKeys = screenshotKeys;
         return display;
     },
 

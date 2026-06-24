@@ -36,6 +36,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
+    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
@@ -101,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.63',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -149,6 +150,8 @@ const plugin = {
             navBtnStyle: () => self._navBtnStyle(),
             navBtnPrimaryStyle: () => self._navBtnPrimaryStyle(),
             dashBtnClass: (variant, size) => self._dashBtnClass(variant, size),
+            logApiClick: (action, detail) => self._logDashApiClick(action, detail),
+            logApiSkip: (action, reason, detail) => self._logDashApiSkip(action, reason, detail),
             multiSelectHtml: (scopeKey, label, emptyHint, bulkActions) => self._multiSelectHtml(scopeKey, label, emptyHint, bulkActions),
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
@@ -252,8 +255,10 @@ const plugin = {
             disputeClaimUi: {},
             helpfulnessUi: {},
             flagResolutionUi: {},
+            flagCreateUi: {},
             actionBlockUi: {},
             userStoryUi: {},
+            screenshotUi: {},
             includeTasks: true,
             includeQa: true,
             includeDisputes: false,
@@ -284,6 +289,19 @@ const plugin = {
             }
         } catch (_e) { /* fall through */ }
         return window;
+    },
+
+    _logDashApiClick(action, detail) {
+        const label = String(action || 'unknown').trim();
+        const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
+        Logger.log('dashboard: api ' + label + suffix);
+    },
+
+    _logDashApiSkip(action, reason, detail) {
+        const label = String(action || 'unknown').trim();
+        const why = String(reason || 'blocked').trim();
+        const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
+        Logger.warn('dashboard: api ' + label + ' skipped — ' + why + suffix);
     },
 
     _isOpen() {
@@ -1365,6 +1383,7 @@ const plugin = {
             '  justify-content: flex-end;',
             '  gap: 0.25rem;',
             '  flex-shrink: 0;',
+            '  margin-left: 6px;',
             '  pointer-events: auto;',
             '}',
             '#wf-dash-modal [data-wf-dash-task-card] > .wf-dash-card-shell > .wf-dash-task-card-article {',
@@ -1389,11 +1408,17 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--get-verifier,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
             '  width: auto;',
-            '  min-width: 5.5rem;',
-            '  padding: 0 4px;',
             '  border: 1px solid var(--brand, var(--primary, #2563eb));',
             '  background: #000;',
             '  color: #fff;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--get-verifier {',
+            '  min-width: 5.5rem;',
+            '  padding: 0 4px;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
+            '  min-width: 0;',
+            '  padding: 0 6px;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--get-verifier:hover,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
@@ -1433,7 +1458,7 @@ const plugin = {
             '  gap: 8px;',
             '  padding: 0 8px;',
             '  margin-bottom: 0;',
-            '  padding-right: calc(13.5rem + 8px);',
+            '  padding-right: calc(10.5rem + 14px);',
             '  box-sizing: border-box;',
             '}',
             '#wf-dash-modal .wf-dash-card-tabs-left {',

@@ -155,6 +155,18 @@ function _deGroupConsecutive(diff, includeTypes, highlightType) {
 
 function _deTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
 
+function _deSplitWordHighlightEdges(text) {
+    const source = String(text == null ? '' : text);
+    if (!source) return { lead: '', core: '', trail: '' };
+    const leadMatch = source.match(/^[ \t]+/);
+    const lead = leadMatch ? leadMatch[0] : '';
+    let rest = source.slice(lead.length);
+    const trailMatch = rest.match(/[ \t]+$/);
+    const trail = trailMatch ? trailMatch[0] : '';
+    const core = rest.slice(0, rest.length - trail.length);
+    return { lead, core, trail };
+}
+
 function _deSectionUnitLength(group, granularity) {
     const values = group.values || [];
     if (granularity === 'line') {
@@ -252,9 +264,18 @@ function _deHighlightStyles() {
     };
 }
 
-function _deRenderHighlightGroupHtml(group, highlightStyle, text) {
+function _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity) {
     if (text === '\n') {
         return `<span style="${highlightStyle}">↵</span>\n`;
+    }
+    if (effectiveGranularity === 'word') {
+        const { lead, core, trail } = _deSplitWordHighlightEdges(text);
+        if (!core) return _deEqualSpanHtml(text);
+        let html = '';
+        if (lead) html += _deEqualSpanHtml(lead);
+        html += `<span style="${highlightStyle}">${_deEscHtml(core)}</span>`;
+        if (trail) html += _deEqualSpanHtml(trail);
+        return html;
     }
     const trimmed = group.trimTrailing ? _deTrimTrailing(text) : text;
     const trail = group.trimTrailing ? text.slice(trimmed.length) : '';
@@ -269,7 +290,7 @@ function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
     groups.forEach((group) => {
         const text = group.values.join('');
         if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
-            html += _deRenderHighlightGroupHtml(group, highlightStyle, text);
+            html += _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity);
         } else {
             html += _deEqualSpanHtml(text);
         }
@@ -285,7 +306,7 @@ function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
     groups.forEach((group) => {
         const text = group.values.join('');
         if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
-            html += _deRenderHighlightGroupHtml(group, highlightStyle, text);
+            html += _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity);
         } else {
             html += _deEqualSpanHtml(text);
         }
@@ -323,7 +344,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '1.4',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

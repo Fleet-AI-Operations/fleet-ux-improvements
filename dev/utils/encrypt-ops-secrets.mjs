@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 //
-// encrypt-ops-secrets.mjs — Encrypt local/ops-secrets.json → ops-secrets.enc.json
+// encrypt-ops-secrets.mjs — Legacy alias for encrypt-ops-bundle.mjs
 //
 // Usage:
 //   node dev/utils/encrypt-ops-secrets.mjs encrypt [--password 'secret']
 //   node dev/utils/encrypt-ops-secrets.mjs decrypt [--password 'secret']   # verify locally
 //
 // Prefer encrypt-ops-bundle.mjs (local/ops-bundle.json + local/PostgREST/password).
-// This script remains for legacy local/ops-secrets.json-only workflows.
-// Plaintext (gitignored):  local/ops-secrets.json or local/ops-bundle.json
+// Plaintext (gitignored):  local/ops-bundle.json
 // Committed ciphertext:    ops-secrets.enc.json
 //
 // Password: --password, OPS_PASSWORD env, or hidden prompt.
@@ -22,7 +21,6 @@ import { decryptWithPassword, encryptWithPassword, FORMAT_PREFIX } from './ops-p
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../..');
 const BUNDLE_PATH = path.join(root, 'local', 'ops-bundle.json');
-const PLAINTEXT_PATH = path.join(root, 'local', 'ops-secrets.json');
 const PASSWORD_PATH = path.join(root, 'local', 'PostgREST', 'password');
 const ENCRYPTED_PATH = path.join(root, 'ops-secrets.enc.json');
 
@@ -31,7 +29,7 @@ function usage() {
   node dev/utils/encrypt-ops-secrets.mjs encrypt [--password '...']
   node dev/utils/encrypt-ops-secrets.mjs decrypt [--password '...']
 
-  Plaintext:  ${PLAINTEXT_PATH}
+  Plaintext:  ${BUNDLE_PATH}
   Encrypted:  ${ENCRYPTED_PATH}`);
 }
 
@@ -101,18 +99,13 @@ async function resolvePassword(flagPassword) {
 }
 
 function readPlaintextJson() {
-    let pathUsed = BUNDLE_PATH;
     if (!fs.existsSync(BUNDLE_PATH)) {
-        if (fs.existsSync(PLAINTEXT_PATH)) {
-            pathUsed = PLAINTEXT_PATH;
-        } else {
-            throw new Error(
-                'Plaintext not found. Create ' + BUNDLE_PATH
-                + ' (see dev/ops-bundle.example.json)'
-            );
-        }
+        throw new Error(
+            'Plaintext not found. Create ' + BUNDLE_PATH
+            + ' (see dev/ops-bundle.example.json)'
+        );
     }
-    const text = fs.readFileSync(pathUsed, 'utf8');
+    const text = fs.readFileSync(BUNDLE_PATH, 'utf8');
     JSON.parse(text);
     return text;
 }
@@ -126,7 +119,7 @@ async function cmdEncrypt(password) {
     };
     fs.writeFileSync(ENCRYPTED_PATH, JSON.stringify(out, null, 2) + '\n', 'utf8');
     console.log('[info] Wrote ' + ENCRYPTED_PATH);
-    console.log('[info] Commit ops-secrets.enc.json; keep local/ops-secrets.json out of git.');
+    console.log('[info] Commit ops-secrets.enc.json; keep local/ops-bundle.json out of git.');
 }
 
 async function cmdDecrypt(password) {
