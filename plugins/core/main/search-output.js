@@ -45,17 +45,17 @@ const DASH_FLAG_CREATE_REASON_KEYS = [
     'other'
 ];
 const DASH_DISPUTE_RESOLUTION_OPTIONS = [
-    { key: 'approved', label: 'Approve (QA pool)', status: 'approved' },
-    { key: 'approved_and_accepted', label: 'Approve (Production)', status: 'approved_and_accepted' },
-    { key: 'approved_with_revisions', label: 'Approve (Revisions)', status: 'approved_with_revisions' },
-    { key: 'rejected', label: 'Reject', status: 'rejected' },
     {
         key: 'flag_product_bug',
-        label: 'Flag as product bug',
+        label: 'Flag as Bug',
         status: 'approved',
         skipWorkflowSignal: true,
         bugCategory: 'Other'
-    }
+    },
+    { key: 'rejected', label: 'Reject Dispute', status: 'rejected' },
+    { key: 'approved_with_revisions', label: 'Approve & Return to Writer', status: 'approved_with_revisions' },
+    { key: 'approved', label: 'Approve Dispute', status: 'approved' },
+    { key: 'approved_and_accepted', label: 'Approve & Accept Task', status: 'approved_and_accepted' }
 ];
 const DASH_AUTO_GROW_TEXTAREA_MIN_PX = 48;
 const DASH_AUTO_GROW_TEXTAREA_ATTR = 'data-wf-dash-auto-grow';
@@ -7256,8 +7256,7 @@ const searchOutputMethods = {
                 resolutionReason: '',
                 resolutionKey: '',
                 claimedAt: null,
-                submitting: false,
-                releaseConfirming: false
+                submitting: false
             };
         }
         if (!this._state.disputeClaimUi[id]) {
@@ -7266,8 +7265,7 @@ const searchOutputMethods = {
                 resolutionReason: '',
                 resolutionKey: '',
                 claimedAt: null,
-                submitting: false,
-                releaseConfirming: false
+                submitting: false
             };
         }
         return this._state.disputeClaimUi[id];
@@ -7327,24 +7325,18 @@ const searchOutputMethods = {
             + ' display: block; width: 100%; box-sizing: border-box; min-height: '
             + DASH_AUTO_GROW_TEXTAREA_MIN_PX + 'px; overflow-y: hidden; resize: none; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
 
-        let releaseHtml = '';
-        if (ui.releaseConfirming) {
-            releaseHtml = `<span style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Are you sure?</span>`
-                + `<button type="button" data-wf-dash-dispute-release-confirm="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Confirm</button>`
-                + `<button type="button" data-wf-dash-dispute-release-cancel="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Cancel</button>`;
-        } else {
-            releaseHtml = `<button type="button" data-wf-dash-dispute-release="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Release</button>`;
-        }
+        let releaseHtml = `<button type="button" data-wf-dash-dispute-release="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Release</button>`;
 
+        const envBtnStyle = 'flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;';
         const envBtn = url
-            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Resolve with Environment</button>`
+            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${secondaryClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${this._extLinkIconSvg(true)}</button>`
             : '';
 
         return `<div data-wf-dash-dispute-resolution="${escDisputeId}" data-item-id="${escItemId}" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); display: flex; flex-direction: column; gap: 8px;">`
             + `<textarea ${DASH_AUTO_GROW_TEXTAREA_ATTR}="1" data-wf-dash-dispute-resolution-input="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" rows="2" placeholder="Resolution reason…" style="${textareaStyle}"${disabled}>${dashEscHtml(reason)}</textarea>`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">`
             + `<select data-wf-dash-dispute-resolution-status="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" style="${selectStyle}"${disabled}>`
-            + `<option value=""${resolutionKey ? '' : ' selected'} disabled hidden>Select outcome…</option>`
+            + `<option value=""${resolutionKey ? '' : ' selected'} disabled hidden>Select resolution</option>`
             + this._disputeResolutionOptionsHtml(resolutionKey)
             + `</select>`
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto;">`
@@ -7405,42 +7397,20 @@ const searchOutputMethods = {
         }
     },
 
-    _handleDisputeReleasePrompt(disputeId, itemId) {
-        const id = String(disputeId || '').trim();
-        if (!id) return;
-        const ui = this._getDisputeClaimUi(id);
-        if (ui.submitting || ui.status !== 'claimed') return;
-        ui.releaseConfirming = true;
-        if (!this._patchDisputeResolutionPanel(id, itemId)) {
-            this._patchTaskCard(itemId);
-        }
-    },
-
-    _handleDisputeReleaseCancel(disputeId, itemId) {
-        const id = String(disputeId || '').trim();
-        if (!id) return;
-        const ui = this._getDisputeClaimUi(id);
-        ui.releaseConfirming = false;
-        if (!this._patchDisputeResolutionPanel(id, itemId)) {
-            this._patchTaskCard(itemId);
-        }
-    },
-
-    async _handleDisputeReleaseConfirm(disputeId, itemId) {
+    async _handleDisputeRelease(disputeId, itemId) {
         const id = String(disputeId || '').trim();
         if (!id || !itemId) {
             this._logDashApiSkip('dispute-release', 'missing dispute or item id');
             return;
         }
         const ui = this._getDisputeClaimUi(id);
-        if (ui.submitting) {
-            this._logDashApiSkip('dispute-release', 'already submitting', id);
+        if (ui.submitting || ui.status !== 'claimed') {
+            this._logDashApiSkip('dispute-release', ui.submitting ? 'already submitting' : 'not claimed', id);
             return;
         }
 
         this._logDashApiClick('dispute-release', id);
         ui.submitting = true;
-        ui.releaseConfirming = false;
         this._patchTaskCard(itemId);
         try {
             await this._fleetWebPost(this._disputeReleaseApiPath(id), {
@@ -7466,7 +7436,7 @@ const searchOutputMethods = {
         const reason = String(ui.resolutionReason || '').trim();
         const option = this._disputeResolutionOptionByKey(ui.resolutionKey);
         if (!reason || !option) {
-            this._logDashApiSkip('dispute-resolve', 'missing reason or outcome', id);
+            this._logDashApiSkip('dispute-resolve', 'missing reason or resolution', id);
             return;
         }
         if (ui.submitting) {
@@ -7576,7 +7546,6 @@ const searchOutputMethods = {
             ui.resolutionReason = '';
             ui.resolutionKey = '';
             ui.submitting = false;
-            ui.releaseConfirming = false;
             Logger.log('search-output: dispute claimed — ' + id);
         } catch (e) {
             ui.status = 'idle';
@@ -10431,25 +10400,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const disputeId = disputeReleaseBtn.getAttribute('data-dispute-id');
                 const itemId = disputeReleaseBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) dash._handleDisputeReleasePrompt(disputeId, itemId);
-                return;
-            }
-            const disputeReleaseConfirmBtn = e.target.closest('[data-wf-dash-dispute-release-confirm]');
-            if (disputeReleaseConfirmBtn && modal.contains(disputeReleaseConfirmBtn)) {
-                e.stopPropagation();
-                e.preventDefault();
-                const disputeId = disputeReleaseConfirmBtn.getAttribute('data-dispute-id');
-                const itemId = disputeReleaseConfirmBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._handleDisputeReleaseConfirm(disputeId, itemId);
-                return;
-            }
-            const disputeReleaseCancelBtn = e.target.closest('[data-wf-dash-dispute-release-cancel]');
-            if (disputeReleaseCancelBtn && modal.contains(disputeReleaseCancelBtn)) {
-                e.stopPropagation();
-                e.preventDefault();
-                const disputeId = disputeReleaseCancelBtn.getAttribute('data-dispute-id');
-                const itemId = disputeReleaseCancelBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) dash._handleDisputeReleaseCancel(disputeId, itemId);
+                if (disputeId && itemId) void dash._handleDisputeRelease(disputeId, itemId);
                 return;
             }
             const disputeResolveBtn = e.target.closest('[data-wf-dash-dispute-resolve]');
@@ -10650,7 +10601,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.31',
+    _version: '3.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

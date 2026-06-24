@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "10.394",
+  "archetypesVersion": "10.395",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -34,8 +34,8 @@
     },
     {
       "name": "dashboard-lib.js",
-      "version": "2.24",
-      "hash": "sha256-51365c51a8cdb68771ffe1115fbd67b79a377fe3a42fd69bf1f6beb65366f975",
+      "version": "2.25",
+      "hash": "sha256-cc9e681f2d09bdec9413dfb41734dc05f637f0e5960209d09966d22217820a1b",
       "log": false
     },
     {
@@ -58,8 +58,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "3.31",
-      "hash": "sha256-0907115007639e056e419982c52b1b12501b1dc752fe2795dedf3b8a1692418a",
+      "version": "3.32",
+      "hash": "sha256-92b7c44735b5bc106e0a011a6b23a3f30571883d8138b8867201cc8621a2c094",
       "log": false
     },
     {
