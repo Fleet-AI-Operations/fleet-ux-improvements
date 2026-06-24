@@ -38,7 +38,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -87,6 +87,59 @@ const plugin = {
             btn.style.background = 'rgba(255,255,255,0.08)';
         };
         return btn;
+    },
+
+    makeClipboardHelpDetails() {
+        const details = document.createElement('details');
+        details.style.cssText = 'margin:10px 0 0 0;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);';
+
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'How this works';
+        summaryEl.style.cssText =
+            'cursor:pointer;font-size:12px;color:#b0b0b8;outline:none;user-select:none;';
+
+        const help = document.createElement('div');
+        help.style.cssText =
+            'margin-top:10px;font-size:11px;color:#a5a5ad;line-height:1.55;user-select:text;';
+
+        function pBlock(strongLabel, rest) {
+            const p = document.createElement('p');
+            p.style.margin = '0 0 8px 0';
+            const s = document.createElement('strong');
+            s.style.color = '#ddd';
+            s.textContent = strongLabel;
+            p.appendChild(s);
+            p.appendChild(document.createTextNode(` ${rest}`));
+            return p;
+        }
+
+        help.appendChild(
+            pBlock(
+                'Extract',
+                'copies the text noVNC currently holds for the virtual machine into this computer\u2019s system clipboard. Use the virtual machine\u2019s normal copy first so that buffer fills, then click Extract.'
+            )
+        );
+        help.appendChild(
+            pBlock(
+                'Overwrite',
+                'takes plain text from this computer\u2019s clipboard and pushes it into noVNC\u2019s virtual machine clipboard buffer. Then use the virtual machine\u2019s normal paste.'
+            )
+        );
+        help.appendChild(
+            pBlock(
+                'Keyboard',
+                '\u2318+C sends Ctrl+C to the virtual machine, then copies noVNC\u2019s buffer to this computer. \u2318+V pushes this computer\u2019s clipboard into the virtual machine and sends Ctrl+V. Ctrl+Shift+F is the same as Overwrite. Ctrl+Shift+C is the same as Extract.'
+            )
+        );
+        const p3 = document.createElement('p');
+        p3.style.margin = '0';
+        p3.textContent =
+            'Always combine these controls with the virtual machine\u2019s native copy/paste: copy in the virtual machine \u2192 Extract (or Ctrl+Shift+C) to the host; copy on the host \u2192 Overwrite (or Ctrl+Shift+F) \u2192 paste in the virtual machine (or \u2318+V).';
+        help.appendChild(p3);
+
+        details.appendChild(summaryEl);
+        details.appendChild(help);
+        return details;
     },
 
     installWaitObserver(state) {
@@ -415,6 +468,7 @@ const plugin = {
             btnRow.appendChild(bOverwrite);
             clipBody.appendChild(btnRow);
             clipBody.appendChild(shortcutHint);
+            clipBody.appendChild(this.makeClipboardHelpDetails());
             clipSection.appendChild(clipHeader);
             clipSection.appendChild(clipBody);
             bodyEl.appendChild(clipSection);
