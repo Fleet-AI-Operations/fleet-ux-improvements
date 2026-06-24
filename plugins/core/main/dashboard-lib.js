@@ -22,7 +22,7 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     dispute: 'Disputes',
     senior_review: 'Sr Review'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated', 'screenshots'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
@@ -32,7 +32,8 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     dispute_resolved: 'Dispute Resolved',
     flagged: 'Flagged',
     senior_review_flagged: 'Flagged for Senior Review',
-    escalated: 'Escalated'
+    escalated: 'Escalated',
+    screenshots: 'Screenshots associated with task'
 };
 const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
 const DASH_LIB_QA_HELPFULNESS_LABELS = {
@@ -357,7 +358,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -840,6 +841,24 @@ const plugin = {
         return (task.promptVersions || []).some((v) => String(v.resubmissionNotes || '').trim());
     },
 
+    _itemHasAssociatedScreenshots(item) {
+        if (!item) return false;
+        const task = item.task;
+        if (task && Array.isArray(task.allFeedback)) {
+            for (const entry of task.allFeedback) {
+                const keys = entry.display && entry.display.screenshotKeys;
+                if (Array.isArray(keys) && keys.length > 0) return true;
+            }
+        }
+        if (item.qaFeedback && item.qaFeedback.screenshotKeys && item.qaFeedback.screenshotKeys.length) {
+            return true;
+        }
+        for (const dispute of item.disputes || []) {
+            if (dispute.screenshotKeys && dispute.screenshotKeys.length) return true;
+        }
+        return false;
+    },
+
     _itemPromptHistory(item) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
@@ -854,6 +873,7 @@ const plugin = {
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];
     },
 
