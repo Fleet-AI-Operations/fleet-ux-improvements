@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.67',
+    _version: '5.69',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

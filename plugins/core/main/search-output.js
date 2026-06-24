@@ -7548,7 +7548,6 @@ const searchOutputMethods = {
         const url = dashFleetDisputeUrl(disputeId);
         const disabled = ui.submitting ? ' disabled' : '';
         const secondaryClass = this._dashBtnClass('secondary', 'compact');
-        const primaryClass = this._dashBtnClass('primary', 'compact');
         const basicClass = this._dashBtnClass('basic', 'compact');
         const reason = ui.resolutionReason != null ? String(ui.resolutionReason) : '';
         const resolutionKey = ui.resolutionKey != null ? String(ui.resolutionKey) : '';
@@ -7565,7 +7564,7 @@ const searchOutputMethods = {
 
         const envBtnStyle = 'flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;';
         const envBtn = url
-            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${secondaryClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${this._extLinkIconSvg(true)}</button>`
+            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${basicClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${this._extLinkIconSvg(true)}</button>`
             : '';
 
         return `<div data-wf-dash-dispute-resolution="${escDisputeId}" data-item-id="${escItemId}" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); display: flex; flex-direction: column; gap: 8px;">`
@@ -7578,7 +7577,7 @@ const searchOutputMethods = {
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto;">`
             + envBtn
             + releaseHtml
-            + `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${primaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>Resolve</button>`
+            + `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>Resolve</button>`
             + `</div></div></div>`;
     },
 
@@ -10870,7 +10869,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.34',
+    _version: '3.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
