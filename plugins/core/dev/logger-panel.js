@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.14',
+    _version: '2.15',
     enabledByDefault: true,
     phase: 'core',
 
@@ -37,6 +37,7 @@ const plugin = {
         presenceObserver: null,
         ui: null,
         handlers: null,
+        pointerListenersAttached: false,
         newLogCount: 0,
         isAtBottom: true
     },
@@ -109,7 +110,7 @@ const plugin = {
         root.style.flexDirection = 'column';
         root.style.zIndex = '2147483646';
         root.style.resize = 'none';
-        root.style.overflow = 'auto';
+        root.style.overflow = 'hidden';
         root.style.minWidth = '240px';
         root.style.minHeight = '140px';
 
@@ -283,6 +284,7 @@ const plugin = {
         resizeHandle.style.borderRight = '2px solid rgba(255,255,255,0.25)';
         resizeHandle.style.borderBottom = '2px solid rgba(255,255,255,0.25)';
         resizeHandle.style.borderRadius = '0 0 8px 0';
+        resizeHandle.style.zIndex = '1';
 
         headerActions.appendChild(clearButton);
         headerActions.appendChild(copyButton);
@@ -331,8 +333,31 @@ const plugin = {
         };
     },
 
+    _attachPointerListeners(state) {
+        if (state.pointerListenersAttached || !state.handlers) {
+            return;
+        }
+        state.pointerListenersAttached = true;
+        document.addEventListener('mousemove', state.handlers.onPointerMove, true);
+        document.addEventListener('mouseup', state.handlers.onPointerUp, true);
+    },
+
+    _detachPointerListeners(state) {
+        if (!state.pointerListenersAttached || !state.handlers) {
+            return;
+        }
+        state.pointerListenersAttached = false;
+        document.removeEventListener('mousemove', state.handlers.onPointerMove, true);
+        document.removeEventListener('mouseup', state.handlers.onPointerUp, true);
+        if (document.body) {
+            document.body.style.userSelect = '';
+        }
+    },
+
     _ensureHandlers(state) {
         if (state.handlers) return;
+        const self = this;
+        state.pointerListenersAttached = false;
         state.handlers = {
             onMouseDown: (event) => {
                 const ui = state.ui;
@@ -340,52 +365,52 @@ const plugin = {
                 if (event.button !== 0) return;
                 if (event.target === ui.clearButton || ui.headerActions.contains(event.target)) return;
                 if (event.target !== ui.header && !ui.header.contains(event.target)) return;
+                event.preventDefault();
                 state.isDragging = true;
                 const rect = ui.root.getBoundingClientRect();
                 state.dragOffsetX = event.clientX - rect.left;
                 state.dragOffsetY = event.clientY - rect.top;
+                if (document.body) {
+                    document.body.style.userSelect = 'none';
+                }
+                self._attachPointerListeners(state);
             },
-            onMouseMove: (event) => {
-                if (!state.isDragging) return;
+            onPointerMove: (event) => {
                 const ui = state.ui;
                 if (!ui) return;
-                const nextLeft = Math.max(8, event.clientX - state.dragOffsetX);
-                const nextTop = Math.max(8, event.clientY - state.dragOffsetY);
-                ui.root.style.left = `${nextLeft}px`;
-                ui.root.style.top = `${nextTop}px`;
-                ui.root.style.right = 'auto';
-                ui.root.style.bottom = 'auto';
+                if (state.isDragging) {
+                    const nextLeft = Math.max(8, event.clientX - state.dragOffsetX);
+                    const nextTop = Math.max(8, event.clientY - state.dragOffsetY);
+                    ui.root.style.left = `${nextLeft}px`;
+                    ui.root.style.top = `${nextTop}px`;
+                    ui.root.style.right = 'auto';
+                    ui.root.style.bottom = 'auto';
+                    return;
+                }
+                if (state.isResizing) {
+                    const nextWidth = Math.max(240, state.resizeStartWidth + (event.clientX - state.resizeStartX));
+                    const nextHeight = Math.max(140, state.resizeStartHeight + (event.clientY - state.resizeStartY));
+                    ui.root.style.width = `${nextWidth}px`;
+                    ui.root.style.height = `${nextHeight}px`;
+                }
             },
-            onMouseUp: () => {
+            onPointerUp: () => {
                 const ui = state.ui;
                 if (state.isDragging && ui) {
-                    // Save position when dragging ends
                     const rect = ui.root.getBoundingClientRect();
-                    Storage.set(this.storageKeys.positionLeft, rect.left);
-                    Storage.set(this.storageKeys.positionTop, rect.top);
+                    Storage.set(self.storageKeys.positionLeft, rect.left);
+                    Storage.set(self.storageKeys.positionTop, rect.top);
                     Logger.log(`✓ Dev logger position saved: left=${rect.left}, top=${rect.top}`);
                 }
                 if (state.isResizing && ui) {
-                    // Save size when resizing ends
                     const rect = ui.root.getBoundingClientRect();
-                    Storage.set(this.storageKeys.width, rect.width);
-                    Storage.set(this.storageKeys.height, rect.height);
+                    Storage.set(self.storageKeys.width, rect.width);
+                    Storage.set(self.storageKeys.height, rect.height);
                     Logger.log(`✓ Dev logger size saved: width=${rect.width}, height=${rect.height}`);
                 }
                 state.isDragging = false;
                 state.isResizing = false;
-                if (document.body) {
-                    document.body.style.userSelect = '';
-                }
-            },
-            onResizeMove: (event) => {
-                if (!state.isResizing) return;
-                const ui = state.ui;
-                if (!ui) return;
-                const nextWidth = Math.max(240, state.resizeStartWidth + (event.clientX - state.resizeStartX));
-                const nextHeight = Math.max(140, state.resizeStartHeight + (event.clientY - state.resizeStartY));
-                ui.root.style.width = `${nextWidth}px`;
-                ui.root.style.height = `${nextHeight}px`;
+                self._detachPointerListeners(state);
             },
             onToggle: () => this._updateVisibility(state, !state.isVisible),
             onClear: () => this._clearLogs(state),
@@ -416,6 +441,7 @@ const plugin = {
                 if (document.body) {
                     document.body.style.userSelect = 'none';
                 }
+                self._attachPointerListeners(state);
             },
             onScroll: () => {
                 this._checkScrollPosition(state);
@@ -428,10 +454,6 @@ const plugin = {
                 this._scrollToBottom(state);
             }
         };
-
-        document.addEventListener('mousemove', state.handlers.onMouseMove);
-        document.addEventListener('mousemove', state.handlers.onResizeMove);
-        document.addEventListener('mouseup', state.handlers.onMouseUp);
     },
 
     _bindUI(state) {
@@ -779,9 +801,7 @@ const plugin = {
             if (ui && ui.newLogIndicator) {
                 ui.newLogIndicator.removeEventListener('click', state.handlers.onScrollToBottom);
             }
-            document.removeEventListener('mousemove', state.handlers.onMouseMove);
-            document.removeEventListener('mousemove', state.handlers.onResizeMove);
-            document.removeEventListener('mouseup', state.handlers.onMouseUp);
+            this._detachPointerListeners(state);
             state.handlers = null;
         }
         this._teardownUI(state);
