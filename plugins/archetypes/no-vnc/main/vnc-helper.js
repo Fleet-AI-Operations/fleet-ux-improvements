@@ -14,6 +14,10 @@ const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
 const PROMPT_DEFAULT_LINES = 5;
+const DEFAULT_MODAL_WIDTH = 320;
+const DEFAULT_MODAL_HEIGHT = 420;
+const MIN_MODAL_WIDTH = 260;
+const MIN_MODAL_HEIGHT = 180;
 
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
@@ -27,7 +31,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -215,6 +219,8 @@ const plugin = {
         let restoreTab = null;
         let onMove = () => {};
         let onUp = () => {};
+        let onResizeMove = () => {};
+        let onResizeUp = () => {};
 
         const minimizeModal = () => {
             if (!root) {
@@ -249,11 +255,11 @@ const plugin = {
         if (showPanel) {
             root = document.createElement('div');
             root.id = ROOT_ID;
-            root.style.cssText = `position:fixed;left:16px;top:120px;width:320px;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
+            root.style.cssText = `position:fixed;left:16px;top:120px;width:${DEFAULT_MODAL_WIDTH}px;height:${DEFAULT_MODAL_HEIGHT}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
 
             const headerEl = document.createElement('div');
             headerEl.style.cssText =
-                'display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);';
+                'display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;';
             const headerTitle = document.createElement('div');
             headerTitle.textContent = 'VNC Helper';
             headerTitle.style.cssText =
@@ -274,7 +280,8 @@ const plugin = {
             headerEl.appendChild(minimizeBtn);
 
             const bodyEl = document.createElement('div');
-            bodyEl.style.cssText = 'padding:0 0 12px 0;user-select:text;';
+            bodyEl.style.cssText =
+                'flex:1;min-height:0;overflow-y:auto;padding:0 0 12px 0;user-select:text;';
 
             // Prompt section
             const promptBody = document.createElement('div');
@@ -356,8 +363,14 @@ const plugin = {
             clipSection.appendChild(clipBody);
             bodyEl.appendChild(clipSection);
 
+            const resizeHandle = document.createElement('div');
+            resizeHandle.setAttribute('aria-label', 'Resize VNC Helper');
+            resizeHandle.style.cssText =
+                'position:absolute;right:2px;bottom:2px;width:14px;height:14px;cursor:se-resize;background:transparent;border-right:2px solid rgba(255,255,255,0.25);border-bottom:2px solid rgba(255,255,255,0.25);border-radius:0 0 8px 0;z-index:1;';
+
             root.appendChild(headerEl);
             root.appendChild(bodyEl);
+            root.appendChild(resizeHandle);
             document.body.appendChild(root);
 
             bExtract.addEventListener('click', () => {
@@ -376,8 +389,14 @@ const plugin = {
             });
 
             let drag = false;
+            let resizing = false;
             let ox = 0;
             let oy = 0;
+            let resizeStartX = 0;
+            let resizeStartY = 0;
+            let resizeStartW = 0;
+            let resizeStartH = 0;
+
             onMove = (ev) => {
                 if (!drag || !root) {
                     return;
@@ -385,11 +404,36 @@ const plugin = {
                 root.style.left = `${Math.max(0, ev.clientX - ox)}px`;
                 root.style.top = `${Math.max(0, ev.clientY - oy)}px`;
             };
+            onResizeMove = (ev) => {
+                if (!resizing || !root) {
+                    return;
+                }
+                const nextW = Math.max(MIN_MODAL_WIDTH, resizeStartW + (ev.clientX - resizeStartX));
+                const nextH = Math.max(MIN_MODAL_HEIGHT, resizeStartH + (ev.clientY - resizeStartY));
+                root.style.width = `${nextW}px`;
+                root.style.height = `${nextH}px`;
+            };
             onUp = () => {
+                if (!drag) {
+                    return;
+                }
                 drag = false;
                 headerTitle.style.cursor = 'grab';
                 document.removeEventListener('mousemove', onMove, true);
                 document.removeEventListener('mouseup', onUp, true);
+            };
+            onResizeUp = () => {
+                if (!resizing) {
+                    return;
+                }
+                resizing = false;
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onResizeMove, true);
+                document.removeEventListener('mouseup', onResizeUp, true);
+                if (root) {
+                    const rect = root.getBoundingClientRect();
+                    Logger.log(`vncHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                }
             };
             headerTitle.addEventListener('mousedown', (ev) => {
                 if (ev.button !== 0) {
@@ -403,6 +447,22 @@ const plugin = {
                 document.addEventListener('mousemove', onMove, true);
                 document.addEventListener('mouseup', onUp, true);
                 ev.preventDefault();
+            });
+            resizeHandle.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                ev.preventDefault();
+                ev.stopPropagation();
+                resizing = true;
+                const r = root.getBoundingClientRect();
+                resizeStartX = ev.clientX;
+                resizeStartY = ev.clientY;
+                resizeStartW = r.width;
+                resizeStartH = r.height;
+                document.body.style.userSelect = 'none';
+                document.addEventListener('mousemove', onResizeMove, true);
+                document.addEventListener('mouseup', onResizeUp, true);
             });
         }
 
@@ -443,6 +503,9 @@ const plugin = {
         window.__fleetVncHelperTeardown = () => {
             document.removeEventListener('mousemove', onMove, true);
             document.removeEventListener('mouseup', onUp, true);
+            document.removeEventListener('mousemove', onResizeMove, true);
+            document.removeEventListener('mouseup', onResizeUp, true);
+            document.body.style.userSelect = '';
             if (window._vncHelperKeydown) {
                 document.removeEventListener('keydown', window._vncHelperKeydown, true);
                 window._vncHelperKeydown = null;
@@ -459,7 +522,7 @@ const plugin = {
 
         if (showPanel) {
             Logger.log('vncHelper: modal and keyboard shortcuts active');
-            toast('VNC Helper ready — drag the title bar. ⌘C/⌘V, Ctrl+Shift+C/F.');
+            toast('VNC Helper ready — drag title bar, resize corner. ⌘C/⌘V, Ctrl+Shift+C/F.');
         } else {
             Logger.log('vncHelper: keyboard shortcuts active (panel hidden via settings)');
             toast('VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
