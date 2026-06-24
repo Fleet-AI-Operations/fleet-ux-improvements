@@ -19,6 +19,13 @@ const DEFAULT_MODAL_HEIGHT = 420;
 const MIN_MODAL_WIDTH = 260;
 const MIN_MODAL_HEIGHT = 180;
 
+const LAYOUT_STORAGE_KEYS = {
+    left: 'vnc-helper-layout-left',
+    top: 'vnc-helper-layout-top',
+    width: 'vnc-helper-layout-width',
+    height: 'vnc-helper-layout-height'
+};
+
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
@@ -31,7 +38,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -44,6 +51,42 @@ const plugin = {
 
     isPanelEnabled() {
         return Storage.getSubOptionEnabled(this.id, SHOW_PANEL_SUBOPTION_ID, true);
+    },
+
+    loadSavedLayout() {
+        return {
+            left: Storage.get(LAYOUT_STORAGE_KEYS.left, null),
+            top: Storage.get(LAYOUT_STORAGE_KEYS.top, null),
+            width: Storage.get(LAYOUT_STORAGE_KEYS.width, DEFAULT_MODAL_WIDTH),
+            height: Storage.get(LAYOUT_STORAGE_KEYS.height, DEFAULT_MODAL_HEIGHT)
+        };
+    },
+
+    saveLayout(root) {
+        if (!root) {
+            return;
+        }
+        const rect = root.getBoundingClientRect();
+        Storage.set(LAYOUT_STORAGE_KEYS.left, rect.left);
+        Storage.set(LAYOUT_STORAGE_KEYS.top, rect.top);
+        Storage.set(LAYOUT_STORAGE_KEYS.width, rect.width);
+        Storage.set(LAYOUT_STORAGE_KEYS.height, rect.height);
+    },
+
+    makeSmallHeaderButton(label, ariaLabel) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.setAttribute('aria-label', ariaLabel);
+        btn.style.cssText =
+            'margin:0;padding:2px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#d0d0d8;font:inherit;font-size:10px;font-weight:500;cursor:pointer;';
+        btn.onmouseenter = () => {
+            btn.style.background = 'rgba(255,255,255,0.14)';
+        };
+        btn.onmouseleave = () => {
+            btn.style.background = 'rgba(255,255,255,0.08)';
+        };
+        return btn;
     },
 
     installWaitObserver(state) {
@@ -139,7 +182,7 @@ const plugin = {
         textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
     },
 
-    makeSectionHeader(label, onToggle) {
+    makeSectionHeader(label, onToggle, trailingEl) {
         const header = document.createElement('div');
         header.style.cssText =
             'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;letter-spacing:0.03em;text-transform:uppercase;user-select:none;';
@@ -157,6 +200,9 @@ const plugin = {
 
         header.appendChild(toggleBtn);
         header.appendChild(title);
+        if (trailingEl) {
+            header.appendChild(trailingEl);
+        }
 
         let collapsed = false;
         toggleBtn.addEventListener('click', (ev) => {
@@ -253,9 +299,10 @@ const plugin = {
         };
 
         if (showPanel) {
+            const savedLayout = this.loadSavedLayout();
             root = document.createElement('div');
             root.id = ROOT_ID;
-            root.style.cssText = `position:fixed;left:16px;top:120px;width:${DEFAULT_MODAL_WIDTH}px;height:${DEFAULT_MODAL_HEIGHT}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? 16}px;top:${savedLayout.top ?? 120}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
 
             const headerEl = document.createElement('div');
             headerEl.style.cssText =
@@ -290,15 +337,24 @@ const plugin = {
             promptTextarea.setAttribute('aria-label', 'Prompt');
             promptTextarea.spellcheck = false;
             const cachedPrompt = this.readCachedPrompt();
+            const initialPromptText = cachedPrompt;
             if (cachedPrompt) {
                 promptTextarea.value = cachedPrompt;
             }
             this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
             promptBody.appendChild(promptTextarea);
 
+            const resetPromptBtn = this.makeSmallHeaderButton('Reset', 'Reset prompt to page-load state');
+            resetPromptBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                promptTextarea.value = initialPromptText;
+                this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                Logger.log('vncHelper: prompt reset to page-load state');
+            });
+
             const promptSection = this.makeSectionHeader('Prompt', (collapsed) => {
                 promptBody.style.display = collapsed ? 'none' : '';
-            });
+            }, resetPromptBtn);
             bodyEl.appendChild(promptSection.header);
             bodyEl.appendChild(promptBody);
 
@@ -421,6 +477,11 @@ const plugin = {
                 headerTitle.style.cursor = 'grab';
                 document.removeEventListener('mousemove', onMove, true);
                 document.removeEventListener('mouseup', onUp, true);
+                if (root) {
+                    this.saveLayout(root);
+                    const rect = root.getBoundingClientRect();
+                    Logger.log(`vncHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                }
             };
             onResizeUp = () => {
                 if (!resizing) {
@@ -431,6 +492,7 @@ const plugin = {
                 document.removeEventListener('mousemove', onResizeMove, true);
                 document.removeEventListener('mouseup', onResizeUp, true);
                 if (root) {
+                    this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
                     Logger.log(`vncHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
                 }

@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.6",
+  "archetypesVersion": "11.7",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -84,8 +84,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.14",
-      "hash": "sha256-6aca31e25d0e67d983009d5c6144da884db7b6af6fa439f257d4084051fba318",
+      "version": "2.15",
+      "hash": "sha256-ccb3635a66a684d86d45666889997179f59ba19c8db218555f17792bdcfc7070",
       "log": false
     }
   ],
@@ -601,8 +601,8 @@
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.4",
-          "hash": "sha256-a76b3e7c02d8d91cf1647bd9838c5c9c0ed4123c0fb459abf2caac6be0b42c3c",
+          "version": "1.5",
+          "hash": "sha256-648cd1dca51120d390460fc2738adf8297539a2510dddb4cb7bc1f86dd15e6a5",
           "log": false
         }
       ]
