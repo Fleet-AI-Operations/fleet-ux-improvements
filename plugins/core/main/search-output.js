@@ -129,12 +129,14 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
+    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 
 const DASH_OUTPUT_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
     { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
+    { id: 'dispute_resolution_time_minutes', label: 'Dispute Resolution Time Minutes', type: 'number', hydrateHint: true },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
@@ -3844,7 +3846,8 @@ const searchOutputMethods = {
             promptHistory: (opts.promptHistory || []).map((h) => h.id),
             qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
             v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id),
-            qaTimeMinutes: (opts.qaTimeMinutes || []).map((h) => h.id)
+            qaTimeMinutes: (opts.qaTimeMinutes || []).map((h) => h.id),
+            disputeResolutionTimeMinutes: (opts.disputeResolutionTimeMinutes || []).map((h) => h.id)
         };
     },
 
@@ -3886,6 +3889,22 @@ const searchOutputMethods = {
         const present = new Set();
         for (const item of scopeItems || []) {
             for (const bucketId of lib.itemQaTimeMinutesBuckets(item)) {
+                present.add(bucketId);
+            }
+        }
+        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
+            .filter((id) => present.has(id))
+            .map((id) => ({
+                id,
+                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
+            }));
+    },
+
+    _buildDisputeResolutionTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        const present = new Set();
+        for (const item of scopeItems || []) {
+            for (const bucketId of lib.itemDisputeResolutionTimeMinutesBuckets(item)) {
                 present.add(bucketId);
             }
         }
@@ -4407,6 +4426,7 @@ const searchOutputMethods = {
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
         options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
         options.qaTimeMinutes = this._buildQaTimeFilterOptions(scopeItems);
+        options.disputeResolutionTimeMinutes = this._buildDisputeResolutionTimeFilterOptions(scopeItems);
         this._state.filterListOptions = options;
         const newBounds = this._listBoundsFromOptions(options);
         this._state.filterListBoundsPrev = prevBounds;
@@ -4520,6 +4540,8 @@ const searchOutputMethods = {
                 return dashLib().itemV1CreationTimeMinutes(item);
             case 'qa_time_minutes':
                 return dashLib().itemQaTimeMinutes(item);
+            case 'dispute_resolution_time_minutes':
+                return dashLib().itemDisputeResolutionTimeMinutes(item);
             default:
                 return null;
         }
@@ -4727,6 +4749,7 @@ const searchOutputMethods = {
             qaHelpfulness: [],
             v1CreationTimeMinutes: [],
             qaTimeMinutes: [],
+            disputeResolutionTimeMinutes: [],
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -6219,7 +6242,8 @@ const searchOutputMethods = {
             'filter-task-issues': 'Task issues',
             'filter-return-types': 'Return types',
             'filter-v1-creation-time': 'v1 Creation Time Minutes',
-            'filter-qa-time': 'QA Time Minutes'
+            'filter-qa-time': 'QA Time Minutes',
+            'filter-dispute-resolution-time': 'Dispute Resolution Time Minutes'
         };
         return labels[scopeKey] || scopeKey;
     },
@@ -6633,7 +6657,7 @@ const searchOutputMethods = {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
             statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: []
+            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: [], disputeResolutionTimeMinutes: []
         };
         this._resetManualFilters();
         for (const { scopeKey } of DASH_FILTER_SCOPES) {
@@ -7533,7 +7557,7 @@ const searchOutputMethods = {
         const keys = [
             'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
             'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
-            'v1CreationTimeMinutes', 'qaTimeMinutes'
+            'v1CreationTimeMinutes', 'qaTimeMinutes', 'disputeResolutionTimeMinutes'
         ];
         for (const key of keys) {
             const boundIds = bounds[key] || [];
@@ -8112,7 +8136,8 @@ const searchOutputMethods = {
             ['promptHistory', bounds.promptHistory],
             ['qaHelpfulness', bounds.qaHelpfulness],
             ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes],
-            ['qaTimeMinutes', bounds.qaTimeMinutes]
+            ['qaTimeMinutes', bounds.qaTimeMinutes],
+            ['disputeResolutionTimeMinutes', bounds.disputeResolutionTimeMinutes]
         ];
         for (const [key, boundIds] of dims) {
             if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
@@ -10272,7 +10297,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.29',
+    _version: '3.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

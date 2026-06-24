@@ -36,6 +36,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
+    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
@@ -101,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '5.66',
+    _version: '5.67',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

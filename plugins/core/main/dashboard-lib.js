@@ -340,7 +340,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '2.23',
+    _version: '2.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -458,7 +458,9 @@ const plugin = {
             itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
             itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets),
             itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
-            itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets)
+            itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets),
+            itemDisputeResolutionTimeMinutes: bind(self._itemDisputeResolutionTimeMinutes),
+            itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -981,6 +983,44 @@ const plugin = {
         return dashLibPassesDimension(this._itemQaTimeMinutesBuckets(item), effective, count);
     },
 
+    _collectItemDisputeResolutionDurationSeconds(item) {
+        const seconds = [];
+        for (const dispute of (item && item.disputes) || []) {
+            if (!dispute.resolutionAt) continue;
+            const sec = dispute.reviewDurationSeconds;
+            if (sec == null || !Number.isFinite(Number(sec)) || Number(sec) < 0) continue;
+            seconds.push(Number(sec));
+        }
+        return seconds;
+    },
+
+    _itemDisputeResolutionTimeMinutes(item) {
+        const seconds = this._collectItemDisputeResolutionDurationSeconds(item);
+        if (seconds.length === 0) return null;
+        return dashLibV1CreationTimeMinutes(Math.max(...seconds));
+    },
+
+    _itemDisputeResolutionTimeMinutesBuckets(item) {
+        const buckets = new Set();
+        for (const sec of this._collectItemDisputeResolutionDurationSeconds(item)) {
+            const minutes = dashLibV1CreationTimeMinutes(sec);
+            const bucketId = dashLibV1CreationTimeBucketId(minutes);
+            if (bucketId) buckets.add(bucketId);
+        }
+        return [...buckets];
+    },
+
+    _itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, forceIncludeId) {
+        const selected = draft.disputeResolutionTimeMinutes || [];
+        const count = (listBounds.disputeResolutionTimeMinutes || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemDisputeResolutionTimeMinutesBuckets(item), effective, count);
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
@@ -1014,6 +1054,10 @@ const plugin = {
         const qaTimeCount = (bounds.qaTimeMinutes || []).length;
         if (qaTimeCount > 0) {
             passed = passed.filter((item) => this._itemPassesQaTimeFilter(item, f, bounds));
+        }
+        const disputeResolutionTimeCount = (bounds.disputeResolutionTimeMinutes || []).length;
+        if (disputeResolutionTimeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesDisputeResolutionTimeFilter(item, f, bounds));
         }
         const queryActive = regex
             ? lib.isRegexQueryActive(promptText)
@@ -1251,6 +1295,7 @@ const plugin = {
         result.qaHelpfulness = new Set();
         result.v1CreationTimeMinutes = new Set();
         result.qaTimeMinutes = new Set();
+        result.disputeResolutionTimeMinutes = new Set();
         return result;
     },
 
@@ -1289,6 +1334,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
@@ -1302,6 +1348,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, id)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantV1CreationTime.add(id);
         }
@@ -1315,8 +1362,23 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, draft, listBounds, id)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
             ));
             if (!hasMatch) irrelevantQaTime.add(id);
+        }
+        const disputeResolutionTimeOptions = (options && options.disputeResolutionTimeMinutes) || [];
+        const irrelevantDisputeResolutionTime = result.disputeResolutionTimeMinutes;
+        for (const { id } of disputeResolutionTimeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, id)
+            ));
+            if (!hasMatch) irrelevantDisputeResolutionTime.add(id);
         }
         return result;
     },
@@ -1329,6 +1391,7 @@ const plugin = {
         result.qaHelpfulness = new Map();
         result.v1CreationTimeMinutes = new Map();
         result.qaTimeMinutes = new Map();
+        result.disputeResolutionTimeMinutes = new Map();
         return result;
     },
 
@@ -1362,6 +1425,11 @@ const plugin = {
         const selectedQaTime = effective.qaTimeMinutes || [];
         if (allQaTime.length > 0 && selectedQaTime.length === 0) {
             effective.qaTimeMinutes = [...allQaTime];
+        }
+        const allDisputeResolutionTime = bounds.disputeResolutionTimeMinutes || [];
+        const selectedDisputeResolutionTime = effective.disputeResolutionTimeMinutes || [];
+        if (allDisputeResolutionTime.length > 0 && selectedDisputeResolutionTime.length === 0) {
+            effective.disputeResolutionTimeMinutes = [...allDisputeResolutionTime];
         }
         return effective;
     },
@@ -1402,6 +1470,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             helpfulnessCounts.set(id, count);
         }
@@ -1415,6 +1484,7 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, id)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             v1CreationTimeCounts.set(id, count);
         }
@@ -1428,8 +1498,23 @@ const plugin = {
                 && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
                 && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
                 && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, id)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
             )).length;
             qaTimeCounts.set(id, count);
+        }
+        const disputeResolutionTimeOptions = (options && options.disputeResolutionTimeMinutes) || [];
+        const disputeResolutionTimeCounts = result.disputeResolutionTimeMinutes;
+        for (const { id } of disputeResolutionTimeOptions) {
+            const count = items.filter((item) => (
+                this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
+                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
+                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
+                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, id)
+            )).length;
+            disputeResolutionTimeCounts.set(id, count);
         }
         return result;
     },
