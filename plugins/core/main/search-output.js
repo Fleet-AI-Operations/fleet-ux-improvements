@@ -63,6 +63,9 @@ const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags',
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
 const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
+const DASH_FLEET_INTERNAL_API = 'https://api.internal.fleet-platform.fleetai.com/v1';
+const DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE = 50;
+const DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES = 3;
 const SO_ROLLING_OVERLAY_OUTSET = 6;
 
 const DASH_KIND_LABELS = {
@@ -622,6 +625,211 @@ const searchOutputMethods = {
             return json;
         }
         return null;
+    },
+
+    async _fleetInternalGet(path, queryParams, teamId) {
+        const pageWindow = this._pageWindow();
+        const ops = this._dashOpsTab();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const team = String(teamId || this._dashGetCookie('current-team-id') || '').trim();
+        if (!team || !DASH_UUID_RE.test(team)) {
+            throw new Error('Fleet team context not available.');
+        }
+        const url = new URL(DASH_FLEET_INTERNAL_API + path);
+        Object.entries(queryParams || {}).forEach(([key, value]) => {
+            if (value != null && value !== '') url.searchParams.set(key, String(value));
+        });
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'GET',
+            credentials: 'omit',
+            headers: {
+                accept: '*/*',
+                'content-type': 'application/json',
+                'x-jwt-token': jwt,
+                'x-team-id': team,
+                origin: DASH_FLEET_ORIGIN,
+                referer: DASH_FLEET_ORIGIN + '/'
+            }
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Fleet internal API ' + res.status + ': ' + (text || res.statusText));
+        }
+        return res.json();
+    },
+
+    async _fetchUserResolvedDisputeHistoryPage(userId, teamId, offset, limit) {
+        const uid = String(userId || '').trim();
+        if (!uid) return { disputes: [], total_count: 0 };
+        return this._fleetInternalGet('/dispute-reviews/history', {
+            user_id: uid,
+            limit: String(limit != null ? limit : DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE),
+            offset: String(offset != null ? offset : 0)
+        }, teamId);
+    },
+
+    _disputeIdsMatch(leftId, rightId) {
+        return String(leftId || '').trim() === String(rightId || '').trim();
+    },
+
+    _findOpenDisputePrefetchRow(disputeId, taskId) {
+        const tid = String(taskId || '').trim();
+        if (!tid) return null;
+        const rows = this._getPrefetchCache('openDisputes').get(tid) || [];
+        return rows.find((row) => this._disputeIdsMatch(row && row.id, disputeId)) || null;
+    },
+
+    async _fetchLiveDashboardResolvedDispute(disputeId, userId, teamId) {
+        const did = String(disputeId || '').trim();
+        const uid = String(userId || '').trim();
+        if (!did || !uid) return null;
+        const limit = DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE;
+        let offset = 0;
+        for (let page = 0; page < DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES; page++) {
+            const payload = await this._fetchUserResolvedDisputeHistoryPage(uid, teamId, offset, limit);
+            const rows = (payload && Array.isArray(payload.disputes)) ? payload.disputes : [];
+            const found = rows.find((row) => this._disputeIdsMatch(row && row.id, did));
+            if (found) return found;
+            const totalCount = payload && payload.total_count != null ? Number(payload.total_count) : rows.length;
+            offset += limit;
+            if (rows.length < limit || offset >= totalCount) break;
+        }
+        Logger.warn('search-output: dispute ' + did + ' not found in review history after '
+            + DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES + ' page(s)');
+        return null;
+    },
+
+    _mergeDashboardResolvedDisputeRow({ historyRow, openRow, resolveContext, taskId }) {
+        const option = resolveContext && resolveContext.option;
+        const reason = resolveContext && resolveContext.reason;
+        const ui = resolveContext && resolveContext.ui;
+        if (!option || !String(reason || '').trim()) return null;
+
+        const hist = historyRow || {};
+        const open = openRow || {};
+        const tid = String(taskId || '').trim();
+        const resolverId = this._dashGetCurrentUserId();
+        const body = this._buildDisputeResolveRequestBody(ui || {}, option, reason);
+        const disputeData = Object.assign({}, open.dispute_data || {}, hist.dispute_data || {});
+        if (body.disputeReviewDurationSeconds != null) {
+            disputeData.dispute_review_duration_seconds = body.disputeReviewDurationSeconds;
+        }
+
+        let feedbackId = open.feedback_id;
+        if (feedbackId == null && hist.dispute_data && hist.dispute_data.feedbackId != null) {
+            feedbackId = hist.dispute_data.feedbackId;
+        }
+
+        const merged = {
+            id: hist.id != null ? hist.id : open.id,
+            eval_task_id: hist.eval_task_id || open.eval_task_id || tid,
+            team_id: open.team_id || hist.team_id || null,
+            created_at: hist.created_at || open.created_at,
+            dispute_status: hist.dispute_status || option.status,
+            dispute_data: disputeData,
+            dispute_reason: open.dispute_reason || hist.dispute_reason || '',
+            resolved_at: hist.resolved_at || new Date().toISOString(),
+            resolved_by: resolverId,
+            resolution_reason: body.resolutionReason,
+            feedback_id: feedbackId,
+            original_feedback_created_at: open.original_feedback_created_at || null,
+            eval_task: open.eval_task || null,
+            creator: open.creator || null,
+            resolver: open.resolver || null
+        };
+        return this._stripResolvedDisputeRow(merged);
+    },
+
+    _removeDisputeFromOpenPrefetch(disputeId, taskId) {
+        const did = String(disputeId || '').trim();
+        const tid = String(taskId || '').trim();
+        if (!did || !tid) return;
+
+        const filterMap = (map) => {
+            if (!map || typeof map.get !== 'function') return;
+            const rows = map.get(tid);
+            if (!rows || !rows.length) return;
+            const next = rows.filter((row) => !this._disputeIdsMatch(row && row.id, did));
+            if (next.length) map.set(tid, next);
+            else map.delete(tid);
+        };
+
+        filterMap(this._getPrefetchCache('openDisputes'));
+        filterMap(this._state.openDisputesByTaskId);
+    },
+
+    _upsertDisputeInResolvedPrefetch(strippedRow, taskId) {
+        const tid = String(taskId || '').trim();
+        if (!strippedRow || !tid) return;
+        const cache = this._getPrefetchCache('resolvedDisputes');
+        const did = String(strippedRow.id || '').trim();
+        const bucket = cache.get(tid) || [];
+        const next = bucket.filter((row) => !this._disputeIdsMatch(row && row.id, did));
+        next.push(strippedRow);
+        cache.set(tid, next);
+
+        if (!this._state.resolvedDisputeTaskIds) this._state.resolvedDisputeTaskIds = new Set();
+        this._state.resolvedDisputeTaskIds.add(tid);
+        if (!this._state.resolverDisputeTaskIds) this._state.resolverDisputeTaskIds = new Set();
+        this._state.resolverDisputeTaskIds.add(tid);
+
+        const at = String(strippedRow.resolved_at || '');
+        if (at) {
+            if (!this._state.resolvedDisputeAtByTaskId) {
+                this._state.resolvedDisputeAtByTaskId = new Map();
+            }
+            const prev = this._state.resolvedDisputeAtByTaskId.get(tid);
+            if (!prev || at > prev) this._state.resolvedDisputeAtByTaskId.set(tid, at);
+        }
+    },
+
+    async _syncDashboardDisputeResolvePrefetch(disputeId, itemId, resolveContext) {
+        const id = String(disputeId || '').trim();
+        const iid = String(itemId || '').trim();
+        if (!id || !iid) return;
+
+        const item = this._findCachedItem(iid);
+        if (!item || !item.task || !item.task.id) {
+            Logger.warn('search-output: dispute resolve cache sync skipped — item not found ' + iid);
+            return;
+        }
+        const taskId = item.task.id;
+        const openRow = this._findOpenDisputePrefetchRow(id, taskId);
+
+        const userId = this._dashGetCurrentUserId();
+        const teamId = this._dashGetCookie('current-team-id');
+        let historyRow = null;
+        try {
+            historyRow = await this._fetchLiveDashboardResolvedDispute(id, userId, teamId);
+        } catch (e) {
+            Logger.warn('search-output: dispute review history fetch failed — ' + id, e);
+        }
+
+        if (!historyRow && !openRow) {
+            Logger.warn('search-output: dispute resolve cache sync skipped — no history or open row for ' + id);
+            return;
+        }
+
+        const stripped = this._mergeDashboardResolvedDisputeRow({
+            historyRow,
+            openRow,
+            resolveContext,
+            taskId
+        });
+        if (!stripped || !stripped.id) {
+            Logger.warn('search-output: dispute resolve cache sync skipped — merge failed for ' + id);
+            return;
+        }
+
+        this._removeDisputeFromOpenPrefetch(id, taskId);
+        this._upsertDisputeInResolvedPrefetch(stripped, taskId);
+        Logger.log('search-output: dispute resolve cache synced — ' + id
+            + ' task ' + String(taskId).slice(0, 8)
+            + (historyRow ? '' : ' (degraded merge)'));
     },
 
     _parseFleetWebPostErrorBody(err) {
@@ -7482,6 +7690,7 @@ const searchOutputMethods = {
             });
             delete this._state.disputeClaimUi[id];
             Logger.log('search-output: dispute resolved — ' + id + ' (' + option.key + ')');
+            await this._syncDashboardDisputeResolvePrefetch(id, itemId, { option, reason, ui });
             await this._rehydrateCard(itemId);
         } catch (e) {
             ui.submitting = false;
@@ -10661,7 +10870,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '3.33',
+    _version: '3.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
