@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.1",
+  "archetypesVersion": "11.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -461,6 +461,12 @@
           "version": "1.9",
           "log": false,
           "hash": "sha256-96e76698cdc83a6539a60fa1586d144d1873931df2434eb21066071afad15a38"
+        },
+        {
+          "name": "vnc-prompt-writer.js",
+          "version": "1.0",
+          "hash": "sha256-c2cf4ce42e18229d6342cfe3c96f35b9aa330116ed5046df006f1d2df26d54a7",
+          "log": false
         }
       ]
     },
@@ -594,9 +600,9 @@
       "disambiguationSelectors": [],
       "plugins": [
         {
-          "name": "novnc-clipboard-bridge.js",
-          "version": "1.1",
-          "hash": "sha256-6c5c31f50878010a97dd053b5b2ce252a59c1b7ebb39ff5d135611e3ef484994",
+          "name": "vnc-helper.js",
+          "version": "1.0",
+          "hash": "sha256-563881ba95b2430f7e2795390dc54baae16364e5e4a860597bb4ad621840f4bc",
           "log": false
         }
       ]
