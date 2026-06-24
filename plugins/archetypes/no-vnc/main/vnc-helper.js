@@ -27,7 +27,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -322,17 +322,28 @@ const plugin = {
             bodyEl.appendChild(scratchSection.header);
             bodyEl.appendChild(scratchBody);
 
-            // Clipboard buttons section
+            // VM Clipboard buttons section
             const clipSection = document.createElement('div');
             clipSection.style.cssText =
-                'padding:8px 12px 0 12px;border-top:1px solid rgba(255,255,255,0.08);user-select:text;';
+                'padding:0 0 4px 0;border-top:1px solid rgba(255,255,255,0.08);user-select:text;';
+
+            const clipHeader = document.createElement('div');
+            clipHeader.textContent = 'VM Clipboard';
+            clipHeader.style.cssText =
+                'padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;letter-spacing:0.03em;text-transform:uppercase;user-select:none;';
+
+            const clipBody = document.createElement('div');
+            clipBody.style.cssText = 'padding:0 12px 8px 12px;';
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:8px;';
 
             function makeBtn(label) {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.textContent = label;
                 b.style.cssText =
-                    'display:block;width:100%;margin:0 0 8px 0;padding:9px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#f2f2f2;font:inherit;font-weight:500;cursor:pointer;';
+                    'flex:1;margin:0;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
                 b.onmouseenter = () => {
                     b.style.background = 'rgba(255,255,255,0.14)';
                 };
@@ -342,15 +353,18 @@ const plugin = {
                 return b;
             }
 
-            const bExtract = makeBtn('Extract VM Clipboard');
-            const bOverwrite = makeBtn('Overwrite VM Clipboard');
+            const bExtract = makeBtn('Extract');
+            const bOverwrite = makeBtn('Overwrite');
             const shortcutHint = document.createElement('div');
             shortcutHint.textContent = '⌘C/⌘V · Ctrl+Shift+C/F';
-            shortcutHint.style.cssText = 'font-size:11px;color:#a5a5ad;text-align:center;margin-top:2px;';
+            shortcutHint.style.cssText = 'font-size:11px;color:#a5a5ad;text-align:center;margin-top:8px;';
 
-            clipSection.appendChild(bExtract);
-            clipSection.appendChild(bOverwrite);
-            clipSection.appendChild(shortcutHint);
+            btnRow.appendChild(bExtract);
+            btnRow.appendChild(bOverwrite);
+            clipBody.appendChild(btnRow);
+            clipBody.appendChild(shortcutHint);
+            clipSection.appendChild(clipHeader);
+            clipSection.appendChild(clipBody);
             bodyEl.appendChild(clipSection);
 
             root.appendChild(headerEl);
