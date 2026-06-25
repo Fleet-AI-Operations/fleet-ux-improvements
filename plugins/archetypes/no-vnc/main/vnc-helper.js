@@ -38,7 +38,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -397,13 +397,16 @@ const plugin = {
             this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
             promptBody.appendChild(promptTextarea);
 
-            const resetPromptBtn = this.makeSmallHeaderButton('Reset', 'Reset prompt to page-load state');
-            resetPromptBtn.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                promptTextarea.value = initialPromptText;
-                this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
-                Logger.log('vncHelper: prompt reset to page-load state');
-            });
+            let resetPromptBtn = null;
+            if (cachedPrompt) {
+                resetPromptBtn = this.makeSmallHeaderButton('Reset', 'Reset prompt to page-load state');
+                resetPromptBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    promptTextarea.value = initialPromptText;
+                    this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                    Logger.log('vncHelper: prompt reset to page-load state');
+                });
+            }
 
             const promptSection = this.makeSectionHeader('Prompt', (collapsed) => {
                 promptBody.style.display = collapsed ? 'none' : '';

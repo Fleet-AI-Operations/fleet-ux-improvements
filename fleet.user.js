@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.5.4
+// @version      9.6.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -23,14 +23,21 @@
 (function() {
     'use strict';
 
-    // Exit immediately if inside an iframe.
+    // noVNC / embedded env instances live on *.env.*.fleetai.com (also used before full bootstrap in iframes).
+    const NOVNC_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
+
+    // Exit immediately if inside a non-env iframe; env-subdomain iframes run minimal FOS clipboard bootstrap only.
     if (window.top != window.self) {
-        console.warn("[Fleet UX Enhancer] - iframe detected. Terminating duplicate script instance. This is normal.");
+        if (!NOVNC_HOST_PATTERN.test(window.location.hostname)) {
+            console.warn("[Fleet UX Enhancer] - iframe detected. Terminating duplicate script instance. This is normal.");
+            return;
+        }
+        initFosEmbeddedMode();
         return;
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.5.4';
+    const VERSION = '9.6.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -42,7 +49,6 @@
 
     // noVNC instances run on a separate subdomain origin; return a synthetic path so
     // the archetype detection pipeline can still match them via urlPattern.
-    const NOVNC_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
     const NOVNC_SYNTHETIC_PATH = '_novnc';
     
     // GitHub repository configuration
@@ -290,6 +296,387 @@
 
     if (DEV_SCRIPTS_ENABLED) {
         writeDevActiveBranchMarker();
+    }
+
+    /**
+     * Minimal bootstrap for FOS env iframes embedded on www.fleetai.com.
+     * Parent fos-embedded-watcher authorizes via postMessage; this injects a neutered clipboard panel only.
+     */
+    function initFosEmbeddedMode() {
+        const EMBED_LOG = '[Fleet UX Enhancer] fos-embedded';
+        const ROOT_ID = 'fleet-fos-embedded-clipboard';
+        const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
+        const COPY_SUCCESS_MS = 1000;
+        const COPY_FAIL_MS = 500;
+        const FLEET_PARENT_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
+
+        let fosAuthorized = false;
+        let bridgeStarted = false;
+        let bridgeDismissed = false;
+        let waitObserver = null;
+        let clipQueue = Promise.resolve();
+
+        function isFleetParentOrigin(origin) {
+            try {
+                return FLEET_PARENT_HOSTS.has(new URL(origin).hostname);
+            } catch (_e) {
+                return false;
+            }
+        }
+
+        function flashSuccess(btn) {
+            if (btn._fosClipResetTimeout) {
+                clearTimeout(btn._fosClipResetTimeout);
+            }
+            btn.style.transition = '';
+            btn.style.backgroundColor = 'rgb(34, 197, 94)';
+            btn.style.color = '#ffffff';
+            btn._fosClipResetTimeout = setTimeout(() => {
+                btn._fosClipResetTimeout = null;
+                btn.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                btn.style.color = '#f2f2f2';
+            }, COPY_SUCCESS_MS);
+        }
+
+        function flashFailure(btn) {
+            if (btn._fosClipResetTimeout) {
+                clearTimeout(btn._fosClipResetTimeout);
+            }
+            const prevT = btn.style.transition;
+            btn.style.transition = 'none';
+            btn.style.backgroundColor = 'rgb(239, 68, 68)';
+            btn.style.color = '#ffffff';
+            void btn.offsetHeight;
+            btn.style.transition = 'background-color ' + COPY_FAIL_MS + 'ms ease-out, color ' + COPY_FAIL_MS + 'ms ease-out';
+            btn.style.backgroundColor = 'rgba(255,255,255,0.08)';
+            btn.style.color = '#f2f2f2';
+            btn._fosClipResetTimeout = setTimeout(() => {
+                btn.style.transition = prevT || '';
+                btn._fosClipResetTimeout = null;
+            }, COPY_FAIL_MS);
+        }
+
+        function clipEl() {
+            return document.getElementById(NOVNC_CLIPBOARD_ID);
+        }
+
+        function getRfb() {
+            return (
+                window.rfb ||
+                window._rfb ||
+                (window.UI && window.UI.rfb) ||
+                (window.APP && window.APP.rfb) ||
+                (window.noVNC && window.noVNC.rfb) ||
+                null
+            );
+        }
+
+        function sleep(ms) {
+            return new Promise((resolve) => {
+                setTimeout(resolve, ms);
+            });
+        }
+
+        async function pushOsTextToVmClipboard(text) {
+            const el = clipEl();
+            if (!el) {
+                console.warn(EMBED_LOG + ': overwrite failed — noVNC clipboard field missing');
+                return false;
+            }
+            const merged = text;
+            const rfb = getRfb();
+            el.value = merged;
+            if (rfb && typeof rfb.clipboardPasteFrom === 'function') {
+                rfb.clipboardPasteFrom('');
+                await sleep(12);
+                rfb.clipboardPasteFrom(merged);
+            } else {
+                el.value = '';
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(12);
+                el.value = merged;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return true;
+        }
+
+        async function extractVmTextToOs() {
+            const el = clipEl();
+            if (!el) {
+                console.warn(EMBED_LOG + ': extract failed — noVNC clipboard field missing');
+                return false;
+            }
+            const v = el.value || '';
+            if (!v) {
+                console.warn(EMBED_LOG + ': extract skipped — VM clipboard empty');
+                return false;
+            }
+            try {
+                await navigator.clipboard.writeText(v);
+                return true;
+            } catch (e) {
+                console.warn(EMBED_LOG + ': extract failed — could not write system clipboard', e);
+                return false;
+            }
+        }
+
+        async function runOverwrite(btn) {
+            try {
+                const t = await navigator.clipboard.readText();
+                const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
+                if (ok) {
+                    flashSuccess(btn);
+                    console.log(EMBED_LOG + ': overwrite ok');
+                } else {
+                    flashFailure(btn);
+                }
+            } catch (e) {
+                flashFailure(btn);
+                console.warn(EMBED_LOG + ': overwrite failed — could not read system clipboard', e);
+            }
+        }
+
+        async function runExtract(btn) {
+            const ok = await extractVmTextToOs();
+            if (ok) {
+                flashSuccess(btn);
+                console.log(EMBED_LOG + ': extract ok');
+            } else {
+                flashFailure(btn);
+            }
+        }
+
+        function injectPanel() {
+            if (bridgeDismissed) {
+                return;
+            }
+            const old = document.getElementById(ROOT_ID);
+            if (old) {
+                old.remove();
+            }
+
+            const root = document.createElement('div');
+            root.id = ROOT_ID;
+            root.style.cssText =
+                'position:fixed;left:16px;bottom:16px;z-index:2147483646;' +
+                'min-width:220px;max-width:280px;padding:0;' +
+                'border-radius:10px;border:1px solid rgba(255,255,255,0.14);' +
+                'background:rgba(28,28,32,0.96);color:#f2f2f2;' +
+                'font:500 12px/1.4 system-ui,-apple-system,sans-serif;' +
+                'box-shadow:0 8px 32px rgba(0,0,0,0.45);user-select:none;';
+
+            const clipHeader = document.createElement('div');
+            clipHeader.style.cssText =
+                'display:flex;align-items:center;justify-content:space-between;' +
+                'padding:6px 8px 4px 12px;cursor:grab;';
+
+            const clipTitle = document.createElement('div');
+            clipTitle.textContent = 'VM Clipboard';
+            clipTitle.style.cssText =
+                'font-size:11px;font-weight:600;color:#b0b0b8;' +
+                'letter-spacing:0.03em;text-transform:uppercase;flex:1;min-width:0;';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.setAttribute('aria-label', 'Close VM Clipboard');
+            closeBtn.textContent = '\u00d7';
+            closeBtn.style.cssText =
+                'flex-shrink:0;margin:0;padding:0 4px;border:none;background:transparent;' +
+                'color:#a5a5ad;font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;';
+            closeBtn.onmouseenter = () => {
+                closeBtn.style.color = '#f2f2f2';
+            };
+            closeBtn.onmouseleave = () => {
+                closeBtn.style.color = '#a5a5ad';
+            };
+
+            clipHeader.appendChild(clipTitle);
+            clipHeader.appendChild(closeBtn);
+
+            const clipBody = document.createElement('div');
+            clipBody.style.cssText = 'padding:0 12px 10px 12px;';
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:8px;';
+
+            function makeBtn(label) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.style.cssText =
+                    'flex:1;margin:0;padding:6px 8px;border-radius:6px;' +
+                    'border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);' +
+                    'color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
+                b.onmouseenter = () => {
+                    if (!b._fosClipResetTimeout) {
+                        b.style.background = 'rgba(255,255,255,0.14)';
+                    }
+                };
+                b.onmouseleave = () => {
+                    if (!b._fosClipResetTimeout) {
+                        b.style.background = 'rgba(255,255,255,0.08)';
+                    }
+                };
+                return b;
+            }
+
+            const bExtract = makeBtn('Extract');
+            const bOverwrite = makeBtn('Overwrite');
+            bExtract.addEventListener('click', () => {
+                clipQueue = clipQueue.then(() => runExtract(bExtract)).catch(() => {});
+            });
+            bOverwrite.addEventListener('click', () => {
+                clipQueue = clipQueue.then(() => runOverwrite(bOverwrite)).catch(() => {});
+            });
+
+            btnRow.appendChild(bExtract);
+            btnRow.appendChild(bOverwrite);
+            clipBody.appendChild(btnRow);
+            root.appendChild(clipHeader);
+            root.appendChild(clipBody);
+            document.body.appendChild(root);
+
+            let dragging = false;
+            let dragOx = 0;
+            let dragOy = 0;
+
+            function onDragMove(ev) {
+                if (!dragging) {
+                    return;
+                }
+                root.style.left = Math.max(0, ev.clientX - dragOx) + 'px';
+                root.style.top = Math.max(0, ev.clientY - dragOy) + 'px';
+            }
+
+            function onDragUp() {
+                if (!dragging) {
+                    return;
+                }
+                dragging = false;
+                clipHeader.style.cursor = 'grab';
+                document.removeEventListener('mousemove', onDragMove, true);
+                document.removeEventListener('mouseup', onDragUp, true);
+            }
+
+            function dismissBridge() {
+                bridgeDismissed = true;
+                bridgeStarted = true;
+                onDragUp();
+                if (waitObserver) {
+                    try {
+                        waitObserver.disconnect();
+                    } catch (_e) { /* ignore */ }
+                    waitObserver = null;
+                }
+                if (root.parentNode) {
+                    root.parentNode.removeChild(root);
+                }
+                console.log(EMBED_LOG + ': clipboard panel dismissed');
+            }
+
+            closeBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                dismissBridge();
+            });
+
+            clipHeader.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0 || ev.target === closeBtn) {
+                    return;
+                }
+                ev.preventDefault();
+                const r = root.getBoundingClientRect();
+                root.style.bottom = 'auto';
+                root.style.left = r.left + 'px';
+                root.style.top = r.top + 'px';
+                dragging = true;
+                dragOx = ev.clientX - r.left;
+                dragOy = ev.clientY - r.top;
+                clipHeader.style.cursor = 'grabbing';
+                document.addEventListener('mousemove', onDragMove, true);
+                document.addEventListener('mouseup', onDragUp, true);
+            });
+
+            console.log(EMBED_LOG + ': clipboard panel injected');
+        }
+
+        function startBridge() {
+            if (bridgeStarted || bridgeDismissed) {
+                return;
+            }
+            if (waitObserver) {
+                try {
+                    waitObserver.disconnect();
+                } catch (_e) { /* ignore */ }
+                waitObserver = null;
+            }
+            bridgeStarted = true;
+
+            const attach = () => {
+                if (!document.body) {
+                    return;
+                }
+                injectPanel();
+            };
+            if (document.body) {
+                attach();
+            } else {
+                document.addEventListener('DOMContentLoaded', attach, { once: true });
+            }
+        }
+
+        function installWaitObserver() {
+            if (bridgeStarted || bridgeDismissed || waitObserver) {
+                return;
+            }
+            const check = () => {
+                if (!fosAuthorized || bridgeStarted || bridgeDismissed) {
+                    return;
+                }
+                if (document.getElementById(NOVNC_CLIPBOARD_ID)) {
+                    startBridge();
+                }
+            };
+            check();
+            if (bridgeStarted) {
+                return;
+            }
+            waitObserver = new MutationObserver(check);
+            const root = document.documentElement || document.body;
+            if (root) {
+                waitObserver.observe(root, { childList: true, subtree: true });
+            }
+        }
+
+        window.addEventListener('message', (event) => {
+            if (!event.data || event.data.type !== 'fleet-fos-embedded-ready') {
+                return;
+            }
+            if (!isFleetParentOrigin(event.origin)) {
+                return;
+            }
+            const envKey = String(event.data.envKey || '');
+            if (!envKey.includes('fos')) {
+                return;
+            }
+            if (fosAuthorized) {
+                return;
+            }
+            fosAuthorized = true;
+            console.log(EMBED_LOG + ': authorized for env ' + envKey);
+            installWaitObserver();
+        });
+
+        try {
+            window.parent.postMessage(
+                { type: 'fleet-fos-child-ready', hostname: window.location.hostname },
+                '*'
+            );
+            console.log(EMBED_LOG + ': child-ready sent');
+        } catch (e) {
+            console.warn(EMBED_LOG + ': child-ready postMessage failed', e);
+        }
     }
 
     function showNonDevRedirectModal() {
