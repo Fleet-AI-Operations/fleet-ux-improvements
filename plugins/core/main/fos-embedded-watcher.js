@@ -3,7 +3,6 @@
 
 const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_ORCHESTRATOR_INSTANCES_URL = 'https://orchestrator.fleetai.com/v1/env/instances';
-const FOS_LATCH_TIMESTAMP_PATH = '/latch/api/v1/env/timestamp';
 const FOS_CHILD_READY_TYPE = 'fleet-fos-child-ready';
 const FOS_EMBEDDED_READY_TYPE = 'fleet-fos-embedded-ready';
 
@@ -15,12 +14,22 @@ function fosIsFosEnvKey(envKey) {
     return String(envKey || '').includes('fos');
 }
 
+/** Any env-subdomain GET whose path includes "timestamp" (readiness probe path varies by FOS env). */
+function fosIsEnvTimestampProbe(meta) {
+    return (
+        meta.method === 'GET' &&
+        !!meta.urlObj &&
+        FOS_ENV_HOST_PATTERN.test(meta.urlObj.hostname) &&
+        meta.urlObj.pathname.includes('timestamp')
+    );
+}
+
 const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS env instances on the parent page and signals the iframe child when latch is ready',
-    _version: '1.0',
+        'Detects embedded FOS env instances on the parent page and signals the iframe child when the env timestamp probe succeeds',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -146,12 +155,7 @@ const plugin = {
         Context.networkObserver.subscribe({
             id: 'fos-embedded-watcher-latch',
             matches(meta) {
-                return (
-                    meta.method === 'GET' &&
-                    !!meta.urlObj &&
-                    meta.urlObj.pathname === FOS_LATCH_TIMESTAMP_PATH &&
-                    FOS_ENV_HOST_PATTERN.test(meta.urlObj.hostname)
-                );
+                return fosIsEnvTimestampProbe(meta);
             },
             onResponse(meta, response) {
                 if (response.status !== 200) {
@@ -164,7 +168,13 @@ const plugin = {
                 const rec = self._ensureInstance(state, instanceId);
                 if (!rec.latchReady) {
                     rec.latchReady = true;
-                    Logger.log('fosEmbeddedWatcher: latch ready for instance ' + instanceId);
+                    Logger.log(
+                        'fosEmbeddedWatcher: env ready for instance ' +
+                            instanceId +
+                            ' (' +
+                            meta.urlObj.pathname +
+                            ')'
+                    );
                 }
                 self._onInstanceProgress(state, instanceId);
             }

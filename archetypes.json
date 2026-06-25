@@ -1,7 +1,7 @@
 {
   "version": "9.6.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.12",
+  "archetypesVersion": "11.13",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -82,8 +82,8 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "1.0",
-      "hash": "sha256-78cb9fd0151190243b6412fc60a3202e3755f4784d196c9b6f40dbaf5360d812",
+      "version": "1.1",
+      "hash": "sha256-e4ea8afe3bf982acd2a5393e9bdfc0682e891e046dc205b7d3b2a9554dfa3aac",
       "log": false
     }
   ],
