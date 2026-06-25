@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/fos-embedded] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.6.0
+// @version      9.6.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -37,7 +37,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.6.0';
+    const VERSION = '9.6.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -467,7 +467,7 @@
             clipHeader.textContent = 'VM Clipboard';
             clipHeader.style.cssText =
                 'padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;' +
-                'letter-spacing:0.03em;text-transform:uppercase;';
+                'letter-spacing:0.03em;text-transform:uppercase;cursor:grab;';
 
             const clipBody = document.createElement('div');
             clipBody.style.cssText = 'padding:0 12px 10px 12px;';
@@ -511,6 +511,46 @@
             root.appendChild(clipHeader);
             root.appendChild(clipBody);
             document.body.appendChild(root);
+
+            let dragging = false;
+            let dragOx = 0;
+            let dragOy = 0;
+
+            function onDragMove(ev) {
+                if (!dragging) {
+                    return;
+                }
+                root.style.left = Math.max(0, ev.clientX - dragOx) + 'px';
+                root.style.top = Math.max(0, ev.clientY - dragOy) + 'px';
+            }
+
+            function onDragUp() {
+                if (!dragging) {
+                    return;
+                }
+                dragging = false;
+                clipHeader.style.cursor = 'grab';
+                document.removeEventListener('mousemove', onDragMove, true);
+                document.removeEventListener('mouseup', onDragUp, true);
+            }
+
+            clipHeader.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                ev.preventDefault();
+                const r = root.getBoundingClientRect();
+                root.style.bottom = 'auto';
+                root.style.left = r.left + 'px';
+                root.style.top = r.top + 'px';
+                dragging = true;
+                dragOx = ev.clientX - r.left;
+                dragOy = ev.clientY - r.top;
+                clipHeader.style.cursor = 'grabbing';
+                document.addEventListener('mousemove', onDragMove, true);
+                document.addEventListener('mouseup', onDragUp, true);
+            });
+
             console.log(EMBED_LOG + ': clipboard panel injected');
         }
 
