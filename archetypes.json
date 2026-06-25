@@ -1,7 +1,7 @@
 {
   "version": "9.6.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.14",
+  "archetypesVersion": "11.15",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -531,6 +531,12 @@
           "name": "verifier-expand-mismatch-rows.js",
           "version": "1.1",
           "hash": "sha256-4ae6e8d7080aa18a33423f710ef76856a64a0b91fc19119bb8a2d9a350eba6af",
+          "log": false
+        },
+        {
+          "name": "vnc-helper.js",
+          "version": "1.7",
+          "hash": "sha256-5a752f8810727b23a9c029d0f90d05c27a7f19113c99605cf61a6b206aab51e4",
           "log": false
         }
       ]
