@@ -1,7 +1,7 @@
 {
   "version": "9.5.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.8",
+  "archetypesVersion": "11.9",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -601,8 +601,8 @@
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.6",
-          "hash": "sha256-5a0de18ed975c8875e0b6ea8f08cb26bc7e6e490ffe99e87da9496c93934ce50",
+          "version": "1.7",
+          "hash": "sha256-9369c3b7b2114234117469318bbe6e9754c9c10a50273d8a415f3c8df0965097",
           "log": false
         }
       ]
