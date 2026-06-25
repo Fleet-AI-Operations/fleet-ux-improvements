@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/fos-embedded] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.6.1
+// @version      9.6.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -37,7 +37,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.6.1';
+    const VERSION = '9.6.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -312,6 +312,7 @@
 
         let fosAuthorized = false;
         let bridgeStarted = false;
+        let bridgeDismissed = false;
         let waitObserver = null;
         let clipQueue = Promise.resolve();
 
@@ -448,6 +449,9 @@
         }
 
         function injectPanel() {
+            if (bridgeDismissed) {
+                return;
+            }
             const old = document.getElementById(ROOT_ID);
             if (old) {
                 old.remove();
@@ -464,10 +468,32 @@
                 'box-shadow:0 8px 32px rgba(0,0,0,0.45);user-select:none;';
 
             const clipHeader = document.createElement('div');
-            clipHeader.textContent = 'VM Clipboard';
             clipHeader.style.cssText =
-                'padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;' +
-                'letter-spacing:0.03em;text-transform:uppercase;cursor:grab;';
+                'display:flex;align-items:center;justify-content:space-between;' +
+                'padding:6px 8px 4px 12px;cursor:grab;';
+
+            const clipTitle = document.createElement('div');
+            clipTitle.textContent = 'VM Clipboard';
+            clipTitle.style.cssText =
+                'font-size:11px;font-weight:600;color:#b0b0b8;' +
+                'letter-spacing:0.03em;text-transform:uppercase;flex:1;min-width:0;';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.setAttribute('aria-label', 'Close VM Clipboard');
+            closeBtn.textContent = '\u00d7';
+            closeBtn.style.cssText =
+                'flex-shrink:0;margin:0;padding:0 4px;border:none;background:transparent;' +
+                'color:#a5a5ad;font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;';
+            closeBtn.onmouseenter = () => {
+                closeBtn.style.color = '#f2f2f2';
+            };
+            closeBtn.onmouseleave = () => {
+                closeBtn.style.color = '#a5a5ad';
+            };
+
+            clipHeader.appendChild(clipTitle);
+            clipHeader.appendChild(closeBtn);
 
             const clipBody = document.createElement('div');
             clipBody.style.cssText = 'padding:0 12px 10px 12px;';
@@ -534,8 +560,29 @@
                 document.removeEventListener('mouseup', onDragUp, true);
             }
 
+            function dismissBridge() {
+                bridgeDismissed = true;
+                bridgeStarted = true;
+                onDragUp();
+                if (waitObserver) {
+                    try {
+                        waitObserver.disconnect();
+                    } catch (_e) { /* ignore */ }
+                    waitObserver = null;
+                }
+                if (root.parentNode) {
+                    root.parentNode.removeChild(root);
+                }
+                console.log(EMBED_LOG + ': clipboard panel dismissed');
+            }
+
+            closeBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                dismissBridge();
+            });
+
             clipHeader.addEventListener('mousedown', (ev) => {
-                if (ev.button !== 0) {
+                if (ev.button !== 0 || ev.target === closeBtn) {
                     return;
                 }
                 ev.preventDefault();
@@ -555,7 +602,7 @@
         }
 
         function startBridge() {
-            if (bridgeStarted) {
+            if (bridgeStarted || bridgeDismissed) {
                 return;
             }
             if (waitObserver) {
@@ -580,11 +627,11 @@
         }
 
         function installWaitObserver() {
-            if (bridgeStarted || waitObserver) {
+            if (bridgeStarted || bridgeDismissed || waitObserver) {
                 return;
             }
             const check = () => {
-                if (!fosAuthorized || bridgeStarted) {
+                if (!fosAuthorized || bridgeStarted || bridgeDismissed) {
                     return;
                 }
                 if (document.getElementById(NOVNC_CLIPBOARD_ID)) {
