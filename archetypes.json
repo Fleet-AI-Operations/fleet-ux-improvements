@@ -1,7 +1,7 @@
 {
-  "version": "9.5.4",
+  "version": "9.6.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.9",
+  "archetypesVersion": "11.11",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -78,6 +78,12 @@
       "name": "verifier-fetcher.js",
       "version": "2.0",
       "hash": "sha256-e718f83998625396d675b4fe140088f3cb96fd2a36dbab6ebc37f9c8adf9b3bd",
+      "log": false
+    },
+    {
+      "name": "fos-embedded-watcher.js",
+      "version": "1.0",
+      "hash": "sha256-78cb9fd0151190243b6412fc60a3202e3755f4784d196c9b6f40dbaf5360d812",
       "log": false
     }
   ],
