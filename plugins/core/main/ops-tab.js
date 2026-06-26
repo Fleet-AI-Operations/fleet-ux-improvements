@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.3',
+    _version: '8.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2931,6 +2931,7 @@ const plugin = {
 
     _opsMemberBadgeCategory(member) {
         const teamLabels = member.teamLabels || new Set();
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return 'fellows';
         for (const label of teamLabels) {
             if (OPS_TEAM_EPIC_LABELS.has(label)) return 'epic';
         }
