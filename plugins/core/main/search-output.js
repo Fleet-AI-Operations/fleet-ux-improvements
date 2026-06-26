@@ -6777,6 +6777,14 @@ const searchOutputMethods = {
         this._syncOutputToggleUi();
     },
 
+    _setOutputTypesTaskAndQa() {
+        this._state.includeTasks = true;
+        this._state.includeQa = true;
+        this._state.includeDisputes = false;
+        this._state.includeSeniorReview = false;
+        this._syncOutputToggleUi();
+    },
+
     _resetSearchScopeToUniversal() {
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const itemsEl = this._msItemsEl(key);
@@ -6952,6 +6960,36 @@ const searchOutputMethods = {
         this._setResultsMode('clear');
         this._setSearchError('');
         Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time · deep');
+        await this._submitSearch();
+    },
+
+    async _runContributorWorkerOutputDeepDive(person, options) {
+        if (!this._modal) {
+            Logger.warn('dashboard: worker output deep dive skipped — modal not open');
+            return;
+        }
+        const normalized = this._normalizeAuthorPerson(person);
+        if (!normalized || !normalized.id) {
+            Logger.warn('dashboard: worker output deep dive skipped — missing person id');
+            return;
+        }
+        if (this._state.loading) {
+            Logger.warn('dashboard: worker output deep dive skipped — search in progress');
+            return;
+        }
+        const opts = options || {};
+        if (opts.activeTab) this._setActiveTab(opts.activeTab);
+        this._setLeftTab('search');
+        this._setAuthorTokens([normalized], { replace: true });
+        this._setOutputTypesTaskAndQa();
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        this._resetSearchScopeToUniversal();
+        this._setSearchDepth('deep');
+        this._setResultsMode('clear');
+        this._setSearchError('');
+        Logger.log('dashboard: worker output deep dive — ' + this._personDisplayLabel(normalized) + ' · task+QA · all time · deep');
         await this._submitSearch();
     },
 
@@ -11140,7 +11178,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -160,6 +160,12 @@ const plugin = {
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
+            },
+            runContributorWorkerOutputDeepDive: (person, options) => {
+                if (typeof self._runContributorWorkerOutputDeepDive === 'function') {
+                    return self._runContributorWorkerOutputDeepDive(person, options);
+                }
+                Logger.warn('dashboard: runContributorWorkerOutputDeepDive unavailable — search-output tab not loaded');
             },
             switchFleetTeam: (teamId) => {
                 if (typeof self._switchFleetTeam === 'function') return self._switchFleetTeam(teamId);

@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.4',
+    _version: '8.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3296,7 +3296,7 @@ const plugin = {
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
         return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output</button>';
+            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output 🔦</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
@@ -3314,12 +3314,13 @@ const plugin = {
             Logger.warn('ops-tab: Search Worker Output skipped — missing member id');
             return;
         }
-        if (!Context.dashboard || typeof Context.dashboard.setAuthorTokens !== 'function') {
-            Logger.warn('ops-tab: Search Worker Output skipped — dashboard unavailable');
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.runContributorWorkerOutputDeepDive !== 'function') {
+            Logger.warn('ops-tab: Search Worker Output skipped — dashboard deep dive unavailable');
             return;
         }
-        Context.dashboard.setAuthorTokens([person], { replace: true, activeTab: 'search-output' });
-        Logger.log('ops-tab: Search Worker Output for ' + (person.full_name || person.id));
+        Logger.log('ops-tab: Search Worker Output deep dive for ' + (person.full_name || person.id));
+        void dash.runContributorWorkerOutputDeepDive(person, { activeTab: 'search-output' });
     },
 
     _renderOpsMemberTeamRowHtml(label, member, session) {
