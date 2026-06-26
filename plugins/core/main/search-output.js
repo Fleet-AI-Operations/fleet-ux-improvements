@@ -4923,15 +4923,44 @@ const searchOutputMethods = {
     },
 
     _syncDropExcludedUi() {
-        const btn = this._q('#wf-dash-drop-excluded');
-        if (!btn) return;
         const cached = this._state.cachedItems;
         const filtered = this._state.filteredItems;
-        const show = !this._state.loading
+        const filtersReady = !this._state.loading
             && cached !== null && filtered !== null
-            && this._hasActiveFilters()
-            && filtered.length < cached.length;
-        btn.style.display = show ? '' : 'none';
+            && this._hasActiveFilters();
+        const dropExcluded = this._q('#wf-dash-drop-excluded');
+        if (dropExcluded) {
+            const showExcluded = filtersReady && filtered.length < cached.length;
+            dropExcluded.style.display = showExcluded ? '' : 'none';
+        }
+        const dropIncluded = this._q('#wf-dash-drop-included');
+        if (dropIncluded) {
+            const showIncluded = filtersReady && filtered.length > 0;
+            dropIncluded.style.display = showIncluded ? '' : 'none';
+        }
+    },
+
+    _dropIncludedResults() {
+        const filtered = this._state.filteredItems;
+        const cached = this._state.cachedItems;
+        if (!filtered || !cached || filtered.length === 0) return;
+        const includedIds = new Set(filtered.map((it) => it.id));
+        const kept = cached.filter((it) => !includedIds.has(it.id));
+        const dropped = filtered.length;
+        this._state.cachedItems = kept;
+        const newHydrateUi = {};
+        for (const id of Object.keys(this._state.hydrateUi || {})) {
+            if (!includedIds.has(id)) newHydrateUi[id] = this._state.hydrateUi[id];
+        }
+        this._state.hydrateUi = newHydrateUi;
+        const newUserStoryUi = {};
+        for (const id of Object.keys(this._state.userStoryUi || {})) {
+            if (!includedIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
+        }
+        this._state.userStoryUi = newUserStoryUi;
+        this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
+        Logger.log('search-output: dropped ' + dropped + ' included result(s) from cache — '
+            + kept.length + ' remaining');
     },
 
     _dropExcludedResults() {
@@ -6659,6 +6688,7 @@ const searchOutputMethods = {
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
+                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
@@ -10715,6 +10745,8 @@ function attachSearchOutputListeners(modal, dash) {
                 }
             });
         }
+        const dropIncluded = dash._q('#wf-dash-drop-included');
+        if (dropIncluded) dropIncluded.addEventListener('click', () => dash._dropIncludedResults());
         const dropExcluded = dash._q('#wf-dash-drop-excluded');
         if (dropExcluded) dropExcluded.addEventListener('click', () => dash._dropExcludedResults());
         const clearResults = dash._q('#wf-dash-clear-results');
@@ -11108,7 +11140,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
