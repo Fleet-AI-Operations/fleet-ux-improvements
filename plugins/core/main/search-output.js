@@ -9850,7 +9850,7 @@ const searchOutputMethods = {
                     <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
                 </div>`;
         const bodyHtml = display.resolutionAt
-            ? `${reasonHtml}${resolutionHtml}${screenshotHtml}`
+            ? `${reasonHtml}${screenshotHtml}${resolutionHtml}`
             : `${reasonHtml}${screenshotHtml}${resolutionPanelHtml}`;
         return this._actionBlockShellHtml(
             blockId,
@@ -11108,7 +11108,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
