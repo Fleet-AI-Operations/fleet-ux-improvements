@@ -32,6 +32,11 @@ const OPS_TEAM_SEARCH_URL = OPS_FLEET_ORIGIN + '/dashboard/team';
 const OPS_SESSION_REFRESH_USER_MESSAGE =
     'Fleet session token not yet captured. Navigate to a Fleet data page (e.g. dashboard/team), then press Refresh catalogs.';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
+/** Query param on programmatic Team page opens for background credential refresh */
+const OPS_TEAM_CRED_REFRESH_QUERY = 'wfOpsTeamCredRefresh';
+/** localStorage signal written when cred-refresh tab captures search action (cross-tab notify) */
+const OPS_TEAM_CRED_REFRESH_DONE_STORAGE_KEY = 'fleet-ux:ops-team-cred-refresh-done';
+const OPS_TEAM_CRED_REFRESH_TIMEOUT_MS = 90000;
 /** localStorage key for the dynamically captured Next.js server action hash for team member search */
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
 /** localStorage key for the dynamically captured Next.js router state tree for team member search */
@@ -192,7 +197,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.6',
+    _version: '8.7',
     phase: 'core',
     enabledByDefault: true,
 
@@ -210,6 +215,9 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
+    /** Background Team page cred refresh: { modal, startedAt } while waiting for capture */
+    _opsTeamCredRefreshPending: null,
+    _opsTeamCredRefreshTimeout: null,
     /** Dynamically discovered team add-member server action (same URL as search, different action hash) */
     _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
     /** Dynamically discovered task detail server action (task events RSC payload) */
@@ -1987,6 +1995,9 @@ const plugin = {
                         routerState: routerState || ''
                     };
                     Logger.debug('ops-tab: team search action synced from storage event (' + e.newValue.slice(0, 12) + '…)');
+                    self._onOpsTeamCredRefreshComplete();
+                } else if (e.key === OPS_TEAM_CRED_REFRESH_DONE_STORAGE_KEY && e.newValue) {
+                    self._onOpsTeamCredRefreshComplete();
                 } else if (e.key === OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY && e.newValue) {
                     const routerState = pageWindow.localStorage
                         ? pageWindow.localStorage.getItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY)
@@ -2011,11 +2022,88 @@ const plugin = {
         }
     },
 
-    _openOpsTeamPageInBackground() {
+    _clearOpsTeamCredRefreshPending() {
+        if (this._opsTeamCredRefreshTimeout != null) {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow) pageWindow.clearTimeout(this._opsTeamCredRefreshTimeout);
+            this._opsTeamCredRefreshTimeout = null;
+        }
+        this._opsTeamCredRefreshPending = null;
+    },
+
+    _isOpsTeamCredRefreshTab() {
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            return new URL(pageWindow.location.href).searchParams.get(OPS_TEAM_CRED_REFRESH_QUERY) === '1';
+        } catch (_e) {
+            return false;
+        }
+    },
+
+    _signalOpsTeamCredRefreshComplete() {
+        try {
+            const storage = this._getOpsPageWindow().localStorage;
+            if (storage) storage.setItem(OPS_TEAM_CRED_REFRESH_DONE_STORAGE_KEY, String(Date.now()));
+        } catch (e) {
+            Logger.debug('ops-tab: team cred refresh done signal failed', e);
+        }
+    },
+
+    _tryCloseOpsTeamCredRefreshTab() {
+        if (!this._isOpsTeamCredRefreshTab()) return;
+        Logger.log('ops-tab: team cred refresh complete — closing background tab');
         const pageWindow = this._getOpsPageWindow();
-        const opened = pageWindow.open(OPS_TEAM_SEARCH_URL, '_blank', 'noopener,noreferrer');
-        pageWindow.focus();
-        Logger.log('ops-tab: team page opened in background tab for credential refresh');
+        pageWindow.setTimeout(() => {
+            try {
+                pageWindow.close();
+            } catch (_e) { /* ignore — browser may block close */ }
+        }, 300);
+    },
+
+    _onOpsTeamCredRefreshComplete() {
+        const pending = this._opsTeamCredRefreshPending;
+        if (!pending) return;
+        const modal = pending.modal;
+        this._clearOpsTeamCredRefreshPending();
+        this._reloadOpsTeamDashboardActionsFromStorage();
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            this._setOpsTeamSearchStaleRetryStatus(modal,
+                'Credentials not ready yet — try Refresh credentials again.');
+            Logger.warn('ops-tab: team cred refresh signaled but search action still missing');
+            return;
+        }
+        this._setOpsTeamSearchStaleRetryStatus(modal, 'Credentials refreshed — retrying search…');
+        Logger.log('ops-tab: team cred refresh captured — auto-retrying search');
+        void this._handleOpsTeamSearchCredentialRetry(modal);
+    },
+
+    _openOpsTeamPageInBackground(modal) {
+        this._clearOpsTeamCredRefreshPending();
+        const pageWindow = this._getOpsPageWindow();
+        const url = OPS_TEAM_SEARCH_URL + '?' + OPS_TEAM_CRED_REFRESH_QUERY + '=1';
+        const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+            if (modal) {
+                this._setOpsTeamSearchStaleRetryStatus(modal,
+                    'Popup blocked — allow popups for Fleet, then try again.');
+            }
+            Logger.warn('ops-tab: team cred refresh tab blocked (popup blocker)');
+            return null;
+        }
+        if (modal) {
+            this._opsTeamCredRefreshPending = { modal, startedAt: Date.now() };
+            this._setOpsTeamSearchStaleRetryStatus(modal, 'Opening Team page in background…');
+            const self = this;
+            this._opsTeamCredRefreshTimeout = pageWindow.setTimeout(() => {
+                if (!self._opsTeamCredRefreshPending) return;
+                const pendingModal = self._opsTeamCredRefreshPending.modal;
+                self._clearOpsTeamCredRefreshPending();
+                self._setOpsTeamSearchStaleRetryStatus(pendingModal,
+                    'Background refresh timed out — try Refresh credentials again.');
+                Logger.warn('ops-tab: team cred refresh timed out');
+            }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
+        }
+        Logger.log('ops-tab: team page opened in background for credential refresh');
         return opened;
     },
 
@@ -2207,9 +2295,14 @@ const plugin = {
 
                 const kind = self._opsClassifyTeamDashboardPostBody(meta.body);
                 if (kind === 'search') {
+                    const credRefreshTab = self._isOpsTeamCredRefreshTab();
                     if (nextAction !== self._opsTeamSearchActionCache.nextAction) {
                         self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                    if (credRefreshTab) {
+                        self._signalOpsTeamCredRefreshComplete();
+                        self._tryCloseOpsTeamCredRefreshTab();
                     }
                 } else if (kind === 'add-member') {
                     if (nextAction !== self._opsTeamAddMemberActionCache.nextAction) {
@@ -2296,8 +2389,8 @@ const plugin = {
             '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
             '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
-            'Open the Team page in a new tab (it refreshes credentials automatically), then click ',
-            '<strong>Retry search</strong> here.',
+            'Click <strong>Refresh credentials</strong> to open the Team page in a background tab — ',
+            'credentials refresh automatically and the tab closes on its own.',
             '</p>',
             '<p id="wf-ops-team-search-stale-retry-status" style="display: none; font-size: 12px; color: #b91c1c; margin: 8px 0 0 0; line-height: 1.45;"></p>',
             '</div>',
@@ -2305,7 +2398,7 @@ const plugin = {
             '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">',
             '<button type="button" id="wf-ops-team-search-open-team" style="',
             btnStyle,
-            'color: #991b1b;background: #fef2f2;">Open Team page</button>',
+            'color: #991b1b;background: #fef2f2;">Refresh credentials</button>',
             '<button type="button" id="wf-ops-team-search-retry-btn" style="',
             btnStyle,
             'color: #fff;background: #dc2626;">Retry search</button>',
@@ -2355,7 +2448,7 @@ const plugin = {
             const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
-                    self._openOpsTeamPageInBackground();
+                    self._openOpsTeamPageInBackground(modal);
                 });
             }
             const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
