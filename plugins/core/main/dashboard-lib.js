@@ -30,7 +30,7 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
     dispute_resolved: 'Dispute Resolved',
-    flagged: 'Flagged',
+    flagged: 'Flagged as bugged',
     senior_review_flagged: 'Flagged for Senior Review',
     escalated: 'Escalated',
     screenshots: 'Screenshots associated with task'
@@ -358,7 +358,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,7 +1,7 @@
 {
-  "version": "9.6.2",
+  "version": "10.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "11.14",
+  "archetypesVersion": "12.4",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,20 +22,28 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "8.0",
-      "hash": "sha256-7774705edfb574d10736edc510e4ccad0a2b0d178c9927aa40d730c4cb4eb16b",
+      "version": "8.3",
+      "hash": "sha256-78b4430447ec0b263d0c6c099a8717cb7ad1a4ed53984e784bbd5eb1d7190749",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "10.0",
-      "hash": "sha256-2371541f990f2da97d700ba580d6b10e941289063b9ad231418a4cb5cb6e83b2",
+      "version": "10.1",
+      "hash": "sha256-496aebd0ccc5c70599f43ccfab1f4b28521b078d0cb8324546d054c46840e9d5",
       "log": false
     },
     {
+      "name": "fos-embedded-watcher.js",
+      "version": "1.1",
+      "hash": "sha256-e4ea8afe3bf982acd2a5393e9bdfc0682e891e046dc205b7d3b2a9554dfa3aac",
+      "log": false
+    }
+  ],
+  "opsDashboardPlugins": [
+    {
       "name": "dashboard-lib.js",
-      "version": "3.1",
-      "hash": "sha256-50de0ba3c2c25c693ef956962e8001ad8efbb83ac4d95e4018fa172c8ef65348",
+      "version": "3.2",
+      "hash": "sha256-7e6137f9d966dc17c4c08c8a56c9cc9bac2c23c24ee4e8c40942a5669c6546e8",
       "log": false
     },
     {
@@ -58,8 +66,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.0",
-      "hash": "sha256-fba00087baa7c99d10c25c25d37ba7e60e8d37538f2796bb19bb924c7808e803",
+      "version": "4.1",
+      "hash": "sha256-22bc4ef1e93b27f78e5c04973c311795f4663f19fc011e3cc7eb331e462e435c",
       "log": false
     },
     {
@@ -78,12 +86,6 @@
       "name": "verifier-fetcher.js",
       "version": "2.0",
       "hash": "sha256-e718f83998625396d675b4fe140088f3cb96fd2a36dbab6ebc37f9c8adf9b3bd",
-      "log": false
-    },
-    {
-      "name": "fos-embedded-watcher.js",
-      "version": "1.1",
-      "hash": "sha256-e4ea8afe3bf982acd2a5393e9bdfc0682e891e046dc205b7d3b2a9554dfa3aac",
       "log": false
     }
   ],
@@ -531,6 +533,12 @@
           "name": "verifier-expand-mismatch-rows.js",
           "version": "1.1",
           "hash": "sha256-4ae6e8d7080aa18a33423f710ef76856a64a0b91fc19119bb8a2d9a350eba6af",
+          "log": false
+        },
+        {
+          "name": "vnc-helper.js",
+          "version": "1.7",
+          "hash": "sha256-5a752f8810727b23a9c029d0f90d05c27a7f19113c99605cf61a6b206aab51e4",
           "log": false
         }
       ]

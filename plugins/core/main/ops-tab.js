@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.0',
+    _version: '8.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -253,6 +253,7 @@ const plugin = {
             isEnabled: () => this._getOpsTabEnabled(),
             isWanted: () => this._getOpsTabWanted(),
             hasStoredPassword: () => this._hasOpsStoredPassword(),
+            needsOpsDashboardRefresh: () => this._needsOpsDashboardRefresh(),
             shouldOpenDashboardOnSettings: () => this._shouldOpenDashboardOnSettings(),
             getOpsDashboardOpenOnSettings: () => this._getOpsDashboardOpenOnSettings(),
             setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
@@ -662,6 +663,11 @@ const plugin = {
 
     _getOpsTabEnabled() {
         return this._getOpsTabWanted() && this._hasOpsStoredPassword() && this._isOpsAccessConfigured();
+    },
+
+    _needsOpsDashboardRefresh() {
+        if (!this._getOpsTabEnabled()) return false;
+        return Context.opsDashboardPluginsLoaded !== true;
     },
 
     async _verifyOpsPassword(password) {
@@ -4346,6 +4352,10 @@ const plugin = {
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
         }
+        if (settingsPlugin && typeof settingsPlugin.syncOpsRefreshBanner === 'function') {
+            settingsPlugin.syncOpsRefreshBanner(modal);
+        }
+        this._syncOpsSettingsSubmoduleVisibility(modal);
         return true;
     },
 
@@ -4366,16 +4376,16 @@ const plugin = {
     _renderOpsSettingsSection() {
         const opsWantsEnabled = this._getOpsTabWanted();
         const opsHasStoredPassword = this._hasOpsStoredPassword();
-        const opsNeedsPassword = opsWantsEnabled && !opsHasStoredPassword;
-        const opsUnlocked = opsWantsEnabled && opsHasStoredPassword;
         const switchHTML = this._renderOpsSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled);
         const openOnSettings = this._getOpsDashboardOpenOnSettings();
         const submoduleSwitchHTML = this._renderOpsSubSwitchHTML('wf-ops-dashboard-open-on-settings', openOnSettings);
-        const passwordPanelDisplay = opsNeedsPassword ? 'block' : 'none';
-        const suboptionsDisplay = opsWantsEnabled ? 'block' : 'none';
-        const openDashboardBtnDisplay = opsUnlocked ? 'block' : 'none';
+        const enableCardDisplay = opsHasStoredPassword ? 'block' : 'none';
+        const passwordPanelDisplay = opsHasStoredPassword ? 'none' : 'block';
+        const suboptionsDisplay = opsHasStoredPassword && opsWantsEnabled ? 'block' : 'none';
+        const openDashboardBtnDisplay = opsHasStoredPassword && opsWantsEnabled ? 'block' : 'none';
         return `
             <div style="margin-bottom: 20px;">
+                <div id="wf-ops-enable-wrap" style="display: ${enableCardDisplay};">
                 <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
@@ -4395,10 +4405,11 @@ const plugin = {
                         ">Open Dashboard</button>
                     </div>
                 </div>
+                </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops password</label>
+                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
                     <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" placeholder="Enter password" style="
+                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" style="
                             flex: 1;
                             min-width: 0;
                             padding: 8px 12px;
@@ -4419,12 +4430,16 @@ const plugin = {
     },
 
     _syncOpsSettingsSubmoduleVisibility(modal) {
+        const enableWrap = this._opsQuery(modal, '#wf-ops-enable-wrap', 'opsEnableWrap');
+        const passwordPanel = this._opsQuery(modal, '#wf-ops-password-panel', 'opsPasswordPanelSync');
         const wrap = this._opsQuery(modal, '#wf-ops-dashboard-suboptions-wrap', 'opsSubmoduleWrap');
         const openBtn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtn');
+        const hasPassword = this._hasOpsStoredPassword();
         const wanted = this._getOpsTabWanted();
-        const unlocked = wanted && this._hasOpsStoredPassword();
-        if (wrap) wrap.style.display = wanted ? 'block' : 'none';
-        if (openBtn) openBtn.style.display = unlocked ? 'block' : 'none';
+        if (enableWrap) enableWrap.style.display = hasPassword ? 'block' : 'none';
+        if (passwordPanel) passwordPanel.style.display = hasPassword ? 'none' : 'block';
+        if (wrap) wrap.style.display = hasPassword && wanted ? 'block' : 'none';
+        if (openBtn) openBtn.style.display = hasPassword && wanted ? 'block' : 'none';
     },
 
     _renderOpsSwitchHTML(id, isEnabled) {

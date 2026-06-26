@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      9.6.2
+// @version      10.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -37,7 +37,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '9.6.2';
+    const VERSION = '10.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -103,6 +103,8 @@
         opsAccess: null,
         /** From archetypes.json `opsSecrets` (encrypted secrets file path). */
         opsSecrets: null,
+        /** True after ops dashboard plugins are fetched and initialized this session. */
+        opsDashboardPluginsLoaded: false,
     };
 
     const RefreshGuard = {
@@ -2063,6 +2065,7 @@
         archetypes: [],
         devArchetypes: [],
         corePlugins: [],
+        opsDashboardPlugins: [],
         devPlugins: [],
         currentArchetype: null,
         currentDevArchetype: null,
@@ -2106,6 +2109,7 @@
                                 this.archetypes = config.archetypes || [];
                                 this.devArchetypes = config.devArchetypes || [];
                                 this.corePlugins = config.corePlugins || [];
+                                this.opsDashboardPlugins = config.opsDashboardPlugins || [];
                                 this.devPlugins = config.devPlugins || [];
                                 this.settingsModalDocs = config.settingsModalDocs || [];
                                 
@@ -2168,6 +2172,10 @@
 
         getCorePlugins() {
             return this.corePlugins || [];
+        },
+
+        getOpsDashboardPlugins() {
+            return this.opsDashboardPlugins || [];
         },
 
         getDevPlugins() {
@@ -3279,6 +3287,10 @@
         getDevPlugins() {
             return this.getAll().filter(p => p._isDev === true);
         },
+
+        getOpsDashboardPlugins() {
+            return this.getAll().filter(p => p._isOps === true);
+        },
         
         isEnabled(id) {
             if (this._enabledCache.has(id)) return this._enabledCache.get(id);
@@ -3341,13 +3353,26 @@
         
         runCorePlugins() {
             this.getCorePlugins()
-                .filter(p => this.isEnabled(p.id))
+                .filter(p => p._isOps !== true && this.isEnabled(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
                         Logger.log(`✓ Core plugin initialized: ${plugin.id}`);
                     } catch (e) {
                         Logger.error(`Error in core plugin ${plugin.id}:`, e);
+                    }
+                });
+        },
+
+        runOpsDashboardPlugins() {
+            this.getOpsDashboardPlugins()
+                .filter(p => this.isEnabled(p.id))
+                .forEach(plugin => {
+                    try {
+                        if (plugin.init) plugin.init(plugin.state, Context);
+                        Logger.log(`✓ Ops dashboard plugin initialized: ${plugin.id}`);
+                    } catch (e) {
+                        Logger.error(`Error in ops dashboard plugin ${plugin.id}:`, e);
                     }
                 });
         },
@@ -3423,9 +3448,26 @@
         const corePlugins = ArchetypeManager.getCorePlugins();
         await PluginLoader.loadPluginsFromConfig(corePlugins, 'core');
         corePluginsLoaded = true;
-        
+
         await waitForBody();
         PluginManager.runCorePlugins();
+
+        const opsDashboardPlugins = ArchetypeManager.getOpsDashboardPlugins();
+        if (opsDashboardPlugins.length > 0) {
+            if (Context.opsTab && Context.opsTab.isEnabled()) {
+                Logger.log('ops tab enabled: loading ops dashboard plugins...');
+                const beforeIds = new Set(PluginManager.getAll().map(p => p.id));
+                await PluginLoader.loadPluginsFromConfig(opsDashboardPlugins, 'core');
+                PluginManager.getAll()
+                    .filter(p => !beforeIds.has(p.id))
+                    .forEach(p => { p._isOps = true; });
+                PluginManager.runOpsDashboardPlugins();
+                Context.opsDashboardPluginsLoaded = true;
+            } else {
+                Context.opsDashboardPluginsLoaded = false;
+                Logger.log('ops dashboard plugins deferred — reload page after granting ops access');
+            }
+        }
     }
     
     async function initializeForPage() {
