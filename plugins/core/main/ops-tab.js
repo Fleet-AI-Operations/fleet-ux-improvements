@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.5',
+    _version: '8.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2364,9 +2364,27 @@ const plugin = {
                     void self._handleOpsTeamSearchCredentialRetry(modal);
                 });
             }
+        } else {
+            this._setOpsTeamSearchStatus(
+                modal,
+                'Team search credentials are missing or out of date. Open the Team page in Fleet, then retry.',
+                true,
+                false,
+                false
+            );
+            Logger.warn('ops-tab: team search refresh banner fallback — output wrap missing');
+            Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+            return;
         }
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
         Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+    },
+
+    _opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams) {
+        if (!allTeams || allTeams.length === 0) return false;
+        if (memberMap && memberMap.size > 0) return false;
+        const q = String(query || '').trim();
+        return q === '';
     },
 
     async _handleOpsTeamSearchCredentialRetry(modal) {
@@ -3679,6 +3697,11 @@ const plugin = {
 
         if (this._opsTeamSearchActive === sessionId) {
             this._opsTeamSearchAbortController = null;
+            if (!staleActionDetected && this._opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams)) {
+                staleActionDetected = true;
+                this._clearOpsTeamSearchActionCache();
+                Logger.warn('ops-tab: team search returned zero members for all teams — treating credentials as stale');
+            }
             if (staleActionDetected) {
                 this._showOpsTeamSearchActionRefreshBanner(modal);
                 this._opsTeamSearchMemberCache = null;
