@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      10.1
+// @version      10.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -37,7 +37,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '10.1';
+    const VERSION = '10.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -480,12 +480,16 @@
                 'font-size:11px;font-weight:600;color:#b0b0b8;' +
                 'letter-spacing:0.03em;text-transform:uppercase;flex:1;min-width:0;';
 
+            const closeActions = document.createElement('div');
+            closeActions.style.cssText =
+                'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+
             const closeBtn = document.createElement('button');
             closeBtn.type = 'button';
             closeBtn.setAttribute('aria-label', 'Close VM Clipboard');
             closeBtn.textContent = '\u00d7';
             closeBtn.style.cssText =
-                'flex-shrink:0;margin:0;padding:0 4px;border:none;background:transparent;' +
+                'margin:0;padding:0 4px;border:none;background:transparent;' +
                 'color:#a5a5ad;font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;';
             closeBtn.onmouseenter = () => {
                 closeBtn.style.color = '#f2f2f2';
@@ -494,8 +498,40 @@
                 closeBtn.style.color = '#a5a5ad';
             };
 
+            const closeConfirm = document.createElement('div');
+            closeConfirm.style.cssText = 'display:none;align-items:center;gap:4px;';
+
+            function makeHeaderActionBtn(label, destructive) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.style.cssText =
+                    'margin:0;padding:2px 6px;border-radius:4px;font:inherit;font-size:10px;' +
+                    'font-weight:600;line-height:1.3;cursor:pointer;white-space:nowrap;';
+                if (destructive) {
+                    b.style.border = '1px solid rgba(239,68,68,0.45)';
+                    b.style.background = 'rgba(239,68,68,0.18)';
+                    b.style.color = '#fecaca';
+                } else {
+                    b.style.border = '1px solid rgba(255,255,255,0.18)';
+                    b.style.background = 'rgba(255,255,255,0.06)';
+                    b.style.color = '#c8c8d0';
+                }
+                return b;
+            }
+
+            const cancelCloseBtn = makeHeaderActionBtn('Cancel', false);
+            cancelCloseBtn.setAttribute('aria-label', 'Cancel closing VM Clipboard');
+            const confirmCloseBtn = makeHeaderActionBtn('Confirm', true);
+            confirmCloseBtn.setAttribute('aria-label', 'Confirm close VM Clipboard');
+
+            closeConfirm.appendChild(cancelCloseBtn);
+            closeConfirm.appendChild(confirmCloseBtn);
+            closeActions.appendChild(closeBtn);
+            closeActions.appendChild(closeConfirm);
+
             clipHeader.appendChild(clipTitle);
-            clipHeader.appendChild(closeBtn);
+            clipHeader.appendChild(closeActions);
 
             const clipBody = document.createElement('div');
             clipBody.style.cssText = 'padding:0 12px 10px 12px;';
@@ -578,13 +614,31 @@
                 console.log(EMBED_LOG + ': clipboard panel dismissed');
             }
 
+            function showCloseConfirm() {
+                closeBtn.style.display = 'none';
+                closeConfirm.style.display = 'flex';
+            }
+
+            function hideCloseConfirm() {
+                closeConfirm.style.display = 'none';
+                closeBtn.style.display = '';
+            }
+
             closeBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                showCloseConfirm();
+            });
+            cancelCloseBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                hideCloseConfirm();
+            });
+            confirmCloseBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 dismissBridge();
             });
 
             clipHeader.addEventListener('mousedown', (ev) => {
-                if (ev.button !== 0 || ev.target === closeBtn) {
+                if (ev.button !== 0 || closeActions.contains(ev.target)) {
                     return;
                 }
                 ev.preventDefault();
