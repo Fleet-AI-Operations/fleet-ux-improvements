@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      10.0
+// @version      10.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -37,7 +37,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '10.0';
+    const VERSION = '10.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -103,6 +103,8 @@
         opsAccess: null,
         /** From archetypes.json `opsSecrets` (encrypted secrets file path). */
         opsSecrets: null,
+        /** True after ops dashboard plugins are fetched and initialized this session. */
+        opsDashboardPluginsLoaded: false,
     };
 
     const RefreshGuard = {
@@ -3460,7 +3462,9 @@
                     .filter(p => !beforeIds.has(p.id))
                     .forEach(p => { p._isOps = true; });
                 PluginManager.runOpsDashboardPlugins();
+                Context.opsDashboardPluginsLoaded = true;
             } else {
+                Context.opsDashboardPluginsLoaded = false;
                 Logger.log('ops dashboard plugins deferred — reload page after granting ops access');
             }
         }

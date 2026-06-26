@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.0',
+    _version: '10.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -27,7 +27,8 @@ const plugin = {
             shouldShowUpdateBanner: () => self._shouldShowUpdateNotification(),
             createUpdateNotificationHTML: () => self._createUpdateNotificationHTML(),
             attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root),
-            refreshUpdateIndicator: () => self._updatePulseAnimation()
+            refreshUpdateIndicator: () => self._updatePulseAnimation(),
+            syncOpsRefreshBanner: (modal) => self._syncOpsRefreshBanner(modal)
         };
         this._ensureDialogBackdropStyles();
         this._ensureSettingsButton();
@@ -432,6 +433,9 @@ const plugin = {
         const updateNotificationHTML = this._shouldShowUpdateNotification()
             ? this._createUpdateNotificationHTML()
             : '';
+        const opsRefreshBannerHTML = this._shouldShowOpsRefreshBanner()
+            ? this._createOpsRefreshBannerHTML()
+            : '';
         
         const hasDevSettings = this._hasActiveDevSettings();
         const tabs = this._getSettingsTabs();
@@ -563,6 +567,7 @@ const plugin = {
                     </button>
                 </div>
                 ${updateNotificationHTML}
+                ${opsRefreshBannerHTML}
                 ${tabRowHTML}
                 <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: #92400e;">
                     Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.
@@ -905,6 +910,8 @@ const plugin = {
         });
 
         this._attachUpdateBannerListeners(modal, 'settings-ui');
+        this._attachOpsRefreshBannerListeners(modal, 'settings-ui');
+        this._syncOpsRefreshBanner(modal);
 
         // Tab buttons
         this._attachTabListeners(modal);
@@ -2416,6 +2423,99 @@ const plugin = {
     _shouldShowUpdateNotification() {
         return (Context.isOutdated && Context.latestVersion) ||
             (Context.isDevBranch && this._getPulseOverrideEnabled());
+    },
+
+    _shouldShowOpsRefreshBanner() {
+        if (!Context.opsTab || typeof Context.opsTab.needsOpsDashboardRefresh !== 'function') return false;
+        return Context.opsTab.needsOpsDashboardRefresh();
+    },
+
+    _syncOpsRefreshBanner(modal) {
+        if (!modal) return;
+        const shouldShow = this._shouldShowOpsRefreshBanner();
+        let banner = modal.querySelector('#wf-ops-refresh-banner');
+        if (!shouldShow) {
+            if (banner) banner.style.display = 'none';
+            return;
+        }
+        if (!banner) {
+            const tabRow = modal.querySelector('#wf-settings-tab-row');
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = this._createOpsRefreshBannerHTML();
+            banner = wrapper.firstElementChild;
+            if (tabRow && tabRow.parentElement) {
+                tabRow.parentElement.insertBefore(banner, tabRow);
+            } else {
+                const header = modal.querySelector('#wf-settings-content');
+                if (header) header.insertBefore(banner, header.firstChild);
+            }
+            this._attachOpsRefreshBannerListeners(modal, 'settings-ui');
+        }
+        banner.style.display = 'block';
+        Logger.log('settings-ui: ops refresh banner shown');
+    },
+
+    _attachOpsRefreshBannerListeners(root, reloadSource) {
+        const modal = root;
+        if (!modal || modal.dataset.wfOpsRefreshBannerBound === '1') return;
+        const refreshBtn = Context.dom.query('#wf-ops-refresh-fetch-btn', {
+            root: modal,
+            context: `${this.id}.opsRefreshFetchBtn`
+        });
+        if (!refreshBtn) return;
+        modal.dataset.wfOpsRefreshBannerBound = '1';
+        const source = reloadSource || 'settings-ui';
+        refreshBtn.addEventListener('click', () => {
+            if (typeof Context.requestExtensionReload === 'function') {
+                Context.requestExtensionReload(source + ' ops refresh banner');
+            } else {
+                window.location.reload();
+            }
+        });
+    },
+
+    _createOpsRefreshBannerHTML() {
+        return `
+            <div id="wf-ops-refresh-banner" style="
+                margin-bottom: 20px;
+                padding: 14px;
+                background: #fef3c7;
+                border: 2px solid #f59e0b;
+                border-radius: 8px;
+            ">
+                <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #b45309; flex-shrink: 0; margin-top: 2px;">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <div style="flex: 1;">
+                        <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #92400e;">
+                            Ops Tab Unlock Pending
+                        </h3>
+                        <p style="font-size: 13px; color: #92400e; margin: 0; line-height: 1.5;">
+                            Refresh the page to activate the Ops tab and load the dashboard plugins.
+                        </p>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fcd34d; text-align: center;">
+                    <button type="button" id="wf-ops-refresh-fetch-btn" style="
+                        padding: 8px 14px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        color: #92400e;
+                        background: #fffbeb;
+                        border: 1px solid #f59e0b;
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">Refresh to Fetch</button>
+                </div>
+            </div>
+        `;
+    },
+
+    syncOpsRefreshBanner(modal) {
+        return this._syncOpsRefreshBanner(modal);
     },
 
     _attachUpdateBannerListeners(root, reloadSource) {

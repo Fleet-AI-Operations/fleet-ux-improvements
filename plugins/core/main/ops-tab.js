@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -253,6 +253,7 @@ const plugin = {
             isEnabled: () => this._getOpsTabEnabled(),
             isWanted: () => this._getOpsTabWanted(),
             hasStoredPassword: () => this._hasOpsStoredPassword(),
+            needsOpsDashboardRefresh: () => this._needsOpsDashboardRefresh(),
             shouldOpenDashboardOnSettings: () => this._shouldOpenDashboardOnSettings(),
             getOpsDashboardOpenOnSettings: () => this._getOpsDashboardOpenOnSettings(),
             setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
@@ -662,6 +663,11 @@ const plugin = {
 
     _getOpsTabEnabled() {
         return this._getOpsTabWanted() && this._hasOpsStoredPassword() && this._isOpsAccessConfigured();
+    },
+
+    _needsOpsDashboardRefresh() {
+        if (!this._getOpsTabEnabled()) return false;
+        return Context.opsDashboardPluginsLoaded !== true;
     },
 
     async _verifyOpsPassword(password) {
@@ -4345,6 +4351,9 @@ const plugin = {
         void this._loadOpsSecrets(true);
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
+        }
+        if (settingsPlugin && typeof settingsPlugin.syncOpsRefreshBanner === 'function') {
+            settingsPlugin.syncOpsRefreshBanner(modal);
         }
         return true;
     },
