@@ -192,7 +192,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4405,9 +4405,9 @@ const plugin = {
                     </div>
                 </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
-                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops password</label>
+                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
                     <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" placeholder="Enter password" style="
+                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" style="
                             flex: 1;
                             min-width: 0;
                             padding: 8px 12px;
