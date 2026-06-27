@@ -365,7 +365,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.8',
+    _version: '3.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -448,6 +448,7 @@ const plugin = {
             emptyFilterOptionCounts: bind(self._emptyFilterOptionCounts),
             computeFilterOptionCounts: bind(self._computeFilterOptionCounts),
             computeFilterScopedTotal: bind(self._computeFilterScopedTotal),
+            computeFilterScopedTotalForOrder: bind(self._computeFilterScopedTotalForOrder),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
             dedupeSystemFeedbackEntries: bind(self._dedupeSystemFeedbackEntries),
@@ -1562,6 +1563,14 @@ const plugin = {
             caseSensitive: false
         }), listBounds, sortContext);
         return scoped.length;
+    },
+
+    _computeFilterScopedTotalForOrder(items, draft, listBounds, ctx, ancestorDraftKeys) {
+        const partialDraft = {};
+        for (const key of ancestorDraftKeys || []) {
+            partialDraft[key] = (draft && draft[key]) || [];
+        }
+        return this._computeFilterScopedTotal(items, partialDraft, listBounds, ctx);
     },
 
     _flagReasonLabel(reason) {

@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.11',
+    _version: '6.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -256,6 +256,7 @@ const plugin = {
             bootstrapRunPromise: null,
             committed: null,
             appliedFilters: null,
+            filterSelectionOrder: [],
             filterListOptions: null,
             cardUi: {},
             taskOpenUi: {},
@@ -1881,6 +1882,9 @@ const plugin = {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                if (typeof this._updateFilterSelectionOrder === 'function') {
+                    this._updateFilterSelectionOrder(msKey);
+                }
                 this._keepFilterMsDropdownOpen(msKey);
                 this._renderFilterLists();
             }
@@ -1910,7 +1914,12 @@ const plugin = {
                 this._toggleMsBulkSelection(key);
                 if (key.startsWith('search-teams')) this._renderSearchProjectsList();
                 if (key.startsWith('search-')) this._validateRangeUi();
-                if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
+                if (key.startsWith('filter-') && this._state.cachedItems) {
+                    if (typeof this._updateFilterSelectionOrder === 'function') {
+                        this._updateFilterSelectionOrder(key);
+                    }
+                    this._renderFilterLists();
+                }
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (dashIsTeamMembersMsKey(key) && typeof this._onTeamMemberMsChange === 'function') {
                     this._onTeamMemberMsChange(this._modal);

@@ -7229,6 +7229,22 @@ const searchOutputMethods = {
         return draft;
     },
 
+    _updateFilterSelectionOrder(msKey) {
+        const scope = DASH_FILTER_SCOPES.find((s) => s.scopeKey === msKey);
+        if (!scope) return;
+        const { draftKey } = scope;
+        const order = this._state.filterSelectionOrder || [];
+        const selected = this._selectedFromList(msKey);
+        const wasInQueue = order.includes(draftKey);
+        const hasSelection = selected.length > 0;
+
+        if (hasSelection && !wasInQueue) {
+            this._state.filterSelectionOrder = [...order, draftKey];
+        } else if (!hasSelection && wasInQueue) {
+            this._state.filterSelectionOrder = order.filter((k) => k !== draftKey);
+        }
+    },
+
     _resetFilterLists() {
         this._state.filterListOptions = {
             teams: [], projects: [], envs: [],
@@ -7272,12 +7288,23 @@ const searchOutputMethods = {
         const optionCounts = scopeItems.length > 0
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterOptionCounts();
-        const filteredTotalCount = scopeItems.length > 0 && this._isFilterDraftValid(draft)
-            ? lib.computeFilterScopedTotal(scopeItems, draft, listBounds, {
-                helpfulnessUi: filterOptions.helpfulnessUi,
-                currentUserId: filterOptions.currentUserId
-            })
-            : scopeItems.length;
+        const order = this._state.filterSelectionOrder || [];
+        const pctCtx = {
+            helpfulnessUi: filterOptions.helpfulnessUi,
+            currentUserId: filterOptions.currentUserId
+        };
+        const denominatorByDraftKey = {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const pos = order.indexOf(draftKey);
+            const ancestorKeys = pos === -1 ? [...order] : order.slice(0, pos);
+            if (ancestorKeys.length === 0) {
+                denominatorByDraftKey[draftKey] = scopeItems.length;
+            } else {
+                denominatorByDraftKey[draftKey] = lib.computeFilterScopedTotalForOrder(
+                    scopeItems, draft, listBounds, pctCtx, ancestorKeys
+                );
+            }
+        }
 
         const openFilterKeys = this._beginFilterMsDropdownRefresh();
         try {
@@ -7309,7 +7336,7 @@ const searchOutputMethods = {
                     false,
                     irrelevantSet,
                     countsForScope,
-                    filteredTotalCount
+                    denominatorByDraftKey[draftKey]
                 );
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
@@ -8881,6 +8908,7 @@ const searchOutputMethods = {
             return;
         }
         this._clearFilterUiFields();
+        this._state.filterSelectionOrder = [];
         const ok = await this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
         if (ok) {
             Logger.log('dashboard: filters reset to defaults (all options selected)');
@@ -8909,6 +8937,7 @@ const searchOutputMethods = {
         this._state.autoHydratePending = false;
         this._state.autoHydratePendingLogged = false;
         this._state.disputesBulkIncomplete = false;
+        this._state.filterSelectionOrder = [];
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -10718,7 +10747,10 @@ function attachSearchOutputListeners(modal, dash) {
         if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
         const deferLiveFilterApply = (msKey) => {
-            queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
+            queueMicrotask(() => {
+                dash._updateFilterSelectionOrder(msKey);
+                dash._maybeLiveApplyFilterMsChange(msKey);
+            });
         };
         modal.addEventListener('change', (e) => {
             const cb = e.target;
@@ -11196,7 +11228,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.13',
+    _version: '4.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
