@@ -358,7 +358,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1473,48 +1473,8 @@ const plugin = {
         return result;
     },
 
-    _effectiveDraftForOptionCounts(draft, listBounds) {
-        if (!draft) return draft;
-        const bounds = listBounds || {};
-        const effective = { ...draft };
-        for (const dim of this._checkboxFilterDimensions) {
-            const all = bounds[dim.draftKey] || [];
-            const selected = effective[dim.draftKey] || [];
-            if (all.length > 0 && selected.length === 0) {
-                effective[dim.draftKey] = [...all];
-            }
-        }
-        const allHistory = bounds.promptHistory || [];
-        const selectedHistory = effective.promptHistory || [];
-        if (allHistory.length > 0 && selectedHistory.length === 0) {
-            effective.promptHistory = [...allHistory];
-        }
-        const allHelpfulness = bounds.qaHelpfulness || [];
-        const selectedHelpfulness = effective.qaHelpfulness || [];
-        if (allHelpfulness.length > 0 && selectedHelpfulness.length === 0) {
-            effective.qaHelpfulness = [...allHelpfulness];
-        }
-        const allV1CreationTime = bounds.v1CreationTimeMinutes || [];
-        const selectedV1CreationTime = effective.v1CreationTimeMinutes || [];
-        if (allV1CreationTime.length > 0 && selectedV1CreationTime.length === 0) {
-            effective.v1CreationTimeMinutes = [...allV1CreationTime];
-        }
-        const allQaTime = bounds.qaTimeMinutes || [];
-        const selectedQaTime = effective.qaTimeMinutes || [];
-        if (allQaTime.length > 0 && selectedQaTime.length === 0) {
-            effective.qaTimeMinutes = [...allQaTime];
-        }
-        const allDisputeResolutionTime = bounds.disputeResolutionTimeMinutes || [];
-        const selectedDisputeResolutionTime = effective.disputeResolutionTimeMinutes || [];
-        if (allDisputeResolutionTime.length > 0 && selectedDisputeResolutionTime.length === 0) {
-            effective.disputeResolutionTimeMinutes = [...allDisputeResolutionTime];
-        }
-        return effective;
-    },
-
     _computeFilterOptionCounts(items, draft, listBounds, options) {
         const result = this._emptyFilterOptionCounts();
-        const effectiveDraft = this._effectiveDraftForOptionCounts(draft, listBounds);
         const ctx = this._itemFilterPassCtx(options);
         for (const dim of this._checkboxFilterDimensions) {
             const optionList = (options && options[dim.optionsKey]) || [];
@@ -1522,7 +1482,7 @@ const plugin = {
             for (const { id } of optionList) {
                 const count = items.filter((item) => (
                     dim.getValues(item.task).includes(id)
-                    && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, { taskKey: dim.draftKey })
+                    && this._itemPassesFilterDraft(item, draft, listBounds, ctx, { taskKey: dim.draftKey })
                 )).length;
                 counts.set(id, count);
             }
@@ -1532,7 +1492,7 @@ const plugin = {
         for (const { id } of historyOptions) {
             const count = items.filter((item) => (
                 this._itemPromptHistory(item).includes(id)
-                && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, {
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'promptHistory', forceIncludeId: id
                 })
             )).length;
@@ -1543,7 +1503,7 @@ const plugin = {
         for (const { id } of helpfulnessOptions) {
             const count = items.filter((item) => (
                 this._itemQaHelpfulness(item, ctx.helpfulnessUi, ctx.currentUserId).includes(id)
-                && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, {
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'qaHelpfulness', forceIncludeId: id
                 })
             )).length;
@@ -1554,7 +1514,7 @@ const plugin = {
         for (const { id } of v1CreationTimeOptions) {
             const count = items.filter((item) => (
                 this._itemV1CreationTimeBuckets(item).includes(id)
-                && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, {
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'v1CreationTimeMinutes', forceIncludeId: id
                 })
             )).length;
@@ -1565,7 +1525,7 @@ const plugin = {
         for (const { id } of qaTimeOptions) {
             const count = items.filter((item) => (
                 this._itemQaTimeMinutesBuckets(item).includes(id)
-                && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, {
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'qaTimeMinutes', forceIncludeId: id
                 })
             )).length;
@@ -1576,7 +1536,7 @@ const plugin = {
         for (const { id } of disputeResolutionTimeOptions) {
             const count = items.filter((item) => (
                 this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
-                && this._itemPassesFilterDraft(item, effectiveDraft, listBounds, ctx, {
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'disputeResolutionTimeMinutes', forceIncludeId: id
                 })
             )).length;
