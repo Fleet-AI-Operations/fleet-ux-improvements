@@ -202,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.11',
+    _version: '8.12',
     phase: 'core',
     enabledByDefault: true,
 
@@ -229,7 +229,7 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
-    /** Expert profile cred refresh: { modal, expertId, searchQuery, startedAt } while waiting for capture */
+    /** Expert profile cred refresh: { modal, expertId, startedAt } while waiting for capture */
     _opsExpertCredRefreshPending: null,
     _opsExpertCredRefreshTimeout: null,
     _opsSyncChannel: null,
@@ -2191,7 +2191,6 @@ const plugin = {
         const pending = this._opsExpertCredRefreshPending;
         if (!pending) return;
         const modal = pending.modal;
-        const searchQuery = pending.searchQuery || '';
 
         if (!this._opsExpertStatsActionCache.nextAction) {
             this._loadOpsExpertStatsActionFromStorage();
@@ -2215,14 +2214,6 @@ const plugin = {
 
         this._clearOpsExpertCredRefreshPending();
 
-        if (searchQuery) {
-            if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
-            this._opsExpertStatsHydrateGen++;
-            Logger.log('ops-tab: expert cred refresh captured — re-running named search');
-            void this._handleOpsTeamSearch(modal);
-            return;
-        }
-
         if (this._opsTeamSearchMemberCache) {
             if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
             this._opsExpertStatsHydrateGen++;
@@ -2231,7 +2222,7 @@ const plugin = {
             return;
         }
 
-        Logger.log('ops-tab: expert cred refresh captured — blank search, no results on screen');
+        Logger.log('ops-tab: expert cred refresh captured — no results on screen');
     },
 
     _openOpsExpertProfileForCredRefresh(modal, expertId) {
@@ -2239,8 +2230,6 @@ const plugin = {
         if (!id) return null;
         this._clearOpsExpertCredRefreshPending();
         const pageWindow = this._getOpsPageWindow();
-        const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'expertCredRefreshSearchInput');
-        const searchQuery = input ? input.value.trim() : '';
         const url = this._opsExpertProfileUrl(id, true);
         const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
         if (!opened) {
@@ -2248,7 +2237,7 @@ const plugin = {
             return null;
         }
         if (modal) {
-            this._opsExpertCredRefreshPending = { modal, expertId: id, searchQuery, startedAt: Date.now() };
+            this._opsExpertCredRefreshPending = { modal, expertId: id, startedAt: Date.now() };
             const self = this;
             this._opsExpertCredRefreshTimeout = pageWindow.setTimeout(() => {
                 if (!self._opsExpertCredRefreshPending) return;
