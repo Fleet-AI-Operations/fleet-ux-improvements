@@ -226,7 +226,7 @@ const teamMembersMethods = {
 
     _readTeamMembersPageSizePref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(TEAM_MEMBERS_PAGE_SIZE_KEY);
+            const v = Storage.getData(TEAM_MEMBERS_PAGE_SIZE_KEY, null);
             if (v === '10' || v === '25' || v === '50' || v === 'all') return v;
         } catch (_e) { /* ignore */ }
         return null;
@@ -235,7 +235,7 @@ const teamMembersMethods = {
     _persistTeamMembersPageSizePref(value) {
         try {
             const v = String(value || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
-            this._pageWindow().localStorage.setItem(TEAM_MEMBERS_PAGE_SIZE_KEY, v);
+            Storage.setData(TEAM_MEMBERS_PAGE_SIZE_KEY, v);
         } catch (e) {
             Logger.debug('team-members: could not persist page size', e);
         }
@@ -593,7 +593,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

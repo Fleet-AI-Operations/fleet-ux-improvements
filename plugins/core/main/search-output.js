@@ -408,7 +408,7 @@ function dashFirstEmbed(embed) {
 const searchOutputMethods = {
     _readBootstrapCache() {
         try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_BOOTSTRAP_STORAGE_KEY);
+            const raw = Storage.getData(DASH_BOOTSTRAP_STORAGE_KEY, null);
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             if (!parsed || parsed.version !== DASH_BOOTSTRAP_VERSION) return null;
@@ -444,7 +444,7 @@ const searchOutputMethods = {
             environments: data.environments
         };
         try {
-            this._pageWindow().localStorage.setItem(DASH_BOOTSTRAP_STORAGE_KEY, JSON.stringify(entry));
+            Storage.setData(DASH_BOOTSTRAP_STORAGE_KEY, JSON.stringify(entry));
         } catch (e) {
             Logger.warn('dashboard: failed to write bootstrap cache', e);
         }
@@ -924,7 +924,7 @@ const searchOutputMethods = {
         const fromCookie = this._dashGetCookie('current-user-id');
         if (fromCookie && DASH_UUID_RE.test(fromCookie)) return fromCookie;
         try {
-            const stored = this._pageWindow().localStorage.getItem('fleet-ux:ops-current-user-id');
+            const stored = Storage.getData('fleet-ux:ops-current-user-id', null);
             if (stored && DASH_UUID_RE.test(stored)) return stored;
         } catch (_e) { /* ignore */ }
         return '';
@@ -4256,7 +4256,7 @@ const searchOutputMethods = {
 
     _readSearchDepthPref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(DASH_SEARCH_DEPTH_STORAGE_KEY);
+            const v = Storage.getData(DASH_SEARCH_DEPTH_STORAGE_KEY, null);
             if (v === 'deep' || v === 'quick') return v;
         } catch (_e) { /* ignore */ }
         return 'quick';
@@ -4264,7 +4264,7 @@ const searchOutputMethods = {
 
     _persistSearchDepthPref(depth) {
         try {
-            this._pageWindow().localStorage.setItem(DASH_SEARCH_DEPTH_STORAGE_KEY, depth === 'deep' ? 'deep' : 'quick');
+            Storage.setData(DASH_SEARCH_DEPTH_STORAGE_KEY, depth === 'deep' ? 'deep' : 'quick');
         } catch (e) {
             Logger.debug('dashboard: could not persist search depth', e);
         }
@@ -4319,7 +4319,7 @@ const searchOutputMethods = {
 
     _readResultsModePref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_MODE_STORAGE_KEY);
+            const v = Storage.getData(DASH_RESULTS_MODE_STORAGE_KEY, null);
             if (v === 'add' || v === 'clear') return v;
         } catch (_e) { /* ignore */ }
         return 'clear';
@@ -4327,7 +4327,7 @@ const searchOutputMethods = {
 
     _persistResultsModePref(mode) {
         try {
-            this._pageWindow().localStorage.setItem(
+            Storage.setData(
                 DASH_RESULTS_MODE_STORAGE_KEY,
                 mode === 'add' ? 'add' : 'clear'
             );
@@ -5195,7 +5195,7 @@ const searchOutputMethods = {
 
     _readResultsPageSizePref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_PAGE_SIZE_KEY);
+            const v = Storage.getData(DASH_RESULTS_PAGE_SIZE_KEY, null);
             if (v === '10' || v === '25' || v === '50' || v === '100' || v === 'all') return v;
         } catch (_e) { /* ignore */ }
         return null;
@@ -5204,7 +5204,7 @@ const searchOutputMethods = {
     _persistResultsPageSizePref(value) {
         try {
             const v = String(value || DASH_RESULTS_PAGE_SIZE_DEFAULT);
-            this._pageWindow().localStorage.setItem(DASH_RESULTS_PAGE_SIZE_KEY, v);
+            Storage.setData(DASH_RESULTS_PAGE_SIZE_KEY, v);
         } catch (e) {
             Logger.debug('dashboard: could not persist results page size', e);
         }
@@ -11178,7 +11178,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      10.2
+// @version      10.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -12,6 +12,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_listValues
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @connect      cdn.jsdelivr.net
@@ -37,11 +38,49 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '10.2';
+    const VERSION = '10.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
     };
+    /** Extension-owned data keys (formerly page localStorage `fleet-ux:*`); stored in GM via Storage.getData/setData. */
+    const SCRIPT_DATA_KEY_REGISTRY = [
+        'fleet-ux:ops-team-search-next-action',
+        'fleet-ux:ops-team-search-router-state',
+        'fleet-ux:ops-team-add-member-next-action',
+        'fleet-ux:ops-team-add-member-router-state',
+        'fleet-ux:ops-task-data-next-action',
+        'fleet-ux:ops-task-data-router-state',
+        'fleet-ux:ops-expert-stats-next-action',
+        'fleet-ux:ops-expert-stats-router-state',
+        'fleet-ux:ops-current-user-id',
+        'fleet-ux:ops-team-cred-refresh-done',
+        'fleet-ux:dashboard-bootstrap',
+        'fleet-ux:dashboard-search-depth',
+        'fleet-ux:dashboard-results-mode',
+        'fleet-ux:dashboard-results-page-size',
+        'fleet-ux:dashboard-side-panel-width',
+        'fleet-ux:dashboard-results-panel-max-width',
+        'fleet-ux:diff-viewer-side-panel-width',
+        'fleet-ux:team-members-page-size',
+        'fleet-ux:verifier-fetcher-scratchpad-width',
+        'fleet-ux:verifier-fetcher-scratchpad-open',
+        'fleet-ux:verifier-fetcher-scratchpad-text',
+        'fleet-ux:diff-viewer-stash',
+        'fleet-ux:diff-viewer-granularity',
+        'fleet-ux:diff-viewer-comp-mode',
+        'fleet-ux:diff-viewer-highlight-modality',
+        'fleet-ux:supabase-rest-base-url',
+        'fleet-ux:supabase-anon-key',
+        'fleet-ux:supabase-project-ref',
+        'fleet-ux:supabase-access-token'
+    ];
+    /** Page localStorage keys that must stay on the page (dev script handshake). Never migrated or cleared by us. */
+    const DEV_HANDSHAKE_PAGE_LS_ALLOWLIST = new Set([
+        'fleet-dev-branch-id',
+        'fleet-dev-active-branch',
+        'fleet-main-active-branch'
+    ]);
     const LOG_PREFIX = '[Fleet UX Enhancer]';
     
     // Base URL that matches the @match pattern (without trailing wildcard)
@@ -884,6 +923,157 @@
         setSubOptionEnabled(pluginId, subOptionId, enabled) {
             this.set(`suboption-${pluginId}-${subOptionId}`, enabled);
         },
+        _dataGmKey(logicalKey) {
+            return `data:${logicalKey}`;
+        },
+        getData(logicalKey, defaultValue) {
+            return this.get(this._dataGmKey(logicalKey), defaultValue);
+        },
+        setData(logicalKey, value) {
+            this.set(this._dataGmKey(logicalKey), value);
+        },
+        deleteData(logicalKey) {
+            this.delete(this._dataGmKey(logicalKey));
+        },
+        purgeLegacyPageLocalStorage() {
+            const pageStorage = getPageLocalStorage();
+            if (!pageStorage) {
+                return 0;
+            }
+            let purged = 0;
+            SCRIPT_DATA_KEY_REGISTRY.forEach((key) => {
+                if (DEV_HANDSHAKE_PAGE_LS_ALLOWLIST.has(key)) {
+                    return;
+                }
+                try {
+                    if (pageStorage.getItem(key) != null) {
+                        pageStorage.removeItem(key);
+                        purged++;
+                    }
+                } catch (_e) { /* ignore */ }
+            });
+            return purged;
+        },
+        migratePageLocalStorageOnce() {
+            const pageStorage = getPageLocalStorage();
+            if (!pageStorage) {
+                return 0;
+            }
+            let migrated = 0;
+            SCRIPT_DATA_KEY_REGISTRY.forEach((key) => {
+                if (DEV_HANDSHAKE_PAGE_LS_ALLOWLIST.has(key)) {
+                    return;
+                }
+                try {
+                    const existing = this.getData(key, null);
+                    if (existing != null && existing !== '') {
+                        return;
+                    }
+                    const legacy = pageStorage.getItem(key);
+                    if (legacy == null || legacy === '') {
+                        return;
+                    }
+                    this.setData(key, legacy);
+                    pageStorage.removeItem(key);
+                    migrated++;
+                } catch (e) {
+                    Logger.debug('Storage: page localStorage migration failed for ' + key, e);
+                }
+            });
+            if (migrated > 0) {
+                Logger.info('Storage: migrated ' + migrated + ' key(s) from page localStorage to script storage');
+            }
+            return migrated;
+        },
+        _collectArchetypeIdsForClear() {
+            const ids = new Set(['global', 'dev']);
+            const am = Context.archetypeManager;
+            if (am) {
+                if (Array.isArray(am.archetypes)) {
+                    am.archetypes.forEach((a) => { if (a && a.id) ids.add(a.id); });
+                }
+                if (Array.isArray(am.devArchetypes)) {
+                    am.devArchetypes.forEach((a) => { if (a && a.id) ids.add(a.id); });
+                }
+            }
+            return [...ids];
+        },
+        _clearAllFallback(plugins) {
+            let clearedCount = 0;
+            const allPlugins = plugins || (Context.pluginManager ? Context.pluginManager.getAll() : []);
+            allPlugins.forEach(plugin => {
+                this.delete(`plugin-${plugin.id}-enabled`);
+                clearedCount++;
+                this.delete(`module-logging-${plugin.id}`);
+                clearedCount++;
+                if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
+                    plugin.subOptions.forEach(subOption => {
+                        this.delete(`suboption-${plugin.id}-${subOption.id}`);
+                        clearedCount++;
+                    });
+                }
+                const pluginKey = this.getPluginKey(plugin.id, null);
+                if (pluginKey) {
+                    this.delete(`plugin-cache-${pluginKey}`);
+                    clearedCount++;
+                }
+                this.delete(`${plugin.id}-ignored`);
+                clearedCount++;
+            });
+            const globalKeys = [
+                'global-plugins-enabled',
+                'global-plugins-previous',
+                'page-refresh-confirmation-enabled',
+                'extension-refresh-confirmation-enabled',
+                'pulse-override-enabled',
+                'ops-tab-enabled',
+                'ops-tab-stored-password',
+                'ops-tab-password-hash-seen',
+                'ops-dashboard-open-on-settings',
+                'dev-global-plugins-enabled',
+                'dev-global-plugins-previous',
+                'debug',
+                'verbose',
+                'submodule-logging',
+                'disputes-cache'
+            ];
+            globalKeys.forEach(key => {
+                this.delete(key);
+                clearedCount++;
+            });
+            Object.values(SHARED_STORAGE_KEYS).forEach(key => {
+                this.delete(key);
+                clearedCount++;
+            });
+            SCRIPT_DATA_KEY_REGISTRY.forEach((key) => {
+                this.deleteData(key);
+                clearedCount++;
+            });
+            this._collectArchetypeIdsForClear().forEach(archetypeId => {
+                this.delete(`plugin-order-${archetypeId}`);
+                clearedCount++;
+                this.delete(`dev-plugin-order-${archetypeId}`);
+                clearedCount++;
+                this.delete(`plugin-cache-registry-${archetypeId}`);
+                clearedCount++;
+            });
+            this.delete('plugin-cache-registry-global');
+            clearedCount++;
+            this.delete('plugin-cache-registry-dev');
+            clearedCount++;
+            const devLoggerKeys = [
+                'dev-logger-position-left',
+                'dev-logger-position-top',
+                'dev-logger-width',
+                'dev-logger-height',
+                'dev-logger-is-visible'
+            ];
+            devLoggerKeys.forEach(key => {
+                this.delete(key);
+                clearedCount++;
+            });
+            return clearedCount;
+        },
         // Delete a key
         delete(key) {
             try {
@@ -896,103 +1086,34 @@
         clearAll(plugins = null) {
             Logger.log('Clearing all storage and cache...');
             let clearedCount = 0;
-            
-            // Clear all plugin-related storage
-            const allPlugins = plugins || (Context.pluginManager ? Context.pluginManager.getAll() : []);
-            allPlugins.forEach(plugin => {
-                // Clear plugin enabled state
-                this.delete(`plugin-${plugin.id}-enabled`);
-                clearedCount++;
-                
-                // Clear module logging
-                this.delete(`module-logging-${plugin.id}`);
-                clearedCount++;
-                
-                // Clear sub-options
-                if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
-                    plugin.subOptions.forEach(subOption => {
-                        this.delete(`suboption-${plugin.id}-${subOption.id}`);
-                        clearedCount++;
+
+            try {
+                if (typeof GM_listValues === 'function') {
+                    GM_listValues().forEach((fullKey) => {
+                        if (fullKey.startsWith(STORAGE_PREFIX)) {
+                            try {
+                                GM_deleteValue(fullKey);
+                                clearedCount++;
+                            } catch (e) {
+                                Logger.warn('Storage.clearAll: failed to delete ' + fullKey, e);
+                            }
+                        }
                     });
+                } else {
+                    Logger.warn('Storage.clearAll: GM_listValues unavailable; using registry fallback');
+                    clearedCount += this._clearAllFallback(plugins);
                 }
-                
-                // Clear plugin cache (try common patterns)
-                // Note: We can't enumerate all cache keys, so we clear known patterns
-                const pluginKey = this.getPluginKey(plugin.id, null);
-                if (pluginKey) {
-                    this.delete(`plugin-cache-${pluginKey}`);
-                    clearedCount++;
-                }
-                // Clear plugin-specific data stores (e.g. dispute-ids-enhancer ignore list)
-                this.delete(`${plugin.id}-ignored`);
-                clearedCount++;
-            });
-            
-            // Clear global settings and known plugin data caches
-            const globalKeys = [
-                'global-plugins-enabled',
-                'global-plugins-previous',
-                'page-refresh-confirmation-enabled',
-                'extension-refresh-confirmation-enabled',
-                'ops-tab-enabled',
-                'ops-tab-stored-password',
-                'ops-dashboard-open-on-settings',
-                'debug',
-                'verbose',
-                'submodule-logging',
-                'disputes-cache'
-            ];
-            globalKeys.forEach(key => {
-                this.delete(key);
-                clearedCount++;
-            });
-            
-            // Clear shared cross-archetype storage keys
-            Object.values(SHARED_STORAGE_KEYS).forEach(key => {
-                this.delete(key);
-                clearedCount++;
-            });
-            
-            // Clear plugin order for all known archetypes
-            const commonArchetypeIds = [
-                'global', 'dashboard', 'tool-use-task-creation', 'tool-use-task-creation-openclaw',
-                'tool-use-revision', 'create-task-project-selection', 'dashboard-create-instance',
-                'comp-use-task-creation', 'comp-use-revision', 'qa-tool-use', 'qa-session',
-                'qa-comp-use', 'disputes', 'dispute-detail', 'task-view', 'dashboard-data-task',
-                'dashboard-data-expert', 'no-vnc', 'assessments-grade', 'assessments-grade-detail',
-            ];
-            commonArchetypeIds.forEach(archetypeId => {
-                this.delete(`plugin-order-${archetypeId}`);
-                clearedCount++;
-                
-                // Also clear dev plugin order
-                this.delete(`dev-plugin-order-${archetypeId}`);
-                clearedCount++;
-                
-                // Clear plugin cache registry for this archetype
-                this.delete(`plugin-cache-registry-${archetypeId}`);
-                clearedCount++;
-            });
-            
-            // Also clear global and dev registries (in case they exist)
-            this.delete('plugin-cache-registry-global');
-            clearedCount++;
-            this.delete('plugin-cache-registry-dev');
-            clearedCount++;
-            
-            // Clear dev logger panel storage if it exists
-            const devLoggerKeys = [
-                'dev-logger-position-left',
-                'dev-logger-position-top',
-                'dev-logger-width',
-                'dev-logger-height',
-                'dev-logger-is-visible'
-            ];
-            devLoggerKeys.forEach(key => {
-                this.delete(key);
-                clearedCount++;
-            });
-            
+            } catch (e) {
+                Logger.warn('Storage.clearAll: GM_listValues wipe failed; using registry fallback', e);
+                clearedCount += this._clearAllFallback(plugins);
+            }
+
+            const legacyPurged = this.purgeLegacyPageLocalStorage();
+            if (legacyPurged > 0) {
+                Logger.log('Storage.clearAll: purged ' + legacyPurged + ' legacy page localStorage key(s)');
+                clearedCount += legacyPurged;
+            }
+
             Logger.log(`✓ Cleared ${clearedCount} storage keys`);
             return clearedCount;
         },
@@ -1217,7 +1338,7 @@
 
     // ============= NETWORK OBSERVER =============
     /**
-     * Stable extension-owned keys for runtime access values stored in Fleet page localStorage.
+     * Stable extension-owned keys for runtime access values stored in script GM storage.
      * Discovered live from Supabase fetch traffic; consumed by Ops verifier fetcher (and any
      * future modules that need shared API config) via `Context.networkObserver.getRuntimeAccess()`.
      */
@@ -1374,11 +1495,8 @@
                 push(runtimeAccess.supabaseAccessToken);
             }
             try {
-                const storage = pageWindow && pageWindow.localStorage;
-                if (storage) {
-                    const cached = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
-                    push(cached);
-                }
+                const cached = Storage.getData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken, null);
+                push(cached);
             } catch (_e) { /* ignore */ }
             if (pageWindow) {
                 this._collectFromStorage(pageWindow.localStorage).forEach(push);
@@ -1503,14 +1621,12 @@
             });
         },
 
-        _loadRuntimeAccessFromStorage(pageWindow) {
+        _loadRuntimeAccessFromStorage(_pageWindow) {
             try {
-                const storage = pageWindow.localStorage;
-                if (!storage) return;
-                const baseUrl = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
-                const anonKey = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
-                const projectRef = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseProjectRef);
-                const accessToken = storage.getItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+                const baseUrl = Storage.getData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl, null);
+                const anonKey = Storage.getData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey, null);
+                const projectRef = Storage.getData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseProjectRef, null);
+                const accessToken = Storage.getData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken, null);
 
                 const anonKeyValid = anonKey ? this._jwtIsAnonForRef(anonKey, projectRef) : false;
                 const baseUrlValid = baseUrl ? this._validRestBaseUrlForRef(baseUrl, projectRef) : false;
@@ -1519,16 +1635,16 @@
                     : false;
 
                 if (anonKey && !anonKeyValid) {
-                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
-                    Logger.warn('NetworkObserver: discarded stale anon key from localStorage');
+                    Storage.deleteData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAnonKey);
+                    Logger.warn('NetworkObserver: discarded stale anon key from script storage');
                 }
                 if (baseUrl && !baseUrlValid) {
-                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
-                    Logger.warn('NetworkObserver: discarded stale Supabase REST base URL from localStorage');
+                    Storage.deleteData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseRestBaseUrl);
+                    Logger.warn('NetworkObserver: discarded stale Supabase REST base URL from script storage');
                 }
                 if (accessToken && !accessTokenValid) {
-                    storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
-                    Logger.warn('NetworkObserver: discarded invalid access token from localStorage');
+                    Storage.deleteData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+                    Logger.warn('NetworkObserver: discarded invalid access token from script storage');
                 }
 
                 this._runtimeAccess = {
@@ -1538,7 +1654,7 @@
                     supabaseAccessToken: accessTokenValid ? accessToken : null
                 };
             } catch (e) {
-                Logger.debug('NetworkObserver: hydrating runtime access from localStorage failed', e);
+                Logger.debug('NetworkObserver: hydrating runtime access from script storage failed', e);
             }
         },
 
@@ -1634,21 +1750,19 @@
             }
         },
 
-        _setRuntimeAccessToken(pageWindow, token) {
+        _setRuntimeAccessToken(_pageWindow, token) {
             this._runtimeAccess.supabaseAccessToken = token;
             try {
-                const storage = pageWindow && pageWindow.localStorage;
-                if (storage && token) {
-                    storage.setItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken, token);
+                if (token) {
+                    Storage.setData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken, token);
                 }
             } catch (_e) { /* ignore */ }
         },
 
-        _clearRuntimeAccessToken(pageWindow) {
+        _clearRuntimeAccessToken(_pageWindow) {
             this._runtimeAccess.supabaseAccessToken = null;
             try {
-                const storage = pageWindow && pageWindow.localStorage;
-                if (storage) storage.removeItem(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
+                Storage.deleteData(RUNTIME_ACCESS_STORAGE_KEYS.supabaseAccessToken);
             } catch (_e) { /* ignore */ }
         },
 
@@ -1706,16 +1820,15 @@
             }
         },
 
-        _persistRuntimeAccess(pageWindow, partial) {
-            const storage = pageWindow && pageWindow.localStorage;
+        _persistRuntimeAccess(_pageWindow, partial) {
             let changed = false;
             const setKey = (storageKey, value) => {
                 if (!value) return;
                 if (this._runtimeAccess[storageKey] === value) return;
                 this._runtimeAccess[storageKey] = value;
-                if (storage) {
-                    try { storage.setItem(RUNTIME_ACCESS_STORAGE_KEYS[storageKey], value); } catch (_e) { /* ignore */ }
-                }
+                try {
+                    Storage.setData(RUNTIME_ACCESS_STORAGE_KEYS[storageKey], value);
+                } catch (_e) { /* ignore */ }
                 changed = true;
             };
             setKey('supabaseProjectRef', partial.supabaseProjectRef);
@@ -3305,6 +3418,8 @@
         }
     };
 
+    Context.archetypeManager = ArchetypeManager;
+
     // ============= PLUGIN MANAGER =============
     const PluginManager = {
         plugins: {},
@@ -3767,6 +3882,7 @@
         // Always log script version (cannot be disabled)
         console.log(`${LOG_PREFIX} v${VERSION}`);
         Logger.log('Starting...');
+        Storage.migratePageLocalStorageOnce();
 
         // NetworkObserver.init() runs at document-start (before handshake); idempotent if already installed.
         NetworkObserver.init();

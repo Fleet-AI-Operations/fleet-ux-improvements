@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1134,7 +1134,7 @@ const plugin = {
     _readSidePanelWidthPref(scopeKey) {
         const scope = scopeKey || 'dashboard';
         try {
-            const raw = this._pageWindow().localStorage.getItem(this._sidePanelWidthStorageKey(scope));
+            const raw = Storage.getData(this._sidePanelWidthStorageKey(scope), null);
             const n = parseInt(raw, 10);
             if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_WIDTH) return n;
         } catch (_e) { /* fall through */ }
@@ -1145,7 +1145,7 @@ const plugin = {
         const scope = scopeKey || 'dashboard';
         try {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(this._sidePanelWidthStorageKey(scope), String(clamped));
+            Storage.setData(this._sidePanelWidthStorageKey(scope), String(clamped));
         } catch (e) {
             Logger.warn('dashboard: failed to write side panel width pref (' + scope + ')', e);
         }
@@ -1153,7 +1153,7 @@ const plugin = {
 
     _readResultsPanelMaxWidthPref() {
         try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+            const raw = Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null);
             if (raw == null || raw === '') return null;
             const n = parseInt(raw, 10);
             if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_RESULTS_WIDTH) return n;
@@ -1164,11 +1164,11 @@ const plugin = {
     _writeResultsPanelMaxWidthPref(widthPx) {
         try {
             if (widthPx == null) {
-                this._pageWindow().localStorage.removeItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+                Storage.deleteData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
                 return;
             }
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
+            Storage.setData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
             Logger.warn('dashboard: failed to write results panel max width pref', e);
         }

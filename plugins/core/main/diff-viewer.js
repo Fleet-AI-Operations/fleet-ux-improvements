@@ -264,13 +264,13 @@ function _dvSlotMetaRowHtml(slot) {
 
 function _dvLoadStash() {
     try {
-        const raw = localStorage.getItem(DV_STASH_KEY);
+        const raw = Storage.getData(DV_STASH_KEY, null);
         return raw ? JSON.parse(raw) : [];
     } catch (_e) { return []; }
 }
 
 function _dvSaveStash() {
-    try { localStorage.setItem(DV_STASH_KEY, JSON.stringify(_dvState.stash)); } catch (_e) { /* no-op */ }
+    try { Storage.setData(DV_STASH_KEY, JSON.stringify(_dvState.stash)); } catch (_e) { /* no-op */ }
 }
 
 // ── Retrieve input parser (mirrors search-output._parseRetrieveInput) ──
@@ -1107,7 +1107,7 @@ function _dvApplyViewProgression(modal) {
     Logger.log('diff-viewer: View Complete Task Progression — ' + _dvState.slots.length + ' slots');
     _dvState.compMode = 'rolling';
     _dvState.rollingLeft = 0;
-    try { localStorage.setItem(DV_COMP_MODE_KEY, 'rolling'); } catch (_e) { /* no-op */ }
+    try { Storage.setData(DV_COMP_MODE_KEY, 'rolling'); } catch (_e) { /* no-op */ }
     _dvRenderAll(modal);
     _dvSyncCompModeUi(modal);
     _dvUpdateRollingOverlay(modal);
@@ -2101,7 +2101,7 @@ function _dvAttachListeners(modal, dash) {
             const gran = segBtn.getAttribute('data-dv-seg');
             if (gran !== _dvState.granularity) {
                 _dvState.granularity = gran;
-                try { localStorage.setItem(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
+                try { Storage.setData(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
                 _dvSyncGranularityUi(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateAboveLabels(modal);
@@ -2117,7 +2117,7 @@ function _dvAttachListeners(modal, dash) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
                 _dvState.highlightModality = modality;
-                try { localStorage.setItem(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
+                try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateAboveLabels(modal);
@@ -2134,7 +2134,7 @@ function _dvAttachListeners(modal, dash) {
             if (compMode !== _dvState.compMode) {
                 _dvState.compMode = compMode;
                 if (compMode === 'rolling') _dvClampRollingLeft();
-                try { localStorage.setItem(DV_COMP_MODE_KEY, compMode); } catch (_e) { /* no-op */ }
+                try { Storage.setData(DV_COMP_MODE_KEY, compMode); } catch (_e) { /* no-op */ }
                 _dvClearHoverDiff(modal);
                 _dvState.hoverSlotIdx = null;
                 _dvSyncCompModeUi(modal);
@@ -2911,7 +2911,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2934,19 +2934,19 @@ const plugin = {
 
         // Restore persisted granularity
         try {
-            const stored = localStorage.getItem(DV_GRANULARITY_KEY);
+            const stored = Storage.getData(DV_GRANULARITY_KEY, null);
             if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
         } catch (_e) { /* no-op */ }
 
         // Restore persisted comparison mode
         try {
-            const storedComp = localStorage.getItem(DV_COMP_MODE_KEY);
+            const storedComp = Storage.getData(DV_COMP_MODE_KEY, null);
             if (storedComp === 'base' || storedComp === 'rolling') _dvState.compMode = storedComp;
         } catch (_e) { /* no-op */ }
 
         // Restore persisted highlight modality
         try {
-            const storedModality = localStorage.getItem(DV_HIGHLIGHT_MODALITY_KEY);
+            const storedModality = Storage.getData(DV_HIGHLIGHT_MODALITY_KEY, null);
             if (storedModality === 'differences' || storedModality === 'similarities') {
                 _dvState.highlightModality = storedModality;
             }
