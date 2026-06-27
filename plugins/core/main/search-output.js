@@ -10746,27 +10746,6 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
-        const deferLiveFilterApply = (msKey) => {
-            queueMicrotask(() => {
-                dash._updateFilterSelectionOrder(msKey);
-                dash._maybeLiveApplyFilterMsChange(msKey);
-            });
-        };
-        modal.addEventListener('change', (e) => {
-            const cb = e.target;
-            if (!cb || cb.type !== 'checkbox') return;
-            const msKey = cb.getAttribute('data-wf-dash-ms');
-            if (!msKey || !msKey.startsWith('filter-')) return;
-            deferLiveFilterApply(msKey);
-        });
-        modal.addEventListener('click', (e) => {
-            const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
-            if (!msBulkToggle || !modal.contains(msBulkToggle)) return;
-            const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
-            if (!key || !key.startsWith('filter-')) return;
-            deferLiveFilterApply(key);
-        });
-
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -11228,7 +11207,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.14',
+    _version: '4.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

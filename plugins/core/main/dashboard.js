@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.12',
+    _version: '6.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1887,6 +1887,9 @@ const plugin = {
                 }
                 this._keepFilterMsDropdownOpen(msKey);
                 this._renderFilterLists();
+                if (typeof this._maybeLiveApplyFilterMsChange === 'function') {
+                    this._maybeLiveApplyFilterMsChange(msKey);
+                }
             }
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
         });
@@ -1919,6 +1922,9 @@ const plugin = {
                         this._updateFilterSelectionOrder(key);
                     }
                     this._renderFilterLists();
+                    if (typeof this._maybeLiveApplyFilterMsChange === 'function') {
+                        this._maybeLiveApplyFilterMsChange(key);
+                    }
                 }
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (dashIsTeamMembersMsKey(key) && typeof this._onTeamMemberMsChange === 'function') {
