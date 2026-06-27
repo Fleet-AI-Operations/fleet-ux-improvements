@@ -57,6 +57,9 @@ const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
 const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
+/** Query param on programmatic expert profile opens for stats credential refresh (auto-close when captured) */
+const OPS_EXPERT_CRED_REFRESH_QUERY = 'wfOpsExpertCredRefresh';
+const OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS = 90000;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
@@ -199,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.9',
+    _version: '8.10',
     phase: 'core',
     enabledByDefault: true,
 
@@ -226,6 +229,9 @@ const plugin = {
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
+    /** Expert profile cred refresh: { modal, expertId, searchQuery, startedAt } while waiting for capture */
+    _opsExpertCredRefreshPending: null,
+    _opsExpertCredRefreshTimeout: null,
     _opsSyncChannel: null,
     _opsSyncChannelSubscribed: false,
     /** memberId → { loading?, creator?, qa?, error? } */
@@ -1582,6 +1588,7 @@ const plugin = {
         }
         if (changed) {
             Logger.log('ops-tab: expert stats action updated (' + nextAction.slice(0, 12) + '…)');
+            this._broadcastOpsSync({ type: 'expertStatsActionUpdated' });
         }
     },
 
@@ -1625,9 +1632,14 @@ const plugin = {
                 if (!nextAction) return;
                 const kind = self._opsClassifyExpertPostBody(meta.body);
                 if (kind === 'stats-creator' || kind === 'stats-qa') {
+                    const credRefreshTab = self._isOpsExpertCredRefreshTab();
                     if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                    if (credRefreshTab) {
+                        self._signalOpsExpertCredRefreshComplete();
+                        self._tryCloseOpsExpertCredRefreshTab();
                     }
                 }
             }
@@ -1760,6 +1772,33 @@ const plugin = {
         return [role, message, '—', '—'];
     },
 
+    _opsExpertProfileUrl(expertId, credRefresh) {
+        const id = String(expertId || '').trim();
+        if (!id) return '';
+        let url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+        if (credRefresh) url += '?' + OPS_EXPERT_CRED_REFRESH_QUERY + '=1';
+        return url;
+    },
+
+    _opsExpertStatsCredRefreshBtnHtml(memberId) {
+        const id = String(memberId || '').trim();
+        if (!id) return '';
+        const attrId = this._opsEscapeAttr(id);
+        const title = 'Open expert profile to refresh stats';
+        return '<button type="button" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
+            'data-ops-action="expert-stats-cred-refresh" data-ops-member-id="' + attrId + '" ' +
+            'title="' + this._opsEscapeHtml(title) + '" aria-label="' + this._opsEscapeHtml(title) + '">' +
+            this._opsProfileLinkIconSvg() + '</button>';
+    },
+
+    _opsExpertStatsUnavailableHtml(memberId) {
+        return '<div class="wf-ops-member-stats-grid wf-ops-member-stats-grid--plain" data-ops-member-stats-grid>' +
+            '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            this._opsEscapeHtml('Stats unavailable (open expert profile once)') +
+            this._opsExpertStatsCredRefreshBtnHtml(memberId) +
+            '</span></div>';
+    },
+
     _opsExpertStatsGridHtml(creatorCols, qaCols, opts) {
         const plain = !!(opts && opts.plain);
         const gridClass = plain
@@ -1770,10 +1809,10 @@ const plugin = {
         return '<div class="' + gridClass + '" data-ops-member-stats-grid>' + cells + '</div>';
     },
 
-    _renderOpsTeamMemberStatsInnerHtml(entry) {
-        if (!this._opsExpertStatsActionCache.nextAction) {
-            const msg = 'Stats unavailable (open an expert profile once)';
-            return this._opsExpertStatsGridHtml([msg], [msg], { plain: true });
+    _renderOpsTeamMemberStatsInnerHtml(entry, memberId) {
+        if (!this._opsExpertStatsActionCache.nextAction
+            || (entry && entry.error === 'missing-credentials')) {
+            return this._opsExpertStatsUnavailableHtml(memberId);
         }
         if (!entry || entry.loading) {
             const msg = 'Loading stats…';
@@ -1798,7 +1837,7 @@ const plugin = {
     _renderOpsTeamMemberStatsHtml(memberId) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
-            this._renderOpsTeamMemberStatsInnerHtml(entry) +
+            this._renderOpsTeamMemberStatsInnerHtml(entry, memberId) +
         '</div>';
     },
 
@@ -1807,7 +1846,7 @@ const plugin = {
         if (!tile) return;
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         const statsSlot = tile.querySelector('[data-ops-member-stats]');
-        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry, memberId);
     },
 
     _patchOpsTeamMemberStats(modal, memberId) {
@@ -2016,6 +2055,12 @@ const plugin = {
                     Logger.debug('ops-tab: team add-member action synced from BroadcastChannel');
                 } else if (data.type === 'credRefreshDone') {
                     self._onOpsTeamCredRefreshComplete();
+                } else if (data.type === 'expertStatsActionUpdated') {
+                    self._loadOpsExpertStatsActionFromStorage();
+                    Logger.debug('ops-tab: expert stats action synced from BroadcastChannel');
+                    self._onOpsExpertCredRefreshComplete();
+                } else if (data.type === 'expertCredRefreshDone') {
+                    self._onOpsExpertCredRefreshComplete();
                 }
             };
             this._opsSyncChannelSubscribed = true;
@@ -2102,6 +2147,87 @@ const plugin = {
             }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
         }
         Logger.log('ops-tab: team page opened for credential refresh');
+        return opened;
+    },
+
+    _clearOpsExpertCredRefreshPending() {
+        if (this._opsExpertCredRefreshTimeout != null) {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow) pageWindow.clearTimeout(this._opsExpertCredRefreshTimeout);
+            this._opsExpertCredRefreshTimeout = null;
+        }
+        this._opsExpertCredRefreshPending = null;
+    },
+
+    _isOpsExpertCredRefreshTab() {
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            const url = new URL(pageWindow.location.href);
+            if (!OPS_EXPERT_PATH_RE.test(url.pathname)) return false;
+            return url.searchParams.get(OPS_EXPERT_CRED_REFRESH_QUERY) === '1';
+        } catch (_e) {
+            return false;
+        }
+    },
+
+    _signalOpsExpertCredRefreshComplete() {
+        this._broadcastOpsSync({ type: 'expertCredRefreshDone' });
+    },
+
+    _tryCloseOpsExpertCredRefreshTab() {
+        if (!this._isOpsExpertCredRefreshTab()) return;
+        Logger.log('ops-tab: expert cred refresh complete — closing expert profile tab');
+        const pageWindow = this._getOpsPageWindow();
+        pageWindow.setTimeout(() => {
+            try {
+                pageWindow.close();
+            } catch (_e) { /* ignore — browser may block close */ }
+        }, 300);
+    },
+
+    _onOpsExpertCredRefreshComplete() {
+        const pending = this._opsExpertCredRefreshPending;
+        if (!pending) return;
+        const modal = pending.modal;
+        const searchQuery = pending.searchQuery || '';
+        this._clearOpsExpertCredRefreshPending();
+        this._loadOpsExpertStatsActionFromStorage();
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            Logger.warn('ops-tab: expert cred refresh signaled but stats action still missing');
+            return;
+        }
+        if (!searchQuery) {
+            Logger.log('ops-tab: expert cred refresh captured — blank search, no auto retry');
+            return;
+        }
+        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
+        Logger.log('ops-tab: expert cred refresh captured — re-running named search');
+        void this._handleOpsTeamSearch(modal);
+    },
+
+    _openOpsExpertProfileForCredRefresh(modal, expertId) {
+        const id = String(expertId || '').trim();
+        if (!id) return null;
+        this._clearOpsExpertCredRefreshPending();
+        const pageWindow = this._getOpsPageWindow();
+        const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'expertCredRefreshSearchInput');
+        const searchQuery = input ? input.value.trim() : '';
+        const url = this._opsExpertProfileUrl(id, true);
+        const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+            Logger.warn('ops-tab: expert cred refresh tab blocked (popup blocker)');
+            return null;
+        }
+        if (modal) {
+            this._opsExpertCredRefreshPending = { modal, expertId: id, searchQuery, startedAt: Date.now() };
+            const self = this;
+            this._opsExpertCredRefreshTimeout = pageWindow.setTimeout(() => {
+                if (!self._opsExpertCredRefreshPending) return;
+                self._clearOpsExpertCredRefreshPending();
+                Logger.warn('ops-tab: expert cred refresh timed out');
+            }, OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS);
+        }
+        Logger.log('ops-tab: expert profile opened for stats credential refresh (' + id.slice(0, 8) + '…)');
         return opened;
     },
 
@@ -3302,6 +3428,11 @@ const plugin = {
         const memberId = actionEl.getAttribute('data-ops-member-id');
         const action = actionEl.getAttribute('data-ops-action');
         if (!memberId || !action) return;
+
+        if (action === 'expert-stats-cred-refresh') {
+            this._openOpsExpertProfileForCredRefresh(modal, memberId);
+            return;
+        }
 
         const member = this._getOpsMemberFromCache(memberId);
         if (!member) {
