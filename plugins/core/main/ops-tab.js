@@ -202,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.10',
+    _version: '8.11',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1810,11 +1810,10 @@ const plugin = {
     },
 
     _renderOpsTeamMemberStatsInnerHtml(entry, memberId) {
-        if (!this._opsExpertStatsActionCache.nextAction
-            || (entry && entry.error === 'missing-credentials')) {
+        if (!this._opsExpertStatsActionCache.nextAction) {
             return this._opsExpertStatsUnavailableHtml(memberId);
         }
-        if (!entry || entry.loading) {
+        if (!entry || entry.loading || entry.error === 'missing-credentials') {
             const msg = 'Loading stats…';
             return this._opsExpertStatsGridHtml(
                 this._opsExpertStatsStatusColumns('Creator', msg),
@@ -1870,13 +1869,16 @@ const plugin = {
         if (!cache) return;
 
         const memberIds = this._getVisibleTeamMemberIds(modal, cache);
+        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
         const toFetch = memberIds.filter((id) => {
             const entry = this._opsExpertStatsCache.get(id);
-            return !entry || (!entry.creator && !entry.qa && !entry.error);
+            if (!entry) return true;
+            if (entry.loading) return false;
+            if (entry.creator || entry.qa) return false;
+            if (entry.error === 'missing-credentials') return hasStats;
+            return !entry.error;
         });
         if (toFetch.length === 0) return;
-
-        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
 
         if (!hasStats) {
             for (const id of toFetch) {
@@ -2058,8 +2060,8 @@ const plugin = {
                 } else if (data.type === 'expertStatsActionUpdated') {
                     self._loadOpsExpertStatsActionFromStorage();
                     Logger.debug('ops-tab: expert stats action synced from BroadcastChannel');
-                    self._onOpsExpertCredRefreshComplete();
                 } else if (data.type === 'expertCredRefreshDone') {
+                    self._loadOpsExpertStatsActionFromStorage();
                     self._onOpsExpertCredRefreshComplete();
                 }
             };
@@ -2185,24 +2187,51 @@ const plugin = {
         }, 300);
     },
 
-    _onOpsExpertCredRefreshComplete() {
+    _onOpsExpertCredRefreshComplete(retryAttempt) {
         const pending = this._opsExpertCredRefreshPending;
         if (!pending) return;
         const modal = pending.modal;
         const searchQuery = pending.searchQuery || '';
-        this._clearOpsExpertCredRefreshPending();
-        this._loadOpsExpertStatsActionFromStorage();
+
         if (!this._opsExpertStatsActionCache.nextAction) {
+            this._loadOpsExpertStatsActionFromStorage();
+        }
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            if (!retryAttempt) {
+                const self = this;
+                const pageWindow = this._getOpsPageWindow();
+                if (pageWindow) {
+                    pageWindow.setTimeout(() => {
+                        if (!self._opsExpertCredRefreshPending) return;
+                        self._onOpsExpertCredRefreshComplete(true);
+                    }, 100);
+                    return;
+                }
+            }
+            this._clearOpsExpertCredRefreshPending();
             Logger.warn('ops-tab: expert cred refresh signaled but stats action still missing');
             return;
         }
-        if (!searchQuery) {
-            Logger.log('ops-tab: expert cred refresh captured — blank search, no auto retry');
+
+        this._clearOpsExpertCredRefreshPending();
+
+        if (searchQuery) {
+            if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
+            this._opsExpertStatsHydrateGen++;
+            Logger.log('ops-tab: expert cred refresh captured — re-running named search');
+            void this._handleOpsTeamSearch(modal);
             return;
         }
-        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
-        Logger.log('ops-tab: expert cred refresh captured — re-running named search');
-        void this._handleOpsTeamSearch(modal);
+
+        if (this._opsTeamSearchMemberCache) {
+            if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
+            this._opsExpertStatsHydrateGen++;
+            Logger.log('ops-tab: expert cred refresh captured — re-hydrating stats for visible members');
+            void this._hydrateOpsTeamMemberStatsForVisible(modal);
+            return;
+        }
+
+        Logger.log('ops-tab: expert cred refresh captured — blank search, no results on screen');
     },
 
     _openOpsExpertProfileForCredRefresh(modal, expertId) {
@@ -3828,6 +3857,8 @@ const plugin = {
         this._opsTeamSearchMemberCache = null;
         this._opsTeamActiveFilters = null;
         this._opsMemberDetailsOpenIds = null;
+        this._opsExpertStatsHydrateGen++;
+        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
         this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
