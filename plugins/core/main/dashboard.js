@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.13',
+    _version: '6.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1894,6 +1894,20 @@ const plugin = {
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
         });
 
+        modal.addEventListener('mousedown', (e) => {
+            if (this._isInsideOpenMsFlyout(e.target)) return;
+            this._closeFlyoutMsDropdowns();
+        });
+
+        for (const panelId of ['#wf-dash-left-panel-search', '#wf-dash-left-panel-filters']) {
+            const scrollPanel = this._q(panelId);
+            if (!scrollPanel) continue;
+            scrollPanel.addEventListener('scroll', () => {
+                this._closeFlyoutMsDropdowns();
+                this._repositionOpenFlyouts();
+            }, { passive: true });
+        }
+
         modal.addEventListener('click', (e) => {
             const msToggle = e.target.closest('[data-wf-dash-ms-toggle]');
             if (msToggle && modal.contains(msToggle)) {
@@ -1996,6 +2010,35 @@ const plugin = {
         }
     },
 
+    _isInsideOpenMsFlyout(target) {
+        if (!target || !this._modal || !this._modal.contains(target)) return false;
+        const wrap = target.closest('[data-wf-dash-ms-wrap]');
+        if (wrap) {
+            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
+            if (dashIsFlyoutMsKey(scopeKey) && this._isMsDropdownOpen(scopeKey)) return true;
+        }
+        const panel = target.closest('[data-wf-dash-ms-panel]');
+        if (panel) {
+            const scopeKey = panel.getAttribute('data-wf-dash-ms-panel');
+            if (dashIsFlyoutMsKey(scopeKey) && this._isMsDropdownOpen(scopeKey)) return true;
+        }
+        return false;
+    },
+
+    _flyoutVerticalViewBottom(scopeKey, modalRect, gap) {
+        let viewBottom = modalRect.bottom - gap;
+        if (scopeKey && scopeKey.startsWith('search-')) {
+            const retrieveSection = this._q('#wf-dash-section-retrieve');
+            if (retrieveSection) {
+                const retrieveTop = retrieveSection.getBoundingClientRect().top - gap;
+                if (retrieveTop > modalRect.top + gap) {
+                    viewBottom = Math.min(viewBottom, retrieveTop);
+                }
+            }
+        }
+        return viewBottom;
+    },
+
     _applyMsFlyoutVerticalLayout(scopeKey, panel, headerRect, modalRect, gap) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return;
@@ -2004,7 +2047,7 @@ const plugin = {
         const naturalHeight = panel.scrollHeight;
         const chromeHeight = Math.max(0, naturalHeight - itemsEl.scrollHeight);
         const viewTop = modalRect.top + gap;
-        const viewBottom = modalRect.bottom - gap;
+        const viewBottom = this._flyoutVerticalViewBottom(scopeKey, modalRect, gap);
         const headerTop = headerRect.top;
         const spaceBelow = viewBottom - headerTop;
         const spaceAbove = headerTop - viewTop;
