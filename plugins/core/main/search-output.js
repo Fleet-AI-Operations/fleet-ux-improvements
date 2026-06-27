@@ -5989,16 +5989,17 @@ const searchOutputMethods = {
         return (this._getViewItems() || []).filter((it) => !it.hydrated);
     },
 
-    _needsManualHydrate() {
-        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
+    _getUnhydratedOnPage() {
+        return this._getPaginatedViewItems().filter((it) => !it.hydrated);
     },
 
-    _getUnhydratedForAutoHydrate() {
+    _getUnhydratedBeyondPage() {
         const pageIds = new Set(this._getPaginatedViewItems().map((it) => it.id));
-        const allUnhydrated = this._getUnhydratedInView();
-        const onPage = allUnhydrated.filter((it) => pageIds.has(it.id));
-        const beyondPage = allUnhydrated.filter((it) => !pageIds.has(it.id));
-        return [...onPage, ...beyondPage];
+        return this._getUnhydratedInView().filter((it) => !pageIds.has(it.id));
+    },
+
+    _needsManualHydrateForRemainder() {
+        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
     },
 
     _autoHydrateContextKey() {
@@ -6013,22 +6014,23 @@ const searchOutputMethods = {
             this._state.autoHydratePending = false;
             return;
         }
-        if (this._needsManualHydrate()) {
+        const onPage = this._getUnhydratedOnPage();
+        const beyondPage = this._getUnhydratedBeyondPage();
+        const manualRemainder = this._needsManualHydrateForRemainder();
+        if (onPage.length === 0 && (beyondPage.length === 0 || manualRemainder)) {
             this._state.autoHydratePending = false;
-            if (!this._state.manualHydrateThresholdLogged) {
-                Logger.log('search-output: auto-hydrate skipped — '
-                    + this._getUnhydratedInView().length + ' unhydrated result(s) (manual threshold '
-                    + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+)');
-                this._state.manualHydrateThresholdLogged = true;
+            if (manualRemainder && beyondPage.length > 0) {
+                if (!this._state.manualHydrateThresholdLogged) {
+                    Logger.log('search-output: remainder auto-hydrate skipped — '
+                        + beyondPage.length + ' unhydrated result(s) beyond first page (manual threshold '
+                        + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+ total)');
+                    this._state.manualHydrateThresholdLogged = true;
+                }
+                this._syncBulkHydrateUi();
             }
-            this._syncBulkHydrateUi();
             return;
         }
         this._state.manualHydrateThresholdLogged = false;
-        if (this._getUnhydratedInView().length === 0) {
-            this._state.autoHydratePending = false;
-            return;
-        }
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             if (!this._state.autoHydratePendingLogged) {
                 Logger.debug('dashboard: auto-hydrate deferred — dashboardData not ready');
@@ -6048,26 +6050,31 @@ const searchOutputMethods = {
 
     async _autoHydrateBackground() {
         if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
-        if (this._needsManualHydrate()) {
-            this._syncBulkHydrateUi();
-            return;
-        }
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
             return;
         }
         const contextKey = this._autoHydrateContextKey();
-        const toHydrate = this._getUnhydratedForAutoHydrate();
-        if (toHydrate.length === 0) return;
+        const manualRemainder = this._needsManualHydrateForRemainder();
+        const onPage = this._getUnhydratedOnPage();
+        const beyondPage = manualRemainder ? [] : this._getUnhydratedBeyondPage();
+        if (onPage.length === 0 && beyondPage.length === 0) {
+            if (manualRemainder) this._syncBulkHydrateUi();
+            return;
+        }
 
         const meta = this._getResultsPaginationMeta();
-        Logger.log('dashboard: auto-hydrate background — ' + toHydrate.length + ' card(s)'
-            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ' visible first)' : ''));
+        const phaseParts = [];
+        if (onPage.length > 0) phaseParts.push(onPage.length + ' on first page');
+        if (beyondPage.length > 0) phaseParts.push(beyondPage.length + ' in background');
+        Logger.log('dashboard: auto-hydrate — ' + phaseParts.join(', ')
+            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
 
         this._state.autoHydrateActive = true;
         let hydratedTotal = 0;
-        try {
-            hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
+        const hydrateBatch = async (items, label) => {
+            if (items.length === 0) return 0;
+            return this._hydrateItemsInBulkBatches(items, {
                 shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
                 onChunkStart: (chunk) => {
                     for (const item of chunk) {
@@ -6082,23 +6089,44 @@ const searchOutputMethods = {
                     }
                 }
             });
-            if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
-            }
-            if (hydratedTotal > 0) {
-                this._onScopeDataEnriched();
-                if (this._autoHydrateContextKey() === contextKey) {
+        };
+        try {
+            if (onPage.length > 0) {
+                hydratedTotal += await hydrateBatch(onPage);
+                if (this._autoHydrateContextKey() === contextKey && hydratedTotal > 0) {
+                    this._onScopeDataEnriched();
                     this._renderResults();
                 }
-                Logger.log('dashboard: auto-hydrate background complete — ' + hydratedTotal + ' card(s)');
+            }
+            if (this._autoHydrateContextKey() !== contextKey) {
+                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+                return;
+            }
+            if (manualRemainder) {
+                if (hydratedTotal > 0) {
+                    Logger.log('dashboard: auto-hydrate first page complete — ' + hydratedTotal + ' card(s); remainder manual');
+                }
+                this._syncBulkHydrateUi();
+                return;
+            }
+            if (beyondPage.length > 0) {
+                const bgHydrated = await hydrateBatch(beyondPage);
+                hydratedTotal += bgHydrated;
+            }
+            if (this._autoHydrateContextKey() !== contextKey) {
+                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+            } else if (hydratedTotal > 0) {
+                this._onScopeDataEnriched();
+                this._renderResults();
+                Logger.log('dashboard: auto-hydrate complete — ' + hydratedTotal + ' card(s)');
             }
         } catch (err) {
-            for (const item of toHydrate) {
+            for (const item of [...onPage, ...beyondPage]) {
                 this._getHydrateUi(item.id).status = 'idle';
                 this._patchTaskCard(item.id);
             }
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: auto-hydrate background failed', err);
+                Logger.warn('dashboard: auto-hydrate failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
@@ -6172,7 +6200,7 @@ const searchOutputMethods = {
                 btn.style.display = 'none';
             } else {
                 const unhydratedCount = this._getUnhydratedInView().length;
-                if (unhydratedCount === 0 || !this._needsManualHydrate()) {
+                if (unhydratedCount === 0 || !this._needsManualHydrateForRemainder()) {
                     btn.style.display = 'none';
                 } else {
                     btn.style.display = '';
@@ -11075,7 +11103,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
