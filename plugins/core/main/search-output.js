@@ -6336,6 +6336,24 @@ const searchOutputMethods = {
         if (quickRange) quickRange.value = 'today';
     },
 
+    _markTimeFilterUserPicked() {
+        if (this._state.timeFilterUserPicked) return;
+        this._state.timeFilterUserPicked = true;
+        Logger.debug('search-output: time filter marked user-picked');
+    },
+
+    _resetTimeFilterUserPicked() {
+        this._state.timeFilterUserPicked = false;
+    },
+
+    _maybeSwitchToAllTimeForContributor() {
+        if (this._state.timeFilterUserPicked) return;
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        Logger.log('search-output: contributor resolved — quick range switched to All Time');
+    },
+
     _btnToggleStyle(active, colorKind) {
         const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
         if (active) {
@@ -6885,6 +6903,9 @@ const searchOutputMethods = {
         if (activeTab) this._setActiveTab(activeTab);
         const label = normalized.map((p) => this._personDisplayLabel(p)).join(', ') || '(none)';
         Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
+        if (normalized.length > 0) {
+            this._maybeSwitchToAllTimeForContributor();
+        }
     },
 
     _addAuthorToken(person) {
@@ -6894,6 +6915,7 @@ const searchOutputMethods = {
         this._setAuthorError('');
         this._renderAuthorTokens();
         this._validateRangeUi();
+        this._maybeSwitchToAllTimeForContributor();
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
@@ -8747,6 +8769,7 @@ const searchOutputMethods = {
 
     _clearParameters() {
         this._state.draftTokens = [];
+        this._markTimeFilterUserPicked();
         this._state.includeTasks = true;
         this._state.includeQa = true;
         this._state.includeDisputes = false;
@@ -10543,6 +10566,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (el) el.addEventListener('change', () => {
                 dash._validateRangeUi();
                 if (!dash._applyingQuickDate) {
+                    dash._markTimeFilterUserPicked();
                     const quick = dash._q('#wf-dash-quick-range');
                     if (quick) quick.value = '';
                 }
@@ -10550,7 +10574,10 @@ function attachSearchOutputListeners(modal, dash) {
         });
 
         const clearDates = dash._q('#wf-dash-clear-dates');
-        if (clearDates) clearDates.addEventListener('click', () => dash._clearDateRangeFields());
+        if (clearDates) clearDates.addEventListener('click', () => {
+            dash._markTimeFilterUserPicked();
+            dash._clearDateRangeFields();
+        });
 
         const toggleTasks = dash._q('#wf-dash-toggle-tasks');
         const toggleQa = dash._q('#wf-dash-toggle-qa');
@@ -10683,6 +10710,7 @@ function attachSearchOutputListeners(modal, dash) {
             quickRange.addEventListener('change', () => {
                 const preset = quickRange.value;
                 if (!preset) return;
+                dash._markTimeFilterUserPicked();
                 dash._applyQuickDatePreset(preset);
             });
         }
@@ -11103,7 +11131,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.6',
+    _version: '4.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -11136,6 +11164,7 @@ const plugin = {
                 dash._updateSubstringErrorUi();
                 dash._validateRangeUi();
                 dash._syncFieldClearButtons();
+                dash._resetTimeFilterUserPicked();
                 dash._applyDefaultSearchDates();
                 dash._state.resultsMode = dash._readResultsModePref();
                 dash._syncResultsModeUi();
