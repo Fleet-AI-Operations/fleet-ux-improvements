@@ -40,7 +40,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 150;
+const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.6',
+    _version: '6.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
