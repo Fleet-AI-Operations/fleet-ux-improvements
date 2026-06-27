@@ -32,7 +32,7 @@ const OPS_TEAM_SEARCH_URL = OPS_FLEET_ORIGIN + '/dashboard/team';
 const OPS_SESSION_REFRESH_USER_MESSAGE =
     'Fleet session token not yet captured. Navigate to a Fleet data page (e.g. dashboard/team), then press Refresh catalogs.';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
-/** Query param on programmatic Team page opens for background credential refresh */
+/** Query param on programmatic Team page opens for credential refresh (auto-close when captured) */
 const OPS_TEAM_CRED_REFRESH_QUERY = 'wfOpsTeamCredRefresh';
 /** BroadcastChannel name for cross-tab ops dashboard action sync (replaces page localStorage storage events). */
 const OPS_SYNC_CHANNEL_NAME = 'fleet-ux-ops-sync';
@@ -199,7 +199,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.8',
+    _version: '8.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -217,7 +217,7 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
-    /** Background Team page cred refresh: { modal, startedAt } while waiting for capture */
+    /** Team page cred refresh: { modal, startedAt } while waiting for capture */
     _opsTeamCredRefreshPending: null,
     _opsTeamCredRefreshTimeout: null,
     /** Dynamically discovered team add-member server action (same URL as search, different action hash) */
@@ -2049,7 +2049,7 @@ const plugin = {
 
     _tryCloseOpsTeamCredRefreshTab() {
         if (!this._isOpsTeamCredRefreshTab()) return;
-        Logger.log('ops-tab: team cred refresh complete — closing background tab');
+        Logger.log('ops-tab: team cred refresh complete — closing Team tab');
         const pageWindow = this._getOpsPageWindow();
         pageWindow.setTimeout(() => {
             try {
@@ -2075,7 +2075,7 @@ const plugin = {
         void this._handleOpsTeamSearchCredentialRetry(modal);
     },
 
-    _openOpsTeamPageInBackground(modal) {
+    _openOpsTeamPageForCredRefresh(modal) {
         this._clearOpsTeamCredRefreshPending();
         const pageWindow = this._getOpsPageWindow();
         const url = OPS_TEAM_SEARCH_URL + '?' + OPS_TEAM_CRED_REFRESH_QUERY + '=1';
@@ -2090,18 +2090,18 @@ const plugin = {
         }
         if (modal) {
             this._opsTeamCredRefreshPending = { modal, startedAt: Date.now() };
-            this._setOpsTeamSearchStaleRetryStatus(modal, 'Opening Team page in background…');
+            this._setOpsTeamSearchStaleRetryStatus(modal, 'Opening Team page…');
             const self = this;
             this._opsTeamCredRefreshTimeout = pageWindow.setTimeout(() => {
                 if (!self._opsTeamCredRefreshPending) return;
                 const pendingModal = self._opsTeamCredRefreshPending.modal;
                 self._clearOpsTeamCredRefreshPending();
                 self._setOpsTeamSearchStaleRetryStatus(pendingModal,
-                    'Background refresh timed out — try Refresh credentials again.');
+                    'Credential refresh timed out — try Refresh credentials again.');
                 Logger.warn('ops-tab: team cred refresh timed out');
             }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
         }
-        Logger.log('ops-tab: team page opened in background for credential refresh');
+        Logger.log('ops-tab: team page opened for credential refresh');
         return opened;
     },
 
@@ -2369,7 +2369,7 @@ const plugin = {
             '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
             '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
-            'Click <strong>Refresh credentials</strong> to open the Team page in a background tab — ',
+            'Click <strong>Refresh credentials</strong> to open the Team page in a new tab — ',
             'credentials refresh automatically and the tab closes on its own.',
             '</p>',
             '<p id="wf-ops-team-search-stale-retry-status" style="display: none; font-size: 12px; color: #b91c1c; margin: 8px 0 0 0; line-height: 1.45;"></p>',
@@ -2428,7 +2428,7 @@ const plugin = {
             const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
-                    self._openOpsTeamPageInBackground(modal);
+                    self._openOpsTeamPageForCredRefresh(modal);
                 });
             }
             const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
