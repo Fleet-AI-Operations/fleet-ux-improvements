@@ -360,7 +360,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -442,6 +442,7 @@ const plugin = {
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
             emptyFilterOptionCounts: bind(self._emptyFilterOptionCounts),
             computeFilterOptionCounts: bind(self._computeFilterOptionCounts),
+            computeFilterScopedTotal: bind(self._computeFilterScopedTotal),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
             dedupeSystemFeedbackEntries: bind(self._dedupeSystemFeedbackEntries),
@@ -1557,6 +1558,16 @@ const plugin = {
             disputeResolutionTimeCounts.set(id, count);
         }
         return result;
+    },
+
+    _computeFilterScopedTotal(items, draft, listBounds, sortContext) {
+        const scoped = this._applyClientWorkerOutputFilters(items, Object.assign({}, draft || {}, {
+            promptText: '',
+            fuzzy: false,
+            regex: false,
+            caseSensitive: false
+        }), listBounds, sortContext);
+        return scoped.length;
     },
 
     _flagReasonLabel(reason) {

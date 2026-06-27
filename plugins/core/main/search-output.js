@@ -7269,6 +7269,12 @@ const searchOutputMethods = {
         const optionCounts = scopeItems.length > 0
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterOptionCounts();
+        const filteredTotalCount = scopeItems.length > 0 && this._isFilterDraftValid(draft)
+            ? lib.computeFilterScopedTotal(scopeItems, draft, listBounds, {
+                helpfulnessUi: filterOptions.helpfulnessUi,
+                currentUserId: filterOptions.currentUserId
+            })
+            : scopeItems.length;
 
         const openFilterKeys = this._beginFilterMsDropdownRefresh();
         try {
@@ -7300,7 +7306,7 @@ const searchOutputMethods = {
                     false,
                     irrelevantSet,
                     countsForScope,
-                    scopeItems.length
+                    filteredTotalCount
                 );
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
@@ -11187,7 +11193,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.10',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
