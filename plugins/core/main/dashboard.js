@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.9',
+    _version: '6.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -579,15 +579,29 @@ const plugin = {
             '  font-size: 11px;',
             '  color: var(--foreground, #0f172a);',
             '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="cb"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="count"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="pct"] {',
+            '  width: 1%;',
+            '}',
             '#wf-dash-modal table[data-wf-dash-ms-option-table] td {',
             '  border: none;',
             '  padding: 4px 6px;',
             '  vertical-align: middle;',
             '}',
-            '#wf-dash-modal table[data-wf-dash-ms-option-table] td:first-child {',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="cb"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="count"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="pct"] {',
+            '  width: 1%;',
+            '  white-space: nowrap;',
+            '  padding-left: 2px;',
+            '  padding-right: 2px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="cb"] {',
             '  padding-left: 8px;',
             '}',
-            '#wf-dash-modal table[data-wf-dash-ms-option-table] td:last-child {',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="label"] {',
+            '  width: auto;',
             '  padding-right: 8px;',
             '}',
             '#wf-dash-modal table[data-wf-dash-ms-option-table] tr[data-wf-dash-ms-option] {',
@@ -2665,12 +2679,12 @@ const plugin = {
             : `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(it.label)}</span>`;
         return `
             <tr data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}"${ariaCount ? ' aria-label="' + dashEscHtml(ariaCount + ariaSuffix) + '"' : ''}>
-                <td align="center">
+                <td data-wf-dash-ms-option-col="cb" align="center">
                     <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
                 </td>
-                <td align="center">${countNumHtml}</td>
-                <td align="center">${countPctHtml}</td>
-                <td align="left">${textHtml}</td>
+                <td data-wf-dash-ms-option-col="count" align="center">${countNumHtml}</td>
+                <td data-wf-dash-ms-option-col="pct" align="center">${countPctHtml}</td>
+                <td data-wf-dash-ms-option-col="label" align="left">${textHtml}</td>
             </tr>`;
     },
 
@@ -2713,7 +2727,13 @@ const plugin = {
             </label>`;
         }).join('');
         if (useFilterTable) {
-            return '<table data-wf-dash-ms-option-table="1" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + rows + '</tbody></table>';
+            return '<table data-wf-dash-ms-option-table="1" cellpadding="0" cellspacing="0" role="presentation">'
+                + '<colgroup>'
+                + '<col data-wf-dash-ms-option-col="cb">'
+                + '<col data-wf-dash-ms-option-col="count">'
+                + '<col data-wf-dash-ms-option-col="pct">'
+                + '<col data-wf-dash-ms-option-col="label">'
+                + '</colgroup><tbody>' + rows + '</tbody></table>';
         }
         return rows;
     },
