@@ -7299,7 +7299,8 @@ const searchOutputMethods = {
                     false,
                     false,
                     irrelevantSet,
-                    countsForScope
+                    countsForScope,
+                    scopeItems.length
                 );
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
@@ -11186,7 +11187,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

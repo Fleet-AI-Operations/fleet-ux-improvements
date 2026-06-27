@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.5',
+    _version: '6.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2574,23 +2574,39 @@ const plugin = {
         return [...items.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
-    _msOptionCountBadgeHtml(count) {
+    _formatFilterOptionCountLabel(count, totalQueueCount, optionsInScope) {
         if (count == null) return '';
-        return `<span data-wf-dash-ms-option-count="1" aria-label="${dashEscHtml(String(count))} matching results">${dashEscHtml(String(count))}</span>`;
+        const countNum = Number(count);
+        if (!Number.isFinite(countNum)) return String(count);
+        if (optionsInScope === 1) return String(countNum);
+        const totalNum = Number(totalQueueCount);
+        if (!Number.isFinite(totalNum) || totalNum <= 0) return String(countNum);
+        const pct = (countNum / totalNum) * 100;
+        const pctStr = pct < 1
+            ? String(parseFloat(pct.toFixed(2)))
+            : String(Math.round(pct));
+        return countNum + ' / ' + pctStr + '%';
     },
 
-    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts) {
+    _msOptionCountBadgeHtml(count, totalQueueCount, optionsInScope) {
+        if (count == null) return '';
+        const label = this._formatFilterOptionCountLabel(count, totalQueueCount, optionsInScope);
+        return `<span data-wf-dash-ms-option-count="1" aria-label="${dashEscHtml(label + ' of queue')}">${dashEscHtml(label)}</span>`;
+    },
+
+    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts, totalQueueCount) {
         if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
+        const optionsInScope = items.length;
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
             const email = String(it.email || '').trim();
             const displayName = String(it.name || it.label || '').trim();
             const countBadge = counts && counts.has(it.id)
-                ? this._msOptionCountBadgeHtml(counts.get(it.id))
+                ? this._msOptionCountBadgeHtml(counts.get(it.id), totalQueueCount, optionsInScope)
                 : '';
             const textHtml = email
                 ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
@@ -2744,8 +2760,9 @@ const plugin = {
         const loading = Boolean(options.loading);
         const irrelevantIds = options.irrelevantIds || null;
         const optionCounts = options.optionCounts instanceof Map ? options.optionCounts : null;
+        const totalQueueCount = options.totalQueueCount != null ? options.totalQueueCount : null;
         itemsEl.innerHTML = this._multiSelectItemsHtml(
-            scopeKey, items, emptyHint, loading, false, irrelevantIds, optionCounts
+            scopeKey, items, emptyHint, loading, false, irrelevantIds, optionCounts, totalQueueCount
         );
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             if (prev.has(cb.value)) cb.checked = true;
