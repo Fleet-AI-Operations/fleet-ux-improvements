@@ -12,8 +12,8 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
-const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
+const DASH_AUTO_HYDRATE_MANUAL_THRESHOLD = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
@@ -105,15 +105,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
 };
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
-const DASH_SEARCH_DEPTH_TOGGLE_ACTIVE = 'border: 2px solid #ca8a04; color: #a16207; background: transparent;';
 const DASH_FLAGGED_COLOR = '#a16207';
 const DASH_FLAGGED_BORDER = '#ca8a04';
 const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
-
-const DASH_SEARCH_DEPTH_HINTS = {
-    quick: 'Faster results, task history hydration only on demand.',
-    deep: 'Slower results with complete task history for each card.'
-};
 const DASH_RESULTS_MODE_HINTS = {
     clear: 'Clears previous results and replaces with new search results.',
     add: 'Adds new search results to previous ones (deduplicated).'
@@ -3379,7 +3373,7 @@ const searchOutputMethods = {
         } finally {
             this._refreshCatalogDependentUi();
             if (this._state.autoHydratePending && this._isOpen()) {
-                this._scheduleAutoHydrateVisiblePage();
+                this._scheduleAutoHydrateBackground();
             }
         }
     },
@@ -3800,8 +3794,7 @@ const searchOutputMethods = {
             openDisputesByTaskId,
             resolvedDisputeAtByTaskId,
             scope,
-            authorIds,
-            searchDepth
+            authorIds
         } = opts;
         const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows);
         let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
@@ -3874,8 +3867,7 @@ const searchOutputMethods = {
         includeSeniorReview,
         afterIso,
         beforeIso,
-        scope,
-        searchDepth
+        scope
     }) {
         this._state.activeSearchScope = scope;
         this._state.activeSearchAfterIso = afterIso;
@@ -3902,20 +3894,6 @@ const searchOutputMethods = {
         }));
 
         await this._awaitPrefetchKindsForSearch({ includeDisputes, includeSeniorReview });
-
-        if (searchDepth === 'deep') {
-            const extraKinds = DASH_PREFETCH_KINDS.filter((kind) => {
-                if (includeDisputes && (kind === 'openDisputes' || kind === 'resolvedDisputes')) return false;
-                if (includeSeniorReview && (kind === 'pendingFlags' || kind === 'resolvedFlags')) return false;
-                return true;
-            });
-            if (extraKinds.length > 0) {
-                await Promise.all(extraKinds.map((kind) => this._trackSearchLoadPromise(
-                    'Prefetch ' + this._prefetchLabel(kind),
-                    (tracker) => this._ensurePrefetch(kind, tracker)
-                )));
-            }
-        }
 
         const contributorSet = authorIds.length > 0 ? this._contributorSetFromAuthorIds(authorIds) : null;
 
@@ -3989,8 +3967,7 @@ const searchOutputMethods = {
             afterIso,
             beforeIso,
             scope,
-            authorIds,
-            searchDepth
+            authorIds
         };
 
         if (this._shouldStopSearch()) {
@@ -4254,67 +4231,12 @@ const searchOutputMethods = {
         return new Set();
     },
 
-    _readSearchDepthPref() {
-        try {
-            const v = Storage.getData(DASH_SEARCH_DEPTH_STORAGE_KEY, null);
-            if (v === 'deep' || v === 'quick') return v;
-        } catch (_e) { /* ignore */ }
-        return 'quick';
-    },
-
-    _persistSearchDepthPref(depth) {
-        try {
-            Storage.setData(DASH_SEARCH_DEPTH_STORAGE_KEY, depth === 'deep' ? 'deep' : 'quick');
-        } catch (e) {
-            Logger.debug('dashboard: could not persist search depth', e);
-        }
-    },
-
-    _getSearchDepthFromUi() {
-        const deepBtn = this._q('#wf-dash-depth-deep');
-        return deepBtn && deepBtn.getAttribute('aria-pressed') === 'true' ? 'deep' : 'quick';
-    },
-
     _btnDepthSegmentStyle(active) {
         const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
         if (active) {
-            return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
+            return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
         }
         return base + ' ' + DASH_TOGGLE_INACTIVE;
-    },
-
-    _syncSearchDepthHint() {
-        const hintEl = this._q('#wf-dash-search-depth-hint');
-        if (!hintEl) return;
-        const depth = this._state.searchDepth || 'quick';
-        const hint = this._hintStyle();
-        hintEl.innerHTML = `<span style="${hint} line-height: 1.4;">${dashEscHtml(DASH_SEARCH_DEPTH_HINTS[depth] || '')}</span>`;
-    },
-
-    _syncSearchDepthUi() {
-        const depth = this._state.searchDepth || this._readSearchDepthPref();
-        this._state.searchDepth = depth;
-        const quickBtn = this._q('#wf-dash-depth-quick');
-        const deepBtn = this._q('#wf-dash-depth-deep');
-        if (quickBtn) {
-            const active = depth === 'quick';
-            quickBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            quickBtn.style.cssText = this._btnDepthSegmentStyle(active);
-        }
-        if (deepBtn) {
-            const active = depth === 'deep';
-            deepBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            deepBtn.style.cssText = this._btnDepthSegmentStyle(active);
-        }
-        this._syncSearchDepthHint();
-    },
-
-    _setSearchDepth(depth) {
-        const next = depth === 'deep' ? 'deep' : 'quick';
-        this._state.searchDepth = next;
-        this._persistSearchDepthPref(next);
-        this._syncSearchDepthUi();
-        Logger.log('dashboard: search depth — ' + next);
     },
 
     _readResultsModePref() {
@@ -4479,6 +4401,8 @@ const searchOutputMethods = {
         this._state.autoHydrateScheduled = false;
         this._state.autoHydratePending = false;
         this._state.autoHydratePendingLogged = false;
+        this._state.autoHydratePassId = (this._state.autoHydratePassId || 0) + 1;
+        this._state.manualHydrateThresholdLogged = false;
 
         if (additive && this._state.cachedItems && this._state.cachedItems.length > 0) {
             this._state.resultsLoadSnapshot = this._state.cachedItems.slice();
@@ -4583,7 +4507,6 @@ const searchOutputMethods = {
             includeQa: kindSet.has('qa'),
             includeDisputes: kindSet.has('dispute'),
             includeSeniorReview: kindSet.has('senior_review'),
-            searchDepth: prev.searchDepth || this._state.searchDepth || 'quick',
             authorCount: 0,
             authorLabels: [],
             searchKinds: DASH_KIND_MERGE_ORDER.filter((k) => kindSet.has(k))
@@ -6066,24 +5989,43 @@ const searchOutputMethods = {
         return (this._getViewItems() || []).filter((it) => !it.hydrated);
     },
 
-    _getUnhydratedOnPage() {
-        return this._getPaginatedViewItems().filter((it) => !it.hydrated);
+    _needsManualHydrate() {
+        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
+    },
+
+    _getUnhydratedForAutoHydrate() {
+        const pageIds = new Set(this._getPaginatedViewItems().map((it) => it.id));
+        const allUnhydrated = this._getUnhydratedInView();
+        const onPage = allUnhydrated.filter((it) => pageIds.has(it.id));
+        const beyondPage = allUnhydrated.filter((it) => !pageIds.has(it.id));
+        return [...onPage, ...beyondPage];
     },
 
     _autoHydrateContextKey() {
         const tab = this._state.resultsKindTab || 'all';
-        const page = this._state.resultsPage || 0;
-        const total = (this._getViewItems() || []).length;
-        return page + '|' + tab + '|' + total;
+        const pass = this._state.autoHydratePassId || 0;
+        return pass + '|' + tab;
     },
 
-    _scheduleAutoHydrateVisiblePage() {
+    _scheduleAutoHydrateBackground() {
         if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
         if (!this._bulkHydrateShowable()) {
             this._state.autoHydratePending = false;
             return;
         }
-        if (this._getUnhydratedOnPage().length === 0) {
+        if (this._needsManualHydrate()) {
+            this._state.autoHydratePending = false;
+            if (!this._state.manualHydrateThresholdLogged) {
+                Logger.log('search-output: auto-hydrate skipped — '
+                    + this._getUnhydratedInView().length + ' unhydrated result(s) (manual threshold '
+                    + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+)');
+                this._state.manualHydrateThresholdLogged = true;
+            }
+            this._syncBulkHydrateUi();
+            return;
+        }
+        this._state.manualHydrateThresholdLogged = false;
+        if (this._getUnhydratedInView().length === 0) {
             this._state.autoHydratePending = false;
             return;
         }
@@ -6100,23 +6042,27 @@ const searchOutputMethods = {
         this._state.autoHydrateScheduled = true;
         queueMicrotask(() => {
             this._state.autoHydrateScheduled = false;
-            void this._autoHydrateVisiblePage();
+            void this._autoHydrateBackground();
         });
     },
 
-    async _autoHydrateVisiblePage() {
+    async _autoHydrateBackground() {
         if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
+        if (this._needsManualHydrate()) {
+            this._syncBulkHydrateUi();
+            return;
+        }
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
             return;
         }
         const contextKey = this._autoHydrateContextKey();
-        const toHydrate = this._getUnhydratedOnPage();
+        const toHydrate = this._getUnhydratedForAutoHydrate();
         if (toHydrate.length === 0) return;
 
         const meta = this._getResultsPaginationMeta();
-        Logger.log('dashboard: auto-hydrate page — ' + toHydrate.length + ' card(s)'
-            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+        Logger.log('dashboard: auto-hydrate background — ' + toHydrate.length + ' card(s)'
+            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ' visible first)' : ''));
 
         this._state.autoHydrateActive = true;
         let hydratedTotal = 0;
@@ -6137,14 +6083,14 @@ const searchOutputMethods = {
                 }
             });
             if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
+                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
             }
             if (hydratedTotal > 0) {
                 this._onScopeDataEnriched();
                 if (this._autoHydrateContextKey() === contextKey) {
                     this._renderResults();
                 }
-                Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s)');
+                Logger.log('dashboard: auto-hydrate background complete — ' + hydratedTotal + ' card(s)');
             }
         } catch (err) {
             for (const item of toHydrate) {
@@ -6152,7 +6098,7 @@ const searchOutputMethods = {
                 this._patchTaskCard(item.id);
             }
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: auto-hydrate page failed', err);
+                Logger.warn('dashboard: auto-hydrate background failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
@@ -6165,7 +6111,7 @@ const searchOutputMethods = {
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
             committed
-            && committed.searchDepth === 'quick'
+            && !committed.retrieveMode
             && this._state.hasSearched
             && !this._state.loading
             && resultsReady
@@ -6209,7 +6155,7 @@ const searchOutputMethods = {
             const committed = this._state.committed;
             const canLabel = Boolean(
                 committed
-                && committed.searchDepth === 'quick'
+                && !committed.retrieveMode
                 && this._state.filteredItems !== null
                 && this._state.cachedItems !== null
             );
@@ -6226,7 +6172,7 @@ const searchOutputMethods = {
                 btn.style.display = 'none';
             } else {
                 const unhydratedCount = this._getUnhydratedInView().length;
-                if (unhydratedCount === 0) {
+                if (unhydratedCount === 0 || !this._needsManualHydrate()) {
                     btn.style.display = 'none';
                 } else {
                     btn.style.display = '';
@@ -6375,7 +6321,7 @@ const searchOutputMethods = {
         const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer;';
         if (active) {
             if (tabId === 'all') {
-                return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
+                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
             return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
@@ -6548,14 +6494,6 @@ const searchOutputMethods = {
                                             <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
                                             <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
                                         </div>
-                                    </div>
-                                    <div>
-                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Search depth</div>
-                                        <div style="display: flex; width: 100%; gap: 8px;">
-                                            <button type="button" id="wf-dash-depth-quick" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Quick</button>
-                                            <button type="button" id="wf-dash-depth-deep" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Deep</button>
-                                        </div>
-                                        <div id="wf-dash-search-depth-hint" style="margin-top: 8px;"></div>
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Contributors</label>
@@ -6956,10 +6894,9 @@ const searchOutputMethods = {
         if (quickRange) quickRange.value = 'all-time';
         this._applyQuickDatePreset('all-time');
         this._resetSearchScopeToUniversal();
-        this._setSearchDepth('deep');
         this._setResultsMode('clear');
         this._setSearchError('');
-        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time · deep');
+        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time');
         await this._submitSearch();
     },
 
@@ -6986,10 +6923,9 @@ const searchOutputMethods = {
         if (quickRange) quickRange.value = 'all-time';
         this._applyQuickDatePreset('all-time');
         this._resetSearchScopeToUniversal();
-        this._setSearchDepth('deep');
         this._setResultsMode('clear');
         this._setSearchError('');
-        Logger.log('dashboard: worker output deep dive — ' + this._personDisplayLabel(normalized) + ' · task+QA · all time · deep');
+        Logger.log('dashboard: worker output deep dive — ' + this._personDisplayLabel(normalized) + ' · task+QA · all time');
         await this._submitSearch();
     },
 
@@ -8571,7 +8507,6 @@ const searchOutputMethods = {
             includeTaskCreation: true,
             includeQa: false,
             includeDisputes: false,
-            searchDepth: 'deep',
             authorCount: 0,
             authorLabels: [],
             searchKinds: ['task_creation']
@@ -8656,9 +8591,6 @@ const searchOutputMethods = {
                 this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
                 return;
             }
-            const searchDepth = this._getSearchDepthFromUi();
-            this._persistSearchDepthPref(searchDepth);
-            this._state.searchDepth = searchDepth;
             const after = (this._q('#wf-dash-after') || {}).value || '';
             const before = (this._q('#wf-dash-before') || {}).value || '';
             const rangeCheck = dashValidateCreatedAtRange(after, before);
@@ -8686,7 +8618,6 @@ const searchOutputMethods = {
                 includeSeniorReview,
                 afterLocal: after,
                 beforeLocal: before,
-                searchDepth,
                 searchKinds: [
                     includeTasks ? 'task_creation' : null,
                     includeQa ? 'qa' : null,
@@ -8730,8 +8661,7 @@ const searchOutputMethods = {
                     includeSeniorReview,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
-                    scope,
-                    searchDepth
+                    scope
                 });
                 const items = searchResult.items;
                 this._state.cachedItems = items;
@@ -8740,34 +8670,8 @@ const searchOutputMethods = {
                     return;
                 }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
-                if (searchDepth === 'deep' && items.length > 0) {
-                    this._setSearchLoadPhase('Hydrating results…', 0, items.length);
-                    const hydrateLogId = this._beginSearchLoadEntry('Deep hydration (0/' + items.length + ')');
-                    await this._hydrateAllSearchResults(items, {
-                        prefetchedFeedbackRows: searchResult.allFeedbackRows,
-                        skipFeedbackFetch: false,
-                        onProgress: (done, total) => {
-                            this._setSearchLoadPhase('Hydrating results…', done, total);
-                            if (hydrateLogId != null) {
-                                this._updateSearchLoadEntry(hydrateLogId, 'Deep hydration (' + done + '/' + total + ')');
-                            }
-                        }
-                    });
-                    if (hydrateLogId != null && !this._shouldStopSearch()) {
-                        this._resolveSearchLoadEntry(
-                            hydrateLogId,
-                            'Deep hydration (' + items.length + '/' + items.length + ')'
-                        );
-                    }
-                }
-                if (this._shouldStopSearch()) {
-                    this._finishStoppedSearch(items);
-                    return;
-                }
-                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
                 this._setSearchLoadPhase('Applying filters…', items.length);
                 Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
-                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : '')
                     + (hadPriorResults ? ' (add mode)' : ''));
                 this._finalizeResultsLoad(items, {
                     committed: hadPriorResults ? null : searchCommitted
@@ -9310,7 +9214,6 @@ const searchOutputMethods = {
                 return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
-            const depthNote = committed.searchDepth === 'deep' ? ' · deep search' : ' · quick search';
             const disputesNote = s.disputesBulkIncomplete
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
@@ -9320,7 +9223,7 @@ const searchOutputMethods = {
             const prefetchLoadingNote = this._prefetchLoadingActive()
                 ? ' · loading prefetch caches…'
                 : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
             return;
         }
         el.textContent = '';
@@ -9365,7 +9268,7 @@ const searchOutputMethods = {
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
-        this._scheduleAutoHydrateVisiblePage();
+        this._scheduleAutoHydrateBackground();
     },
 
     _copyChipHtml(text, highlight) {
@@ -10312,8 +10215,7 @@ const searchOutputMethods = {
             regex: Boolean(item.highlightRegex)
         });
         const showHydrateTab = item.hydrated === false
-            && this._state.committed
-            && this._state.committed.searchDepth === 'quick'
+            && !(this._state.committed && this._state.committed.retrieveMode)
             && !this._isTasksHydratingActive();
         let hydrateTabHtml = '';
         if (showHydrateTab) {
@@ -10550,19 +10452,14 @@ function attachSearchOutputListeners(modal, dash) {
             dash._resetManualFilters();
         }
 
-        const depthQuick = dash._q('#wf-dash-depth-quick');
-        const depthDeep = dash._q('#wf-dash-depth-deep');
-        if (depthQuick) depthQuick.addEventListener('click', () => dash._setSearchDepth('quick'));
-        if (depthDeep) depthDeep.addEventListener('click', () => dash._setSearchDepth('deep'));
+        const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
+        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
 
         modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 dash._setResultsMode(btn.getAttribute('data-wf-dash-results-mode'));
             });
         });
-
-        const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
-        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
 
         const pageSizeSel = dash._q('#wf-dash-results-page-size');
         if (pageSizeSel) {
@@ -11178,7 +11075,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.4',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -11201,7 +11098,6 @@ const plugin = {
             onOpen(dash) {
                 void dash._doBootstrap();
                 dash._refreshCatalogDependentUi();
-                dash._setSearchDepth('quick');
                 requestAnimationFrame(() => dash._applyAllSidePanelWidths());
             },
             onBuilt(modal, dash) {
@@ -11213,8 +11109,6 @@ const plugin = {
                 dash._validateRangeUi();
                 dash._syncFieldClearButtons();
                 dash._applyDefaultSearchDates();
-                dash._state.searchDepth = 'quick';
-                dash._syncSearchDepthUi();
                 dash._state.resultsMode = dash._readResultsModePref();
                 dash._syncResultsModeUi();
                 const pagePref = dash._readResultsPageSizePref();
