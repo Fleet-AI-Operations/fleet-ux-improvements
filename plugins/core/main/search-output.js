@@ -5034,7 +5034,7 @@ const searchOutputMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client' } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateFirstPage = false } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -5042,7 +5042,7 @@ const searchOutputMethods = {
             this._renderResults();
             this._updateResultsKindTabsUi();
             this._syncResultsToolbarDerivedUi();
-            return false;
+            return Promise.resolve(false);
         }
 
         let bounds;
@@ -5066,7 +5066,7 @@ const searchOutputMethods = {
             const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
             if (filterInvalid.invalid) {
                 this._updateSubstringErrorUi();
-                return false;
+                return Promise.resolve(false);
             }
         }
 
@@ -5099,21 +5099,44 @@ const searchOutputMethods = {
             Logger.log('dashboard: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
         }
 
-        if (filterSource === 'client') {
-            this._syncResultsListDerivedUi();
+        const finishRender = () => {
+            if (filterSource === 'client') {
+                this._syncResultsListDerivedUi();
+            }
+            this._updateResultsStatus();
+            this._updateSubstringErrorUi();
+            this._updateApplyFiltersUi();
+            this._renderResults();
+            this._updateResultsKindTabsUi();
+            this._renderFilterLists({
+                syncDraftFromApplied: filterSource === 'results-mutate'
+                    || filterSource !== 'client'
+                    || Boolean(this._state.appliedFilters)
+            });
+            this._syncResultsToolbarDerivedUi();
+        };
+
+        if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
+            const onPage = this._getUnhydratedOnPage();
+            if (onPage.length > 0) {
+                this._setSearchLoadPhase('Hydrating first page…', onPage.length);
+                this._syncSearchLoadPhaseUi();
+                return this._prehydrateFirstPageBeforeDisplay().then((hydrated) => {
+                    this._state.searchLoadPhase = '';
+                    this._state.loading = false;
+                    if (hydrated > 0) {
+                        Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
+                    }
+                    finishRender();
+                    return true;
+                });
+            }
+            this._state.searchLoadPhase = '';
+            this._state.loading = false;
         }
-        this._updateResultsStatus();
-        this._updateSubstringErrorUi();
-        this._updateApplyFiltersUi();
-        this._renderResults();
-        this._updateResultsKindTabsUi();
-        this._renderFilterLists({
-            syncDraftFromApplied: filterSource === 'results-mutate'
-                || filterSource !== 'client'
-                || Boolean(this._state.appliedFilters)
-        });
-        this._syncResultsToolbarDerivedUi();
-        return true;
+
+        finishRender();
+        return Promise.resolve(true);
     },
 
     _readResultsPageSizePref() {
@@ -6002,6 +6025,33 @@ const searchOutputMethods = {
         return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
     },
 
+    async _prehydrateFirstPageBeforeDisplay() {
+        if (this._state.committed && this._state.committed.retrieveMode) return 0;
+        const onPage = this._getUnhydratedOnPage();
+        if (onPage.length === 0) return 0;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('search-output: first-page prehydrate skipped — dashboardData not loaded');
+            return 0;
+        }
+        const contextKey = this._autoHydrateContextKey();
+        const meta = this._getResultsPaginationMeta();
+        Logger.log('search-output: prehydrating first page before display — ' + onPage.length + ' card(s)'
+            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+
+        this._state.autoHydrateActive = true;
+        this._syncResultsHydrateBannerUi();
+        try {
+            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+            });
+            if (hydrated > 0) this._onScopeDataEnriched();
+            return hydrated;
+        } finally {
+            this._state.autoHydrateActive = false;
+            this._syncResultsHydrateBannerUi();
+        }
+    },
+
     _autoHydrateContextKey() {
         const tab = this._state.resultsKindTab || 'all';
         const pass = this._state.autoHydratePassId || 0;
@@ -6104,7 +6154,7 @@ const searchOutputMethods = {
             }
             if (manualRemainder) {
                 if (hydratedTotal > 0) {
-                    Logger.log('dashboard: auto-hydrate first page complete — ' + hydratedTotal + ' card(s); remainder manual');
+                    Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s); remainder manual');
                 }
                 this._syncBulkHydrateUi();
                 return;
@@ -8744,15 +8794,18 @@ const searchOutputMethods = {
                     return;
                 }
                 this._state.searchFetchActive = false;
-                this._state.loading = false;
-                this._state.searchLoadPhase = '';
                 this._resetSearchLoadLog();
                 this._setSearchButtonLoading(false);
                 this._updateSubstringErrorUi();
                 this._updateApplyFiltersUi();
                 if (this._state.cachedItems !== null) {
-                    this._refreshResultsView({ filterSource: 'search-defaults' });
+                    await this._refreshResultsView({
+                        filterSource: 'search-defaults',
+                        prehydrateFirstPage: true
+                    });
                 } else {
+                    this._state.loading = false;
+                    this._state.searchLoadPhase = '';
                     this._updateResultsStatus();
                     this._renderResults();
                     this._updateResultsKindTabsUi();
@@ -8810,13 +8863,13 @@ const searchOutputMethods = {
         this._resetManualFilters();
     },
 
-    _resetFiltersToDefaults() {
+    async _resetFiltersToDefaults() {
         if (!this._state.cachedItems) {
             Logger.debug('dashboard: filter reset skipped — no results loaded');
             return;
         }
         this._clearFilterUiFields();
-        const ok = this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
+        const ok = await this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
         if (ok) {
             Logger.log('dashboard: filters reset to defaults (all options selected)');
         }
@@ -10650,7 +10703,7 @@ function attachSearchOutputListeners(modal, dash) {
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
-        if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
+        if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
         const deferLiveFilterApply = (msKey) => {
             queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
@@ -11131,7 +11184,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.7',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
