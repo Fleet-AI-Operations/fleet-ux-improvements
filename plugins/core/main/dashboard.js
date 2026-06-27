@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.8',
+    _version: '6.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -567,8 +567,39 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-ms-option-style';
         style.textContent = [
-            '#wf-dash-modal label[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"] {',
+            '#wf-dash-modal label[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"],',
+            '#wf-dash-modal tr[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] {',
+            '  border: none;',
+            '  border-collapse: collapse;',
+            '  width: 100%;',
+            '  table-layout: auto;',
+            '  font-size: 11px;',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td {',
+            '  border: none;',
+            '  padding: 4px 6px;',
+            '  vertical-align: middle;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td:first-child {',
+            '  padding-left: 8px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td:last-child {',
+            '  padding-right: 8px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] tr[data-wf-dash-ms-option] {',
+            '  cursor: pointer;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] [data-wf-dash-ms-option-count-num],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] [data-wf-dash-ms-option-count-pct] {',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '  font-variant-numeric: tabular-nums;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  white-space: nowrap;',
             '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
@@ -1844,6 +1875,16 @@ const plugin = {
                 this._toggleMsDropdown(msToggle.getAttribute('data-wf-dash-ms-toggle'));
                 return;
             }
+            const msOptionRow = e.target.closest('tr[data-wf-dash-ms-option]');
+            if (msOptionRow && modal.contains(msOptionRow)) {
+                if (e.target.closest('input[type="checkbox"]')) return;
+                const cb = msOptionRow.querySelector('input[type="checkbox"][data-wf-dash-ms]');
+                if (cb) {
+                    cb.checked = !cb.checked;
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                return;
+            }
             const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
             if (msBulkToggle && modal.contains(msBulkToggle)) {
                 const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
@@ -2481,7 +2522,7 @@ const plugin = {
             }
             return;
         }
-        const optionLabels = itemsEl.querySelectorAll('label[data-wf-dash-ms-option]');
+        const optionLabels = itemsEl.querySelectorAll('[data-wf-dash-ms-option]');
         if (optionLabels.length === 0) return;
         const lib = dashLib();
         let visible = 0;
@@ -2574,26 +2615,63 @@ const plugin = {
         return [...items.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
-    _formatFilterOptionCountLabel(count, filteredTotalCount, optionsInScope) {
-        if (count == null) return '';
+    _formatFilterOptionCountParts(count, filteredTotalCount, optionsInScope) {
+        if (count == null) return { countText: '', pctText: '' };
         const countNum = Number(count);
-        if (!Number.isFinite(countNum)) return String(count);
-        if (optionsInScope === 1) return String(countNum);
-        if (countNum === 0) return '0';
+        if (!Number.isFinite(countNum)) return { countText: String(count), pctText: '' };
+        const countText = String(countNum);
+        if (optionsInScope === 1 || countNum === 0) return { countText, pctText: '' };
         const totalNum = Number(filteredTotalCount);
-        if (!Number.isFinite(totalNum) || totalNum <= 0) return String(countNum);
+        if (!Number.isFinite(totalNum) || totalNum <= 0) return { countText, pctText: '' };
         const pct = (countNum / totalNum) * 100;
         const pctStr = pct < 1
             ? String(parseFloat(pct.toFixed(2)))
             : String(Math.round(pct));
-        return countNum + ' / ' + pctStr + '%';
+        return { countText, pctText: pctStr + '%' };
     },
 
-    _msOptionCountBadgeHtml(count, filteredTotalCount, optionsInScope) {
-        if (count == null) return '';
-        const label = this._formatFilterOptionCountLabel(count, filteredTotalCount, optionsInScope);
-        const ariaSuffix = label.includes('%') ? ' of filtered' : '';
-        return `<span data-wf-dash-ms-option-count="1" aria-label="${dashEscHtml(label + ariaSuffix)}">${dashEscHtml(label)}</span>`;
+    _formatFilterOptionCountLabel(count, filteredTotalCount, optionsInScope) {
+        const parts = this._formatFilterOptionCountParts(count, filteredTotalCount, optionsInScope);
+        if (!parts.countText) return '';
+        if (!parts.pctText) return parts.countText;
+        return parts.countText + ' / ' + parts.pctText;
+    },
+
+    _filterOptionTableRowHtml(scopeKey, it, opts) {
+        const {
+            defaultChecked,
+            dimStyle,
+            countParts,
+            email,
+            displayName
+        } = opts;
+        const countNumHtml = countParts.countText
+            ? `<span data-wf-dash-ms-option-count-num="1" style="${dimStyle}">${dashEscHtml(countParts.countText)}</span>`
+            : '';
+        const countPctHtml = countParts.pctText
+            ? `<span data-wf-dash-ms-option-count-pct="1" style="${dimStyle}">${dashEscHtml(countParts.pctText)}</span>`
+            : '';
+        const ariaCount = this._formatFilterOptionCountLabel(
+            countParts.countText === '' ? null : Number(countParts.countText),
+            opts.filteredTotalCount,
+            opts.optionsInScope
+        );
+        const ariaSuffix = ariaCount.includes('%') ? ' of filtered' : '';
+        const textHtml = email
+            ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
+                    <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
+                    <div data-wf-dash-ms-option-email="1">${dashEscHtml(email)}</div>
+                </span>`
+            : `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(it.label)}</span>`;
+        return `
+            <tr data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}"${ariaCount ? ' aria-label="' + dashEscHtml(ariaCount + ariaSuffix) + '"' : ''}>
+                <td align="center">
+                    <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
+                </td>
+                <td align="center">${countNumHtml}</td>
+                <td align="center">${countPctHtml}</td>
+                <td align="left">${textHtml}</td>
+            </tr>`;
     },
 
     _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts, filteredTotalCount) {
@@ -2602,14 +2680,26 @@ const plugin = {
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
         const optionsInScope = items.length;
-        return items.map((it) => {
+        const useFilterTable = counts != null;
+        const rows = items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
             const email = String(it.email || '').trim();
             const displayName = String(it.name || it.label || '').trim();
-            const countBadge = counts && counts.has(it.id)
-                ? this._msOptionCountBadgeHtml(counts.get(it.id), filteredTotalCount, optionsInScope)
-                : '';
+            if (useFilterTable) {
+                const countParts = counts.has(it.id)
+                    ? this._formatFilterOptionCountParts(counts.get(it.id), filteredTotalCount, optionsInScope)
+                    : { countText: '', pctText: '' };
+                return this._filterOptionTableRowHtml(scopeKey, it, {
+                    defaultChecked,
+                    dimStyle,
+                    countParts,
+                    email,
+                    displayName,
+                    filteredTotalCount,
+                    optionsInScope
+                });
+            }
             const textHtml = email
                 ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
                     <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
@@ -2619,10 +2709,13 @@ const plugin = {
             return `
             <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
                 <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}></span>
-                ${countBadge}
                 ${textHtml}
             </label>`;
         }).join('');
+        if (useFilterTable) {
+            return '<table data-wf-dash-ms-option-table="1" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + rows + '</tbody></table>';
+        }
+        return rows;
     },
 
     _msOptionCount(scopeKey) {
