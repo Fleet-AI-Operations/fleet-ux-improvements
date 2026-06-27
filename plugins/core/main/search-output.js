@@ -4176,13 +4176,14 @@ const searchOutputMethods = {
         const bounds = boundIds || [];
         if (bounds.length === 0) return true;
         const sel = selected || [];
-        if (sel.length === 0) return true;
-        if (bounds.length === 1) return false;
-        return sel.length >= bounds.length;
+        return sel.length === 0;
     },
 
     _isDimensionAllSelected(selected, boundIds) {
-        return this._isDimensionUnrestricted(selected, boundIds);
+        const bounds = boundIds || [];
+        if (bounds.length === 0) return false;
+        const sel = selected || [];
+        return sel.length >= bounds.length;
     },
 
     _normalizeFilterDimensionSelection(selected, boundIds) {
@@ -11193,7 +11194,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.11',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

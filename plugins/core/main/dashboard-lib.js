@@ -327,9 +327,7 @@ function dashLibPersonLabel(name, email) {
 function dashLibIsDimensionUnrestricted(selected, optionCount) {
     if (optionCount === 0) return true;
     const sel = selected || [];
-    if (sel.length === 0) return true;
-    if (optionCount === 1) return false;
-    return sel.length >= optionCount;
+    return sel.length === 0;
 }
 
 function dashLibPassesDimension(values, selected, optionCount) {
@@ -360,7 +358,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
