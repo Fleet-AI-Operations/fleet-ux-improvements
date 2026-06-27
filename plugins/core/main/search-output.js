@@ -517,8 +517,10 @@ const searchOutputMethods = {
     _projectName(projectId) {
         if (!projectId) return '';
         const projects = (this._state.catalog && this._state.catalog.projects) || [];
-        const found = projects.find((p) => p.id === projectId);
-        return found ? found.name : '';
+        const lib = dashLib();
+        return lib && typeof lib.projectDisplayLabel === 'function'
+            ? lib.projectDisplayLabel(projectId, projects)
+            : String(projectId).trim().slice(0, 8);
     },
 
     // ── PostgREST data layer (reuses ops-tab session/token gathering) ──,
@@ -9579,7 +9581,7 @@ const searchOutputMethods = {
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
                     </div>
                 </div>`;
@@ -11194,7 +11196,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.12',
+    _version: '4.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

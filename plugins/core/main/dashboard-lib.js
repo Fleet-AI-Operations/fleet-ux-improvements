@@ -317,6 +317,13 @@ function dashLibProjectNameFromCatalog(id, projects) {
     return found ? found.name : '';
 }
 
+function dashLibProjectDisplayLabel(id, projects) {
+    const name = String(dashLibProjectNameFromCatalog(id, projects) || '').trim();
+    if (name) return name;
+    const projectId = String(id || '').trim();
+    return projectId ? projectId.slice(0, 8) : '';
+}
+
 function dashLibPersonLabel(name, email) {
     const trimmedName = String(name ?? '').trim();
     const trimmedEmail = String(email ?? '').trim();
@@ -358,7 +365,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -465,6 +472,8 @@ const plugin = {
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
             qaTextBlockLabel: bind(self._qaTextBlockLabel),
+
+            projectDisplayLabel: dashLibProjectDisplayLabel,
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
@@ -1277,7 +1286,7 @@ const plugin = {
             })).sort((a, b) => a.label.localeCompare(b.label)),
             projects: [...projectIds].map((id) => ({
                 id,
-                label: dashLibProjectNameFromCatalog(id, projects) || id.slice(0, 8)
+                label: dashLibProjectDisplayLabel(id, projects)
             })).sort((a, b) => a.label.localeCompare(b.label)),
             envs: [...envKeys].map((key) => {
                 const env = environments.find((e) => e.env_key === key);
