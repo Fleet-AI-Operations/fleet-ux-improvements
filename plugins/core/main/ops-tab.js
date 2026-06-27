@@ -32,24 +32,34 @@ const OPS_TEAM_SEARCH_URL = OPS_FLEET_ORIGIN + '/dashboard/team';
 const OPS_SESSION_REFRESH_USER_MESSAGE =
     'Fleet session token not yet captured. Navigate to a Fleet data page (e.g. dashboard/team), then press Refresh catalogs.';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
-/** localStorage key for the dynamically captured Next.js server action hash for team member search */
+/** Query param on programmatic Team page opens for credential refresh (auto-close when captured) */
+const OPS_TEAM_CRED_REFRESH_QUERY = 'wfOpsTeamCredRefresh';
+/** BroadcastChannel name for cross-tab ops dashboard action sync (replaces page localStorage storage events). */
+const OPS_SYNC_CHANNEL_NAME = 'fleet-ux-ops-sync';
+/** @deprecated Legacy page localStorage key; purged on migration/clear only. */
+const OPS_TEAM_CRED_REFRESH_DONE_STORAGE_KEY = 'fleet-ux:ops-team-cred-refresh-done';
+const OPS_TEAM_CRED_REFRESH_TIMEOUT_MS = 90000;
+/** Script storage key for the dynamically captured Next.js server action hash for team member search */
 const OPS_TEAM_SEARCH_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-search-next-action';
-/** localStorage key for the dynamically captured Next.js router state tree for team member search */
+/** Script storage key for the dynamically captured Next.js router state tree for team member search */
 const OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-search-router-state';
-/** localStorage key for the Next.js server action hash for dashboard team add-member */
+/** Script storage key for the Next.js server action hash for dashboard team add-member */
 const OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY = 'fleet-ux:ops-team-add-member-next-action';
-/** localStorage key for the Next.js router state tree for dashboard team add-member */
+/** Script storage key for the Next.js router state tree for dashboard team add-member */
 const OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-team-add-member-router-state';
-/** localStorage key for the Next.js server action hash for dashboard task data (events) */
+/** Script storage key for the Next.js server action hash for dashboard task data (events) */
 const OPS_TASK_DATA_ACTION_STORAGE_KEY = 'fleet-ux:ops-task-data-next-action';
-/** localStorage key for the Next.js router state tree for dashboard task data */
+/** Script storage key for the Next.js router state tree for dashboard task data */
 const OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-task-data-router-state';
 const OPS_TASK_DATA_PATH_RE = /^\/dashboard\/data\/tasks\/[^/]+$/;
 const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
-/** localStorage key for expert profile summary stats server action (creator + QA via body[1]) */
+/** Script storage key for expert profile summary stats server action (creator + QA via body[1]) */
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
 const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
+/** Query param on programmatic expert profile opens for stats credential refresh (auto-close when captured) */
+const OPS_EXPERT_CRED_REFRESH_QUERY = 'wfOpsExpertCredRefresh';
+const OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS = 90000;
 /** Default team tier when adding a member via the dashboard team server action */
 const OPS_TEAM_ADD_MEMBER_DEFAULT_ROLE = 'expert';
 /** When true, extension gear opens the Ops dashboard instead of the settings modal */
@@ -59,7 +69,7 @@ const OPS_PASSWORD_HASH_SEEN_STORAGE_KEY = 'ops-tab-password-hash-seen';
 const OPS_BUNDLE_NOT_LOADED_MESSAGE =
     'Ops bundle not loaded. Unlock the Ops dashboard and ensure ops-secrets.enc.json is available on this branch.';
 const OPS_BUNDLE_READY_DEFAULT_TIMEOUT_MS = 30000;
-/** localStorage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
+/** Script storage key for the logged-in Fleet user UUID (from __next_f payload, cookie, or JWT) */
 const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 /** Matches `"user":{"id":"<uuid>"` in Next.js RSC flight payloads */
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
@@ -192,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.3',
+    _version: '8.12',
     phase: 'core',
     enabledByDefault: true,
 
@@ -210,12 +220,20 @@ const plugin = {
     _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
+    /** Team page cred refresh: { modal, startedAt } while waiting for capture */
+    _opsTeamCredRefreshPending: null,
+    _opsTeamCredRefreshTimeout: null,
     /** Dynamically discovered team add-member server action (same URL as search, different action hash) */
     _opsTeamAddMemberActionCache: { nextAction: null, routerState: null },
     /** Dynamically discovered task detail server action (task events RSC payload) */
     _opsTaskDataActionCache: { nextAction: null, routerState: null },
     /** Expert profile summary stats action — body [id, false|true] for creator vs QA */
     _opsExpertStatsActionCache: { nextAction: null, routerState: null },
+    /** Expert profile cred refresh: { modal, expertId, startedAt } while waiting for capture */
+    _opsExpertCredRefreshPending: null,
+    _opsExpertCredRefreshTimeout: null,
+    _opsSyncChannel: null,
+    _opsSyncChannelSubscribed: false,
     /** memberId → { loading?, creator?, qa?, error? } */
     _opsExpertStatsCache: null,
     _opsExpertStatsHydrateGen: 0,
@@ -332,7 +350,7 @@ const plugin = {
         this._subscribeOpsTaskDataActionCapture();
         this._subscribeOpsExpertActionCapture();
         this._subscribeOpsCurrentUserIdCapture();
-        this._subscribeOpsTeamDashboardActionStorageSync();
+        this._subscribeOpsTeamDashboardActionSync();
         this._invalidateOpsPasswordOnHashRotation();
         if (this._getOpsTabEnabled()) {
             void this._loadOpsSecrets(false);
@@ -1270,15 +1288,13 @@ const plugin = {
 
     _loadOpsCurrentUserIdFromStorage() {
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const userId = storage.getItem(OPS_CURRENT_USER_ID_STORAGE_KEY);
+            const userId = Storage.getData(OPS_CURRENT_USER_ID_STORAGE_KEY, null);
             if (userId && OPS_UUID_RE.test(userId)) {
                 this._opsCurrentUserIdCache = userId;
-                Logger.debug('ops-tab: current user id hydrated from localStorage (' + userId.slice(0, 8) + '…)');
+                Logger.debug('ops-tab: current user id hydrated from script storage (' + userId.slice(0, 8) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: current user id localStorage hydration failed', e);
+            Logger.debug('ops-tab: current user id script storage hydration failed', e);
         }
     },
 
@@ -1290,8 +1306,7 @@ const plugin = {
         }
         this._opsCurrentUserIdCache = userId;
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) storage.setItem(OPS_CURRENT_USER_ID_STORAGE_KEY, userId);
+            Storage.setData(OPS_CURRENT_USER_ID_STORAGE_KEY, userId);
         } catch (e) {
             Logger.debug('ops-tab: current user id persist failed', e);
         }
@@ -1548,16 +1563,14 @@ const plugin = {
 
     _loadOpsExpertStatsActionFromStorage() {
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const nextAction = storage.getItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
-            const routerState = storage.getItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
+            const nextAction = Storage.getData(OPS_EXPERT_STATS_ACTION_STORAGE_KEY, null);
+            const routerState = Storage.getData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: expert stats action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('ops-tab: expert stats action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert stats action localStorage hydration failed', e);
+            Logger.debug('ops-tab: expert stats action script storage hydration failed', e);
         }
     },
 
@@ -1566,29 +1579,24 @@ const plugin = {
         const changed = nextAction !== this._opsExpertStatsActionCache.nextAction;
         this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.setItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY, nextAction);
-                if (routerState) {
-                    storage.setItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, routerState);
-                }
+            Storage.setData(OPS_EXPERT_STATS_ACTION_STORAGE_KEY, nextAction);
+            if (routerState) {
+                Storage.setData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
             Logger.debug('ops-tab: expert stats action persist failed', e);
         }
         if (changed) {
             Logger.log('ops-tab: expert stats action updated (' + nextAction.slice(0, 12) + '…)');
+            this._broadcastOpsSync({ type: 'expertStatsActionUpdated' });
         }
     },
 
     _clearOpsExpertStatsActionCache() {
         this._opsExpertStatsActionCache = { nextAction: null, routerState: null };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.removeItem(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
-                storage.removeItem(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
-            }
+            Storage.deleteData(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
+            Storage.deleteData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
             Logger.debug('ops-tab: expert stats action cache clear failed', e);
         }
@@ -1624,9 +1632,14 @@ const plugin = {
                 if (!nextAction) return;
                 const kind = self._opsClassifyExpertPostBody(meta.body);
                 if (kind === 'stats-creator' || kind === 'stats-qa') {
+                    const credRefreshTab = self._isOpsExpertCredRefreshTab();
                     if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                    if (credRefreshTab) {
+                        self._signalOpsExpertCredRefreshComplete();
+                        self._tryCloseOpsExpertCredRefreshTab();
                     }
                 }
             }
@@ -1759,6 +1772,33 @@ const plugin = {
         return [role, message, '—', '—'];
     },
 
+    _opsExpertProfileUrl(expertId, credRefresh) {
+        const id = String(expertId || '').trim();
+        if (!id) return '';
+        let url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+        if (credRefresh) url += '?' + OPS_EXPERT_CRED_REFRESH_QUERY + '=1';
+        return url;
+    },
+
+    _opsExpertStatsCredRefreshBtnHtml(memberId) {
+        const id = String(memberId || '').trim();
+        if (!id) return '';
+        const attrId = this._opsEscapeAttr(id);
+        const title = 'Open expert profile to refresh stats';
+        return '<button type="button" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
+            'data-ops-action="expert-stats-cred-refresh" data-ops-member-id="' + attrId + '" ' +
+            'title="' + this._opsEscapeHtml(title) + '" aria-label="' + this._opsEscapeHtml(title) + '">' +
+            this._opsProfileLinkIconSvg() + '</button>';
+    },
+
+    _opsExpertStatsUnavailableHtml(memberId) {
+        return '<div class="wf-ops-member-stats-grid wf-ops-member-stats-grid--plain" data-ops-member-stats-grid>' +
+            '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            this._opsEscapeHtml('Stats unavailable (open expert profile once)') +
+            this._opsExpertStatsCredRefreshBtnHtml(memberId) +
+            '</span></div>';
+    },
+
     _opsExpertStatsGridHtml(creatorCols, qaCols, opts) {
         const plain = !!(opts && opts.plain);
         const gridClass = plain
@@ -1769,12 +1809,11 @@ const plugin = {
         return '<div class="' + gridClass + '" data-ops-member-stats-grid>' + cells + '</div>';
     },
 
-    _renderOpsTeamMemberStatsInnerHtml(entry) {
+    _renderOpsTeamMemberStatsInnerHtml(entry, memberId) {
         if (!this._opsExpertStatsActionCache.nextAction) {
-            const msg = 'Stats unavailable (open an expert profile once)';
-            return this._opsExpertStatsGridHtml([msg], [msg], { plain: true });
+            return this._opsExpertStatsUnavailableHtml(memberId);
         }
-        if (!entry || entry.loading) {
+        if (!entry || entry.loading || entry.error === 'missing-credentials') {
             const msg = 'Loading stats…';
             return this._opsExpertStatsGridHtml(
                 this._opsExpertStatsStatusColumns('Creator', msg),
@@ -1797,7 +1836,7 @@ const plugin = {
     _renderOpsTeamMemberStatsHtml(memberId) {
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
-            this._renderOpsTeamMemberStatsInnerHtml(entry) +
+            this._renderOpsTeamMemberStatsInnerHtml(entry, memberId) +
         '</div>';
     },
 
@@ -1806,7 +1845,7 @@ const plugin = {
         if (!tile) return;
         const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
         const statsSlot = tile.querySelector('[data-ops-member-stats]');
-        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry);
+        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry, memberId);
     },
 
     _patchOpsTeamMemberStats(modal, memberId) {
@@ -1830,13 +1869,16 @@ const plugin = {
         if (!cache) return;
 
         const memberIds = this._getVisibleTeamMemberIds(modal, cache);
+        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
         const toFetch = memberIds.filter((id) => {
             const entry = this._opsExpertStatsCache.get(id);
-            return !entry || (!entry.creator && !entry.qa && !entry.error);
+            if (!entry) return true;
+            if (entry.loading) return false;
+            if (entry.creator || entry.qa) return false;
+            if (entry.error === 'missing-credentials') return hasStats;
+            return !entry.error;
         });
         if (toFetch.length === 0) return;
-
-        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
 
         if (!hasStats) {
             for (const id of toFetch) {
@@ -1937,31 +1979,27 @@ const plugin = {
 
     _loadOpsTeamSearchActionFromStorage() {
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const nextAction = storage.getItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
-            const routerState = storage.getItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
+            const nextAction = Storage.getData(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY, null);
+            const routerState = Storage.getData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: team search action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('ops-tab: team search action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: team search action localStorage hydration failed', e);
+            Logger.debug('ops-tab: team search action script storage hydration failed', e);
         }
     },
 
     _loadOpsTeamAddMemberActionFromStorage() {
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const nextAction = storage.getItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
-            const routerState = storage.getItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
+            const nextAction = Storage.getData(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY, null);
+            const routerState = Storage.getData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTeamAddMemberActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: team add-member action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('ops-tab: team add-member action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: team add-member action localStorage hydration failed', e);
+            Logger.debug('ops-tab: team add-member action script storage hydration failed', e);
         }
     },
 
@@ -1971,51 +2009,243 @@ const plugin = {
         return !!this._opsTeamSearchActionCache.nextAction;
     },
 
-    _subscribeOpsTeamDashboardActionStorageSync() {
-        const self = this;
+    _ensureOpsSyncChannel() {
+        if (this._opsSyncChannel) {
+            return this._opsSyncChannel;
+        }
         try {
-            const pageWindow = this._getOpsPageWindow();
-            if (!pageWindow || pageWindow.__wfOpsTeamActionStorageSynced) return;
-            pageWindow.addEventListener('storage', (e) => {
-                if (!e || !e.key) return;
-                if (e.key === OPS_TEAM_SEARCH_ACTION_STORAGE_KEY && e.newValue) {
-                    const routerState = pageWindow.localStorage
-                        ? pageWindow.localStorage.getItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY)
-                        : '';
-                    self._opsTeamSearchActionCache = {
-                        nextAction: e.newValue,
-                        routerState: routerState || ''
-                    };
-                    Logger.debug('ops-tab: team search action synced from storage event (' + e.newValue.slice(0, 12) + '…)');
-                } else if (e.key === OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY && e.newValue) {
-                    const routerState = pageWindow.localStorage
-                        ? pageWindow.localStorage.getItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY)
-                        : '';
-                    self._opsTeamAddMemberActionCache = {
-                        nextAction: e.newValue,
-                        routerState: routerState || ''
-                    };
-                    Logger.debug('ops-tab: team add-member action synced from storage event (' + e.newValue.slice(0, 12) + '…)');
-                } else if (e.key === OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY && e.newValue
-                    && self._opsTeamSearchActionCache.nextAction) {
-                    self._opsTeamSearchActionCache.routerState = e.newValue;
-                } else if (e.key === OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY && e.newValue
-                    && self._opsTeamAddMemberActionCache.nextAction) {
-                    self._opsTeamAddMemberActionCache.routerState = e.newValue;
-                }
-            });
-            pageWindow.__wfOpsTeamActionStorageSynced = true;
-            Logger.debug('ops-tab: team dashboard action storage sync listener installed');
+            this._opsSyncChannel = new BroadcastChannel(OPS_SYNC_CHANNEL_NAME);
         } catch (e) {
-            Logger.debug('ops-tab: team dashboard action storage sync failed', e);
+            Logger.debug('ops-tab: BroadcastChannel unavailable', e);
+            this._opsSyncChannel = null;
+        }
+        return this._opsSyncChannel;
+    },
+
+    _broadcastOpsSync(message) {
+        try {
+            const channel = this._ensureOpsSyncChannel();
+            if (channel) {
+                channel.postMessage(message);
+            }
+        } catch (e) {
+            Logger.debug('ops-tab: ops sync broadcast failed', e);
         }
     },
 
-    _openOpsTeamPageInBackground() {
+    _subscribeOpsTeamDashboardActionSync() {
+        if (this._opsSyncChannelSubscribed) {
+            return;
+        }
+        const self = this;
+        try {
+            const channel = this._ensureOpsSyncChannel();
+            if (!channel) {
+                return;
+            }
+            channel.onmessage = (ev) => {
+                const data = ev && ev.data;
+                if (!data || !data.type) {
+                    return;
+                }
+                if (data.type === 'teamSearchActionUpdated') {
+                    self._loadOpsTeamSearchActionFromStorage();
+                    Logger.debug('ops-tab: team search action synced from BroadcastChannel');
+                    self._onOpsTeamCredRefreshComplete();
+                } else if (data.type === 'teamAddMemberActionUpdated') {
+                    self._loadOpsTeamAddMemberActionFromStorage();
+                    Logger.debug('ops-tab: team add-member action synced from BroadcastChannel');
+                } else if (data.type === 'credRefreshDone') {
+                    self._onOpsTeamCredRefreshComplete();
+                } else if (data.type === 'expertStatsActionUpdated') {
+                    self._loadOpsExpertStatsActionFromStorage();
+                    Logger.debug('ops-tab: expert stats action synced from BroadcastChannel');
+                } else if (data.type === 'expertCredRefreshDone') {
+                    self._loadOpsExpertStatsActionFromStorage();
+                    self._onOpsExpertCredRefreshComplete();
+                }
+            };
+            this._opsSyncChannelSubscribed = true;
+            Logger.debug('ops-tab: team dashboard action BroadcastChannel sync listener installed');
+        } catch (e) {
+            Logger.debug('ops-tab: team dashboard action BroadcastChannel sync failed', e);
+        }
+    },
+
+    _clearOpsTeamCredRefreshPending() {
+        if (this._opsTeamCredRefreshTimeout != null) {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow) pageWindow.clearTimeout(this._opsTeamCredRefreshTimeout);
+            this._opsTeamCredRefreshTimeout = null;
+        }
+        this._opsTeamCredRefreshPending = null;
+    },
+
+    _isOpsTeamCredRefreshTab() {
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            return new URL(pageWindow.location.href).searchParams.get(OPS_TEAM_CRED_REFRESH_QUERY) === '1';
+        } catch (_e) {
+            return false;
+        }
+    },
+
+    _signalOpsTeamCredRefreshComplete() {
+        this._broadcastOpsSync({ type: 'credRefreshDone' });
+    },
+
+    _tryCloseOpsTeamCredRefreshTab() {
+        if (!this._isOpsTeamCredRefreshTab()) return;
+        Logger.log('ops-tab: team cred refresh complete — closing Team tab');
         const pageWindow = this._getOpsPageWindow();
-        const opened = pageWindow.open(OPS_TEAM_SEARCH_URL, '_blank', 'noopener,noreferrer');
-        pageWindow.focus();
-        Logger.log('ops-tab: team page opened in background tab for credential refresh');
+        pageWindow.setTimeout(() => {
+            try {
+                pageWindow.close();
+            } catch (_e) { /* ignore — browser may block close */ }
+        }, 300);
+    },
+
+    _onOpsTeamCredRefreshComplete() {
+        const pending = this._opsTeamCredRefreshPending;
+        if (!pending) return;
+        const modal = pending.modal;
+        this._clearOpsTeamCredRefreshPending();
+        this._reloadOpsTeamDashboardActionsFromStorage();
+        if (!this._opsTeamSearchActionCache.nextAction) {
+            this._setOpsTeamSearchStaleRetryStatus(modal,
+                'Credentials not ready yet — try Refresh credentials again.');
+            Logger.warn('ops-tab: team cred refresh signaled but search action still missing');
+            return;
+        }
+        this._setOpsTeamSearchStaleRetryStatus(modal, 'Credentials refreshed — retrying search…');
+        Logger.log('ops-tab: team cred refresh captured — auto-retrying search');
+        void this._handleOpsTeamSearchCredentialRetry(modal);
+    },
+
+    _openOpsTeamPageForCredRefresh(modal) {
+        this._clearOpsTeamCredRefreshPending();
+        const pageWindow = this._getOpsPageWindow();
+        const url = OPS_TEAM_SEARCH_URL + '?' + OPS_TEAM_CRED_REFRESH_QUERY + '=1';
+        const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+            if (modal) {
+                this._setOpsTeamSearchStaleRetryStatus(modal,
+                    'Popup blocked — allow popups for Fleet, then try again.');
+            }
+            Logger.warn('ops-tab: team cred refresh tab blocked (popup blocker)');
+            return null;
+        }
+        if (modal) {
+            this._opsTeamCredRefreshPending = { modal, startedAt: Date.now() };
+            this._setOpsTeamSearchStaleRetryStatus(modal, 'Opening Team page…');
+            const self = this;
+            this._opsTeamCredRefreshTimeout = pageWindow.setTimeout(() => {
+                if (!self._opsTeamCredRefreshPending) return;
+                const pendingModal = self._opsTeamCredRefreshPending.modal;
+                self._clearOpsTeamCredRefreshPending();
+                self._setOpsTeamSearchStaleRetryStatus(pendingModal,
+                    'Credential refresh timed out — try Refresh credentials again.');
+                Logger.warn('ops-tab: team cred refresh timed out');
+            }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
+        }
+        Logger.log('ops-tab: team page opened for credential refresh');
+        return opened;
+    },
+
+    _clearOpsExpertCredRefreshPending() {
+        if (this._opsExpertCredRefreshTimeout != null) {
+            const pageWindow = this._getOpsPageWindow();
+            if (pageWindow) pageWindow.clearTimeout(this._opsExpertCredRefreshTimeout);
+            this._opsExpertCredRefreshTimeout = null;
+        }
+        this._opsExpertCredRefreshPending = null;
+    },
+
+    _isOpsExpertCredRefreshTab() {
+        try {
+            const pageWindow = this._getOpsPageWindow();
+            const url = new URL(pageWindow.location.href);
+            if (!OPS_EXPERT_PATH_RE.test(url.pathname)) return false;
+            return url.searchParams.get(OPS_EXPERT_CRED_REFRESH_QUERY) === '1';
+        } catch (_e) {
+            return false;
+        }
+    },
+
+    _signalOpsExpertCredRefreshComplete() {
+        this._broadcastOpsSync({ type: 'expertCredRefreshDone' });
+    },
+
+    _tryCloseOpsExpertCredRefreshTab() {
+        if (!this._isOpsExpertCredRefreshTab()) return;
+        Logger.log('ops-tab: expert cred refresh complete — closing expert profile tab');
+        const pageWindow = this._getOpsPageWindow();
+        pageWindow.setTimeout(() => {
+            try {
+                pageWindow.close();
+            } catch (_e) { /* ignore — browser may block close */ }
+        }, 300);
+    },
+
+    _onOpsExpertCredRefreshComplete(retryAttempt) {
+        const pending = this._opsExpertCredRefreshPending;
+        if (!pending) return;
+        const modal = pending.modal;
+
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            this._loadOpsExpertStatsActionFromStorage();
+        }
+        if (!this._opsExpertStatsActionCache.nextAction) {
+            if (!retryAttempt) {
+                const self = this;
+                const pageWindow = this._getOpsPageWindow();
+                if (pageWindow) {
+                    pageWindow.setTimeout(() => {
+                        if (!self._opsExpertCredRefreshPending) return;
+                        self._onOpsExpertCredRefreshComplete(true);
+                    }, 100);
+                    return;
+                }
+            }
+            this._clearOpsExpertCredRefreshPending();
+            Logger.warn('ops-tab: expert cred refresh signaled but stats action still missing');
+            return;
+        }
+
+        this._clearOpsExpertCredRefreshPending();
+
+        if (this._opsTeamSearchMemberCache) {
+            if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
+            this._opsExpertStatsHydrateGen++;
+            Logger.log('ops-tab: expert cred refresh captured — re-hydrating stats for visible members');
+            void this._hydrateOpsTeamMemberStatsForVisible(modal);
+            return;
+        }
+
+        Logger.log('ops-tab: expert cred refresh captured — no results on screen');
+    },
+
+    _openOpsExpertProfileForCredRefresh(modal, expertId) {
+        const id = String(expertId || '').trim();
+        if (!id) return null;
+        this._clearOpsExpertCredRefreshPending();
+        const pageWindow = this._getOpsPageWindow();
+        const url = this._opsExpertProfileUrl(id, true);
+        const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+            Logger.warn('ops-tab: expert cred refresh tab blocked (popup blocker)');
+            return null;
+        }
+        if (modal) {
+            this._opsExpertCredRefreshPending = { modal, expertId: id, startedAt: Date.now() };
+            const self = this;
+            this._opsExpertCredRefreshTimeout = pageWindow.setTimeout(() => {
+                if (!self._opsExpertCredRefreshPending) return;
+                self._clearOpsExpertCredRefreshPending();
+                Logger.warn('ops-tab: expert cred refresh timed out');
+            }, OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS);
+        }
+        Logger.log('ops-tab: expert profile opened for stats credential refresh (' + id.slice(0, 8) + '…)');
         return opened;
     },
 
@@ -2024,29 +2254,24 @@ const plugin = {
         const changed = nextAction !== this._opsTeamSearchActionCache.nextAction;
         this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.setItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY, nextAction);
-                if (routerState) {
-                    storage.setItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, routerState);
-                }
+            Storage.setData(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY, nextAction);
+            if (routerState) {
+                Storage.setData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
             Logger.debug('ops-tab: team search action persist failed', e);
         }
         if (changed) {
             Logger.log('ops-tab: team search action updated (' + nextAction.slice(0, 12) + '…)');
+            this._broadcastOpsSync({ type: 'teamSearchActionUpdated' });
         }
     },
 
     _clearOpsTeamSearchActionCache() {
         this._opsTeamSearchActionCache = { nextAction: null, routerState: null };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.removeItem(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
-                storage.removeItem(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
-            }
+            Storage.deleteData(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
+            Storage.deleteData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
             Logger.debug('ops-tab: team search action cache clear failed', e);
         }
@@ -2058,29 +2283,24 @@ const plugin = {
         const changed = nextAction !== this._opsTeamAddMemberActionCache.nextAction;
         this._opsTeamAddMemberActionCache = { nextAction, routerState: routerState || '' };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.setItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY, nextAction);
-                if (routerState) {
-                    storage.setItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, routerState);
-                }
+            Storage.setData(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY, nextAction);
+            if (routerState) {
+                Storage.setData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
             Logger.debug('ops-tab: team add-member action persist failed', e);
         }
         if (changed) {
             Logger.log('ops-tab: team add-member action updated (' + nextAction.slice(0, 12) + '…)');
+            this._broadcastOpsSync({ type: 'teamAddMemberActionUpdated' });
         }
     },
 
     _clearOpsTeamAddMemberActionCache() {
         this._opsTeamAddMemberActionCache = { nextAction: null, routerState: null };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.removeItem(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
-                storage.removeItem(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
-            }
+            Storage.deleteData(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
+            Storage.deleteData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
             Logger.debug('ops-tab: team add-member action cache clear failed', e);
         }
@@ -2089,16 +2309,14 @@ const plugin = {
 
     _loadOpsTaskDataActionFromStorage() {
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (!storage) return;
-            const nextAction = storage.getItem(OPS_TASK_DATA_ACTION_STORAGE_KEY);
-            const routerState = storage.getItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
+            const nextAction = Storage.getData(OPS_TASK_DATA_ACTION_STORAGE_KEY, null);
+            const routerState = Storage.getData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTaskDataActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: task data action hydrated from localStorage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('ops-tab: task data action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: task data action localStorage hydration failed', e);
+            Logger.debug('ops-tab: task data action script storage hydration failed', e);
         }
     },
 
@@ -2107,12 +2325,9 @@ const plugin = {
         const changed = nextAction !== this._opsTaskDataActionCache.nextAction;
         this._opsTaskDataActionCache = { nextAction, routerState: routerState || '' };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.setItem(OPS_TASK_DATA_ACTION_STORAGE_KEY, nextAction);
-                if (routerState) {
-                    storage.setItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, routerState);
-                }
+            Storage.setData(OPS_TASK_DATA_ACTION_STORAGE_KEY, nextAction);
+            if (routerState) {
+                Storage.setData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
             Logger.debug('ops-tab: task data action persist failed', e);
@@ -2125,11 +2340,8 @@ const plugin = {
     _clearOpsTaskDataActionCache() {
         this._opsTaskDataActionCache = { nextAction: null, routerState: null };
         try {
-            const storage = this._getOpsPageWindow().localStorage;
-            if (storage) {
-                storage.removeItem(OPS_TASK_DATA_ACTION_STORAGE_KEY);
-                storage.removeItem(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
-            }
+            Storage.deleteData(OPS_TASK_DATA_ACTION_STORAGE_KEY);
+            Storage.deleteData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
             Logger.debug('ops-tab: task data action cache clear failed', e);
         }
@@ -2207,9 +2419,14 @@ const plugin = {
 
                 const kind = self._opsClassifyTeamDashboardPostBody(meta.body);
                 if (kind === 'search') {
+                    const credRefreshTab = self._isOpsTeamCredRefreshTab();
                     if (nextAction !== self._opsTeamSearchActionCache.nextAction) {
                         self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
                         Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    }
+                    if (credRefreshTab) {
+                        self._signalOpsTeamCredRefreshComplete();
+                        self._tryCloseOpsTeamCredRefreshTab();
                     }
                 } else if (kind === 'add-member') {
                     if (nextAction !== self._opsTeamAddMemberActionCache.nextAction) {
@@ -2296,8 +2513,8 @@ const plugin = {
             '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
             '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
-            'Open the Team page in a new tab (it refreshes credentials automatically), then click ',
-            '<strong>Retry search</strong> here.',
+            'Click <strong>Refresh credentials</strong> to open the Team page in a new tab — ',
+            'credentials refresh automatically and the tab closes on its own.',
             '</p>',
             '<p id="wf-ops-team-search-stale-retry-status" style="display: none; font-size: 12px; color: #b91c1c; margin: 8px 0 0 0; line-height: 1.45;"></p>',
             '</div>',
@@ -2305,7 +2522,7 @@ const plugin = {
             '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">',
             '<button type="button" id="wf-ops-team-search-open-team" style="',
             btnStyle,
-            'color: #991b1b;background: #fef2f2;">Open Team page</button>',
+            'color: #991b1b;background: #fef2f2;">Refresh credentials</button>',
             '<button type="button" id="wf-ops-team-search-retry-btn" style="',
             btnStyle,
             'color: #fff;background: #dc2626;">Retry search</button>',
@@ -2355,7 +2572,7 @@ const plugin = {
             const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
-                    self._openOpsTeamPageInBackground();
+                    self._openOpsTeamPageForCredRefresh(modal);
                 });
             }
             const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
@@ -2364,9 +2581,27 @@ const plugin = {
                     void self._handleOpsTeamSearchCredentialRetry(modal);
                 });
             }
+        } else {
+            this._setOpsTeamSearchStatus(
+                modal,
+                'Team search credentials are missing or out of date. Open the Team page in Fleet, then retry.',
+                true,
+                false,
+                false
+            );
+            Logger.warn('ops-tab: team search refresh banner fallback — output wrap missing');
+            Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+            return;
         }
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
         Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+    },
+
+    _opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams) {
+        if (!allTeams || allTeams.length === 0) return false;
+        if (memberMap && memberMap.size > 0) return false;
+        const q = String(query || '').trim();
+        return q === '';
     },
 
     async _handleOpsTeamSearchCredentialRetry(modal) {
@@ -2931,6 +3166,7 @@ const plugin = {
 
     _opsMemberBadgeCategory(member) {
         const teamLabels = member.teamLabels || new Set();
+        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return 'fellows';
         for (const label of teamLabels) {
             if (OPS_TEAM_EPIC_LABELS.has(label)) return 'epic';
         }
@@ -3211,6 +3447,11 @@ const plugin = {
         const action = actionEl.getAttribute('data-ops-action');
         if (!memberId || !action) return;
 
+        if (action === 'expert-stats-cred-refresh') {
+            this._openOpsExpertProfileForCredRefresh(modal, memberId);
+            return;
+        }
+
         const member = this._getOpsMemberFromCache(memberId);
         if (!member) {
             Logger.warn('ops-tab: member edit action skipped — member not in cache');
@@ -3295,7 +3536,7 @@ const plugin = {
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
         return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output</button>';
+            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output 🔦</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
@@ -3313,12 +3554,13 @@ const plugin = {
             Logger.warn('ops-tab: Search Worker Output skipped — missing member id');
             return;
         }
-        if (!Context.dashboard || typeof Context.dashboard.setAuthorTokens !== 'function') {
-            Logger.warn('ops-tab: Search Worker Output skipped — dashboard unavailable');
+        const dash = Context.dashboard;
+        if (!dash || typeof dash.runContributorWorkerOutputDeepDive !== 'function') {
+            Logger.warn('ops-tab: Search Worker Output skipped — dashboard deep dive unavailable');
             return;
         }
-        Context.dashboard.setAuthorTokens([person], { replace: true, activeTab: 'search-output' });
-        Logger.log('ops-tab: Search Worker Output for ' + (person.full_name || person.id));
+        Logger.log('ops-tab: Search Worker Output deep dive for ' + (person.full_name || person.id));
+        void dash.runContributorWorkerOutputDeepDive(person, { activeTab: 'search-output' });
     },
 
     _renderOpsMemberTeamRowHtml(label, member, session) {
@@ -3604,6 +3846,8 @@ const plugin = {
         this._opsTeamSearchMemberCache = null;
         this._opsTeamActiveFilters = null;
         this._opsMemberDetailsOpenIds = null;
+        this._opsExpertStatsHydrateGen++;
+        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
         this._clearOpsMemberEditState();
 
         if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
@@ -3677,6 +3921,11 @@ const plugin = {
 
         if (this._opsTeamSearchActive === sessionId) {
             this._opsTeamSearchAbortController = null;
+            if (!staleActionDetected && this._opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams)) {
+                staleActionDetected = true;
+                this._clearOpsTeamSearchActionCache();
+                Logger.warn('ops-tab: team search returned zero members for all teams — treating credentials as stale');
+            }
             if (staleActionDetected) {
                 this._showOpsTeamSearchActionRefreshBanner(modal);
                 this._opsTeamSearchMemberCache = null;

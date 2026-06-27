@@ -15,7 +15,7 @@ function verifierFetcherPageWindow() {
 
 function readVerifierScratchpadWidthPref() {
     try {
-        const raw = verifierFetcherPageWindow().localStorage.getItem(VERIFIER_SCRATCHPAD_WIDTH_KEY);
+        const raw = Storage.getData(VERIFIER_SCRATCHPAD_WIDTH_KEY, null);
         const n = parseInt(raw, 10);
         if (!Number.isFinite(n) || n < VERIFIER_SCRATCHPAD_MIN_WIDTH) return VERIFIER_SCRATCHPAD_DEFAULT_WIDTH;
         return n;
@@ -27,7 +27,7 @@ function readVerifierScratchpadWidthPref() {
 function writeVerifierScratchpadWidthPref(widthPx) {
     try {
         const clamped = Math.max(VERIFIER_SCRATCHPAD_MIN_WIDTH, Math.round(widthPx));
-        verifierFetcherPageWindow().localStorage.setItem(VERIFIER_SCRATCHPAD_WIDTH_KEY, String(clamped));
+        Storage.setData(VERIFIER_SCRATCHPAD_WIDTH_KEY, String(clamped));
     } catch (err) {
         Logger.warn('verifier-fetcher: failed to write scratchpad width pref', err);
     }
@@ -35,7 +35,7 @@ function writeVerifierScratchpadWidthPref(widthPx) {
 
 function readVerifierScratchpadOpenPref() {
     try {
-        return verifierFetcherPageWindow().localStorage.getItem(VERIFIER_SCRATCHPAD_OPEN_KEY) === '1';
+        return Storage.getData(VERIFIER_SCRATCHPAD_OPEN_KEY, null) === '1';
     } catch (_e) {
         return false;
     }
@@ -43,7 +43,7 @@ function readVerifierScratchpadOpenPref() {
 
 function writeVerifierScratchpadOpenPref(open) {
     try {
-        verifierFetcherPageWindow().localStorage.setItem(VERIFIER_SCRATCHPAD_OPEN_KEY, open ? '1' : '0');
+        Storage.setData(VERIFIER_SCRATCHPAD_OPEN_KEY, open ? '1' : '0');
     } catch (err) {
         Logger.warn('verifier-fetcher: failed to write scratchpad open pref', err);
     }
@@ -51,7 +51,7 @@ function writeVerifierScratchpadOpenPref(open) {
 
 function readVerifierScratchpadTextPref() {
     try {
-        return verifierFetcherPageWindow().localStorage.getItem(VERIFIER_SCRATCHPAD_TEXT_KEY) || '';
+        return Storage.getData(VERIFIER_SCRATCHPAD_TEXT_KEY, '') || '';
     } catch (_e) {
         return '';
     }
@@ -59,7 +59,7 @@ function readVerifierScratchpadTextPref() {
 
 function writeVerifierScratchpadTextPref(text) {
     try {
-        verifierFetcherPageWindow().localStorage.setItem(VERIFIER_SCRATCHPAD_TEXT_KEY, text || '');
+        Storage.setData(VERIFIER_SCRATCHPAD_TEXT_KEY, text || '');
     } catch (err) {
         Logger.warn('verifier-fetcher: failed to write scratchpad text pref', err);
     }
@@ -481,7 +481,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

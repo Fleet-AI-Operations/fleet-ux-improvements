@@ -12,8 +12,8 @@
 // Porting notes / oddities live in local/dashboard/reference/dashboard-live-port-handoff.md.
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
-const DASH_SEARCH_DEPTH_STORAGE_KEY = 'fleet-ux:dashboard-search-depth';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
+const DASH_AUTO_HYDRATE_MANUAL_THRESHOLD = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
@@ -105,15 +105,9 @@ const DASH_OUTPUT_KIND_CONFIG = {
 };
 
 const DASH_TOGGLE_INACTIVE = 'border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.6;';
-const DASH_SEARCH_DEPTH_TOGGLE_ACTIVE = 'border: 2px solid #ca8a04; color: #a16207; background: transparent;';
 const DASH_FLAGGED_COLOR = '#a16207';
 const DASH_FLAGGED_BORDER = '#ca8a04';
 const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
-
-const DASH_SEARCH_DEPTH_HINTS = {
-    quick: 'Faster results, task history hydration only on demand.',
-    deep: 'Slower results with complete task history for each card.'
-};
 const DASH_RESULTS_MODE_HINTS = {
     clear: 'Clears previous results and replaces with new search results.',
     add: 'Adds new search results to previous ones (deduplicated).'
@@ -408,7 +402,7 @@ function dashFirstEmbed(embed) {
 const searchOutputMethods = {
     _readBootstrapCache() {
         try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_BOOTSTRAP_STORAGE_KEY);
+            const raw = Storage.getData(DASH_BOOTSTRAP_STORAGE_KEY, null);
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             if (!parsed || parsed.version !== DASH_BOOTSTRAP_VERSION) return null;
@@ -444,7 +438,7 @@ const searchOutputMethods = {
             environments: data.environments
         };
         try {
-            this._pageWindow().localStorage.setItem(DASH_BOOTSTRAP_STORAGE_KEY, JSON.stringify(entry));
+            Storage.setData(DASH_BOOTSTRAP_STORAGE_KEY, JSON.stringify(entry));
         } catch (e) {
             Logger.warn('dashboard: failed to write bootstrap cache', e);
         }
@@ -924,7 +918,7 @@ const searchOutputMethods = {
         const fromCookie = this._dashGetCookie('current-user-id');
         if (fromCookie && DASH_UUID_RE.test(fromCookie)) return fromCookie;
         try {
-            const stored = this._pageWindow().localStorage.getItem('fleet-ux:ops-current-user-id');
+            const stored = Storage.getData('fleet-ux:ops-current-user-id', null);
             if (stored && DASH_UUID_RE.test(stored)) return stored;
         } catch (_e) { /* ignore */ }
         return '';
@@ -3379,7 +3373,7 @@ const searchOutputMethods = {
         } finally {
             this._refreshCatalogDependentUi();
             if (this._state.autoHydratePending && this._isOpen()) {
-                this._scheduleAutoHydrateVisiblePage();
+                this._scheduleAutoHydrateBackground();
             }
         }
     },
@@ -3800,8 +3794,7 @@ const searchOutputMethods = {
             openDisputesByTaskId,
             resolvedDisputeAtByTaskId,
             scope,
-            authorIds,
-            searchDepth
+            authorIds
         } = opts;
         const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows);
         let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
@@ -3874,8 +3867,7 @@ const searchOutputMethods = {
         includeSeniorReview,
         afterIso,
         beforeIso,
-        scope,
-        searchDepth
+        scope
     }) {
         this._state.activeSearchScope = scope;
         this._state.activeSearchAfterIso = afterIso;
@@ -3902,20 +3894,6 @@ const searchOutputMethods = {
         }));
 
         await this._awaitPrefetchKindsForSearch({ includeDisputes, includeSeniorReview });
-
-        if (searchDepth === 'deep') {
-            const extraKinds = DASH_PREFETCH_KINDS.filter((kind) => {
-                if (includeDisputes && (kind === 'openDisputes' || kind === 'resolvedDisputes')) return false;
-                if (includeSeniorReview && (kind === 'pendingFlags' || kind === 'resolvedFlags')) return false;
-                return true;
-            });
-            if (extraKinds.length > 0) {
-                await Promise.all(extraKinds.map((kind) => this._trackSearchLoadPromise(
-                    'Prefetch ' + this._prefetchLabel(kind),
-                    (tracker) => this._ensurePrefetch(kind, tracker)
-                )));
-            }
-        }
 
         const contributorSet = authorIds.length > 0 ? this._contributorSetFromAuthorIds(authorIds) : null;
 
@@ -3989,8 +3967,7 @@ const searchOutputMethods = {
             afterIso,
             beforeIso,
             scope,
-            authorIds,
-            searchDepth
+            authorIds
         };
 
         if (this._shouldStopSearch()) {
@@ -4199,7 +4176,9 @@ const searchOutputMethods = {
         const bounds = boundIds || [];
         if (bounds.length === 0) return true;
         const sel = selected || [];
-        return sel.length === 0 || sel.length >= bounds.length;
+        if (sel.length === 0) return true;
+        if (bounds.length === 1) return false;
+        return sel.length >= bounds.length;
     },
 
     _isDimensionAllSelected(selected, boundIds) {
@@ -4254,72 +4233,17 @@ const searchOutputMethods = {
         return new Set();
     },
 
-    _readSearchDepthPref() {
-        try {
-            const v = this._pageWindow().localStorage.getItem(DASH_SEARCH_DEPTH_STORAGE_KEY);
-            if (v === 'deep' || v === 'quick') return v;
-        } catch (_e) { /* ignore */ }
-        return 'quick';
-    },
-
-    _persistSearchDepthPref(depth) {
-        try {
-            this._pageWindow().localStorage.setItem(DASH_SEARCH_DEPTH_STORAGE_KEY, depth === 'deep' ? 'deep' : 'quick');
-        } catch (e) {
-            Logger.debug('dashboard: could not persist search depth', e);
-        }
-    },
-
-    _getSearchDepthFromUi() {
-        const deepBtn = this._q('#wf-dash-depth-deep');
-        return deepBtn && deepBtn.getAttribute('aria-pressed') === 'true' ? 'deep' : 'quick';
-    },
-
     _btnDepthSegmentStyle(active) {
         const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
         if (active) {
-            return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
+            return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
         }
         return base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
-    _syncSearchDepthHint() {
-        const hintEl = this._q('#wf-dash-search-depth-hint');
-        if (!hintEl) return;
-        const depth = this._state.searchDepth || 'quick';
-        const hint = this._hintStyle();
-        hintEl.innerHTML = `<span style="${hint} line-height: 1.4;">${dashEscHtml(DASH_SEARCH_DEPTH_HINTS[depth] || '')}</span>`;
-    },
-
-    _syncSearchDepthUi() {
-        const depth = this._state.searchDepth || this._readSearchDepthPref();
-        this._state.searchDepth = depth;
-        const quickBtn = this._q('#wf-dash-depth-quick');
-        const deepBtn = this._q('#wf-dash-depth-deep');
-        if (quickBtn) {
-            const active = depth === 'quick';
-            quickBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            quickBtn.style.cssText = this._btnDepthSegmentStyle(active);
-        }
-        if (deepBtn) {
-            const active = depth === 'deep';
-            deepBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            deepBtn.style.cssText = this._btnDepthSegmentStyle(active);
-        }
-        this._syncSearchDepthHint();
-    },
-
-    _setSearchDepth(depth) {
-        const next = depth === 'deep' ? 'deep' : 'quick';
-        this._state.searchDepth = next;
-        this._persistSearchDepthPref(next);
-        this._syncSearchDepthUi();
-        Logger.log('dashboard: search depth — ' + next);
-    },
-
     _readResultsModePref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_MODE_STORAGE_KEY);
+            const v = Storage.getData(DASH_RESULTS_MODE_STORAGE_KEY, null);
             if (v === 'add' || v === 'clear') return v;
         } catch (_e) { /* ignore */ }
         return 'clear';
@@ -4327,7 +4251,7 @@ const searchOutputMethods = {
 
     _persistResultsModePref(mode) {
         try {
-            this._pageWindow().localStorage.setItem(
+            Storage.setData(
                 DASH_RESULTS_MODE_STORAGE_KEY,
                 mode === 'add' ? 'add' : 'clear'
             );
@@ -4479,6 +4403,8 @@ const searchOutputMethods = {
         this._state.autoHydrateScheduled = false;
         this._state.autoHydratePending = false;
         this._state.autoHydratePendingLogged = false;
+        this._state.autoHydratePassId = (this._state.autoHydratePassId || 0) + 1;
+        this._state.manualHydrateThresholdLogged = false;
 
         if (additive && this._state.cachedItems && this._state.cachedItems.length > 0) {
             this._state.resultsLoadSnapshot = this._state.cachedItems.slice();
@@ -4583,7 +4509,6 @@ const searchOutputMethods = {
             includeQa: kindSet.has('qa'),
             includeDisputes: kindSet.has('dispute'),
             includeSeniorReview: kindSet.has('senior_review'),
-            searchDepth: prev.searchDepth || this._state.searchDepth || 'quick',
             authorCount: 0,
             authorLabels: [],
             searchKinds: DASH_KIND_MERGE_ORDER.filter((k) => kindSet.has(k))
@@ -4923,15 +4848,44 @@ const searchOutputMethods = {
     },
 
     _syncDropExcludedUi() {
-        const btn = this._q('#wf-dash-drop-excluded');
-        if (!btn) return;
         const cached = this._state.cachedItems;
         const filtered = this._state.filteredItems;
-        const show = !this._state.loading
+        const filtersReady = !this._state.loading
             && cached !== null && filtered !== null
-            && this._hasActiveFilters()
-            && filtered.length < cached.length;
-        btn.style.display = show ? '' : 'none';
+            && this._hasActiveFilters();
+        const dropExcluded = this._q('#wf-dash-drop-excluded');
+        if (dropExcluded) {
+            const showExcluded = filtersReady && filtered.length < cached.length;
+            dropExcluded.style.display = showExcluded ? '' : 'none';
+        }
+        const dropIncluded = this._q('#wf-dash-drop-included');
+        if (dropIncluded) {
+            const showIncluded = filtersReady && filtered.length > 0;
+            dropIncluded.style.display = showIncluded ? '' : 'none';
+        }
+    },
+
+    _dropIncludedResults() {
+        const filtered = this._state.filteredItems;
+        const cached = this._state.cachedItems;
+        if (!filtered || !cached || filtered.length === 0) return;
+        const includedIds = new Set(filtered.map((it) => it.id));
+        const kept = cached.filter((it) => !includedIds.has(it.id));
+        const dropped = filtered.length;
+        this._state.cachedItems = kept;
+        const newHydrateUi = {};
+        for (const id of Object.keys(this._state.hydrateUi || {})) {
+            if (!includedIds.has(id)) newHydrateUi[id] = this._state.hydrateUi[id];
+        }
+        this._state.hydrateUi = newHydrateUi;
+        const newUserStoryUi = {};
+        for (const id of Object.keys(this._state.userStoryUi || {})) {
+            if (!includedIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
+        }
+        this._state.userStoryUi = newUserStoryUi;
+        this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
+        Logger.log('search-output: dropped ' + dropped + ' included result(s) from cache — '
+            + kept.length + ' remaining');
     },
 
     _dropExcludedResults() {
@@ -5082,7 +5036,7 @@ const searchOutputMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client' } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateFirstPage = false } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -5090,7 +5044,7 @@ const searchOutputMethods = {
             this._renderResults();
             this._updateResultsKindTabsUi();
             this._syncResultsToolbarDerivedUi();
-            return false;
+            return Promise.resolve(false);
         }
 
         let bounds;
@@ -5114,7 +5068,7 @@ const searchOutputMethods = {
             const filterInvalid = lib.isPromptFilterInvalid(filters.promptText, filters.caseSensitive, filters.regex);
             if (filterInvalid.invalid) {
                 this._updateSubstringErrorUi();
-                return false;
+                return Promise.resolve(false);
             }
         }
 
@@ -5147,26 +5101,49 @@ const searchOutputMethods = {
             Logger.log('dashboard: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
         }
 
-        if (filterSource === 'client') {
-            this._syncResultsListDerivedUi();
+        const finishRender = () => {
+            if (filterSource === 'client') {
+                this._syncResultsListDerivedUi();
+            }
+            this._updateResultsStatus();
+            this._updateSubstringErrorUi();
+            this._updateApplyFiltersUi();
+            this._renderResults();
+            this._updateResultsKindTabsUi();
+            this._renderFilterLists({
+                syncDraftFromApplied: filterSource === 'results-mutate'
+                    || filterSource !== 'client'
+                    || Boolean(this._state.appliedFilters)
+            });
+            this._syncResultsToolbarDerivedUi();
+        };
+
+        if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
+            const onPage = this._getUnhydratedOnPage();
+            if (onPage.length > 0) {
+                this._setSearchLoadPhase('Hydrating first page…', onPage.length);
+                this._syncSearchLoadPhaseUi();
+                return this._prehydrateFirstPageBeforeDisplay().then((hydrated) => {
+                    this._state.searchLoadPhase = '';
+                    this._state.loading = false;
+                    if (hydrated > 0) {
+                        Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
+                    }
+                    finishRender();
+                    return true;
+                });
+            }
+            this._state.searchLoadPhase = '';
+            this._state.loading = false;
         }
-        this._updateResultsStatus();
-        this._updateSubstringErrorUi();
-        this._updateApplyFiltersUi();
-        this._renderResults();
-        this._updateResultsKindTabsUi();
-        this._renderFilterLists({
-            syncDraftFromApplied: filterSource === 'results-mutate'
-                || filterSource !== 'client'
-                || Boolean(this._state.appliedFilters)
-        });
-        this._syncResultsToolbarDerivedUi();
-        return true;
+
+        finishRender();
+        return Promise.resolve(true);
     },
 
     _readResultsPageSizePref() {
         try {
-            const v = this._pageWindow().localStorage.getItem(DASH_RESULTS_PAGE_SIZE_KEY);
+            const v = Storage.getData(DASH_RESULTS_PAGE_SIZE_KEY, null);
             if (v === '10' || v === '25' || v === '50' || v === '100' || v === 'all') return v;
         } catch (_e) { /* ignore */ }
         return null;
@@ -5175,7 +5152,7 @@ const searchOutputMethods = {
     _persistResultsPageSizePref(value) {
         try {
             const v = String(value || DASH_RESULTS_PAGE_SIZE_DEFAULT);
-            this._pageWindow().localStorage.setItem(DASH_RESULTS_PAGE_SIZE_KEY, v);
+            Storage.setData(DASH_RESULTS_PAGE_SIZE_KEY, v);
         } catch (e) {
             Logger.debug('dashboard: could not persist results page size', e);
         }
@@ -6041,23 +6018,71 @@ const searchOutputMethods = {
         return this._getPaginatedViewItems().filter((it) => !it.hydrated);
     },
 
-    _autoHydrateContextKey() {
-        const tab = this._state.resultsKindTab || 'all';
-        const page = this._state.resultsPage || 0;
-        const total = (this._getViewItems() || []).length;
-        return page + '|' + tab + '|' + total;
+    _getUnhydratedBeyondPage() {
+        const pageIds = new Set(this._getPaginatedViewItems().map((it) => it.id));
+        return this._getUnhydratedInView().filter((it) => !pageIds.has(it.id));
     },
 
-    _scheduleAutoHydrateVisiblePage() {
+    _needsManualHydrateForRemainder() {
+        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
+    },
+
+    async _prehydrateFirstPageBeforeDisplay() {
+        if (this._state.committed && this._state.committed.retrieveMode) return 0;
+        const onPage = this._getUnhydratedOnPage();
+        if (onPage.length === 0) return 0;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('search-output: first-page prehydrate skipped — dashboardData not loaded');
+            return 0;
+        }
+        const contextKey = this._autoHydrateContextKey();
+        const meta = this._getResultsPaginationMeta();
+        Logger.log('search-output: prehydrating first page before display — ' + onPage.length + ' card(s)'
+            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+
+        this._state.autoHydrateActive = true;
+        this._syncResultsHydrateBannerUi();
+        try {
+            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+            });
+            if (hydrated > 0) this._onScopeDataEnriched();
+            return hydrated;
+        } finally {
+            this._state.autoHydrateActive = false;
+            this._syncResultsHydrateBannerUi();
+        }
+    },
+
+    _autoHydrateContextKey() {
+        const tab = this._state.resultsKindTab || 'all';
+        const pass = this._state.autoHydratePassId || 0;
+        return pass + '|' + tab;
+    },
+
+    _scheduleAutoHydrateBackground() {
         if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
         if (!this._bulkHydrateShowable()) {
             this._state.autoHydratePending = false;
             return;
         }
-        if (this._getUnhydratedOnPage().length === 0) {
+        const onPage = this._getUnhydratedOnPage();
+        const beyondPage = this._getUnhydratedBeyondPage();
+        const manualRemainder = this._needsManualHydrateForRemainder();
+        if (onPage.length === 0 && (beyondPage.length === 0 || manualRemainder)) {
             this._state.autoHydratePending = false;
+            if (manualRemainder && beyondPage.length > 0) {
+                if (!this._state.manualHydrateThresholdLogged) {
+                    Logger.log('search-output: remainder auto-hydrate skipped — '
+                        + beyondPage.length + ' unhydrated result(s) beyond first page (manual threshold '
+                        + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+ total)');
+                    this._state.manualHydrateThresholdLogged = true;
+                }
+                this._syncBulkHydrateUi();
+            }
             return;
         }
+        this._state.manualHydrateThresholdLogged = false;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             if (!this._state.autoHydratePendingLogged) {
                 Logger.debug('dashboard: auto-hydrate deferred — dashboardData not ready');
@@ -6071,28 +6096,37 @@ const searchOutputMethods = {
         this._state.autoHydrateScheduled = true;
         queueMicrotask(() => {
             this._state.autoHydrateScheduled = false;
-            void this._autoHydrateVisiblePage();
+            void this._autoHydrateBackground();
         });
     },
 
-    async _autoHydrateVisiblePage() {
+    async _autoHydrateBackground() {
         if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
             return;
         }
         const contextKey = this._autoHydrateContextKey();
-        const toHydrate = this._getUnhydratedOnPage();
-        if (toHydrate.length === 0) return;
+        const manualRemainder = this._needsManualHydrateForRemainder();
+        const onPage = this._getUnhydratedOnPage();
+        const beyondPage = manualRemainder ? [] : this._getUnhydratedBeyondPage();
+        if (onPage.length === 0 && beyondPage.length === 0) {
+            if (manualRemainder) this._syncBulkHydrateUi();
+            return;
+        }
 
         const meta = this._getResultsPaginationMeta();
-        Logger.log('dashboard: auto-hydrate page — ' + toHydrate.length + ' card(s)'
+        const phaseParts = [];
+        if (onPage.length > 0) phaseParts.push(onPage.length + ' on first page');
+        if (beyondPage.length > 0) phaseParts.push(beyondPage.length + ' in background');
+        Logger.log('dashboard: auto-hydrate — ' + phaseParts.join(', ')
             + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
 
         this._state.autoHydrateActive = true;
         let hydratedTotal = 0;
-        try {
-            hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
+        const hydrateBatch = async (items, label) => {
+            if (items.length === 0) return 0;
+            return this._hydrateItemsInBulkBatches(items, {
                 shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
                 onChunkStart: (chunk) => {
                     for (const item of chunk) {
@@ -6107,23 +6141,44 @@ const searchOutputMethods = {
                     }
                 }
             });
-            if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results page or tab changed');
-            }
-            if (hydratedTotal > 0) {
-                this._onScopeDataEnriched();
-                if (this._autoHydrateContextKey() === contextKey) {
+        };
+        try {
+            if (onPage.length > 0) {
+                hydratedTotal += await hydrateBatch(onPage);
+                if (this._autoHydrateContextKey() === contextKey && hydratedTotal > 0) {
+                    this._onScopeDataEnriched();
                     this._renderResults();
                 }
-                Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s)');
+            }
+            if (this._autoHydrateContextKey() !== contextKey) {
+                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+                return;
+            }
+            if (manualRemainder) {
+                if (hydratedTotal > 0) {
+                    Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s); remainder manual');
+                }
+                this._syncBulkHydrateUi();
+                return;
+            }
+            if (beyondPage.length > 0) {
+                const bgHydrated = await hydrateBatch(beyondPage);
+                hydratedTotal += bgHydrated;
+            }
+            if (this._autoHydrateContextKey() !== contextKey) {
+                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+            } else if (hydratedTotal > 0) {
+                this._onScopeDataEnriched();
+                this._renderResults();
+                Logger.log('dashboard: auto-hydrate complete — ' + hydratedTotal + ' card(s)');
             }
         } catch (err) {
-            for (const item of toHydrate) {
+            for (const item of [...onPage, ...beyondPage]) {
                 this._getHydrateUi(item.id).status = 'idle';
                 this._patchTaskCard(item.id);
             }
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: auto-hydrate page failed', err);
+                Logger.warn('dashboard: auto-hydrate failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
@@ -6136,7 +6191,7 @@ const searchOutputMethods = {
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
             committed
-            && committed.searchDepth === 'quick'
+            && !committed.retrieveMode
             && this._state.hasSearched
             && !this._state.loading
             && resultsReady
@@ -6180,7 +6235,7 @@ const searchOutputMethods = {
             const committed = this._state.committed;
             const canLabel = Boolean(
                 committed
-                && committed.searchDepth === 'quick'
+                && !committed.retrieveMode
                 && this._state.filteredItems !== null
                 && this._state.cachedItems !== null
             );
@@ -6197,7 +6252,7 @@ const searchOutputMethods = {
                 btn.style.display = 'none';
             } else {
                 const unhydratedCount = this._getUnhydratedInView().length;
-                if (unhydratedCount === 0) {
+                if (unhydratedCount === 0 || !this._needsManualHydrateForRemainder()) {
                     btn.style.display = 'none';
                 } else {
                     btn.style.display = '';
@@ -6333,6 +6388,24 @@ const searchOutputMethods = {
         if (quickRange) quickRange.value = 'today';
     },
 
+    _markTimeFilterUserPicked() {
+        if (this._state.timeFilterUserPicked) return;
+        this._state.timeFilterUserPicked = true;
+        Logger.debug('search-output: time filter marked user-picked');
+    },
+
+    _resetTimeFilterUserPicked() {
+        this._state.timeFilterUserPicked = false;
+    },
+
+    _maybeSwitchToAllTimeForContributor() {
+        if (this._state.timeFilterUserPicked) return;
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        Logger.log('search-output: contributor resolved — quick range switched to All Time');
+    },
+
     _btnToggleStyle(active, colorKind) {
         const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
         if (active) {
@@ -6346,7 +6419,7 @@ const searchOutputMethods = {
         const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer;';
         if (active) {
             if (tabId === 'all') {
-                return base + ' ' + DASH_SEARCH_DEPTH_TOGGLE_ACTIVE;
+                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
             return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
@@ -6521,14 +6594,6 @@ const searchOutputMethods = {
                                         </div>
                                     </div>
                                     <div>
-                                        <div style="${label} margin-bottom: 6px; font-weight: 600;">Search depth</div>
-                                        <div style="display: flex; width: 100%; gap: 8px;">
-                                            <button type="button" id="wf-dash-depth-quick" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Quick</button>
-                                            <button type="button" id="wf-dash-depth-deep" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Deep</button>
-                                        </div>
-                                        <div id="wf-dash-search-depth-hint" style="margin-top: 8px;"></div>
-                                    </div>
-                                    <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Contributors</label>
                                         <div id="wf-dash-author-box" style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
                                             <input type="text" id="wf-dash-author-input" autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 120px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
@@ -6659,6 +6724,7 @@ const searchOutputMethods = {
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
+                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
@@ -6744,6 +6810,14 @@ const searchOutputMethods = {
         this._state.includeQa = kind === 'qa';
         this._state.includeDisputes = kind === 'dispute';
         this._state.includeSeniorReview = kind === 'senior_review';
+        this._syncOutputToggleUi();
+    },
+
+    _setOutputTypesTaskAndQa() {
+        this._state.includeTasks = true;
+        this._state.includeQa = true;
+        this._state.includeDisputes = false;
+        this._state.includeSeniorReview = false;
         this._syncOutputToggleUi();
     },
 
@@ -6881,6 +6955,9 @@ const searchOutputMethods = {
         if (activeTab) this._setActiveTab(activeTab);
         const label = normalized.map((p) => this._personDisplayLabel(p)).join(', ') || '(none)';
         Logger.log('dashboard: author tokens ' + (replace ? 'replaced' : 'merged') + ' (' + label + ')');
+        if (normalized.length > 0) {
+            this._maybeSwitchToAllTimeForContributor();
+        }
     },
 
     _addAuthorToken(person) {
@@ -6890,6 +6967,7 @@ const searchOutputMethods = {
         this._setAuthorError('');
         this._renderAuthorTokens();
         this._validateRangeUi();
+        this._maybeSwitchToAllTimeForContributor();
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
@@ -6918,10 +6996,38 @@ const searchOutputMethods = {
         if (quickRange) quickRange.value = 'all-time';
         this._applyQuickDatePreset('all-time');
         this._resetSearchScopeToUniversal();
-        this._setSearchDepth('deep');
         this._setResultsMode('clear');
         this._setSearchError('');
-        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time · deep');
+        Logger.log('dashboard: contributor deep dive — ' + this._personDisplayLabel(normalized) + ' · ' + historyKind + ' · all time');
+        await this._submitSearch();
+    },
+
+    async _runContributorWorkerOutputDeepDive(person, options) {
+        if (!this._modal) {
+            Logger.warn('dashboard: worker output deep dive skipped — modal not open');
+            return;
+        }
+        const normalized = this._normalizeAuthorPerson(person);
+        if (!normalized || !normalized.id) {
+            Logger.warn('dashboard: worker output deep dive skipped — missing person id');
+            return;
+        }
+        if (this._state.loading) {
+            Logger.warn('dashboard: worker output deep dive skipped — search in progress');
+            return;
+        }
+        const opts = options || {};
+        if (opts.activeTab) this._setActiveTab(opts.activeTab);
+        this._setLeftTab('search');
+        this._setAuthorTokens([normalized], { replace: true });
+        this._setOutputTypesTaskAndQa();
+        const quickRange = this._q('#wf-dash-quick-range');
+        if (quickRange) quickRange.value = 'all-time';
+        this._applyQuickDatePreset('all-time');
+        this._resetSearchScopeToUniversal();
+        this._setResultsMode('clear');
+        this._setSearchError('');
+        Logger.log('dashboard: worker output deep dive — ' + this._personDisplayLabel(normalized) + ' · task+QA · all time');
         await this._submitSearch();
     },
 
@@ -8503,7 +8609,6 @@ const searchOutputMethods = {
             includeTaskCreation: true,
             includeQa: false,
             includeDisputes: false,
-            searchDepth: 'deep',
             authorCount: 0,
             authorLabels: [],
             searchKinds: ['task_creation']
@@ -8588,9 +8693,6 @@ const searchOutputMethods = {
                 this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
                 return;
             }
-            const searchDepth = this._getSearchDepthFromUi();
-            this._persistSearchDepthPref(searchDepth);
-            this._state.searchDepth = searchDepth;
             const after = (this._q('#wf-dash-after') || {}).value || '';
             const before = (this._q('#wf-dash-before') || {}).value || '';
             const rangeCheck = dashValidateCreatedAtRange(after, before);
@@ -8618,7 +8720,6 @@ const searchOutputMethods = {
                 includeSeniorReview,
                 afterLocal: after,
                 beforeLocal: before,
-                searchDepth,
                 searchKinds: [
                     includeTasks ? 'task_creation' : null,
                     includeQa ? 'qa' : null,
@@ -8662,8 +8763,7 @@ const searchOutputMethods = {
                     includeSeniorReview,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
-                    scope,
-                    searchDepth
+                    scope
                 });
                 const items = searchResult.items;
                 this._state.cachedItems = items;
@@ -8672,34 +8772,8 @@ const searchOutputMethods = {
                     return;
                 }
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after fetch'); return; }
-                if (searchDepth === 'deep' && items.length > 0) {
-                    this._setSearchLoadPhase('Hydrating results…', 0, items.length);
-                    const hydrateLogId = this._beginSearchLoadEntry('Deep hydration (0/' + items.length + ')');
-                    await this._hydrateAllSearchResults(items, {
-                        prefetchedFeedbackRows: searchResult.allFeedbackRows,
-                        skipFeedbackFetch: false,
-                        onProgress: (done, total) => {
-                            this._setSearchLoadPhase('Hydrating results…', done, total);
-                            if (hydrateLogId != null) {
-                                this._updateSearchLoadEntry(hydrateLogId, 'Deep hydration (' + done + '/' + total + ')');
-                            }
-                        }
-                    });
-                    if (hydrateLogId != null && !this._shouldStopSearch()) {
-                        this._resolveSearchLoadEntry(
-                            hydrateLogId,
-                            'Deep hydration (' + items.length + '/' + items.length + ')'
-                        );
-                    }
-                }
-                if (this._shouldStopSearch()) {
-                    this._finishStoppedSearch(items);
-                    return;
-                }
-                if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped after hydrate'); return; }
                 this._setSearchLoadPhase('Applying filters…', items.length);
                 Logger.log('dashboard: search loaded ' + items.length + ' item(s)'
-                    + (searchDepth === 'deep' ? ' (deep, fully hydrated)' : '')
                     + (hadPriorResults ? ' (add mode)' : ''));
                 this._finalizeResultsLoad(items, {
                     committed: hadPriorResults ? null : searchCommitted
@@ -8722,15 +8796,18 @@ const searchOutputMethods = {
                     return;
                 }
                 this._state.searchFetchActive = false;
-                this._state.loading = false;
-                this._state.searchLoadPhase = '';
                 this._resetSearchLoadLog();
                 this._setSearchButtonLoading(false);
                 this._updateSubstringErrorUi();
                 this._updateApplyFiltersUi();
                 if (this._state.cachedItems !== null) {
-                    this._refreshResultsView({ filterSource: 'search-defaults' });
+                    await this._refreshResultsView({
+                        filterSource: 'search-defaults',
+                        prehydrateFirstPage: true
+                    });
                 } else {
+                    this._state.loading = false;
+                    this._state.searchLoadPhase = '';
                     this._updateResultsStatus();
                     this._renderResults();
                     this._updateResultsKindTabsUi();
@@ -8747,6 +8824,7 @@ const searchOutputMethods = {
 
     _clearParameters() {
         this._state.draftTokens = [];
+        this._markTimeFilterUserPicked();
         this._state.includeTasks = true;
         this._state.includeQa = true;
         this._state.includeDisputes = false;
@@ -8787,13 +8865,13 @@ const searchOutputMethods = {
         this._resetManualFilters();
     },
 
-    _resetFiltersToDefaults() {
+    async _resetFiltersToDefaults() {
         if (!this._state.cachedItems) {
             Logger.debug('dashboard: filter reset skipped — no results loaded');
             return;
         }
         this._clearFilterUiFields();
-        const ok = this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
+        const ok = await this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
         if (ok) {
             Logger.log('dashboard: filters reset to defaults (all options selected)');
         }
@@ -9242,7 +9320,6 @@ const searchOutputMethods = {
                 return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
             }).join('');
             const filterNote = this._hasActiveFilters() ? ' · filters active' : '';
-            const depthNote = committed.searchDepth === 'deep' ? ' · deep search' : ' · quick search';
             const disputesNote = s.disputesBulkIncomplete
                 ? ' · disputes list may be incomplete (narrow date range)'
                 : '';
@@ -9252,7 +9329,7 @@ const searchOutputMethods = {
             const prefetchLoadingNote = this._prefetchLoadingActive()
                 ? ' · loading prefetch caches…'
                 : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(depthNote)}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(filterNote)}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
             return;
         }
         el.textContent = '';
@@ -9297,7 +9374,7 @@ const searchOutputMethods = {
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
-        this._scheduleAutoHydrateVisiblePage();
+        this._scheduleAutoHydrateBackground();
     },
 
     _copyChipHtml(text, highlight) {
@@ -10244,8 +10321,7 @@ const searchOutputMethods = {
             regex: Boolean(item.highlightRegex)
         });
         const showHydrateTab = item.hydrated === false
-            && this._state.committed
-            && this._state.committed.searchDepth === 'quick'
+            && !(this._state.committed && this._state.committed.retrieveMode)
             && !this._isTasksHydratingActive();
         let hydrateTabHtml = '';
         if (showHydrateTab) {
@@ -10482,19 +10558,14 @@ function attachSearchOutputListeners(modal, dash) {
             dash._resetManualFilters();
         }
 
-        const depthQuick = dash._q('#wf-dash-depth-quick');
-        const depthDeep = dash._q('#wf-dash-depth-deep');
-        if (depthQuick) depthQuick.addEventListener('click', () => dash._setSearchDepth('quick'));
-        if (depthDeep) depthDeep.addEventListener('click', () => dash._setSearchDepth('deep'));
+        const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
+        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
 
         modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 dash._setResultsMode(btn.getAttribute('data-wf-dash-results-mode'));
             });
         });
-
-        const bulkHydrate = dash._q('#wf-dash-bulk-hydrate');
-        if (bulkHydrate) bulkHydrate.addEventListener('click', () => { void dash._bulkHydrateVisible(); });
 
         const pageSizeSel = dash._q('#wf-dash-results-page-size');
         if (pageSizeSel) {
@@ -10550,6 +10621,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (el) el.addEventListener('change', () => {
                 dash._validateRangeUi();
                 if (!dash._applyingQuickDate) {
+                    dash._markTimeFilterUserPicked();
                     const quick = dash._q('#wf-dash-quick-range');
                     if (quick) quick.value = '';
                 }
@@ -10557,7 +10629,10 @@ function attachSearchOutputListeners(modal, dash) {
         });
 
         const clearDates = dash._q('#wf-dash-clear-dates');
-        if (clearDates) clearDates.addEventListener('click', () => dash._clearDateRangeFields());
+        if (clearDates) clearDates.addEventListener('click', () => {
+            dash._markTimeFilterUserPicked();
+            dash._clearDateRangeFields();
+        });
 
         const toggleTasks = dash._q('#wf-dash-toggle-tasks');
         const toggleQa = dash._q('#wf-dash-toggle-qa');
@@ -10630,7 +10705,7 @@ function attachSearchOutputListeners(modal, dash) {
         const applyFilters = dash._q('#wf-dash-apply-filters');
         if (applyFilters) applyFilters.addEventListener('click', () => dash._applyFiltersAndRender());
         const resetFilters = dash._q('#wf-dash-reset-filters');
-        if (resetFilters) resetFilters.addEventListener('click', () => dash._resetFiltersToDefaults());
+        if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
         const deferLiveFilterApply = (msKey) => {
             queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
@@ -10690,6 +10765,7 @@ function attachSearchOutputListeners(modal, dash) {
             quickRange.addEventListener('change', () => {
                 const preset = quickRange.value;
                 if (!preset) return;
+                dash._markTimeFilterUserPicked();
                 dash._applyQuickDatePreset(preset);
             });
         }
@@ -10715,6 +10791,8 @@ function attachSearchOutputListeners(modal, dash) {
                 }
             });
         }
+        const dropIncluded = dash._q('#wf-dash-drop-included');
+        if (dropIncluded) dropIncluded.addEventListener('click', () => dash._dropIncludedResults());
         const dropExcluded = dash._q('#wf-dash-drop-excluded');
         if (dropExcluded) dropExcluded.addEventListener('click', () => dash._dropExcludedResults());
         const clearResults = dash._q('#wf-dash-clear-results');
@@ -11108,7 +11186,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.1',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -11131,7 +11209,6 @@ const plugin = {
             onOpen(dash) {
                 void dash._doBootstrap();
                 dash._refreshCatalogDependentUi();
-                dash._setSearchDepth('quick');
                 requestAnimationFrame(() => dash._applyAllSidePanelWidths());
             },
             onBuilt(modal, dash) {
@@ -11142,9 +11219,8 @@ const plugin = {
                 dash._updateSubstringErrorUi();
                 dash._validateRangeUi();
                 dash._syncFieldClearButtons();
+                dash._resetTimeFilterUserPicked();
                 dash._applyDefaultSearchDates();
-                dash._state.searchDepth = 'quick';
-                dash._syncSearchDepthUi();
                 dash._state.resultsMode = dash._readResultsModePref();
                 dash._syncResultsModeUi();
                 const pagePref = dash._readResultsPageSizePref();

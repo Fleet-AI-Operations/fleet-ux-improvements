@@ -9,44 +9,47 @@ function _deEscHtml(value) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function _dePushTokenStr(tokens, token) {
-    if (!token) return;
-    if (token === '\n') {
-        tokens.push('\n');
-        return;
-    }
-    if (/^[ \t]+$/.test(token)) {
-        tokens.push(token);
-        return;
-    }
-    const trailingMatch = token.match(/^(.+?)([ \t]+)$/);
-    if (trailingMatch) {
-        tokens.push(trailingMatch[1]);
-        tokens.push(trailingMatch[2]);
-        return;
-    }
-    tokens.push(token);
+function _deIsWordChar(char, prevChar, nextChar) {
+    if (/[\p{L}\p{N}_]/u.test(char)) return true;
+    return char === '\''
+        && /[\p{L}\p{N}_]/u.test(prevChar || '')
+        && /[\p{L}\p{N}_]/u.test(nextChar || '');
 }
 
 function _deTokenize(text) {
     const tokens = [];
-    let current = '';
-    for (const char of text) {
+    const chars = [...String(text ?? '')];
+    let i = 0;
+    while (i < chars.length) {
+        const char = chars[i];
         if (char === '\n') {
-            if (current) _dePushTokenStr(tokens, current);
             tokens.push('\n');
-            current = '';
-        } else if (char === ' ' || char === '\t') {
-            current += char;
-        } else {
-            if (current && (current.endsWith(' ') || current.endsWith('\t'))) {
-                _dePushTokenStr(tokens, current);
-                current = '';
-            }
-            current += char;
+            i++;
+            continue;
         }
+        if (char === ' ' || char === '\t') {
+            let ws = char;
+            i++;
+            while (i < chars.length && (chars[i] === ' ' || chars[i] === '\t')) {
+                ws += chars[i];
+                i++;
+            }
+            tokens.push(ws);
+            continue;
+        }
+        if (_deIsWordChar(char, chars[i - 1], chars[i + 1])) {
+            let word = char;
+            i++;
+            while (i < chars.length && _deIsWordChar(chars[i], chars[i - 1], chars[i + 1])) {
+                word += chars[i];
+                i++;
+            }
+            tokens.push(word);
+            continue;
+        }
+        tokens.push(char);
+        i++;
     }
-    if (current) _dePushTokenStr(tokens, current);
     return tokens;
 }
 
@@ -344,7 +347,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

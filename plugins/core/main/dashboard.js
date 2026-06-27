@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.0',
+    _version: '6.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -161,6 +161,12 @@ const plugin = {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
             },
+            runContributorWorkerOutputDeepDive: (person, options) => {
+                if (typeof self._runContributorWorkerOutputDeepDive === 'function') {
+                    return self._runContributorWorkerOutputDeepDive(person, options);
+                }
+                Logger.warn('dashboard: runContributorWorkerOutputDeepDive unavailable — search-output tab not loaded');
+            },
             switchFleetTeam: (teamId) => {
                 if (typeof self._switchFleetTeam === 'function') return self._switchFleetTeam(teamId);
                 Logger.warn('dashboard: switchFleetTeam unavailable — search-output tab not loaded');
@@ -215,7 +221,6 @@ const plugin = {
             bootstrapError: null,
             sessionRefreshRequired: false,
             draftTokens: [],
-            searchDepth: 'quick',
             resultsKindTab: 'all',
             hydrateUi: {},
             hydrateBulkActive: false,
@@ -224,6 +229,8 @@ const plugin = {
             autoHydrateScheduled: false,
             autoHydratePending: false,
             autoHydratePendingLogged: false,
+            autoHydratePassId: 0,
+            timeFilterUserPicked: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
             activeTab: 'search-output',
@@ -1128,7 +1135,7 @@ const plugin = {
     _readSidePanelWidthPref(scopeKey) {
         const scope = scopeKey || 'dashboard';
         try {
-            const raw = this._pageWindow().localStorage.getItem(this._sidePanelWidthStorageKey(scope));
+            const raw = Storage.getData(this._sidePanelWidthStorageKey(scope), null);
             const n = parseInt(raw, 10);
             if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_WIDTH) return n;
         } catch (_e) { /* fall through */ }
@@ -1139,7 +1146,7 @@ const plugin = {
         const scope = scopeKey || 'dashboard';
         try {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(this._sidePanelWidthStorageKey(scope), String(clamped));
+            Storage.setData(this._sidePanelWidthStorageKey(scope), String(clamped));
         } catch (e) {
             Logger.warn('dashboard: failed to write side panel width pref (' + scope + ')', e);
         }
@@ -1147,7 +1154,7 @@ const plugin = {
 
     _readResultsPanelMaxWidthPref() {
         try {
-            const raw = this._pageWindow().localStorage.getItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+            const raw = Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null);
             if (raw == null || raw === '') return null;
             const n = parseInt(raw, 10);
             if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_RESULTS_WIDTH) return n;
@@ -1158,11 +1165,11 @@ const plugin = {
     _writeResultsPanelMaxWidthPref(widthPx) {
         try {
             if (widthPx == null) {
-                this._pageWindow().localStorage.removeItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+                Storage.deleteData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
                 return;
             }
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
-            this._pageWindow().localStorage.setItem(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
+            Storage.setData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
             Logger.warn('dashboard: failed to write results panel max width pref', e);
         }
@@ -2119,24 +2126,6 @@ const plugin = {
         const bulkToggle = this._q('[data-wf-dash-ms-bulk-toggle="' + scopeKey + '"]');
         if (bulkToggle) bulkToggle.style.display = showBulkToggle ? '' : 'none';
         if (showBulkToggle) this._applyMsBulkToggleLabel(scopeKey);
-        const itemsEl = this._msItemsEl(scopeKey);
-        if (itemsEl && !dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
-            const singleOption = optionCount === 1;
-            itemsEl.querySelectorAll('label[data-wf-dash-ms-option]').forEach((label) => {
-                const cb = label.querySelector('input[type="checkbox"]');
-                if (!cb) return;
-                if (singleOption) {
-                    cb.checked = true;
-                    cb.disabled = true;
-                    label.style.cursor = 'default';
-                    label.style.opacity = '0.85';
-                } else {
-                    cb.disabled = false;
-                    label.style.cursor = 'pointer';
-                    label.style.opacity = '';
-                }
-            });
-        }
         if (open && dashIsFlyoutMsKey(scopeKey) && !this._state.msDropdownToggled[scopeKey]) {
             requestAnimationFrame(() => this._positionMsFlyoutPanel(scopeKey));
         }
@@ -2595,7 +2584,6 @@ const plugin = {
         if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
-        const singleOption = items.length === 1 && !dashIsTeamMembersMsKey(scopeKey);
         return items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
@@ -2610,13 +2598,9 @@ const plugin = {
                     <div data-wf-dash-ms-option-email="1">${dashEscHtml(email)}</div>
                 </span>`
                 : `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(it.label)}</span>`;
-            const labelCursor = singleOption ? 'default' : 'pointer';
-            const labelOpacity = singleOption ? '0.85' : '';
-            const checked = singleOption || defaultChecked;
-            const disabledAttr = singleOption ? ' disabled' : '';
             return `
-            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: ${labelCursor}; color: var(--foreground, #0f172a);${labelOpacity ? ' opacity: ' + labelOpacity + ';' : ''}">
-                <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${checked ? ' checked' : ''}${disabledAttr}></span>
+            <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
+                <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}></span>
                 ${countBadge}
                 ${textHtml}
             </label>`;
