@@ -102,7 +102,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.15',
+    _version: '6.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1370,28 +1370,30 @@ const plugin = {
     },
 
     _ensureUserStoryStyles() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-user-story-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-user-story-style';
+        if (!this._modal) return;
+        let style = this._modal.querySelector('#wf-dash-user-story-style');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-user-story-style';
+            this._modal.appendChild(style);
+        }
         style.textContent = [
             '#wf-dash-modal .wf-dash-user-story-block {',
             '  display: flex;',
             '  flex-direction: column;',
-            '  gap: 12px;',
+            '  gap: 14px;',
             '  margin-top: 8px;',
-            '  padding: 6px 0 2px 12px;',
-            '  border-left: 3px solid var(--border, #e2e8f0);',
             '}',
-            '#wf-dash-modal .wf-dash-user-story-field-label {',
-            '  margin: 0 0 4px;',
-            '  font-size: 10px;',
-            '  font-weight: 600;',
-            '  letter-spacing: 0.04em;',
-            '  text-transform: uppercase;',
-            '  color: var(--muted-foreground, #64748b);',
+            '#wf-dash-modal .wf-dash-user-story-field-header {',
+            '  display: flex;',
+            '  align-items: center;',
+            '  gap: 6px;',
+            '  margin-bottom: 4px;',
             '}',
             '#wf-dash-modal .wf-dash-user-story-field-body {',
             '  margin: 0;',
+            '  padding: 6px 0 2px 12px;',
+            '  border-left: 3px solid var(--border, #e2e8f0);',
             '  white-space: pre-wrap;',
             '  word-break: break-word;',
             '  line-height: 1.5;',
@@ -1414,6 +1416,11 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] {',
             '  grid-template-rows: 1fr;',
             '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="0"] {',
+            '  grid-template-rows: 0fr;',
+            '  max-height: 0;',
+            '  overflow: hidden;',
+            '}',
             '#wf-dash-modal [data-wf-dash-user-story-panel] > [data-wf-dash-user-story-inner] {',
             '  overflow: hidden;',
             '  min-height: 0;',
@@ -1427,7 +1434,6 @@ const plugin = {
             '  transition: opacity 180ms ease-in 40ms;',
             '}'
         ].join('\n');
-        this._modal.appendChild(style);
     },
 
     _ensureCardActionStyles() {

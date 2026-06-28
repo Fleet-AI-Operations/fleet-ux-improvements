@@ -5607,9 +5607,9 @@ const searchOutputMethods = {
 
     _userStoryPanelBodyHtml(ui) {
         const fields = [
-            { key: 'scenarioTitle', label: 'Scenario title' },
-            { key: 'humanAnnotatorInstructions', label: 'Annotator instructions' },
-            { key: 'userStory', label: 'User story' }
+            { key: 'scenarioTitle', label: 'Scenario Title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
+            { key: 'userStory', label: 'User Story' }
         ];
         const parts = [];
         for (const { key, label } of fields) {
@@ -5617,7 +5617,10 @@ const searchOutputMethods = {
             if (!text) continue;
             parts.push(
                 '<div class="wf-dash-user-story-field">'
-                + '<div class="wf-dash-user-story-field-label">' + dashEscHtml(label) + '</div>'
+                + '<div class="wf-dash-user-story-field-header">'
+                + this._labelSpan(label)
+                + this._copyIconHtml(text)
+                + '</div>'
                 + '<p class="wf-dash-user-story-field-body">' + dashEscHtml(text) + '</p>'
                 + '</div>'
             );
@@ -5671,6 +5674,8 @@ const searchOutputMethods = {
     },
 
     _animateUserStoryOpen(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (!ui.visible) return;
         const section = this._findUserStorySection(itemId);
         const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
         if (!panel) return;
@@ -5678,11 +5683,32 @@ const searchOutputMethods = {
         panel.setAttribute('aria-hidden', 'true');
         const win = this._pageWindow();
         win.requestAnimationFrame(() => {
+            if (!this._getUserStoryUi(itemId).visible) return;
             win.requestAnimationFrame(() => {
+                if (!this._getUserStoryUi(itemId).visible) return;
                 panel.setAttribute('data-open', '1');
                 panel.setAttribute('aria-hidden', 'false');
             });
         });
+    },
+
+    _syncUserStoryPanelOpen(itemId, visible) {
+        const section = this._findUserStorySection(itemId);
+        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+        if (!panel) return;
+        panel.setAttribute('data-open', visible ? '1' : '0');
+        panel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    },
+
+    _patchUserStoryVisibility(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findUserStorySection(itemId);
+        if (!section) return false;
+        const ui = this._getUserStoryUi(itemId);
+        const btn = section.querySelector('[data-wf-dash-user-story]');
+        if (btn) btn.textContent = this._userStoryBtnLabel(ui);
+        this._syncUserStoryPanelOpen(itemId, ui.visible);
+        return true;
     },
 
     _patchUserStorySection(itemId) {
@@ -5729,8 +5755,7 @@ const searchOutputMethods = {
             if (inner) inner.innerHTML = bodyHtml;
         }
         if (panel) {
-            panel.setAttribute('data-open', ui.visible ? '1' : '0');
-            panel.setAttribute('aria-hidden', ui.visible ? 'false' : 'true');
+            this._syncUserStoryPanelOpen(itemId, ui.visible);
         }
         return true;
     },
@@ -5775,8 +5800,11 @@ const searchOutputMethods = {
         if (ui.status === 'loaded' || ui.status === 'error') {
             if (!this._userStoryHasContent(ui)) return;
             ui.visible = !ui.visible;
+            delete ui.animateOpen;
             Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
-            if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
+            if (!this._patchUserStoryVisibility(id)) {
+                this._patchTaskCard(id);
+            }
             return;
         }
         if (ui.status === 'loading') {
@@ -5842,9 +5870,12 @@ const searchOutputMethods = {
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         this._patchTaskCard(id);
-        if (ui.animateOpen) {
+        if (ui.animateOpen && ui.visible) {
             delete ui.animateOpen;
             this._animateUserStoryOpen(id);
+        } else {
+            delete ui.animateOpen;
+            this._syncUserStoryPanelOpen(id, ui.visible);
         }
     },
 
@@ -11259,7 +11290,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.17',
+    _version: '4.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.42",
+  "archetypesVersion": "12.44",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -54,8 +54,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "6.15",
-      "hash": "sha256-58b79452e0025bd4ad4c4c146172f567eb5225f87cb379aaed0067edb8d66637",
+      "version": "6.16",
+      "hash": "sha256-b755f4334eb0e88b4e71d0bcefbe218fc6d08ea798e9cc0d234d2b098a28e344",
       "log": false
     },
     {
@@ -66,8 +66,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.17",
-      "hash": "sha256-ced93163c1d794ba4cf1efe2852a496f3bae1bbcea0f4433db511630cfc27848",
+      "version": "4.18",
+      "hash": "sha256-9d89ecce4bcadf29352f164bfecf4a539557cefd8831fcc3014d5ed669dabd65",
       "log": false
     },
     {
@@ -579,8 +579,8 @@
         },
         {
           "name": "task-user-story-section.js",
-          "version": "1.4",
-          "hash": "sha256-31b4edf683df6cae56ea66b1eb944e7414ff504b3c66cd180be7072e61f4b3ef",
+          "version": "1.5",
+          "hash": "sha256-2e21de6b61287abcacbb75d0b0631c3ceb0b3a3894b40b2cd76cb8ef76172413",
           "log": false
         }
       ]

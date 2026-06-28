@@ -3,7 +3,7 @@
 
 const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
 const PLUGIN_ID = 'task-user-story-section';
-const SECTION_LABEL = 'User story';
+const SECTION_LABEL = 'User Story';
 const VISIBLE_LINES_DEFAULT = 6;
 const COPY_SUCCESS_FLASH_MS = 1000;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
@@ -22,7 +22,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -258,24 +258,25 @@ const plugin = {
         }
     },
 
-    _createCopyButton(source) {
+    _createCopyButton(source, fieldLabel) {
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = COPY_BTN_CLASS;
         copyBtn.setAttribute('data-fleet-plugin', PLUGIN_ID);
         copyBtn.setAttribute('data-slot', 'copy-user-story');
-        copyBtn.title = 'Copy user story';
-        copyBtn.setAttribute('aria-label', 'Copy user story');
-        copyBtn.innerHTML = COPY_ICON_SVG + 'Copy';
+        const title = fieldLabel ? 'Copy ' + fieldLabel : 'Copy user story';
+        copyBtn.title = title;
+        copyBtn.setAttribute('aria-label', title);
+        copyBtn.innerHTML = COPY_ICON_SVG;
 
         copyBtn.addEventListener('click', async () => {
             const ok = await this._copyTextToClipboard(source);
             if (ok) {
                 this._showCopySuccessFlash(copyBtn);
-                Logger.log(PLUGIN_ID + ': copied user story (' + source.length + ' chars)');
+                Logger.log(PLUGIN_ID + ': copied ' + (fieldLabel || 'user story') + ' (' + source.length + ' chars)');
             } else {
                 this._showCopyFailurePulse(copyBtn);
-                Logger.warn(PLUGIN_ID + ': user story copy failed');
+                Logger.warn(PLUGIN_ID + ': copy failed for ' + (fieldLabel || 'user story'));
             }
         });
 
@@ -404,12 +405,31 @@ const plugin = {
 
     _scenarioCopyText(fields) {
         const blocks = [];
-        if (fields.scenarioTitle) blocks.push('Scenario title\n' + fields.scenarioTitle);
+        if (fields.scenarioTitle) blocks.push('Scenario Title\n' + fields.scenarioTitle);
         if (fields.humanAnnotatorInstructions) {
-            blocks.push('Annotator instructions\n' + fields.humanAnnotatorInstructions);
+            blocks.push('Annotator Instructions\n' + fields.humanAnnotatorInstructions);
         }
-        if (fields.userStory) blocks.push('User story\n' + fields.userStory);
+        if (fields.userStory) blocks.push('User Story\n' + fields.userStory);
         return blocks.join('\n\n');
+    },
+
+    _createFieldHeader(label, copyText) {
+        const header = document.createElement('div');
+        header.className = 'mb-1 flex items-center gap-1.5';
+        const fieldLabel = document.createElement('div');
+        fieldLabel.className = 'text-sm text-muted-foreground font-medium';
+        fieldLabel.textContent = label;
+        header.appendChild(fieldLabel);
+        header.appendChild(this._createCopyButton(copyText, label));
+        return header;
+    },
+
+    _createFieldBody(value) {
+        const body = document.createElement('div');
+        body.className =
+            'whitespace-pre-wrap break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
+        body.textContent = value;
+        return body;
     },
 
     async _fetchAndRender(state, shell, taskKey) {
@@ -486,32 +506,24 @@ const plugin = {
         const actions = shell.querySelector('[data-slot="actions"]');
         if (!content || !actions) return;
 
-        content.className =
-            'bg-muted/40 overflow-auto break-words rounded-md p-3 text-sm text-muted-foreground space-y-3';
+        content.className = 'overflow-auto break-words space-y-3.5';
         content.replaceChildren();
 
         const fieldDefs = [
-            { key: 'scenarioTitle', label: 'Scenario title' },
-            { key: 'humanAnnotatorInstructions', label: 'Annotator instructions' },
-            { key: 'userStory', label: 'User story' }
+            { key: 'scenarioTitle', label: 'Scenario Title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
+            { key: 'userStory', label: 'User Story' }
         ];
         for (const { key, label } of fieldDefs) {
             const value = fields[key];
             if (!value) continue;
             const block = document.createElement('div');
-            const fieldLabel = document.createElement('div');
-            fieldLabel.className = 'text-xs text-muted-foreground font-medium mb-1';
-            fieldLabel.textContent = label;
-            const body = document.createElement('div');
-            body.className = 'whitespace-pre-wrap break-words';
-            body.textContent = value;
-            block.appendChild(fieldLabel);
-            block.appendChild(body);
+            block.appendChild(this._createFieldHeader(label, value));
+            block.appendChild(this._createFieldBody(value));
             content.appendChild(block);
         }
 
-        const copyText = this._scenarioCopyText(fields);
-        actions.replaceChildren(this._createCopyButton(copyText));
+        actions.replaceChildren();
         this._attachResizeHandle(content);
     }
 };
