@@ -9,7 +9,7 @@ const COPY_SUCCESS_FLASH_MS = 1000;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_PULSE_MS = 500;
 const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
-const COPY_BTN_CLASS =
+const NAV_BTN_CLASS =
     'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground h-7 text-xs pl-2 pr-2 py-1 gap-1.5';
 const COPY_ICON_SVG =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5">' +
@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
     description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -33,7 +33,10 @@ const plugin = {
         fetchDone: false,
         bundleWaitStarted: false,
         bundleUnavailable: false,
-        taskKey: ''
+        taskKey: '',
+        verifierSource: '',
+        verifierVisible: false,
+        contentSearch: { query: '', index: 0, matchStarts: [] }
     },
 
     onMutation(state, context) {
@@ -111,7 +114,10 @@ const plugin = {
             '.fleet-wf-verifier-code-wrap pre,',
             '.fleet-wf-verifier-code-wrap pre code.hljs{background:transparent!important;}',
             '.fleet-wf-verifier-code-wrap mark.wf-ops-verifier-hit{background:color-mix(in srgb,#facc15 40%,transparent);color:unset;border-radius:2px;padding:0 1px;}',
-            '.fleet-wf-verifier-code-wrap mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}'
+            '.fleet-wf-verifier-code-wrap mark.wf-ops-verifier-hit-active{background:#facc15!important;outline:1px solid #ca8a04;}',
+            '.fleet-wf-verifier-search-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 8px 0;}',
+            '.fleet-wf-verifier-search-toolbar input[type="text"]{flex:1 1 10rem;min-width:0;padding:6px 10px;font-size:12px;border:1px solid var(--border,#e5e5e5);border-radius:6px;background:var(--background,#fff);color:var(--foreground,#333);box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;}',
+            '.fleet-wf-verifier-search-toolbar .fleet-wf-verifier-search-count{font-size:11px;color:var(--muted-foreground,#64748b);white-space:nowrap;}'
         ].join('');
         document.head.appendChild(style);
         CleanupRegistry.registerElement(style);
@@ -138,6 +144,16 @@ const plugin = {
             return { parent, placeholder: el, label };
         }
         return null;
+    },
+
+    _createNavButton(label, slot) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = NAV_BTN_CLASS;
+        btn.setAttribute('data-fleet-plugin', PLUGIN_ID);
+        btn.setAttribute('data-slot', slot);
+        btn.textContent = label;
+        return btn;
     },
 
     _clearCopyButtonFeedback(button) {
@@ -210,7 +226,7 @@ const plugin = {
     _createCopyButton(source) {
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
-        copyBtn.className = COPY_BTN_CLASS;
+        copyBtn.className = NAV_BTN_CLASS;
         copyBtn.setAttribute('data-fleet-plugin', PLUGIN_ID);
         copyBtn.setAttribute('data-slot', 'copy-verifier');
         copyBtn.innerHTML = COPY_ICON_SVG + 'Copy';
@@ -229,10 +245,10 @@ const plugin = {
         return copyBtn;
     },
 
-    _attachCopyButtonToVerifierHeader(slot, source) {
+    _attachVerifierHeader(slot, source, ui) {
         const { parent, label } = slot;
         if (!label || !parent) return;
-        if (parent.querySelector('[data-slot="copy-verifier"]')) return;
+        if (parent.querySelector('[data-fleet-plugin="' + PLUGIN_ID + '-header"]')) return;
 
         const headerRow = document.createElement('div');
         headerRow.className = 'mb-2 flex flex-wrap items-center justify-between gap-2';
@@ -244,8 +260,189 @@ const plugin = {
 
         const actions = document.createElement('div');
         actions.className = 'flex items-center gap-1';
+
+        ui.showBtn = this._createNavButton('Show verifier', 'show-verifier');
+        ui.showBtn.addEventListener('click', () => {
+            this._setVerifierVisible(ui, !ui.state.verifierVisible);
+        });
+        actions.appendChild(ui.showBtn);
         actions.appendChild(this._createCopyButton(source));
+
         headerRow.appendChild(actions);
+        ui.headerRow = headerRow;
+    },
+
+    _buildSearchToolbar(state, ui) {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'fleet-wf-verifier-search-toolbar';
+        toolbar.setAttribute('data-fleet-plugin', PLUGIN_ID);
+        toolbar.setAttribute('data-slot', 'verifier-search-toolbar');
+        toolbar.style.display = 'none';
+
+        const label = document.createElement('label');
+        label.textContent = 'Search in code:';
+        label.style.cssText = 'font-size:11px;font-weight:600;color:var(--muted-foreground,#64748b);white-space:nowrap;flex-shrink:0;';
+        label.setAttribute('for', 'fleet-wf-verifier-search-' + state.taskKey);
+
+        const inputWrap = document.createElement('span');
+        inputWrap.style.cssText = 'display:flex;flex:1 1 10rem;min-width:0;gap:4px;align-items:center;';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'fleet-wf-verifier-search-' + state.taskKey;
+        input.placeholder = 'Find in verifier…';
+        input.autocomplete = 'off';
+        input.setAttribute('data-slot', 'verifier-search-input');
+
+        const clearBtn = this._createNavButton('×', 'verifier-search-clear');
+        clearBtn.title = 'Clear search';
+        clearBtn.setAttribute('aria-label', 'Clear search');
+        clearBtn.style.display = 'none';
+
+        inputWrap.appendChild(input);
+        inputWrap.appendChild(clearBtn);
+
+        const countEl = document.createElement('span');
+        countEl.className = 'fleet-wf-verifier-search-count';
+        countEl.setAttribute('data-slot', 'verifier-search-count');
+
+        const prevBtn = this._createNavButton('Prev', 'verifier-search-prev');
+        const nextBtn = this._createNavButton('Next', 'verifier-search-next');
+
+        toolbar.appendChild(label);
+        toolbar.appendChild(inputWrap);
+        toolbar.appendChild(countEl);
+        toolbar.appendChild(prevBtn);
+        toolbar.appendChild(nextBtn);
+
+        ui.searchToolbar = toolbar;
+        ui.searchInput = input;
+        ui.searchClearBtn = clearBtn;
+        ui.searchCountEl = countEl;
+        ui.searchPrevBtn = prevBtn;
+        ui.searchNextBtn = nextBtn;
+
+        this._attachSearchListeners(state, ui);
+        return toolbar;
+    },
+
+    _updateSearchUi(ui) {
+        const search = ui.state.contentSearch;
+        const matchCount = search.matchStarts ? search.matchStarts.length : 0;
+        const hasQuery = Boolean((search.query || '').trim());
+
+        if (ui.searchClearBtn) {
+            ui.searchClearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
+        }
+        if (ui.searchCountEl) {
+            if (!hasQuery) {
+                ui.searchCountEl.textContent = '';
+            } else if (matchCount === 0) {
+                ui.searchCountEl.textContent = 'No matches';
+            } else {
+                ui.searchCountEl.textContent = (search.index + 1) + ' / ' + matchCount;
+            }
+        }
+        const navDisabled = !hasQuery || matchCount === 0;
+        if (ui.searchPrevBtn) ui.searchPrevBtn.disabled = navDisabled;
+        if (ui.searchNextBtn) ui.searchNextBtn.disabled = navDisabled;
+    },
+
+    async _refreshVerifierDisplay(ui) {
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.renderVerifierCodeElement !== 'function' || !ui.codeEl) return;
+        ui.state.contentSearch = await opsTab.renderVerifierCodeElement(ui.codeEl, {
+            text: ui.state.verifierSource,
+            searchState: ui.state.contentSearch
+        });
+        this._updateSearchUi(ui);
+        const query = (ui.state.contentSearch.query || '').trim();
+        if (query) {
+            requestAnimationFrame(() => {
+                if (typeof opsTab.scrollVerifierActiveContentMatch === 'function') {
+                    opsTab.scrollVerifierActiveContentMatch(ui.codeEl);
+                }
+            });
+        }
+    },
+
+    _applyVerifierContentSearch(ui, rawQuery) {
+        ui.state.contentSearch.query = String(rawQuery || '');
+        ui.state.contentSearch.index = 0;
+        void this._refreshVerifierDisplay(ui);
+        const q = ui.state.contentSearch.query.trim();
+        if (q) {
+            const n = ui.state.contentSearch.matchStarts ? ui.state.contentSearch.matchStarts.length : 0;
+            Logger.log(PLUGIN_ID + ': verifier content search — ' + n + ' match(es) for "' + q + '"');
+        }
+    },
+
+    _clearVerifierContentSearch(ui) {
+        if (ui.searchInput) ui.searchInput.value = '';
+        this._applyVerifierContentSearch(ui, '');
+        Logger.log(PLUGIN_ID + ': verifier content search cleared');
+    },
+
+    _stepVerifierContentMatch(ui, delta) {
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.stepVerifierContentMatchInElement !== 'function') return;
+        void opsTab.stepVerifierContentMatchInElement(
+            ui.codeEl,
+            ui.state.contentSearch,
+            delta,
+            () => this._refreshVerifierDisplay(ui)
+        ).then((nextSearch) => {
+            ui.state.contentSearch = nextSearch;
+            this._updateSearchUi(ui);
+            requestAnimationFrame(() => {
+                if (typeof opsTab.scrollVerifierActiveContentMatch === 'function') {
+                    opsTab.scrollVerifierActiveContentMatch(ui.codeEl);
+                }
+            });
+        });
+    },
+
+    _attachSearchListeners(state, ui) {
+        if (!ui.searchInput || ui.searchInput.dataset.wfSearchAttached === '1') return;
+        ui.searchInput.dataset.wfSearchAttached = '1';
+
+        ui.searchInput.addEventListener('input', () => {
+            this._applyVerifierContentSearch(ui, ui.searchInput.value);
+        });
+        ui.searchInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            this._stepVerifierContentMatch(ui, e.shiftKey ? -1 : 1);
+        });
+        if (ui.searchClearBtn) {
+            ui.searchClearBtn.addEventListener('click', () => this._clearVerifierContentSearch(ui));
+        }
+        if (ui.searchPrevBtn) {
+            ui.searchPrevBtn.addEventListener('click', () => this._stepVerifierContentMatch(ui, -1));
+        }
+        if (ui.searchNextBtn) {
+            ui.searchNextBtn.addEventListener('click', () => this._stepVerifierContentMatch(ui, 1));
+        }
+    },
+
+    _setVerifierVisible(ui, visible) {
+        ui.state.verifierVisible = Boolean(visible);
+        const show = ui.state.verifierVisible;
+        if (ui.wrap) ui.wrap.style.display = show ? 'block' : 'none';
+        if (ui.searchToolbar) ui.searchToolbar.style.display = show ? 'flex' : 'none';
+        if (ui.showBtn) ui.showBtn.textContent = show ? 'Hide verifier' : 'Show verifier';
+        Logger.log(PLUGIN_ID + ': verifier ' + (show ? 'shown' : 'hidden'));
+    },
+
+    _subscribeFleetThemeRefresh(ui) {
+        if (ui.themeSubscribed) return;
+        const de = Context.diffEngine;
+        if (!de || typeof de.onFleetThemeChange !== 'function') return;
+        de.onFleetThemeChange(() => {
+            if (!ui.state.verifierSource || !ui.codeEl) return;
+            void this._refreshVerifierDisplay(ui);
+        });
+        ui.themeSubscribed = true;
     },
 
     _attachResizeHandle(pre) {
@@ -370,14 +567,24 @@ const plugin = {
             slot.placeholder.classList.add('fleet-wf-hidden-no-verifier');
             slot.placeholder.style.display = 'none';
 
-            this._attachCopyButtonToVerifierHeader(slot, source);
+            state.verifierSource = source;
+            state.verifierVisible = false;
+            state.contentSearch = { query: '', index: 0, matchStarts: [] };
+
+            const ui = { state, themeSubscribed: false };
+
+            this._attachVerifierHeader(slot, source, ui);
 
             this._ensureVerifierCodeStyles();
+
+            const searchToolbar = this._buildSearchToolbar(state, ui);
+            slot.parent.insertBefore(searchToolbar, slot.placeholder.nextSibling);
 
             const wrap = document.createElement('div');
             wrap.setAttribute('data-fleet-plugin', PLUGIN_ID);
             wrap.className = 'fleet-wf-verifier-code-wrap';
             wrap.style.background = 'transparent';
+            wrap.style.display = 'none';
 
             const pre = document.createElement('pre');
             pre.className = 'fleet-wf-verifier-code-pre max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 font-mono text-sm text-muted-foreground';
@@ -389,13 +596,16 @@ const plugin = {
 
             pre.appendChild(code);
             wrap.appendChild(pre);
-            slot.parent.appendChild(wrap);
+            slot.parent.insertBefore(wrap, searchToolbar.nextSibling);
+
+            ui.wrap = wrap;
+            ui.codeEl = code;
+            ui.pre = pre;
 
             this._attachResizeHandle(pre);
-
-            if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
-                await Context.highlightJs.highlightCodeElement(code, { text: source, language: 'python' });
-            }
+            this._subscribeFleetThemeRefresh(ui);
+            await this._refreshVerifierDisplay(ui);
+            this._setVerifierVisible(ui, false);
 
             state.fetchDone = true;
             Logger.log(PLUGIN_ID + ': rendered verifier (' + source.length + ' chars) for ' + taskKey);

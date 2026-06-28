@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.50",
+  "archetypesVersion": "12.51",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "8.12",
-      "hash": "sha256-16052f01a9eb6462857318fa551f188c7d75d38d6dcc2104ba66737abebaf7b8",
+      "version": "8.13",
+      "hash": "sha256-780a52c46fb1cf5972b81d69582b0ba862f9de8b0a007cb60d5faaefb625900d",
       "log": false
     },
     {
@@ -567,8 +567,8 @@
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "1.7",
-          "hash": "sha256-5dbcae6ceceea4b1bcc8e60c369d0f25907e882a24439f326a62d42e6fb79969",
+          "version": "1.8",
+          "hash": "sha256-c66a38226af62d6dda87d5aefad851034c1f4de9fb24ebb091c6f864fc7379af",
           "log": false
         },
         {
