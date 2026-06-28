@@ -3,7 +3,7 @@
 
 const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
 const PLUGIN_ID = 'task-user-story-section';
-const SECTION_LABEL = 'User story';
+const SECTION_LABEL = 'User Story';
 const VISIBLE_LINES_DEFAULT = 6;
 const COPY_SUCCESS_FLASH_MS = 1000;
 const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
@@ -22,7 +22,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.3',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -179,13 +179,13 @@ const plugin = {
         bodyWrap.className = 'relative';
         bodyWrap.setAttribute('data-slot', 'body');
 
-        const pre = document.createElement('pre');
-        pre.className =
+        const content = document.createElement('div');
+        content.className =
             'bg-muted/40 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm text-muted-foreground';
-        pre.setAttribute('data-slot', 'content');
-        pre.textContent = 'Loading user story…';
+        content.setAttribute('data-slot', 'content');
+        content.textContent = 'Loading user story…';
 
-        bodyWrap.appendChild(pre);
+        bodyWrap.appendChild(content);
         section.appendChild(bodyWrap);
 
         return section;
@@ -258,24 +258,25 @@ const plugin = {
         }
     },
 
-    _createCopyButton(source) {
+    _createCopyButton(source, fieldLabel) {
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = COPY_BTN_CLASS;
         copyBtn.setAttribute('data-fleet-plugin', PLUGIN_ID);
         copyBtn.setAttribute('data-slot', 'copy-user-story');
-        copyBtn.title = 'Copy user story';
-        copyBtn.setAttribute('aria-label', 'Copy user story');
-        copyBtn.innerHTML = COPY_ICON_SVG + 'Copy';
+        const title = fieldLabel ? 'Copy ' + fieldLabel : 'Copy user story';
+        copyBtn.title = title;
+        copyBtn.setAttribute('aria-label', title);
+        copyBtn.innerHTML = COPY_ICON_SVG;
 
         copyBtn.addEventListener('click', async () => {
             const ok = await this._copyTextToClipboard(source);
             if (ok) {
                 this._showCopySuccessFlash(copyBtn);
-                Logger.log(PLUGIN_ID + ': copied user story (' + source.length + ' chars)');
+                Logger.log(PLUGIN_ID + ': copied ' + (fieldLabel || 'user story') + ' (' + source.length + ' chars)');
             } else {
                 this._showCopyFailurePulse(copyBtn);
-                Logger.warn(PLUGIN_ID + ': user story copy failed');
+                Logger.warn(PLUGIN_ID + ': copy failed for ' + (fieldLabel || 'user story'));
             }
         });
 
@@ -381,6 +382,56 @@ const plugin = {
         pre.dataset.wfUserStoryResizeAttached = '1';
     },
 
+    _scenarioFieldsFromResult(result) {
+        return {
+            scenarioTitle: result && result.scenarioTitle != null ? String(result.scenarioTitle).trim() : '',
+            humanAnnotatorInstructions: result && result.humanAnnotatorInstructions != null
+                ? String(result.humanAnnotatorInstructions).trim()
+                : '',
+            userStory: result && result.userStory != null ? String(result.userStory).trim() : ''
+        };
+    },
+
+    _hasScenarioContent(fields) {
+        return Boolean(fields.scenarioTitle || fields.humanAnnotatorInstructions || fields.userStory);
+    },
+
+    _scenarioEmptyMessage(reason) {
+        if (reason === 'no_scenario_id') return 'No scenario linked to this task.';
+        if (reason === 'scenario_not_found') return 'Scenario not found.';
+        if (reason === 'task_not_found') return 'Task not found.';
+        return 'No user story for this task.';
+    },
+
+    _scenarioCopyText(fields) {
+        const blocks = [];
+        if (fields.scenarioTitle) blocks.push('Scenario Title\n' + fields.scenarioTitle);
+        if (fields.humanAnnotatorInstructions) {
+            blocks.push('Annotator Instructions\n' + fields.humanAnnotatorInstructions);
+        }
+        if (fields.userStory) blocks.push('User Story\n' + fields.userStory);
+        return blocks.join('\n\n');
+    },
+
+    _createFieldHeader(label, copyText) {
+        const header = document.createElement('div');
+        header.className = 'mb-1 flex items-center gap-1.5';
+        const fieldLabel = document.createElement('div');
+        fieldLabel.className = 'text-sm text-muted-foreground font-medium';
+        fieldLabel.textContent = label;
+        header.appendChild(fieldLabel);
+        header.appendChild(this._createCopyButton(copyText, label));
+        return header;
+    },
+
+    _createFieldBody(value) {
+        const body = document.createElement('div');
+        body.className =
+            'whitespace-pre-wrap break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
+        body.textContent = value;
+        return body;
+    },
+
     async _fetchAndRender(state, shell, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
@@ -401,29 +452,27 @@ const plugin = {
                 return;
             }
 
-            const userStory = result && result.userStory != null ? String(result.userStory) : '';
-            if (!userStory.trim()) {
+            const fields = this._scenarioFieldsFromResult(result);
+            if (!this._hasScenarioContent(fields)) {
                 const reason = result && result.reason ? result.reason : 'empty';
-                const message = reason === 'no_scenario_id'
-                    ? 'No scenario linked to this task.'
-                    : reason === 'scenario_not_found'
-                        ? 'Scenario not found.'
-                        : reason === 'task_not_found'
-                            ? 'Task not found.'
-                            : 'No user story for this task.';
-                this._setSectionMessage(shell, message);
+                this._setSectionMessage(shell, this._scenarioEmptyMessage(reason));
                 state.fetchDone = true;
                 Logger.warn(PLUGIN_ID + ': no user story for ' + taskKey + ' (' + reason + ')');
                 return;
             }
 
-            this._renderUserStory(shell, userStory);
+            this._renderScenarioContent(shell, fields);
             state.fetchDone = true;
             if (!state.activationLogged) {
                 Logger.log(PLUGIN_ID + ': user story section active for ' + taskKey);
                 state.activationLogged = true;
             }
-            Logger.log(PLUGIN_ID + ': rendered user story (' + userStory.length + ' chars) for ' + taskKey);
+            const summary = [
+                fields.scenarioTitle ? 'title ' + fields.scenarioTitle.length + ' chars' : null,
+                fields.humanAnnotatorInstructions ? 'instructions ' + fields.humanAnnotatorInstructions.length + ' chars' : null,
+                fields.userStory ? 'story ' + fields.userStory.length + ' chars' : null
+            ].filter(Boolean).join(', ');
+            Logger.log(PLUGIN_ID + ': rendered scenario content for ' + taskKey + ' (' + summary + ')');
         } catch (err) {
             if (this._isTransientBundleError(err)) {
                 state.fetchStarted = false;
@@ -442,19 +491,39 @@ const plugin = {
     },
 
     _setSectionMessage(shell, message) {
-        const pre = shell.querySelector('[data-slot="content"]');
+        const content = shell.querySelector('[data-slot="content"]');
         const actions = shell.querySelector('[data-slot="actions"]');
-        if (pre) pre.textContent = message;
+        if (content) {
+            content.textContent = message;
+            content.className =
+                'bg-muted/40 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm text-muted-foreground';
+        }
         if (actions) actions.replaceChildren();
     },
 
-    _renderUserStory(shell, userStory) {
-        const pre = shell.querySelector('[data-slot="content"]');
+    _renderScenarioContent(shell, fields) {
+        const content = shell.querySelector('[data-slot="content"]');
         const actions = shell.querySelector('[data-slot="actions"]');
-        if (!pre || !actions) return;
+        if (!content || !actions) return;
 
-        pre.textContent = userStory;
-        actions.replaceChildren(this._createCopyButton(userStory));
-        this._attachResizeHandle(pre);
+        content.className = 'overflow-auto break-words space-y-3.5';
+        content.replaceChildren();
+
+        const fieldDefs = [
+            { key: 'scenarioTitle', label: 'Scenario Title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
+            { key: 'userStory', label: 'User Story' }
+        ];
+        for (const { key, label } of fieldDefs) {
+            const value = fields[key];
+            if (!value) continue;
+            const block = document.createElement('div');
+            block.appendChild(this._createFieldHeader(label, value));
+            block.appendChild(this._createFieldBody(value));
+            content.appendChild(block);
+        }
+
+        actions.replaceChildren();
+        this._attachResizeHandle(content);
     }
 };

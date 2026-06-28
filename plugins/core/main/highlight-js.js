@@ -5,12 +5,17 @@ const HLJS_VERSION = '11.11.1';
 const HLJS_BASE = 'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@' + HLJS_VERSION + '/build';
 const HLJS_CORE_URL = HLJS_BASE + '/highlight.min.js';
 const HLJS_PYTHON_URL = HLJS_BASE + '/languages/python.min.js';
-const HLJS_THEME_URL = HLJS_BASE + '/styles/github.min.css';
+const HLJS_THEMES = {
+    light: HLJS_BASE + '/styles/github.min.css',
+    dark: HLJS_BASE + '/styles/github-dark.min.css'
+};
+const HLJS_ROOT_CLASS = 'wf-hljs-root';
+const HLJS_THEME_ATTR = 'data-wf-hljs-theme';
 const HLJS_STYLE_ID = 'wf-fleet-hljs-theme';
 /** Appended after theme CSS so code blocks inherit the host surface background. */
 const HLJS_THEME_OVERRIDES =
-    '\n.hljs{background:transparent!important}' +
-    '\npre code.hljs{padding:0;background:transparent!important}';
+    '\nhtml[' + HLJS_THEME_ATTR + '] code.' + HLJS_ROOT_CLASS + '.hljs{background:transparent!important}' +
+    '\nhtml[' + HLJS_THEME_ATTR + '] pre code.' + HLJS_ROOT_CLASS + '.hljs{padding:0;background:transparent!important}';
 
 function gmFetchText(url) {
     return new Promise((resolve, reject) => {
@@ -38,7 +43,8 @@ function gmFetchText(url) {
 const HLJS_EXPECTED_HASHES = {
     [HLJS_CORE_URL]: '',
     [HLJS_PYTHON_URL]: '',
-    [HLJS_THEME_URL]: '',
+    [HLJS_THEMES.light]: '',
+    [HLJS_THEMES.dark]: ''
 };
 
 async function sha256hex(text) {
@@ -65,11 +71,17 @@ async function gmFetchTextVerified(url) {
     return text;
 }
 
+function resolveFleetSyntaxTheme() {
+    const de = Context.diffEngine;
+    if (de && typeof de.getFleetTheme === 'function') return de.getFleetTheme();
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
 const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.3',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -77,9 +89,12 @@ const plugin = {
     _loadPromise: null,
     _loadFailed: false,
     _styleInjected: false,
+    _activeTheme: null,
+    _fleetThemeSubscribed: false,
 
     init() {
         const self = this;
+        this._applyThemeToDocument(resolveFleetSyntaxTheme());
         Context.highlightJs = {
             isReady: () => !!self._hljs,
             ensureLoaded: () => self._ensureHighlightJsLoaded(),
@@ -87,6 +102,46 @@ const plugin = {
             setPlainCode: (codeEl, text) => self._setPlainCode(codeEl, text)
         };
         Logger.log('highlight-js: module registered (Context.highlightJs)');
+    },
+
+    _ensureFleetThemeSubscription() {
+        if (this._fleetThemeSubscribed) return;
+        const de = Context.diffEngine;
+        if (!de || typeof de.onFleetThemeChange !== 'function') return;
+        de.onFleetThemeChange(() => { void this._onFleetThemeChanged(); });
+        this._fleetThemeSubscribed = true;
+    },
+
+    _applyThemeToDocument(theme) {
+        const next = theme === 'dark' ? 'dark' : 'light';
+        this._activeTheme = next;
+        try {
+            document.documentElement.setAttribute(HLJS_THEME_ATTR, next);
+        } catch (err) {
+            Logger.warn('highlight-js: failed to apply theme attribute', err);
+        }
+    },
+
+    async _onFleetThemeChanged() {
+        const next = resolveFleetSyntaxTheme();
+        if (next === this._activeTheme) return;
+        this._applyThemeToDocument(next);
+        Logger.log('highlight-js: theme synced to fleet site → ' + next);
+        await this._refreshAllHighlighted();
+    },
+
+    async _refreshAllHighlighted() {
+        const nodes = document.querySelectorAll('code.' + HLJS_ROOT_CLASS);
+        for (const el of nodes) {
+            const text = el.textContent || '';
+            const language = el.getAttribute('data-wf-hljs-lang') || 'python';
+            await this._highlightCodeElement(el, { text, language });
+        }
+        const modal = document.getElementById('wf-dash-modal');
+        const ops = Context.opsTab;
+        if (modal && ops && typeof ops._refreshVerifierOutputDisplay === 'function') {
+            await ops._refreshVerifierOutputDisplay(modal);
+        }
     },
 
     async _ensureHighlightJsLoaded() {
@@ -98,11 +153,12 @@ const plugin = {
 
         this._loadPromise = (async () => {
             try {
-                Logger.debug('highlight-js: fetching core + python from jsDelivr');
-                const [coreJs, pythonJs, themeCss] = await Promise.all([
+                Logger.debug('highlight-js: fetching core + python + themes from jsDelivr');
+                const [coreJs, pythonJs, lightCss, darkCss] = await Promise.all([
                     gmFetchTextVerified(HLJS_CORE_URL),
                     gmFetchTextVerified(HLJS_PYTHON_URL),
-                    gmFetchTextVerified(HLJS_THEME_URL)
+                    gmFetchTextVerified(HLJS_THEMES.light),
+                    gmFetchTextVerified(HLJS_THEMES.dark)
                 ]);
                 const loadHljs = new Function(
                     coreJs + '\n' + pythonJs + '\nreturn typeof hljs !== "undefined" ? hljs : null;'
@@ -111,7 +167,7 @@ const plugin = {
                 if (!instance) {
                     throw new Error('highlight-js: hljs global missing after load');
                 }
-                this._injectThemeStylesheet(themeCss);
+                this._injectThemeStylesheets({ light: lightCss, dark: darkCss });
                 this._hljs = instance;
                 Logger.info('highlight-js: loaded v' + HLJS_VERSION);
                 return this._hljs;
@@ -127,15 +183,52 @@ const plugin = {
         return this._loadPromise;
     },
 
-    _injectThemeStylesheet(cssText) {
-        if (this._styleInjected || !cssText) return;
+    _stripCssComments(css) {
+        return css.replace(/\/\*[\s\S]*?\*\//g, '');
+    },
+
+    /**
+     * Maps a hljs theme selector onto our scoped root so token colours win over page stylesheets.
+     */
+    _scopeHljsSelector(scopeBase, selector) {
+        return selector.split(',').map((part) => {
+            const sel = part.trim();
+            if (!sel) return sel;
+            if (/^pre\s+code\.hljs\b/.test(sel) || /^code\.hljs\b/.test(sel) || sel === '.hljs') {
+                return scopeBase + '.hljs';
+            }
+            if (sel.startsWith('.hljs')) {
+                return scopeBase + ' ' + sel;
+            }
+            return scopeBase + ' ' + sel;
+        }).join(', ');
+    },
+
+    _scopeHljsCss(css, scopeBase) {
+        const stripped = this._stripCssComments(css);
+        return stripped.replace(/([^{}]+)\{([^{}]*)\}/g, (_match, rawSel, body) => {
+            const trimmed = rawSel.trim();
+            if (!trimmed || trimmed.startsWith('@')) return trimmed + '{' + body + '}';
+            return this._scopeHljsSelector(scopeBase, trimmed) + '{' + body + '}';
+        });
+    },
+
+    _injectThemeStylesheets(themeCssByName) {
+        if (this._styleInjected || !themeCssByName) return;
         if (document.getElementById(HLJS_STYLE_ID)) {
             this._styleInjected = true;
             return;
         }
+        const chunks = [];
+        for (const themeName of ['light', 'dark']) {
+            const cssText = themeCssByName[themeName];
+            if (!cssText) continue;
+            const scopeBase = 'html[' + HLJS_THEME_ATTR + '="' + themeName + '"] code.' + HLJS_ROOT_CLASS;
+            chunks.push(this._scopeHljsCss(cssText, scopeBase));
+        }
         const style = document.createElement('style');
         style.id = HLJS_STYLE_ID;
-        style.textContent = cssText + HLJS_THEME_OVERRIDES;
+        style.textContent = chunks.join('') + HLJS_THEME_OVERRIDES;
         document.head.appendChild(style);
         this._styleInjected = true;
         CleanupRegistry.registerElement(style);
@@ -144,8 +237,9 @@ const plugin = {
     _setPlainCode(codeEl, text) {
         if (!codeEl) return;
         codeEl.textContent = text || '';
-        codeEl.className = 'language-plaintext';
+        codeEl.className = HLJS_ROOT_CLASS + ' language-plaintext';
         codeEl.removeAttribute('data-highlighted');
+        codeEl.removeAttribute('data-wf-hljs-lang');
     },
 
     async _highlightCodeElement(codeEl, options) {
@@ -153,14 +247,25 @@ const plugin = {
         const language = (options && options.language) || 'python';
         if (!codeEl) return false;
 
+        this._ensureFleetThemeSubscription();
+        this._applyThemeToDocument(resolveFleetSyntaxTheme());
         this._setPlainCode(codeEl, text);
         if (!text) return true;
 
         try {
             const hljs = await this._ensureHighlightJsLoaded();
-            codeEl.className = 'language-' + language;
+            codeEl.className = HLJS_ROOT_CLASS + ' language-' + language;
+            codeEl.setAttribute('data-wf-hljs-lang', language);
             codeEl.removeAttribute('data-highlighted');
             hljs.highlightElement(codeEl);
+            // Strip language-* class so page-level Prism.js or other auto-highlighters
+            // do not re-process this element and overwrite the token colours.
+            codeEl.className = (codeEl.className || '')
+                .replace(/\blanguage-\S+/g, '')
+                .trim() || (HLJS_ROOT_CLASS + ' hljs');
+            if (!codeEl.classList.contains(HLJS_ROOT_CLASS)) {
+                codeEl.classList.add(HLJS_ROOT_CLASS);
+            }
             return true;
         } catch (err) {
             this._setPlainCode(codeEl, text);

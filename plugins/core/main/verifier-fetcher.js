@@ -8,10 +8,7 @@ const VERIFIER_SCRATCHPAD_DEFAULT_WIDTH = 320;
 const VERIFIER_SCRATCHPAD_MIN_WIDTH = 200;
 const VERIFIER_SCRATCHPAD_MIN_CODE_WIDTH = 240;
 const VERIFIER_SCRATCHPAD_TEXT_SAVE_MS = 400;
-
-function verifierFetcherPageWindow() {
-    return Context.getPageWindow ? Context.getPageWindow() : window;
-}
+const VERIFIER_MONO_FONT = 'font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);';
 
 function readVerifierScratchpadWidthPref() {
     try {
@@ -100,59 +97,38 @@ function applyVerifierScratchpadLayout(modal, openOverride) {
     toggleBtn.textContent = open ? 'Hide scratchpad' : 'Scratchpad';
 }
 
-function ensureVerifierScratchpadResizeStyles(modal) {
-    if (!modal || modal.querySelector('#wf-ops-verifier-scratchpad-resize-style')) return;
-    const style = document.createElement('style');
-    style.id = 'wf-ops-verifier-scratchpad-resize-style';
-    style.textContent = [
-        '#wf-ops-verifier-scratchpad-split-handle:hover,',
-        '#wf-ops-verifier-scratchpad-split-handle:active {',
-        '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
-        '}'
-    ].join('');
-    modal.appendChild(style);
-}
-
 function attachVerifierScratchpadResize(modal) {
     if (!modal || modal.dataset.wfVerifierScratchpadResizeAttached === '1') return;
     modal.dataset.wfVerifierScratchpadResizeAttached = '1';
-    ensureVerifierScratchpadResizeStyles(modal);
 
     modal.addEventListener('mousedown', (e) => {
         const handle = e.target.closest('#wf-ops-verifier-scratchpad-split-handle');
         if (!handle || !modal.contains(handle)) return;
         if (!readVerifierScratchpadOpenPref()) return;
-        e.preventDefault();
 
         const outputWrap = modal.querySelector('#wf-ops-verifier-output-wrap');
         const scratchpadPane = modal.querySelector('#wf-ops-verifier-scratchpad-pane');
         if (!outputWrap || !scratchpadPane) return;
 
+        const loader = Context.dashboard && Context.dashboard._loader;
+        if (!loader || typeof loader._beginColResizeDrag !== 'function') return;
+
         const startX = e.clientX;
         const startWidth = scratchpadPane.getBoundingClientRect().width;
-        const doc = document;
 
-        const onMove = (ev) => {
-            const next = clampVerifierScratchpadWidth(outputWrap, startWidth + (startX - ev.clientX));
-            scratchpadPane.style.width = next + 'px';
-            scratchpadPane.style.maxWidth = next + 'px';
-        };
-
-        const onUp = () => {
-            doc.removeEventListener('mousemove', onMove);
-            doc.removeEventListener('mouseup', onUp);
-            doc.body.style.cursor = '';
-            doc.body.style.userSelect = '';
-            const finalWidth = clampVerifierScratchpadWidth(outputWrap, scratchpadPane.getBoundingClientRect().width);
-            writeVerifierScratchpadWidthPref(finalWidth);
-            applyVerifierScratchpadLayout(modal, true);
-            Logger.log('verifier-fetcher: scratchpad width set to ' + finalWidth + 'px');
-        };
-
-        doc.body.style.cursor = 'col-resize';
-        doc.body.style.userSelect = 'none';
-        doc.addEventListener('mousemove', onMove);
-        doc.addEventListener('mouseup', onUp);
+        loader._beginColResizeDrag(e, {
+            onMove: (ev) => {
+                const next = clampVerifierScratchpadWidth(outputWrap, startWidth + (startX - ev.clientX));
+                scratchpadPane.style.width = next + 'px';
+                scratchpadPane.style.maxWidth = next + 'px';
+            },
+            onUp: () => {
+                const finalWidth = clampVerifierScratchpadWidth(outputWrap, scratchpadPane.getBoundingClientRect().width);
+                writeVerifierScratchpadWidthPref(finalWidth);
+                applyVerifierScratchpadLayout(modal, true);
+                Logger.log('verifier-fetcher: scratchpad width set to ' + finalWidth + 'px');
+            }
+        });
     });
 }
 
@@ -197,49 +173,42 @@ function restoreVerifierScratchpadTabState(modal, state) {
 
 function verifierFetcherPanelHtml() {
     const dash = Context.dashboard;
+    const loader = dash && dash._loader;
     const btnClass = (variant, size) => (dash && typeof dash.dashBtnClass === 'function'
         ? dash.dashBtnClass(variant, size)
         : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
+    const inputStyle = loader && typeof loader._inputStyle === 'function'
+        ? loader._inputStyle()
+        : 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1); border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a); box-sizing: border-box;';
+    const hintStyle = loader && typeof loader._hintStyle === 'function'
+        ? loader._hintStyle()
+        : 'font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b); letter-spacing: -0.01em;';
+    const labelStyle = loader && typeof loader._labelStyle === 'function'
+        ? loader._labelStyle()
+        : 'font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b); letter-spacing: -0.01em;';
+    const clearBtnStyle = loader && typeof loader._inputClearBtnStyle === 'function'
+        ? loader._inputClearBtnStyle()
+        : 'flex-shrink: 0; width: 32px; height: 32px; padding: 0; font-size: 17px; line-height: 1; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
+    const monoInputStyle = inputStyle + ' ' + VERIFIER_MONO_FONT;
+    const compactInputStyle = inputStyle + ' padding: 6px 10px; ' + VERIFIER_MONO_FONT;
+
     return `
             <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
                 <div style="flex-shrink: 0;">
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
                         Verifier Code Fetcher
                     </h3>
-                    <p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0 0 10px 0; line-height: 1.45;">
+                    <p style="${hintStyle} margin: 0 0 10px 0; line-height: 1.45;">
                         Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
                     </p>
                     <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="
-                            flex: 1;
-                            min-width: 0;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: var(--background, white);
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                        ">
+                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="${monoInputStyle} flex: 1; min-width: 0;">
                         <button type="button" id="wf-ops-fetch-verifier" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
                     </div>
                     <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
-                        <div id="wf-ops-verifier-status" style="font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
+                        <div id="wf-ops-verifier-status" style="${hintStyle} line-height: 1.45;"></div>
                     </div>
-                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="
-                        display: none;
-                        width: 100%;
-                        margin-top: 8px;
-                        padding: 8px 12px;
-                        font-size: 12px;
-                        border: 1px solid var(--border, #e5e5e5);
-                        border-radius: 6px;
-                        background: var(--background, white);
-                        color: var(--foreground, #333);
-                        box-sizing: border-box;
-                        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                    "></select>
+                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="display: none; width: 100%; margin-top: 8px; ${monoInputStyle}"></select>
                 </div>
                 <div id="wf-ops-verifier-output-toolbar" style="
                     display: none;
@@ -266,24 +235,12 @@ function verifierFetcherPanelHtml() {
                         justify-content: flex-start;
                         box-sizing: border-box;
                     ">
-                        <label for="wf-ops-verifier-content-search" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Search in code:</label>
+                        <label for="wf-ops-verifier-content-search" style="${labelStyle} white-space: nowrap; flex-shrink: 0;">Search in code:</label>
                         <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
-                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="
-                                flex: 1;
-                                min-width: 0;
-                                width: 100%;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                border: 1px solid var(--border, #e5e5e5);
-                                border-radius: 6px;
-                                background: var(--background, white);
-                                color: var(--foreground, #333);
-                                box-sizing: border-box;
-                                font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-                            ">
-                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" class="${btnClass('basic', 'icon')}" style="display: none;">&times;</button>
+                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="${compactInputStyle} flex: 1; min-width: 0; width: 100%;">
+                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" class="${btnClass('basic', 'icon')}" style="${clearBtnStyle} display: none;">&times;</button>
                         </span>
-                        <span id="wf-ops-verifier-content-match-count" style="font-size: 11px; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;"></span>
+                        <span id="wf-ops-verifier-content-match-count" style="${labelStyle} white-space: nowrap; flex-shrink: 0;"></span>
                         <button type="button" id="wf-ops-verifier-content-prev" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Prev</button>
                         <button type="button" id="wf-ops-verifier-content-next" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Next</button>
                         <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
@@ -324,10 +281,10 @@ function verifierFetcherPanelHtml() {
                             overflow-x: auto;
                             white-space: pre;
                             word-break: normal;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ${VERIFIER_MONO_FONT}
                         "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
                     </div>
-                    <div id="wf-ops-verifier-scratchpad-split-handle" role="separator" aria-orientation="vertical" aria-label="Resize scratchpad" tabindex="0" title="Drag to resize scratchpad" style="
+                    <div id="wf-ops-verifier-scratchpad-split-handle" data-wf-dash-split-handle role="separator" aria-orientation="vertical" aria-label="Resize scratchpad" tabindex="0" title="Drag to resize scratchpad" style="
                         display: none;
                         flex-shrink: 0;
                         width: 8px;
@@ -353,9 +310,7 @@ function verifierFetcherPanelHtml() {
                         <div style="
                             flex-shrink: 0;
                             padding: 6px 10px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: var(--muted-foreground, #64748b);
+                            ${labelStyle}
                             border-bottom: 1px solid var(--border, #e5e5e5);
                         ">Scratchpad</div>
                         <textarea id="wf-ops-verifier-scratchpad" placeholder="Notes…" autocomplete="off" spellcheck="true" style="
@@ -371,7 +326,7 @@ function verifierFetcherPanelHtml() {
                             color: var(--foreground, #333);
                             resize: none;
                             box-sizing: border-box;
-                            font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+                            ${VERIFIER_MONO_FONT}
                             outline: none;
                         "></textarea>
                     </aside>
@@ -379,7 +334,7 @@ function verifierFetcherPanelHtml() {
             </div>`;
 }
 
-function attachVerifierFetcherListeners(modal, dash) {
+function attachVerifierFetcherListeners(modal) {
     const ops = Context.opsTab;
     if (!ops) return;
     if (modal.dataset.wfVerifierFetcherListenersAttached === '1') {
@@ -481,7 +436,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '2.1',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -494,7 +449,6 @@ const plugin = {
         }
         Context.verifierFetcherUi = {
             syncOutputToolbar: (modal) => syncVerifierOutputToolbar(modal),
-            restoreScratchpad: (modal) => restoreVerifierScratchpadState(modal),
             captureScratchpadTabState: (modal) => captureVerifierScratchpadTabState(modal),
             restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state)
         };
@@ -502,7 +456,7 @@ const plugin = {
             id: 'verifier-fetcher',
             label: 'Verifier Fetcher',
             panelHtml() { return verifierFetcherPanelHtml(); },
-            attachListeners(modal, dash) { attachVerifierFetcherListeners(modal, dash); },
+            attachListeners(modal) { attachVerifierFetcherListeners(modal); },
             captureState(modal, dash) {
                 const ops = Context.opsTab;
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);

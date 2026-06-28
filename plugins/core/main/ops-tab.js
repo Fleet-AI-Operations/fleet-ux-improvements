@@ -202,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.12',
+    _version: '8.13',
     phase: 'core',
     enabledByDefault: true,
 
@@ -298,6 +298,12 @@ const plugin = {
             applyVerifierContentSearch: (modal, query) => this._applyVerifierContentSearch(modal, query),
             clearVerifierContentSearch: (modal) => this._clearVerifierContentSearch(modal),
             stepVerifierContentMatch: (modal, dir) => this._stepVerifierContentMatch(modal, dir),
+            findVerifierContentMatchStarts: (text, query) => this._findVerifierContentMatchStarts(text, query),
+            renderVerifierCodeElement: (codeEl, opts) => this._renderVerifierCodeElement(codeEl, opts),
+            setVerifierContentMatchActive: (codeEl, activeIndex) => this._setVerifierContentMatchActive(codeEl, activeIndex),
+            scrollVerifierActiveContentMatch: (codeEl) => this._scrollVerifierActiveContentMatchInElement(codeEl),
+            stepVerifierContentMatchInElement: (codeEl, searchState, delta, rerender) =>
+                this._stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender),
             captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
             restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
             copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
@@ -4396,19 +4402,54 @@ const plugin = {
         Logger.log('ops-tab: verifier content search cleared');
     },
 
-    _scrollVerifierActiveContentMatch(modal) {
-        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
-        if (!output) return;
-        const active = output.querySelector('.wf-ops-verifier-hit-active');
+    _scrollVerifierActiveContentMatchInElement(codeEl) {
+        if (!codeEl) return;
+        const active = codeEl.querySelector('.wf-ops-verifier-hit-active');
         if (active && typeof active.scrollIntoView === 'function') {
             active.scrollIntoView({ block: 'center', inline: 'nearest' });
         }
     },
 
+    _scrollVerifierActiveContentMatch(modal) {
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
+        this._scrollVerifierActiveContentMatchInElement(output);
+    },
+
+    async _renderVerifierCodeElement(codeEl, options) {
+        const text = options && options.text != null ? options.text : '';
+        const searchState = (options && options.searchState) || { query: '', index: 0, matchStarts: [] };
+        const query = (searchState.query || '').trim();
+
+        if (!codeEl) return searchState;
+
+        if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
+            await Context.highlightJs.highlightCodeElement(codeEl, { text, language: 'python' });
+        } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
+            Context.highlightJs.setPlainCode(codeEl, text);
+        } else {
+            codeEl.textContent = text;
+            codeEl.className = text ? 'language-python' : 'language-plaintext';
+        }
+
+        if (query) {
+            const matchStarts = this._findVerifierContentMatchStarts(text, query);
+            searchState.matchStarts = matchStarts;
+            searchState.index = this._applyVerifierSearchMarksInDom(
+                codeEl,
+                matchStarts,
+                query.length,
+                searchState.index
+            );
+        } else {
+            searchState.matchStarts = [];
+            searchState.index = 0;
+        }
+        return searchState;
+    },
+
     async _refreshVerifierOutputDisplay(modal) {
         const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
         const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
-        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
         const text = this._opsVerifierSourceText || '';
         const query = (this._opsVerifierContentSearch.query || '').trim();
 
@@ -4421,30 +4462,30 @@ const plugin = {
             return;
         }
 
-        if (Context.highlightJs && typeof Context.highlightJs.highlightCodeElement === 'function') {
-            await Context.highlightJs.highlightCodeElement(output, { text, language: 'python' });
-        } else if (Context.highlightJs && typeof Context.highlightJs.setPlainCode === 'function') {
-            Context.highlightJs.setPlainCode(output, text);
-        } else {
-            output.textContent = text;
-            output.className = text ? 'language-python' : 'language-plaintext';
-        }
+        this._opsVerifierContentSearch = await this._renderVerifierCodeElement(output, {
+            text,
+            searchState: this._opsVerifierContentSearch
+        });
 
         if (query) {
-            const matchStarts = this._findVerifierContentMatchStarts(text, query);
-            this._opsVerifierContentSearch.matchStarts = matchStarts;
-            this._opsVerifierContentSearch.index = this._applyVerifierSearchMarksInDom(
-                output,
-                matchStarts,
-                query.length,
-                this._opsVerifierContentSearch.index
-            );
             requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-        } else {
-            this._opsVerifierContentSearch.matchStarts = [];
-            this._opsVerifierContentSearch.index = 0;
         }
         this._updateVerifierContentSearchUi(modal);
+    },
+
+    async _stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender) {
+        const search = searchState || { query: '', index: 0, matchStarts: [] };
+        const count = search.matchStarts ? search.matchStarts.length : 0;
+        if (!count || !delta) return search;
+        search.index = (search.index + delta + count) % count;
+        if (codeEl && codeEl.querySelector('.wf-ops-verifier-hit')) {
+            this._setVerifierContentMatchActive(codeEl, search.index);
+            return search;
+        }
+        if (typeof rerender === 'function') {
+            await rerender();
+        }
+        return search;
     },
 
     _applyVerifierContentSearch(modal, rawQuery) {
@@ -4462,16 +4503,15 @@ const plugin = {
         const search = this._opsVerifierContentSearch;
         const count = search.matchStarts ? search.matchStarts.length : 0;
         if (!count || !delta) return;
-        search.index = (search.index + delta + count) % count;
         const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputStep');
-        if (output && output.querySelector('.wf-ops-verifier-hit')) {
-            this._setVerifierContentMatchActive(output, search.index);
+        void this._stepVerifierContentMatchInElement(output, search, delta, () =>
+            this._refreshVerifierOutputDisplay(modal)
+        ).then((nextSearch) => {
+            this._opsVerifierContentSearch = nextSearch;
             this._updateVerifierContentSearchUi(modal);
             requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-        } else {
-            void this._refreshVerifierOutputDisplay(modal);
-        }
-        Logger.debug('ops-tab: verifier content match ' + (search.index + 1) + '/' + count);
+            Logger.debug('ops-tab: verifier content match ' + (nextSearch.index + 1) + '/' + count);
+        });
     },
 
     async _setOpsVerifierOutput(modal, value) {

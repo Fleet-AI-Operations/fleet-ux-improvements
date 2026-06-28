@@ -1,9 +1,6 @@
 // ============= dashboard.js =============
 // Ops dashboard loader: modal shell, tab registry, shared multi-select UI.
 // Tab modules: search-output.js, diff-viewer.js, team-members.js, verifier-fetcher.js
-
-// ============= dashboard.js =============
-// Worker Output Search (Ops dashboard): search output, team members, verifier fetch.
 //
 // This is the live port of the local prototype in local/dashboard. All data is
 // PostgREST table/query shapes come from the encrypted ops bundle (Context.opsTab).
@@ -40,7 +37,7 @@ const DASH_FILTER_SCOPES = [
     { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
 ];
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_MS_HOVER_CLOSE_MS = 150;
+const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
 
@@ -72,23 +69,9 @@ function dashLib() {
     return Context.dashboardLib;
 }
 
-
-
-
-
-
-
-// ── Fleet URLs (ported from lib/fleetUrls.js) ──
-
-
-// ── Formatting ──
-
-
-
-
-// ── HTML escaping ──
-
 function dashEscHtml(value) {
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.escHtml === 'function') return lib.escHtml(value);
     return String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -102,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.5',
+    _version: '6.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -147,8 +130,6 @@ const plugin = {
             labelStyle: () => self._labelStyle(),
             hintStyle: () => self._hintStyle(),
             inputStyle: () => self._inputStyle(),
-            navBtnStyle: () => self._navBtnStyle(),
-            navBtnPrimaryStyle: () => self._navBtnPrimaryStyle(),
             dashBtnClass: (variant, size) => self._dashBtnClass(variant, size),
             logApiClick: (action, detail) => self._logDashApiClick(action, detail),
             logApiSkip: (action, reason, detail) => self._logDashApiSkip(action, reason, detail),
@@ -157,6 +138,11 @@ const plugin = {
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
             splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
+            pagerChevronSvg: (dir) => self._pagerChevronSvg(dir),
+            paginationMeta: (total, pageSize, pageHolder) => self._paginationMeta(total, pageSize, pageHolder),
+            rangeLabel: (meta, options) => self._rangeLabel(meta, options),
+            syncPagerNavUi: (opts) => self._syncPagerNavUi(opts),
+            numericFilterRowHtml: (opts) => self._numericFilterRowHtml(opts),
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
@@ -256,6 +242,7 @@ const plugin = {
             bootstrapRunPromise: null,
             committed: null,
             appliedFilters: null,
+            filterSelectionOrder: [],
             filterListOptions: null,
             cardUi: {},
             taskOpenUi: {},
@@ -355,10 +342,7 @@ const plugin = {
                         }
                     }
                 }
-                requestAnimationFrame(() => {
-                    this._applyAllSidePanelWidths();
-                    this._applyAllResultsPanelMaxWidths();
-                });
+                this._scheduleSplitLayoutSync();
                 Logger.log('dashboard: opened');
             } catch (e) {
                 Logger.error('dashboard: open failed', e);
@@ -567,8 +551,57 @@ const plugin = {
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-ms-option-style';
         style.textContent = [
-            '#wf-dash-modal label[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"] {',
+            '#wf-dash-modal label[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"],',
+            '#wf-dash-modal tr[data-wf-dash-ms-option][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] {',
+            '  border: none;',
+            '  border-collapse: collapse;',
+            '  width: 100%;',
+            '  table-layout: auto;',
+            '  font-size: 11px;',
+            '  color: var(--foreground, #0f172a);',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="cb"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="count"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] col[data-wf-dash-ms-option-col="pct"] {',
+            '  width: 1%;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td {',
+            '  border: none;',
+            '  padding: 4px 6px;',
+            '  vertical-align: middle;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="cb"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="count"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="pct"] {',
+            '  width: 1%;',
+            '  white-space: nowrap;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="cb"] {',
+            '  padding-left: 8px;',
+            '  padding-right: 2px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="count"],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="pct"] {',
+            '  padding-left: 5px;',
+            '  padding-right: 5px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] td[data-wf-dash-ms-option-col="label"] {',
+            '  width: auto;',
+            '  padding-right: 8px;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] tr[data-wf-dash-ms-option] {',
+            '  cursor: pointer;',
+            '}',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] [data-wf-dash-ms-option-count-num],',
+            '#wf-dash-modal table[data-wf-dash-ms-option-table] [data-wf-dash-ms-option-count-pct] {',
+            '  font-size: 10px;',
+            '  font-weight: 600;',
+            '  font-variant-numeric: tabular-nums;',
+            '  color: var(--muted-foreground, #64748b);',
+            '  white-space: nowrap;',
             '}',
             '#wf-dash-modal label[data-wf-dash-ms-option] {',
             '  display: grid !important;',
@@ -964,36 +997,137 @@ const plugin = {
         return 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1); border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a); box-sizing: border-box;';
     },
 
-    _btnStyle() {
-        return 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a);';
-    },
-
-    _btnPrimaryStyle() {
-        return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
-    },
-
     _inputClearBtnStyle() {
         return 'flex-shrink: 0; width: 32px; height: 32px; padding: 0; font-size: 17px; line-height: 1; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
     },
 
-    _inputClearBtnOverlayStyle() {
-        return this._inputClearBtnStyle() + ' position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; font-size: 15px;';
+    _msHintParagraphStyle() {
+        return 'padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);';
     },
 
-    _btnPrimaryDisabledStyle() {
-        return 'padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    _msHintHtml(text) {
+        return `<p style="${this._msHintParagraphStyle()}">${dashEscHtml(text)}</p>`;
     },
 
-    _navBtnStyle() {
-        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a);';
+    _msOptionTextHtml(displayName, email, label, dimStyle) {
+        if (email) {
+            return `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
+                    <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
+                    <div data-wf-dash-ms-option-email="1">${dashEscHtml(email)}</div>
+                </span>`;
+        }
+        return `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(label)}</span>`;
     },
 
-    _navBtnPrimaryStyle() {
-        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff);';
+    _pagerChevronSvg(dir) {
+        const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
     },
 
-    _navBtnPrimaryDisabledStyle() {
-        return 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: not-allowed; border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); opacity: 0.85;';
+    _paginationMeta(total, pageSize, pageHolder) {
+        const count = Number(total) || 0;
+        const size = pageSize === Infinity || pageSize === 'all' ? Infinity : Number(pageSize);
+        const effectiveSize = Number.isFinite(size) && size > 0 ? size : Infinity;
+        if (count === 0 || effectiveSize === Infinity) {
+            if (pageHolder) pageHolder.page = 0;
+            return { total: count, totalPages: 1, page: 0, canPrev: false, canNext: false, showNav: false, pageSize: effectiveSize };
+        }
+        const totalPages = Math.max(1, Math.ceil(count / effectiveSize));
+        let page = pageHolder && Number.isFinite(pageHolder.page) ? pageHolder.page : 0;
+        if (page >= totalPages) page = totalPages - 1;
+        if (page < 0) page = 0;
+        if (pageHolder) pageHolder.page = page;
+        return {
+            total: count,
+            totalPages,
+            page,
+            canPrev: page > 0,
+            canNext: page < totalPages - 1,
+            showNav: totalPages > 1,
+            pageSize: effectiveSize
+        };
+    },
+
+    _rangeLabel(meta, options) {
+        const opts = options || {};
+        const total = meta ? meta.total : 0;
+        const singular = opts.singular || 'result';
+        const plural = opts.plural || (singular + 's');
+        const suffix = total === 1 ? singular : plural;
+        if (total === 0) return '0 ' + plural;
+        if (!meta || !meta.showNav) {
+            return '1–' + total + ' of ' + total + ' ' + suffix;
+        }
+        const size = meta.pageSize;
+        const start = meta.page * size + 1;
+        const end = Math.min((meta.page + 1) * size, total);
+        return start + '–' + end + ' of ' + total + ' ' + suffix;
+    },
+
+    _syncPagerNavUi(opts) {
+        const options = opts || {};
+        const show = Boolean(options.show);
+        if (options.rowEl) options.rowEl.style.display = show ? (options.rowDisplay || 'flex') : 'none';
+        if (options.pagerEl) options.pagerEl.style.display = show ? (options.pagerDisplay || 'inline-flex') : 'none';
+        if (options.rangeEl) options.rangeEl.textContent = show && options.rangeLabel ? options.rangeLabel : '';
+        if (options.prevBtn) options.prevBtn.disabled = !show || !options.meta || !options.meta.canPrev;
+        if (options.nextBtn) options.nextBtn.disabled = !show || !options.meta || !options.meta.canNext;
+    },
+
+    _numericFilterOptionsHtml(items, selectedId) {
+        const list = Array.isArray(items) ? items : [];
+        const sel = selectedId != null ? String(selectedId) : '';
+        return list.map((item) => {
+            const id = String(item.id != null ? item.id : '');
+            const label = String(item.label != null ? item.label : id);
+            const selected = id === sel ? ' selected' : '';
+            return '<option value="' + dashEscHtml(id) + '"' + selected + '>' + dashEscHtml(label) + '</option>';
+        }).join('');
+    },
+
+    _numericComparatorOptionsHtml(fieldType, selectedId) {
+        const lib = dashLib();
+        const list = fieldType === 'date'
+            ? (lib && lib.DATE_COMPARATORS) || []
+            : (lib && lib.NUMERIC_COMPARATORS) || [];
+        const sel = selectedId || (list[0] ? list[0].id : 'gte');
+        return list.map((c) => {
+            const selected = c.id === sel ? ' selected' : '';
+            return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
+        }).join('');
+    },
+
+    _numericFilterRowHtml(opts) {
+        const options = opts || {};
+        const rowAttr = options.rowAttr || 'data-wf-dash-manual-row';
+        const fieldAttr = options.fieldAttr || 'data-wf-dash-manual-field';
+        const comparatorAttr = options.comparatorAttr || 'data-wf-dash-manual-comparator';
+        const valueAttr = options.valueAttr || 'data-wf-dash-manual-value';
+        const removeAttr = options.removeAttr || 'data-wf-dash-manual-remove';
+        const fields = options.fields || [];
+        const field = options.field || (fields[0] ? fields[0].id : '');
+        const fieldMeta = fields.find((f) => f.id === field) || fields[0] || { id: field, type: 'number' };
+        const isDate = fieldMeta.type === 'date';
+        const comparator = options.comparator || 'gte';
+        const value = options.value != null ? String(options.value) : '';
+        const selectStyle = options.selectStyle || '';
+        const inputStyle = options.inputStyle || '';
+        const removeBtnStyle = options.removeBtnStyle || '';
+        const compWidth = isDate ? '96px' : '52px';
+        const valueWidth = isDate ? '118px' : '72px';
+        const inputType = isDate ? 'date' : 'number';
+        return '<div ' + rowAttr + '="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
+            + '<select ' + fieldAttr + '="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
+            + this._numericFilterOptionsHtml(fields, field)
+            + '</select>'
+            + '<select ' + comparatorAttr + '="1" style="' + selectStyle + ' width: ' + compWidth + '; flex-shrink: 0;">'
+            + this._numericComparatorOptionsHtml(isDate ? 'date' : 'number', comparator)
+            + '</select>'
+            + '<input type="' + inputType + '" ' + valueAttr + '="1" placeholder="Value" step="any" value="'
+            + dashEscHtml(value) + '" style="' + inputStyle + ' width: ' + valueWidth + '; flex-shrink: 0;">'
+            + '<button type="button" ' + removeAttr + '="1" title="Remove filter" style="' + removeBtnStyle
+            + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
+            + '</div>';
     },
 
     _dashBtnClass(variant, size) {
@@ -1237,7 +1371,7 @@ const plugin = {
         return scopeKey === 'dashboard' ? 32 : 16;
     },
 
-    _availableResultsPanelWidth(root) {
+    _splitRootMetrics(root) {
         const rootW = root ? root.getBoundingClientRect().width : 0;
         const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
         const basis = rootW > 0 ? rootW : fallbackW;
@@ -1245,6 +1379,35 @@ const plugin = {
         const leftW = left ? left.getBoundingClientRect().width : DASH_SIDE_PANEL_MIN_WIDTH;
         const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
         const handleReserve = this._splitPanelHandleReserve(scope);
+        return { basis, scope, handleReserve, leftW };
+    },
+
+    _scheduleSplitLayoutSync() {
+        requestAnimationFrame(() => {
+            this._applyAllSidePanelWidths();
+            this._applyAllResultsPanelMaxWidths();
+        });
+    },
+
+    _beginColResizeDrag(e, handlers) {
+        e.preventDefault();
+        const doc = this._pageWindow().document;
+        const onMove = (ev) => handlers.onMove(ev);
+        const onUp = () => {
+            doc.removeEventListener('mousemove', onMove);
+            doc.removeEventListener('mouseup', onUp);
+            doc.body.style.cursor = '';
+            doc.body.style.userSelect = '';
+            handlers.onUp();
+        };
+        doc.body.style.cursor = 'col-resize';
+        doc.body.style.userSelect = 'none';
+        doc.addEventListener('mousemove', onMove);
+        doc.addEventListener('mouseup', onUp);
+    },
+
+    _availableResultsPanelWidth(root) {
+        const { basis, handleReserve, leftW } = this._splitRootMetrics(root);
         return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve));
     },
 
@@ -1254,11 +1417,7 @@ const plugin = {
     },
 
     _clampSidePanelWidth(root, widthPx) {
-        const rootW = root ? root.getBoundingClientRect().width : 0;
-        const fallbackW = this._modal ? this._modal.getBoundingClientRect().width : 960;
-        const basis = rootW > 0 ? rootW : fallbackW;
-        const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
-        const handleReserve = this._splitPanelHandleReserve(scope);
+        const { basis, handleReserve } = this._splitRootMetrics(root);
         const viewportW = this._pageWindow().innerWidth || basis;
         const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
@@ -1320,12 +1479,28 @@ const plugin = {
     },
 
     _ensureUserStoryStyles() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-user-story-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-user-story-style';
+        if (!this._modal) return;
+        let style = this._modal.querySelector('#wf-dash-user-story-style');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-user-story-style';
+            this._modal.appendChild(style);
+        }
         style.textContent = [
-            '#wf-dash-modal .wf-dash-user-story-body {',
-            '  margin: 8px 0 0;',
+            '#wf-dash-modal .wf-dash-user-story-block {',
+            '  display: flex;',
+            '  flex-direction: column;',
+            '  gap: 14px;',
+            '  margin-top: 8px;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-field-header {',
+            '  display: flex;',
+            '  align-items: center;',
+            '  gap: 6px;',
+            '  margin-bottom: 4px;',
+            '}',
+            '#wf-dash-modal .wf-dash-user-story-field-body {',
+            '  margin: 0;',
             '  padding: 6px 0 2px 12px;',
             '  border-left: 3px solid var(--border, #e2e8f0);',
             '  white-space: pre-wrap;',
@@ -1350,6 +1525,11 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="1"] {',
             '  grid-template-rows: 1fr;',
             '}',
+            '#wf-dash-modal [data-wf-dash-user-story-panel][data-open="0"] {',
+            '  grid-template-rows: 0fr;',
+            '  max-height: 0;',
+            '  overflow: hidden;',
+            '}',
             '#wf-dash-modal [data-wf-dash-user-story-panel] > [data-wf-dash-user-story-inner] {',
             '  overflow: hidden;',
             '  min-height: 0;',
@@ -1363,7 +1543,6 @@ const plugin = {
             '  transition: opacity 180ms ease-in 40ms;',
             '}'
         ].join('\n');
-        this._modal.appendChild(style);
     },
 
     _ensureCardActionStyles() {
@@ -1577,80 +1756,64 @@ const plugin = {
     _attachSplitPanelResize() {
         if (!this._modal || this._splitResizeAttached) return;
         this._splitResizeAttached = true;
-        const doc = this._pageWindow().document;
         this._modal.addEventListener('mousedown', (e) => {
             const handle = e.target.closest('[data-wf-dash-split-handle]');
             if (!handle || !this._modal.contains(handle)) return;
-            e.preventDefault();
             const root = handle.closest('[data-wf-dash-split-root]');
             const left = root ? root.querySelector('[data-wf-dash-split-left]') : null;
             if (!root || !left) return;
             const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
             const startX = e.clientX;
             const startWidth = left.getBoundingClientRect().width;
-            const onMove = (ev) => {
-                const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
-                this._applySidePanelWidth(root, next);
-                if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
-            };
-            const onUp = () => {
-                doc.removeEventListener('mousemove', onMove);
-                doc.removeEventListener('mouseup', onUp);
-                doc.body.style.cursor = '';
-                doc.body.style.userSelect = '';
-                const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
-                this._writeSidePanelWidthPref(finalWidth, scope);
-                this._applySidePanelWidth(root, finalWidth);
-                if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
-                Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
-            };
-            doc.body.style.cursor = 'col-resize';
-            doc.body.style.userSelect = 'none';
-            doc.addEventListener('mousemove', onMove);
-            doc.addEventListener('mouseup', onUp);
+            this._beginColResizeDrag(e, {
+                onMove: (ev) => {
+                    const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
+                    this._applySidePanelWidth(root, next);
+                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                },
+                onUp: () => {
+                    const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
+                    this._writeSidePanelWidthPref(finalWidth, scope);
+                    this._applySidePanelWidth(root, finalWidth);
+                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                    Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
+                }
+            });
         });
     },
 
     _attachResultsPanelWidthResize() {
         if (!this._modal || this._resultsWidthResizeAttached) return;
         this._resultsWidthResizeAttached = true;
-        const doc = this._pageWindow().document;
         this._modal.addEventListener('mousedown', (e) => {
             const handle = e.target.closest('[data-wf-dash-results-width-handle]');
             if (!handle || !this._modal.contains(handle)) return;
-            e.preventDefault();
             const root = handle.closest('[data-wf-dash-split-root]');
             const col = root ? root.querySelector('[data-wf-dash-results-column]') : null;
             if (!root || !col) return;
             const colLeft = col.getBoundingClientRect().left;
-            const onMove = (ev) => {
-                const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
-                col.style.flex = '0 0 auto';
-                col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
-                col.style.width = next + 'px';
-                col.style.maxWidth = next + 'px';
-            };
-            const onUp = () => {
-                doc.removeEventListener('mousemove', onMove);
-                doc.removeEventListener('mouseup', onUp);
-                doc.body.style.cursor = '';
-                doc.body.style.userSelect = '';
-                const available = this._availableResultsPanelWidth(root);
-                const finalWidth = this._clampResultsPanelMaxWidth(root, col.getBoundingClientRect().width);
-                if (finalWidth >= available - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
-                    this._writeResultsPanelMaxWidthPref(null);
-                    this._applyResultsPanelMaxWidth(root);
-                    Logger.log('dashboard: results panel max width cleared (full width)');
-                } else {
-                    this._writeResultsPanelMaxWidthPref(finalWidth);
-                    this._applyResultsPanelMaxWidth(root);
-                    Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
+            this._beginColResizeDrag(e, {
+                onMove: (ev) => {
+                    const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
+                    col.style.flex = '0 0 auto';
+                    col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
+                    col.style.width = next + 'px';
+                    col.style.maxWidth = next + 'px';
+                },
+                onUp: () => {
+                    const available = this._availableResultsPanelWidth(root);
+                    const finalWidth = this._clampResultsPanelMaxWidth(root, col.getBoundingClientRect().width);
+                    if (finalWidth >= available - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                        this._writeResultsPanelMaxWidthPref(null);
+                        this._applyResultsPanelMaxWidth(root);
+                        Logger.log('dashboard: results panel max width cleared (full width)');
+                    } else {
+                        this._writeResultsPanelMaxWidthPref(finalWidth);
+                        this._applyResultsPanelMaxWidth(root);
+                        Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
+                    }
                 }
-            };
-            doc.body.style.cursor = 'col-resize';
-            doc.body.style.userSelect = 'none';
-            doc.addEventListener('mousemove', onMove);
-            doc.addEventListener('mouseup', onUp);
+            });
         });
     },
 
@@ -1692,14 +1855,14 @@ const plugin = {
                         </button>
                         <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
-                            <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">${isFlyout ? '▸' : '▸'}</span>
+                            <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
                         </button>
                     </div>
                 </div>
                 <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelInitialStyle}">
                     ${toolbar}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
-                        <p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>
+                        ${this._msHintHtml(emptyHint)}
                     </div>
                 </div>
             </div>
@@ -1810,8 +1973,7 @@ const plugin = {
                     this._flyoutResizeTimer = null;
                     if (this._isOpen()) {
                         this._repositionOpenFlyouts();
-                        this._applyAllSidePanelWidths();
-                        this._applyAllResultsPanelMaxWidths();
+                        this._scheduleSplitLayoutSync();
                     }
                 }, 100);
             }, { passive: true });
@@ -1832,16 +1994,46 @@ const plugin = {
                 this._onTeamMemberMsChange(this._modal);
             }
             if (msKey.startsWith('filter-') && this._state.cachedItems) {
+                if (typeof this._updateFilterSelectionOrder === 'function') {
+                    this._updateFilterSelectionOrder(msKey);
+                }
                 this._keepFilterMsDropdownOpen(msKey);
                 this._renderFilterLists();
+                if (typeof this._maybeLiveApplyFilterMsChange === 'function') {
+                    this._maybeLiveApplyFilterMsChange(msKey);
+                }
             }
             if (msKey.startsWith('filter-')) this._updateApplyFiltersUi();
         });
+
+        modal.addEventListener('mousedown', (e) => {
+            if (this._isInsideOpenMsFlyout(e.target)) return;
+            this._closeFlyoutMsDropdowns();
+        });
+
+        for (const panelId of ['#wf-dash-left-panel-search', '#wf-dash-left-panel-filters']) {
+            const scrollPanel = this._q(panelId);
+            if (!scrollPanel) continue;
+            scrollPanel.addEventListener('scroll', () => {
+                this._closeFlyoutMsDropdowns();
+                this._repositionOpenFlyouts();
+            }, { passive: true });
+        }
 
         modal.addEventListener('click', (e) => {
             const msToggle = e.target.closest('[data-wf-dash-ms-toggle]');
             if (msToggle && modal.contains(msToggle)) {
                 this._toggleMsDropdown(msToggle.getAttribute('data-wf-dash-ms-toggle'));
+                return;
+            }
+            const msOptionRow = e.target.closest('tr[data-wf-dash-ms-option]');
+            if (msOptionRow && modal.contains(msOptionRow)) {
+                if (e.target.closest('input[type="checkbox"]')) return;
+                const cb = msOptionRow.querySelector('input[type="checkbox"][data-wf-dash-ms]');
+                if (cb) {
+                    cb.checked = !cb.checked;
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 return;
             }
             const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
@@ -1851,7 +2043,15 @@ const plugin = {
                 this._toggleMsBulkSelection(key);
                 if (key.startsWith('search-teams')) this._renderSearchProjectsList();
                 if (key.startsWith('search-')) this._validateRangeUi();
-                if (key.startsWith('filter-') && this._state.cachedItems) this._renderFilterLists();
+                if (key.startsWith('filter-') && this._state.cachedItems) {
+                    if (typeof this._updateFilterSelectionOrder === 'function') {
+                        this._updateFilterSelectionOrder(key);
+                    }
+                    this._renderFilterLists();
+                    if (typeof this._maybeLiveApplyFilterMsChange === 'function') {
+                        this._maybeLiveApplyFilterMsChange(key);
+                    }
+                }
                 if (key.startsWith('filter-')) this._updateApplyFiltersUi();
                 if (dashIsTeamMembersMsKey(key) && typeof this._onTeamMemberMsChange === 'function') {
                     this._onTeamMemberMsChange(this._modal);
@@ -1878,8 +2078,20 @@ const plugin = {
         return Boolean(this._state.msDropdownOpen[scopeKey]);
     },
 
-    _msPanelOpenStyle() {
-        return 'display: block; width: 100%; min-width: 0; overflow-x: hidden; overflow-y: visible; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff);';
+    _finalizeHiddenPanelAfterTransition(panel, finalize, propNames, scopeKey) {
+        const props = Array.isArray(propNames) ? propNames : [propNames];
+        const onEnd = (e) => {
+            if (e.target !== panel) return;
+            if (!props.includes(e.propertyName)) return;
+            finalize();
+        };
+        panel.addEventListener('transitionend', onEnd, { once: true });
+        const fallback = setTimeout(finalize, DASH_MS_FLYOUT_ANIM_MS + 50);
+        if (scopeKey != null) {
+            const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
+            timers.flyoutFallback = fallback;
+            this._state.msDropdownHoverTimers[scopeKey] = timers;
+        }
     },
 
     _msChevronForScope(scopeKey, open) {
@@ -1922,6 +2134,35 @@ const plugin = {
         }
     },
 
+    _isInsideOpenMsFlyout(target) {
+        if (!target || !this._modal || !this._modal.contains(target)) return false;
+        const wrap = target.closest('[data-wf-dash-ms-wrap]');
+        if (wrap) {
+            const scopeKey = wrap.getAttribute('data-wf-dash-ms-wrap');
+            if (dashIsFlyoutMsKey(scopeKey) && this._isMsDropdownOpen(scopeKey)) return true;
+        }
+        const panel = target.closest('[data-wf-dash-ms-panel]');
+        if (panel) {
+            const scopeKey = panel.getAttribute('data-wf-dash-ms-panel');
+            if (dashIsFlyoutMsKey(scopeKey) && this._isMsDropdownOpen(scopeKey)) return true;
+        }
+        return false;
+    },
+
+    _flyoutVerticalViewBottom(scopeKey, modalRect, gap) {
+        let viewBottom = modalRect.bottom - gap;
+        if (scopeKey && scopeKey.startsWith('search-')) {
+            const retrieveSection = this._q('#wf-dash-section-retrieve');
+            if (retrieveSection) {
+                const retrieveTop = retrieveSection.getBoundingClientRect().top - gap;
+                if (retrieveTop > modalRect.top + gap) {
+                    viewBottom = Math.min(viewBottom, retrieveTop);
+                }
+            }
+        }
+        return viewBottom;
+    },
+
     _applyMsFlyoutVerticalLayout(scopeKey, panel, headerRect, modalRect, gap) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) return;
@@ -1930,7 +2171,7 @@ const plugin = {
         const naturalHeight = panel.scrollHeight;
         const chromeHeight = Math.max(0, naturalHeight - itemsEl.scrollHeight);
         const viewTop = modalRect.top + gap;
-        const viewBottom = modalRect.bottom - gap;
+        const viewBottom = this._flyoutVerticalViewBottom(scopeKey, modalRect, gap);
         const headerTop = headerRect.top;
         const spaceBelow = viewBottom - headerTop;
         const spaceAbove = headerTop - viewTop;
@@ -2005,15 +2246,7 @@ const plugin = {
             panel.style.display = 'none';
             this._resetMsFlyoutPanelPosition(panel, scopeKey);
         };
-        const onEnd = (e) => {
-            if (e.target !== panel) return;
-            if (e.propertyName !== 'opacity' && e.propertyName !== 'transform') return;
-            finalize();
-        };
-        panel.addEventListener('transitionend', onEnd, { once: true });
-        const timers = this._state.msDropdownHoverTimers[scopeKey] || {};
-        timers.flyoutFallback = setTimeout(finalize, DASH_MS_FLYOUT_ANIM_MS + 50);
-        this._state.msDropdownHoverTimers[scopeKey] = timers;
+        this._finalizeHiddenPanelAfterTransition(panel, finalize, ['opacity', 'transform'], scopeKey);
     },
 
     _clearMsAccordionPanelInlineOpenStyles(panel) {
@@ -2053,12 +2286,7 @@ const plugin = {
             if (this._isMsDropdownOpen(scopeKey)) return;
             panel.style.display = 'none';
         };
-        const onEnd = (e) => {
-            if (e.target !== panel || e.propertyName !== 'max-height') return;
-            finalize();
-        };
-        panel.addEventListener('transitionend', onEnd, { once: true });
-        setTimeout(finalize, DASH_MS_FLYOUT_ANIM_MS + 50);
+        this._finalizeHiddenPanelAfterTransition(panel, finalize, 'max-height');
     },
 
     _msItemsContainerStyle() {
@@ -2449,6 +2677,22 @@ const plugin = {
         return lib.textMatchesQuery(text, q, true, false);
     },
 
+    _syncMsNoMatchEl(itemsEl, query, visibleCount) {
+        let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
+        if (query && visibleCount === 0) {
+            if (!noMatchEl) {
+                noMatchEl = document.createElement('p');
+                noMatchEl.setAttribute('data-wf-dash-ms-no-match', '1');
+                noMatchEl.style.cssText = this._msHintParagraphStyle();
+                noMatchEl.textContent = 'No matches';
+                itemsEl.appendChild(noMatchEl);
+            }
+            noMatchEl.style.display = '';
+        } else if (noMatchEl) {
+            noMatchEl.style.display = 'none';
+        }
+    },
+
     _applyMsDropdownFilter(scopeKey, query) {
         if (!scopeKey) return;
         this._state.msDropdownFilter[scopeKey] = query || '';
@@ -2466,22 +2710,10 @@ const plugin = {
                 else row.setAttribute('data-wf-dash-ms-filter-hidden', '1');
                 if (show) visible += 1;
             });
-            let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
-            if (q && visible === 0) {
-                if (!noMatchEl) {
-                    noMatchEl = document.createElement('p');
-                    noMatchEl.setAttribute('data-wf-dash-ms-no-match', '1');
-                    noMatchEl.style.cssText = 'padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);';
-                    noMatchEl.textContent = 'No matches';
-                    itemsEl.appendChild(noMatchEl);
-                }
-                noMatchEl.style.display = '';
-            } else if (noMatchEl) {
-                noMatchEl.style.display = 'none';
-            }
+            this._syncMsNoMatchEl(itemsEl, q, visible);
             return;
         }
-        const optionLabels = itemsEl.querySelectorAll('label[data-wf-dash-ms-option]');
+        const optionLabels = itemsEl.querySelectorAll('[data-wf-dash-ms-option]');
         if (optionLabels.length === 0) return;
         const lib = dashLib();
         let visible = 0;
@@ -2491,19 +2723,7 @@ const plugin = {
             else label.setAttribute('data-wf-dash-ms-filter-hidden', '1');
             if (show) visible += 1;
         });
-        let noMatchEl = itemsEl.querySelector('[data-wf-dash-ms-no-match]');
-        if (q && visible === 0) {
-            if (!noMatchEl) {
-                noMatchEl = document.createElement('p');
-                noMatchEl.setAttribute('data-wf-dash-ms-no-match', '1');
-                noMatchEl.style.cssText = 'padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);';
-                noMatchEl.textContent = 'No matches';
-                itemsEl.appendChild(noMatchEl);
-            }
-            noMatchEl.style.display = '';
-        } else if (noMatchEl) {
-            noMatchEl.style.display = 'none';
-        }
+        this._syncMsNoMatchEl(itemsEl, q, visible);
     },
 
     _syncMsDropdownFilterUi(scopeKey) {
@@ -2553,10 +2773,7 @@ const plugin = {
             Context.opsTab.revalidateOnDashboardTabActivated(this._modal);
         }
         if (tabId === 'search-output' || tabId === 'team-members' || tabId === 'diff-viewer') {
-            requestAnimationFrame(() => {
-                this._applyAllSidePanelWidths();
-                this._applyAllResultsPanelMaxWidths();
-            });
+            this._scheduleSplitLayoutSync();
         }
     },
 
@@ -2574,46 +2791,104 @@ const plugin = {
         return [...items.querySelectorAll('input[type="checkbox"]')].map((cb) => cb.value);
     },
 
-    _msOptionCountBadgeHtml(count) {
-        if (count == null) return '';
-        return `<span data-wf-dash-ms-option-count="1" aria-label="${dashEscHtml(String(count))} matching results">${dashEscHtml(String(count))}</span>`;
+    _formatFilterOptionCountParts(count, filteredTotalCount, optionsInScope) {
+        if (count == null) return { countText: '', pctText: '' };
+        const countNum = Number(count);
+        if (!Number.isFinite(countNum)) return { countText: String(count), pctText: '' };
+        const countText = String(countNum);
+        if (optionsInScope === 1 || countNum === 0) return { countText, pctText: '' };
+        const totalNum = Number(filteredTotalCount);
+        if (!Number.isFinite(totalNum) || totalNum <= 0) return { countText, pctText: '' };
+        const pct = (countNum / totalNum) * 100;
+        const lib = dashLib();
+        const pctStr = lib && typeof lib.formatPercent === 'function'
+            ? lib.formatPercent(pct)
+            : (pct < 1 ? String(parseFloat(pct.toFixed(2))) : String(Math.round(pct)));
+        return { countText, pctText: pctStr + '%' };
     },
 
-    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts) {
-        if (loading) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>`;
-        if (items.length === 0) return `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(emptyHint)}</p>`;
+    _formatFilterOptionCountLabel(count, filteredTotalCount, optionsInScope) {
+        const parts = this._formatFilterOptionCountParts(count, filteredTotalCount, optionsInScope);
+        if (!parts.countText) return '';
+        if (!parts.pctText) return parts.countText;
+        return parts.countText + ' / ' + parts.pctText;
+    },
+
+    _filterOptionTableRowHtml(scopeKey, it, opts) {
+        const {
+            defaultChecked,
+            dimStyle,
+            countParts,
+            email,
+            displayName
+        } = opts;
+        const countNumHtml = countParts.countText
+            ? `<span data-wf-dash-ms-option-count-num="1" style="${dimStyle}">${dashEscHtml(countParts.countText)}</span>`
+            : '';
+        const countPctHtml = countParts.pctText
+            ? `<span data-wf-dash-ms-option-count-pct="1" style="${dimStyle}">${dashEscHtml(countParts.pctText)}</span>`
+            : '';
+        const ariaCount = this._formatFilterOptionCountLabel(
+            countParts.countText === '' ? null : Number(countParts.countText),
+            opts.filteredTotalCount,
+            opts.optionsInScope
+        );
+        const ariaSuffix = ariaCount.includes('%') ? ' of filtered' : '';
+        const textHtml = this._msOptionTextHtml(displayName, email, it.label, dimStyle);
+        return `
+            <tr data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}"${ariaCount ? ' aria-label="' + dashEscHtml(ariaCount + ariaSuffix) + '"' : ''}>
+                <td data-wf-dash-ms-option-col="cb" align="center">
+                    <input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}>
+                </td>
+                <td data-wf-dash-ms-option-col="count" align="center">${countNumHtml}</td>
+                <td data-wf-dash-ms-option-col="pct" align="center">${countPctHtml}</td>
+                <td data-wf-dash-ms-option-col="label" align="left">${textHtml}</td>
+            </tr>`;
+    },
+
+    _multiSelectItemsHtml(scopeKey, items, emptyHint, loading, defaultChecked, irrelevantIds, optionCounts, filteredTotalCount) {
+        if (loading) return this._msHintHtml('Loading…');
+        if (items.length === 0) return this._msHintHtml(emptyHint);
         const irrelevant = irrelevantIds || null;
         const counts = optionCounts instanceof Map ? optionCounts : null;
-        return items.map((it) => {
+        const optionsInScope = items.length;
+        const useFilterTable = counts != null;
+        const rows = items.map((it) => {
             const dim = irrelevant && irrelevant.has(it.id);
             const dimStyle = dim ? ' color: var(--muted-foreground, #64748b); opacity: 0.5;' : '';
             const email = String(it.email || '').trim();
             const displayName = String(it.name || it.label || '').trim();
-            const countBadge = counts && counts.has(it.id)
-                ? this._msOptionCountBadgeHtml(counts.get(it.id))
-                : '';
-            const textHtml = email
-                ? `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">
-                    <div data-wf-dash-ms-option-name="1">${dashEscHtml(displayName)}</div>
-                    <div data-wf-dash-ms-option-email="1">${dashEscHtml(email)}</div>
-                </span>`
-                : `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(it.label)}</span>`;
+            if (useFilterTable) {
+                const countParts = counts.has(it.id)
+                    ? this._formatFilterOptionCountParts(counts.get(it.id), filteredTotalCount, optionsInScope)
+                    : { countText: '', pctText: '' };
+                return this._filterOptionTableRowHtml(scopeKey, it, {
+                    defaultChecked,
+                    dimStyle,
+                    countParts,
+                    email,
+                    displayName,
+                    filteredTotalCount,
+                    optionsInScope
+                });
+            }
+            const textHtml = this._msOptionTextHtml(displayName, email, it.label, dimStyle);
             return `
             <label data-wf-dash-ms-option="1" data-wf-dash-ms-label="${dashEscHtml(it.label)}" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
                 <span data-wf-dash-ms-option-cb="1"><input type="checkbox" value="${dashEscHtml(it.id)}" data-wf-dash-ms="${dashEscHtml(scopeKey)}"${defaultChecked ? ' checked' : ''}></span>
-                ${countBadge}
                 ${textHtml}
             </label>`;
         }).join('');
-    },
-
-    _msOptionCount(scopeKey) {
-        const itemsEl = this._msItemsEl(scopeKey);
-        if (!itemsEl) return 0;
-        if (dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
-            return itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length;
+        if (useFilterTable) {
+            return '<table data-wf-dash-ms-option-table="1" cellpadding="0" cellspacing="0" role="presentation">'
+                + '<colgroup>'
+                + '<col data-wf-dash-ms-option-col="cb">'
+                + '<col data-wf-dash-ms-option-col="count">'
+                + '<col data-wf-dash-ms-option-col="pct">'
+                + '<col data-wf-dash-ms-option-col="label">'
+                + '</colgroup><tbody>' + rows + '</tbody></table>';
         }
-        return itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]').length;
+        return rows;
     },
 
     _enforceDualConstraintPolarity(scopeKey, cb) {
@@ -2643,10 +2918,10 @@ const plugin = {
 
     _dualConstraintItemsHtml(scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, loading) {
         if (loading) {
-            return '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">Loading…</p>';
+            return this._msHintHtml('Loading…');
         }
         if (!items || items.length === 0) {
-            return '<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(emptyHint) + '</p>';
+            return this._msHintHtml(emptyHint);
         }
         const header = '<div data-wf-dash-ms-dual-header="1">' +
             '<span data-wf-dash-ms-dual-label="1"></span>' +
@@ -2744,8 +3019,9 @@ const plugin = {
         const loading = Boolean(options.loading);
         const irrelevantIds = options.irrelevantIds || null;
         const optionCounts = options.optionCounts instanceof Map ? options.optionCounts : null;
+        const filteredTotalCount = options.filteredTotalCount != null ? options.filteredTotalCount : null;
         itemsEl.innerHTML = this._multiSelectItemsHtml(
-            scopeKey, items, emptyHint, loading, false, irrelevantIds, optionCounts
+            scopeKey, items, emptyHint, loading, false, irrelevantIds, optionCounts, filteredTotalCount
         );
         itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             if (prev.has(cb.value)) cb.checked = true;

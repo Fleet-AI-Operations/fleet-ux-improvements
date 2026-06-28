@@ -167,86 +167,19 @@ function dashDefaultManualFilterStageRows() {
     }));
 }
 
-const DASH_OUTPUT_NUM_COMPARATORS = [
-    { id: 'gt', label: '>' },
-    { id: 'gte', label: '>=' },
-    { id: 'lt', label: '<' },
-    { id: 'lte', label: '<=' },
-    { id: 'eq', label: '=' },
-    { id: 'neq', label: '≠' }
-];
-
-const DASH_OUTPUT_DATE_COMPARATORS = [
-    { id: 'gt', label: 'After' },
-    { id: 'gte', label: 'On or after' },
-    { id: 'lt', label: 'Before' },
-    { id: 'lte', label: 'On or before' },
-    { id: 'eq', label: 'On' },
-    { id: 'neq', label: 'Not on' }
-];
-
 function dashManualFilterWordCount(text) {
     const trimmed = String(text || '').trim();
     if (!trimmed) return 0;
     return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
-function dashManualFilterFieldOptionsHtml(selectedId) {
-    const sel = selectedId || DASH_MANUAL_FILTER_DEFAULT_FIELD;
-    return DASH_OUTPUT_MANUAL_FILTER_FIELDS.map((f) => {
-        const selected = f.id === sel ? ' selected' : '';
-        return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>' + dashEscHtml(f.label) + '</option>';
-    }).join('');
-}
-
-function dashManualComparatorOptionsHtml(fieldType, selectedId) {
-    const list = fieldType === 'date' ? DASH_OUTPUT_DATE_COMPARATORS : DASH_OUTPUT_NUM_COMPARATORS;
-    const sel = selectedId || list[0].id;
-    return list.map((c) => {
-        const selected = c.id === sel ? ' selected' : '';
-        return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
-    }).join('');
-}
-
-function dashManualFilterRowHtml(opts) {
-    const options = opts || {};
-    const field = options.field || DASH_MANUAL_FILTER_DEFAULT_FIELD;
-    const fieldMeta = DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === field)
-        || DASH_OUTPUT_MANUAL_FILTER_FIELDS.find((f) => f.id === DASH_MANUAL_FILTER_DEFAULT_FIELD)
-        || DASH_OUTPUT_MANUAL_FILTER_FIELDS[0];
-    const isDate = fieldMeta.type === 'date';
-    const comparator = options.comparator || (isDate ? 'gte' : 'gte');
-    const value = options.value != null ? String(options.value) : '';
-    const selectStyle = options.selectStyle || '';
-    const inputStyle = options.inputStyle || '';
-    const removeBtnStyle = options.removeBtnStyle || '';
-    const compWidth = isDate ? '96px' : '52px';
-    return '<div data-wf-dash-manual-row="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
-        + '<select data-wf-dash-manual-field="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
-        + dashManualFilterFieldOptionsHtml(field)
-        + '</select>'
-        + '<select data-wf-dash-manual-comparator="1" style="' + selectStyle + ' width: ' + compWidth + '; flex-shrink: 0;">'
-        + dashManualComparatorOptionsHtml(isDate ? 'date' : 'number', comparator)
-        + '</select>'
-        + '<input type="' + (isDate ? 'date' : 'number') + '" data-wf-dash-manual-value="1" placeholder="Value" step="any" value="'
-        + dashEscHtml(value) + '" style="' + inputStyle + ' width: ' + (isDate ? '118px' : '72px') + '; flex-shrink: 0;">'
-        + '<button type="button" data-wf-dash-manual-remove="1" title="Remove filter" style="' + removeBtnStyle
-        + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
-        + '</div>';
-}
-
-
 function dashLib() {
     return Context.dashboardLib;
 }
 
 function dashEscHtml(value) {
-    return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    const lib = dashLib();
+    return lib && lib.escHtml ? lib.escHtml(value) : String(value == null ? '' : value);
 }
 
 function dashPgInFilter(values) {
@@ -295,51 +228,8 @@ function dashFleetDisputeUrl(disputeId) {
 // ── Formatting ──
 
 function dashFormatCreatedAt(iso) {
-    if (!iso) return '—';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    return date.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
-    });
-}
-
-function dashRelativeAgo(iso) {
-    if (!iso) return '';
-    const then = new Date(iso);
-    if (Number.isNaN(then.getTime())) return '';
-    const diffMs = Math.max(0, Date.now() - then.getTime());
-    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const days = Math.floor(totalHours / 24);
-    const hours = totalHours % 24;
-    const parts = [];
-    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
-    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
-    return parts.join(', ') + ' ago';
-}
-
-function dashCreatedTabRelativeAgo(iso) {
-    if (!iso) return '';
-    const then = new Date(iso);
-    if (Number.isNaN(then.getTime())) return '';
-    const diffMs = Math.max(0, Date.now() - then.getTime());
-    const totalMins = Math.floor(diffMs / (1000 * 60));
-    const totalHours = Math.floor(totalMins / 60);
-    const days = Math.floor(totalHours / 24);
-    const hours = totalHours % 24;
-    if (days > 0) {
-        let text = days + ' day' + (days === 1 ? '' : 's');
-        if (hours > 0) text += ', ' + hours + (hours === 1 ? ' hr' : ' hrs');
-        return text + ' ago';
-    }
-    if (totalHours > 0) {
-        return totalHours + (totalHours === 1 ? ' hr' : ' hrs') + ' ago';
-    }
-    const mins = Math.max(1, totalMins);
-    return mins + (mins === 1 ? ' min' : ' mins') + ' ago';
+    const lib = dashLib();
+    return lib && lib.formatCreatedAt ? lib.formatCreatedAt(iso) : String(iso || '—');
 }
 
 function dashProblemCreationDurationText(seconds) {
@@ -356,7 +246,7 @@ function dashProblemCreationDurationText(seconds) {
 
 function dashTimestampWithDurationParts(iso, durationSeconds) {
     const formatted = dashFormatCreatedAt(iso);
-    const ago = dashCreatedTabRelativeAgo(iso);
+    const ago = dashLib().relativeAgo(iso, { style: 'compact' });
     const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
     const durationText = Number.isFinite(durationSec) && durationSec >= 0
         ? dashProblemCreationDurationText(durationSec)
@@ -517,8 +407,10 @@ const searchOutputMethods = {
     _projectName(projectId) {
         if (!projectId) return '';
         const projects = (this._state.catalog && this._state.catalog.projects) || [];
-        const found = projects.find((p) => p.id === projectId);
-        return found ? found.name : '';
+        const lib = dashLib();
+        return lib && typeof lib.projectDisplayLabel === 'function'
+            ? lib.projectDisplayLabel(projectId, projects)
+            : String(projectId).trim().slice(0, 8);
     },
 
     // ── PostgREST data layer (reuses ops-tab session/token gathering) ──,
@@ -1418,9 +1310,7 @@ const searchOutputMethods = {
         const confirmClass = this._dashBtnClass('primary', 'compact');
         const dismissClass = this._dashBtnClass('basic', 'compact');
         const disabled = ui.submitting ? ' disabled' : '';
-        const textareaStyle = this._inputStyle()
-            + ' display: block; width: 100%; box-sizing: border-box; min-height: '
-            + DASH_AUTO_GROW_TEXTAREA_MIN_PX + 'px; overflow-y: hidden; resize: none; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+        const textareaStyle = this._autoGrowTextareaStyle();
         return `
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>
@@ -1444,21 +1334,9 @@ const searchOutputMethods = {
         }
         if (!wrap) return;
         const itemId = wrap.getAttribute('data-wf-dash-item-id') || '';
-        const ta = wrap.querySelector('[data-wf-dash-flag-resolution-input]');
-        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
-        const selStart = hadFocus ? ta.selectionStart : null;
-        const selEnd = hadFocus ? ta.selectionEnd : null;
+        const focus = this._textareaFocusSnapshot(wrap, '[data-wf-dash-flag-resolution-input]');
         wrap.innerHTML = this._flagResolutionBlockHtml(fid, itemId);
-        const newTa = wrap.querySelector('[data-wf-dash-flag-resolution-input]');
-        if (newTa) this._syncAutoGrowTextarea(newTa, DASH_AUTO_GROW_TEXTAREA_MIN_PX);
-        if (hadFocus) {
-            if (newTa) {
-                newTa.focus();
-                try {
-                    if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
-                } catch (_e) { /* ignore */ }
-            }
-        }
+        this._restoreTextareaFocus(wrap, '[data-wf-dash-flag-resolution-input]', focus);
     },
 
     _handleFlagResolutionInput(flagId, value) {
@@ -1544,11 +1422,8 @@ const searchOutputMethods = {
         const submitStyle = !canSubmit ? ' opacity: 0.45; cursor: not-allowed;' : '';
         const cancelClass = this._dashBtnClass('basic', 'compact');
         const submitClass = this._dashBtnClass('primary', 'compact');
-        const selectStyle = this._inputStyle()
-            + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
-        const textareaStyle = this._inputStyle()
-            + ' display: block; width: 100%; box-sizing: border-box; min-height: '
-            + DASH_AUTO_GROW_TEXTAREA_MIN_PX + 'px; overflow-y: hidden; resize: none; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+        const selectStyle = this._compactSelectStyle();
+        const textareaStyle = this._autoGrowTextareaStyle();
         return `
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <span style="font-weight: 600; color: var(--foreground, #0f172a);">Flag for Senior Review</span>
@@ -1588,21 +1463,9 @@ const searchOutputMethods = {
         }
         if (!wrap) return;
         const tid = taskId || wrap.getAttribute('data-task-id') || '';
-        const ta = wrap.querySelector('[data-wf-dash-flag-create-note]');
-        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
-        const selStart = hadFocus ? ta.selectionStart : null;
-        const selEnd = hadFocus ? ta.selectionEnd : null;
+        const focus = this._textareaFocusSnapshot(wrap, '[data-wf-dash-flag-create-note]');
         wrap.innerHTML = this._flagCreateFormInnerHtml(iid, tid);
-        const newTa = wrap.querySelector('[data-wf-dash-flag-create-note]');
-        if (newTa) this._syncAutoGrowTextarea(newTa, DASH_AUTO_GROW_TEXTAREA_MIN_PX);
-        if (hadFocus) {
-            if (newTa) {
-                newTa.focus();
-                try {
-                    if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
-                } catch (_e) { /* ignore */ }
-            }
-        }
+        this._restoreTextareaFocus(wrap, '[data-wf-dash-flag-create-note]', focus);
     },
 
     _readFlagCreateFormFromDom(itemId) {
@@ -4119,11 +3982,11 @@ const searchOutputMethods = {
             }));
     },
 
-    _buildV1CreationTimeFilterOptions(scopeItems) {
+    _buildTimeBucketFilterOptions(scopeItems, bucketFn) {
         const lib = dashLib();
         const present = new Set();
         for (const item of scopeItems || []) {
-            for (const bucketId of lib.itemV1CreationTimeBuckets(item)) {
+            for (const bucketId of bucketFn(item)) {
                 present.add(bucketId);
             }
         }
@@ -4133,38 +3996,21 @@ const searchOutputMethods = {
                 id,
                 label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
             }));
+    },
+
+    _buildV1CreationTimeFilterOptions(scopeItems) {
+        const lib = dashLib();
+        return this._buildTimeBucketFilterOptions(scopeItems, (item) => lib.itemV1CreationTimeBuckets(item));
     },
 
     _buildQaTimeFilterOptions(scopeItems) {
         const lib = dashLib();
-        const present = new Set();
-        for (const item of scopeItems || []) {
-            for (const bucketId of lib.itemQaTimeMinutesBuckets(item)) {
-                present.add(bucketId);
-            }
-        }
-        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
-            .filter((id) => present.has(id))
-            .map((id) => ({
-                id,
-                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
-            }));
+        return this._buildTimeBucketFilterOptions(scopeItems, (item) => lib.itemQaTimeMinutesBuckets(item));
     },
 
     _buildDisputeResolutionTimeFilterOptions(scopeItems) {
         const lib = dashLib();
-        const present = new Set();
-        for (const item of scopeItems || []) {
-            for (const bucketId of lib.itemDisputeResolutionTimeMinutesBuckets(item)) {
-                present.add(bucketId);
-            }
-        }
-        return (lib.V1_CREATION_TIME_BUCKET_ORDER || [])
-            .filter((id) => present.has(id))
-            .map((id) => ({
-                id,
-                label: (lib.V1_CREATION_TIME_BUCKET_LABELS && lib.V1_CREATION_TIME_BUCKET_LABELS[id]) || id
-            }));
+        return this._buildTimeBucketFilterOptions(scopeItems, (item) => lib.itemDisputeResolutionTimeMinutesBuckets(item));
     },
 
     _refreshHelpfulnessFilterUi() {
@@ -4176,13 +4022,14 @@ const searchOutputMethods = {
         const bounds = boundIds || [];
         if (bounds.length === 0) return true;
         const sel = selected || [];
-        if (sel.length === 0) return true;
-        if (bounds.length === 1) return false;
-        return sel.length >= bounds.length;
+        return sel.length === 0;
     },
 
     _isDimensionAllSelected(selected, boundIds) {
-        return this._isDimensionUnrestricted(selected, boundIds);
+        const bounds = boundIds || [];
+        if (bounds.length === 0) return false;
+        const sel = selected || [];
+        return sel.length >= bounds.length;
     },
 
     _normalizeFilterDimensionSelection(selected, boundIds) {
@@ -4234,11 +4081,7 @@ const searchOutputMethods = {
     },
 
     _btnDepthSegmentStyle(active) {
-        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
-        if (active) {
-            return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
-        }
-        return base + ' ' + DASH_TOGGLE_INACTIVE;
+        return this._segmentBtnStyle(active, 'depth');
     },
 
     _readResultsModePref() {
@@ -4604,11 +4447,6 @@ const searchOutputMethods = {
         return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
     },
 
-    _isFilterScopeVisible(scopeKey) {
-        const wrap = this._filterScopeWrapEl(scopeKey);
-        return Boolean(wrap && wrap.style.display !== 'none');
-    },
-
     _reindexFilterListsFromScope(resetDrafts) {
         const lib = dashLib();
         const scopeItems = this._getFilterScopeItems();
@@ -4650,7 +4488,8 @@ const searchOutputMethods = {
         const inputStyle = this._inputStyle() + ' padding: 4px 8px; font-size: 11px;';
         const selectStyle = inputStyle;
         const row = document.createElement('div');
-        row.innerHTML = dashManualFilterRowHtml({
+        row.innerHTML = this._numericFilterRowHtml({
+            fields: DASH_OUTPUT_MANUAL_FILTER_FIELDS,
             field: opts && opts.field,
             comparator: opts && opts.comparator,
             value: opts && opts.value,
@@ -5116,6 +4955,7 @@ const searchOutputMethods = {
                     || Boolean(this._state.appliedFilters)
             });
             this._syncResultsToolbarDerivedUi();
+            this._validateRangeUi();
         };
 
         if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
@@ -5129,6 +4969,12 @@ const searchOutputMethods = {
                     if (hydrated > 0) {
                         Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
                     }
+                    finishRender();
+                    return true;
+                }).catch((err) => {
+                    Logger.warn('search-output: first page prehydrate failed', err);
+                    this._state.searchLoadPhase = '';
+                    this._state.loading = false;
                     finishRender();
                     return true;
                 });
@@ -5204,46 +5050,21 @@ const searchOutputMethods = {
 
     _getResultsPaginationMeta() {
         const viewItems = this._getViewItems() || [];
-        const total = viewItems.length;
-        const size = this._getEffectiveResultsPageSize();
-        if (total === 0 || size === Infinity) {
-            return { total, totalPages: 1, page: 0, canPrev: false, canNext: false, showNav: false };
-        }
-        const totalPages = Math.max(1, Math.ceil(total / size));
-        let page = this._state.resultsPage || 0;
-        if (page >= totalPages) page = totalPages - 1;
-        this._state.resultsPage = page;
-        return {
-            total,
-            totalPages,
-            page,
-            canPrev: page > 0,
-            canNext: page < totalPages - 1,
-            showNav: totalPages > 1
-        };
+        const pageHolder = { page: this._state.resultsPage || 0 };
+        const meta = this._paginationMeta(
+            viewItems.length,
+            this._getEffectiveResultsPageSize(),
+            pageHolder
+        );
+        this._state.resultsPage = pageHolder.page;
+        return meta;
     },
 
     _getResultsRangeLabel() {
-        const viewItems = this._getViewItems() || [];
-        const total = viewItems.length;
-        if (total === 0) return '0 results';
-        const meta = this._getResultsPaginationMeta();
-        const suffix = total === 1 ? ' result' : ' results';
-        if (!meta.showNav) {
-            return '1–' + total + ' of ' + total + suffix;
-        }
-        const size = this._getEffectiveResultsPageSize();
-        const start = meta.page * size + 1;
-        const end = Math.min((meta.page + 1) * size, total);
-        return start + '–' + end + ' of ' + total + suffix;
-    },
-
-    _pagerNavBtnStyle(disabled) {
-        const base = 'width: 28px; height: 28px; padding: 0; font-size: 15px; font-weight: 600; line-height: 1; border-radius: 6px; flex-shrink: 0;';
-        if (disabled) {
-            return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--muted, #f1f5f9); color: var(--muted-foreground, #94a3b8); cursor: not-allowed; opacity: 0.75;';
-        }
-        return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--foreground, #0f172a); cursor: pointer;';
+        return this._rangeLabel(this._getResultsPaginationMeta(), {
+            singular: 'result',
+            plural: 'results'
+        });
     },
 
     _goResultsPage(delta) {
@@ -5258,34 +5079,25 @@ const searchOutputMethods = {
     },
 
     _syncResultsPagerUi() {
+        const showPager = this._resultsToolbarReady();
+        const meta = showPager ? this._getResultsPaginationMeta() : null;
         const pager = this._q('#wf-dash-results-pager');
         const kindSlot = this._q('#wf-dash-results-pager-slot-kind');
-        const showPager = this._resultsToolbarReady();
-
-        if (showPager) {
-            const row2 = this._q('#wf-dash-results-toolbar-row2');
-            if (row2) row2.style.display = 'flex';
+        if (showPager && pager && kindSlot && pager.parentElement !== kindSlot) {
+            kindSlot.appendChild(pager);
         }
-
-        if (pager) {
-            pager.style.display = showPager ? 'inline-flex' : 'none';
-            if (showPager && kindSlot && pager.parentElement !== kindSlot) {
-                kindSlot.appendChild(pager);
-            }
-        }
-
-        const countEl = this._q('#wf-dash-results-range-count');
-        if (countEl) countEl.textContent = showPager ? this._getResultsRangeLabel() : '';
-
-        const meta = showPager ? this._getResultsPaginationMeta() : null;
-        const prevBtn = this._q('#wf-dash-results-prev');
-        const nextBtn = this._q('#wf-dash-results-next');
-        if (prevBtn) {
-            prevBtn.disabled = !meta || !meta.canPrev;
-        }
-        if (nextBtn) {
-            nextBtn.disabled = !meta || !meta.canNext;
-        }
+        this._syncPagerNavUi({
+            show: showPager,
+            rowEl: this._q('#wf-dash-results-toolbar-row2'),
+            rowDisplay: 'flex',
+            pagerEl: pager,
+            pagerDisplay: 'inline-flex',
+            rangeEl: this._q('#wf-dash-results-range-count'),
+            rangeLabel: meta ? this._getResultsRangeLabel() : '',
+            prevBtn: this._q('#wf-dash-results-prev'),
+            nextBtn: this._q('#wf-dash-results-next'),
+            meta
+        });
     },
 
     _syncResultsRangeCountUi() {
@@ -5358,11 +5170,22 @@ const searchOutputMethods = {
 
     _getUserStoryUi(itemId) {
         const id = String(itemId || '');
-        if (!id) return { status: 'idle', visible: false, userStory: null, message: null };
+        if (!id) {
+            return {
+                status: 'idle',
+                visible: false,
+                scenarioTitle: null,
+                humanAnnotatorInstructions: null,
+                userStory: null,
+                message: null
+            };
+        }
         if (!this._state.userStoryUi[id]) {
             this._state.userStoryUi[id] = {
                 status: 'idle',
                 visible: false,
+                scenarioTitle: null,
+                humanAnnotatorInstructions: null,
                 userStory: null,
                 message: null
             };
@@ -5571,7 +5394,8 @@ const searchOutputMethods = {
     },
 
     _userStoryHasContent(ui) {
-        return ui.userStory != null && String(ui.userStory).trim().length > 0;
+        return ['scenarioTitle', 'humanAnnotatorInstructions', 'userStory']
+            .some((key) => ui[key] != null && String(ui[key]).trim().length > 0);
     },
 
     _userStoryIsAbsent(ui) {
@@ -5583,11 +5407,26 @@ const searchOutputMethods = {
         return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
     },
 
-    _userStoryBodyText(ui) {
-        const story = this._dashQuotedText(ui.userStory);
-        return story
-            ? dashEscHtml(story)
-            : dashEscHtml(ui.message || 'No user story for this task.');
+    _userStoryPanelBodyHtml(ui) {
+        const fields = [
+            { key: 'scenarioTitle', label: 'Scenario Title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
+            { key: 'userStory', label: 'User Story' }
+        ];
+        const parts = [];
+        for (const { key, label } of fields) {
+            const text = this._dashQuotedText(ui[key]);
+            if (!text) continue;
+            parts.push(this._quotedFieldBlockHtml(label, dashEscHtml(text), text, {
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            }));
+        }
+        if (parts.length === 0) {
+            return this._userStoryEmptyHtml(ui);
+        }
+        return '<div class="wf-dash-user-story-block">' + parts.join('') + '</div>';
     },
 
     _userStoryBtnLabel(ui) {
@@ -5612,7 +5451,7 @@ const searchOutputMethods = {
         const panelOpen = ui.visible && !ui.animateOpen;
         const panelHtml = hasPanel
             ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-                + `<div data-wf-dash-user-story-inner><p class="wf-dash-user-story-body">${this._userStoryBodyText(ui)}</p></div>`
+                + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
                 + '</div>'
             : '';
         return `
@@ -5633,6 +5472,8 @@ const searchOutputMethods = {
     },
 
     _animateUserStoryOpen(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (!ui.visible) return;
         const section = this._findUserStorySection(itemId);
         const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
         if (!panel) return;
@@ -5640,11 +5481,32 @@ const searchOutputMethods = {
         panel.setAttribute('aria-hidden', 'true');
         const win = this._pageWindow();
         win.requestAnimationFrame(() => {
+            if (!this._getUserStoryUi(itemId).visible) return;
             win.requestAnimationFrame(() => {
+                if (!this._getUserStoryUi(itemId).visible) return;
                 panel.setAttribute('data-open', '1');
                 panel.setAttribute('aria-hidden', 'false');
             });
         });
+    },
+
+    _syncUserStoryPanelOpen(itemId, visible) {
+        const section = this._findUserStorySection(itemId);
+        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+        if (!panel) return;
+        panel.setAttribute('data-open', visible ? '1' : '0');
+        panel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    },
+
+    _patchUserStoryVisibility(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findUserStorySection(itemId);
+        if (!section) return false;
+        const ui = this._getUserStoryUi(itemId);
+        const btn = section.querySelector('[data-wf-dash-user-story]');
+        if (btn) btn.textContent = this._userStoryBtnLabel(ui);
+        this._syncUserStoryPanelOpen(itemId, ui.visible);
+        return true;
     },
 
     _patchUserStorySection(itemId) {
@@ -5679,20 +5541,19 @@ const searchOutputMethods = {
             if (panel) panel.remove();
             return true;
         }
-        const bodyText = this._userStoryBodyText(ui);
+        const bodyHtml = this._userStoryPanelBodyHtml(ui);
         if (!panel) {
             section.insertAdjacentHTML('beforeend',
                 `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
-                + `<div data-wf-dash-user-story-inner"><p class="wf-dash-user-story-body">${bodyText}</p></div>`
+                + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
                 + '</div>');
             panel = section.querySelector('[data-wf-dash-user-story-panel]');
         } else {
-            const body = panel.querySelector('.wf-dash-user-story-body');
-            if (body) body.innerHTML = bodyText;
+            const inner = panel.querySelector('[data-wf-dash-user-story-inner]');
+            if (inner) inner.innerHTML = bodyHtml;
         }
         if (panel) {
-            panel.setAttribute('data-open', ui.visible ? '1' : '0');
-            panel.setAttribute('aria-hidden', ui.visible ? 'false' : 'true');
+            this._syncUserStoryPanelOpen(itemId, ui.visible);
         }
         return true;
     },
@@ -5737,8 +5598,11 @@ const searchOutputMethods = {
         if (ui.status === 'loaded' || ui.status === 'error') {
             if (!this._userStoryHasContent(ui)) return;
             ui.visible = !ui.visible;
+            delete ui.animateOpen;
             Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
-            if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
+            if (!this._patchUserStoryVisibility(id)) {
+                this._patchTaskCard(id);
+            }
             return;
         }
         if (ui.status === 'loading') {
@@ -5764,22 +5628,38 @@ const searchOutputMethods = {
 
         try {
             const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
-            const userStory = result && result.userStory != null ? String(result.userStory) : '';
-            if (!userStory.trim()) {
+            ui.scenarioTitle = result && result.scenarioTitle != null
+                ? String(result.scenarioTitle).trim() || null
+                : null;
+            ui.humanAnnotatorInstructions = result && result.humanAnnotatorInstructions != null
+                ? String(result.humanAnnotatorInstructions).trim() || null
+                : null;
+            ui.userStory = result && result.userStory != null
+                ? String(result.userStory).trim() || null
+                : null;
+            if (!this._userStoryHasContent(ui)) {
                 const reason = result && result.reason ? result.reason : 'empty';
+                ui.scenarioTitle = null;
+                ui.humanAnnotatorInstructions = null;
                 ui.userStory = null;
                 ui.message = this._userStoryEmptyMessage(reason);
                 Logger.warn('dashboard: user story empty — ' + id + ' (' + reason + ')');
             } else {
-                ui.userStory = userStory;
                 ui.message = null;
-                Logger.log('dashboard: user story fetched — ' + id + ' (' + userStory.length + ' chars)');
+                const summary = [
+                    ui.scenarioTitle ? 'title ' + ui.scenarioTitle.length + ' chars' : null,
+                    ui.humanAnnotatorInstructions ? 'instructions ' + ui.humanAnnotatorInstructions.length + ' chars' : null,
+                    ui.userStory ? 'story ' + ui.userStory.length + ' chars' : null
+                ].filter(Boolean).join(', ');
+                Logger.log('dashboard: user story fetched — ' + id + ' (' + summary + ')');
             }
             ui.status = 'loaded';
-            ui.visible = Boolean(userStory.trim());
+            ui.visible = this._userStoryHasContent(ui);
             if (ui.visible) ui.animateOpen = true;
         } catch (err) {
             ui.status = 'error';
+            ui.scenarioTitle = null;
+            ui.humanAnnotatorInstructions = null;
             ui.userStory = null;
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
@@ -5788,9 +5668,12 @@ const searchOutputMethods = {
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         this._patchTaskCard(id);
-        if (ui.animateOpen) {
+        if (ui.animateOpen && ui.visible) {
             delete ui.animateOpen;
             this._animateUserStoryOpen(id);
+        } else {
+            delete ui.animateOpen;
+            this._syncUserStoryPanelOpen(id, ui.visible);
         }
     },
 
@@ -6240,13 +6123,8 @@ const searchOutputMethods = {
                 && this._state.cachedItems !== null
             );
             if (canLabel) {
-                const kinds = this._committedSearchKinds(committed);
-                const tab = this._state.resultsKindTab || 'all';
-                const base = 'Hydrate ' + this._kindLabelForHydrate(tab, kinds) + ' results';
-                const unhydratedCount = this._getUnhydratedInView().length;
-                btn.textContent = unhydratedCount > 0
-                    ? base + ' (' + unhydratedCount + ' remaining)'
-                    : base;
+                const label = this._bulkHydrateLabel();
+                if (label) btn.textContent = label;
             }
             if (!this._bulkHydrateShowable()) {
                 btn.style.display = 'none';
@@ -6480,9 +6358,7 @@ const searchOutputMethods = {
         if (!value) {
             return '<span class="wf-dash-card-key-copy wf-dash-card-key-copy--empty">—</span>';
         }
-        const inner = (highlight && highlight.query)
-            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
-            : dashEscHtml(value);
+        const inner = this._dashCopyInnerHtml(value, highlight);
         return '<button type="button" class="wf-dash-card-key-copy" dir="rtl" data-wf-dash-copy="' + dashEscHtml(value) + '"'
             + ' title="Click to copy: ' + dashEscHtml(value) + '" aria-label="Task key: ' + dashEscHtml(value) + '">'
             + '<span class="wf-dash-card-key-copy-text" dir="ltr">' + inner + '</span></button>';
@@ -6545,6 +6421,148 @@ const searchOutputMethods = {
         };
         Context.diffViewer.addTask(seed);
         Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
+    },
+
+    _autoGrowTextareaStyle() {
+        return this._inputStyle()
+            + ' display: block; width: 100%; box-sizing: border-box; min-height: '
+            + DASH_AUTO_GROW_TEXTAREA_MIN_PX + 'px; overflow-y: hidden; resize: none; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+    },
+
+    _compactSelectStyle() {
+        return this._inputStyle() + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
+    },
+
+    _iconMicroBtnStyle() {
+        return 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
+    },
+
+    _segmentBtnStyle(active, variant) {
+        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
+        if (variant === 'depth') {
+            if (active) {
+                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
+            }
+            return base + ' ' + DASH_TOGGLE_INACTIVE;
+        }
+        return base;
+    },
+
+    _textareaFocusSnapshot(wrap, selector) {
+        const ta = wrap && wrap.querySelector(selector);
+        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
+        return {
+            hadFocus,
+            selStart: hadFocus && ta ? ta.selectionStart : null,
+            selEnd: hadFocus && ta ? ta.selectionEnd : null
+        };
+    },
+
+    _restoreTextareaFocus(wrap, selector, snapshot) {
+        if (!wrap) return;
+        const ta = wrap.querySelector(selector);
+        if (!ta) return;
+        this._syncAutoGrowTextarea(ta, DASH_AUTO_GROW_TEXTAREA_MIN_PX);
+        if (snapshot && snapshot.hadFocus) {
+            ta.focus();
+            try {
+                if (snapshot.selStart != null && snapshot.selEnd != null) {
+                    ta.setSelectionRange(snapshot.selStart, snapshot.selEnd);
+                }
+            } catch (_e) { /* ignore */ }
+        }
+    },
+
+    _quotedFieldBodyLayoutStyle() {
+        return 'margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5;';
+    },
+
+    _mutedQuotedFieldBodyStyle() {
+        return this._quotedFieldBodyLayoutStyle() + ' color: var(--muted-foreground, #64748b);';
+    },
+
+    _quotedFieldBlockHtml(label, bodyHtml, copyText, options) {
+        const opts = options || {};
+        const shellClass = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
+        const headerClass = opts.headerClass ? ' class="' + dashEscHtml(opts.headerClass) + '"' : '';
+        const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
+        const copyHtml = copyText != null && String(copyText).trim()
+            ? this._copyIconHtml(copyText)
+            : '';
+        const headerInner = opts.headerInner
+            || ('<div style="display: flex; align-items: center; gap: 6px;">' + this._labelSpan(label) + copyHtml + '</div>');
+        const bodyTag = opts.bodyTag || 'p';
+        const layout = this._quotedFieldBodyLayoutStyle();
+        const bodyStyle = opts.bodyStyle != null
+            ? opts.bodyStyle
+            : (opts.bodyClass
+                ? layout
+                : layout + ' color: var(--foreground, #0f172a);');
+        const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
+        return '<div' + shellClass + '>'
+            + '<div' + headerClass + '>' + headerInner + '</div>'
+            + '<' + bodyTag + bodyClass + styleAttr + '>' + bodyHtml + '</' + bodyTag + '>'
+            + '</div>';
+    },
+
+    _resolutionStatusBadgeHtml(kind, label) {
+        const k = String(kind || '').toLowerCase();
+        let style;
+        if (k === 'approved' || k === 'confirmed') {
+            style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);';
+        } else if (k === 'rejected' || k === 'dismissed') {
+            style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);';
+        } else {
+            style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);';
+        }
+        return '<span style="' + style + '">' + dashEscHtml(label) + '</span>';
+    },
+
+    _resolutionBlockColors(kind) {
+        const k = String(kind || '').toLowerCase();
+        if (k === 'approved' || k === 'confirmed') {
+            return {
+                border: 'color-mix(in srgb, #16a34a 35%, transparent)',
+                background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+            };
+        }
+        if (k === 'rejected' || k === 'dismissed') {
+            return {
+                border: 'color-mix(in srgb, #dc2626 40%, transparent)',
+                background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+            };
+        }
+        return {
+            border: 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)',
+            background: 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)'
+        };
+    },
+
+    _resolvedActionSubBlockHtml(opts) {
+        const options = opts || {};
+        const blockId = options.blockId;
+        const itemId = options.itemId;
+        const kind = options.kind;
+        const statusLabel = options.statusLabel || 'Resolved';
+        const leftHeaderExtra = options.leftHeaderExtra || '';
+        const resolverHtml = options.resolverHtml || '';
+        const noteLabel = options.noteLabel || 'Reason';
+        const noteBodyHtml = options.noteBodyHtml || '—';
+        const copyText = options.copyText;
+        const colors = this._resolutionBlockColors(kind);
+        const statusBadge = this._resolutionStatusBadgeHtml(kind, statusLabel);
+        const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>' + leftHeaderExtra;
+        const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
+        const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
+        return '<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">'
+            + this._actionBlockShellHtml(
+                blockId,
+                itemId,
+                'padding: 8px 10px; border: 1px solid ' + colors.border + '; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
+                resHeaderRow,
+                resBodyHtml
+            )
+            + '</div>';
     },
 
     _leftTabStyle(active) {
@@ -7172,50 +7190,35 @@ const searchOutputMethods = {
     },
 
     _renderSearchTeamsList() {
-        const itemsEl = this._msItemsEl('search-teams');
-        if (!itemsEl) return;
-        const prevSelected = new Set(this._selectedFromList('search-teams'));
+        const scopeKey = 'search-teams';
+        const prevSelected = new Set(this._selectedFromList(scopeKey));
         const items = this._getSearchableTeamCatalog().map(([id, label]) => ({ id, label }));
-        itemsEl.innerHTML = this._multiSelectItemsHtml('search-teams', items, 'All teams', false, false);
-        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-teams', prevSelected.size === 0 ? 'all' : 'none');
-        this._applyMsBulkToggleLabel('search-teams');
-        this._updateMsCount('search-teams');
-        this._syncMsDropdown('search-teams');
-        this._syncMsDropdownFilterUi('search-teams');
+        this._renderMsList(scopeKey, items, 'All teams', prevSelected);
+        this._setMsBulkToggleMode(scopeKey, prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel(scopeKey);
     },
 
     _renderSearchProjectsList() {
-        const itemsEl = this._msItemsEl('search-projects');
-        if (!itemsEl) return;
-        const prevSelected = new Set(this._selectedFromList('search-projects'));
+        const scopeKey = 'search-projects';
+        const prevSelected = new Set(this._selectedFromList(scopeKey));
         const loading = this._state.bootstrapStatus === 'loading';
         const items = this._availableSearchProjects().map((p) => ({ id: p.id, label: p.name }));
         const hint = this._state.catalog ? 'All projects' : 'Bootstrapping…';
-        itemsEl.innerHTML = this._multiSelectItemsHtml('search-projects', items, hint, loading, false);
-        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-projects', prevSelected.size === 0 ? 'all' : 'none');
-        this._applyMsBulkToggleLabel('search-projects');
-        this._updateMsCount('search-projects');
-        this._syncMsDropdown('search-projects');
-        this._syncMsDropdownFilterUi('search-projects');
+        this._renderMsList(scopeKey, items, hint, prevSelected, { loading });
+        this._setMsBulkToggleMode(scopeKey, prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel(scopeKey);
     },
 
     _renderSearchEnvsList() {
-        const itemsEl = this._msItemsEl('search-envs');
-        if (!itemsEl) return;
-        const prevSelected = new Set(this._selectedFromList('search-envs'));
+        const scopeKey = 'search-envs';
+        const prevSelected = new Set(this._selectedFromList(scopeKey));
         const loading = this._state.bootstrapStatus === 'loading';
         const envs = (this._state.catalog && this._state.catalog.environments) || [];
         const items = envs.map((e) => ({ id: e.env_key, label: e.name || e.env_key }));
         const hint = this._state.catalog ? 'All environments' : 'Bootstrapping…';
-        itemsEl.innerHTML = this._multiSelectItemsHtml('search-envs', items, hint, loading, false);
-        itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { if (prevSelected.has(cb.value)) cb.checked = true; });
-        this._setMsBulkToggleMode('search-envs', prevSelected.size === 0 ? 'all' : 'none');
-        this._applyMsBulkToggleLabel('search-envs');
-        this._updateMsCount('search-envs');
-        this._syncMsDropdown('search-envs');
-        this._syncMsDropdownFilterUi('search-envs');
+        this._renderMsList(scopeKey, items, hint, prevSelected, { loading });
+        this._setMsBulkToggleMode(scopeKey, prevSelected.size === 0 ? 'all' : 'none');
+        this._applyMsBulkToggleLabel(scopeKey);
     },
 
     _getFilterDraft() {
@@ -7224,6 +7227,22 @@ const searchOutputMethods = {
             draft[draftKey] = this._selectedFromList(scopeKey);
         }
         return draft;
+    },
+
+    _updateFilterSelectionOrder(msKey) {
+        const scope = DASH_FILTER_SCOPES.find((s) => s.scopeKey === msKey);
+        if (!scope) return;
+        const { draftKey } = scope;
+        const order = this._state.filterSelectionOrder || [];
+        const selected = this._selectedFromList(msKey);
+        const wasInQueue = order.includes(draftKey);
+        const hasSelection = selected.length > 0;
+
+        if (hasSelection && !wasInQueue) {
+            this._state.filterSelectionOrder = [...order, draftKey];
+        } else if (!hasSelection && wasInQueue) {
+            this._state.filterSelectionOrder = order.filter((k) => k !== draftKey);
+        }
     },
 
     _resetFilterLists() {
@@ -7238,7 +7257,7 @@ const searchOutputMethods = {
             const itemsEl = this._msItemsEl(scopeKey);
             if (!panel || !itemsEl) continue;
             const hint = panel.getAttribute('data-wf-dash-empty') || 'Run a search to enable';
-            itemsEl.innerHTML = `<p style="padding: 6px 8px; font-size: 11px; color: var(--muted-foreground, #64748b);">${dashEscHtml(hint)}</p>`;
+            itemsEl.innerHTML = this._msHintHtml(hint);
             this._updateMsCount(scopeKey);
             this._syncMsDropdown(scopeKey);
         }
@@ -7269,6 +7288,23 @@ const searchOutputMethods = {
         const optionCounts = scopeItems.length > 0
             ? lib.computeFilterOptionCounts(scopeItems, draft, listBounds, filterOptions)
             : lib.emptyFilterOptionCounts();
+        const order = this._state.filterSelectionOrder || [];
+        const pctCtx = {
+            helpfulnessUi: filterOptions.helpfulnessUi,
+            currentUserId: filterOptions.currentUserId
+        };
+        const denominatorByDraftKey = {};
+        for (const { draftKey } of DASH_FILTER_SCOPES) {
+            const pos = order.indexOf(draftKey);
+            const ancestorKeys = pos === -1 ? [...order] : order.slice(0, pos);
+            if (ancestorKeys.length === 0) {
+                denominatorByDraftKey[draftKey] = scopeItems.length;
+            } else {
+                denominatorByDraftKey[draftKey] = lib.computeFilterScopedTotalForOrder(
+                    scopeItems, draft, listBounds, pctCtx, ancestorKeys
+                );
+            }
+        }
 
         const openFilterKeys = this._beginFilterMsDropdownRefresh();
         try {
@@ -7299,7 +7335,8 @@ const searchOutputMethods = {
                     false,
                     false,
                     irrelevantSet,
-                    countsForScope
+                    countsForScope,
+                    denominatorByDraftKey[draftKey]
                 );
                 itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
                     cb.checked = checkedIds.has(cb.value);
@@ -7325,7 +7362,7 @@ const searchOutputMethods = {
                 selectedDisplayNo: null,
                 rollingUi: {
                     rollingLeft: 0,
-                    showHighlights: true,
+                    showHighlights: false,
                     highlightModality: 'differences',
                     feedbackBulkCollapsed: false,
                     activationLogged: false,
@@ -7336,7 +7373,7 @@ const searchOutputMethods = {
         if (!this._state.cardUi[taskId].rollingUi) {
             this._state.cardUi[taskId].rollingUi = {
                 rollingLeft: 0,
-                showHighlights: true,
+                showHighlights: false,
                 highlightModality: 'differences',
                 feedbackBulkCollapsed: false,
                 activationLogged: false,
@@ -7353,16 +7390,13 @@ const searchOutputMethods = {
     _ensureRollingUiOnExpand(taskId, versionCount) {
         const rollingUi = this._getRollingUi(taskId);
         if (!rollingUi.initialized) {
-            rollingUi.showHighlights = true;
-            rollingUi.highlightModality = 'differences';
-            rollingUi.feedbackBulkCollapsed = false;
             rollingUi.rollingLeft = 0;
             rollingUi.initialized = true;
         }
         this._clampCardRollingLeft(rollingUi, versionCount);
         if (versionCount >= 2 && !rollingUi.activationLogged) {
             rollingUi.activationLogged = true;
-            Logger.log('search-output: rolling diff active for task ' + taskId);
+            Logger.log('search-output: all versions expanded for task ' + taskId);
         }
     },
 
@@ -7394,26 +7428,26 @@ const searchOutputMethods = {
         return `<span class="so-rolling-sim-badge">${inner}</span>`;
     },
 
-    _expandedRollingToolbarHtml(itemId, taskId, rollingUi) {
+    _expandedRollingFeedbackBtnHtml(itemId, taskId, rollingUi) {
+        if (rollingUi.showHighlights) return '';
         const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
+        return `<button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>`;
+    },
+
+    _expandedRollingDiffToolbarHtml(rollingUi) {
         const modality = rollingUi.highlightModality;
         const showHighlights = rollingUi.showHighlights;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
-            <button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>
-            <div class="dv-seg-group" role="group" aria-label="Diff modality">
-                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
-                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
-            </div>
+            ${this._labelSpan('Diff Viewer')}
             <div class="dv-seg-group" role="group" aria-label="Diff highlights">
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
             </div>
+            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
+            </div>
         </div>`;
-    },
-
-    _isFeedbackBlockId(blockId) {
-        const id = String(blockId || '');
-        return id.startsWith('qa:') || id.startsWith('dispute:') || id.startsWith('flag:');
     },
 
     _collectFeedbackBlockIdsForItem(item) {
@@ -7680,12 +7714,6 @@ const searchOutputMethods = {
     },
 
     _versionRollingHeaderRightHtml(version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions) {
-        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
-        if (!versionActionBadge && hasSubsequentVersions) {
-            versionActionBadge = this._qaEditedBadgeHtml();
-        }
         const inActivePair = rollingUi.showHighlights
             && versionIdx >= rollingUi.rollingLeft
             && versionIdx <= rollingUi.rollingLeft + 1;
@@ -7699,6 +7727,13 @@ const searchOutputMethods = {
                 rollingUi
             );
             if (simBadge) rightHeader += simBadge;
+        }
+        if (rollingUi.showHighlights) return rightHeader;
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
         }
         if (versionActionBadge) rightHeader += versionActionBadge;
         return rightHeader;
@@ -7865,11 +7900,8 @@ const searchOutputMethods = {
             ? (reasonLen + '/' + DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS + ' chars')
             : 'Resolve';
         const resolveBtnHtml = `<button type="button" data-wf-dash-dispute-resolve="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${secondaryClass}" style="flex-shrink: 0; white-space: nowrap;${resolveStyle}"${resolveDisabled}${disabled}>${dashEscHtml(resolveLabel)}</button>`;
-        const selectStyle = this._inputStyle()
-            + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
-        const textareaStyle = this._inputStyle()
-            + ' display: block; width: 100%; box-sizing: border-box; min-height: '
-            + DASH_AUTO_GROW_TEXTAREA_MIN_PX + 'px; overflow-y: hidden; resize: none; padding: 4px 8px; font-size: 12px; line-height: 1.4;';
+        const selectStyle = this._compactSelectStyle();
+        const textareaStyle = this._autoGrowTextareaStyle();
 
         let releaseHtml = `<button type="button" data-wf-dash-dispute-release="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${disabled}>Release</button>`;
 
@@ -7905,21 +7937,11 @@ const searchOutputMethods = {
         const display = disputes.find((d) => String(d.id || '').trim() === id);
         if (!display) return false;
 
-        const ta = wrap.querySelector('[data-wf-dash-dispute-resolution-input]');
-        const hadFocus = ta && this._pageWindow().document.activeElement === ta;
-        const selStart = hadFocus && ta ? ta.selectionStart : null;
-        const selEnd = hadFocus && ta ? ta.selectionEnd : null;
+        const focus = this._textareaFocusSnapshot(wrap, '[data-wf-dash-dispute-resolution-input]');
 
         wrap.outerHTML = this._disputeResolutionPanelHtml(display, iid);
         const newWrap = this._modal.querySelector('[data-wf-dash-dispute-resolution="' + esc + '"]');
-        const newTa = newWrap && newWrap.querySelector('[data-wf-dash-dispute-resolution-input]');
-        if (newTa) this._syncAutoGrowTextarea(newTa, DASH_AUTO_GROW_TEXTAREA_MIN_PX);
-        if (hadFocus && newTa) {
-            newTa.focus();
-            try {
-                if (selStart != null && selEnd != null) newTa.setSelectionRange(selStart, selEnd);
-            } catch (_e) { /* ignore */ }
-        }
+        this._restoreTextareaFocus(newWrap, '[data-wf-dash-dispute-resolution-input]', focus);
         return true;
     },
 
@@ -8797,9 +8819,6 @@ const searchOutputMethods = {
                 }
                 this._state.searchFetchActive = false;
                 this._resetSearchLoadLog();
-                this._setSearchButtonLoading(false);
-                this._updateSubstringErrorUi();
-                this._updateApplyFiltersUi();
                 if (this._state.cachedItems !== null) {
                     await this._refreshResultsView({
                         filterSource: 'search-defaults',
@@ -8813,6 +8832,10 @@ const searchOutputMethods = {
                     this._updateResultsKindTabsUi();
                     this._syncResultsToolbarDerivedUi();
                 }
+                this._setSearchButtonLoading(false);
+                this._validateRangeUi();
+                this._updateSubstringErrorUi();
+                this._updateApplyFiltersUi();
             }
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
@@ -8871,6 +8894,7 @@ const searchOutputMethods = {
             return;
         }
         this._clearFilterUiFields();
+        this._state.filterSelectionOrder = [];
         const ok = await this._refreshResultsView({ resetPage: true, filterSource: 'filter-reset' });
         if (ok) {
             Logger.log('dashboard: filters reset to defaults (all options selected)');
@@ -8899,6 +8923,7 @@ const searchOutputMethods = {
         this._state.autoHydratePending = false;
         this._state.autoHydratePendingLogged = false;
         this._state.disputesBulkIncomplete = false;
+        this._state.filterSelectionOrder = [];
         this._resetFilterLists();
         this._updateResultsKindTabsUi();
         this._syncBulkHydrateUi();
@@ -9377,27 +9402,31 @@ const searchOutputMethods = {
         this._scheduleAutoHydrateBackground();
     },
 
+    _dashCopyInnerHtml(value, highlight) {
+        if (highlight && highlight.query) {
+            return this._dashHighlightedHtml(
+                value,
+                highlight.query,
+                highlight.caseSensitive,
+                highlight.fuzzy,
+                highlight.regex
+            );
+        }
+        return dashEscHtml(value);
+    },
+
     _copyChipHtml(text, highlight) {
         const value = String(text == null ? '' : text).trim();
         if (!value) {
-            return `<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>`;
+            return '<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>';
         }
-        const inner = (highlight && highlight.query)
-            ? this._dashHighlightedHtml(value, highlight.query, highlight.caseSensitive, highlight.fuzzy, highlight.regex)
-            : dashEscHtml(value);
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">${inner}</button>`;
+        const inner = this._dashCopyInnerHtml(value, highlight);
+        return '<button type="button" data-wf-dash-copy="' + dashEscHtml(value) + '" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">' + inner + '</button>';
     },
 
     _copyIconHtml(text) {
-        const value = String(text == null ? '' : text);
-        return `<button type="button" data-wf-dash-copy="${dashEscHtml(value)}" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-        </button>`;
-    },
-
-    _pagerChevronSvg(dir) {
-        const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
-        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+        const lib = dashLib();
+        return lib && lib.copyIconHtml ? lib.copyIconHtml(text) : '';
     },
 
     _extLinkIconSvg(active) {
@@ -9477,15 +9506,14 @@ const searchOutputMethods = {
         const text = this._dashQuotedText(notes);
         if (!text) return '';
         const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        return `<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">`
-            + `<div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Notes to QA')}${this._copyIconHtml(text)}</div>`
-            + `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>`
-            + `</div>`;
+        return '<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">'
+            + this._quotedFieldBlockHtml('Notes to QA', body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
+            + '</div>';
     },
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashRelativeAgo(iso);
+        const ago = dashLib().relativeAgo(iso, { style: 'detailed' });
         const muted = Boolean(opts && opts.muted);
         const dateColor = muted
             ? 'color: var(--muted-foreground, #64748b);'
@@ -9555,11 +9583,6 @@ const searchOutputMethods = {
         return this._dashHighlightedHtml(this._dashQuotedText(text), query, caseSensitive, fuzzy, regex);
     },
 
-    _dataValueHtml(text) {
-        const display = String(text == null ? '' : text).trim() || '—';
-        return `<span style="color: var(--foreground, #0f172a);">${dashEscHtml(display)}</span>`;
-    },
-
     _cardHeaderMetaRowHtml(task, itemId) {
         const projectLink = task.projectId
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
@@ -9571,7 +9594,7 @@ const searchOutputMethods = {
                     </div>
                     <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
                         ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project) + projectLink)}
+                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
                     </div>
                 </div>`;
@@ -9590,15 +9613,13 @@ const searchOutputMethods = {
         const personId = String(id || '').trim();
         if (!personId || !historyKind || !DASH_KIND_LABELS[historyKind]) return '';
         const title = this._contributorDeepDiveTitle(historyKind);
-        const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
-        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${btnStyle}">🔦</button>`;
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._iconMicroBtnStyle()}">🔦</button>`;
     },
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
         if (!this._shouldShowFlagCreateBtn(task)) return '';
         const escItemId = dashEscHtml(String(itemId || '').trim());
-        const btnStyle = 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
-        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${btnStyle}">🚩</button>`;
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${this._iconMicroBtnStyle()}">🚩</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive) {
@@ -9619,11 +9640,6 @@ const searchOutputMethods = {
         else if (key === 'bugged') { color = DASH_FLAGGED_COLOR; bg = DASH_FLAGGED_BG; label = 'Bugged'; }
         else if (key.includes('review')) { color = '#b45309'; bg = 'color-mix(in srgb, #d97706 14%, transparent)'; }
         return { color, bg, label };
-    },
-
-    _statusBadgeHtml(status) {
-        const meta = this._statusDisplayMeta(status);
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: ${meta.color}; background: ${meta.bg};">${dashEscHtml(meta.label)}</span>`;
     },
 
     _qaAlertBadgeStyle() {
@@ -9864,22 +9880,8 @@ const searchOutputMethods = {
         const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
         let resolutionHtml = '';
         if (display.resolutionAt) {
-            let resBorder;
-            let resBg;
-            let statusLabel;
-            if (display.isApproved) {
-                resBorder = 'color-mix(in srgb, #16a34a 35%, transparent)';
-                resBg = 'color-mix(in srgb, #16a34a 8%, transparent)';
-                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Approved</span>';
-            } else if (display.isRejected) {
-                resBorder = 'color-mix(in srgb, #dc2626 40%, transparent)';
-                resBg = 'color-mix(in srgb, #dc2626 8%, transparent)';
-                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Rejected</span>';
-            } else {
-                resBorder = 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)';
-                resBg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)';
-                statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
-            }
+            const resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
+            const statusText = display.isApproved ? 'Approved' : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
             const resolutionBody = display.resolutionText
                 ? this._dashQuotedHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
                 : '—';
@@ -9891,23 +9893,17 @@ const searchOutputMethods = {
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'dispute')}</div>`
                 : '';
             const resBlockId = display.id ? ('dispute-res:' + display.id) : ('dispute-res:unknown:' + itemId);
-            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
-            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
-            const resBodyHtml = `${resolverHtml}
-                        <div>
-                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(this._dashQuotedText(display.resolutionText))}</div>
-                            <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>`;
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    ${this._actionBlockShellHtml(
-                resBlockId,
+            resolutionHtml = this._resolvedActionSubBlockHtml({
+                blockId: resBlockId,
                 itemId,
-                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
-                resHeaderRow,
-                resBodyHtml
-            )}
-                </div>`;
+                kind: resolutionKind,
+                statusLabel: statusText,
+                leftHeaderExtra: resolvedHtml,
+                resolverHtml,
+                noteLabel: 'Reason',
+                noteBodyHtml: resolutionBody,
+                copyText: this._dashQuotedText(display.resolutionText)
+            });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const disputeRightHtml = (categoryHtml || claimControlHtml)
@@ -9922,10 +9918,7 @@ const searchOutputMethods = {
         const screenshotHtml = display.id && display.screenshotKeys && display.screenshotKeys.length
             ? this._screenshotBlockHtml('dispute', display.id, itemId, display.screenshotKeys)
             : '';
-        const reasonHtml = `<div>
-                    <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reason')}${this._copyIconHtml(this._dashQuotedText(display.reason))}</div>
-                    <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${reasonBody}</p>
-                </div>`;
+        const reasonHtml = this._quotedFieldBlockHtml('Reason', reasonBody, this._dashQuotedText(display.reason));
         const bodyHtml = display.resolutionAt
             ? `${reasonHtml}${screenshotHtml}${resolutionHtml}`
             : `${reasonHtml}${screenshotHtml}${resolutionPanelHtml}`;
@@ -9962,29 +9955,16 @@ const searchOutputMethods = {
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
         const noteText = this._dashQuotedText(display.note);
         const reviewerNoteHtml = noteText
-            ? `<div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._copyIconHtml(noteText)}</div>
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${this._dashQuotedHighlightedHtml(display.note, hq, cs, fz, rx)}</p>
-            </div>`
+            ? this._quotedFieldBlockHtml(
+                'Reviewer Note',
+                this._dashQuotedHighlightedHtml(display.note, hq, cs, fz, rx),
+                noteText
+            )
             : `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._noneProvidedBadgeHtml()}</div>`;
         let resolutionHtml = '';
         if (display.resolutionAt) {
-            let resBorder;
-            let resBg;
-            let statusLabel;
-            if (display.isConfirmed) {
-                resBorder = 'color-mix(in srgb, #16a34a 35%, transparent)';
-                resBg = 'color-mix(in srgb, #16a34a 8%, transparent)';
-                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent);">Confirmed</span>';
-            } else if (display.isDismissed) {
-                resBorder = 'color-mix(in srgb, #dc2626 40%, transparent)';
-                resBg = 'color-mix(in srgb, #dc2626 8%, transparent)';
-                statusLabel = '<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #b91c1c; background: color-mix(in srgb, #dc2626 14%, transparent);">Dismissed</span>';
-            } else {
-                resBorder = 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)';
-                resBg = 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)';
-                statusLabel = `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">${dashEscHtml(display.status || 'Resolved')}</span>`;
-            }
+            const resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
+            const statusText = display.isConfirmed ? 'Confirmed' : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
             const resolutionBody = display.resolutionNote
                 ? this._dashQuotedHighlightedHtml(display.resolutionNote, hq, cs, fz, rx)
                 : '—';
@@ -9993,23 +9973,17 @@ const searchOutputMethods = {
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'senior_review')}</div>`
                 : '';
             const resBlockId = display.id ? ('flag-res:' + display.id) : ('flag-res:unknown:' + itemId);
-            const resLeftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>${resolvedHtml}`;
-            const resHeaderRow = this._actionBlockHeaderRowHtml(resBlockId, resLeftHeader, statusLabel);
-            const resBodyHtml = `${resolverHtml}
-                        <div>
-                            <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Resolution Note')}${this._copyIconHtml(this._dashQuotedText(display.resolutionNote))}</div>
-                            <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${resolutionBody}</p>
-                        </div>`;
-            resolutionHtml = `
-                <div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                    ${this._actionBlockShellHtml(
-                resBlockId,
+            resolutionHtml = this._resolvedActionSubBlockHtml({
+                blockId: resBlockId,
                 itemId,
-                'padding: 8px 10px; border: 1px solid ' + resBorder + '; border-radius: 6px; background: ' + resBg + '; display: flex; flex-direction: column; gap: 6px;',
-                resHeaderRow,
-                resBodyHtml
-            )}
-                </div>`;
+                kind: resolutionKind,
+                statusLabel: statusText,
+                leftHeaderExtra: resolvedHtml,
+                resolverHtml,
+                noteLabel: 'Resolution Note',
+                noteBodyHtml: resolutionBody,
+                copyText: this._dashQuotedText(display.resolutionNote)
+            });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
             ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
@@ -10216,6 +10190,7 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const rollingUi = rollingOpts && rollingOpts.rollingUi;
+        const diffMode = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights;
         const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
             && rollingOpts.versionIdx >= rollingUi.rollingLeft
             && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
@@ -10236,19 +10211,18 @@ const searchOutputMethods = {
             );
             if (simBadge) rightHeader += simBadge;
         }
-        if (versionActionBadge) rightHeader += versionActionBadge;
+        if (!diffMode && versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
             forceRightSection: !!(rollingOpts && rollingOpts.active)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
-        const notesToQaHtml = this._notesToQaSectionHtml(
-            version.resubmissionNotes, hq, cs, fz, rx
-        );
+        const notesToQaHtml = diffMode
+            ? ''
+            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx);
+        const taskActionsPart = diffMode ? '' : taskActionsHtml;
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + notesToQaHtml
-            + (rollingOpts && rollingOpts.active
-                ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
-                : taskActionsHtml);
+            + taskActionsPart;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
@@ -10405,21 +10379,26 @@ const searchOutputMethods = {
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
+        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const diffMode = rollingUi && rollingUi.showHighlights;
+
         let row3Html = '';
         if (expanded) {
-            const rollingUi = this._getRollingUi(task.id);
             const rollingActive = hasTimeline && totalVersions >= 2;
-            if (rollingActive) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
-            const toolbarRight = rollingActive
-                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi)
+            if (rollingActive && rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const feedbackBtn = rollingActive && rollingUi
+                ? this._expandedRollingFeedbackBtnHtml(itemId, task.id, rollingUi)
+                : '';
+            const diffToolbar = rollingActive && rollingUi
+                ? this._expandedRollingDiffToolbarHtml(rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
-                    ${toolbarRight}
+                    ${feedbackBtn}
+                    ${diffToolbar}
                 </div>`;
         }
 
-        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
         const maxDisplayVersionNo = hasTimeline
             ? Math.max(...versions.map((v) => v.displayVersionNo))
             : 0;
@@ -10447,7 +10426,7 @@ const searchOutputMethods = {
             );
         }).join('');
 
-        const row2Html = reviewerBadges
+        const row2Html = !diffMode && reviewerBadges
             ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${reviewerBadges}
                 </div>`
@@ -10634,25 +10613,17 @@ function attachSearchOutputListeners(modal, dash) {
             dash._clearDateRangeFields();
         });
 
-        const toggleTasks = dash._q('#wf-dash-toggle-tasks');
-        const toggleQa = dash._q('#wf-dash-toggle-qa');
-        const toggleDisputes = dash._q('#wf-dash-toggle-disputes');
-        if (toggleTasks) toggleTasks.addEventListener('click', () => {
-            dash._toggleOutputType('tasks');
-            dash._validateRangeUi();
-        });
-        if (toggleQa) toggleQa.addEventListener('click', () => {
-            dash._toggleOutputType('qa');
-            dash._validateRangeUi();
-        });
-        if (toggleDisputes) toggleDisputes.addEventListener('click', () => {
-            dash._toggleOutputType('disputes');
-            dash._validateRangeUi();
-        });
-        const toggleSeniorReview = dash._q('#wf-dash-toggle-senior-review');
-        if (toggleSeniorReview) toggleSeniorReview.addEventListener('click', () => {
-            dash._toggleOutputType('senior_review');
-            dash._validateRangeUi();
+        [
+            ['#wf-dash-toggle-tasks', 'tasks'],
+            ['#wf-dash-toggle-qa', 'qa'],
+            ['#wf-dash-toggle-disputes', 'disputes'],
+            ['#wf-dash-toggle-senior-review', 'senior_review']
+        ].forEach(([selector, kind]) => {
+            const toggle = dash._q(selector);
+            if (toggle) toggle.addEventListener('click', () => {
+                dash._toggleOutputType(kind);
+                dash._validateRangeUi();
+            });
         });
 
         const prompt = dash._q('#wf-dash-prompt');
@@ -10707,24 +10678,6 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
-        const deferLiveFilterApply = (msKey) => {
-            queueMicrotask(() => dash._maybeLiveApplyFilterMsChange(msKey));
-        };
-        modal.addEventListener('change', (e) => {
-            const cb = e.target;
-            if (!cb || cb.type !== 'checkbox') return;
-            const msKey = cb.getAttribute('data-wf-dash-ms');
-            if (!msKey || !msKey.startsWith('filter-')) return;
-            deferLiveFilterApply(msKey);
-        });
-        modal.addEventListener('click', (e) => {
-            const msBulkToggle = e.target.closest('[data-wf-dash-ms-bulk-toggle]');
-            if (!msBulkToggle || !modal.contains(msBulkToggle)) return;
-            const key = msBulkToggle.getAttribute('data-wf-dash-ms-bulk-toggle');
-            if (!key || !key.startsWith('filter-')) return;
-            deferLiveFilterApply(key);
-        });
-
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -10742,7 +10695,7 @@ function attachSearchOutputListeners(modal, dash) {
                 const compSel = row.querySelector('[data-wf-dash-manual-comparator]');
                 const valueInp = row.querySelector('[data-wf-dash-manual-value]');
                 if (compSel) {
-                    compSel.innerHTML = dashManualComparatorOptionsHtml(isDate ? 'date' : 'number', isDate ? 'gte' : 'gte');
+                    compSel.innerHTML = dash._numericComparatorOptionsHtml(isDate ? 'date' : 'number', 'gte');
                 }
                 if (valueInp) {
                     valueInp.type = isDate ? 'date' : 'number';
@@ -11186,7 +11139,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.9',
+    _version: '4.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -11198,6 +11151,12 @@ const plugin = {
             return;
         }
         Object.assign(loader, searchOutputMethods);
+        const de = Context.diffEngine;
+        if (de && typeof de.onFleetThemeChange === 'function') {
+            de.onFleetThemeChange(() => {
+                if (typeof loader._renderResults === 'function') loader._renderResults();
+            });
+        }
         if (loader._state && loader._state.catalog == null && typeof loader._readBootstrapCache === 'function') {
             loader._state.catalog = loader._readBootstrapCache();
         }

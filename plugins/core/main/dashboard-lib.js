@@ -60,6 +60,60 @@ const DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE = 'qa.revision_requested';
 const DASH_LIB_RSC_REF_RE = /^\$(\d+)$/;
 const DASH_LIB_BUG_REPORT_DEDUP_MS = 2000;
 
+const DASH_LIB_NUMERIC_COMPARATORS = [
+    { id: 'gt', label: '>' },
+    { id: 'gte', label: '>=' },
+    { id: 'lt', label: '<' },
+    { id: 'lte', label: '<=' },
+    { id: 'eq', label: '=' },
+    { id: 'neq', label: '≠' }
+];
+
+const DASH_LIB_DATE_COMPARATORS = [
+    { id: 'gt', label: 'After' },
+    { id: 'gte', label: 'On or after' },
+    { id: 'lt', label: 'Before' },
+    { id: 'lte', label: 'On or before' },
+    { id: 'eq', label: 'On' },
+    { id: 'neq', label: 'Not on' }
+];
+
+function dashLibEscHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function dashLibFormatCreatedAt(iso) {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return String(iso);
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function dashLibCopyIconHtml(text) {
+    const value = String(text == null ? '' : text);
+    return '<button type="button" data-wf-dash-copy="' + dashLibEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+        + '</button>';
+}
+
+function dashLibFormatPercent(n) {
+    const pct = Number(n);
+    if (!Number.isFinite(pct)) return '0';
+    if (pct < 1) return String(parseFloat(pct.toFixed(2)));
+    return String(Math.round(pct));
+}
+
 const DASH_LIB_FLAG_REASON_LABELS = {
     ai_generated: 'AI Generated',
     poor_feedback_from_previous_qa: 'Poor Feedback From Previous QA',
@@ -317,6 +371,13 @@ function dashLibProjectNameFromCatalog(id, projects) {
     return found ? found.name : '';
 }
 
+function dashLibProjectDisplayLabel(id, projects) {
+    const name = String(dashLibProjectNameFromCatalog(id, projects) || '').trim();
+    if (name) return name;
+    const projectId = String(id || '').trim();
+    return projectId ? projectId.slice(0, 8) : '';
+}
+
 function dashLibPersonLabel(name, email) {
     const trimmedName = String(name ?? '').trim();
     const trimmedEmail = String(email ?? '').trim();
@@ -327,9 +388,7 @@ function dashLibPersonLabel(name, email) {
 function dashLibIsDimensionUnrestricted(selected, optionCount) {
     if (optionCount === 0) return true;
     const sel = selected || [];
-    if (sel.length === 0) return true;
-    if (optionCount === 1) return false;
-    return sel.length >= optionCount;
+    return sel.length === 0;
 }
 
 function dashLibPassesDimension(values, selected, optionCount) {
@@ -356,11 +415,42 @@ function dashLibV1CreationTimeBucketId(minutes) {
     return 'gt_120';
 }
 
+/** ISO timestamp → relative "N units ago"; never emits a zero unit (minimum: 1 minute). */
+function dashLibRelativeAgo(iso, options) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const compact = Boolean(options && options.style === 'compact');
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalMins = Math.floor(diffMs / (1000 * 60));
+    const totalHours = Math.floor(totalMins / 60);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+
+    const dayLabel = (n) => n + ' day' + (n === 1 ? '' : 's');
+    const hourLabel = (n) => compact
+        ? n + (n === 1 ? ' hr' : ' hrs')
+        : n + ' hour' + (n === 1 ? '' : 's');
+    const minLabel = (n) => compact
+        ? n + (n === 1 ? ' min' : ' mins')
+        : n + ' minute' + (n === 1 ? '' : 's');
+
+    if (days > 0) {
+        let text = dayLabel(days);
+        if (hours > 0) text += ', ' + hourLabel(hours);
+        return text + ' ago';
+    }
+    if (hours > 0) {
+        return hourLabel(hours) + ' ago';
+    }
+    return minLabel(Math.max(1, totalMins)) + ' ago';
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.3',
+    _version: '3.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -373,6 +463,13 @@ const plugin = {
             pgInFilter: dashLibPgInFilter,
             pgInChunks: dashLibPgInChunks,
             isDimensionUnrestricted: dashLibIsDimensionUnrestricted,
+
+            escHtml: dashLibEscHtml,
+            formatCreatedAt: dashLibFormatCreatedAt,
+            copyIconHtml: dashLibCopyIconHtml,
+            formatPercent: dashLibFormatPercent,
+            NUMERIC_COMPARATORS: DASH_LIB_NUMERIC_COMPARATORS,
+            DATE_COMPARATORS: DASH_LIB_DATE_COMPARATORS,
 
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             CHECKBOX_FILTER_DIMENSIONS: self._checkboxFilterDimensions,
@@ -442,6 +539,8 @@ const plugin = {
             computeFilterIrrelevance: bind(self._computeFilterIrrelevance),
             emptyFilterOptionCounts: bind(self._emptyFilterOptionCounts),
             computeFilterOptionCounts: bind(self._computeFilterOptionCounts),
+            computeFilterScopedTotal: bind(self._computeFilterScopedTotal),
+            computeFilterScopedTotalForOrder: bind(self._computeFilterScopedTotalForOrder),
 
             buildQaFeedbackDisplay: bind(self._buildQaFeedbackDisplay),
             dedupeSystemFeedbackEntries: bind(self._dedupeSystemFeedbackEntries),
@@ -462,10 +561,13 @@ const plugin = {
             validateCreatedAtRange: bind(self._validateCreatedAtRange),
             quickDatePresetRange: bind(self._quickDatePresetRange),
             dateInputValue: bind(self._dateInputValue),
+            relativeAgo: dashLibRelativeAgo,
             isUniversalSearchParams: bind(self._isUniversalSearchParams),
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
             qaTextBlockLabel: bind(self._qaTextBlockLabel),
+
+            projectDisplayLabel: dashLibProjectDisplayLabel,
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
@@ -1278,7 +1380,7 @@ const plugin = {
             })).sort((a, b) => a.label.localeCompare(b.label)),
             projects: [...projectIds].map((id) => ({
                 id,
-                label: dashLibProjectNameFromCatalog(id, projects) || id.slice(0, 8)
+                label: dashLibProjectDisplayLabel(id, projects)
             })).sort((a, b) => a.label.localeCompare(b.label)),
             envs: [...envKeys].map((key) => {
                 const env = environments.find((e) => e.env_key === key);
@@ -1339,15 +1441,67 @@ const plugin = {
         return result;
     },
 
+    _itemFilterPassCtx(options) {
+        return {
+            helpfulnessUi: (options && options.helpfulnessUi) || {},
+            currentUserId: (options && options.currentUserId) || ''
+        };
+    },
+
+    _itemPassesFilterDraft(item, draft, listBounds, ctx, exclude) {
+        const task = item && item.task;
+        if (!task) return false;
+        const ex = exclude || {};
+        const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
+        const currentUserId = (ctx && ctx.currentUserId) || '';
+        const itemKey = ex.itemKey || null;
+        const forceId = ex.forceIncludeId;
+
+        if (!this._taskPassesFilterDimensions(
+            task, draft, listBounds, ex.taskKey != null ? ex.taskKey : null
+        )) {
+            return false;
+        }
+        if (!this._itemPassesPromptHistoryFilter(
+            item, draft, listBounds, itemKey === 'promptHistory' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesQaHelpfulnessFilter(
+            item, draft, listBounds, helpfulnessUi,
+            itemKey === 'qaHelpfulness' ? forceId : undefined,
+            currentUserId
+        )) {
+            return false;
+        }
+        if (!this._itemPassesV1CreationTimeFilter(
+            item, draft, listBounds, itemKey === 'v1CreationTimeMinutes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesQaTimeFilter(
+            item, draft, listBounds, itemKey === 'qaTimeMinutes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesDisputeResolutionTimeFilter(
+            item, draft, listBounds, itemKey === 'disputeResolutionTimeMinutes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        return true;
+    },
+
     _computeFilterIrrelevance(items, draft, listBounds, options) {
         const result = this._emptyFilterIrrelevance();
+        const ctx = this._itemFilterPassCtx(options);
         for (const dim of this._checkboxFilterDimensions) {
             const optionList = (options && options[dim.optionsKey]) || [];
             const irrelevant = result[dim.draftKey];
             for (const { id } of optionList) {
-                const hasMatch = items.some(({ task }) => (
-                    dim.getValues(task).includes(id)
-                    && this._taskPassesFilterDimensions(task, draft, listBounds, dim.draftKey)
+                const hasMatch = items.some((item) => (
+                    dim.getValues(item.task).includes(id)
+                    && this._itemPassesFilterDraft(item, draft, listBounds, ctx, { taskKey: dim.draftKey })
                 ));
                 if (!hasMatch) irrelevant.add(id);
             }
@@ -1357,24 +1511,20 @@ const plugin = {
         for (const { id } of historyOptions) {
             const hasMatch = items.some((item) => (
                 this._itemPromptHistory(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'promptHistory', forceIncludeId: id
+                })
             ));
             if (!hasMatch) irrelevantHistory.add(id);
         }
-        const helpfulnessUi = (options && options.helpfulnessUi) || {};
-        const currentUserId = (options && options.currentUserId) || '';
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const irrelevantHelpfulness = result.qaHelpfulness;
         for (const { id } of helpfulnessOptions) {
             const hasMatch = items.some((item) => (
-                this._itemQaHelpfulness(item, helpfulnessUi, currentUserId).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, id, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
+                this._itemQaHelpfulness(item, ctx.helpfulnessUi, ctx.currentUserId).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'qaHelpfulness', forceIncludeId: id
+                })
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
@@ -1383,12 +1533,9 @@ const plugin = {
         for (const { id } of v1CreationTimeOptions) {
             const hasMatch = items.some((item) => (
                 this._itemV1CreationTimeBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, id)
-                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'v1CreationTimeMinutes', forceIncludeId: id
+                })
             ));
             if (!hasMatch) irrelevantV1CreationTime.add(id);
         }
@@ -1397,12 +1544,9 @@ const plugin = {
         for (const { id } of qaTimeOptions) {
             const hasMatch = items.some((item) => (
                 this._itemQaTimeMinutesBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, draft, listBounds, id)
-                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, undefined)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'qaTimeMinutes', forceIncludeId: id
+                })
             ));
             if (!hasMatch) irrelevantQaTime.add(id);
         }
@@ -1411,12 +1555,9 @@ const plugin = {
         for (const { id } of disputeResolutionTimeOptions) {
             const hasMatch = items.some((item) => (
                 this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, draft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, draft, listBounds, helpfulnessUi, undefined, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, draft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, draft, listBounds, id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeResolutionTimeMinutes', forceIncludeId: id
+                })
             ));
             if (!hasMatch) irrelevantDisputeResolutionTime.add(id);
         }
@@ -1435,55 +1576,16 @@ const plugin = {
         return result;
     },
 
-    _effectiveDraftForOptionCounts(draft, listBounds) {
-        if (!draft) return draft;
-        const bounds = listBounds || {};
-        const effective = { ...draft };
-        for (const dim of this._checkboxFilterDimensions) {
-            const all = bounds[dim.draftKey] || [];
-            const selected = effective[dim.draftKey] || [];
-            if (all.length > 0 && selected.length === 0) {
-                effective[dim.draftKey] = [...all];
-            }
-        }
-        const allHistory = bounds.promptHistory || [];
-        const selectedHistory = effective.promptHistory || [];
-        if (allHistory.length > 0 && selectedHistory.length === 0) {
-            effective.promptHistory = [...allHistory];
-        }
-        const allHelpfulness = bounds.qaHelpfulness || [];
-        const selectedHelpfulness = effective.qaHelpfulness || [];
-        if (allHelpfulness.length > 0 && selectedHelpfulness.length === 0) {
-            effective.qaHelpfulness = [...allHelpfulness];
-        }
-        const allV1CreationTime = bounds.v1CreationTimeMinutes || [];
-        const selectedV1CreationTime = effective.v1CreationTimeMinutes || [];
-        if (allV1CreationTime.length > 0 && selectedV1CreationTime.length === 0) {
-            effective.v1CreationTimeMinutes = [...allV1CreationTime];
-        }
-        const allQaTime = bounds.qaTimeMinutes || [];
-        const selectedQaTime = effective.qaTimeMinutes || [];
-        if (allQaTime.length > 0 && selectedQaTime.length === 0) {
-            effective.qaTimeMinutes = [...allQaTime];
-        }
-        const allDisputeResolutionTime = bounds.disputeResolutionTimeMinutes || [];
-        const selectedDisputeResolutionTime = effective.disputeResolutionTimeMinutes || [];
-        if (allDisputeResolutionTime.length > 0 && selectedDisputeResolutionTime.length === 0) {
-            effective.disputeResolutionTimeMinutes = [...allDisputeResolutionTime];
-        }
-        return effective;
-    },
-
     _computeFilterOptionCounts(items, draft, listBounds, options) {
         const result = this._emptyFilterOptionCounts();
-        const effectiveDraft = this._effectiveDraftForOptionCounts(draft, listBounds);
+        const ctx = this._itemFilterPassCtx(options);
         for (const dim of this._checkboxFilterDimensions) {
             const optionList = (options && options[dim.optionsKey]) || [];
             const counts = result[dim.draftKey];
             for (const { id } of optionList) {
-                const count = items.filter(({ task }) => (
-                    dim.getValues(task).includes(id)
-                    && this._taskPassesFilterDimensions(task, effectiveDraft, listBounds, dim.draftKey)
+                const count = items.filter((item) => (
+                    dim.getValues(item.task).includes(id)
+                    && this._itemPassesFilterDraft(item, draft, listBounds, ctx, { taskKey: dim.draftKey })
                 )).length;
                 counts.set(id, count);
             }
@@ -1493,24 +1595,20 @@ const plugin = {
         for (const { id } of historyOptions) {
             const count = items.filter((item) => (
                 this._itemPromptHistory(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'promptHistory', forceIncludeId: id
+                })
             )).length;
             historyCounts.set(id, count);
         }
-        const helpfulnessUi = (options && options.helpfulnessUi) || {};
-        const currentUserId = (options && options.currentUserId) || '';
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const helpfulnessCounts = result.qaHelpfulness;
         for (const { id } of helpfulnessOptions) {
             const count = items.filter((item) => (
-                this._itemQaHelpfulness(item, helpfulnessUi, currentUserId).includes(id)
-                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
+                this._itemQaHelpfulness(item, ctx.helpfulnessUi, ctx.currentUserId).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'qaHelpfulness', forceIncludeId: id
+                })
             )).length;
             helpfulnessCounts.set(id, count);
         }
@@ -1519,12 +1617,9 @@ const plugin = {
         for (const { id } of v1CreationTimeOptions) {
             const count = items.filter((item) => (
                 this._itemV1CreationTimeBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, id)
-                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'v1CreationTimeMinutes', forceIncludeId: id
+                })
             )).length;
             v1CreationTimeCounts.set(id, count);
         }
@@ -1533,12 +1628,9 @@ const plugin = {
         for (const { id } of qaTimeOptions) {
             const count = items.filter((item) => (
                 this._itemQaTimeMinutesBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, id)
-                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, undefined)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'qaTimeMinutes', forceIncludeId: id
+                })
             )).length;
             qaTimeCounts.set(id, count);
         }
@@ -1547,16 +1639,31 @@ const plugin = {
         for (const { id } of disputeResolutionTimeOptions) {
             const count = items.filter((item) => (
                 this._itemDisputeResolutionTimeMinutesBuckets(item).includes(id)
-                && this._taskPassesFilterDimensions(item.task, effectiveDraft, listBounds, null)
-                && this._itemPassesPromptHistoryFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaHelpfulnessFilter(item, effectiveDraft, listBounds, helpfulnessUi, id, currentUserId)
-                && this._itemPassesV1CreationTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesQaTimeFilter(item, effectiveDraft, listBounds, undefined)
-                && this._itemPassesDisputeResolutionTimeFilter(item, effectiveDraft, listBounds, id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeResolutionTimeMinutes', forceIncludeId: id
+                })
             )).length;
             disputeResolutionTimeCounts.set(id, count);
         }
         return result;
+    },
+
+    _computeFilterScopedTotal(items, draft, listBounds, sortContext) {
+        const scoped = this._applyClientWorkerOutputFilters(items, Object.assign({}, draft || {}, {
+            promptText: '',
+            fuzzy: false,
+            regex: false,
+            caseSensitive: false
+        }), listBounds, sortContext);
+        return scoped.length;
+    },
+
+    _computeFilterScopedTotalForOrder(items, draft, listBounds, ctx, ancestorDraftKeys) {
+        const partialDraft = {};
+        for (const key of ancestorDraftKeys || []) {
+            partialDraft[key] = (draft && draft[key]) || [];
+        }
+        return this._computeFilterScopedTotal(items, partialDraft, listBounds, ctx);
     },
 
     _flagReasonLabel(reason) {
