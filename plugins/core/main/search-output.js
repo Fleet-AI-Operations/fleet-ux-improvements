@@ -5119,6 +5119,7 @@ const searchOutputMethods = {
                     || Boolean(this._state.appliedFilters)
             });
             this._syncResultsToolbarDerivedUi();
+            this._validateRangeUi();
         };
 
         if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
@@ -5132,6 +5133,12 @@ const searchOutputMethods = {
                     if (hydrated > 0) {
                         Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
                     }
+                    finishRender();
+                    return true;
+                }).catch((err) => {
+                    Logger.warn('search-output: first page prehydrate failed', err);
+                    this._state.searchLoadPhase = '';
+                    this._state.loading = false;
                     finishRender();
                     return true;
                 });
@@ -8834,9 +8841,6 @@ const searchOutputMethods = {
                 }
                 this._state.searchFetchActive = false;
                 this._resetSearchLoadLog();
-                this._setSearchButtonLoading(false);
-                this._updateSubstringErrorUi();
-                this._updateApplyFiltersUi();
                 if (this._state.cachedItems !== null) {
                     await this._refreshResultsView({
                         filterSource: 'search-defaults',
@@ -8850,6 +8854,10 @@ const searchOutputMethods = {
                     this._updateResultsKindTabsUi();
                     this._syncResultsToolbarDerivedUi();
                 }
+                this._setSearchButtonLoading(false);
+                this._validateRangeUi();
+                this._updateSubstringErrorUi();
+                this._updateApplyFiltersUi();
             }
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
@@ -11207,7 +11215,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.15',
+    _version: '4.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
