@@ -6473,6 +6473,14 @@ const searchOutputMethods = {
         }
     },
 
+    _quotedFieldBodyLayoutStyle() {
+        return 'margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5;';
+    },
+
+    _mutedQuotedFieldBodyStyle() {
+        return this._quotedFieldBodyLayoutStyle() + ' color: var(--muted-foreground, #64748b);';
+    },
+
     _quotedFieldBlockHtml(label, bodyHtml, copyText, options) {
         const opts = options || {};
         const shellClass = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
@@ -6484,9 +6492,12 @@ const searchOutputMethods = {
         const headerInner = opts.headerInner
             || ('<div style="display: flex; align-items: center; gap: 6px;">' + this._labelSpan(label) + copyHtml + '</div>');
         const bodyTag = opts.bodyTag || 'p';
+        const layout = this._quotedFieldBodyLayoutStyle();
         const bodyStyle = opts.bodyStyle != null
             ? opts.bodyStyle
-            : 'margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);';
+            : (opts.bodyClass
+                ? layout
+                : layout + ' color: var(--foreground, #0f172a);');
         const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
         return '<div' + shellClass + '>'
             + '<div' + headerClass + '>' + headerInner + '</div>'
@@ -9496,7 +9507,7 @@ const searchOutputMethods = {
         if (!text) return '';
         const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
         return '<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">'
-            + this._quotedFieldBlockHtml('Notes to QA', body, text)
+            + this._quotedFieldBlockHtml('Notes to QA', body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
             + '</div>';
     },
 
@@ -11128,7 +11139,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.22',
+    _version: '4.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
