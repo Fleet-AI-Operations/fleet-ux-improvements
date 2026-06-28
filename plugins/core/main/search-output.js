@@ -7444,7 +7444,7 @@ const searchOutputMethods = {
                 selectedDisplayNo: null,
                 rollingUi: {
                     rollingLeft: 0,
-                    showHighlights: true,
+                    showHighlights: false,
                     highlightModality: 'differences',
                     feedbackBulkCollapsed: false,
                     activationLogged: false,
@@ -7455,7 +7455,7 @@ const searchOutputMethods = {
         if (!this._state.cardUi[taskId].rollingUi) {
             this._state.cardUi[taskId].rollingUi = {
                 rollingLeft: 0,
-                showHighlights: true,
+                showHighlights: false,
                 highlightModality: 'differences',
                 feedbackBulkCollapsed: false,
                 activationLogged: false,
@@ -7472,16 +7472,13 @@ const searchOutputMethods = {
     _ensureRollingUiOnExpand(taskId, versionCount) {
         const rollingUi = this._getRollingUi(taskId);
         if (!rollingUi.initialized) {
-            rollingUi.showHighlights = true;
-            rollingUi.highlightModality = 'differences';
-            rollingUi.feedbackBulkCollapsed = false;
             rollingUi.rollingLeft = 0;
             rollingUi.initialized = true;
         }
         this._clampCardRollingLeft(rollingUi, versionCount);
         if (versionCount >= 2 && !rollingUi.activationLogged) {
             rollingUi.activationLogged = true;
-            Logger.log('search-output: rolling diff active for task ' + taskId);
+            Logger.log('search-output: all versions expanded for task ' + taskId);
         }
     },
 
@@ -7517,8 +7514,11 @@ const searchOutputMethods = {
         const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
         const modality = rollingUi.highlightModality;
         const showHighlights = rollingUi.showHighlights;
+        const feedbackBtn = showHighlights
+            ? ''
+            : `<button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>`;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
-            <button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>
+            ${feedbackBtn}
             <div class="dv-seg-group" role="group" aria-label="Diff modality">
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
@@ -7799,12 +7799,6 @@ const searchOutputMethods = {
     },
 
     _versionRollingHeaderRightHtml(version, versionIdx, renderedVersions, rollingUi, feedbackEntries, hasSubsequentVersions) {
-        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
-        if (!versionActionBadge && hasSubsequentVersions) {
-            versionActionBadge = this._qaEditedBadgeHtml();
-        }
         const inActivePair = rollingUi.showHighlights
             && versionIdx >= rollingUi.rollingLeft
             && versionIdx <= rollingUi.rollingLeft + 1;
@@ -7818,6 +7812,13 @@ const searchOutputMethods = {
                 rollingUi
             );
             if (simBadge) rightHeader += simBadge;
+        }
+        if (rollingUi.showHighlights) return rightHeader;
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let versionActionBadge = this._feedbackActionBadgeHtml(versionActionEntry);
+        if (!versionActionBadge && hasSubsequentVersions) {
+            versionActionBadge = this._qaEditedBadgeHtml();
         }
         if (versionActionBadge) rightHeader += versionActionBadge;
         return rightHeader;
@@ -10338,6 +10339,7 @@ const searchOutputMethods = {
             hq, cs, fz, rx, itemId
         );
         const rollingUi = rollingOpts && rollingOpts.rollingUi;
+        const diffMode = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights;
         const inActivePair = rollingOpts && rollingOpts.active && rollingUi && rollingUi.showHighlights
             && rollingOpts.versionIdx >= rollingUi.rollingLeft
             && rollingOpts.versionIdx <= rollingUi.rollingLeft + 1;
@@ -10358,19 +10360,18 @@ const searchOutputMethods = {
             );
             if (simBadge) rightHeader += simBadge;
         }
-        if (versionActionBadge) rightHeader += versionActionBadge;
+        if (!diffMode && versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
             forceRightSection: !!(rollingOpts && rollingOpts.active)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
-        const notesToQaHtml = this._notesToQaSectionHtml(
-            version.resubmissionNotes, hq, cs, fz, rx
-        );
+        const notesToQaHtml = diffMode
+            ? ''
+            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx);
+        const taskActionsPart = diffMode ? '' : taskActionsHtml;
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + notesToQaHtml
-            + (rollingOpts && rollingOpts.active
-                ? `<div class="so-rolling-muted-feedback">${taskActionsHtml}</div>`
-                : taskActionsHtml);
+            + taskActionsPart;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
@@ -10527,12 +10528,14 @@ const searchOutputMethods = {
             ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
             : '';
 
+        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const diffMode = rollingUi && rollingUi.showHighlights;
+
         let row3Html = '';
         if (expanded) {
-            const rollingUi = this._getRollingUi(task.id);
             const rollingActive = hasTimeline && totalVersions >= 2;
-            if (rollingActive) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
-            const toolbarRight = rollingActive
+            if (rollingActive && rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const toolbarRight = rollingActive && rollingUi
                 ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
@@ -10541,7 +10544,6 @@ const searchOutputMethods = {
                 </div>`;
         }
 
-        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
         const maxDisplayVersionNo = hasTimeline
             ? Math.max(...versions.map((v) => v.displayVersionNo))
             : 0;
@@ -10569,7 +10571,7 @@ const searchOutputMethods = {
             );
         }).join('');
 
-        const row2Html = reviewerBadges
+        const row2Html = !diffMode && reviewerBadges
             ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${reviewerBadges}
                 </div>`
@@ -11290,7 +11292,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.18',
+    _version: '4.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
