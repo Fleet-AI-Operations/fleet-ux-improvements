@@ -9,7 +9,6 @@ const HLJS_THEMES = {
     light: HLJS_BASE + '/styles/github.min.css',
     dark: HLJS_BASE + '/styles/github-dark.min.css'
 };
-const HLJS_THEME_PREF_KEY = 'fleet-ux:hljs-theme';
 const HLJS_ROOT_CLASS = 'wf-hljs-root';
 const HLJS_THEME_ATTR = 'data-wf-hljs-theme';
 const HLJS_STYLE_ID = 'wf-fleet-hljs-theme';
@@ -72,30 +71,17 @@ async function gmFetchTextVerified(url) {
     return text;
 }
 
-function readHljsThemePref() {
-    try {
-        const stored = Storage.getData(HLJS_THEME_PREF_KEY, null);
-        if (stored === 'light' || stored === 'dark') return stored;
-    } catch (_e) { /* ignore */ }
-    try {
-        if (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
-    } catch (_e) { /* ignore */ }
-    return 'light';
-}
-
-function writeHljsThemePref(theme) {
-    try {
-        Storage.setData(HLJS_THEME_PREF_KEY, theme);
-    } catch (err) {
-        Logger.warn('highlight-js: failed to write theme pref', err);
-    }
+function resolveFleetSyntaxTheme() {
+    const de = Context.diffEngine;
+    if (de && typeof de.getFleetTheme === 'function') return de.getFleetTheme();
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 }
 
 const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -104,19 +90,26 @@ const plugin = {
     _loadFailed: false,
     _styleInjected: false,
     _activeTheme: null,
+    _fleetThemeSubscribed: false,
 
     init() {
         const self = this;
-        this._applyThemeToDocument(readHljsThemePref());
+        this._applyThemeToDocument(resolveFleetSyntaxTheme());
         Context.highlightJs = {
             isReady: () => !!self._hljs,
-            getTheme: () => self._activeTheme || readHljsThemePref(),
-            setTheme: (theme) => self._setTheme(theme),
             ensureLoaded: () => self._ensureHighlightJsLoaded(),
             highlightCodeElement: (codeEl, options) => self._highlightCodeElement(codeEl, options),
             setPlainCode: (codeEl, text) => self._setPlainCode(codeEl, text)
         };
         Logger.log('highlight-js: module registered (Context.highlightJs)');
+    },
+
+    _ensureFleetThemeSubscription() {
+        if (this._fleetThemeSubscribed) return;
+        const de = Context.diffEngine;
+        if (!de || typeof de.onFleetThemeChange !== 'function') return;
+        de.onFleetThemeChange(() => { void this._onFleetThemeChanged(); });
+        this._fleetThemeSubscribed = true;
     },
 
     _applyThemeToDocument(theme) {
@@ -129,14 +122,12 @@ const plugin = {
         }
     },
 
-    async _setTheme(theme) {
-        const next = theme === 'dark' ? 'dark' : 'light';
-        if (next === this._activeTheme) return next;
+    async _onFleetThemeChanged() {
+        const next = resolveFleetSyntaxTheme();
+        if (next === this._activeTheme) return;
         this._applyThemeToDocument(next);
-        writeHljsThemePref(next);
-        Logger.log('highlight-js: theme set to ' + next);
+        Logger.log('highlight-js: theme synced to fleet site → ' + next);
         await this._refreshAllHighlighted();
-        return next;
     },
 
     async _refreshAllHighlighted() {
@@ -256,7 +247,8 @@ const plugin = {
         const language = (options && options.language) || 'python';
         if (!codeEl) return false;
 
-        this._applyThemeToDocument(readHljsThemePref());
+        this._ensureFleetThemeSubscription();
+        this._applyThemeToDocument(resolveFleetSyntaxTheme());
         this._setPlainCode(codeEl, text);
         if (!text) return true;
 

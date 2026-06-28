@@ -2900,6 +2900,14 @@ function _dvFlashTabAdded() {
     Logger.debug('diff-viewer: tab add pulse');
 }
 
+function _dvOnFleetThemeChange() {
+    const loader = Context.dashboard && Context.dashboard._loader;
+    const modal = loader && loader._modal;
+    if (!modal) return;
+    _dvRenderDiffs(modal);
+    if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+}
+
 // ── Public API: Context.diffViewer ──
 
 function _dvApiAddTask(seed) {
@@ -2914,7 +2922,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2956,6 +2964,11 @@ const plugin = {
 
         // Inject styles
         _dvInjectStyles();
+
+        const de = Context.diffEngine;
+        if (de && typeof de.onFleetThemeChange === 'function') {
+            de.onFleetThemeChange(_dvOnFleetThemeChange);
+        }
 
         // Expose public API
         Context.diffViewer = {

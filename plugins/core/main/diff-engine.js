@@ -22,9 +22,61 @@ function _deFormatPercent(value) {
 
 let _deCachedHighlightStyles = null;
 let _deCachedHighlightDark = null;
+let _deFleetThemeListeners = [];
+let _deFleetThemeObserverStarted = false;
+let _deLastFleetDark = null;
+
+function _deIsFleetDark() {
+    return document.documentElement.classList.contains('dark');
+}
+
+function _deGetFleetTheme() {
+    return _deIsFleetDark() ? 'dark' : 'light';
+}
+
+function _deInvalidateHighlightStyles() {
+    _deCachedHighlightStyles = null;
+    _deCachedHighlightDark = null;
+}
+
+function _deNotifyFleetThemeChange() {
+    const dark = _deIsFleetDark();
+    if (_deLastFleetDark === dark) return;
+    _deLastFleetDark = dark;
+    _deInvalidateHighlightStyles();
+    const payload = { theme: dark ? 'dark' : 'light', dark };
+    for (const fn of _deFleetThemeListeners) {
+        try {
+            fn(payload);
+        } catch (err) {
+            Logger.warn('diff-engine: theme listener failed', err);
+        }
+    }
+}
+
+function _deEnsureFleetThemeObserver() {
+    if (_deFleetThemeObserverStarted) return;
+    _deFleetThemeObserverStarted = true;
+    _deLastFleetDark = _deIsFleetDark();
+    try {
+        const observer = new MutationObserver(() => _deNotifyFleetThemeChange());
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        CleanupRegistry.register(() => observer.disconnect());
+    } catch (err) {
+        Logger.warn('diff-engine: fleet theme observer failed', err);
+    }
+}
+
+function _deOnFleetThemeChange(callback) {
+    if (typeof callback !== 'function') return () => {};
+    _deFleetThemeListeners.push(callback);
+    return () => {
+        _deFleetThemeListeners = _deFleetThemeListeners.filter((fn) => fn !== callback);
+    };
+}
 
 function _deHighlightStyles() {
-    const dark = document.documentElement.classList.contains('dark');
+    const dark = _deIsFleetDark();
     if (_deCachedHighlightStyles && _deCachedHighlightDark === dark) return _deCachedHighlightStyles;
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
     const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
@@ -349,13 +401,18 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init() {
+        _deEnsureFleetThemeObserver();
         Context.diffEngine = {
+            isFleetDark: _deIsFleetDark,
+            getFleetTheme: _deGetFleetTheme,
+            onFleetThemeChange: _deOnFleetThemeChange,
+
             plainPromptHtml(text) {
                 return _deEqualSpanHtml(text || '');
             },

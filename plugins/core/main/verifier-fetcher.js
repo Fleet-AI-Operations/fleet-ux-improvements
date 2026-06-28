@@ -142,19 +142,9 @@ function restoreVerifierScratchpadState(modal) {
     applyVerifierScratchpadLayout(modal);
 }
 
-function syncVerifierHljsThemeToggle(modal) {
-    if (!modal) return;
-    const btn = modal.querySelector('#wf-ops-verifier-hljs-theme-toggle');
-    if (!btn || !Context.highlightJs || typeof Context.highlightJs.getTheme !== 'function') return;
-    const theme = Context.highlightJs.getTheme();
-    btn.textContent = theme === 'dark' ? 'Light theme' : 'Dark theme';
-    btn.title = theme === 'dark' ? 'Switch to light syntax theme' : 'Switch to dark syntax theme';
-}
-
 function syncVerifierOutputToolbar(modal) {
     if (!modal) return;
     applyVerifierScratchpadLayout(modal);
-    syncVerifierHljsThemeToggle(modal);
 }
 
 function captureVerifierScratchpadTabState(modal) {
@@ -255,10 +245,7 @@ function verifierFetcherPanelHtml() {
                         <button type="button" id="wf-ops-verifier-content-next" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Next</button>
                         <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
                     </div>
-                    <span style="display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start;">
-                        <button type="button" id="wf-ops-verifier-hljs-theme-toggle" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Dark theme</button>
-                        <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Scratchpad</button>
-                    </span>
+                    <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Scratchpad</button>
                 </div>
                 <div id="wf-ops-verifier-output-wrap" style="
                     display: none;
@@ -368,23 +355,10 @@ function attachVerifierFetcherListeners(modal) {
     const verifierContentPrev = modal.querySelector('#wf-ops-verifier-content-prev');
     const verifierContentNext = modal.querySelector('#wf-ops-verifier-content-next');
     const scratchpadToggle = modal.querySelector('#wf-ops-verifier-scratchpad-toggle');
-    const hljsThemeToggle = modal.querySelector('#wf-ops-verifier-hljs-theme-toggle');
     const scratchpadTextarea = modal.querySelector('#wf-ops-verifier-scratchpad');
 
     attachVerifierScratchpadResize(modal);
     restoreVerifierScratchpadState(modal);
-    syncVerifierHljsThemeToggle(modal);
-
-    if (hljsThemeToggle && Context.highlightJs && typeof Context.highlightJs.setTheme === 'function') {
-        hljsThemeToggle.addEventListener('click', () => {
-            const current = Context.highlightJs.getTheme();
-            const next = current === 'dark' ? 'light' : 'dark';
-            void Context.highlightJs.setTheme(next).then(() => {
-                syncVerifierHljsThemeToggle(modal);
-                Logger.log('verifier-fetcher: hljs theme set to ' + next);
-            });
-        });
-    }
 
     if (scratchpadToggle) {
         scratchpadToggle.addEventListener('click', () => {
@@ -462,7 +436,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

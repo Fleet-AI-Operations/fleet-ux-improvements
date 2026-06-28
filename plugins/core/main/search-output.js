@@ -11139,7 +11139,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.23',
+    _version: '4.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -11151,6 +11151,12 @@ const plugin = {
             return;
         }
         Object.assign(loader, searchOutputMethods);
+        const de = Context.diffEngine;
+        if (de && typeof de.onFleetThemeChange === 'function') {
+            de.onFleetThemeChange(() => {
+                if (typeof loader._renderResults === 'function') loader._renderResults();
+            });
+        }
         if (loader._state && loader._state.catalog == null && typeof loader._readBootstrapCache === 'function') {
             loader._state.catalog = loader._readBootstrapCache();
         }
