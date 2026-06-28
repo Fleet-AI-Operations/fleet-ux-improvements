@@ -5368,11 +5368,22 @@ const searchOutputMethods = {
 
     _getUserStoryUi(itemId) {
         const id = String(itemId || '');
-        if (!id) return { status: 'idle', visible: false, userStory: null, message: null };
+        if (!id) {
+            return {
+                status: 'idle',
+                visible: false,
+                scenarioTitle: null,
+                humanAnnotatorInstructions: null,
+                userStory: null,
+                message: null
+            };
+        }
         if (!this._state.userStoryUi[id]) {
             this._state.userStoryUi[id] = {
                 status: 'idle',
                 visible: false,
+                scenarioTitle: null,
+                humanAnnotatorInstructions: null,
                 userStory: null,
                 message: null
             };
@@ -5581,7 +5592,8 @@ const searchOutputMethods = {
     },
 
     _userStoryHasContent(ui) {
-        return ui.userStory != null && String(ui.userStory).trim().length > 0;
+        return ['scenarioTitle', 'humanAnnotatorInstructions', 'userStory']
+            .some((key) => ui[key] != null && String(ui[key]).trim().length > 0);
     },
 
     _userStoryIsAbsent(ui) {
@@ -5593,11 +5605,27 @@ const searchOutputMethods = {
         return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
     },
 
-    _userStoryBodyText(ui) {
-        const story = this._dashQuotedText(ui.userStory);
-        return story
-            ? dashEscHtml(story)
-            : dashEscHtml(ui.message || 'No user story for this task.');
+    _userStoryPanelBodyHtml(ui) {
+        const fields = [
+            { key: 'scenarioTitle', label: 'Scenario title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator instructions' },
+            { key: 'userStory', label: 'User story' }
+        ];
+        const parts = [];
+        for (const { key, label } of fields) {
+            const text = this._dashQuotedText(ui[key]);
+            if (!text) continue;
+            parts.push(
+                '<div class="wf-dash-user-story-field">'
+                + '<div class="wf-dash-user-story-field-label">' + dashEscHtml(label) + '</div>'
+                + '<p class="wf-dash-user-story-field-body">' + dashEscHtml(text) + '</p>'
+                + '</div>'
+            );
+        }
+        if (parts.length === 0) {
+            return this._userStoryEmptyHtml(ui);
+        }
+        return '<div class="wf-dash-user-story-block">' + parts.join('') + '</div>';
     },
 
     _userStoryBtnLabel(ui) {
@@ -5622,7 +5650,7 @@ const searchOutputMethods = {
         const panelOpen = ui.visible && !ui.animateOpen;
         const panelHtml = hasPanel
             ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-                + `<div data-wf-dash-user-story-inner><p class="wf-dash-user-story-body">${this._userStoryBodyText(ui)}</p></div>`
+                + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
                 + '</div>'
             : '';
         return `
@@ -5689,16 +5717,16 @@ const searchOutputMethods = {
             if (panel) panel.remove();
             return true;
         }
-        const bodyText = this._userStoryBodyText(ui);
+        const bodyHtml = this._userStoryPanelBodyHtml(ui);
         if (!panel) {
             section.insertAdjacentHTML('beforeend',
                 `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
-                + `<div data-wf-dash-user-story-inner"><p class="wf-dash-user-story-body">${bodyText}</p></div>`
+                + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
                 + '</div>');
             panel = section.querySelector('[data-wf-dash-user-story-panel]');
         } else {
-            const body = panel.querySelector('.wf-dash-user-story-body');
-            if (body) body.innerHTML = bodyText;
+            const inner = panel.querySelector('[data-wf-dash-user-story-inner]');
+            if (inner) inner.innerHTML = bodyHtml;
         }
         if (panel) {
             panel.setAttribute('data-open', ui.visible ? '1' : '0');
@@ -5774,22 +5802,38 @@ const searchOutputMethods = {
 
         try {
             const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
-            const userStory = result && result.userStory != null ? String(result.userStory) : '';
-            if (!userStory.trim()) {
+            ui.scenarioTitle = result && result.scenarioTitle != null
+                ? String(result.scenarioTitle).trim() || null
+                : null;
+            ui.humanAnnotatorInstructions = result && result.humanAnnotatorInstructions != null
+                ? String(result.humanAnnotatorInstructions).trim() || null
+                : null;
+            ui.userStory = result && result.userStory != null
+                ? String(result.userStory).trim() || null
+                : null;
+            if (!this._userStoryHasContent(ui)) {
                 const reason = result && result.reason ? result.reason : 'empty';
+                ui.scenarioTitle = null;
+                ui.humanAnnotatorInstructions = null;
                 ui.userStory = null;
                 ui.message = this._userStoryEmptyMessage(reason);
                 Logger.warn('dashboard: user story empty — ' + id + ' (' + reason + ')');
             } else {
-                ui.userStory = userStory;
                 ui.message = null;
-                Logger.log('dashboard: user story fetched — ' + id + ' (' + userStory.length + ' chars)');
+                const summary = [
+                    ui.scenarioTitle ? 'title ' + ui.scenarioTitle.length + ' chars' : null,
+                    ui.humanAnnotatorInstructions ? 'instructions ' + ui.humanAnnotatorInstructions.length + ' chars' : null,
+                    ui.userStory ? 'story ' + ui.userStory.length + ' chars' : null
+                ].filter(Boolean).join(', ');
+                Logger.log('dashboard: user story fetched — ' + id + ' (' + summary + ')');
             }
             ui.status = 'loaded';
-            ui.visible = Boolean(userStory.trim());
+            ui.visible = this._userStoryHasContent(ui);
             if (ui.visible) ui.animateOpen = true;
         } catch (err) {
             ui.status = 'error';
+            ui.scenarioTitle = null;
+            ui.humanAnnotatorInstructions = null;
             ui.userStory = null;
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
@@ -11215,7 +11259,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.16',
+    _version: '4.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

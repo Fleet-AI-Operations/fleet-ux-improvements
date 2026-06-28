@@ -22,7 +22,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -179,13 +179,13 @@ const plugin = {
         bodyWrap.className = 'relative';
         bodyWrap.setAttribute('data-slot', 'body');
 
-        const pre = document.createElement('pre');
-        pre.className =
+        const content = document.createElement('div');
+        content.className =
             'bg-muted/40 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm text-muted-foreground';
-        pre.setAttribute('data-slot', 'content');
-        pre.textContent = 'Loading user story…';
+        content.setAttribute('data-slot', 'content');
+        content.textContent = 'Loading user story…';
 
-        bodyWrap.appendChild(pre);
+        bodyWrap.appendChild(content);
         section.appendChild(bodyWrap);
 
         return section;
@@ -381,6 +381,37 @@ const plugin = {
         pre.dataset.wfUserStoryResizeAttached = '1';
     },
 
+    _scenarioFieldsFromResult(result) {
+        return {
+            scenarioTitle: result && result.scenarioTitle != null ? String(result.scenarioTitle).trim() : '',
+            humanAnnotatorInstructions: result && result.humanAnnotatorInstructions != null
+                ? String(result.humanAnnotatorInstructions).trim()
+                : '',
+            userStory: result && result.userStory != null ? String(result.userStory).trim() : ''
+        };
+    },
+
+    _hasScenarioContent(fields) {
+        return Boolean(fields.scenarioTitle || fields.humanAnnotatorInstructions || fields.userStory);
+    },
+
+    _scenarioEmptyMessage(reason) {
+        if (reason === 'no_scenario_id') return 'No scenario linked to this task.';
+        if (reason === 'scenario_not_found') return 'Scenario not found.';
+        if (reason === 'task_not_found') return 'Task not found.';
+        return 'No user story for this task.';
+    },
+
+    _scenarioCopyText(fields) {
+        const blocks = [];
+        if (fields.scenarioTitle) blocks.push('Scenario title\n' + fields.scenarioTitle);
+        if (fields.humanAnnotatorInstructions) {
+            blocks.push('Annotator instructions\n' + fields.humanAnnotatorInstructions);
+        }
+        if (fields.userStory) blocks.push('User story\n' + fields.userStory);
+        return blocks.join('\n\n');
+    },
+
     async _fetchAndRender(state, shell, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
@@ -401,29 +432,27 @@ const plugin = {
                 return;
             }
 
-            const userStory = result && result.userStory != null ? String(result.userStory) : '';
-            if (!userStory.trim()) {
+            const fields = this._scenarioFieldsFromResult(result);
+            if (!this._hasScenarioContent(fields)) {
                 const reason = result && result.reason ? result.reason : 'empty';
-                const message = reason === 'no_scenario_id'
-                    ? 'No scenario linked to this task.'
-                    : reason === 'scenario_not_found'
-                        ? 'Scenario not found.'
-                        : reason === 'task_not_found'
-                            ? 'Task not found.'
-                            : 'No user story for this task.';
-                this._setSectionMessage(shell, message);
+                this._setSectionMessage(shell, this._scenarioEmptyMessage(reason));
                 state.fetchDone = true;
                 Logger.warn(PLUGIN_ID + ': no user story for ' + taskKey + ' (' + reason + ')');
                 return;
             }
 
-            this._renderUserStory(shell, userStory);
+            this._renderScenarioContent(shell, fields);
             state.fetchDone = true;
             if (!state.activationLogged) {
                 Logger.log(PLUGIN_ID + ': user story section active for ' + taskKey);
                 state.activationLogged = true;
             }
-            Logger.log(PLUGIN_ID + ': rendered user story (' + userStory.length + ' chars) for ' + taskKey);
+            const summary = [
+                fields.scenarioTitle ? 'title ' + fields.scenarioTitle.length + ' chars' : null,
+                fields.humanAnnotatorInstructions ? 'instructions ' + fields.humanAnnotatorInstructions.length + ' chars' : null,
+                fields.userStory ? 'story ' + fields.userStory.length + ' chars' : null
+            ].filter(Boolean).join(', ');
+            Logger.log(PLUGIN_ID + ': rendered scenario content for ' + taskKey + ' (' + summary + ')');
         } catch (err) {
             if (this._isTransientBundleError(err)) {
                 state.fetchStarted = false;
@@ -442,19 +471,47 @@ const plugin = {
     },
 
     _setSectionMessage(shell, message) {
-        const pre = shell.querySelector('[data-slot="content"]');
+        const content = shell.querySelector('[data-slot="content"]');
         const actions = shell.querySelector('[data-slot="actions"]');
-        if (pre) pre.textContent = message;
+        if (content) {
+            content.textContent = message;
+            content.className =
+                'bg-muted/40 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm text-muted-foreground';
+        }
         if (actions) actions.replaceChildren();
     },
 
-    _renderUserStory(shell, userStory) {
-        const pre = shell.querySelector('[data-slot="content"]');
+    _renderScenarioContent(shell, fields) {
+        const content = shell.querySelector('[data-slot="content"]');
         const actions = shell.querySelector('[data-slot="actions"]');
-        if (!pre || !actions) return;
+        if (!content || !actions) return;
 
-        pre.textContent = userStory;
-        actions.replaceChildren(this._createCopyButton(userStory));
-        this._attachResizeHandle(pre);
+        content.className =
+            'bg-muted/40 overflow-auto break-words rounded-md p-3 text-sm text-muted-foreground space-y-3';
+        content.replaceChildren();
+
+        const fieldDefs = [
+            { key: 'scenarioTitle', label: 'Scenario title' },
+            { key: 'humanAnnotatorInstructions', label: 'Annotator instructions' },
+            { key: 'userStory', label: 'User story' }
+        ];
+        for (const { key, label } of fieldDefs) {
+            const value = fields[key];
+            if (!value) continue;
+            const block = document.createElement('div');
+            const fieldLabel = document.createElement('div');
+            fieldLabel.className = 'text-xs text-muted-foreground font-medium mb-1';
+            fieldLabel.textContent = label;
+            const body = document.createElement('div');
+            body.className = 'whitespace-pre-wrap break-words';
+            body.textContent = value;
+            block.appendChild(fieldLabel);
+            block.appendChild(body);
+            content.appendChild(block);
+        }
+
+        const copyText = this._scenarioCopyText(fields);
+        actions.replaceChildren(this._createCopyButton(copyText));
+        this._attachResizeHandle(content);
     }
 };
