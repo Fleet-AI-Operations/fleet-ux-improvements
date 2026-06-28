@@ -7510,22 +7510,24 @@ const searchOutputMethods = {
         return `<span class="so-rolling-sim-badge">${inner}</span>`;
     },
 
-    _expandedRollingToolbarHtml(itemId, taskId, rollingUi) {
+    _expandedRollingFeedbackBtnHtml(itemId, taskId, rollingUi) {
+        if (rollingUi.showHighlights) return '';
         const feedbackLabel = rollingUi.feedbackBulkCollapsed ? 'Expand Feedback' : 'Collapse Feedback';
+        return `<button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>`;
+    },
+
+    _expandedRollingDiffToolbarHtml(rollingUi) {
         const modality = rollingUi.highlightModality;
         const showHighlights = rollingUi.showHighlights;
-        const feedbackBtn = showHighlights
-            ? ''
-            : `<button type="button" data-wf-dash-feedback-bulk="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">${dashEscHtml(feedbackLabel)}</button>`;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
-            ${feedbackBtn}
-            <div class="dv-seg-group" role="group" aria-label="Diff modality">
-                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
-                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
-            </div>
+            ${this._labelSpan('Diff Viewer')}
             <div class="dv-seg-group" role="group" aria-label="Diff highlights">
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
+            </div>
+            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
+                ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
             </div>
         </div>`;
     },
@@ -10535,12 +10537,16 @@ const searchOutputMethods = {
         if (expanded) {
             const rollingActive = hasTimeline && totalVersions >= 2;
             if (rollingActive && rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
-            const toolbarRight = rollingActive && rollingUi
-                ? this._expandedRollingToolbarHtml(itemId, task.id, rollingUi)
+            const feedbackBtn = rollingActive && rollingUi
+                ? this._expandedRollingFeedbackBtnHtml(itemId, task.id, rollingUi)
+                : '';
+            const diffToolbar = rollingActive && rollingUi
+                ? this._expandedRollingDiffToolbarHtml(rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
                     <button type="button" data-wf-dash-timeline-order="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" class="${this._dashBtnClass('basic', 'compact')}">${ui.timelineNewestFirst ? 'Newest first' : 'Oldest first'}</button>
-                    ${toolbarRight}
+                    ${feedbackBtn}
+                    ${diffToolbar}
                 </div>`;
         }
 
@@ -11292,7 +11298,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.19',
+    _version: '4.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
