@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.37",
+  "archetypesVersion": "12.39",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "highlight-js.js",
-      "version": "1.4",
-      "hash": "sha256-26cbc46c5594034252983befa5b26c93e73d029b68d224a9f13b05b66b1b4d62",
+      "version": "1.5",
+      "hash": "sha256-3adef07eaab50892a4890b44d67bdf653392b0749ffd6b75ef851d108eb40ef8",
       "log": false
     },
     {
@@ -84,8 +84,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "2.1",
-      "hash": "sha256-f79f581927fedcc0ac09603b94de9ae398c33b9f17bbb54ceb09cac808e9e872",
+      "version": "2.2",
+      "hash": "sha256-6ea1a0eee558db8f210b2432e497d9dc271e105030075609e2ebc60b429d0366",
       "log": false
     }
   ],
