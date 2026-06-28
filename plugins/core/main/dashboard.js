@@ -70,6 +70,8 @@ function dashLib() {
 }
 
 function dashEscHtml(value) {
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.escHtml === 'function') return lib.escHtml(value);
     return String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -83,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.17',
+    _version: '6.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -136,6 +138,11 @@ const plugin = {
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
             splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
+            pagerChevronSvg: (dir) => self._pagerChevronSvg(dir),
+            paginationMeta: (total, pageSize, pageHolder) => self._paginationMeta(total, pageSize, pageHolder),
+            rangeLabel: (meta, options) => self._rangeLabel(meta, options),
+            syncPagerNavUi: (opts) => self._syncPagerNavUi(opts),
+            numericFilterRowHtml: (opts) => self._numericFilterRowHtml(opts),
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
                 Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
@@ -1010,6 +1017,117 @@ const plugin = {
                 </span>`;
         }
         return `<span data-wf-dash-ms-option-text="1" style="${dimStyle}">${dashEscHtml(label)}</span>`;
+    },
+
+    _pagerChevronSvg(dir) {
+        const path = dir === 'prev' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6';
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+    },
+
+    _paginationMeta(total, pageSize, pageHolder) {
+        const count = Number(total) || 0;
+        const size = pageSize === Infinity || pageSize === 'all' ? Infinity : Number(pageSize);
+        const effectiveSize = Number.isFinite(size) && size > 0 ? size : Infinity;
+        if (count === 0 || effectiveSize === Infinity) {
+            if (pageHolder) pageHolder.page = 0;
+            return { total: count, totalPages: 1, page: 0, canPrev: false, canNext: false, showNav: false, pageSize: effectiveSize };
+        }
+        const totalPages = Math.max(1, Math.ceil(count / effectiveSize));
+        let page = pageHolder && Number.isFinite(pageHolder.page) ? pageHolder.page : 0;
+        if (page >= totalPages) page = totalPages - 1;
+        if (page < 0) page = 0;
+        if (pageHolder) pageHolder.page = page;
+        return {
+            total: count,
+            totalPages,
+            page,
+            canPrev: page > 0,
+            canNext: page < totalPages - 1,
+            showNav: totalPages > 1,
+            pageSize: effectiveSize
+        };
+    },
+
+    _rangeLabel(meta, options) {
+        const opts = options || {};
+        const total = meta ? meta.total : 0;
+        const singular = opts.singular || 'result';
+        const plural = opts.plural || (singular + 's');
+        const suffix = total === 1 ? singular : plural;
+        if (total === 0) return '0 ' + plural;
+        if (!meta || !meta.showNav) {
+            return '1–' + total + ' of ' + total + ' ' + suffix;
+        }
+        const size = meta.pageSize;
+        const start = meta.page * size + 1;
+        const end = Math.min((meta.page + 1) * size, total);
+        return start + '–' + end + ' of ' + total + ' ' + suffix;
+    },
+
+    _syncPagerNavUi(opts) {
+        const options = opts || {};
+        const show = Boolean(options.show);
+        if (options.rowEl) options.rowEl.style.display = show ? (options.rowDisplay || 'flex') : 'none';
+        if (options.pagerEl) options.pagerEl.style.display = show ? (options.pagerDisplay || 'inline-flex') : 'none';
+        if (options.rangeEl) options.rangeEl.textContent = show && options.rangeLabel ? options.rangeLabel : '';
+        if (options.prevBtn) options.prevBtn.disabled = !show || !options.meta || !options.meta.canPrev;
+        if (options.nextBtn) options.nextBtn.disabled = !show || !options.meta || !options.meta.canNext;
+    },
+
+    _numericFilterOptionsHtml(items, selectedId) {
+        const list = Array.isArray(items) ? items : [];
+        const sel = selectedId != null ? String(selectedId) : '';
+        return list.map((item) => {
+            const id = String(item.id != null ? item.id : '');
+            const label = String(item.label != null ? item.label : id);
+            const selected = id === sel ? ' selected' : '';
+            return '<option value="' + dashEscHtml(id) + '"' + selected + '>' + dashEscHtml(label) + '</option>';
+        }).join('');
+    },
+
+    _numericComparatorOptionsHtml(fieldType, selectedId) {
+        const lib = dashLib();
+        const list = fieldType === 'date'
+            ? (lib && lib.DATE_COMPARATORS) || []
+            : (lib && lib.NUMERIC_COMPARATORS) || [];
+        const sel = selectedId || (list[0] ? list[0].id : 'gte');
+        return list.map((c) => {
+            const selected = c.id === sel ? ' selected' : '';
+            return '<option value="' + dashEscHtml(c.id) + '"' + selected + '>' + dashEscHtml(c.label) + '</option>';
+        }).join('');
+    },
+
+    _numericFilterRowHtml(opts) {
+        const options = opts || {};
+        const rowAttr = options.rowAttr || 'data-wf-dash-manual-row';
+        const fieldAttr = options.fieldAttr || 'data-wf-dash-manual-field';
+        const comparatorAttr = options.comparatorAttr || 'data-wf-dash-manual-comparator';
+        const valueAttr = options.valueAttr || 'data-wf-dash-manual-value';
+        const removeAttr = options.removeAttr || 'data-wf-dash-manual-remove';
+        const fields = options.fields || [];
+        const field = options.field || (fields[0] ? fields[0].id : '');
+        const fieldMeta = fields.find((f) => f.id === field) || fields[0] || { id: field, type: 'number' };
+        const isDate = fieldMeta.type === 'date';
+        const comparator = options.comparator || 'gte';
+        const value = options.value != null ? String(options.value) : '';
+        const selectStyle = options.selectStyle || '';
+        const inputStyle = options.inputStyle || '';
+        const removeBtnStyle = options.removeBtnStyle || '';
+        const compWidth = isDate ? '96px' : '52px';
+        const valueWidth = isDate ? '118px' : '72px';
+        const inputType = isDate ? 'date' : 'number';
+        return '<div ' + rowAttr + '="1" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">'
+            + '<select ' + fieldAttr + '="1" style="' + selectStyle + ' flex: 1; min-width: 120px;">'
+            + this._numericFilterOptionsHtml(fields, field)
+            + '</select>'
+            + '<select ' + comparatorAttr + '="1" style="' + selectStyle + ' width: ' + compWidth + '; flex-shrink: 0;">'
+            + this._numericComparatorOptionsHtml(isDate ? 'date' : 'number', comparator)
+            + '</select>'
+            + '<input type="' + inputType + '" ' + valueAttr + '="1" placeholder="Value" step="any" value="'
+            + dashEscHtml(value) + '" style="' + inputStyle + ' width: ' + valueWidth + '; flex-shrink: 0;">'
+            + '<button type="button" ' + removeAttr + '="1" title="Remove filter" style="' + removeBtnStyle
+            + ' flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>'
+            + '</div>';
     },
 
     _dashBtnClass(variant, size) {
@@ -2682,9 +2800,10 @@ const plugin = {
         const totalNum = Number(filteredTotalCount);
         if (!Number.isFinite(totalNum) || totalNum <= 0) return { countText, pctText: '' };
         const pct = (countNum / totalNum) * 100;
-        const pctStr = pct < 1
-            ? String(parseFloat(pct.toFixed(2)))
-            : String(Math.round(pct));
+        const lib = dashLib();
+        const pctStr = lib && typeof lib.formatPercent === 'function'
+            ? lib.formatPercent(pct)
+            : (pct < 1 ? String(parseFloat(pct.toFixed(2))) : String(Math.round(pct)));
         return { countText, pctText: pctStr + '%' };
     },
 

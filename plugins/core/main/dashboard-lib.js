@@ -60,6 +60,60 @@ const DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE = 'qa.revision_requested';
 const DASH_LIB_RSC_REF_RE = /^\$(\d+)$/;
 const DASH_LIB_BUG_REPORT_DEDUP_MS = 2000;
 
+const DASH_LIB_NUMERIC_COMPARATORS = [
+    { id: 'gt', label: '>' },
+    { id: 'gte', label: '>=' },
+    { id: 'lt', label: '<' },
+    { id: 'lte', label: '<=' },
+    { id: 'eq', label: '=' },
+    { id: 'neq', label: '≠' }
+];
+
+const DASH_LIB_DATE_COMPARATORS = [
+    { id: 'gt', label: 'After' },
+    { id: 'gte', label: 'On or after' },
+    { id: 'lt', label: 'Before' },
+    { id: 'lte', label: 'On or before' },
+    { id: 'eq', label: 'On' },
+    { id: 'neq', label: 'Not on' }
+];
+
+function dashLibEscHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function dashLibFormatCreatedAt(iso) {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return String(iso);
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function dashLibCopyIconHtml(text) {
+    const value = String(text == null ? '' : text);
+    return '<button type="button" data-wf-dash-copy="' + dashLibEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+        + '</button>';
+}
+
+function dashLibFormatPercent(n) {
+    const pct = Number(n);
+    if (!Number.isFinite(pct)) return '0';
+    if (pct < 1) return String(parseFloat(pct.toFixed(2)));
+    return String(Math.round(pct));
+}
+
 const DASH_LIB_FLAG_REASON_LABELS = {
     ai_generated: 'AI Generated',
     poor_feedback_from_previous_qa: 'Poor Feedback From Previous QA',
@@ -396,7 +450,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.10',
+    _version: '3.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -409,6 +463,13 @@ const plugin = {
             pgInFilter: dashLibPgInFilter,
             pgInChunks: dashLibPgInChunks,
             isDimensionUnrestricted: dashLibIsDimensionUnrestricted,
+
+            escHtml: dashLibEscHtml,
+            formatCreatedAt: dashLibFormatCreatedAt,
+            copyIconHtml: dashLibCopyIconHtml,
+            formatPercent: dashLibFormatPercent,
+            NUMERIC_COMPARATORS: DASH_LIB_NUMERIC_COMPARATORS,
+            DATE_COMPARATORS: DASH_LIB_DATE_COMPARATORS,
 
             MIN_SUBSTRING_LENGTH: DASH_LIB_MIN_SUBSTRING_LENGTH,
             CHECKBOX_FILTER_DIMENSIONS: self._checkboxFilterDimensions,

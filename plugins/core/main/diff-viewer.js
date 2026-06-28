@@ -28,7 +28,6 @@ const DV_DRAG_THRESHOLD_PX = 4;
 
 let _dvSlotSeq = 0;
 let _dvLensSyncScheduled = false;
-let _dvLensSyncAfterLayout = false;
 
 // ── Module state ──
 
@@ -46,9 +45,7 @@ const _dvState = {
     freeBase: '',
     freeCompare: '',
     drag: _dvCreateEmptyDragState(),
-    hoverSlotIdx: null,
-    searchLoading: false,
-    searchError: null
+    hoverSlotIdx: null
 };
 
 function _dvCreateEmptyDragState() {
@@ -77,17 +74,46 @@ function _dvCreateEmptyDragState() {
 
 // ── Diff engine delegation (Context.diffEngine from diff-engine.js) ──
 
+function dashLib() {
+    return Context.dashboardLib;
+}
+
 function _dvEscHtml(value) {
+    const lib = dashLib();
+    if (lib && typeof lib.escHtml === 'function') return lib.escHtml(value);
     return String(value == null ? '' : value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function _dvCopyIconHtml(text) {
-    const value = String(text == null ? '' : text);
-    return '<button type="button" data-wf-dash-copy="' + _dvEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
-        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
-        + '</button>';
+function _dvStashEmptyHtml() {
+    return _dvSlotPlaceholderHtml('No tasks in stash.');
+}
+
+function _dvSlotPlaceholderHtml(msg) {
+    const loader = Context.dashboard && Context.dashboard._loader;
+    if (loader && typeof loader._msHintHtml === 'function') return loader._msHintHtml(msg);
+    return `<div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">${_dvEscHtml(msg)}</div>`;
+}
+
+function _dvIconBtnStyle() {
+    return 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
+}
+
+function _dvAuthorLineHtml(authorName, authorEmail) {
+    const display = authorName
+        ? _dvEscHtml(authorName) + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '')
+        : _dvEscHtml(authorEmail || '—');
+    const title = _dvEscHtml(authorName || '') + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '');
+    return `<div class="dv-slot-author" title="${title}">${display}</div>`;
+}
+
+function _dvSyncSegPressed(modal, attr, stateValue) {
+    if (!modal) return;
+    modal.querySelectorAll('[' + attr + ']').forEach((btn) => {
+        const active = btn.getAttribute(attr) === String(stateValue);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
 }
 
 function _dvEngine() {
@@ -110,17 +136,45 @@ function _dvHighlightLengthUnitLabel() {
     return _dvState.granularity === 'char' ? 'chars' : 'words';
 }
 
-function _dvComparisonPairsForLengthRange(modal) {
+function _dvComparePairs(modal, opts) {
+    const mode = (opts && opts.mode) || 'all';
     if (_dvState.mode === 'free-text') {
         const baseInput = _dvQ(modal, 'dv-free-base-input');
         const compareInput = _dvQ(modal, 'dv-free-compare-input');
-        return [{
-            baseText: (baseInput && baseInput.value) || '',
-            compareText: (compareInput && compareInput.value) || ''
-        }];
+        const baseText = (baseInput && baseInput.value) || '';
+        const compareText = (compareInput && compareInput.value) || '';
+        if (mode === 'active') {
+            if (!baseText && !compareText) return null;
+            return { leftText: baseText, rightText: compareText };
+        }
+        return [{ baseText, compareText }];
+    }
+    if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) {
+        return mode === 'active' ? null : [];
+    }
+    if (mode === 'active') {
+        if (_dvState.compMode === 'rolling') {
+            _dvClampRollingLeft();
+            const left = _dvState.slots[_dvState.rollingLeft];
+            const right = _dvState.slots[_dvState.rollingLeft + 1];
+            if (!left || !right) return null;
+            return { leftText: _dvSlotPromptText(left), rightText: _dvSlotPromptText(right) };
+        }
+        if (_dvState.slots.length === 2) {
+            return {
+                leftText: _dvSlotPromptText(_dvState.slots[0]),
+                rightText: _dvSlotPromptText(_dvState.slots[1])
+            };
+        }
+        if (_dvState.hoverSlotIdx != null && _dvState.hoverSlotIdx > 0) {
+            return {
+                leftText: _dvSlotPromptText(_dvState.slots[0]),
+                rightText: _dvSlotPromptText(_dvState.slots[_dvState.hoverSlotIdx])
+            };
+        }
+        return null;
     }
     const pairs = [];
-    if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) return pairs;
     if (_dvState.compMode === 'rolling') {
         _dvClampRollingLeft();
         const left = _dvState.slots[_dvState.rollingLeft];
@@ -145,7 +199,7 @@ function _dvRefreshHighlightLengthRange(modal) {
         _dvSyncHighlightLengthUi(modal);
         return;
     }
-    const pairs = _dvComparisonPairsForLengthRange(modal);
+    const pairs = _dvComparePairs(modal, { mode: 'all' });
     let globalMin = Infinity;
     let globalMax = 0;
     const allLengths = [];
@@ -590,8 +644,7 @@ function _dvParseTranslateY(el) {
     return m ? parseFloat(m[2]) : 0;
 }
 
-function _dvMeasureNavRowH(track) {
-    if (track && track._dvRowH) return track._dvRowH;
+function _dvMeasureNavRowH(_track) {
     return DV_REEL_NAV_ROW_H;
 }
 
@@ -621,7 +674,6 @@ function _dvSyncAllVersionTracks(modal) {
         if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
         const track = modal.querySelector('[data-dv-version-track="' + i + '"]');
         if (!track) continue;
-        track._dvRowH = null;
         _dvSyncVersionTrack(track, slot.lensIndex);
     }
 }
@@ -687,16 +739,40 @@ function _dvSyncReelTrack(track, lensIndex, modal) {
     _dvApplyReelContentOpacities(track, y, modal);
 }
 
-function _dvSyncAllReelTracks(modal) {
-    if (!modal) return;
-    for (let i = 0; i < _dvState.slots.length; i++) {
-        const slot = _dvState.slots[i];
-        if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
-        if (slot._lensAnimating) continue;
-        const track = modal.querySelector('[data-dv-reel-track="' + i + '"]');
-        if (!track) continue;
-        _dvSyncReelTrack(track, slot.lensIndex, modal);
+function _dvAnimateTranslateY(track, fromY, toY, opts) {
+    if (!track) {
+        if (opts && opts.done) opts.done();
+        return;
     }
+    const onTick = opts && opts.onTick;
+    const done = opts && opts.done;
+    if (typeof track.animate !== 'function') {
+        track.style.transform = 'translateY(' + toY + 'px)';
+        if (onTick) onTick(toY);
+        if (done) done();
+        return;
+    }
+    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
+    const anim = track.animate(
+        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
+        animOpts
+    );
+    let rafId = 0;
+    if (onTick) {
+        const tick = () => {
+            onTick(_dvParseTranslateY(track));
+            if (anim.playState === 'running' || anim.playState === 'pending') {
+                rafId = requestAnimationFrame(tick);
+            }
+        };
+        rafId = requestAnimationFrame(tick);
+    }
+    anim.addEventListener('finish', () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        track.style.transform = 'translateY(' + toY + 'px)';
+        if (onTick) onTick(toY);
+        if (done) done();
+    });
 }
 
 function _dvAnimateReelTrack(track, delta, modal, done) {
@@ -708,30 +784,9 @@ function _dvAnimateReelTrack(track, delta, modal, done) {
     const stepH = _dvReelCardStepH(slotsArea);
     const fromY = _dvParseTranslateY(track);
     const toY = fromY - delta * stepH;
-    if (typeof track.animate !== 'function') {
-        track.style.transform = 'translateY(' + toY + 'px)';
-        _dvApplyReelContentOpacities(track, toY, modal);
-        if (done) done();
-        return;
-    }
-    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
-    const anim = track.animate(
-        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
-        animOpts
-    );
-    let rafId = 0;
-    const tick = () => {
-        _dvApplyReelContentOpacities(track, _dvParseTranslateY(track), modal);
-        if (anim.playState === 'running' || anim.playState === 'pending') {
-            rafId = requestAnimationFrame(tick);
-        }
-    };
-    rafId = requestAnimationFrame(tick);
-    anim.addEventListener('finish', () => {
-        cancelAnimationFrame(rafId);
-        track.style.transform = 'translateY(' + toY + 'px)';
-        _dvApplyReelContentOpacities(track, toY, modal);
-        if (done) done();
+    _dvAnimateTranslateY(track, fromY, toY, {
+        onTick: (y) => _dvApplyReelContentOpacities(track, y, modal),
+        done
     });
 }
 
@@ -743,16 +798,7 @@ function _dvAnimateVersionTrack(track, viewport, delta, done) {
     const rowH = _dvMeasureNavRowH(track);
     const fromY = _dvParseTranslateY(track);
     const toY = fromY - delta * rowH;
-    if (typeof track.animate !== 'function') {
-        track.style.transform = 'translateY(' + toY + 'px)';
-        if (done) done();
-        return;
-    }
-    const animOpts = { duration: DV_ANIM_MS, easing: DV_ANIM_EASE, fill: 'forwards' };
-    track.animate(
-        [{ transform: 'translateY(' + fromY + 'px)' }, { transform: 'translateY(' + toY + 'px)' }],
-        animOpts
-    ).addEventListener('finish', () => { if (done) done(); });
+    _dvAnimateTranslateY(track, fromY, toY, { done });
 }
 
 function _dvUpdateReelNavControls(slotIdx, modal) {
@@ -801,7 +847,11 @@ function _dvShiftLens(slotIdx, delta, modal) {
     if (!reelTrack || typeof reelTrack.animate !== 'function') {
         slot.lensIndex = newIdx;
         Logger.debug('diff-viewer: lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
-        _dvRenderAll(modal);
+        if (reelTrack) _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
+        if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
+        _dvUpdateReelNavControls(slotIdx, modal);
+        _dvRenderDiffs(modal);
+        _dvUpdateAboveLabels(modal);
         return;
     }
 
@@ -1186,7 +1236,7 @@ function _dvPanelHtml(dash) {
                     <button type="button" id="dv-stash-clear" data-dv-stash-clear class="${btnClass('basic', 'nav')}" style="flex-shrink:0;padding:2px 8px;font-size:10px;line-height:1.4;" disabled>Clear</button>
                 </div>
                 <div id="dv-stash-chips" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-height:0;">
-                    <div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>
+                    ${_dvStashEmptyHtml()}
                 </div>
             </div>
         </div>
@@ -1340,7 +1390,7 @@ function _dvReelUnifiedChromeH() {
 
 function _dvAboveLabelInnerHtml() {
     if (!_dvState.showHighlights) return '';
-    const pair = _dvActiveCompareTexts();
+    const pair = _dvComparePairs(null, { mode: 'active' });
     if (!pair) return '';
     const eng = _dvEngine();
     if (!eng) return '';
@@ -1371,38 +1421,12 @@ function _dvUpdateAboveLabels(modal) {
     _dvSetAboveLabelEl(_dvQ(modal, 'dv-slots-above-label'), _dvAboveLabelInnerHtml());
 }
 
-function _dvActiveCompareTexts() {
-    if (_dvState.mode !== 'tasks' || _dvState.slots.length < 2) return null;
-    if (_dvState.compMode === 'rolling') {
-        _dvClampRollingLeft();
-        const left = _dvState.slots[_dvState.rollingLeft];
-        const right = _dvState.slots[_dvState.rollingLeft + 1];
-        if (!left || !right) return null;
-        return { leftText: _dvSlotPromptText(left), rightText: _dvSlotPromptText(right) };
-    }
-    if (_dvState.slots.length === 2) {
-        return { leftText: _dvSlotPromptText(_dvState.slots[0]), rightText: _dvSlotPromptText(_dvState.slots[1]) };
-    }
-    if (_dvState.hoverSlotIdx != null && _dvState.hoverSlotIdx > 0) {
-        return {
-            leftText: _dvSlotPromptText(_dvState.slots[0]),
-            rightText: _dvSlotPromptText(_dvState.slots[_dvState.hoverSlotIdx])
-        };
-    }
-    return null;
-}
-
-function _dvSlotHtml(slot, slotIdx, slotCount) {
-    const authorDisplay = slot.authorName
-        ? _dvEscHtml(slot.authorName) + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')
-        : _dvEscHtml(slot.authorEmail || '—');
+function _dvSlotHtml(slot, slotIdx) {
+    const authorHtml = _dvAuthorLineHtml(slot.authorName, slot.authorEmail);
     const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
-    const authorHtml = authorDisplay
-        ? `<div class="dv-slot-author" title="${_dvEscHtml(slot.authorName || '') + (slot.authorEmail ? ' · ' + _dvEscHtml(slot.authorEmail) : '')}">${authorDisplay}</div>`
-        : '';
     const createdHtml = _dvSlotMetaRowHtml(slot);
 
-    const btnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
+    const btnStyle = _dvIconBtnStyle();
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
     const removeBtn = `<button type="button" data-dv-remove="${slotIdx}" title="Remove from comparison and stash" aria-label="Remove from comparison and stash" style="${btnStyle}background:#fee2e2;color:#dc2626;">×</button>`;
 
@@ -1414,7 +1438,7 @@ function _dvSlotHtml(slot, slotIdx, slotCount) {
     } else if (slot.promptVersions && slot.promptVersions.length > 0) {
         bodyHtml = _dvReelHtml(slot, slotIdx);
     } else {
-        bodyHtml = `<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted-foreground,#64748b);padding:16px;">No versions available</div>`;
+        bodyHtml = `<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:16px;">${_dvSlotPlaceholderHtml('No versions available')}</div>`;
     }
 
     return `<div class="dv-slot" data-dv-slot="${slotIdx}" style="display:flex;flex-direction:column;height:100%;overflow:hidden;box-sizing:border-box;">
@@ -1537,6 +1561,7 @@ function _dvRenderSlotsArea(modal) {
     if (!baseInner || !extraContainer) return;
 
     _dvState.hoverSlotIdx = null;
+    modal._dvLensPreCache = null;
 
     if (_dvState.slots.length === 0) {
         if (baseContainer) baseContainer.style.display = '';
@@ -1546,22 +1571,17 @@ function _dvRenderSlotsArea(modal) {
     }
 
     if (baseContainer) baseContainer.style.display = '';
-    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0, _dvState.slots.length);
+    baseInner.innerHTML = _dvSlotHtml(_dvState.slots[0], 0);
     let extraHtml = '';
     for (let i = 1; i < _dvState.slots.length; i++) {
-        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i, _dvState.slots.length)}</div></div>`;
+        extraHtml += `<div class="dv-slot-column" data-dv-slot-column="${i}"><div class="dv-slot-wrap">${_dvSlotHtml(_dvState.slots[i], i)}</div></div>`;
     }
     extraContainer.innerHTML = extraHtml;
 }
 
 function _dvStashChipHtml(entry, idx, active) {
-    const authorLine = entry.authorName
-        ? _dvEscHtml(entry.authorName) + (entry.authorEmail ? ' · ' + _dvEscHtml(entry.authorEmail) : '')
-        : _dvEscHtml(entry.authorEmail || '—');
+    const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
     const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
-    const authorHtml = authorLine
-        ? `<div class="dv-slot-author" title="${authorLine}">${authorLine}</div>`
-        : '';
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
@@ -1569,7 +1589,7 @@ function _dvStashChipHtml(entry, idx, active) {
     const metaHtml = (createdHtml || versionHtml)
         ? `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`
         : '';
-    const removeBtnStyle = 'width:22px;height:22px;padding:0;border:none;border-radius:4px;background:transparent;color:var(--muted-foreground,#64748b);cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
+    const removeBtnStyle = _dvIconBtnStyle() + 'background:transparent;color:var(--muted-foreground,#64748b);';
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
         <div class="dv-stash-chip-main">
             <div class="dv-stash-key">${keyLine}</div>
@@ -1584,7 +1604,7 @@ function _dvRenderStash(modal) {
     const chips = _dvQ(modal, 'dv-stash-chips');
     if (!chips) return;
     if (_dvState.stash.length === 0) {
-        chips.innerHTML = `<div style="font-size:11px;color:var(--muted-foreground,#64748b);padding:4px 0;">No tasks in stash.</div>`;
+        chips.innerHTML = _dvStashEmptyHtml();
         _dvSyncStashClearUi(modal);
         return;
     }
@@ -1633,17 +1653,22 @@ function _dvSlotPromptText(slot) {
     return (v && v.prompt) || '';
 }
 
-function _dvRenderDiffs(modal) {
-    if (_dvState.mode !== 'tasks') return;
-    _dvRefreshHighlightLengthRange(modal);
-    if (_dvState.slots.length < 2) {
-        _dvRemoveRollingOverlay(modal);
-        const basePre = modal.querySelector('[data-dv-lens-pre="0"]');
-        if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(_dvSlotPromptText(_dvState.slots[0])), null);
-        _dvUpdateAboveLabels(modal);
-        _dvScheduleReelLensSync(modal);
-        return;
+function _dvGetLensPreRef(modal, idx) {
+    if (!modal) return null;
+    if (modal._dvLensPreCache && modal._dvLensPreCache[idx]) {
+        const cached = modal._dvLensPreCache[idx];
+        if (cached.isConnected) return cached;
     }
+    const el = modal.querySelector('[data-dv-lens-pre="' + idx + '"]');
+    if (el) {
+        if (!modal._dvLensPreCache) modal._dvLensPreCache = {};
+        modal._dvLensPreCache[idx] = el;
+    }
+    return el || null;
+}
+
+function _dvApplyDiffToLensPres(modal, lensPres) {
+    const getPre = (idx) => (lensPres && lensPres[idx]) || _dvGetLensPreRef(modal, idx);
 
     if (_dvState.compMode === 'rolling') {
         _dvClampRollingLeft();
@@ -1658,7 +1683,7 @@ function _dvRenderDiffs(modal) {
         for (let i = 0; i < _dvState.slots.length; i++) {
             const slot = _dvState.slots[i];
             if (!slot.promptVersions || slot.loading) continue;
-            const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
+            const lensPre = getPre(i);
             if (!lensPre) continue;
             if (i === leftIdx) {
                 if (leftIdx === 0) _dvSetBaseLensHtml(lensPre, baseHtml, null);
@@ -1669,8 +1694,6 @@ function _dvRenderDiffs(modal) {
                 lensPre.innerHTML = _dvPlainPromptHtml(_dvSlotPromptText(slot));
             }
         }
-        _dvUpdateAboveLabels(modal);
-        _dvScheduleReelLensSync(modal);
         return;
     }
 
@@ -1679,7 +1702,7 @@ function _dvRenderDiffs(modal) {
     const baseText = _dvSlotPromptText(base);
     const twoSlots = _dvState.slots.length === 2;
 
-    const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
+    const baseLensPre = getPre(0);
     if (twoSlots) {
         const compare = _dvState.slots[1];
         if (compare && compare.promptVersions && !compare.loading) {
@@ -1698,9 +1721,29 @@ function _dvRenderDiffs(modal) {
         if (!slot.promptVersions || slot.loading) continue;
         const compareText = _dvSlotPromptText(slot);
         const { compareHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-        const lensPre = modal.querySelector('[data-dv-lens-pre="' + i + '"]');
+        const lensPre = getPre(i);
         if (lensPre) lensPre.innerHTML = compareHtml;
     }
+}
+
+function _dvRenderDiffs(modal) {
+    if (_dvState.mode !== 'tasks') return;
+    _dvRefreshHighlightLengthRange(modal);
+    if (_dvState.slots.length < 2) {
+        _dvRemoveRollingOverlay(modal);
+        const basePre = _dvGetLensPreRef(modal, 0);
+        if (basePre) _dvSetBaseLensHtml(basePre, _dvPlainPromptHtml(_dvSlotPromptText(_dvState.slots[0])), null);
+        _dvUpdateAboveLabels(modal);
+        _dvScheduleReelLensSync(modal);
+        return;
+    }
+
+    const lensPres = {};
+    for (let i = 0; i < _dvState.slots.length; i++) {
+        const pre = _dvGetLensPreRef(modal, i);
+        if (pre) lensPres[i] = pre;
+    }
+    _dvApplyDiffToLensPres(modal, lensPres);
     _dvUpdateAboveLabels(modal);
     _dvScheduleReelLensSync(modal);
 }
@@ -1726,34 +1769,33 @@ function _dvApplyCompareHoverRing(slotIdx, modal) {
     if (wrap) wrap.classList.add('dv-slot-wrap--compare-hover');
 }
 
-function _dvApplyHoverDiff(slotIdx, modal) {
+function _dvSetHoverDiff(modal, slotIdx) {
+    if (slotIdx == null) {
+        if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) {
+            _dvClearCompareHoverRing(modal);
+            return;
+        }
+        const base = _dvState.slots[0];
+        if (!base || !base.promptVersions) return;
+        const baseLensPre = _dvGetLensPreRef(modal, 0);
+        if (baseLensPre && !baseLensPre.hasAttribute('data-dv-hover-src')) {
+            _dvClearCompareHoverRing(modal);
+            return;
+        }
+        _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(_dvSlotPromptText(base)), null);
+        _dvClearCompareHoverRing(modal);
+        return;
+    }
     if (!_dvState.showHighlights || _dvState.compMode !== 'base' || _dvState.slots.length <= 2 || slotIdx === 0) return;
     const base = _dvState.slots[0];
     const compare = _dvState.slots[slotIdx];
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
-    const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
+    const baseLensPre = _dvGetLensPreRef(modal, 0);
     if (baseLensPre && baseLensPre.getAttribute('data-dv-hover-src') === String(slotIdx)) return;
     const baseText = _dvSlotPromptText(base);
     const compareText = _dvSlotPromptText(compare);
     const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
     _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
-}
-
-function _dvClearHoverDiff(modal) {
-    if (_dvState.compMode !== 'base' || _dvState.slots.length <= 2) {
-        _dvClearCompareHoverRing(modal);
-        return;
-    }
-    const base = _dvState.slots[0];
-    if (!base || !base.promptVersions) return;
-    const baseText = _dvSlotPromptText(base);
-    const baseLensPre = modal.querySelector('[data-dv-lens-pre="0"]');
-    if (baseLensPre && !baseLensPre.hasAttribute('data-dv-hover-src')) {
-        _dvClearCompareHoverRing(modal);
-        return;
-    }
-    _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
-    _dvClearCompareHoverRing(modal);
 }
 
 function _dvRemoveRollingOverlay(modal) {
@@ -1802,24 +1844,17 @@ function _dvUpdateRollingOverlay(modal) {
     overlay.style.height = Math.max(0, bottom - top) + 'px';
 }
 
-function _dvScheduleReelLensSync(modal, opts) {
-    const afterLayout = Boolean(opts && opts.afterLayout);
+function _dvScheduleReelLensSync(modal) {
     if (!modal) return;
-    if (_dvLensSyncScheduled) {
-        if (afterLayout) _dvLensSyncAfterLayout = true;
-        return;
-    }
+    if (_dvLensSyncScheduled) return;
     _dvLensSyncScheduled = true;
 
-    const finish = () => {
-        _dvLensSyncScheduled = false;
-        _dvLensSyncAfterLayout = false;
-        _dvSyncReelLensHeights(modal);
-        _dvSyncAllVersionTracks(modal);
-    };
-
     requestAnimationFrame(() => {
-        requestAnimationFrame(finish);
+        requestAnimationFrame(() => {
+            _dvLensSyncScheduled = false;
+            _dvSyncReelLensHeights(modal);
+            _dvSyncAllVersionTracks(modal);
+        });
     });
 }
 
@@ -1846,7 +1881,7 @@ function _dvSyncReelLensHeights(modal) {
     const rowH = row ? row.clientHeight : 0;
     if (rowH <= 0) {
         _dvLensSyncScheduled = false;
-        _dvScheduleReelLensSync(modal, { afterLayout: true });
+        _dvScheduleReelLensSync(modal);
         return;
     }
 
@@ -1954,25 +1989,16 @@ function _dvSyncModeUi(modal) {
     if (tasks) tasks.style.display = isTask ? 'flex' : 'none';
     if (slotsArea) slotsArea.style.display = isTask ? 'flex' : 'none';
     if (freeArea) freeArea.style.display = isTask ? 'none' : 'flex';
-    modal.querySelectorAll('[data-dv-mode]').forEach((btn) => {
-        const active = btn.getAttribute('data-dv-mode') === _dvState.mode;
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
+    _dvSyncSegPressed(modal, 'data-dv-mode', _dvState.mode);
 }
 
 function _dvSyncGranularityUi(modal) {
-    modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
-        const active = btn.getAttribute('data-dv-seg') === _dvState.granularity;
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
+    _dvSyncSegPressed(modal, 'data-dv-seg', _dvState.granularity);
 }
 
 function _dvSyncHighlightModalityUi(modal) {
     if (!modal) return;
-    modal.querySelectorAll('[data-dv-highlight-modality]').forEach((btn) => {
-        const active = btn.getAttribute('data-dv-highlight-modality') === _dvState.highlightModality;
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
+    _dvSyncSegPressed(modal, 'data-dv-highlight-modality', _dvState.highlightModality);
 }
 
 function _dvSyncCompModeUi(modal) {
@@ -1982,10 +2008,7 @@ function _dvSyncCompModeUi(modal) {
         slotsArea.classList.toggle('dv-slots-area--rolling', _dvState.compMode === 'rolling');
     }
     _dvUpdateAboveLabels(modal);
-    modal.querySelectorAll('[data-dv-comp-mode]').forEach((btn) => {
-        const active = btn.getAttribute('data-dv-comp-mode') === _dvState.compMode;
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
+    _dvSyncSegPressed(modal, 'data-dv-comp-mode', _dvState.compMode);
     if (_dvState.compMode !== 'rolling') _dvRemoveRollingOverlay(modal);
 }
 
@@ -2022,17 +2045,12 @@ function _dvSyncHighlightsUi(modal) {
     if (!modal) return;
     const right = _dvQ(modal, 'dv-right');
     if (right) right.classList.toggle('dv-highlights-off', !_dvState.showHighlights);
-    modal.querySelectorAll('[data-dv-highlights]').forEach((btn) => {
-        const on = btn.getAttribute('data-dv-highlights') === 'on';
-        btn.setAttribute('aria-pressed', on === _dvState.showHighlights ? 'true' : 'false');
-    });
+    _dvSyncSegPressed(modal, 'data-dv-highlights', _dvState.showHighlights ? 'on' : 'off');
     _dvSyncHighlightLengthUi(modal);
     if (!_dvState.showHighlights) _dvRemoveRollingOverlay(modal);
 }
 
 function _dvSetSearchLoading(modal, loading, error) {
-    _dvState.searchLoading = loading;
-    _dvState.searchError = error || null;
     const btn = _dvQ(modal, 'dv-search-btn');
     const inp = _dvQ(modal, 'dv-search-input');
     const errEl = _dvQ(modal, 'dv-search-error');
@@ -2046,7 +2064,7 @@ function _dvSetSearchLoading(modal, loading, error) {
 
 // ── Event listeners ──
 
-function _dvAttachListeners(modal, dash) {
+function _dvAttachListeners(modal) {
     // ── Mode toggle ──
     modal.addEventListener('click', (e) => {
         const copyEl = e.target.closest('[data-dv-copy]');
@@ -2077,7 +2095,7 @@ function _dvAttachListeners(modal, dash) {
                     _dvRenderDiffs(modal);
                     _dvUpdateRollingOverlay(modal);
                     _dvLensSyncScheduled = false;
-                    _dvScheduleReelLensSync(modal, { afterLayout: true });
+                    _dvScheduleReelLensSync(modal);
                 }
                 Logger.log('diff-viewer: mode → ' + mode);
             }
@@ -2124,14 +2142,14 @@ function _dvAttachListeners(modal, dash) {
                 _dvState.compMode = compMode;
                 if (compMode === 'rolling') _dvClampRollingLeft();
                 try { Storage.setData(DV_COMP_MODE_KEY, compMode); } catch (_e) { /* no-op */ }
-                _dvClearHoverDiff(modal);
+                _dvSetHoverDiff(modal, null);
                 _dvState.hoverSlotIdx = null;
                 _dvSyncCompModeUi(modal);
                 _dvRenderSlotsArea(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateRollingOverlay(modal);
                 _dvLensSyncScheduled = false;
-                _dvScheduleReelLensSync(modal, { afterLayout: true });
+                _dvScheduleReelLensSync(modal);
                 Logger.log('diff-viewer: comp mode → ' + compMode);
             }
             return;
@@ -2144,7 +2162,7 @@ function _dvAttachListeners(modal, dash) {
             if (enabled !== _dvState.showHighlights) {
                 _dvState.showHighlights = enabled;
                 _dvState.hoverSlotIdx = null;
-                _dvClearHoverDiff(modal);
+                _dvSetHoverDiff(modal, null);
                 _dvSyncHighlightsUi(modal);
                 _dvRenderDiffs(modal);
                 _dvUpdateAboveLabels(modal);
@@ -2315,7 +2333,7 @@ function _dvAttachListeners(modal, dash) {
         if (_dvState.hoverSlotIdx === idx) return;
         _dvState.hoverSlotIdx = idx;
         _dvApplyCompareHoverRing(idx, modal);
-        if (_dvState.slots.length > 2) _dvApplyHoverDiff(idx, modal);
+        if (_dvState.slots.length > 2) _dvSetHoverDiff(modal, idx);
         _dvUpdateAboveLabels(modal);
     });
 
@@ -2328,7 +2346,7 @@ function _dvAttachListeners(modal, dash) {
         const related = e.relatedTarget;
         if (related instanceof Node && slot.contains(related)) return;
         _dvState.hoverSlotIdx = null;
-        _dvClearHoverDiff(modal);
+        _dvSetHoverDiff(modal, null);
         _dvUpdateAboveLabels(modal);
     });
 }
@@ -2890,20 +2908,15 @@ function _dvApiAddTask(seed) {
     _dvAddSlot(seed, modal);
 }
 
-function _dvApiIsStashed(taskId) {
-    return _dvStashFind(taskId) >= 0;
-}
-
 // ── Plugin ──
 
 const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
-    initialState: { registered: false },
 
     init() {
         const loader = Context.dashboard && Context.dashboard._loader;
@@ -2946,8 +2959,7 @@ const plugin = {
 
         // Expose public API
         Context.diffViewer = {
-            addTask: _dvApiAddTask,
-            isStashed: _dvApiIsStashed
+            addTask: _dvApiAddTask
         };
 
         // Register tab
@@ -2955,7 +2967,7 @@ const plugin = {
             id: 'diff-viewer',
             label: 'Diff Viewer',
             panelHtml(dash) { return _dvPanelHtml(dash); },
-            attachListeners(modal, dash) { _dvAttachListeners(modal, dash); },
+            attachListeners(modal) { _dvAttachListeners(modal); },
             onBuilt(modal) {
                 _dvRenderStash(modal);
                 _dvAttachReelLensResizeObserver(modal);

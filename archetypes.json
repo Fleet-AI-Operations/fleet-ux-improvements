@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.48",
+  "archetypesVersion": "12.52",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -42,8 +42,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "3.10",
-      "hash": "sha256-66c0e9ac8774adf2cc09baf992c2287c5d31c86579e5750ca130baf86535d1e1",
+      "version": "3.11",
+      "hash": "sha256-94f4d9ff13a105f7fa6700008bd87b27933d553ca2b60879c466bf453fe0b0d2",
       "log": false
     },
     {
@@ -54,38 +54,38 @@
     },
     {
       "name": "dashboard.js",
-      "version": "6.17",
-      "hash": "sha256-6943abfd493a591ec2f1fbd25b9a28dbd737c5bbd5323968891f3f9a1d43acc1",
+      "version": "6.18",
+      "hash": "sha256-fdabda56d45a4ec2611e1525c2886e19e6f1e4683eafb38d5d592fb5314af98e",
       "log": false
     },
     {
       "name": "diff-engine.js",
-      "version": "2.1",
-      "hash": "sha256-de0135acb0b7aa446330a08acee97c6ad483fa07f3694a8aea4f0bfafd728820",
+      "version": "2.2",
+      "hash": "sha256-b87e8c665ef14b67d25566fb325a7b1cd44f27899ef9ace1a1d35254aac09bce",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "4.21",
-      "hash": "sha256-db11d451e16e1a1b9339b32884ad759f7a6a6b59805c1f43bd4f85104a985590",
+      "version": "4.22",
+      "hash": "sha256-811d521c5b0a0c51682b3b0ca075fbc9ece5627b2f394a0faf2d721667880a43",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "2.2",
-      "hash": "sha256-a24262e791e14b165b49f193c850f3df9c60e3b5499e037b472470c407218977",
+      "version": "2.3",
+      "hash": "sha256-e3b5f540ce8c870a7d8a71babd959901219c2380c925df395217e3bf57c8ce6e",
       "log": false
     },
     {
       "name": "team-members.js",
-      "version": "3.1",
-      "hash": "sha256-58be622e852a87da1c3de2e5e3068d80b76113f69d94d2a92ddbdd5a01994fca",
+      "version": "3.2",
+      "hash": "sha256-ac751e96f7c323289d8eab05fe668b0aa68d12662bdccac576dcf53a8bea3ce7",
       "log": false
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "2.2",
-      "hash": "sha256-6ea1a0eee558db8f210b2432e497d9dc271e105030075609e2ebc60b429d0366",
+      "version": "2.3",
+      "hash": "sha256-2b361612219773a5102b61b612b4776c51ee8eb07a301b91a27ab094bce17657",
       "log": false
     }
   ],

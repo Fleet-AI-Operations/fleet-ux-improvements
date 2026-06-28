@@ -4,9 +4,39 @@ const DE_CHAR_DIFF_LIMIT = 15000;
 const DE_WORD_DIFF_TOKEN_LIMIT = 4000;
 
 function _deEscHtml(value) {
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.escHtml === 'function') return lib.escHtml(value);
     return String(value == null ? '' : value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _deFormatPercent(value) {
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.formatPercent === 'function') return lib.formatPercent(value);
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    if (n < 1) return (Math.round(n * 100) / 100).toFixed(2);
+    return String(Math.round(n));
+}
+
+let _deCachedHighlightStyles = null;
+let _deCachedHighlightDark = null;
+
+function _deHighlightStyles() {
+    const dark = document.documentElement.classList.contains('dark');
+    if (_deCachedHighlightStyles && _deCachedHighlightDark === dark) return _deCachedHighlightStyles;
+    const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
+    const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
+    const equalBg = 'rgba(250,215,50,0.4)';
+    const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
+    _deCachedHighlightDark = dark;
+    _deCachedHighlightStyles = {
+        remove: `background-color:${removeBg};${span}`,
+        add: `background-color:${addBg};${span}`,
+        equal: `background-color:${equalBg};${span}`
+    };
+    return _deCachedHighlightStyles;
 }
 
 function _deIsWordChar(char, prevChar, nextChar) {
@@ -254,19 +284,6 @@ function _deEqualSpanHtml(text) {
     return `<span class="dv-diff-equal">${_deEscHtml(text)}</span>`;
 }
 
-function _deHighlightStyles() {
-    const dark = document.documentElement.classList.contains('dark');
-    const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
-    const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
-    const equalBg = 'rgba(250,215,50,0.4)';
-    const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
-    return {
-        remove: `background-color:${removeBg};${span}`,
-        add: `background-color:${addBg};${span}`,
-        equal: `background-color:${equalBg};${span}`
-    };
-}
-
 function _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity) {
     if (text === '\n') {
         return `<span style="${highlightStyle}">↵</span>\n`;
@@ -285,10 +302,10 @@ function _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranu
     return `<span style="${highlightStyle}">${_deEscHtml(trimmed)}</span>${trail ? _deEqualSpanHtml(trail) : ''}`;
 }
 
-function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
+function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, renderOpts) {
     const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
     const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
-    const groups = _deGroupConsecutive(diff, ['equal', 'remove'], highlightType);
+    const groups = _deGroupConsecutive(diff, includeTypes, highlightType);
     let html = '';
     groups.forEach((group) => {
         const text = group.values.join('');
@@ -299,29 +316,14 @@ function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
         }
     });
     return html;
+}
+
+function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
+    return _deRenderSideHtml(diff, ['equal', 'remove'], highlightStyle, highlightType, renderOpts);
 }
 
 function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
-    const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
-    const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
-    const groups = _deGroupConsecutive(diff, ['equal', 'add'], highlightType);
-    let html = '';
-    groups.forEach((group) => {
-        const text = group.values.join('');
-        if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
-            html += _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity);
-        } else {
-            html += _deEqualSpanHtml(text);
-        }
-    });
-    return html;
-}
-
-function _deFormatPercent(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '0';
-    if (n < 1) return (Math.round(n * 100) / 100).toFixed(2);
-    return String(Math.round(n));
+    return _deRenderSideHtml(diff, ['equal', 'add'], highlightStyle, highlightType, renderOpts);
 }
 
 function _deDiffUnits(baseText, compareText, granularity) {
@@ -347,7 +349,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -424,7 +426,7 @@ const plugin = {
                 const rangeMin = lengthRange ? lengthRange.min : 0;
                 const subsetActive = minHighlightLength > 0 && lengthRange && minHighlightLength > rangeMin;
                 if (subsetActive) {
-                    const { diff } = _deComputeDiff(leftText, rightText, granularity);
+                    const diff = (opts && opts.diff) || _deComputeDiff(leftText, rightText, granularity).diff;
                     const { baseSubset, compareSubset } = _deJoinQualifyingSubsetTexts(
                         diff, highlightModality, effectiveGranularity, minHighlightLength
                     );
