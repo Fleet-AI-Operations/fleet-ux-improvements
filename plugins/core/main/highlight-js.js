@@ -5,12 +5,20 @@ const HLJS_VERSION = '11.11.1';
 const HLJS_BASE = 'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@' + HLJS_VERSION + '/build';
 const HLJS_CORE_URL = HLJS_BASE + '/highlight.min.js';
 const HLJS_PYTHON_URL = HLJS_BASE + '/languages/python.min.js';
-const HLJS_THEME_URL = HLJS_BASE + '/styles/github.min.css';
+// Theme: pick any valid hljs styles/ filename. Options include 'github.min.css' (light),
+// 'github-dark.min.css' (dark), 'atom-one-dark.min.css', 'monokai.min.css', etc.
+const HLJS_THEME = 'github-dark.min.css';
+const HLJS_THEME_URL = HLJS_BASE + '/styles/' + HLJS_THEME;
+/**
+ * Scope selector prepended to every injected theme rule. This bumps specificity above any
+ * page-level hljs stylesheet the host app may load, preventing colour bleed-through.
+ */
+const HLJS_CSS_SCOPE = '#wf-dash-modal';
 const HLJS_STYLE_ID = 'wf-fleet-hljs-theme';
 /** Appended after theme CSS so code blocks inherit the host surface background. */
 const HLJS_THEME_OVERRIDES =
-    '\n.hljs{background:transparent!important}' +
-    '\npre code.hljs{padding:0;background:transparent!important}';
+    '\n' + HLJS_CSS_SCOPE + ' .hljs{background:transparent!important}' +
+    '\n' + HLJS_CSS_SCOPE + ' pre code.hljs{padding:0;background:transparent!important}';
 
 function gmFetchText(url) {
     return new Promise((resolve, reject) => {
@@ -38,7 +46,7 @@ function gmFetchText(url) {
 const HLJS_EXPECTED_HASHES = {
     [HLJS_CORE_URL]: '',
     [HLJS_PYTHON_URL]: '',
-    [HLJS_THEME_URL]: '',
+    [HLJS_THEME_URL]: '', // update hash here when bumping HLJS_THEME or HLJS_VERSION
 };
 
 async function sha256hex(text) {
@@ -69,7 +77,7 @@ const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -127,6 +135,21 @@ const plugin = {
         return this._loadPromise;
     },
 
+    /**
+     * Prefixes every CSS selector in `css` with `scope` so our theme rules have
+     * higher specificity than any page-level hljs stylesheet. Skips @-rules.
+     */
+    _scopeHljsCss(css, scope) {
+        return css.replace(/([^{}]+?)\{([^{}]*)\}/g, (_match, rawSel, body) => {
+            const trimmed = rawSel.trim();
+            if (!trimmed || trimmed.startsWith('@')) return trimmed + '{' + body + '}';
+            const prefixed = trimmed.split(',')
+                .map(s => { const t = s.trim(); return t ? scope + ' ' + t : t; })
+                .join(',');
+            return prefixed + '{' + body + '}';
+        });
+    },
+
     _injectThemeStylesheet(cssText) {
         if (this._styleInjected || !cssText) return;
         if (document.getElementById(HLJS_STYLE_ID)) {
@@ -135,7 +158,7 @@ const plugin = {
         }
         const style = document.createElement('style');
         style.id = HLJS_STYLE_ID;
-        style.textContent = cssText + HLJS_THEME_OVERRIDES;
+        style.textContent = this._scopeHljsCss(cssText, HLJS_CSS_SCOPE) + HLJS_THEME_OVERRIDES;
         document.head.appendChild(style);
         this._styleInjected = true;
         CleanupRegistry.registerElement(style);
@@ -161,6 +184,9 @@ const plugin = {
             codeEl.className = 'language-' + language;
             codeEl.removeAttribute('data-highlighted');
             hljs.highlightElement(codeEl);
+            // Strip language-* class so page-level Prism.js or other auto-highlighters
+            // do not re-process this element and overwrite the token colours.
+            codeEl.className = (codeEl.className || '').replace(/\blanguage-\S+/g, '').trim() || 'hljs';
             return true;
         } catch (err) {
             this._setPlainCode(codeEl, text);
