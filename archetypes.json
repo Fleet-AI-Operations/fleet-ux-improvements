@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.46",
+  "archetypesVersion": "12.47",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -42,8 +42,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "3.9",
-      "hash": "sha256-8fc07a96130d6df4f4a8e71fd4a3ceb504081db739a8a6ffaf12be434586f79b",
+      "version": "3.10",
+      "hash": "sha256-66c0e9ac8774adf2cc09baf992c2287c5d31c86579e5750ca130baf86535d1e1",
       "log": false
     },
     {
@@ -66,14 +66,14 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.20",
-      "hash": "sha256-f244d3fe2ae2ed90b300fdcb3911fcc2bc57b5e39a015d77b4b24635b7c21a4a",
+      "version": "4.21",
+      "hash": "sha256-db11d451e16e1a1b9339b32884ad759f7a6a6b59805c1f43bd4f85104a985590",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "2.1",
-      "hash": "sha256-3863df56e9c0fc0d9fd8cb9aad04177cf4863d3d18cbd3d01fde5ed9a83e70b0",
+      "version": "2.2",
+      "hash": "sha256-a24262e791e14b165b49f193c850f3df9c60e3b5499e037b472470c407218977",
       "log": false
     },
     {

@@ -198,20 +198,6 @@ function _dvFormatCreatedAt(iso) {
     });
 }
 
-function _dvRelativeAgo(iso) {
-    if (!iso) return '';
-    const then = new Date(iso);
-    if (Number.isNaN(then.getTime())) return '';
-    const diffMs = Math.max(0, Date.now() - then.getTime());
-    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const days = Math.floor(totalHours / 24);
-    const hours = totalHours % 24;
-    const parts = [];
-    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
-    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
-    return parts.join(', ') + ' ago';
-}
-
 function _dvTaskInitialCreatedAt(taskCreatedAt, promptVersions) {
     const versions = promptVersions || [];
     if (versions.length) {
@@ -224,7 +210,10 @@ function _dvTaskInitialCreatedAt(taskCreatedAt, promptVersions) {
 function _dvTimestampLineHtml(prefixLabel, iso) {
     if (!iso) return '';
     const formatted = _dvFormatCreatedAt(iso);
-    const ago = _dvRelativeAgo(iso);
+    const lib = Context.dashboardLib;
+    const ago = lib && typeof lib.relativeAgo === 'function'
+        ? lib.relativeAgo(iso, { style: 'detailed' })
+        : '';
     const dateSpan = `<span class="dv-timestamp-date">${_dvEscHtml(formatted)}</span>`;
     let html = prefixLabel
         ? `<span class="dv-timestamp-accent">${_dvEscHtml(prefixLabel)}</span> ${dateSpan}`
@@ -2911,7 +2900,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

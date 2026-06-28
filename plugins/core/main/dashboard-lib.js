@@ -361,11 +361,42 @@ function dashLibV1CreationTimeBucketId(minutes) {
     return 'gt_120';
 }
 
+/** ISO timestamp → relative "N units ago"; never emits a zero unit (minimum: 1 minute). */
+function dashLibRelativeAgo(iso, options) {
+    if (!iso) return '';
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return '';
+    const compact = Boolean(options && options.style === 'compact');
+    const diffMs = Math.max(0, Date.now() - then.getTime());
+    const totalMins = Math.floor(diffMs / (1000 * 60));
+    const totalHours = Math.floor(totalMins / 60);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+
+    const dayLabel = (n) => n + ' day' + (n === 1 ? '' : 's');
+    const hourLabel = (n) => compact
+        ? n + (n === 1 ? ' hr' : ' hrs')
+        : n + ' hour' + (n === 1 ? '' : 's');
+    const minLabel = (n) => compact
+        ? n + (n === 1 ? ' min' : ' mins')
+        : n + ' minute' + (n === 1 ? '' : 's');
+
+    if (days > 0) {
+        let text = dayLabel(days);
+        if (hours > 0) text += ', ' + hourLabel(hours);
+        return text + ' ago';
+    }
+    if (hours > 0) {
+        return hourLabel(hours) + ' ago';
+    }
+    return minLabel(Math.max(1, totalMins)) + ' ago';
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.9',
+    _version: '3.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -469,6 +500,7 @@ const plugin = {
             validateCreatedAtRange: bind(self._validateCreatedAtRange),
             quickDatePresetRange: bind(self._quickDatePresetRange),
             dateInputValue: bind(self._dateInputValue),
+            relativeAgo: dashLibRelativeAgo,
             isUniversalSearchParams: bind(self._isUniversalSearchParams),
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 

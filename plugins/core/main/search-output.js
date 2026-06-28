@@ -307,41 +307,6 @@ function dashFormatCreatedAt(iso) {
     });
 }
 
-function dashRelativeAgo(iso) {
-    if (!iso) return '';
-    const then = new Date(iso);
-    if (Number.isNaN(then.getTime())) return '';
-    const diffMs = Math.max(0, Date.now() - then.getTime());
-    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const days = Math.floor(totalHours / 24);
-    const hours = totalHours % 24;
-    const parts = [];
-    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
-    parts.push(hours + ' hour' + (hours === 1 ? '' : 's'));
-    return parts.join(', ') + ' ago';
-}
-
-function dashCreatedTabRelativeAgo(iso) {
-    if (!iso) return '';
-    const then = new Date(iso);
-    if (Number.isNaN(then.getTime())) return '';
-    const diffMs = Math.max(0, Date.now() - then.getTime());
-    const totalMins = Math.floor(diffMs / (1000 * 60));
-    const totalHours = Math.floor(totalMins / 60);
-    const days = Math.floor(totalHours / 24);
-    const hours = totalHours % 24;
-    if (days > 0) {
-        let text = days + ' day' + (days === 1 ? '' : 's');
-        if (hours > 0) text += ', ' + hours + (hours === 1 ? ' hr' : ' hrs');
-        return text + ' ago';
-    }
-    if (totalHours > 0) {
-        return totalHours + (totalHours === 1 ? ' hr' : ' hrs') + ' ago';
-    }
-    const mins = Math.max(1, totalMins);
-    return mins + (mins === 1 ? ' min' : ' mins') + ' ago';
-}
-
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
@@ -356,7 +321,7 @@ function dashProblemCreationDurationText(seconds) {
 
 function dashTimestampWithDurationParts(iso, durationSeconds) {
     const formatted = dashFormatCreatedAt(iso);
-    const ago = dashCreatedTabRelativeAgo(iso);
+    const ago = dashLib().relativeAgo(iso, { style: 'compact' });
     const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
     const durationText = Number.isFinite(durationSec) && durationSec >= 0
         ? dashProblemCreationDurationText(durationSec)
@@ -9610,7 +9575,7 @@ const searchOutputMethods = {
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashRelativeAgo(iso);
+        const ago = dashLib().relativeAgo(iso, { style: 'detailed' });
         const muted = Boolean(opts && opts.muted);
         const dateColor = muted
             ? 'color: var(--muted-foreground, #64748b);'
@@ -11298,7 +11263,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.20',
+    _version: '4.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
