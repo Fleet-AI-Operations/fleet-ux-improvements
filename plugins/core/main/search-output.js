@@ -769,6 +769,10 @@ const searchOutputMethods = {
         return '/disputes/' + encodeURIComponent(String(disputeId)) + '/resolve';
     },
 
+    _flagBuggedApiPath(evalTaskId) {
+        return '/flag-bugged/' + encodeURIComponent(String(evalTaskId));
+    },
+
     _disputeReleaseApiPath(disputeId) {
         return '/disputes/' + encodeURIComponent(String(disputeId)) + '/release';
     },
@@ -7905,6 +7909,14 @@ const searchOutputMethods = {
         return body;
     },
 
+    _buildFlagBuggedRequestBody(ui, reasonText) {
+        const cat = this._disputeBugCategoryByKey(ui.bugCategoryKey);
+        return {
+            reason: cat.label,
+            description: String(reasonText || '').trim()
+        };
+    },
+
     _disputeResolutionReasonLength(reason) {
         return String(reason || '').trim().length;
     },
@@ -8079,10 +8091,28 @@ const searchOutputMethods = {
             return;
         }
 
+        let evalTaskId = '';
+        if (option.key === 'flag_product_bug') {
+            const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+            if (!item || !item.task || !item.task.id) {
+                this._logDashApiSkip('dispute-resolve', 'missing eval task id', id);
+                return;
+            }
+            evalTaskId = String(item.task.id).trim();
+        }
+
         this._logDashApiClick('dispute-resolve', id + ' — ' + option.key);
         ui.submitting = true;
         this._patchTaskCard(itemId);
         try {
+            if (option.key === 'flag_product_bug') {
+                await this._fleetWebPost(this._flagBuggedApiPath(evalTaskId), {
+                    body: this._buildFlagBuggedRequestBody(ui, reason),
+                    referer: this._disputeResolveReferer(id)
+                });
+                Logger.log('search-output: task flagged bugged — ' + evalTaskId.slice(0, 8)
+                    + ' (dispute ' + id + ')');
+            }
             await this._fleetWebPost(this._disputeResolveApiPath(id), {
                 body: this._buildDisputeResolveRequestBody(ui, option, reason),
                 referer: this._disputeResolveReferer(id)
@@ -11211,7 +11241,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.25',
+    _version: '4.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
