@@ -50,13 +50,22 @@ const DASH_DISPUTE_RESOLUTION_OPTIONS = [
         key: 'flag_product_bug',
         label: 'Flag as Bug',
         status: 'approved',
-        skipWorkflowSignal: true,
-        bugCategory: 'Other'
+        skipWorkflowSignal: true
     },
     { key: 'rejected', label: 'Reject Dispute', status: 'rejected' },
     { key: 'approved_with_revisions', label: 'Approve & Return to Writer', status: 'approved_with_revisions' },
     { key: 'approved', label: 'Approve Dispute', status: 'approved' },
     { key: 'approved_and_accepted', label: 'Approve & Accept Task', status: 'approved_and_accepted' }
+];
+/** Fleet dispute “Flag as Bug” categories (labels sent in resolutionReason brackets). */
+const DASH_DISPUTE_BUG_CATEGORIES = [
+    { key: 'environment_broken', label: 'Environment is broken or misconfigured' },
+    { key: 'impossible_story', label: 'User story is impossible to complete' },
+    { key: 'missing_data', label: 'Required data/state is missing from environment' },
+    { key: 'conflicting_requirements', label: 'User story has conflicting requirements' },
+    { key: 'unsupported_actions', label: 'App does not support required actions' },
+    { key: 'grading_broken', label: 'Task cannot be graded correctly' },
+    { key: 'other', label: 'Other' }
 ];
 const DASH_AUTO_GROW_TEXTAREA_MIN_PX = 48;
 const DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS = 50;
@@ -7827,6 +7836,7 @@ const searchOutputMethods = {
                 status: 'idle',
                 resolutionReason: '',
                 resolutionKey: '',
+                bugCategoryKey: '',
                 claimedAt: null,
                 submitting: false
             };
@@ -7836,9 +7846,13 @@ const searchOutputMethods = {
                 status: 'idle',
                 resolutionReason: '',
                 resolutionKey: '',
+                bugCategoryKey: '',
                 claimedAt: null,
                 submitting: false
             };
+        }
+        if (this._state.disputeClaimUi[id].bugCategoryKey == null) {
+            this._state.disputeClaimUi[id].bugCategoryKey = '';
         }
         return this._state.disputeClaimUi[id];
     },
@@ -7856,13 +7870,31 @@ const searchOutputMethods = {
         }).join('');
     },
 
+    _disputeBugCategoryByKey(key) {
+        const k = String(key || '').trim();
+        return DASH_DISPUTE_BUG_CATEGORIES.find((cat) => cat.key === k) || null;
+    },
+
+    _disputeBugCategoryOptionsHtml(selectedKey) {
+        const sel = String(selectedKey || '').trim();
+        const placeholder = `<option value=""${sel ? '' : ' selected'} disabled hidden>Select bug category</option>`;
+        const options = DASH_DISPUTE_BUG_CATEGORIES.map((cat) => {
+            const selected = cat.key === sel ? ' selected' : '';
+            return `<option value="${dashEscHtml(cat.key)}"${selected}>${dashEscHtml(cat.label)}</option>`;
+        }).join('');
+        return placeholder + options;
+    },
+
     _buildDisputeResolveRequestBody(ui, option, reasonText) {
         const seconds = ui.claimedAt
             ? Math.max(0, Math.round((Date.now() - ui.claimedAt) / 1000))
             : 0;
         let resolutionReason = String(reasonText || '').trim();
-        if (option.bugCategory) {
-            resolutionReason = 'Flagged as product bug: [' + option.bugCategory + '] ' + resolutionReason;
+        if (option.key === 'flag_product_bug') {
+            const cat = this._disputeBugCategoryByKey(ui.bugCategoryKey);
+            if (cat && cat.label) {
+                resolutionReason = 'Flagged as product bug: [' + cat.label + '] ' + resolutionReason;
+            }
         }
         const body = {
             status: option.status,
@@ -7891,9 +7923,12 @@ const searchOutputMethods = {
         const basicClass = this._dashBtnClass('basic', 'compact');
         const reason = ui.resolutionReason != null ? String(ui.resolutionReason) : '';
         const resolutionKey = ui.resolutionKey != null ? String(ui.resolutionKey) : '';
+        const bugCategoryKey = ui.bugCategoryKey != null ? String(ui.bugCategoryKey) : '';
+        const flagAsBug = resolutionKey === 'flag_product_bug';
         const reasonLen = this._disputeResolutionReasonLength(reason);
         const reasonMeetsMin = reasonLen >= DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS;
-        const canResolve = reasonMeetsMin && resolutionKey && !ui.submitting;
+        const bugCategorySelected = !flagAsBug || Boolean(this._disputeBugCategoryByKey(bugCategoryKey));
+        const canResolve = reasonMeetsMin && resolutionKey && bugCategorySelected && !ui.submitting;
         const resolveDisabled = !canResolve ? ' disabled' : '';
         const resolveStyle = !canResolve ? ' opacity: 0.45; cursor: not-allowed;' : '';
         const resolveLabel = !ui.submitting && !reasonMeetsMin
@@ -7910,13 +7945,22 @@ const searchOutputMethods = {
             ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${basicClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${this._extLinkIconSvg(true)}</button>`
             : '';
 
+        const bugCategorySelect = flagAsBug
+            ? `<select data-wf-dash-dispute-bug-category="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" style="${selectStyle}" aria-label="Bug category"${disabled}>`
+                + this._disputeBugCategoryOptionsHtml(bugCategoryKey)
+                + '</select>'
+            : '';
+
         return `<div data-wf-dash-dispute-resolution="${escDisputeId}" data-item-id="${escItemId}" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); display: flex; flex-direction: column; gap: 8px;">`
             + `<textarea ${DASH_AUTO_GROW_TEXTAREA_ATTR}="1" data-wf-dash-dispute-resolution-input="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" rows="2" placeholder="Resolution reason…" style="${textareaStyle}"${disabled}>${dashEscHtml(reason)}</textarea>`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">`
+            + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">`
             + `<select data-wf-dash-dispute-resolution-status="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" style="${selectStyle}"${disabled}>`
             + `<option value=""${resolutionKey ? '' : ' selected'} disabled hidden>Select resolution</option>`
             + this._disputeResolutionOptionsHtml(resolutionKey)
             + `</select>`
+            + bugCategorySelect
+            + `</div>`
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto;">`
             + envBtn
             + releaseHtml
@@ -7959,7 +8003,21 @@ const searchOutputMethods = {
         const id = String(disputeId || '').trim();
         if (!id) return;
         const ui = this._getDisputeClaimUi(id);
-        ui.resolutionKey = String(key || '').trim();
+        const nextKey = String(key || '').trim();
+        ui.resolutionKey = nextKey;
+        if (nextKey !== 'flag_product_bug') {
+            ui.bugCategoryKey = '';
+        }
+        if (!this._patchDisputeResolutionPanel(id, itemId)) {
+            this._patchTaskCard(itemId);
+        }
+    },
+
+    _handleDisputeBugCategoryChange(disputeId, itemId, key) {
+        const id = String(disputeId || '').trim();
+        if (!id) return;
+        const ui = this._getDisputeClaimUi(id);
+        ui.bugCategoryKey = String(key || '').trim();
         if (!this._patchDisputeResolutionPanel(id, itemId)) {
             this._patchTaskCard(itemId);
         }
@@ -8005,6 +8063,10 @@ const searchOutputMethods = {
         const option = this._disputeResolutionOptionByKey(ui.resolutionKey);
         if (!option) {
             this._logDashApiSkip('dispute-resolve', 'missing resolution', id);
+            return;
+        }
+        if (option.key === 'flag_product_bug' && !this._disputeBugCategoryByKey(ui.bugCategoryKey)) {
+            this._logDashApiSkip('dispute-resolve', 'missing bug category', id);
             return;
         }
         if (reason.length < DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS) {
@@ -8121,6 +8183,7 @@ const searchOutputMethods = {
                 ui.claimedAt = Date.now();
                 ui.resolutionReason = '';
                 ui.resolutionKey = '';
+                ui.bugCategoryKey = '';
                 ui.submitting = false;
                 Logger.log('search-output: dispute claimed — ' + id
                     + (retriedAfterRelease ? ' (after releasing prior lease)' : ''));
@@ -11127,6 +11190,15 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
+            const disputeBugCategory = e.target.closest('[data-wf-dash-dispute-bug-category]');
+            if (disputeBugCategory && modal.contains(disputeBugCategory)) {
+                const disputeId = disputeBugCategory.getAttribute('data-dispute-id');
+                const itemId = disputeBugCategory.getAttribute('data-item-id');
+                if (disputeId && itemId) {
+                    dash._handleDisputeBugCategoryChange(disputeId, itemId, disputeBugCategory.value);
+                }
+                return;
+            }
             const flagCreateReason = e.target.closest('[data-wf-dash-flag-create-reason]');
             if (flagCreateReason && modal.contains(flagCreateReason)) {
                 const itemId = flagCreateReason.getAttribute('data-item-id');
@@ -11139,7 +11211,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.24',
+    _version: '4.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
