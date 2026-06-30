@@ -47,10 +47,18 @@ const DASH_FLAG_CREATE_REASON_KEYS = [
 ];
 const DASH_DISPUTE_RESOLUTION_OPTIONS = [
     {
-        key: 'flag_product_bug',
-        label: 'Flag as Bug',
+        key: 'flag_bugged_accept_dispute',
+        label: 'Flag as bugged (accept dispute)',
         status: 'approved',
-        skipWorkflowSignal: true
+        skipWorkflowSignal: true,
+        flagAsBugged: true
+    },
+    {
+        key: 'flag_bugged_reject_dispute',
+        label: 'Flag as bugged (reject dispute)',
+        status: 'rejected',
+        skipWorkflowSignal: true,
+        flagAsBugged: true
     },
     { key: 'rejected', label: 'Reject Dispute', status: 'rejected' },
     { key: 'approved_with_revisions', label: 'Approve & Return to Writer', status: 'approved_with_revisions' },
@@ -7866,6 +7874,10 @@ const searchOutputMethods = {
         return DASH_DISPUTE_RESOLUTION_OPTIONS.find((opt) => opt.key === k) || null;
     },
 
+    _disputeResolutionIsFlagAsBugged(option) {
+        return Boolean(option && option.flagAsBugged);
+    },
+
     _disputeResolutionOptionsHtml(selectedKey) {
         const sel = String(selectedKey || '').trim();
         return DASH_DISPUTE_RESOLUTION_OPTIONS.map((opt) => {
@@ -7894,7 +7906,7 @@ const searchOutputMethods = {
             ? Math.max(0, Math.round((Date.now() - ui.claimedAt) / 1000))
             : 0;
         let resolutionReason = String(reasonText || '').trim();
-        if (option.key === 'flag_product_bug') {
+        if (this._disputeResolutionIsFlagAsBugged(option)) {
             const cat = this._disputeBugCategoryByKey(ui.bugCategoryKey);
             if (cat && cat.label) {
                 resolutionReason = 'Flagged as product bug: [' + cat.label + '] ' + resolutionReason;
@@ -7936,7 +7948,8 @@ const searchOutputMethods = {
         const reason = ui.resolutionReason != null ? String(ui.resolutionReason) : '';
         const resolutionKey = ui.resolutionKey != null ? String(ui.resolutionKey) : '';
         const bugCategoryKey = ui.bugCategoryKey != null ? String(ui.bugCategoryKey) : '';
-        const flagAsBug = resolutionKey === 'flag_product_bug';
+        const resolutionOption = this._disputeResolutionOptionByKey(resolutionKey);
+        const flagAsBug = this._disputeResolutionIsFlagAsBugged(resolutionOption);
         const reasonLen = this._disputeResolutionReasonLength(reason);
         const reasonMeetsMin = reasonLen >= DASH_DISPUTE_RESOLUTION_REASON_MIN_CHARS;
         const bugCategorySelected = !flagAsBug || Boolean(this._disputeBugCategoryByKey(bugCategoryKey));
@@ -8017,7 +8030,8 @@ const searchOutputMethods = {
         const ui = this._getDisputeClaimUi(id);
         const nextKey = String(key || '').trim();
         ui.resolutionKey = nextKey;
-        if (nextKey !== 'flag_product_bug') {
+        const nextOption = this._disputeResolutionOptionByKey(nextKey);
+        if (!this._disputeResolutionIsFlagAsBugged(nextOption)) {
             ui.bugCategoryKey = '';
         }
         if (!this._patchDisputeResolutionPanel(id, itemId)) {
@@ -8077,7 +8091,7 @@ const searchOutputMethods = {
             this._logDashApiSkip('dispute-resolve', 'missing resolution', id);
             return;
         }
-        if (option.key === 'flag_product_bug' && !this._disputeBugCategoryByKey(ui.bugCategoryKey)) {
+        if (this._disputeResolutionIsFlagAsBugged(option) && !this._disputeBugCategoryByKey(ui.bugCategoryKey)) {
             this._logDashApiSkip('dispute-resolve', 'missing bug category', id);
             return;
         }
@@ -8092,7 +8106,7 @@ const searchOutputMethods = {
         }
 
         let evalTaskId = '';
-        if (option.key === 'flag_product_bug') {
+        if (this._disputeResolutionIsFlagAsBugged(option)) {
             const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
             if (!item || !item.task || !item.task.id) {
                 this._logDashApiSkip('dispute-resolve', 'missing eval task id', id);
@@ -8105,13 +8119,13 @@ const searchOutputMethods = {
         ui.submitting = true;
         this._patchTaskCard(itemId);
         try {
-            if (option.key === 'flag_product_bug') {
+            if (this._disputeResolutionIsFlagAsBugged(option)) {
                 await this._fleetWebPost(this._flagBuggedApiPath(evalTaskId), {
                     body: this._buildFlagBuggedRequestBody(ui, reason),
                     referer: this._disputeResolveReferer(id)
                 });
                 Logger.log('search-output: task flagged bugged — ' + evalTaskId.slice(0, 8)
-                    + ' (dispute ' + id + ')');
+                    + ' (dispute ' + id + ', ' + option.status + ')');
             }
             await this._fleetWebPost(this._disputeResolveApiPath(id), {
                 body: this._buildDisputeResolveRequestBody(ui, option, reason),
@@ -11241,7 +11255,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.26',
+    _version: '4.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
