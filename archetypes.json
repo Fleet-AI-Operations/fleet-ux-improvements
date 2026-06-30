@@ -66,8 +66,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.24",
-      "hash": "sha256-6a1e77bc820e02a957ad19f596576765f23e25c2aaec2ecffd3f32b8fd0b854b",
+      "version": "4.28",
+      "hash": "sha256-9e2e6d383715e44eef96438d437b0b37c1120c77b2fc7039a48cd3d19a736d1b",
       "log": false
     },
     {
@@ -484,7 +484,14 @@
       "description": "Page for reviewing writer disputes",
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
-      "plugins": []
+      "plugins": [
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
+        }
+      ]
     },
     {
       "id": "dispute-detail",
@@ -540,6 +547,12 @@
           "version": "1.7",
           "hash": "sha256-5a752f8810727b23a9c029d0f90d05c27a7f19113c99605cf61a6b206aab51e4",
           "log": false
+        },
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
         }
       ]
     },
