@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.21',
+    _version: '6.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -360,15 +360,6 @@ const plugin = {
     },
 
     open() {
-        if (Context.settingsUi && typeof Context.settingsUi.isMainUserscriptUpdateAvailable === 'function'
-            && Context.settingsUi.isMainUserscriptUpdateAvailable()) {
-            Logger.info('dashboard: open blocked — update banner active');
-            if (typeof Context.settingsUi.openModal === 'function') {
-                Context.settingsUi.openModal({ forceSettings: true });
-            }
-            return;
-        }
-
         const doOpen = () => {
             try {
                 try {
@@ -384,11 +375,16 @@ const plugin = {
                 }
                 this._overlay.style.display = 'flex';
                 try {
-                    const doc = this._pageWindow().document;
-                    const settingsModal = doc.getElementById('wf-settings-modal');
-                    if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
-                        settingsModal.close();
+                    if (Context.settingsUi && typeof Context.settingsUi.closeModal === 'function') {
+                        Context.settingsUi.closeModal();
                         Logger.log('dashboard: closed settings modal on dashboard open');
+                    } else {
+                        const doc = this._pageWindow().document;
+                        const settingsModal = doc.getElementById('wf-settings-modal');
+                        if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
+                            settingsModal.close();
+                            Logger.log('dashboard: closed settings modal on dashboard open');
+                        }
                     }
                 } catch (e) {
                     Logger.debug('dashboard: could not close settings modal', e);
