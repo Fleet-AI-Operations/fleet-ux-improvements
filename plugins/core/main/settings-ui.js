@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.5',
+    _version: '10.6',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -24,6 +24,7 @@ const plugin = {
         const self = this;
         Context.settingsUi = {
             openModal: (opts) => self.openModal(opts),
+            closeModal: () => self._closeModal(),
             isMainUserscriptUpdateAvailable: () => self._isMainUserscriptUpdateAvailable(),
             attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root),
             refreshUpdateIndicator: () => self._updatePulseAnimation(),
@@ -50,27 +51,32 @@ const plugin = {
         const routeDashboard = this._shouldOpenOpsDashboard();
         Logger.log('settings-ui: openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
         if (routeDashboard) {
-            if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
-                Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
-                this._openSettingsModal();
-                return;
-            }
-            if (typeof Context.dashboard.isReady === 'function' && !Context.dashboard.isReady()) {
-                Logger.warn('settings-ui: dashboard tab modules not ready — opening settings');
-                this._openSettingsModal();
-                return;
-            }
-            try {
-                Context.dashboard.open();
-                Logger.log('settings-ui: opened Ops dashboard from gear');
-                return;
-            } catch (err) {
-                Logger.error('settings-ui: dashboard open failed — falling back to settings', err);
-                this._openSettingsModal();
-                return;
-            }
+            void this._openOpsDashboardFromGear();
+            return;
         }
         this._openSettingsModal();
+    },
+
+    async _openOpsDashboardFromGear() {
+        if (typeof Context.ensureOpsDashboardPluginsLoaded === 'function') {
+            try {
+                await Context.ensureOpsDashboardPluginsLoaded();
+            } catch (e) {
+                Logger.warn('settings-ui: ensureOpsDashboardPluginsLoaded before gear route failed', e);
+            }
+        }
+        if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
+            Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
+            this._openSettingsModal();
+            return;
+        }
+        try {
+            Context.dashboard.open();
+            Logger.log('settings-ui: opened Ops dashboard from gear');
+        } catch (err) {
+            Logger.error('settings-ui: dashboard open failed — falling back to settings', err);
+            this._openSettingsModal();
+        }
     },
 
     _isMainUserscriptUpdateAvailable() {
@@ -98,6 +104,7 @@ const plugin = {
             modal.remove();
         }
         modal = this._createModal();
+        this._bindSettingsDialogCloseSync(modal);
         try {
             if (typeof modal.showModal === 'function') {
                 modal.showModal();
@@ -279,24 +286,23 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.onModalClosed === 'function') {
             Context.opsTab.onModalClosed();
         }
-        if (modal && typeof modal.close === 'function') {
-            if (modal.open) {
-                modal.close();
-            } else {
-                this._modalOpen = false;
-                const msg = document.getElementById('wf-settings-message');
-                if (msg) msg.style.display = 'none';
-            }
+        if (modal && typeof modal.close === 'function' && modal.open) {
+            modal.close();
         } else if (modal) {
             modal.style.display = 'none';
-            this._modalOpen = false;
-            const msg = document.getElementById('wf-settings-message');
-            if (msg) msg.style.display = 'none';
-        } else {
-            this._modalOpen = false;
-            const msg = document.getElementById('wf-settings-message');
-            if (msg) msg.style.display = 'none';
         }
+        this._modalOpen = false;
+        const msg = document.getElementById('wf-settings-message');
+        if (msg) msg.style.display = 'none';
+    },
+
+    _bindSettingsDialogCloseSync(modal) {
+        if (!modal || modal.dataset.wfCloseStateBound === '1') return;
+        modal.dataset.wfCloseStateBound = '1';
+        modal.addEventListener('close', () => {
+            this._stopForeignModalObserver();
+            this._modalOpen = false;
+        });
     },
 
     _stopForeignModalObserver() {
