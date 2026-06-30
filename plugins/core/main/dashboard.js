@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.18',
+    _version: '6.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -100,8 +100,13 @@ const plugin = {
     _keydownDoc: null,
     _splitResizeAttached: false,
     _flyoutResizeTimer: null,
+    _activeTabFallbackLogged: false,
 
-    init() {
+    init(state) {
+        if (state && state.loaderRegistered) {
+            Logger.debug('dashboard: loader already registered — skipping re-init');
+            return;
+        }
         this._state = this._createInitialState();
         this._tabs = [];
         this._tabsById = {};
@@ -113,11 +118,21 @@ const plugin = {
                     Logger.warn('dashboard: registerTab skipped — missing id');
                     return;
                 }
+                const isNew = !self._tabsById[def.id];
                 self._tabsById[def.id] = def;
                 const idx = self._tabs.findIndex((t) => t.id === def.id);
                 if (idx >= 0) self._tabs[idx] = def;
                 else self._tabs.push(def);
                 Logger.log('dashboard: tab registered — ' + def.id);
+                if (isNew && self._built && self._overlay && self._overlay.isConnected) {
+                    const wasOpen = self._isOpen();
+                    self._built = false;
+                    if (wasOpen) {
+                        self._ensureBuilt();
+                        self._setActiveTab(self._resolveActiveTabId(self._state.activeTab));
+                        self._syncIncompleteTabsBanner();
+                    }
+                }
             },
             open: () => self.open(),
             close: () => self.close(),
@@ -197,6 +212,7 @@ const plugin = {
                 }
             }
         };
+        if (state) state.loaderRegistered = true;
         Logger.log('dashboard: loader registered (Context.dashboard)');
     },
 
@@ -307,6 +323,42 @@ const plugin = {
         return required.every((id) => Boolean(this._tabsById && this._tabsById[id]));
     },
 
+    _resolveActiveTabId(preferred) {
+        const preferredId = String(preferred || '').trim();
+        if (preferredId && this._tabsById && this._tabsById[preferredId]) {
+            return preferredId;
+        }
+        if (this._tabs && this._tabs.length > 0) {
+            const firstId = this._tabs[0].id;
+            if (preferredId && preferredId !== firstId) {
+                this._logActiveTabFallbackIfNeeded(preferredId, firstId);
+            }
+            return firstId;
+        }
+        return preferredId || 'search-output';
+    },
+
+    _logActiveTabFallbackIfNeeded(preferred, resolved) {
+        if (this._activeTabFallbackLogged) return;
+        this._activeTabFallbackLogged = true;
+        Logger.warn('dashboard: active tab ' + preferred + ' unavailable — showing ' + resolved);
+    },
+
+    _syncIncompleteTabsBanner() {
+        if (!this._modal) return;
+        const banner = this._modal.querySelector('#wf-dash-incomplete-banner');
+        if (!banner) return;
+        const show = !this._isDashboardReady();
+        banner.style.display = show ? 'block' : 'none';
+        if (!show) return;
+        const missing = ['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer']
+            .filter((id) => !this._tabsById || !this._tabsById[id]);
+        banner.textContent = missing.length > 0
+            ? 'Some dashboard modules failed to load (' + missing.join(', ') + '). Check the console or refresh the page.'
+            : 'Some dashboard modules failed to load. Check the console or refresh the page.';
+        Logger.warn('dashboard: incomplete — missing tab(s): ' + (missing.join(', ') || 'unknown'));
+    },
+
     open() {
         const doOpen = () => {
             try {
@@ -333,6 +385,10 @@ const plugin = {
                     Logger.debug('dashboard: could not close settings modal', e);
                 }
                 this._syncDashboardUpdateMode();
+                if (!this._shouldShowDashboardUpdateTab()) {
+                    this._setActiveTab(this._resolveActiveTabId(this._state.activeTab));
+                }
+                this._syncIncompleteTabsBanner();
                 for (const tab of this._tabs) {
                     if (typeof tab.onOpen === 'function') {
                         try {
@@ -350,11 +406,24 @@ const plugin = {
             }
         };
 
-        if (Context.opsTab && typeof Context.opsTab.ensureOpsSessionReady === 'function') {
-            void Context.opsTab.ensureOpsSessionReady(this._modal).finally(doOpen);
-            return;
-        }
-        doOpen();
+        const prepOpen = async () => {
+            try {
+                if (typeof Context.ensureOpsDashboardPluginsLoaded === 'function') {
+                    await Context.ensureOpsDashboardPluginsLoaded();
+                }
+            } catch (e) {
+                Logger.warn('dashboard: ensureOpsDashboardPluginsLoaded failed', e);
+            }
+            try {
+                if (Context.opsTab && typeof Context.opsTab.ensureOpsSessionReady === 'function') {
+                    await Context.opsTab.ensureOpsSessionReady(this._modal);
+                }
+            } catch (e) {
+                Logger.debug('dashboard: ensureOpsSessionReady failed', e);
+            }
+            doOpen();
+        };
+        void prepOpen();
     },
 
     close() {
@@ -453,6 +522,7 @@ const plugin = {
             this._applyAllSidePanelWidths();
             this._applyAllResultsPanelMaxWidths();
             this._syncDashboardUpdateMode();
+            this._syncIncompleteTabsBanner();
             this._syncAllMsDropdowns();
             for (const tab of this._tabs) {
                 if (typeof tab.onBuilt === 'function') {
@@ -908,8 +978,8 @@ const plugin = {
         normalTabs.forEach((btn) => { btn.style.display = ''; });
         if (headerTask) headerTask.style.display = '';
         if (headerOps) headerOps.style.display = '';
-        const restoreTab = this._state.activeTab === 'update' ? 'search-output' : this._state.activeTab;
-        this._setActiveTab(restoreTab || 'search-output');
+        const restorePreferred = this._state.activeTab === 'update' ? 'search-output' : this._state.activeTab;
+        this._setActiveTab(this._resolveActiveTabId(restorePreferred || 'search-output'));
     },
 
     _modalHtml() {
@@ -938,7 +1008,9 @@ const plugin = {
         const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
             ? ops.renderGradeAssessmentsHeaderLink()
             : '';
-        const activeTabId = this._state.activeTab || (tabs[0] ? tabs[0].id : 'search-output');
+        const activeTabId = this._resolveActiveTabId(
+            this._state.activeTab || (tabs[0] ? tabs[0].id : 'search-output')
+        );
         const panelHtml = tabs.map((t) => {
             const def = this._tabsById[t.id];
             let inner = '';
@@ -973,6 +1045,7 @@ const plugin = {
                 </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
+                <div id="wf-dash-incomplete-banner" style="display: none; margin-bottom: 12px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; flex-shrink: 0;"></div>
                 ${panelHtml}
                 <div data-wf-dash-panel="update" style="flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; align-items: center; padding: 8px 0;">
                     <div style="width: 100%; max-width: 720px; box-sizing: border-box;">${updatePanelHtml}</div>
@@ -2743,6 +2816,8 @@ const plugin = {
     _setActiveTab(tabId) {
         if (this._shouldShowDashboardUpdateTab() && tabId !== 'update') {
             tabId = 'update';
+        } else {
+            tabId = this._resolveActiveTabId(tabId);
         }
         this._state.activeTab = tabId;
         this._modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {

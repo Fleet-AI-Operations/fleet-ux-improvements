@@ -202,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.13',
+    _version: '8.14',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4638,6 +4638,13 @@ const plugin = {
         Logger.log('ops-tab: password saved on device');
         this._persistOpsPasswordHashSeen(this._getOpsPasswordHash());
         void this._loadOpsSecrets(true);
+        if (typeof Context.ensureOpsDashboardPluginsLoaded === 'function') {
+            try {
+                await Context.ensureOpsDashboardPluginsLoaded();
+            } catch (e) {
+                Logger.warn('ops-tab: ensureOpsDashboardPluginsLoaded after unlock failed', e);
+            }
+        }
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, null, { keepCurrentPane: true });
         }
@@ -4645,6 +4652,7 @@ const plugin = {
             settingsPlugin.syncOpsRefreshBanner(modal);
         }
         this._syncOpsSettingsSubmoduleVisibility(modal);
+        this._syncOpsDashboardIncompleteMessage(modal);
         return true;
     },
 
@@ -4692,6 +4700,9 @@ const plugin = {
                             margin-top: 10px;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
+                        <div id="wf-ops-dashboard-incomplete-msg" style="display: none; margin-top: 10px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+                            Search Output module failed to load. Check the console or refresh the page.
+                        </div>
                     </div>
                 </div>
                 </div>
@@ -4729,6 +4740,21 @@ const plugin = {
         if (passwordPanel) passwordPanel.style.display = hasPassword ? 'none' : 'block';
         if (wrap) wrap.style.display = hasPassword && wanted ? 'block' : 'none';
         if (openBtn) openBtn.style.display = hasPassword && wanted ? 'block' : 'none';
+        this._syncOpsDashboardIncompleteMessage(modal);
+    },
+
+    _syncOpsDashboardIncompleteMessage(modal) {
+        const el = this._opsQuery(modal, '#wf-ops-dashboard-incomplete-msg', 'opsDashboardIncompleteMsg');
+        if (!el) return;
+        const show = this._getOpsTabWanted()
+            && this._hasOpsStoredPassword()
+            && Context.dashboard
+            && typeof Context.dashboard.isReady === 'function'
+            && !Context.dashboard.isReady();
+        el.style.display = show ? 'block' : 'none';
+        if (show) {
+            Logger.warn('ops-tab: dashboard modules incomplete — Search Output may be unavailable');
+        }
     },
 
     _renderOpsSwitchHTML(id, isEnabled) {
@@ -4986,12 +5012,23 @@ const plugin = {
                 Logger.warn('ops-tab: Open Dashboard skipped — not unlocked');
                 return;
             }
-            if (Context.dashboard && typeof Context.dashboard.open === 'function') {
-                Context.dashboard.open();
-                Logger.log('ops-tab: opened Ops dashboard from settings');
-            } else {
-                Logger.warn('ops-tab: Open Dashboard skipped — Context.dashboard unavailable');
-            }
+            const self = this;
+            void (async () => {
+                if (typeof Context.ensureOpsDashboardPluginsLoaded === 'function') {
+                    try {
+                        await Context.ensureOpsDashboardPluginsLoaded();
+                    } catch (e) {
+                        Logger.warn('ops-tab: ensureOpsDashboardPluginsLoaded before open failed', e);
+                    }
+                }
+                self._syncOpsDashboardIncompleteMessage(modal);
+                if (Context.dashboard && typeof Context.dashboard.open === 'function') {
+                    Context.dashboard.open();
+                    Logger.log('ops-tab: opened Ops dashboard from settings');
+                } else {
+                    Logger.warn('ops-tab: Open Dashboard skipped — Context.dashboard unavailable');
+                }
+            })();
         });
     },
 
