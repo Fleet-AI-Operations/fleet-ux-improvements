@@ -48,14 +48,14 @@ const DASH_FLAG_CREATE_REASON_KEYS = [
 const DASH_DISPUTE_RESOLUTION_OPTIONS = [
     {
         key: 'flag_bugged_accept_dispute',
-        label: 'Flag as bugged (accept dispute)',
+        label: 'Flag As Bugged (Accept Dispute)',
         status: 'approved',
         skipWorkflowSignal: true,
         flagAsBugged: true
     },
     {
         key: 'flag_bugged_reject_dispute',
-        label: 'Flag as bugged (reject dispute)',
+        label: 'Flag As Bugged (Reject Dispute)',
         status: 'rejected',
         skipWorkflowSignal: true,
         flagAsBugged: true
@@ -11255,7 +11255,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.27',
+    _version: '4.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
