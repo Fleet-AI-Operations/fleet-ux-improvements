@@ -35,7 +35,7 @@ jobs:
           }
 
           # Build a JSON object mapping logical keys to hashes.
-          # Keys use prefixes to disambiguate sections (core/, dev/, arch/, devarch/).
+          # Keys use prefixes to disambiguate sections (core/, opsdash/, dev/, arch/, devarch/).
           hashes_json="{"
           first=true
 
@@ -50,6 +50,18 @@ jobs:
             first=false
             hashes_json+="$(printf '%s' "core/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
           done < <(jq -r '.corePlugins[].name' "$archetypes_path")
+
+          # opsDashboardPlugins → plugins/core/main/<name>
+          while IFS= read -r name; do
+            filepath="$plugins_dir/core/main/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Ops dashboard plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "opsdash/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '.opsDashboardPlugins[].name' "$archetypes_path")
 
           # devPlugins → plugins/core/dev/<name>
           while IFS= read -r name; do
@@ -97,6 +109,7 @@ jobs:
             ($arch[0]) as $a
             | $a
             | .corePlugins |= map(.name as $n | .hash = ($h["core/" + $n] // ""))
+            | (.opsDashboardPlugins // []) |= map(.name as $n | .hash = ($h["opsdash/" + $n] // ""))
             | .devPlugins |= map(.name as $n | .hash = ($h["dev/" + $n] // ""))
             | (.archetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["arch/" + $aid + "/" + $n] // "")))
             | (.devArchetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["devarch/" + $aid + "/" + $n] // "")))

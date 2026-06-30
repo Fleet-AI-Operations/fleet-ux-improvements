@@ -51,6 +51,17 @@ jobs:
           done < <(jq -r '.corePlugins[].name' "$archetypes_path")
 
           while IFS= read -r name; do
+            filepath="$plugins_dir/core/main/$name"
+            hash="$(compute_hash "$filepath")"
+            if [[ -z "$hash" ]]; then
+              echo "::warning::Ops dashboard plugin file not found: $filepath"
+            fi
+            $first || hashes_json+=","
+            first=false
+            hashes_json+="$(printf '%s' "opsdash/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+          done < <(jq -r '.opsDashboardPlugins[].name' "$archetypes_path")
+
+          while IFS= read -r name; do
             filepath="$plugins_dir/core/dev/$name"
             hash="$(compute_hash "$filepath")"
             if [[ -z "$hash" ]]; then
@@ -92,6 +103,7 @@ jobs:
             ($arch[0]) as $a
             | $a
             | .corePlugins |= map(.name as $n | .hash = ($h["core/" + $n] // ""))
+            | (.opsDashboardPlugins // []) |= map(.name as $n | .hash = ($h["opsdash/" + $n] // ""))
             | .devPlugins |= map(.name as $n | .hash = ($h["dev/" + $n] // ""))
             | (.archetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["arch/" + $aid + "/" + $n] // "")))
             | (.devArchetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["devarch/" + $aid + "/" + $n] // "")))
