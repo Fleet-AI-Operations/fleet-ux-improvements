@@ -1,7 +1,7 @@
 {
   "version": "10.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.64",
+  "archetypesVersion": "12.65",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -487,9 +487,9 @@
       "plugins": [
         {
           "name": "flag-as-bug-modal-improvements.js",
-          "version": "1.0",
+          "version": "2.0",
           "log": false,
-          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
+          "hash": "sha256-f61a630b7c615e5d02072f661ae4b02881da199240bf5df003273b5cdbd756db"
         }
       ]
     },
@@ -550,9 +550,9 @@
         },
         {
           "name": "flag-as-bug-modal-improvements.js",
-          "version": "1.0",
+          "version": "2.0",
           "log": false,
-          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
+          "hash": "sha256-388e6ea28e376e0655a8fc73f7cf6fe43b2018809347cc92fadfa173777a8db2"
         }
       ]
     },

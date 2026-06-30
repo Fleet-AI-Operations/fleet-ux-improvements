@@ -17,7 +17,7 @@ const plugin = {
     name: 'Flag-as-Bug Modal Improvements',
     description:
         'Adds Flag as Bug (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
-    _version: '1.0',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -200,7 +200,31 @@ const plugin = {
         return out;
     },
 
-    resolveIdsForSubmit(dialog) {
+    async fetchActiveDisputeIds() {
+        const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const req = pageWindow.fetch || fetch;
+        const url = pageWindow.location.origin + '/api/disputes?limit=1';
+        const res = await req.call(pageWindow, url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { accept: 'application/json' }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const disputeId = data && data.activeDisputeId != null
+            ? String(data.activeDisputeId).trim()
+            : '';
+        let evalTaskId = '';
+        if (disputeId && Array.isArray(data.disputes)) {
+            const match = data.disputes.find((d) => String(d.id) === disputeId);
+            if (match && match.eval_task_id) {
+                evalTaskId = String(match.eval_task_id).trim();
+            }
+        }
+        return { disputeId, evalTaskId };
+    },
+
+    async resolveIdsForSubmit(_dialog) {
         const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const stashed = pageWindow[CONTEXT_KEY] || {};
         let disputeId = String(stashed.disputeId || '').trim();
@@ -213,6 +237,20 @@ const plugin = {
             const fromDom = this.resolveIdsFromDocument();
             if (!disputeId) disputeId = fromDom.disputeId;
             if (!evalTaskId) evalTaskId = fromDom.evalTaskId;
+        }
+
+        if (!disputeId || !evalTaskId) {
+            try {
+                const fromApi = await this.fetchActiveDisputeIds();
+                if (!disputeId) disputeId = fromApi.disputeId;
+                if (!evalTaskId) evalTaskId = fromApi.evalTaskId;
+                if (fromApi.disputeId) {
+                    Logger.debug('flagAsBugModalImprovements: dispute id from active lease fallback — '
+                        + fromApi.disputeId);
+                }
+            } catch (e) {
+                Logger.warn('flagAsBugModalImprovements: active dispute fetch fallback failed', e);
+            }
         }
 
         return { disputeId, evalTaskId };
@@ -273,7 +311,7 @@ const plugin = {
     async handleRejectSubmit(dialog, rejectBtn, approveBtn) {
         const reason = this.readBugReason(dialog);
         const description = this.readDescription(dialog);
-        const { disputeId, evalTaskId } = this.resolveIdsForSubmit(dialog);
+        const { disputeId, evalTaskId } = await this.resolveIdsForSubmit(dialog);
 
         if (!reason) {
             Logger.warn('flagAsBugModalImprovements: reject blocked — bug reason not selected');
