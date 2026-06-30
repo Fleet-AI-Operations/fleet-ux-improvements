@@ -11255,26 +11255,40 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.28',
+    _version: '4.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
-    init() {
-        const loader = Context.dashboard && Context.dashboard._loader;
-        if (!loader) {
-            Logger.error('search-output: dashboard loader not registered');
+    init(state) {
+        if (state && state.registered) {
+            Logger.debug('search-output: tab already registered — skipping re-init');
             return;
         }
-        Object.assign(loader, searchOutputMethods);
-        const de = Context.diffEngine;
-        if (de && typeof de.onFleetThemeChange === 'function') {
-            de.onFleetThemeChange(() => {
-                if (typeof loader._renderResults === 'function') loader._renderResults();
-            });
+        const loader = Context.dashboard && Context.dashboard._loader;
+        if (!loader) {
+            const err = new Error('search-output: dashboard loader not registered');
+            Logger.error(err.message);
+            throw err;
         }
-        if (loader._state && loader._state.catalog == null && typeof loader._readBootstrapCache === 'function') {
-            loader._state.catalog = loader._readBootstrapCache();
+        try {
+            Object.assign(loader, searchOutputMethods);
+        } catch (e) {
+            Logger.error('search-output: attach to dashboard loader failed', e);
+            throw e;
+        }
+        try {
+            const de = Context.diffEngine;
+            if (de && typeof de.onFleetThemeChange === 'function') {
+                de.onFleetThemeChange(() => {
+                    if (typeof loader._renderResults === 'function') loader._renderResults();
+                });
+            }
+            if (loader._state && loader._state.catalog == null && typeof loader._readBootstrapCache === 'function') {
+                loader._state.catalog = loader._readBootstrapCache();
+            }
+        } catch (e) {
+            Logger.warn('search-output: pre-register setup failed', e);
         }
         Context.dashboard.registerTab({
             id: 'search-output',
@@ -11308,6 +11322,7 @@ const plugin = {
                 requestAnimationFrame(() => dash._applyAllSidePanelWidths());
             }
         });
+        if (state) state.registered = true;
         Logger.log('search-output: tab registered');
     }
 
