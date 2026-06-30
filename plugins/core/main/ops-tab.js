@@ -202,7 +202,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.14',
+    _version: '8.15',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2860,6 +2860,87 @@ const plugin = {
         return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     },
 
+    _syncOpsToggleVisual(checkbox) {
+        if (!checkbox) return;
+        const slider = checkbox.nextElementSibling;
+        if (!slider) return;
+        const knob = slider.querySelector('span');
+        const isChecked = checkbox.checked;
+        const onColor = slider.dataset.wfOnColor || '#6366f1';
+        slider.style.backgroundColor = isChecked ? onColor : '#ccc';
+        if (knob) {
+            const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '17px';
+            const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
+            knob.style.left = isChecked ? knobLeftOn : knobLeftOff;
+        }
+    },
+
+    _injectOpsSettingsButtonStyles() {
+        if (document.getElementById('wf-ops-settings-btn-style')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-ops-settings-btn-style';
+        style.textContent = [
+            '#wf-settings-modal .wf-dash-btn {',
+            '  appearance: none;',
+            '  -webkit-appearance: none;',
+            '  box-sizing: border-box;',
+            '  margin: 0;',
+            '  font-family: inherit;',
+            '  font-weight: 600;',
+            '  border-radius: 6px;',
+            '  cursor: pointer;',
+            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
+            '  white-space: nowrap;',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  line-height: 1.4;',
+            '  text-decoration: none;',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--regular {',
+            '  padding: 7px 14px;',
+            '  font-size: 12px;',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--nav {',
+            '  padding: 4px 10px;',
+            '  font-size: 11px;',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--full {',
+            '  width: 100%;',
+            '  box-sizing: border-box;',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--primary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--primary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
+            '  color: var(--primary-foreground, #ffffff);',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--secondary {',
+            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+            '  background: #000;',
+            '  color: #fff;',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
+            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  color: var(--brand, var(--primary, #2563eb));',
+            '}',
+            '#wf-settings-modal .wf-dash-btn--primary:disabled,',
+            '#wf-settings-modal .wf-dash-btn--secondary:disabled {',
+            '  cursor: not-allowed;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--muted-foreground, #94a3b8);',
+            '  opacity: 0.85;',
+            '}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+    },
+
     _injectOpsSpinnerStyle() {
         if (document.getElementById('wf-ops-spinner-style')) return;
         const style = document.createElement('style');
@@ -4998,6 +5079,7 @@ const plugin = {
         if (!toggle || toggle.dataset.wfOpsOpenOnSettingsBound === '1') return;
         toggle.dataset.wfOpsOpenOnSettingsBound = '1';
         toggle.addEventListener('change', (e) => {
+            this._syncOpsToggleVisual(e.target);
             this._setOpsDashboardOpenOnSettings(e.target.checked);
             Logger.log('ops-tab: open dashboard on settings ' + (e.target.checked ? 'enabled' : 'disabled'));
         });
@@ -5035,6 +5117,7 @@ const plugin = {
     _attachOpsSettingsListeners(modal, settingsPlugin) {
         if (!modal) return;
         this._injectOpsSpinnerStyle();
+        this._injectOpsSettingsButtonStyles();
         this._attachOpsPasswordListeners(modal, settingsPlugin);
         this._attachOpsTabToggleListener(modal, settingsPlugin);
         this._attachOpsDashboardOpenOnSettingsListener(modal);
