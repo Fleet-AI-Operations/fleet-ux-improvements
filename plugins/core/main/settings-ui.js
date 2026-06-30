@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.3',
+    _version: '10.4',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -69,7 +69,7 @@ const plugin = {
     },
 
     _isMainUserscriptUpdateAvailable() {
-        return Boolean(Context.isOutdated && Context.latestVersion);
+        return this._shouldShowUpdateNotification();
     },
 
     _shouldOpenOpsDashboard() {
