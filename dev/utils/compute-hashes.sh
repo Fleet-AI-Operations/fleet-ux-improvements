@@ -12,7 +12,7 @@
 #   --plugins-dir DIR  Plugins directory (default: <root>/plugins).
 #
 # Effects:
-#   1. Reads plugin entries from archetypes.json (corePlugins, devPlugins, archetypes, devArchetypes).
+#   1. Reads plugin entries from archetypes.json (corePlugins, opsDashboardPlugins, devPlugins, archetypes, devArchetypes).
 #   2. Computes SHA-256 hash of each plugin file on disk.
 #   3. Adds or updates the "hash" field on each plugin object in archetypes.json.
 #
@@ -72,7 +72,7 @@ compute_hash() {
 }
 
 # Build a JSON object mapping logical keys to hashes.
-# Keys use prefixes to disambiguate sections (core/, dev/, arch/, devarch/).
+# Keys use prefixes to disambiguate sections (core/, opsdash/, dev/, arch/, devarch/).
 hashes_json="{"
 first=true
 
@@ -87,6 +87,18 @@ while IFS= read -r name; do
   first=false
   hashes_json+="$(printf '%s' "core/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
 done < <(jq -r '.corePlugins[].name' "$archetypes_path")
+
+# opsDashboardPlugins → plugins/core/main/<name>
+while IFS= read -r name; do
+  filepath="$plugins_dir/core/main/$name"
+  hash="$(compute_hash "$filepath")"
+  if [[ -z "$hash" ]]; then
+    echo "[warn] Ops dashboard plugin file not found: $filepath" >&2
+  fi
+  $first || hashes_json+=","
+  first=false
+  hashes_json+="$(printf '%s' "opsdash/$name" | jq -Rs .): $(printf '%s' "$hash" | jq -Rs .)"
+done < <(jq -r '.opsDashboardPlugins[].name' "$archetypes_path")
 
 # devPlugins → plugins/core/dev/<name>
 while IFS= read -r name; do
@@ -134,6 +146,7 @@ jq -n --slurpfile arch "$archetypes_path" --argjson h "$hashes_json" '
   ($arch[0]) as $a
   | $a
   | .corePlugins |= map(.name as $n | .hash = ($h["core/" + $n] // ""))
+  | (.opsDashboardPlugins // []) |= map(.name as $n | .hash = ($h["opsdash/" + $n] // ""))
   | .devPlugins |= map(.name as $n | .hash = ($h["dev/" + $n] // ""))
   | (.archetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["arch/" + $aid + "/" + $n] // "")))
   | (.devArchetypes // []) |= map(.id as $aid | .plugins |= map(.name as $n | .hash = ($h["devarch/" + $aid + "/" + $n] // "")))
