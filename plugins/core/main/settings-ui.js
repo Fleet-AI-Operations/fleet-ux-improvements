@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.2',
+    _version: '10.4',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -24,8 +24,7 @@ const plugin = {
         const self = this;
         Context.settingsUi = {
             openModal: (opts) => self.openModal(opts),
-            shouldShowUpdateBanner: () => self._shouldShowUpdateNotification(),
-            createUpdateNotificationHTML: () => self._createUpdateNotificationHTML(),
+            isMainUserscriptUpdateAvailable: () => self._isMainUserscriptUpdateAvailable(),
             attachUpdateBannerListeners: (root) => self._attachUpdateBannerListeners(root),
             refreshUpdateIndicator: () => self._updatePulseAnimation(),
             syncOpsRefreshBanner: (modal) => self._syncOpsRefreshBanner(modal)
@@ -69,7 +68,12 @@ const plugin = {
         this._openSettingsModal();
     },
 
+    _isMainUserscriptUpdateAvailable() {
+        return this._shouldShowUpdateNotification();
+    },
+
     _shouldOpenOpsDashboard() {
+        if (this._isMainUserscriptUpdateAvailable()) return false;
         if (!Context.opsTab) return false;
         if (typeof Context.opsTab.shouldOpenDashboardOnSettings === 'function') {
             return Context.opsTab.shouldOpenDashboardOnSettings() && Context.opsTab.isEnabled();
