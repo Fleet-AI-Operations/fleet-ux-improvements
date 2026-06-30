@@ -1,7 +1,7 @@
 {
   "version": "10.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.52",
+  "archetypesVersion": "12.53",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -484,7 +484,14 @@
       "description": "Page for reviewing writer disputes",
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
-      "plugins": []
+      "plugins": [
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
+        }
+      ]
     },
     {
       "id": "dispute-detail",
@@ -540,6 +547,12 @@
           "version": "1.7",
           "hash": "sha256-5a752f8810727b23a9c029d0f90d05c27a7f19113c99605cf61a6b206aab51e4",
           "log": false
+        },
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-826e57f0a571b651a7d6ce143d1fa7f5f5ce59095af9d5a98f8891cd14edba83"
         }
       ]
     },
