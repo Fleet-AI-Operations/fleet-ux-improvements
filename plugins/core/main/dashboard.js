@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.21',
+    _version: '6.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -360,15 +360,6 @@ const plugin = {
     },
 
     open() {
-        if (Context.settingsUi && typeof Context.settingsUi.isMainUserscriptUpdateAvailable === 'function'
-            && Context.settingsUi.isMainUserscriptUpdateAvailable()) {
-            Logger.info('dashboard: open blocked — update banner active');
-            if (typeof Context.settingsUi.openModal === 'function') {
-                Context.settingsUi.openModal({ forceSettings: true });
-            }
-            return;
-        }
-
         const doOpen = () => {
             try {
                 try {

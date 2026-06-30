@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.4',
+    _version: '10.5',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -42,7 +42,12 @@ const plugin = {
      */
     openModal(opts) {
         const options = opts || {};
-        const routeDashboard = !options.forceSettings && this._shouldOpenOpsDashboard();
+        if (options.forceSettings) {
+            if (this._modalOpen) return;
+            this._openSettingsModal();
+            return;
+        }
+        const routeDashboard = this._shouldOpenOpsDashboard();
         Logger.log('settings-ui: openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
         if (routeDashboard) {
             if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
