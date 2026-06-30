@@ -4,7 +4,7 @@
 
 const DIALOG_TITLE = 'Flag as Bugged';
 const APPROVE_LABEL = 'Flag as Bugged (Approve Dispute)';
-const REJECT_LABEL = 'Flag as Bug (Reject Dispute)';
+const REJECT_LABEL = 'Flag as Bugged (Reject Dispute)';
 const MIN_DESCRIPTION_CHARS = 100;
 const VIEW_TASK_PREFIX = '/work/problems/view-task/';
 const ENHANCED_ATTR = 'data-fleet-flag-bug-modal-enhanced';
@@ -16,8 +16,8 @@ const plugin = {
     id: 'flagAsBugModalImprovements',
     name: 'Flag-as-Bug Modal Improvements',
     description:
-        'Adds Flag as Bug (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
-    _version: '2.0',
+        'Adds Flag as Bugged (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -77,7 +77,7 @@ const plugin = {
             }
         }, true);
         state.flagBugListenerInstalled = true;
-        Logger.debug('flagAsBugModalImprovements: Flag as Bug click capture installed');
+        Logger.debug('flagAsBugModalImprovements: Flag as Bugged click capture installed');
     },
 
     findFlagBugDialog() {
