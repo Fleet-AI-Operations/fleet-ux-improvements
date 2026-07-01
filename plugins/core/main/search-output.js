@@ -4696,13 +4696,27 @@ const searchOutputMethods = {
         const sel = this._q('#wf-dash-version-mode');
         if (!wrap || !sel) return;
         const authorIds = this._state.activeSearchAuthorIds || [];
+        const hasContributors = authorIds.length > 0;
         const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
-        const show = authorIds.length > 0 && hasResults;
-        wrap.style.display = show ? 'inline-flex' : 'none';
-        if (show) {
-            const mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
-            if (sel.value !== mode) sel.value = mode;
+        wrap.style.display = hasResults ? 'inline-flex' : 'none';
+        if (!hasResults) return;
+        let mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+        if (!hasContributors && mode === DASH_VERSION_MODE_CONTRIBUTOR) {
+            mode = DASH_VERSION_MODE_FINAL;
+            this._state.versionMode = mode;
         }
+        sel.innerHTML = this._dashVersionModeSelectOptionsHtml(hasContributors, mode);
+    },
+
+    _dashVersionModeSelectOptionsHtml(includeContributorMatch, selectedValue) {
+        const selected = String(selectedValue || DASH_VERSION_MODE_FINAL);
+        let html = '';
+        if (includeContributorMatch) {
+            html += `<option value="${DASH_VERSION_MODE_CONTRIBUTOR}"${selected === DASH_VERSION_MODE_CONTRIBUTOR ? ' selected' : ''}>Contributor match</option>`;
+        }
+        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>All v1s</option>`;
+        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>All final versions</option>`;
+        return html;
     },
 
     _isTasksHydratingActive() {
@@ -11344,7 +11358,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.30',
+    _version: '4.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
