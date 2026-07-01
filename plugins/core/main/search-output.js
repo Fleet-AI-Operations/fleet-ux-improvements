@@ -10686,9 +10686,7 @@ const searchOutputMethods = {
 
         const ui = this._getCardUi(task.id);
         const expanded = ui.expanded;
-        const selectedDisplayNo = expanded || versionMode === DASH_VERSION_MODE_CONTRIBUTOR
-            ? (ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo)
-            : defaultDisplayNo;
+        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
 
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
@@ -11503,7 +11501,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.34',
+    _version: '4.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
