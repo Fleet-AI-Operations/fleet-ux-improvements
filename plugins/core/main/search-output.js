@@ -132,6 +132,10 @@ const DASH_RESULTS_MODE_HINTS = {
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
 const DASH_NONE_SELECTED_HINT = 'None selected = all.';
 
+const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
+const DASH_VERSION_MODE_V1 = 'all_v1';
+const DASH_VERSION_MODE_FINAL = 'all_final';
+
 const DASH_SORT_DEFAULT = 'task_submitted:desc';
 const DASH_SORT_METRICS = [
     { id: 'task_submitted', label: 'Task created' },
@@ -3757,6 +3761,9 @@ const searchOutputMethods = {
         this._state.activeSearchAfterIso = afterIso;
         this._state.activeSearchBeforeIso = beforeIso;
         this._state.activeSearchAuthorIds = authorIds || [];
+        this._state.versionMode = authorIds.length > 0
+            ? DASH_VERSION_MODE_CONTRIBUTOR
+            : DASH_VERSION_MODE_FINAL;
 
         const preserveDisputeState = this._isAdditiveResultsMode()
             && Array.isArray(this._state.resultsLoadSnapshot)
@@ -4681,6 +4688,21 @@ const searchOutputMethods = {
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
         this._syncDropExcludedUi();
+        this._syncVersionModeDropdownUi();
+    },
+
+    _syncVersionModeDropdownUi() {
+        const wrap = this._q('#wf-dash-version-mode-wrap');
+        const sel = this._q('#wf-dash-version-mode');
+        if (!wrap || !sel) return;
+        const authorIds = this._state.activeSearchAuthorIds || [];
+        const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
+        const show = authorIds.length > 0 && hasResults;
+        wrap.style.display = show ? 'inline-flex' : 'none';
+        if (show) {
+            const mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+            if (sel.value !== mode) sel.value = mode;
+        }
     },
 
     _isTasksHydratingActive() {
@@ -5174,6 +5196,47 @@ const searchOutputMethods = {
         this._syncResultsListDerivedUi();
         this._renderResults();
         this._updateApplyFiltersUi();
+    },
+
+    _applyVersionModeChange(mode) {
+        const next = String(mode || DASH_VERSION_MODE_FINAL);
+        if (this._state.versionMode === next) return;
+        this._state.versionMode = next;
+        for (const ui of Object.values(this._state.cardUi || {})) {
+            if (!ui.expanded) ui.selectedDisplayNo = null;
+        }
+        this._renderResults();
+        Logger.log('search-output: version mode → ' + next);
+    },
+
+    _contributorMatchDisplayNo(item, versions) {
+        const authorIds = this._state.activeSearchAuthorIds || [];
+        const contributorSet = authorIds.length > 0
+            ? this._contributorSetFromAuthorIds(authorIds)
+            : null;
+        const matchingNos = [];
+        const allFeedback = (item.task && item.task.allFeedback) || [];
+        if (contributorSet) {
+            for (const entry of allFeedback) {
+                const reviewerId = entry.reviewer && entry.reviewer.id
+                    ? String(entry.reviewer.id).trim()
+                    : '';
+                if (reviewerId && this._profileIdMatchesContributorSet(reviewerId, contributorSet)
+                    && entry.linkedDisplayVersionNo != null) {
+                    matchingNos.push(entry.linkedDisplayVersionNo);
+                }
+            }
+        }
+        if (matchingNos.length > 0) {
+            return Math.max(...matchingNos);
+        }
+        if (item.selectedFeedbackId) {
+            const entry = allFeedback.find((f) => f.id === item.selectedFeedbackId);
+            if (entry && entry.linkedDisplayVersionNo != null) {
+                return entry.linkedDisplayVersionNo;
+            }
+        }
+        return versions[versions.length - 1].displayVersionNo;
     },
 
     _findCachedItem(itemId) {
@@ -6772,6 +6835,14 @@ const searchOutputMethods = {
                             <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
                             <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0;">
+                                        <span>Version</span>
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 10rem; max-width: 14rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            <option value="contributor_match">Contributor match</option>
+                                            <option value="all_v1">All v1s</option>
+                                            <option value="all_final">All final versions</option>
+                                        </select>
+                                    </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                         <span>Sort</span>
                                         <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 18rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
@@ -9015,6 +9086,8 @@ const searchOutputMethods = {
         this._state.hasSearched = false;
         this._state.committed = null;
         this._state.cardUi = {};
+        this._state.versionMode = DASH_VERSION_MODE_FINAL;
+        this._state.activeSearchAuthorIds = [];
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
         this._state.actionBlockUi = {};
@@ -10439,15 +10512,24 @@ const searchOutputMethods = {
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
 
-        let defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
-        if (item.selectedFeedbackId) {
-            const entry = allFeedback.find((f) => f.id === item.selectedFeedbackId);
-            if (entry) defaultDisplayNo = entry.linkedDisplayVersionNo;
+        const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+        const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
+
+        let defaultDisplayNo;
+        if (versionMode === DASH_VERSION_MODE_V1) {
+            const sorted = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
+            defaultDisplayNo = sorted[0].displayVersionNo;
+        } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
+            defaultDisplayNo = this._contributorMatchDisplayNo(item, versions);
+        } else {
+            defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
         }
 
         const ui = this._getCardUi(task.id);
-        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
         const expanded = ui.expanded;
+        const selectedDisplayNo = expanded || versionMode === DASH_VERSION_MODE_CONTRIBUTOR
+            ? (ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo)
+            : defaultDisplayNo;
 
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
@@ -10663,6 +10745,13 @@ function attachSearchOutputListeners(modal, dash) {
                 Logger.log('dashboard: results page size — ' + val);
                 dash._renderResults();
                 dash._syncResultsPagerUi();
+            });
+        }
+
+        const versionModeSel = dash._q('#wf-dash-version-mode');
+        if (versionModeSel) {
+            versionModeSel.addEventListener('change', () => {
+                dash._applyVersionModeChange(versionModeSel.value);
             });
         }
 
@@ -11255,7 +11344,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.29',
+    _version: '4.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
