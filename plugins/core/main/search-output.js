@@ -6287,7 +6287,7 @@ const searchOutputMethods = {
         row2.style.alignItems = 'center';
         row2.style.justifyContent = 'space-between';
         row2.style.width = '100%';
-        row2.style.gap = '12px';
+        row2.style.gap = '8px';
         const committed = this._state.committed;
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
@@ -6697,6 +6697,18 @@ const searchOutputMethods = {
             : base + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _resultsHeaderBarStyle() {
+        return 'padding: 0 8px 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;';
+    },
+
+    _resultsHeaderRowStyle() {
+        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 0 0;';
+    },
+
+    _resultsToolbarRow2Style() {
+        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: space-between; gap: 8px; width: 100%; flex-wrap: wrap;';
+    },
+
     _searchSectionStyle() {
         return 'background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #ffffff)); border-radius: 10px; padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box;';
     },
@@ -6859,8 +6871,8 @@ const searchOutputMethods = {
                     </div>`;
         const rightHtml = `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
-                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="${this._resultsHeaderBarStyle()}">
+                        <div style="${this._resultsHeaderRowStyle()}">
                             <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; flex-wrap: wrap;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
@@ -6873,7 +6885,7 @@ const searchOutputMethods = {
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
                         </div>
-                        <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
+                        <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
                             <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
                             <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
@@ -11501,7 +11513,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.35',
+    _version: '4.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
