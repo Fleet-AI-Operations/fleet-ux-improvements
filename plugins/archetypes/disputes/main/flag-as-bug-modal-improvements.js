@@ -4,7 +4,7 @@
 
 const DIALOG_TITLE = 'Flag as Bugged';
 const APPROVE_LABEL = 'Flag as Bugged (Approve Dispute)';
-const REJECT_LABEL = 'Flag as Bug (Reject Dispute)';
+const REJECT_LABEL = 'Flag as Bugged (Reject Dispute)';
 const MIN_DESCRIPTION_CHARS = 100;
 const VIEW_TASK_PREFIX = '/work/problems/view-task/';
 const ENHANCED_ATTR = 'data-fleet-flag-bug-modal-enhanced';
@@ -16,8 +16,8 @@ const plugin = {
     id: 'flagAsBugModalImprovements',
     name: 'Flag-as-Bug Modal Improvements',
     description:
-        'Adds Flag as Bug (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
-    _version: '1.0',
+        'Adds Flag as Bugged (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -77,7 +77,7 @@ const plugin = {
             }
         }, true);
         state.flagBugListenerInstalled = true;
-        Logger.debug('flagAsBugModalImprovements: Flag as Bug click capture installed');
+        Logger.debug('flagAsBugModalImprovements: Flag as Bugged click capture installed');
     },
 
     findFlagBugDialog() {
@@ -200,7 +200,31 @@ const plugin = {
         return out;
     },
 
-    resolveIdsForSubmit(dialog) {
+    async fetchActiveDisputeIds() {
+        const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const req = pageWindow.fetch || fetch;
+        const url = pageWindow.location.origin + '/api/disputes?limit=1';
+        const res = await req.call(pageWindow, url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { accept: 'application/json' }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const disputeId = data && data.activeDisputeId != null
+            ? String(data.activeDisputeId).trim()
+            : '';
+        let evalTaskId = '';
+        if (disputeId && Array.isArray(data.disputes)) {
+            const match = data.disputes.find((d) => String(d.id) === disputeId);
+            if (match && match.eval_task_id) {
+                evalTaskId = String(match.eval_task_id).trim();
+            }
+        }
+        return { disputeId, evalTaskId };
+    },
+
+    resolveIdsFromStashAndDom() {
         const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const stashed = pageWindow[CONTEXT_KEY] || {};
         let disputeId = String(stashed.disputeId || '').trim();
@@ -208,6 +232,34 @@ const plugin = {
 
         if (!disputeId) disputeId = this.disputeIdFromPathname();
         if (!evalTaskId) evalTaskId = this.evalTaskIdFromViewTaskLink();
+
+        if (!disputeId || !evalTaskId) {
+            const fromDom = this.resolveIdsFromDocument();
+            if (!disputeId) disputeId = fromDom.disputeId;
+            if (!evalTaskId) evalTaskId = fromDom.evalTaskId;
+        }
+
+        return { disputeId, evalTaskId };
+    },
+
+    async resolveIdsForSubmit(_dialog) {
+        let disputeId = '';
+        let evalTaskId = '';
+
+        try {
+            const fromApi = await this.fetchActiveDisputeIds();
+            disputeId = fromApi.disputeId;
+            evalTaskId = fromApi.evalTaskId;
+            if (disputeId) {
+                Logger.debug('flagAsBugModalImprovements: dispute id from active lease — ' + disputeId);
+            }
+        } catch (e) {
+            Logger.warn('flagAsBugModalImprovements: active dispute fetch failed, using DOM fallbacks', e);
+            return this.resolveIdsFromStashAndDom();
+        }
+
+        if (!evalTaskId) evalTaskId = this.evalTaskIdFromViewTaskLink();
+        if (!disputeId) disputeId = this.disputeIdFromPathname();
 
         if (!disputeId || !evalTaskId) {
             const fromDom = this.resolveIdsFromDocument();
@@ -273,7 +325,7 @@ const plugin = {
     async handleRejectSubmit(dialog, rejectBtn, approveBtn) {
         const reason = this.readBugReason(dialog);
         const description = this.readDescription(dialog);
-        const { disputeId, evalTaskId } = this.resolveIdsForSubmit(dialog);
+        const { disputeId, evalTaskId } = await this.resolveIdsForSubmit(dialog);
 
         if (!reason) {
             Logger.warn('flagAsBugModalImprovements: reject blocked — bug reason not selected');
