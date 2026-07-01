@@ -13,7 +13,7 @@
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
-const DASH_AUTO_HYDRATE_MANUAL_THRESHOLD = 500;
+const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
@@ -3260,8 +3260,8 @@ const searchOutputMethods = {
             Logger.warn('dashboard: bootstrap failed', err);
         } finally {
             this._refreshCatalogDependentUi();
-            if (this._state.autoHydratePending && this._isOpen()) {
-                this._scheduleAutoHydrateBackground();
+            if (this._state.pageHydratePending && this._isOpen()) {
+                this._schedulePageHydrate();
             }
         }
     },
@@ -4271,11 +4271,9 @@ const searchOutputMethods = {
         this._state.loading = true;
         this._state.hydrateBulkActive = false;
         this._state.autoHydrateActive = false;
-        this._state.autoHydrateScheduled = false;
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
+        this._state.pageHydrateScheduled = false;
+        this._state.pageHydratePending = false;
         this._state.autoHydratePassId = (this._state.autoHydratePassId || 0) + 1;
-        this._state.manualHydrateThresholdLogged = false;
 
         if (additive && this._state.cachedItems && this._state.cachedItems.length > 0) {
             this._state.resultsLoadSnapshot = this._state.cachedItems.slice();
@@ -4939,7 +4937,7 @@ const searchOutputMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateFirstPage = false } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -5022,21 +5020,21 @@ const searchOutputMethods = {
             this._validateRangeUi();
         };
 
-        if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
-            const onPage = this._getUnhydratedOnPage();
-            if (onPage.length > 0) {
-                this._setSearchLoadPhase('Hydrating first page…', onPage.length);
+        if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
+            const batch = this._getInitialHydrateBatch();
+            if (batch.length > 0) {
+                this._setSearchLoadPhase('Hydrating results…', batch.length);
                 this._syncSearchLoadPhaseUi();
-                return this._prehydrateFirstPageBeforeDisplay().then((hydrated) => {
+                return this._prehydrateInitialBatchBeforeDisplay().then((hydrated) => {
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     if (hydrated > 0) {
-                        Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
+                        Logger.log('search-output: initial hydrate batch complete — ' + hydrated + ' card(s)');
                     }
                     finishRender();
                     return true;
                 }).catch((err) => {
-                    Logger.warn('search-output: first page prehydrate failed', err);
+                    Logger.warn('search-output: initial hydrate batch failed', err);
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     finishRender();
@@ -6006,39 +6004,40 @@ const searchOutputMethods = {
         return this._getPaginatedViewItems().filter((it) => !it.hydrated);
     },
 
-    _getUnhydratedBeyondPage() {
-        const pageIds = new Set(this._getPaginatedViewItems().map((it) => it.id));
-        return this._getUnhydratedInView().filter((it) => !pageIds.has(it.id));
+    _getInitialHydrateBatch() {
+        return (this._getViewItems() || [])
+            .slice(0, DASH_INITIAL_HYDRATE_CAP)
+            .filter((it) => it && !it.hydrated);
     },
 
     _needsManualHydrateForRemainder() {
-        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
+        const view = this._getViewItems() || [];
+        return view.length > DASH_INITIAL_HYDRATE_CAP && this._getUnhydratedInView().length > 0;
     },
 
-    async _prehydrateFirstPageBeforeDisplay() {
+    async _prehydrateInitialBatchBeforeDisplay() {
         if (this._state.committed && this._state.committed.retrieveMode) return 0;
-        const onPage = this._getUnhydratedOnPage();
-        if (onPage.length === 0) return 0;
+        const batch = this._getInitialHydrateBatch();
+        if (batch.length === 0) return 0;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('search-output: first-page prehydrate skipped — dashboardData not loaded');
+            Logger.warn('search-output: initial hydrate batch skipped — dashboardData not loaded');
             return 0;
         }
         const contextKey = this._autoHydrateContextKey();
-        const meta = this._getResultsPaginationMeta();
-        Logger.log('search-output: prehydrating first page before display — ' + onPage.length + ' card(s)'
-            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+        Logger.log('search-output: prehydrating initial batch before display — ' + batch.length + ' card(s)');
 
         this._state.autoHydrateActive = true;
         this._syncResultsHydrateBannerUi();
-        const loadEntryId = this._beginSearchLoadEntry('Hydrating page cards');
+        const loadEntryId = this._beginSearchLoadEntry('Hydrating results');
         try {
-            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
+            const hydrated = await this._hydrateItemsInBulkBatches(batch, {
                 shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
                 onProgress: (done, total) => {
+                    this._setSearchLoadPhase('Hydrating results…', done, total);
                     if (loadEntryId != null) {
                         this._updateSearchLoadEntry(
                             loadEntryId,
-                            this._searchLoadMessage('Hydrating page cards', done, total)
+                            this._searchLoadMessage('Hydrating results', done, total)
                         );
                     }
                 }
@@ -6046,14 +6045,14 @@ const searchOutputMethods = {
             if (loadEntryId != null) {
                 this._resolveSearchLoadEntry(
                     loadEntryId,
-                    this._searchLoadMessage('Hydrating page cards', hydrated, onPage.length)
+                    this._searchLoadMessage('Hydrating results', hydrated, batch.length)
                 );
             }
             if (hydrated > 0) this._onScopeDataEnriched();
             return hydrated;
         } catch (err) {
             if (loadEntryId != null) {
-                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating page cards — failed');
+                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating results — failed');
             }
             throw err;
         } finally {
@@ -6065,131 +6064,73 @@ const searchOutputMethods = {
     _autoHydrateContextKey() {
         const tab = this._state.resultsKindTab || 'all';
         const pass = this._state.autoHydratePassId || 0;
-        return pass + '|' + tab;
+        const page = this._state.resultsPage || 0;
+        return pass + '|' + tab + '|' + page;
     },
 
-    _scheduleAutoHydrateBackground() {
-        if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
+    _schedulePageHydrate() {
+        if (this._state.pageHydrateScheduled || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
+        if (this._state.loading) return;
         if (!this._bulkHydrateShowable()) {
-            this._state.autoHydratePending = false;
+            this._state.pageHydratePending = false;
             return;
         }
         const onPage = this._getUnhydratedOnPage();
-        const beyondPage = this._getUnhydratedBeyondPage();
-        const manualRemainder = this._needsManualHydrateForRemainder();
-        if (onPage.length === 0 && (beyondPage.length === 0 || manualRemainder)) {
-            this._state.autoHydratePending = false;
-            if (manualRemainder && beyondPage.length > 0) {
-                if (!this._state.manualHydrateThresholdLogged) {
-                    Logger.log('search-output: remainder auto-hydrate skipped — '
-                        + beyondPage.length + ' unhydrated result(s) beyond first page (manual threshold '
-                        + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+ total)');
-                    this._state.manualHydrateThresholdLogged = true;
-                }
-                this._syncBulkHydrateUi();
-            }
+        if (onPage.length === 0) {
+            this._state.pageHydratePending = false;
             return;
         }
-        this._state.manualHydrateThresholdLogged = false;
+        if (this._state.committed && this._state.committed.retrieveMode) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            if (!this._state.autoHydratePendingLogged) {
-                Logger.debug('dashboard: auto-hydrate deferred — dashboardData not ready');
-                this._state.autoHydratePendingLogged = true;
-            }
-            this._state.autoHydratePending = true;
+            this._state.pageHydratePending = true;
             return;
         }
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
-        this._state.autoHydrateScheduled = true;
+        this._state.pageHydratePending = false;
+        this._state.pageHydrateScheduled = true;
         queueMicrotask(() => {
-            this._state.autoHydrateScheduled = false;
-            void this._autoHydrateBackground();
+            this._state.pageHydrateScheduled = false;
+            void this._hydrateCurrentPage();
         });
     },
 
-    async _autoHydrateBackground() {
-        if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
-        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
+    async _hydrateCurrentPage() {
+        if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive || this._state.loading) {
             return;
         }
-        const contextKey = this._autoHydrateContextKey();
-        const manualRemainder = this._needsManualHydrateForRemainder();
         const onPage = this._getUnhydratedOnPage();
-        const beyondPage = manualRemainder ? [] : this._getUnhydratedBeyondPage();
-        if (onPage.length === 0 && beyondPage.length === 0) {
-            if (manualRemainder) this._syncBulkHydrateUi();
+        if (onPage.length === 0) return;
+        if (this._state.committed && this._state.committed.retrieveMode) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             return;
         }
 
+        const contextKey = this._autoHydrateContextKey();
         const meta = this._getResultsPaginationMeta();
-        const phaseParts = [];
-        if (onPage.length > 0) phaseParts.push(onPage.length + ' on first page');
-        if (beyondPage.length > 0) phaseParts.push(beyondPage.length + ' in background');
-        Logger.log('dashboard: auto-hydrate — ' + phaseParts.join(', ')
+        Logger.log('search-output: page hydrate — ' + onPage.length + ' card(s)'
             + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
 
         this._state.autoHydrateActive = true;
-        let hydratedTotal = 0;
-        const hydrateBatch = async (items, label) => {
-            if (items.length === 0) return 0;
-            return this._hydrateItemsInBulkBatches(items, {
-                shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
-                onChunkStart: (chunk) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'loading';
-                        this._patchTaskCard(item.id);
-                    }
-                },
-                onChunkComplete: (chunk) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'idle';
-                        this._patchTaskCard(item.id);
-                    }
-                }
-            });
-        };
+        this._syncResultsHydrateBannerUi();
         try {
-            if (onPage.length > 0) {
-                hydratedTotal += await hydrateBatch(onPage);
-                if (this._autoHydrateContextKey() === contextKey && hydratedTotal > 0) {
-                    this._onScopeDataEnriched();
-                    this._renderResults();
-                }
-            }
+            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+            });
             if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+                Logger.debug('search-output: page hydrate cancelled — view changed');
                 return;
             }
-            if (manualRemainder) {
-                if (hydratedTotal > 0) {
-                    Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s); remainder manual');
-                }
-                this._syncBulkHydrateUi();
-                return;
-            }
-            if (beyondPage.length > 0) {
-                const bgHydrated = await hydrateBatch(beyondPage);
-                hydratedTotal += bgHydrated;
-            }
-            if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
-            } else if (hydratedTotal > 0) {
+            if (hydrated > 0) {
                 this._onScopeDataEnriched();
                 this._renderResults();
-                Logger.log('dashboard: auto-hydrate complete — ' + hydratedTotal + ' card(s)');
+                Logger.log('search-output: page hydrate complete — ' + hydrated + ' card(s)');
             }
         } catch (err) {
-            for (const item of [...onPage, ...beyondPage]) {
-                this._getHydrateUi(item.id).status = 'idle';
-                this._patchTaskCard(item.id);
-            }
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: auto-hydrate failed', err);
+                Logger.warn('search-output: page hydrate failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
+            this._syncResultsHydrateBannerUi();
             this._syncBulkHydrateUi();
         }
     },
@@ -6333,45 +6274,52 @@ const searchOutputMethods = {
 
         this._logDashApiClick('bulk-hydrate', toHydrate.length + ' card(s)');
         this._state.hydrateBulkActive = true;
+        this._state.loading = true;
+        this._resetSearchLoadLog();
+        this._setSearchLoadPhase('Hydrating results…', toHydrate.length);
+        this._syncSearchLoadPhaseUi();
         this._syncBulkHydrateUi();
-        this._setBulkHydrateProgress(0, toHydrate.length);
+        const loadEntryId = this._beginSearchLoadEntry('Hydrating results');
         let hydratedTotal = 0;
         try {
             hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
-                onChunkStart: (chunk, offset) => {
-                    this._setBulkHydrateProgress(offset, toHydrate.length);
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'loading';
-                        this._patchTaskCard(item.id);
+                onProgress: (done, total) => {
+                    this._setSearchLoadPhase('Hydrating results…', done, total);
+                    if (loadEntryId != null) {
+                        this._updateSearchLoadEntry(
+                            loadEntryId,
+                            this._searchLoadMessage('Hydrating results', done, total)
+                        );
                     }
-                },
-                onChunkComplete: (chunk, doneCount) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'idle';
-                        this._patchTaskCard(item.id);
-                    }
-                    this._setBulkHydrateProgress(doneCount, toHydrate.length);
                 }
             });
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(
+                    loadEntryId,
+                    this._searchLoadMessage('Hydrating results', hydratedTotal, toHydrate.length)
+                );
+            }
             this._onScopeDataEnriched();
             const meta = this._getResultsPaginationMeta();
             if (meta && meta.page >= meta.totalPages) {
                 this._state.resultsPage = 0;
             }
-            this._renderResults();
             Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) in tab');
         } catch (err) {
-            for (const item of toHydrate) {
-                this._getHydrateUi(item.id).status = 'idle';
-                this._patchTaskCard(item.id);
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating results — failed');
             }
             if (!this._handleDashSessionRefreshError(err)) {
                 Logger.warn('dashboard: bulk hydrate failed', err);
             }
         } finally {
             this._state.hydrateBulkActive = false;
+            this._state.loading = false;
+            this._state.searchLoadPhase = '';
+            this._resetSearchLoadLog();
             this._syncBulkHydrateUi();
             this._syncResultsRangeCountUi();
+            this._renderResults();
         }
     },
 
@@ -9053,7 +9001,7 @@ const searchOutputMethods = {
                 if (this._state.cachedItems !== null) {
                     await this._refreshResultsView({
                         filterSource: 'search-defaults',
-                        prehydrateFirstPage: true
+                        prehydrateInitialBatch: true
                     });
                 } else {
                     this._state.loading = false;
@@ -9152,9 +9100,8 @@ const searchOutputMethods = {
         this._state.hydrateBulkActive = false;
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
-        this._state.autoHydrateScheduled = false;
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
+        this._state.pageHydrateScheduled = false;
+        this._state.pageHydratePending = false;
         this._state.disputesBulkIncomplete = false;
         this._state.filterSelectionOrder = [];
         this._resetFilterLists();
@@ -9750,7 +9697,7 @@ const searchOutputMethods = {
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
-        this._scheduleAutoHydrateBackground();
+        this._schedulePageHydrate();
     },
 
     _dashCopyInnerHtml(value, highlight) {
@@ -11513,7 +11460,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.36',
+    _version: '4.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
