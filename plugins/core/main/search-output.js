@@ -4736,17 +4736,13 @@ const searchOutputMethods = {
             el.innerHTML = '';
             return;
         }
-        const row2 = this._q('#wf-dash-results-toolbar-row2');
-        if (row2 && row2.style.display === 'none') {
-            row2.style.display = 'flex';
-        }
         const label = this._labelStyle();
         el.style.display = 'inline-flex';
-        if (el.querySelector('[aria-hidden="true"]') && el.querySelector('span:last-child')) {
+        if (el.querySelector('[data-wf-dash-load-mark]')) {
             return;
         }
         el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
-            + this._loadingSpinnerHtml(14)
+            + this._loadingSpinnerHtml(14).replace('<span aria-hidden="true"', '<span data-wf-dash-load-mark="1" aria-hidden="true"')
             + '<span>Hydrating tasks</span></span>';
     },
 
@@ -6866,6 +6862,7 @@ const searchOutputMethods = {
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
@@ -6873,7 +6870,6 @@ const searchOutputMethods = {
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
-                            <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto; align-self: center;"></div>
                             <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
                             <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
@@ -9420,15 +9416,23 @@ const searchOutputMethods = {
 
     _searchLoadLogMarkHtml(e) {
         if (e.resolved) {
-            return '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+            return '<span data-wf-dash-load-mark="1" aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
         }
-        return this._loadingSpinnerHtml(12);
+        return this._loadingSpinnerHtml(12).replace(
+            '<span aria-hidden="true"',
+            '<span data-wf-dash-load-mark="1" aria-hidden="true"'
+        );
     },
 
     _searchLoadLogRowHtml(e) {
-        return `<div data-wf-dash-results-load-log-line="${e.id}" style="${this._searchLoadLogRowStyle(e)}">`
+        return `<div data-wf-dash-results-load-log-line="${e.id}" data-wf-dash-load-state="${this._searchLoadLogStateKey(e)}" style="${this._searchLoadLogRowStyle(e)}">`
             + this._searchLoadLogMarkHtml(e)
-            + `<span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
+            + `<span data-wf-dash-load-text="1" style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
+    },
+
+    _searchLoadLogStateKey(e) {
+        if (!e.resolved) return 'pending';
+        return String(e.message || '').endsWith('— failed') ? 'failed' : 'ok';
     },
 
     _searchLoadPhaseDisplayText(phase) {
@@ -9452,8 +9456,23 @@ const searchOutputMethods = {
     },
 
     _searchLoadOverlayStyle() {
-        return 'display: flex; align-items: flex-start; justify-content: flex-start;'
-            + ' padding: 48px 16px 48px clamp(48px, 33%, 220px); min-height: 120px;';
+        return 'display: flex; align-items: flex-start; width: 100%; box-sizing: border-box;'
+            + ' padding: 48px 16px; min-height: 120px;';
+    },
+
+    _searchLoadOverlayAnchorStyle() {
+        return 'flex: 0 0 33%; min-width: 0; align-self: stretch;';
+    },
+
+    _reorderSearchLoadLogRows(logEl, entries) {
+        for (let i = 0; i < entries.length; i++) {
+            const row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entries[i].id}"]`);
+            if (!row) continue;
+            const desiredBefore = logEl.children[i];
+            if (desiredBefore !== row) {
+                logEl.insertBefore(row, desiredBefore || null);
+            }
+        }
     },
 
     _patchSearchLoadLogDom(colEl) {
@@ -9483,21 +9502,25 @@ const searchOutputMethods = {
                 wrapper.innerHTML = this._searchLoadLogRowHtml(entry);
                 row = wrapper.firstElementChild;
                 logEl.appendChild(row);
-            } else {
+                continue;
+            }
+            const stateKey = this._searchLoadLogStateKey(entry);
+            if (row.getAttribute('data-wf-dash-load-state') !== stateKey) {
+                row.setAttribute('data-wf-dash-load-state', stateKey);
                 row.style.cssText = this._searchLoadLogRowStyle(entry);
-                const textSpan = row.querySelector('span:last-child');
-                if (textSpan) textSpan.textContent = entry.message;
-                const markEl = row.querySelector('[aria-hidden="true"]');
-                const hasCheck = markEl && markEl.textContent.trim() === '✅';
-                if (entry.resolved && !hasCheck) {
-                    markEl.outerHTML = '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+                if (entry.resolved) {
+                    const markEl = row.querySelector('[data-wf-dash-load-mark]');
+                    if (markEl) {
+                        markEl.outerHTML = '<span data-wf-dash-load-mark="1" aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+                    }
                 }
             }
+            const textSpan = row.querySelector('[data-wf-dash-load-text]');
+            if (textSpan && textSpan.textContent !== entry.message) {
+                textSpan.textContent = entry.message;
+            }
         }
-        for (const entry of entries) {
-            const row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entry.id}"]`);
-            if (row) logEl.appendChild(row);
-        }
+        this._reorderSearchLoadLogRows(logEl, entries);
     },
 
     _searchLoadLogHtml() {
@@ -9513,14 +9536,16 @@ const searchOutputMethods = {
         wrap.querySelectorAll('[data-wf-dash-task-card]').forEach((el) => el.remove());
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
-        const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; flex: 1; min-width: 0; max-width: min(420px, 100%);';
         const overlayStyle = this._searchLoadOverlayStyle();
+        const anchorStyle = this._searchLoadOverlayAnchorStyle();
         const stopBtnHtml = this._stopSearchButtonHtml();
         const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
             const phaseDisplay = this._searchLoadPhaseDisplayText(phase);
             wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="${overlayStyle}">
+                <div data-wf-dash-results-load-anchor aria-hidden="true" style="${anchorStyle}"></div>
                 <div data-wf-dash-results-load-col style="${colStyle}">
                     ${stopBtnHtml}
                     <span data-wf-dash-results-load-phase style="${phaseStyle}${phaseDisplay ? '' : ' display: none;'}"${phaseDisplay ? ' data-wf-dash-dots="1"' : ''}>${dashEscHtml(phaseDisplay)}</span>
@@ -9530,8 +9555,17 @@ const searchOutputMethods = {
             return;
         }
         loadingEl.style.cssText = overlayStyle;
-        loadingEl.querySelectorAll(':scope > [aria-hidden="true"]').forEach((el) => el.remove());
+        let anchorEl = loadingEl.querySelector('[data-wf-dash-results-load-anchor]');
+        if (!anchorEl) {
+            loadingEl.insertAdjacentHTML('afterbegin',
+                `<div data-wf-dash-results-load-anchor aria-hidden="true" style="${anchorStyle}"></div>`);
+            anchorEl = loadingEl.querySelector('[data-wf-dash-results-load-anchor]');
+        } else {
+            anchorEl.style.cssText = anchorStyle;
+        }
+        loadingEl.querySelectorAll(':scope > [aria-hidden="true"]:not([data-wf-dash-results-load-anchor])').forEach((el) => el.remove());
         const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
+        if (colEl) colEl.style.cssText = colStyle;
         let stopBtn = colEl ? colEl.querySelector('[data-wf-dash-stop-search]') : null;
         if (stopBtnHtml) {
             if (!stopBtn && colEl) {
@@ -11465,7 +11499,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.32',
+    _version: '4.33',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
