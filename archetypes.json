@@ -1,7 +1,7 @@
 {
   "version": "10.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.70",
+  "archetypesVersion": "12.71",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -66,8 +66,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.33",
-      "hash": "sha256-0dce14e6dfeeff3ede188c3aa17c50e3023feae5ed674ae14b8fccbda487ff07",
+      "version": "4.34",
+      "hash": "sha256-e4179b87f26a3d33077b09ae2a0a6c772bc71c74b4ab732d9c142c7211980c0d",
       "log": false
     },
     {

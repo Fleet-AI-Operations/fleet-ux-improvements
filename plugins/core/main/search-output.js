@@ -4698,8 +4698,9 @@ const searchOutputMethods = {
         const authorIds = this._state.activeSearchAuthorIds || [];
         const hasContributors = authorIds.length > 0;
         const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
-        wrap.style.display = hasResults ? 'inline-flex' : 'none';
-        if (!hasResults) return;
+        const show = hasResults && !this._isTasksHydratingActive();
+        wrap.style.display = show ? 'inline-flex' : 'none';
+        if (!show) return;
         let mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
         if (!hasContributors && mode === DASH_VERSION_MODE_CONTRIBUTOR) {
             mode = DASH_VERSION_MODE_FINAL;
@@ -4734,16 +4735,19 @@ const searchOutputMethods = {
         if (!this._isTasksHydratingActive()) {
             el.style.display = 'none';
             el.innerHTML = '';
+            this._syncVersionModeDropdownUi();
             return;
         }
         const label = this._labelStyle();
         el.style.display = 'inline-flex';
         if (el.querySelector('[data-wf-dash-load-mark]')) {
+            this._syncVersionModeDropdownUi();
             return;
         }
         el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
             + this._loadingSpinnerHtml(14).replace('<span aria-hidden="true"', '<span data-wf-dash-load-mark="1" aria-hidden="true"')
             + '<span>Hydrating tasks</span></span>';
+        this._syncVersionModeDropdownUi();
     },
 
     _syncDropExcludedUi() {
@@ -11499,7 +11503,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.33',
+    _version: '4.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
