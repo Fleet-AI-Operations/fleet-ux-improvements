@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.23',
+    _version: '6.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -555,7 +555,9 @@ const plugin = {
         if (!this._modal || this._modal.querySelector('#wf-dash-spinner-style')) return;
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-spinner-style';
-        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }'
+            + ' @keyframes wf-dash-dots { 0%, 32% { content: \'.\'; } 33%, 65% { content: \'..\'; } 66%, 99% { content: \'...\'; } }'
+            + ' [data-wf-dash-dots]::after { display: inline; content: \'.\'; animation: wf-dash-dots 1.5s linear infinite; }';
         this._modal.appendChild(style);
     },
 

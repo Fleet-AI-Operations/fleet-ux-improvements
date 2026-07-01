@@ -4736,8 +4736,15 @@ const searchOutputMethods = {
             el.innerHTML = '';
             return;
         }
+        const row2 = this._q('#wf-dash-results-toolbar-row2');
+        if (row2 && row2.style.display === 'none') {
+            row2.style.display = 'flex';
+        }
         const label = this._labelStyle();
-        el.style.display = 'block';
+        el.style.display = 'inline-flex';
+        if (el.querySelector('[aria-hidden="true"]') && el.querySelector('span:last-child')) {
+            return;
+        }
         el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
             + this._loadingSpinnerHtml(14)
             + '<span>Hydrating tasks</span></span>';
@@ -6023,12 +6030,32 @@ const searchOutputMethods = {
 
         this._state.autoHydrateActive = true;
         this._syncResultsHydrateBannerUi();
+        const loadEntryId = this._beginSearchLoadEntry('Hydrating page cards');
         try {
             const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
-                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
+                onProgress: (done, total) => {
+                    if (loadEntryId != null) {
+                        this._updateSearchLoadEntry(
+                            loadEntryId,
+                            this._searchLoadMessage('Hydrating page cards', done, total)
+                        );
+                    }
+                }
             });
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(
+                    loadEntryId,
+                    this._searchLoadMessage('Hydrating page cards', hydrated, onPage.length)
+                );
+            }
             if (hydrated > 0) this._onScopeDataEnriched();
             return hydrated;
+        } catch (err) {
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating page cards — failed');
+            }
+            throw err;
         } finally {
             this._state.autoHydrateActive = false;
             this._syncResultsHydrateBannerUi();
@@ -6846,6 +6873,7 @@ const searchOutputMethods = {
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
+                            <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto; align-self: center;"></div>
                             <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
                             <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
@@ -6879,7 +6907,6 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </div>
-                        <div id="wf-dash-results-hydrate-banner" style="display: none; margin-top: 8px;"></div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
@@ -9240,7 +9267,7 @@ const searchOutputMethods = {
 
     _requestStopSearchFetches() {
         if (!this._canShowStopSearchButton()) return;
-        Logger.log('search-output: stop fetches requested');
+        Logger.log('search-output: abort search requested');
         this._state.searchStopRequested = true;
         this._state.searchGeneration = (this._state.searchGeneration || 0) + 1;
     },
@@ -9248,7 +9275,7 @@ const searchOutputMethods = {
     _finishStoppedSearch(items) {
         const list = items || [];
         const hydratedCount = list.filter((it) => it && it.hydrated).length;
-        Logger.info('search-output: search stopped — ' + list.length + ' item(s)'
+        Logger.info('search-output: search aborted — ' + list.length + ' item(s)'
             + (hydratedCount > 0 ? ', ' + hydratedCount + ' hydrated' : ''));
         const hadPrior = this._isAdditiveResultsMode()
             && Array.isArray(this._state.resultsLoadSnapshot)
@@ -9271,7 +9298,7 @@ const searchOutputMethods = {
     _stopSearchButtonHtml() {
         if (!this._canShowStopSearchButton()) return '';
         const cls = this._dashBtnClass('basic', 'compact');
-        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Stop Fetches</button>`;
+        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Abort Search</button>`;
     },
 
     _resetSearchLoadLog() {
@@ -9312,7 +9339,7 @@ const searchOutputMethods = {
     },
 
     _searchLoadMessage(base, count, total) {
-        const label = String(base || '').trim();
+        const label = String(base || '').trim().replace(/\s*\(\d+(?:\/\d+)?\)\s*$/, '');
         if (count == null || Number.isNaN(Number(count))) return label;
         const n = Number(count);
         if (total != null && !Number.isNaN(Number(total)) && Number(total) !== n) {
@@ -9323,7 +9350,7 @@ const searchOutputMethods = {
 
     _trackSearchLoadPromise(message, promiseOrFn) {
         const base = String(message || '').trim();
-        const id = this._beginSearchLoadEntry(this._searchLoadMessage(base, 0));
+        const id = this._beginSearchLoadEntry(base);
         const tracker = {
             setCount: (count, total) => {
                 this._updateSearchLoadEntry(id, this._searchLoadMessage(base, count, total));
@@ -9382,21 +9409,101 @@ const searchOutputMethods = {
         return [...unresolvedEntries, ...resolvedEntries].slice(0, cap);
     },
 
+    _searchLoadLogRowStyle(e) {
+        const failed = e.resolved && String(e.message || '').endsWith('— failed');
+        const textStyle = e.resolved
+            ? (failed ? 'color: var(--destructive, #dc2626);' : 'color: var(--success, #16a34a);')
+            : 'color: var(--muted-foreground, #64748b);';
+        return 'display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 400;'
+            + ' line-height: 1.5; min-width: 0;' + textStyle;
+    },
+
+    _searchLoadLogMarkHtml(e) {
+        if (e.resolved) {
+            return '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+        }
+        return this._loadingSpinnerHtml(12);
+    },
+
+    _searchLoadLogRowHtml(e) {
+        return `<div data-wf-dash-results-load-log-line="${e.id}" style="${this._searchLoadLogRowStyle(e)}">`
+            + this._searchLoadLogMarkHtml(e)
+            + `<span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
+    },
+
+    _searchLoadPhaseDisplayText(phase) {
+        return String(phase || '').trim()
+            .replace(/\s*\(\d+(?:\/\d+)?\)\s*$/, '')
+            .replace(/[….]+\s*$/, '')
+            .replace(/\.\s*$/, '');
+    },
+
+    _applySearchLoadPhaseDom(phaseEl, phase) {
+        const display = this._searchLoadPhaseDisplayText(phase);
+        if (!display) {
+            phaseEl.textContent = '';
+            phaseEl.style.display = 'none';
+            phaseEl.removeAttribute('data-wf-dash-dots');
+            return;
+        }
+        phaseEl.textContent = display;
+        phaseEl.style.display = '';
+        phaseEl.setAttribute('data-wf-dash-dots', '1');
+    },
+
+    _searchLoadOverlayStyle() {
+        return 'display: flex; align-items: flex-start; justify-content: flex-start;'
+            + ' padding: 48px 16px 48px clamp(48px, 33%, 220px); min-height: 120px;';
+    },
+
+    _patchSearchLoadLogDom(colEl) {
+        if (!colEl) return;
+        const entries = this._visibleSearchLoadLogEntries();
+        let logEl = colEl.querySelector('[data-wf-dash-results-load-log]');
+        if (entries.length === 0) {
+            if (logEl) logEl.remove();
+            return;
+        }
+        if (!logEl) {
+            colEl.insertAdjacentHTML('beforeend',
+                '<div data-wf-dash-results-load-log style="margin-top: 8px; max-height: 160px; overflow-y: auto;'
+                + ' display: flex; flex-direction: column; gap: 2px;"></div>');
+            logEl = colEl.querySelector('[data-wf-dash-results-load-log]');
+        }
+        const visibleIds = new Set(entries.map((entry) => entry.id));
+        logEl.querySelectorAll('[data-wf-dash-results-load-log-line]').forEach((row) => {
+            const id = Number(row.getAttribute('data-wf-dash-results-load-log-line'));
+            if (!visibleIds.has(id)) row.remove();
+        });
+        const doc = this._pageWindow().document;
+        for (const entry of entries) {
+            let row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entry.id}"]`);
+            if (!row) {
+                const wrapper = doc.createElement('div');
+                wrapper.innerHTML = this._searchLoadLogRowHtml(entry);
+                row = wrapper.firstElementChild;
+                logEl.appendChild(row);
+            } else {
+                row.style.cssText = this._searchLoadLogRowStyle(entry);
+                const textSpan = row.querySelector('span:last-child');
+                if (textSpan) textSpan.textContent = entry.message;
+                const markEl = row.querySelector('[aria-hidden="true"]');
+                const hasCheck = markEl && markEl.textContent.trim() === '✅';
+                if (entry.resolved && !hasCheck) {
+                    markEl.outerHTML = '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+                }
+            }
+        }
+        for (const entry of entries) {
+            const row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entry.id}"]`);
+            if (row) logEl.appendChild(row);
+        }
+    },
+
     _searchLoadLogHtml() {
         const entries = this._visibleSearchLoadLogEntries();
         if (entries.length === 0) return '';
-        const rowStyle = 'display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 400;'
-            + ' line-height: 1.5; min-width: 0;';
-        const lines = entries.map((e) => {
-            const failed = e.resolved && String(e.message || '').endsWith('— failed');
-            const textStyle = e.resolved
-                ? (failed ? 'color: var(--destructive, #dc2626);' : 'color: var(--success, #16a34a);')
-                : 'color: var(--muted-foreground, #64748b);';
-            const mark = e.resolved
-                ? '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>'
-                : this._loadingSpinnerHtml(12);
-            return `<div data-wf-dash-results-load-log-line="${e.id}" style="${rowStyle}${textStyle}">${mark}<span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
-        }).join('');
+        const lines = entries.map((e) => this._searchLoadLogRowHtml(e)).join('');
         return `<div data-wf-dash-results-load-log style="margin-top: 8px; max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;">${lines}</div>`;
     },
 
@@ -9407,20 +9514,23 @@ const searchOutputMethods = {
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
         const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const overlayStyle = this._searchLoadOverlayStyle();
         const stopBtnHtml = this._stopSearchButtonHtml();
         const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
-            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
-                ${this._loadingSpinnerHtml(20)}
+            const phaseDisplay = this._searchLoadPhaseDisplayText(phase);
+            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="${overlayStyle}">
                 <div data-wf-dash-results-load-col style="${colStyle}">
                     ${stopBtnHtml}
-                    <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
+                    <span data-wf-dash-results-load-phase style="${phaseStyle}${phaseDisplay ? '' : ' display: none;'}"${phaseDisplay ? ' data-wf-dash-dots="1"' : ''}>${dashEscHtml(phaseDisplay)}</span>
                     ${logHtml}
                 </div>
             </div>`;
             return;
         }
+        loadingEl.style.cssText = overlayStyle;
+        loadingEl.querySelectorAll(':scope > [aria-hidden="true"]').forEach((el) => el.remove());
         const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
         let stopBtn = colEl ? colEl.querySelector('[data-wf-dash-stop-search]') : null;
         if (stopBtnHtml) {
@@ -9432,12 +9542,9 @@ const searchOutputMethods = {
         }
         const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
         if (phaseEl) {
-            phaseEl.textContent = phase;
-            phaseEl.style.display = phase ? '' : 'none';
+            this._applySearchLoadPhaseDom(phaseEl, phase);
         }
-        const logEl = loadingEl.querySelector('[data-wf-dash-results-load-log]');
-        if (logEl) logEl.remove();
-        if (logHtml && colEl) colEl.insertAdjacentHTML('beforeend', logHtml);
+        this._patchSearchLoadLogDom(colEl);
     },
 
     _setSearchLoadPhase(message, count, total) {
@@ -11358,7 +11465,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.31',
+    _version: '4.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
