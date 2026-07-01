@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.23',
+    _version: '6.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -228,9 +228,8 @@ const plugin = {
             hydrateBulkActive: false,
             hydrateFetchActive: false,
             autoHydrateActive: false,
-            autoHydrateScheduled: false,
-            autoHydratePending: false,
-            autoHydratePendingLogged: false,
+            pageHydrateScheduled: false,
+            pageHydratePending: false,
             autoHydratePassId: 0,
             timeFilterUserPicked: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
@@ -555,7 +554,9 @@ const plugin = {
         if (!this._modal || this._modal.querySelector('#wf-dash-spinner-style')) return;
         const style = this._pageWindow().document.createElement('style');
         style.id = 'wf-dash-spinner-style';
-        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }';
+        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }'
+            + ' @keyframes wf-dash-dots { 0%, 32% { content: \'.\'; } 33%, 65% { content: \'..\'; } 66%, 99% { content: \'...\'; } }'
+            + ' [data-wf-dash-dots]::after { display: inline; content: \'.\'; animation: wf-dash-dots 1.5s linear infinite; }';
         this._modal.appendChild(style);
     },
 
@@ -1612,17 +1613,11 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--get-verifier,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
             '  width: auto;',
+            '  min-width: 0;',
             '  border: 1px solid var(--brand, var(--primary, #2563eb));',
             '  background: #000;',
             '  color: #fff;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action--get-verifier {',
-            '  min-width: 5.5rem;',
-            '  padding: 0 4px;',
-            '}',
-            '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
-            '  min-width: 0;',
-            '  padding: 0 6px;',
+            '  padding: 0 8px;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--get-verifier:hover,',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',

@@ -13,7 +13,7 @@
 
 const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
-const DASH_AUTO_HYDRATE_MANUAL_THRESHOLD = 500;
+const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
@@ -131,6 +131,10 @@ const DASH_RESULTS_MODE_HINTS = {
 };
 const DASH_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
 const DASH_NONE_SELECTED_HINT = 'None selected = all.';
+
+const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
+const DASH_VERSION_MODE_V1 = 'all_v1';
+const DASH_VERSION_MODE_FINAL = 'all_final';
 
 const DASH_SORT_DEFAULT = 'task_submitted:desc';
 const DASH_SORT_METRICS = [
@@ -3256,8 +3260,8 @@ const searchOutputMethods = {
             Logger.warn('dashboard: bootstrap failed', err);
         } finally {
             this._refreshCatalogDependentUi();
-            if (this._state.autoHydratePending && this._isOpen()) {
-                this._scheduleAutoHydrateBackground();
+            if (this._state.pageHydratePending && this._isOpen()) {
+                this._schedulePageHydrate();
             }
         }
     },
@@ -3757,6 +3761,9 @@ const searchOutputMethods = {
         this._state.activeSearchAfterIso = afterIso;
         this._state.activeSearchBeforeIso = beforeIso;
         this._state.activeSearchAuthorIds = authorIds || [];
+        this._state.versionMode = authorIds.length > 0
+            ? DASH_VERSION_MODE_CONTRIBUTOR
+            : DASH_VERSION_MODE_FINAL;
 
         const preserveDisputeState = this._isAdditiveResultsMode()
             && Array.isArray(this._state.resultsLoadSnapshot)
@@ -4264,11 +4271,9 @@ const searchOutputMethods = {
         this._state.loading = true;
         this._state.hydrateBulkActive = false;
         this._state.autoHydrateActive = false;
-        this._state.autoHydrateScheduled = false;
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
+        this._state.pageHydrateScheduled = false;
+        this._state.pageHydratePending = false;
         this._state.autoHydratePassId = (this._state.autoHydratePassId || 0) + 1;
-        this._state.manualHydrateThresholdLogged = false;
 
         if (additive && this._state.cachedItems && this._state.cachedItems.length > 0) {
             this._state.resultsLoadSnapshot = this._state.cachedItems.slice();
@@ -4681,6 +4686,36 @@ const searchOutputMethods = {
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
         this._syncDropExcludedUi();
+        this._syncVersionModeDropdownUi();
+    },
+
+    _syncVersionModeDropdownUi() {
+        const wrap = this._q('#wf-dash-version-mode-wrap');
+        const sel = this._q('#wf-dash-version-mode');
+        if (!wrap || !sel) return;
+        const authorIds = this._state.activeSearchAuthorIds || [];
+        const hasContributors = authorIds.length > 0;
+        const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
+        const show = hasResults && !this._isTasksHydratingActive();
+        wrap.style.display = show ? 'inline-flex' : 'none';
+        if (!show) return;
+        let mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+        if (!hasContributors && mode === DASH_VERSION_MODE_CONTRIBUTOR) {
+            mode = DASH_VERSION_MODE_FINAL;
+            this._state.versionMode = mode;
+        }
+        sel.innerHTML = this._dashVersionModeSelectOptionsHtml(hasContributors, mode);
+    },
+
+    _dashVersionModeSelectOptionsHtml(includeContributorMatch, selectedValue) {
+        const selected = String(selectedValue || DASH_VERSION_MODE_FINAL);
+        let html = '';
+        if (includeContributorMatch) {
+            html += `<option value="${DASH_VERSION_MODE_CONTRIBUTOR}"${selected === DASH_VERSION_MODE_CONTRIBUTOR ? ' selected' : ''}>Contributor match</option>`;
+        }
+        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>All v1s</option>`;
+        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>All final versions</option>`;
+        return html;
     },
 
     _isTasksHydratingActive() {
@@ -4698,13 +4733,19 @@ const searchOutputMethods = {
         if (!this._isTasksHydratingActive()) {
             el.style.display = 'none';
             el.innerHTML = '';
+            this._syncVersionModeDropdownUi();
             return;
         }
         const label = this._labelStyle();
-        el.style.display = 'block';
+        el.style.display = 'inline-flex';
+        if (el.querySelector('[data-wf-dash-load-mark]')) {
+            this._syncVersionModeDropdownUi();
+            return;
+        }
         el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
-            + this._loadingSpinnerHtml(14)
+            + this._loadingSpinnerHtml(14).replace('<span aria-hidden="true"', '<span data-wf-dash-load-mark="1" aria-hidden="true"')
             + '<span>Hydrating tasks</span></span>';
+        this._syncVersionModeDropdownUi();
     },
 
     _syncDropExcludedUi() {
@@ -4896,7 +4937,7 @@ const searchOutputMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateFirstPage = false } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -4979,21 +5020,21 @@ const searchOutputMethods = {
             this._validateRangeUi();
         };
 
-        if (prehydrateFirstPage && (this._state.resultsPage || 0) === 0) {
-            const onPage = this._getUnhydratedOnPage();
-            if (onPage.length > 0) {
-                this._setSearchLoadPhase('Hydrating first page…', onPage.length);
+        if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
+            const batch = this._getInitialHydrateBatch();
+            if (batch.length > 0) {
+                this._setSearchLoadPhase('Hydrating results…', batch.length);
                 this._syncSearchLoadPhaseUi();
-                return this._prehydrateFirstPageBeforeDisplay().then((hydrated) => {
+                return this._prehydrateInitialBatchBeforeDisplay().then((hydrated) => {
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     if (hydrated > 0) {
-                        Logger.log('search-output: first page prehydrate complete — ' + hydrated + ' card(s)');
+                        Logger.log('search-output: initial hydrate batch complete — ' + hydrated + ' card(s)');
                     }
                     finishRender();
                     return true;
                 }).catch((err) => {
-                    Logger.warn('search-output: first page prehydrate failed', err);
+                    Logger.warn('search-output: initial hydrate batch failed', err);
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     finishRender();
@@ -5174,6 +5215,47 @@ const searchOutputMethods = {
         this._syncResultsListDerivedUi();
         this._renderResults();
         this._updateApplyFiltersUi();
+    },
+
+    _applyVersionModeChange(mode) {
+        const next = String(mode || DASH_VERSION_MODE_FINAL);
+        if (this._state.versionMode === next) return;
+        this._state.versionMode = next;
+        for (const ui of Object.values(this._state.cardUi || {})) {
+            if (!ui.expanded) ui.selectedDisplayNo = null;
+        }
+        this._renderResults();
+        Logger.log('search-output: version mode → ' + next);
+    },
+
+    _contributorMatchDisplayNo(item, versions) {
+        const authorIds = this._state.activeSearchAuthorIds || [];
+        const contributorSet = authorIds.length > 0
+            ? this._contributorSetFromAuthorIds(authorIds)
+            : null;
+        const matchingNos = [];
+        const allFeedback = (item.task && item.task.allFeedback) || [];
+        if (contributorSet) {
+            for (const entry of allFeedback) {
+                const reviewerId = entry.reviewer && entry.reviewer.id
+                    ? String(entry.reviewer.id).trim()
+                    : '';
+                if (reviewerId && this._profileIdMatchesContributorSet(reviewerId, contributorSet)
+                    && entry.linkedDisplayVersionNo != null) {
+                    matchingNos.push(entry.linkedDisplayVersionNo);
+                }
+            }
+        }
+        if (matchingNos.length > 0) {
+            return Math.max(...matchingNos);
+        }
+        if (item.selectedFeedbackId) {
+            const entry = allFeedback.find((f) => f.id === item.selectedFeedbackId);
+            if (entry && entry.linkedDisplayVersionNo != null) {
+                return entry.linkedDisplayVersionNo;
+            }
+        }
+        return versions[versions.length - 1].displayVersionNo;
     },
 
     _findCachedItem(itemId) {
@@ -5922,36 +6004,57 @@ const searchOutputMethods = {
         return this._getPaginatedViewItems().filter((it) => !it.hydrated);
     },
 
-    _getUnhydratedBeyondPage() {
-        const pageIds = new Set(this._getPaginatedViewItems().map((it) => it.id));
-        return this._getUnhydratedInView().filter((it) => !pageIds.has(it.id));
+    _getInitialHydrateBatch() {
+        return (this._getViewItems() || [])
+            .slice(0, DASH_INITIAL_HYDRATE_CAP)
+            .filter((it) => it && !it.hydrated);
     },
 
     _needsManualHydrateForRemainder() {
-        return this._getUnhydratedInView().length >= DASH_AUTO_HYDRATE_MANUAL_THRESHOLD;
+        const view = this._getViewItems() || [];
+        return view.length > DASH_INITIAL_HYDRATE_CAP && this._getUnhydratedInView().length > 0;
     },
 
-    async _prehydrateFirstPageBeforeDisplay() {
+    async _prehydrateInitialBatchBeforeDisplay() {
         if (this._state.committed && this._state.committed.retrieveMode) return 0;
-        const onPage = this._getUnhydratedOnPage();
-        if (onPage.length === 0) return 0;
+        const batch = this._getInitialHydrateBatch();
+        if (batch.length === 0) return 0;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('search-output: first-page prehydrate skipped — dashboardData not loaded');
+            Logger.warn('search-output: initial hydrate batch skipped — dashboardData not loaded');
             return 0;
         }
         const contextKey = this._autoHydrateContextKey();
-        const meta = this._getResultsPaginationMeta();
-        Logger.log('search-output: prehydrating first page before display — ' + onPage.length + ' card(s)'
-            + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
+        Logger.log('search-output: prehydrating initial batch before display — ' + batch.length + ' card(s)');
 
         this._state.autoHydrateActive = true;
         this._syncResultsHydrateBannerUi();
+        const loadEntryId = this._beginSearchLoadEntry('Hydrating results');
         try {
-            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
-                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+            const hydrated = await this._hydrateItemsInBulkBatches(batch, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
+                onProgress: (done, total) => {
+                    this._setSearchLoadPhase('Hydrating results…', done, total);
+                    if (loadEntryId != null) {
+                        this._updateSearchLoadEntry(
+                            loadEntryId,
+                            this._searchLoadMessage('Hydrating results', done, total)
+                        );
+                    }
+                }
             });
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(
+                    loadEntryId,
+                    this._searchLoadMessage('Hydrating results', hydrated, batch.length)
+                );
+            }
             if (hydrated > 0) this._onScopeDataEnriched();
             return hydrated;
+        } catch (err) {
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating results — failed');
+            }
+            throw err;
         } finally {
             this._state.autoHydrateActive = false;
             this._syncResultsHydrateBannerUi();
@@ -5961,131 +6064,73 @@ const searchOutputMethods = {
     _autoHydrateContextKey() {
         const tab = this._state.resultsKindTab || 'all';
         const pass = this._state.autoHydratePassId || 0;
-        return pass + '|' + tab;
+        const page = this._state.resultsPage || 0;
+        return pass + '|' + tab + '|' + page;
     },
 
-    _scheduleAutoHydrateBackground() {
-        if (this._state.autoHydrateScheduled || this._state.autoHydrateActive) return;
+    _schedulePageHydrate() {
+        if (this._state.pageHydrateScheduled || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
+        if (this._state.loading) return;
         if (!this._bulkHydrateShowable()) {
-            this._state.autoHydratePending = false;
+            this._state.pageHydratePending = false;
             return;
         }
         const onPage = this._getUnhydratedOnPage();
-        const beyondPage = this._getUnhydratedBeyondPage();
-        const manualRemainder = this._needsManualHydrateForRemainder();
-        if (onPage.length === 0 && (beyondPage.length === 0 || manualRemainder)) {
-            this._state.autoHydratePending = false;
-            if (manualRemainder && beyondPage.length > 0) {
-                if (!this._state.manualHydrateThresholdLogged) {
-                    Logger.log('search-output: remainder auto-hydrate skipped — '
-                        + beyondPage.length + ' unhydrated result(s) beyond first page (manual threshold '
-                        + DASH_AUTO_HYDRATE_MANUAL_THRESHOLD + '+ total)');
-                    this._state.manualHydrateThresholdLogged = true;
-                }
-                this._syncBulkHydrateUi();
-            }
+        if (onPage.length === 0) {
+            this._state.pageHydratePending = false;
             return;
         }
-        this._state.manualHydrateThresholdLogged = false;
+        if (this._state.committed && this._state.committed.retrieveMode) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            if (!this._state.autoHydratePendingLogged) {
-                Logger.debug('dashboard: auto-hydrate deferred — dashboardData not ready');
-                this._state.autoHydratePendingLogged = true;
-            }
-            this._state.autoHydratePending = true;
+            this._state.pageHydratePending = true;
             return;
         }
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
-        this._state.autoHydrateScheduled = true;
+        this._state.pageHydratePending = false;
+        this._state.pageHydrateScheduled = true;
         queueMicrotask(() => {
-            this._state.autoHydrateScheduled = false;
-            void this._autoHydrateBackground();
+            this._state.pageHydrateScheduled = false;
+            void this._hydrateCurrentPage();
         });
     },
 
-    async _autoHydrateBackground() {
-        if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
-        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('dashboard: auto-hydrate skipped — dashboardData not loaded');
+    async _hydrateCurrentPage() {
+        if (!this._bulkHydrateShowable() || this._state.autoHydrateActive || this._state.hydrateBulkActive || this._state.loading) {
             return;
         }
-        const contextKey = this._autoHydrateContextKey();
-        const manualRemainder = this._needsManualHydrateForRemainder();
         const onPage = this._getUnhydratedOnPage();
-        const beyondPage = manualRemainder ? [] : this._getUnhydratedBeyondPage();
-        if (onPage.length === 0 && beyondPage.length === 0) {
-            if (manualRemainder) this._syncBulkHydrateUi();
+        if (onPage.length === 0) return;
+        if (this._state.committed && this._state.committed.retrieveMode) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             return;
         }
 
+        const contextKey = this._autoHydrateContextKey();
         const meta = this._getResultsPaginationMeta();
-        const phaseParts = [];
-        if (onPage.length > 0) phaseParts.push(onPage.length + ' on first page');
-        if (beyondPage.length > 0) phaseParts.push(beyondPage.length + ' in background');
-        Logger.log('dashboard: auto-hydrate — ' + phaseParts.join(', ')
+        Logger.log('search-output: page hydrate — ' + onPage.length + ' card(s)'
             + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
 
         this._state.autoHydrateActive = true;
-        let hydratedTotal = 0;
-        const hydrateBatch = async (items, label) => {
-            if (items.length === 0) return 0;
-            return this._hydrateItemsInBulkBatches(items, {
-                shouldCancel: () => this._autoHydrateContextKey() !== contextKey,
-                onChunkStart: (chunk) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'loading';
-                        this._patchTaskCard(item.id);
-                    }
-                },
-                onChunkComplete: (chunk) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'idle';
-                        this._patchTaskCard(item.id);
-                    }
-                }
-            });
-        };
+        this._syncResultsHydrateBannerUi();
         try {
-            if (onPage.length > 0) {
-                hydratedTotal += await hydrateBatch(onPage);
-                if (this._autoHydrateContextKey() === contextKey && hydratedTotal > 0) {
-                    this._onScopeDataEnriched();
-                    this._renderResults();
-                }
-            }
+            const hydrated = await this._hydrateItemsInBulkBatches(onPage, {
+                shouldCancel: () => this._autoHydrateContextKey() !== contextKey
+            });
             if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
+                Logger.debug('search-output: page hydrate cancelled — view changed');
                 return;
             }
-            if (manualRemainder) {
-                if (hydratedTotal > 0) {
-                    Logger.log('dashboard: auto-hydrate page complete — ' + hydratedTotal + ' card(s); remainder manual');
-                }
-                this._syncBulkHydrateUi();
-                return;
-            }
-            if (beyondPage.length > 0) {
-                const bgHydrated = await hydrateBatch(beyondPage);
-                hydratedTotal += bgHydrated;
-            }
-            if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('dashboard: auto-hydrate cancelled — results tab or search changed');
-            } else if (hydratedTotal > 0) {
+            if (hydrated > 0) {
                 this._onScopeDataEnriched();
                 this._renderResults();
-                Logger.log('dashboard: auto-hydrate complete — ' + hydratedTotal + ' card(s)');
+                Logger.log('search-output: page hydrate complete — ' + hydrated + ' card(s)');
             }
         } catch (err) {
-            for (const item of [...onPage, ...beyondPage]) {
-                this._getHydrateUi(item.id).status = 'idle';
-                this._patchTaskCard(item.id);
-            }
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: auto-hydrate failed', err);
+                Logger.warn('search-output: page hydrate failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
+            this._syncResultsHydrateBannerUi();
             this._syncBulkHydrateUi();
         }
     },
@@ -6183,7 +6228,7 @@ const searchOutputMethods = {
         row2.style.alignItems = 'center';
         row2.style.justifyContent = 'space-between';
         row2.style.width = '100%';
-        row2.style.gap = '12px';
+        row2.style.gap = '8px';
         const committed = this._state.committed;
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
@@ -6229,45 +6274,52 @@ const searchOutputMethods = {
 
         this._logDashApiClick('bulk-hydrate', toHydrate.length + ' card(s)');
         this._state.hydrateBulkActive = true;
+        this._state.loading = true;
+        this._resetSearchLoadLog();
+        this._setSearchLoadPhase('Hydrating results…', toHydrate.length);
+        this._syncSearchLoadPhaseUi();
         this._syncBulkHydrateUi();
-        this._setBulkHydrateProgress(0, toHydrate.length);
+        const loadEntryId = this._beginSearchLoadEntry('Hydrating results');
         let hydratedTotal = 0;
         try {
             hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
-                onChunkStart: (chunk, offset) => {
-                    this._setBulkHydrateProgress(offset, toHydrate.length);
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'loading';
-                        this._patchTaskCard(item.id);
+                onProgress: (done, total) => {
+                    this._setSearchLoadPhase('Hydrating results…', done, total);
+                    if (loadEntryId != null) {
+                        this._updateSearchLoadEntry(
+                            loadEntryId,
+                            this._searchLoadMessage('Hydrating results', done, total)
+                        );
                     }
-                },
-                onChunkComplete: (chunk, doneCount) => {
-                    for (const item of chunk) {
-                        this._getHydrateUi(item.id).status = 'idle';
-                        this._patchTaskCard(item.id);
-                    }
-                    this._setBulkHydrateProgress(doneCount, toHydrate.length);
                 }
             });
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(
+                    loadEntryId,
+                    this._searchLoadMessage('Hydrating results', hydratedTotal, toHydrate.length)
+                );
+            }
             this._onScopeDataEnriched();
             const meta = this._getResultsPaginationMeta();
             if (meta && meta.page >= meta.totalPages) {
                 this._state.resultsPage = 0;
             }
-            this._renderResults();
             Logger.log('dashboard: bulk hydrate complete — ' + hydratedTotal + ' card(s) in tab');
         } catch (err) {
-            for (const item of toHydrate) {
-                this._getHydrateUi(item.id).status = 'idle';
-                this._patchTaskCard(item.id);
+            if (loadEntryId != null) {
+                this._resolveSearchLoadEntry(loadEntryId, 'Hydrating results — failed');
             }
             if (!this._handleDashSessionRefreshError(err)) {
                 Logger.warn('dashboard: bulk hydrate failed', err);
             }
         } finally {
             this._state.hydrateBulkActive = false;
+            this._state.loading = false;
+            this._state.searchLoadPhase = '';
+            this._resetSearchLoadLog();
             this._syncBulkHydrateUi();
             this._syncResultsRangeCountUi();
+            this._renderResults();
         }
     },
 
@@ -6593,6 +6645,18 @@ const searchOutputMethods = {
             : base + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _resultsHeaderBarStyle() {
+        return 'padding: 0 8px 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;';
+    },
+
+    _resultsHeaderRowStyle() {
+        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 0 0;';
+    },
+
+    _resultsToolbarRow2Style() {
+        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: space-between; gap: 8px; width: 100%; flex-wrap: wrap;';
+    },
+
     _searchSectionStyle() {
         return 'background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #ffffff)); border-radius: 10px; padding: 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box;';
     },
@@ -6755,23 +6819,32 @@ const searchOutputMethods = {
                     </div>`;
         const rightHtml = `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
-                    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="${this._resultsHeaderBarStyle()}">
+                        <div style="${this._resultsHeaderRowStyle()}">
                             <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; flex-wrap: wrap;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
                                 <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
                         </div>
-                        <div id="wf-dash-results-toolbar-row2" style="display: none; margin-top: 10px; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap;">
+                        <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
                             <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
                             <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0;">
+                                        <span>Version</span>
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 10rem; max-width: 14rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                            <option value="contributor_match">Contributor match</option>
+                                            <option value="all_v1">All v1s</option>
+                                            <option value="all_final">All final versions</option>
+                                        </select>
+                                    </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
                                         <span>Sort</span>
                                         <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 18rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
@@ -6794,7 +6867,6 @@ const searchOutputMethods = {
                                 </div>
                             </div>
                         </div>
-                        <div id="wf-dash-results-hydrate-banner" style="display: none; margin-top: 8px;"></div>
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
@@ -8929,7 +9001,7 @@ const searchOutputMethods = {
                 if (this._state.cachedItems !== null) {
                     await this._refreshResultsView({
                         filterSource: 'search-defaults',
-                        prehydrateFirstPage: true
+                        prehydrateInitialBatch: true
                     });
                 } else {
                     this._state.loading = false;
@@ -9015,6 +9087,8 @@ const searchOutputMethods = {
         this._state.hasSearched = false;
         this._state.committed = null;
         this._state.cardUi = {};
+        this._state.versionMode = DASH_VERSION_MODE_FINAL;
+        this._state.activeSearchAuthorIds = [];
         this._state.disputeClaimUi = {};
         this._state.hydrateUi = {};
         this._state.actionBlockUi = {};
@@ -9026,9 +9100,8 @@ const searchOutputMethods = {
         this._state.hydrateBulkActive = false;
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
-        this._state.autoHydrateScheduled = false;
-        this._state.autoHydratePending = false;
-        this._state.autoHydratePendingLogged = false;
+        this._state.pageHydrateScheduled = false;
+        this._state.pageHydratePending = false;
         this._state.disputesBulkIncomplete = false;
         this._state.filterSelectionOrder = [];
         this._resetFilterLists();
@@ -9153,7 +9226,7 @@ const searchOutputMethods = {
 
     _requestStopSearchFetches() {
         if (!this._canShowStopSearchButton()) return;
-        Logger.log('search-output: stop fetches requested');
+        Logger.log('search-output: abort search requested');
         this._state.searchStopRequested = true;
         this._state.searchGeneration = (this._state.searchGeneration || 0) + 1;
     },
@@ -9161,7 +9234,7 @@ const searchOutputMethods = {
     _finishStoppedSearch(items) {
         const list = items || [];
         const hydratedCount = list.filter((it) => it && it.hydrated).length;
-        Logger.info('search-output: search stopped — ' + list.length + ' item(s)'
+        Logger.info('search-output: search aborted — ' + list.length + ' item(s)'
             + (hydratedCount > 0 ? ', ' + hydratedCount + ' hydrated' : ''));
         const hadPrior = this._isAdditiveResultsMode()
             && Array.isArray(this._state.resultsLoadSnapshot)
@@ -9184,7 +9257,7 @@ const searchOutputMethods = {
     _stopSearchButtonHtml() {
         if (!this._canShowStopSearchButton()) return '';
         const cls = this._dashBtnClass('basic', 'compact');
-        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Stop Fetches</button>`;
+        return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Abort Search</button>`;
     },
 
     _resetSearchLoadLog() {
@@ -9225,7 +9298,7 @@ const searchOutputMethods = {
     },
 
     _searchLoadMessage(base, count, total) {
-        const label = String(base || '').trim();
+        const label = String(base || '').trim().replace(/\s*\(\d+(?:\/\d+)?\)\s*$/, '');
         if (count == null || Number.isNaN(Number(count))) return label;
         const n = Number(count);
         if (total != null && !Number.isNaN(Number(total)) && Number(total) !== n) {
@@ -9236,7 +9309,7 @@ const searchOutputMethods = {
 
     _trackSearchLoadPromise(message, promiseOrFn) {
         const base = String(message || '').trim();
-        const id = this._beginSearchLoadEntry(this._searchLoadMessage(base, 0));
+        const id = this._beginSearchLoadEntry(base);
         const tracker = {
             setCount: (count, total) => {
                 this._updateSearchLoadEntry(id, this._searchLoadMessage(base, count, total));
@@ -9295,21 +9368,128 @@ const searchOutputMethods = {
         return [...unresolvedEntries, ...resolvedEntries].slice(0, cap);
     },
 
+    _searchLoadLogRowStyle(e) {
+        const failed = e.resolved && String(e.message || '').endsWith('— failed');
+        const textStyle = e.resolved
+            ? (failed ? 'color: var(--destructive, #dc2626);' : 'color: var(--success, #16a34a);')
+            : 'color: var(--muted-foreground, #64748b);';
+        return 'display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 400;'
+            + ' line-height: 1.5; min-width: 0;' + textStyle;
+    },
+
+    _searchLoadLogMarkHtml(e) {
+        if (e.resolved) {
+            return '<span data-wf-dash-load-mark="1" aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+        }
+        return this._loadingSpinnerHtml(12).replace(
+            '<span aria-hidden="true"',
+            '<span data-wf-dash-load-mark="1" aria-hidden="true"'
+        );
+    },
+
+    _searchLoadLogRowHtml(e) {
+        return `<div data-wf-dash-results-load-log-line="${e.id}" data-wf-dash-load-state="${this._searchLoadLogStateKey(e)}" style="${this._searchLoadLogRowStyle(e)}">`
+            + this._searchLoadLogMarkHtml(e)
+            + `<span data-wf-dash-load-text="1" style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
+    },
+
+    _searchLoadLogStateKey(e) {
+        if (!e.resolved) return 'pending';
+        return String(e.message || '').endsWith('— failed') ? 'failed' : 'ok';
+    },
+
+    _searchLoadPhaseDisplayText(phase) {
+        return String(phase || '').trim()
+            .replace(/\s*\(\d+(?:\/\d+)?\)\s*$/, '')
+            .replace(/[….]+\s*$/, '')
+            .replace(/\.\s*$/, '');
+    },
+
+    _applySearchLoadPhaseDom(phaseEl, phase) {
+        const display = this._searchLoadPhaseDisplayText(phase);
+        if (!display) {
+            phaseEl.textContent = '';
+            phaseEl.style.display = 'none';
+            phaseEl.removeAttribute('data-wf-dash-dots');
+            return;
+        }
+        phaseEl.textContent = display;
+        phaseEl.style.display = '';
+        phaseEl.setAttribute('data-wf-dash-dots', '1');
+    },
+
+    _searchLoadOverlayStyle() {
+        return 'display: flex; align-items: flex-start; width: 100%; box-sizing: border-box;'
+            + ' padding: 48px 16px; min-height: 120px;';
+    },
+
+    _searchLoadOverlayAnchorStyle() {
+        return 'flex: 0 0 33%; min-width: 0; align-self: stretch;';
+    },
+
+    _reorderSearchLoadLogRows(logEl, entries) {
+        for (let i = 0; i < entries.length; i++) {
+            const row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entries[i].id}"]`);
+            if (!row) continue;
+            const desiredBefore = logEl.children[i];
+            if (desiredBefore !== row) {
+                logEl.insertBefore(row, desiredBefore || null);
+            }
+        }
+    },
+
+    _patchSearchLoadLogDom(colEl) {
+        if (!colEl) return;
+        const entries = this._visibleSearchLoadLogEntries();
+        let logEl = colEl.querySelector('[data-wf-dash-results-load-log]');
+        if (entries.length === 0) {
+            if (logEl) logEl.remove();
+            return;
+        }
+        if (!logEl) {
+            colEl.insertAdjacentHTML('beforeend',
+                '<div data-wf-dash-results-load-log style="margin-top: 8px; max-height: 160px; overflow-y: auto;'
+                + ' display: flex; flex-direction: column; gap: 2px;"></div>');
+            logEl = colEl.querySelector('[data-wf-dash-results-load-log]');
+        }
+        const visibleIds = new Set(entries.map((entry) => entry.id));
+        logEl.querySelectorAll('[data-wf-dash-results-load-log-line]').forEach((row) => {
+            const id = Number(row.getAttribute('data-wf-dash-results-load-log-line'));
+            if (!visibleIds.has(id)) row.remove();
+        });
+        const doc = this._pageWindow().document;
+        for (const entry of entries) {
+            let row = logEl.querySelector(`[data-wf-dash-results-load-log-line="${entry.id}"]`);
+            if (!row) {
+                const wrapper = doc.createElement('div');
+                wrapper.innerHTML = this._searchLoadLogRowHtml(entry);
+                row = wrapper.firstElementChild;
+                logEl.appendChild(row);
+                continue;
+            }
+            const stateKey = this._searchLoadLogStateKey(entry);
+            if (row.getAttribute('data-wf-dash-load-state') !== stateKey) {
+                row.setAttribute('data-wf-dash-load-state', stateKey);
+                row.style.cssText = this._searchLoadLogRowStyle(entry);
+                if (entry.resolved) {
+                    const markEl = row.querySelector('[data-wf-dash-load-mark]');
+                    if (markEl) {
+                        markEl.outerHTML = '<span data-wf-dash-load-mark="1" aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
+                    }
+                }
+            }
+            const textSpan = row.querySelector('[data-wf-dash-load-text]');
+            if (textSpan && textSpan.textContent !== entry.message) {
+                textSpan.textContent = entry.message;
+            }
+        }
+        this._reorderSearchLoadLogRows(logEl, entries);
+    },
+
     _searchLoadLogHtml() {
         const entries = this._visibleSearchLoadLogEntries();
         if (entries.length === 0) return '';
-        const rowStyle = 'display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 400;'
-            + ' line-height: 1.5; min-width: 0;';
-        const lines = entries.map((e) => {
-            const failed = e.resolved && String(e.message || '').endsWith('— failed');
-            const textStyle = e.resolved
-                ? (failed ? 'color: var(--destructive, #dc2626);' : 'color: var(--success, #16a34a);')
-                : 'color: var(--muted-foreground, #64748b);';
-            const mark = e.resolved
-                ? '<span aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>'
-                : this._loadingSpinnerHtml(12);
-            return `<div data-wf-dash-results-load-log-line="${e.id}" style="${rowStyle}${textStyle}">${mark}<span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dashEscHtml(e.message)}</span></div>`;
-        }).join('');
+        const lines = entries.map((e) => this._searchLoadLogRowHtml(e)).join('');
         return `<div data-wf-dash-results-load-log style="margin-top: 8px; max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;">${lines}</div>`;
     },
 
@@ -9319,22 +9499,36 @@ const searchOutputMethods = {
         wrap.querySelectorAll('[data-wf-dash-task-card]').forEach((el) => el.remove());
         const phase = String(this._state.searchLoadPhase || '').trim();
         const phaseStyle = 'font-size: 13px; font-weight: 500; color: var(--foreground, #0f172a); line-height: 1.45;';
-        const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: min(420px, 100%);';
+        const colStyle = 'display: flex; flex-direction: column; align-items: flex-start; flex: 1; min-width: 0; max-width: min(420px, 100%);';
+        const overlayStyle = this._searchLoadOverlayStyle();
+        const anchorStyle = this._searchLoadOverlayAnchorStyle();
         const stopBtnHtml = this._stopSearchButtonHtml();
         const logHtml = this._searchLoadLogHtml();
         let loadingEl = wrap.querySelector('[data-wf-dash-results-loading]');
         if (!loadingEl) {
-            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding: 48px 16px; min-height: 120px;">
-                ${this._loadingSpinnerHtml(20)}
+            const phaseDisplay = this._searchLoadPhaseDisplayText(phase);
+            wrap.innerHTML = `<div data-wf-dash-results-loading="1" style="${overlayStyle}">
+                <div data-wf-dash-results-load-anchor aria-hidden="true" style="${anchorStyle}"></div>
                 <div data-wf-dash-results-load-col style="${colStyle}">
                     ${stopBtnHtml}
-                    <span data-wf-dash-results-load-phase style="${phaseStyle}${phase ? '' : ' display: none;'}">${dashEscHtml(phase)}</span>
+                    <span data-wf-dash-results-load-phase style="${phaseStyle}${phaseDisplay ? '' : ' display: none;'}"${phaseDisplay ? ' data-wf-dash-dots="1"' : ''}>${dashEscHtml(phaseDisplay)}</span>
                     ${logHtml}
                 </div>
             </div>`;
             return;
         }
+        loadingEl.style.cssText = overlayStyle;
+        let anchorEl = loadingEl.querySelector('[data-wf-dash-results-load-anchor]');
+        if (!anchorEl) {
+            loadingEl.insertAdjacentHTML('afterbegin',
+                `<div data-wf-dash-results-load-anchor aria-hidden="true" style="${anchorStyle}"></div>`);
+            anchorEl = loadingEl.querySelector('[data-wf-dash-results-load-anchor]');
+        } else {
+            anchorEl.style.cssText = anchorStyle;
+        }
+        loadingEl.querySelectorAll(':scope > [aria-hidden="true"]:not([data-wf-dash-results-load-anchor])').forEach((el) => el.remove());
         const colEl = loadingEl.querySelector('[data-wf-dash-results-load-col]');
+        if (colEl) colEl.style.cssText = colStyle;
         let stopBtn = colEl ? colEl.querySelector('[data-wf-dash-stop-search]') : null;
         if (stopBtnHtml) {
             if (!stopBtn && colEl) {
@@ -9345,12 +9539,9 @@ const searchOutputMethods = {
         }
         const phaseEl = loadingEl.querySelector('[data-wf-dash-results-load-phase]');
         if (phaseEl) {
-            phaseEl.textContent = phase;
-            phaseEl.style.display = phase ? '' : 'none';
+            this._applySearchLoadPhaseDom(phaseEl, phase);
         }
-        const logEl = loadingEl.querySelector('[data-wf-dash-results-load-log]');
-        if (logEl) logEl.remove();
-        if (logHtml && colEl) colEl.insertAdjacentHTML('beforeend', logHtml);
+        this._patchSearchLoadLogDom(colEl);
     },
 
     _setSearchLoadPhase(message, count, total) {
@@ -9506,7 +9697,7 @@ const searchOutputMethods = {
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
-        this._scheduleAutoHydrateBackground();
+        this._schedulePageHydrate();
     },
 
     _dashCopyInnerHtml(value, highlight) {
@@ -10439,15 +10630,22 @@ const searchOutputMethods = {
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
 
-        let defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
-        if (item.selectedFeedbackId) {
-            const entry = allFeedback.find((f) => f.id === item.selectedFeedbackId);
-            if (entry) defaultDisplayNo = entry.linkedDisplayVersionNo;
+        const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+        const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
+
+        let defaultDisplayNo;
+        if (versionMode === DASH_VERSION_MODE_V1) {
+            const sorted = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
+            defaultDisplayNo = sorted[0].displayVersionNo;
+        } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
+            defaultDisplayNo = this._contributorMatchDisplayNo(item, versions);
+        } else {
+            defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
         }
 
         const ui = this._getCardUi(task.id);
-        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
         const expanded = ui.expanded;
+        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
 
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
@@ -10663,6 +10861,13 @@ function attachSearchOutputListeners(modal, dash) {
                 Logger.log('dashboard: results page size — ' + val);
                 dash._renderResults();
                 dash._syncResultsPagerUi();
+            });
+        }
+
+        const versionModeSel = dash._q('#wf-dash-version-mode');
+        if (versionModeSel) {
+            versionModeSel.addEventListener('change', () => {
+                dash._applyVersionModeChange(versionModeSel.value);
             });
         }
 
@@ -11255,7 +11460,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.29',
+    _version: '4.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
