@@ -8488,14 +8488,19 @@ const searchOutputMethods = {
 
     _ratingScoreBlockHtml(title, block) {
         if (!block || block.score == null) {
-            return '<div style="font-size: 11px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(title) + ': no scored activity in hydrated results.</div>';
+            return '';
         }
         const conf = block.confidence || {};
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
+        const sortedPillars = [...(block.pillars || [])].sort((a, b) => {
+            const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
+            if (wDiff !== 0) return wDiff;
+            return String(a.label || '').localeCompare(String(b.label || ''));
+        });
         let pillarsHtml = '';
-        for (const p of block.pillars || []) {
+        for (const p of sortedPillars) {
             const omitted = p.defined === false || p.score == null;
             const pct = omitted ? 0 : Math.round((p.score || 0) * 100);
             const wt = p.effectiveWeight != null ? Math.round(p.effectiveWeight * 1000) / 10 : null;
@@ -8509,18 +8514,21 @@ const searchOutputMethods = {
                 + bar
                 + '</div>';
         }
+        const scoreDisplay = Math.round(block.score);
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
-            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(block.score)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100 · ' + dashEscHtml(block.band || '') + '</span></div>'
-            + '<div style="font-size: 10px; margin-top: 4px; display: inline-block; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
+            + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
+            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
+            + '</div>'
             + pillarsHtml
             + '</div>';
     },
 
     _ratingWorkerCardHtml(worker) {
         const name = worker.name || worker.workerId;
-        const twqsHtml = this._ratingScoreBlockHtml('TWQS', worker.twqs);
-        const qaqsHtml = this._ratingScoreBlockHtml('QAQS', worker.qaqs);
+        const twqsHtml = this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs);
+        const qaqsHtml = this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs);
         const box = this._panelBoxStyle();
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(name) + '</div>'
@@ -11728,7 +11736,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.40',
+    _version: '4.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
