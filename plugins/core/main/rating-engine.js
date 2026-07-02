@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.3';
+const RE_VERSION = '1.4';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_TRAILING_WEEKS = 26;
@@ -76,6 +76,22 @@ function reFeedbackAtForResolvedId(task, feedbackId) {
         if (reIdsEqual(entry.id, fid)) return reFeedbackTimestamp(entry);
     }
     return '';
+}
+
+function reQaFlagPenalizesWorker(task, flag, workerId) {
+    const flaggerId = String((flag && flag.flaggerId) || '');
+    if (flaggerId && reIdsEqual(flaggerId, workerId)) return false;
+    const cutoff = String((flag && (flag.createdAt || flag.resolutionAt)) || '').trim();
+    let hasPrior = false;
+    let hasAny = false;
+    for (const entry of (task && task.allFeedback) || []) {
+        if (!reIsHumanFeedback(entry)) continue;
+        if (!reIdsEqual(entry.reviewer && entry.reviewer.id, workerId)) continue;
+        hasAny = true;
+        const ts = reFeedbackTimestamp(entry);
+        if (!cutoff || (ts && ts < cutoff)) hasPrior = true;
+    }
+    return cutoff ? hasPrior : hasAny;
 }
 
 function reReturnTypeOf(entry) {
@@ -619,10 +635,7 @@ const RatingEngine = {
 
             for (const flag of item.flags || []) {
                 if (!flag.isConfirmed || flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                const hasQaFeedback = (task.allFeedback || []).some((e) => {
-                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
-                });
-                if (!hasQaFeedback) continue;
+                if (!reQaFlagPenalizesWorker(task, flag, workerId)) continue;
                 const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
                 const fw = reEventWeight(flagTs, mode, nowMs, window);
                 if (fw > 0) flagBad += fw;
@@ -829,17 +842,16 @@ const RatingEngine = {
 
             for (const flag of item.flags || []) {
                 if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                const hasQa = (task.allFeedback || []).some((e) => {
-                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
-                });
-                if (!hasQa) continue;
+                if (!reQaFlagPenalizesWorker(task, flag, workerId)) continue;
                 flagsInScope.push({
                     flagId: String(flag.id || ''),
                     taskId: String(task.id || ''),
+                    flaggerId: String(flag.flaggerId || '') || null,
                     reasonKey: flag.reasonKey,
                     status: flag.status || null,
                     isConfirmed: Boolean(flag.isConfirmed),
-                    resolutionAt: flag.resolutionAt || null
+                    resolutionAt: flag.resolutionAt || null,
+                    attributedToWorker: true
                 });
             }
         }
@@ -1002,7 +1014,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
