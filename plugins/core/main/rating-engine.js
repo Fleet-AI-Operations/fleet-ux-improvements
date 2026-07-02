@@ -1,17 +1,11 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.6';
+const RE_VERSION = '1.7';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
-
-const RE_SEVERITY_SCORES = {
-    accepted: 1.0,
-    returned: 0.7,
-    escalated: 0.3,
-    bugged: 0.0
-};
+const RE_STATUS_SEVERITY_DEFAULT = 0.5;
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
@@ -254,16 +248,15 @@ function reHumanFeedbackChronological(task) {
 }
 
 function reTaskSeverityScore(task) {
-    const feedback = reHumanFeedbackChronological(task);
-    if (!feedback.length) return 0.5;
-    let worst = 1.0;
-    for (const entry of feedback) {
-        const rt = reReturnTypeOf(entry);
-        if (!rt) continue;
-        const s = RE_SEVERITY_SCORES[rt];
-        if (s != null && s < worst) worst = s;
-    }
-    return worst;
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (!status) return RE_STATUS_SEVERITY_DEFAULT;
+    if (status.includes('dismissed')) return 0.0;
+    if (status.includes('discarded')) return 0.3;
+    if (status.includes('bugged') || status.includes('escalated')) return 0.4;
+    if (status.includes('staging')) return 0.5;
+    if (status.includes('recovery')) return 0.7;
+    if (status.includes('production')) return 1.0;
+    return RE_STATUS_SEVERITY_DEFAULT;
 }
 
 function reFinalDisplayVersionNo(task) {
@@ -454,6 +447,7 @@ const RatingEngine = {
         let count90d = 0;
         let earliestTs = null;
         const outcomeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0 };
+        const statusCounts = {};
 
         for (const item of writerItems) {
             const task = item.task;
@@ -463,6 +457,8 @@ const RatingEngine = {
 
             const severity = reTaskSeverityScore(task);
             severityEvents.push({ value: severity, weight: w, iso: createdAt });
+            const statusKey = String((task && task.status) || '').trim() || '(missing)';
+            statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
             const wk = reIsoWeekKey(createdAt);
             if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
@@ -530,7 +526,7 @@ const RatingEngine = {
             switch (def.id) {
                 case 'acceptanceSeverity':
                     score = acceptanceScore;
-                    raw = { severityMean, eventCount: severityEvents.length, outcomeCounts };
+                    raw = { severityMean, eventCount: severityEvents.length, statusCounts, outcomeCounts };
                     break;
                 case 'revisionEfficiency':
                     score = revisionPillar;
@@ -1055,7 +1051,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
