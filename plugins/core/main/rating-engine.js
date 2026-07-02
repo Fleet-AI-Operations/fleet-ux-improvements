@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.2';
+const RE_VERSION = '1.3';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_TRAILING_WEEKS = 26;
@@ -66,6 +66,16 @@ function reResolveFeedbackId(id, remap) {
     const key = String(id || '').trim();
     if (!key) return '';
     return String((remap && remap[key]) || key);
+}
+
+function reFeedbackAtForResolvedId(task, feedbackId) {
+    const fid = String(feedbackId || '').trim();
+    if (!fid || !task) return '';
+    for (const entry of task.allFeedback || []) {
+        if (!reIsHumanFeedback(entry)) continue;
+        if (reIdsEqual(entry.id, fid)) return reFeedbackTimestamp(entry);
+    }
+    return '';
 }
 
 function reReturnTypeOf(entry) {
@@ -622,7 +632,8 @@ const RatingEngine = {
                 if (!dispute.resolutionAt) continue;
                 const fid = reResolveFeedbackId(dispute.feedbackId, remap);
                 if (!fid || !feedbackIds.has(fid)) continue;
-                const dw = reEventWeight(dispute.resolutionAt, mode, nowMs, window);
+                const weightTs = reFeedbackAtForResolvedId(task, fid);
+                const dw = reEventWeight(weightTs, mode, nowMs, window);
                 if (dw <= 0) continue;
                 disputeDenom += dw;
                 if (dispute.isRejected) disputeGood += dw;
@@ -807,6 +818,7 @@ const RatingEngine = {
                     disputeId: String(dispute.id || ''),
                     feedbackId: rawFid,
                     resolvedFeedbackId: resolvedFid,
+                    feedbackAt: reFeedbackAtForResolvedId(task, resolvedFid) || null,
                     matchesWorker,
                     status: dispute.status || null,
                     resolutionAt: dispute.resolutionAt || null,
@@ -990,7 +1002,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
