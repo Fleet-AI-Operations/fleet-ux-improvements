@@ -1634,6 +1634,7 @@ const searchOutputMethods = {
                 }
                 item.task.promptVersions = hist.promptVersions || [];
                 item.task.allFeedback = hist.allFeedback || [];
+                item.task.systemFeedbackIdRemap = remap;
                 this._applyTaskShellFromEnrichment(item.task, hist);
                 if (hist.initialCreationTimeSeconds != null) {
                     item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
@@ -2176,7 +2177,9 @@ const searchOutputMethods = {
 
     _onPrefetchComplete(kind) {
         if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
-        void this._reoverlayAllCachedItems();
+        void this._reoverlayAllCachedItems().then(() => {
+            if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
+        });
     },
 
     async _runPrefetch(kind, loadTracker) {
@@ -4734,6 +4737,7 @@ const searchOutputMethods = {
             el.style.display = 'none';
             el.innerHTML = '';
             this._syncVersionModeDropdownUi();
+            if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
             return;
         }
         const label = this._labelStyle();
@@ -4746,6 +4750,7 @@ const searchOutputMethods = {
             + this._loadingSpinnerHtml(14).replace('<span aria-hidden="true"', '<span data-wf-dash-load-mark="1" aria-hidden="true"')
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
+        if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
     },
 
     _syncDropExcludedUi() {
@@ -5830,6 +5835,7 @@ const searchOutputMethods = {
                     }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    item.task.systemFeedbackIdRemap = remap;
                     this._applyTaskShellFromEnrichment(item.task, hist);
                     if (hist.initialCreationTimeSeconds != null) {
                         item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
@@ -6675,6 +6681,7 @@ const searchOutputMethods = {
                             <div style="display: flex; gap: 0; min-width: 0;">
                                 <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
                                 <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                                <button type="button" data-wf-dash-left-tab="ratings" style="${this._leftTabStyle(leftTab === 'ratings')}">Ratings</button>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
@@ -6805,6 +6812,14 @@ const searchOutputMethods = {
                                     <div id="wf-dash-manual-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
                                     <button type="button" id="wf-dash-manual-add" class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div id="wf-dash-left-panel-ratings" style="display: ${leftTab === 'ratings' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+                                <p style="${hint} margin: 0; line-height: 1.45;">Scores use the committed search window and hydrated result cards only — sidebar filters do not change ratings.</p>
+                                <div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>
+                                <div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>
                             </div>
                         </div>
                         <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
@@ -8384,14 +8399,17 @@ const searchOutputMethods = {
         this._state.leftTab = tab;
         this._closeAllMsDropdowns();
         this._syncLeftTabUi();
+        if (tab === 'ratings') this._renderRatingsPanel();
     },
 
     _syncLeftTabUi() {
         const tab = this._state.leftTab;
         const searchPanel = this._q('#wf-dash-left-panel-search');
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
+        const ratingsPanel = this._q('#wf-dash-left-panel-ratings');
         if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
+        if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
         const filterActions = this._q('#wf-dash-actions-filters');
         if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
         this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
@@ -8399,6 +8417,233 @@ const searchOutputMethods = {
             btn.style.cssText = this._leftTabStyle(active);
         });
         this._syncLeftMessagesBar();
+    },
+
+    _isPrefetchInProgress(kind) {
+        this._ensurePrefetchState();
+        const slot = this._getPrefetchSlot(kind);
+        if (!slot) return false;
+        if (slot.status === 'loading') return true;
+        return Boolean(slot.promise) && slot.status !== 'done' && slot.status !== 'error';
+    },
+
+    _getRatingsPrefetchWarnings() {
+        const labels = {
+            openDisputes: 'Open disputes',
+            resolvedDisputes: 'Resolved disputes',
+            pendingFlags: 'Pending sr-review flags',
+            resolvedFlags: 'Resolved sr-review flags'
+        };
+        const loading = DASH_PREFETCH_KINDS.filter((kind) => this._isPrefetchInProgress(kind));
+        if (loading.length === 0) return [];
+        const names = loading.map((k) => labels[k] || k).join(', ');
+        return ['Dispute/flag prefetch still loading (' + names + ') — scores may update when complete'];
+    },
+
+    _getRatingsHydrationWarnings() {
+        const items = this._state.cachedItems || [];
+        if (items.length === 0) return [];
+        const unhydratedCount = items.filter((item) => item && item.hydrated !== true).length;
+        const warnings = [];
+        if (unhydratedCount > 0) {
+            warnings.push(unhydratedCount + ' of ' + items.length + ' result cards not fully hydrated — ratings use hydrated cards only');
+        }
+        if (this._state.hydrateFetchActive) {
+            warnings.push('Per-card deep hydrate in progress — ratings may update when complete');
+        }
+        return warnings;
+    },
+
+    _buildRatingWorkerProfiles() {
+        const committed = this._state.committed || {};
+        const ids = committed.authorIds || [];
+        const labels = committed.authorLabels || [];
+        const tokens = this._state.draftTokens || [];
+        const map = {};
+        ids.forEach((id, i) => {
+            const tok = tokens.find((t) => t.id === id);
+            map[id] = {
+                name: (tok && (tok.name || tok.label)) || labels[i] || id,
+                email: (tok && tok.email) || ''
+            };
+        });
+        return map;
+    },
+
+    _ratingScoreBlockHtml(title, block) {
+        if (!block || block.score == null) {
+            return '<div style="font-size: 11px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(title) + ': no scored activity in hydrated results.</div>';
+        }
+        const conf = block.confidence || {};
+        const confStyle = conf.tier === 'provisional'
+            ? 'border: 1px dashed var(--muted-foreground, #64748b);'
+            : (conf.tier === 'high' ? 'font-weight: 700;' : '');
+        let pillarsHtml = '';
+        for (const p of block.pillars || []) {
+            const omitted = p.defined === false || p.score == null;
+            const pct = omitted ? 0 : Math.round((p.score || 0) * 100);
+            const wt = p.effectiveWeight != null ? Math.round(p.effectiveWeight * 1000) / 10 : null;
+            const bar = omitted
+                ? '<span style="font-size: 10px; color: var(--muted-foreground, #64748b);">omitted</span>'
+                : ('<div style="flex: 1; height: 6px; background: color-mix(in srgb, var(--muted-foreground, #64748b) 20%, transparent); border-radius: 3px; overflow: hidden;"><div style="width: ' + pct + '%; height: 100%; background: var(--brand, var(--primary, #2563eb));"></div></div>'
+                + '<span style="font-size: 10px; min-width: 36px; text-align: right;">' + dashEscHtml(String(pct)) + '%</span>'
+                + (wt != null ? '<span style="font-size: 10px; min-width: 32px; text-align: right; color: var(--muted-foreground, #64748b);">' + wt + '%</span>' : ''));
+            pillarsHtml += '<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px;">'
+                + '<span style="flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + dashEscHtml(p.label) + '">' + dashEscHtml(p.label) + '</span>'
+                + bar
+                + '</div>';
+        }
+        return '<div style="margin-top: 10px;">'
+            + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
+            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(block.score)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100 · ' + dashEscHtml(block.band || '') + '</span></div>'
+            + '<div style="font-size: 10px; margin-top: 4px; display: inline-block; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
+            + pillarsHtml
+            + '</div>';
+    },
+
+    _ratingWorkerCardHtml(worker) {
+        const name = worker.name || worker.workerId;
+        const twqsHtml = this._ratingScoreBlockHtml('TWQS', worker.twqs);
+        const qaqsHtml = this._ratingScoreBlockHtml('QAQS', worker.qaqs);
+        const box = this._panelBoxStyle();
+        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '" style="' + box + ' padding: 12px;">'
+            + '<div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(name) + '</div>'
+            + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-bottom: 6px;">' + dashEscHtml(worker.email) + '</div>' : '')
+            + twqsHtml
+            + qaqsHtml
+            + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export JSON</button>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export MD</button>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>'
+            + '</div>'
+            + '</div>';
+    },
+
+    _renderRatingsPanel() {
+        const cardsEl = this._q('#wf-dash-ratings-cards');
+        const warnEl = this._q('#wf-dash-ratings-warnings');
+        if (!cardsEl) return;
+
+        const committed = this._state.committed || {};
+        const authorCount = committed.authorCount != null ? committed.authorCount : (committed.authorIds || []).length;
+        const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
+
+        if (warnEl) {
+            if (warnings.length) {
+                warnEl.style.display = 'flex';
+                warnEl.innerHTML = warnings.map((w) =>
+                    '<div style="font-size: 11px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, #f59e0b 12%, var(--card, #fff)); color: var(--foreground, #0f172a); border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border, #e2e8f0));">' + dashEscHtml(w) + '</div>'
+                ).join('');
+            } else {
+                warnEl.style.display = 'none';
+                warnEl.innerHTML = '';
+            }
+        }
+
+        if (!this._state.hasSearched || !this._state.cachedItems) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Run a search to load results, then open Ratings.</p>';
+            this._state.ratingsReport = null;
+            return;
+        }
+
+        if (authorCount === 0) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors to generate ratings.</p>';
+            this._state.ratingsReport = null;
+            return;
+        }
+
+        const engine = Context.ratingEngine;
+        if (!engine || typeof engine.compute !== 'function') {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">Rating engine not loaded. Reload the page and try again.</p>';
+            this._state.ratingsReport = null;
+            return;
+        }
+
+        const report = engine.compute({
+            cachedItems: this._state.cachedItems,
+            committed,
+            workerProfiles: this._buildRatingWorkerProfiles()
+        });
+        this._state.ratingsReport = report;
+
+        if (!report.workers || report.workers.length === 0) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No contributor ratings available.</p>';
+            return;
+        }
+
+        cardsEl.innerHTML = report.workers.map((w) => this._ratingWorkerCardHtml(w)).join('');
+        Logger.log('search-output: ratings rendered — ' + report.workers.length + ' worker card(s)');
+    },
+
+    _downloadTextFile(filename, content, mime) {
+        try {
+            const blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            Logger.error('search-output: rating export download failed', e);
+        }
+    },
+
+    _handleRatingExport(workerId, format) {
+        const engine = Context.ratingEngine;
+        const report = this._state.ratingsReport;
+        if (!engine || !report || !report.workers) {
+            Logger.warn('search-output: rating export skipped — no report');
+            return;
+        }
+        const worker = report.workers.find((w) => w.workerId === workerId);
+        if (!worker) {
+            Logger.warn('search-output: rating export skipped — worker not found ' + workerId);
+            return;
+        }
+        const exportDate = new Date().toISOString().slice(0, 10);
+        const scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
+        const workerExport = {
+            ...worker,
+            computedAt: report.computedAt,
+            engineVersion: report.version,
+            exportDate
+        };
+
+        if (format === 'diagnostics') {
+            if (typeof engine.buildDiagnosticsReport !== 'function') {
+                Logger.warn('search-output: diagnostics export skipped — engine method missing');
+                return;
+            }
+            const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
+            const cachedItems = this._state.cachedItems || [];
+            const diagnostics = engine.buildDiagnosticsReport(workerExport, {
+                cachedItems,
+                committed: this._state.committed || {},
+                warnings,
+                unhydratedCount: cachedItems.filter((item) => item && item.hydrated !== true).length
+            });
+            const json = engine.serializeDiagnosticsJson(diagnostics);
+            const filename = engine.buildDiagnosticsFilename(workerExport);
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            Logger.log('search-output: rating diagnostics exported — ' + filename);
+            return;
+        }
+
+        if (format === 'json') {
+            const json = engine.serializeJson(workerExport);
+            const filename = engine.buildExportFilename(worker, scoreType, 'json');
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            Logger.log('search-output: rating JSON exported — ' + filename);
+            return;
+        }
+        const md = engine.serializeMarkdown(workerExport);
+        const mdName = engine.buildExportFilename(worker, scoreType, 'md');
+        this._downloadTextFile(mdName, md, 'text/markdown;charset=utf-8');
+        Logger.log('search-output: rating MD exported — ' + mdName);
     },
 
     _isMessageElVisible(el) {
@@ -11078,6 +11323,13 @@ function attachSearchOutputListeners(modal, dash) {
             }, { passive: true });
         }
     modal.addEventListener('click', (e) => {
+            const exportBtn = e.target.closest('[data-wf-dash-rating-export]');
+            if (exportBtn && modal.contains(exportBtn)) {
+                const workerId = exportBtn.getAttribute('data-wf-dash-rating-worker');
+                const format = exportBtn.getAttribute('data-wf-dash-rating-export');
+                if (workerId && format) dash._handleRatingExport(workerId, format);
+                return;
+            }
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
             if (stopSearchBtn && modal.contains(stopSearchBtn)) {
                 dash._requestStopSearchFetches();
@@ -11460,7 +11712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.37',
+    _version: '4.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
