@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.12';
+const RE_VERSION = '1.13';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -429,8 +429,7 @@ const RatingEngine = {
                 qaqs,
                 meta: {
                     hydratedCount: hydratedItems.length,
-                    unhydratedCount,
-                    scoredItemIds: hydratedItems.map((it) => it.id)
+                    unhydratedCount
                 }
             };
         });
@@ -1093,7 +1092,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.12',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
