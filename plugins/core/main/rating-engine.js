@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.5';
+const RE_VERSION = '1.6';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -15,6 +15,8 @@ const RE_SEVERITY_SCORES = {
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
+const RE_QAQS_SR_PENALTY_BLEND = 0.75;
+const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
 
 const RE_TWQS_PILLARS = [
@@ -594,6 +596,8 @@ const RatingEngine = {
         const returnEpisodes = [];
         let flagBad = 0;
         let flagDenom = 0;
+        let raisedGood = 0;
+        let raisedDenom = 0;
         let disputeGood = 0;
         let disputeDenom = 0;
         const weeklyActivity = new Map();
@@ -632,11 +636,22 @@ const RatingEngine = {
             const remap = task.systemFeedbackIdRemap || {};
 
             for (const flag of item.flags || []) {
-                if (!flag.isConfirmed || flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                if (!reQaFlagPenalizesWorker(task, flag, workerId)) continue;
-                const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                const fw = reEventWeight(flagTs, mode, nowMs, window);
-                if (fw > 0) flagBad += fw;
+                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
+
+                if (flag.isConfirmed && reQaFlagPenalizesWorker(task, flag, workerId)) {
+                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
+                    const fw = reEventWeight(flagTs, mode, nowMs, window);
+                    if (fw > 0) flagBad += fw;
+                }
+
+                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
+                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
+                    const fw = reEventWeight(flagTs, mode, nowMs, window);
+                    if (fw > 0) {
+                        raisedDenom += fw;
+                        if (flag.isConfirmed) raisedGood += fw;
+                    }
+                }
             }
 
             for (const dispute of item.disputes || []) {
@@ -667,9 +682,13 @@ const RatingEngine = {
             disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
         }
 
-        const srScore = flagDenom > 0
+        const penaltyScore = flagDenom > 0
             ? 1 - reShrunkRate(flagBad, flagDenom, 20)
             : reShrunkRate(0, 0, 20);
+        const raisedScore = raisedDenom > 0
+            ? reShrunkRate(raisedGood, raisedDenom, 20)
+            : reShrunkRate(0, 0, 20);
+        const srScore = RE_QAQS_SR_PENALTY_BLEND * penaltyScore + RE_QAQS_SR_RAISED_BLEND * raisedScore;
 
         const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
             ? Date.parse(window.beforeIso)
@@ -696,7 +715,14 @@ const RatingEngine = {
                     break;
                 case 'srReviewIntegrity':
                     score = srScore;
-                    raw = { confirmedFlags: flagBad, feedbackWeight: flagDenom };
+                    raw = {
+                        confirmedFlags: flagBad,
+                        feedbackWeight: flagDenom,
+                        penaltyScore,
+                        raisedConfirmedWeight: raisedGood,
+                        raisedResolvedWeight: raisedDenom,
+                        raisedScore
+                    };
                     break;
                 case 'consistency':
                     defined = consistencyResult.defined;
@@ -738,6 +764,8 @@ const RatingEngine = {
                 returnEpisodes: returnEpisodes.length,
                 flagBad,
                 flagDenom,
+                raisedGood,
+                raisedDenom,
                 disputeGood,
                 disputeDenom
             }
@@ -809,6 +837,7 @@ const RatingEngine = {
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
         const disputesInScope = [];
         const flagsInScope = [];
+        const flagsRaisedInScope = [];
 
         for (const item of cachedItems) {
             const task = item.task;
@@ -838,17 +867,32 @@ const RatingEngine = {
 
             for (const flag of item.flags || []) {
                 if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                if (!reQaFlagPenalizesWorker(task, flag, workerId)) continue;
-                flagsInScope.push({
-                    flagId: String(flag.id || ''),
-                    taskId: String(task.id || ''),
-                    flaggerId: String(flag.flaggerId || '') || null,
-                    reasonKey: flag.reasonKey,
-                    status: flag.status || null,
-                    isConfirmed: Boolean(flag.isConfirmed),
-                    resolutionAt: flag.resolutionAt || null,
-                    attributedToWorker: true
-                });
+
+                if (reQaFlagPenalizesWorker(task, flag, workerId) && flag.isConfirmed) {
+                    flagsInScope.push({
+                        flagId: String(flag.id || ''),
+                        taskId: String(task.id || ''),
+                        flaggerId: String(flag.flaggerId || '') || null,
+                        reasonKey: flag.reasonKey,
+                        status: flag.status || null,
+                        isConfirmed: Boolean(flag.isConfirmed),
+                        resolutionAt: flag.resolutionAt || null,
+                        attributedToWorker: true
+                    });
+                }
+
+                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
+                    flagsRaisedInScope.push({
+                        flagId: String(flag.id || ''),
+                        taskId: String(task.id || ''),
+                        reasonKey: flag.reasonKey,
+                        status: flag.status || null,
+                        isConfirmed: Boolean(flag.isConfirmed),
+                        isDismissed: Boolean(flag.isDismissed),
+                        resolutionAt: flag.resolutionAt || null,
+                        raisedByWorker: true
+                    });
+                }
             }
         }
 
@@ -902,6 +946,7 @@ const RatingEngine = {
                 returnEpisodes: returnEpisodeDetails,
                 disputesInScope,
                 flagsInScope,
+                flagsRaisedInScope,
                 pillarDebug: qaqsPillarDebug
             },
             twqs: workerReport.twqs ? {
@@ -1010,7 +1055,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
