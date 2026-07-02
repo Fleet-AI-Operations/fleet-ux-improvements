@@ -4441,6 +4441,14 @@ const searchOutputMethods = {
         return kinds;
     },
 
+    _ratingSearchScoreTypes(committed) {
+        const c = committed || {};
+        return {
+            showTwqs: Boolean(c.includeTaskCreation),
+            showQaqs: Boolean(c.includeQa)
+        };
+    },
+
     _resultsKindTabsMeta(committed) {
         const kinds = this._committedSearchKinds(committed);
         if (kinds.length === 0) return [];
@@ -8525,10 +8533,15 @@ const searchOutputMethods = {
             + '</div>';
     },
 
-    _ratingWorkerCardHtml(worker) {
+    _ratingWorkerCardHtml(worker, scoreTypes) {
+        const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
-        const twqsHtml = this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs);
-        const qaqsHtml = this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs);
+        const twqsHtml = types.showTwqs
+            ? this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs)
+            : '';
+        const qaqsHtml = types.showQaqs
+            ? this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs)
+            : '';
         const diagnosticsBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>')
             : '';
@@ -8593,12 +8606,14 @@ const searchOutputMethods = {
         });
         this._state.ratingsReport = report;
 
+        const scoreTypes = this._ratingSearchScoreTypes(committed);
+
         if (!report.workers || report.workers.length === 0) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No contributor ratings available.</p>';
             return;
         }
 
-        cardsEl.innerHTML = report.workers.map((w) => this._ratingWorkerCardHtml(w)).join('');
+        cardsEl.innerHTML = report.workers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
         Logger.log('search-output: ratings rendered — ' + report.workers.length + ' worker card(s)');
     },
 
@@ -8632,13 +8647,23 @@ const searchOutputMethods = {
             return;
         }
         const exportDate = new Date().toISOString().slice(0, 10);
-        const scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
+        const scoreTypes = this._ratingSearchScoreTypes(this._state.committed || {});
         const workerExport = {
             ...worker,
+            twqs: scoreTypes.showTwqs ? worker.twqs : null,
+            qaqs: scoreTypes.showQaqs ? worker.qaqs : null,
             computedAt: report.computedAt,
             engineVersion: report.version,
             exportDate
         };
+        let scoreType = 'combined';
+        if (scoreTypes.showTwqs && scoreTypes.showQaqs) {
+            scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
+        } else if (scoreTypes.showTwqs) {
+            scoreType = 'twqs';
+        } else if (scoreTypes.showQaqs) {
+            scoreType = 'qaqs';
+        }
 
         if (format === 'diagnostics') {
             if (typeof engine.buildDiagnosticsReport !== 'function') {
@@ -11739,7 +11764,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.43',
+    _version: '4.44',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
