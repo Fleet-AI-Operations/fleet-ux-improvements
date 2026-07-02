@@ -2437,6 +2437,22 @@ const searchOutputMethods = {
         return cache.get(taskId) || [];
     },
 
+    _getAllCachedOpenDisputeRows(taskId) {
+        return this._filterDisputeRowsForTask(this._getCachedOpenDisputeRows(taskId), taskId);
+    },
+
+    _getAllCachedResolvedDisputeRows(taskId) {
+        return this._filterDisputeRowsForTask(this._getCachedResolvedDisputeRows(taskId), taskId);
+    },
+
+    _getAllCachedFlagRows(taskId) {
+        const pendingCache = this._getPrefetchCache('pendingFlags');
+        const resolvedCache = this._getPrefetchCache('resolvedFlags');
+        const pending = pendingCache ? (pendingCache.get(taskId) || []) : [];
+        const resolved = resolvedCache ? (resolvedCache.get(taskId) || []) : [];
+        return [...pending, ...resolved];
+    },
+
     _getFilteredOpenDisputeRows(taskId, scope, afterIso, beforeIso) {
         const scopeTeamIds = (scope && scope.teamIds) || [];
         return this._filterDisputeRowsForTask(
@@ -2858,8 +2874,8 @@ const searchOutputMethods = {
         const taskId = item.task.id;
         let changed = false;
 
-        const openRows = this._getFilteredOpenDisputeRows(taskId, scope, afterIso, beforeIso);
-        let resolvedRows = this._getFilteredResolvedDisputeRows(taskId, scope, afterIso, beforeIso, contributorSet);
+        const openRows = this._getAllCachedOpenDisputeRows(taskId);
+        let resolvedRows = this._getAllCachedResolvedDisputeRows(taskId);
         const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
         const prefetchFailed = resolvedSlot && resolvedSlot.status === 'error';
         const cacheIncomplete = this._isPrefetchIncomplete('resolvedDisputes');
@@ -2884,7 +2900,7 @@ const searchOutputMethods = {
             changed = true;
         }
 
-        const flagRows = this._getFilteredFlagRows(taskId, scope, afterIso, beforeIso);
+        const flagRows = this._getAllCachedFlagRows(taskId);
         if (flagRows.length > 0) {
             const flagProfileIds = [];
             for (const row of flagRows) {
@@ -11712,7 +11728,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.39',
+    _version: '4.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
