@@ -1,11 +1,12 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.0';
+const RE_VERSION = '1.1';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_TRAILING_WEEKS = 26;
 const RE_TRAILING_WEEKS_MS = RE_TRAILING_WEEKS * 7 * RE_MS_PER_DAY;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
+const RE_DIAG_SAMPLE_ROWS = 5;
 
 const RE_SEVERITY_SCORES = {
     accepted: 1.0,
@@ -42,6 +43,24 @@ const RE_BANDS = [
 
 function reLib() {
     return Context.dashboardLib || null;
+}
+
+function reFeedbackTimestamp(entry) {
+    return String((entry && (entry.feedbackAt || entry.created_at)) || '').trim();
+}
+
+function reTaskTimestamp(task, item) {
+    return String((task && (task.createdAt || task.created_at)) || (item && item.sortAt) || '').trim();
+}
+
+function reIdsEqual(a, b) {
+    return String(a || '').trim() === String(b || '').trim();
+}
+
+function reResolveFeedbackId(id, remap) {
+    const key = String(id || '').trim();
+    if (!key) return '';
+    return String((remap && remap[key]) || key);
 }
 
 function reReturnTypeOf(entry) {
@@ -189,7 +208,7 @@ function reCombinePillars(pillarDefs) {
 function reHumanFeedbackChronological(task) {
     return (task.allFeedback || [])
         .filter(reIsHumanFeedback)
-        .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+        .sort((a, b) => reFeedbackTimestamp(a).localeCompare(reFeedbackTimestamp(b)));
 }
 
 function reTaskSeverityScore(task) {
@@ -206,16 +225,81 @@ function reTaskSeverityScore(task) {
 }
 
 function reFinalDisplayVersionNo(task) {
-    const lib = reLib();
     const versions = (task && task.promptVersions) || [];
-    if (lib && typeof lib.computeDisplayVersions === 'function' && versions.length) {
+    if (!versions.length) return 1;
+    if (versions[0].displayVersionNo != null) {
+        return versions[versions.length - 1].displayVersionNo || 1;
+    }
+    const lib = reLib();
+    if (lib && typeof lib.computeDisplayVersions === 'function') {
         const display = lib.computeDisplayVersions(versions);
         if (display.length) return display[display.length - 1].displayVersionNo || 1;
     }
-    if (versions.length) {
-        return Math.max(...versions.map((v) => Number(v.version_no || v.versionNo || 1)));
+    return Math.max(...versions.map((v) => Number(v.version_no || v.versionNo || 1)));
+}
+
+function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
+    const feedbackById = new Map();
+    for (const item of hydratedItems) {
+        const task = item.task;
+        if (!task) continue;
+        for (const entry of task.allFeedback || []) {
+            if (!reIsHumanFeedback(entry)) continue;
+            const reviewerId = entry.reviewer && entry.reviewer.id;
+            if (!reIdsEqual(reviewerId, workerId)) continue;
+            feedbackById.set(String(entry.id), { entry, task, item });
+        }
     }
-    return 1;
+    return [...feedbackById.values()];
+}
+
+function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
+    const createdAt = reFeedbackTimestamp(entry);
+    const w = reEventWeight(createdAt, mode, nowMs, window);
+    const rt = reReturnTypeOf(entry);
+    if (rt !== 'returned') {
+        return { createdAt, weight: w, returnType: rt, episodeScore: null, rounds: null, subsequentReviewerIds: [] };
+    }
+    const allFb = reHumanFeedbackChronological(task);
+    const returnIdx = allFb.findIndex((e) => String(e.id) === String(entry.id));
+    let episodeScore = 0;
+    let rounds = null;
+    const subsequentReviewerIds = [];
+    if (returnIdx >= 0) {
+        rounds = 0;
+        let accepted = false;
+        for (let i = returnIdx + 1; i < allFb.length; i++) {
+            rounds += 1;
+            const next = allFb[i];
+            if (next.reviewer && next.reviewer.id) {
+                subsequentReviewerIds.push(String(next.reviewer.id));
+            }
+            const nextRt = reReturnTypeOf(next);
+            if (nextRt === 'accepted') {
+                accepted = true;
+                episodeScore = 1 / rounds;
+                break;
+            }
+            if (nextRt === 'bugged' || nextRt === 'escalated') break;
+        }
+        if (!accepted && rounds > 0) episodeScore = 0;
+    }
+    return { createdAt, weight: w, returnType: rt, episodeScore, rounds, subsequentReviewerIds };
+}
+
+function rePillarOmitReason(pillar) {
+    if (!pillar || pillar.defined !== false) return null;
+    switch (pillar.id) {
+        case 'feedbackResolution':
+            return 'No return episodes by this QA in scope';
+        case 'reviewCallAccuracy':
+        case 'disputeOutcomes':
+            return 'No resolved disputes in scope';
+        case 'consistency':
+            return 'Fewer than 2 active calendar weeks in trailing window';
+        default:
+            return 'Pillar undefined';
+    }
 }
 
 function reMedian(values) {
@@ -237,6 +321,24 @@ function reFormatPct(score) {
     const lib = reLib();
     if (lib && typeof lib.formatPercent === 'function') return lib.formatPercent(score * 100);
     return (Math.round(score * 1000) / 10).toFixed(1);
+}
+
+function reFieldAuditRow(entry, task, workerId) {
+    const ts = reFeedbackTimestamp(entry);
+    const allFb = reHumanFeedbackChronological(task);
+    const chronoIdx = allFb.findIndex((e) => String(e.id) === String(entry.id));
+    return {
+        feedbackId: String(entry.id || ''),
+        taskId: String((task && task.id) || ''),
+        feedbackAt: ts || null,
+        created_at_legacy: String((entry && entry.created_at) || '') || null,
+        reviewerId: String((entry.reviewer && entry.reviewer.id) || ''),
+        returnType: reReturnTypeOf(entry),
+        chronologicalIndex: chronoIdx,
+        totalHumanFeedbackOnTask: allFb.length,
+        isFirstQaOnTask: chronoIdx === 0,
+        timestampResolvable: Boolean(ts)
+    };
 }
 
 const RatingEngine = {
@@ -292,7 +394,7 @@ const RatingEngine = {
     _writerItems(workerId, hydratedItems) {
         return hydratedItems.filter((item) => {
             const authorId = item.task && item.task.author && item.task.author.id;
-            return authorId === workerId;
+            return reIdsEqual(authorId, workerId);
         });
     },
 
@@ -313,7 +415,7 @@ const RatingEngine = {
 
         for (const item of writerItems) {
             const task = item.task;
-            const createdAt = task.createdAt || task.created_at || item.sortAt || '';
+            const createdAt = reTaskTimestamp(task, item);
             const w = reEventWeight(createdAt, mode, nowMs, window);
             if (w <= 0) continue;
 
@@ -452,21 +554,7 @@ const RatingEngine = {
     },
 
     _computeQaqs(workerId, hydratedItems, mode, window, nowMs) {
-        const feedbackRows = [];
-        const tasksById = new Map();
-
-        for (const item of hydratedItems) {
-            const task = item.task;
-            if (!task) continue;
-            tasksById.set(task.id, task);
-            for (const entry of task.allFeedback || []) {
-                if (!reIsHumanFeedback(entry)) continue;
-                const reviewerId = entry.reviewer && entry.reviewer.id;
-                if (reviewerId !== workerId) continue;
-                feedbackRows.push({ entry, task, item });
-            }
-        }
-
+        const feedbackRows = reCollectQaqsFeedbackRows(workerId, hydratedItems);
         if (feedbackRows.length === 0) return null;
 
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
@@ -480,7 +568,7 @@ const RatingEngine = {
         let earliestTs = null;
 
         for (const { entry, task } of feedbackRows) {
-            const createdAt = entry.created_at || '';
+            const createdAt = reFeedbackTimestamp(entry);
             const w = reEventWeight(createdAt, mode, nowMs, window);
             if (w <= 0) continue;
 
@@ -491,44 +579,33 @@ const RatingEngine = {
                 if ((nowMs - ts) <= RE_CONFIDENCE_WINDOW_MS) count90d += 1;
             }
 
-            const rt = reReturnTypeOf(entry);
-            if (rt === 'returned') {
-                const allFb = reHumanFeedbackChronological(task);
-                const returnIdx = allFb.findIndex((e) => String(e.id) === String(entry.id));
-                let episodeScore = 0;
-                let rounds = null;
-                if (returnIdx >= 0) {
-                    rounds = 0;
-                    let accepted = false;
-                    for (let i = returnIdx + 1; i < allFb.length; i++) {
-                        rounds += 1;
-                        const nextRt = reReturnTypeOf(allFb[i]);
-                        if (nextRt === 'accepted') {
-                            accepted = true;
-                            episodeScore = 1 / rounds;
-                            break;
-                        }
-                        if (nextRt === 'bugged' || nextRt === 'escalated') break;
-                    }
-                    if (!accepted && rounds > 0) episodeScore = 0;
-                }
-                returnEpisodes.push({ value: episodeScore, weight: w, iso: createdAt, rounds });
+            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
+            if (episode.returnType === 'returned') {
+                returnEpisodes.push({
+                    value: episode.episodeScore,
+                    weight: w,
+                    iso: createdAt,
+                    rounds: episode.rounds
+                });
                 if (reInTrailingWeeks(createdAt, nowMs)) {
                     const wk = reIsoWeekKey(createdAt);
                     if (wk) {
                         if (!weeklyResolution.has(wk)) weeklyResolution.set(wk, []);
-                        weeklyResolution.get(wk).push({ value: episodeScore, weight: w });
+                        weeklyResolution.get(wk).push({ value: episode.episodeScore, weight: w });
                     }
                 }
             }
         }
 
         for (const item of hydratedItems) {
+            const task = item.task;
+            if (!task) continue;
+            const remap = task.systemFeedbackIdRemap || {};
+
             for (const flag of item.flags || []) {
                 if (!flag.isConfirmed || flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                const task = item.task;
                 const hasQaFeedback = (task.allFeedback || []).some((e) => {
-                    return reIsHumanFeedback(e) && e.reviewer && e.reviewer.id === workerId;
+                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
                 });
                 if (!hasQaFeedback) continue;
                 const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
@@ -538,7 +615,7 @@ const RatingEngine = {
 
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
-                const fid = String(dispute.feedbackId || '').trim();
+                const fid = reResolveFeedbackId(dispute.feedbackId, remap);
                 if (!fid || !feedbackIds.has(fid)) continue;
                 const dw = reEventWeight(dispute.resolutionAt, mode, nowMs, window);
                 if (dw <= 0) continue;
@@ -642,6 +719,181 @@ const RatingEngine = {
         };
     },
 
+    buildDiagnosticsReport(workerReport, context) {
+        const ctx = context || {};
+        const cachedItems = (ctx.cachedItems || []).filter((item) => item && item.hydrated === true);
+        const workerId = workerReport.workerId;
+        const mode = workerReport.mode || reResolveWeightingMode(ctx.committed);
+        const window = workerReport.window || reResolveWindow(ctx.committed);
+        const nowMs = Date.parse(workerReport.computedAt) || Date.now();
+
+        const feedbackRows = reCollectQaqsFeedbackRows(workerId, cachedItems);
+        const feedbackRowsRaw = [];
+        let feedbackRowsBeforeDedupe = 0;
+        for (const item of cachedItems) {
+            const task = item.task;
+            if (!task) continue;
+            for (const entry of task.allFeedback || []) {
+                if (!reIsHumanFeedback(entry)) continue;
+                if (!reIdsEqual(entry.reviewer && entry.reviewer.id, workerId)) continue;
+                feedbackRowsBeforeDedupe += 1;
+            }
+        }
+
+        const returnTypeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0, other: 0 };
+        let timestampMissingCount = 0;
+        let weightedFeedbackRows = 0;
+        const returnEpisodeDetails = [];
+        const fieldAuditSamples = [];
+        const seenAuditIds = new Set();
+
+        for (const { entry, task } of feedbackRows) {
+            const ts = reFeedbackTimestamp(entry);
+            if (!ts) timestampMissingCount += 1;
+            const w = reEventWeight(ts, mode, nowMs, window);
+            if (w > 0) weightedFeedbackRows += 1;
+
+            const rt = reReturnTypeOf(entry) || 'other';
+            if (returnTypeCounts[rt] != null) returnTypeCounts[rt] += 1;
+            else returnTypeCounts.other += 1;
+
+            const audit = reFieldAuditRow(entry, task, workerId);
+            const isAnomalous = !audit.timestampResolvable || rt === 'returned';
+            if (fieldAuditSamples.length < RE_DIAG_SAMPLE_ROWS || isAnomalous) {
+                if (!seenAuditIds.has(audit.feedbackId)) {
+                    seenAuditIds.add(audit.feedbackId);
+                    fieldAuditSamples.push(audit);
+                }
+            }
+
+            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
+            if (episode.returnType === 'returned') {
+                returnEpisodeDetails.push({
+                    feedbackId: String(entry.id),
+                    taskId: String(task.id),
+                    feedbackAt: episode.createdAt || null,
+                    roundsToAccept: episode.rounds,
+                    episodeScore: episode.episodeScore,
+                    subsequentReviewerIds: episode.subsequentReviewerIds
+                });
+            }
+        }
+
+        const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
+        const disputesInScope = [];
+        const flagsInScope = [];
+
+        for (const item of cachedItems) {
+            const task = item.task;
+            if (!task) continue;
+            const remap = task.systemFeedbackIdRemap || {};
+            const hasQaOnTask = (task.allFeedback || []).some((e) => {
+                return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
+            });
+            if (!hasQaOnTask) continue;
+
+            for (const dispute of item.disputes || []) {
+                const rawFid = String(dispute.feedbackId || '').trim();
+                const resolvedFid = reResolveFeedbackId(dispute.feedbackId, remap);
+                const matchesWorker = resolvedFid && feedbackIds.has(resolvedFid);
+                disputesInScope.push({
+                    disputeId: String(dispute.id || ''),
+                    feedbackId: rawFid,
+                    resolvedFeedbackId: resolvedFid,
+                    matchesWorker,
+                    status: dispute.status || null,
+                    resolutionAt: dispute.resolutionAt || null,
+                    isRejected: Boolean(dispute.isRejected),
+                    isApproved: Boolean(dispute.isApproved)
+                });
+            }
+
+            for (const flag of item.flags || []) {
+                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
+                const hasQa = (task.allFeedback || []).some((e) => {
+                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
+                });
+                if (!hasQa) continue;
+                flagsInScope.push({
+                    flagId: String(flag.id || ''),
+                    taskId: String(task.id || ''),
+                    reasonKey: flag.reasonKey,
+                    status: flag.status || null,
+                    isConfirmed: Boolean(flag.isConfirmed),
+                    resolutionAt: flag.resolutionAt || null
+                });
+            }
+        }
+
+        const qaqsPillarDebug = (workerReport.qaqs && workerReport.qaqs.pillars || []).map((p) => ({
+            id: p.id,
+            label: p.label,
+            defined: p.defined !== false,
+            whyOmitted: rePillarOmitReason(p),
+            score: p.score,
+            raw: p.raw || {}
+        }));
+
+        const twqsPillarDebug = (workerReport.twqs && workerReport.twqs.pillars || []).map((p) => ({
+            id: p.id,
+            label: p.label,
+            defined: p.defined !== false,
+            whyOmitted: rePillarOmitReason(p),
+            score: p.score,
+            raw: p.raw || {}
+        }));
+
+        return {
+            meta: {
+                engineVersion: RE_VERSION,
+                computedAt: workerReport.computedAt || new Date(nowMs).toISOString(),
+                workerId,
+                name: workerReport.name || workerId,
+                email: workerReport.email || '',
+                mode,
+                window,
+                hydratedCount: cachedItems.length,
+                unhydratedCount: ctx.unhydratedCount != null
+                    ? ctx.unhydratedCount
+                    : Math.max(0, (ctx.cachedItems || []).length - cachedItems.length)
+            },
+            warnings: ctx.warnings || [],
+            fieldAudit: {
+                accessorNotes: {
+                    feedbackTimestamp: 'Uses entry.feedbackAt with fallback to entry.created_at',
+                    taskTimestamp: 'Uses task.createdAt with fallback to item.sortAt',
+                    disputeFeedbackId: 'Applies task.systemFeedbackIdRemap before matching QA feedback rows'
+                },
+                samples: fieldAuditSamples
+            },
+            qaqs: {
+                feedbackRowsBeforeDedupe,
+                feedbackRowsDeduped: feedbackRows.length,
+                timestampMissingCount,
+                weightedFeedbackRows,
+                returnTypeCounts,
+                returnEpisodes: returnEpisodeDetails,
+                disputesInScope,
+                flagsInScope,
+                pillarDebug: qaqsPillarDebug
+            },
+            twqs: workerReport.twqs ? {
+                writerItemCount: this._writerItems(workerId, cachedItems).length,
+                pillarDebug: twqsPillarDebug
+            } : null,
+            scores: {
+                twqs: workerReport.twqs ? {
+                    score: workerReport.twqs.score,
+                    band: workerReport.twqs.band
+                } : null,
+                qaqs: workerReport.qaqs ? {
+                    score: workerReport.qaqs.score,
+                    band: workerReport.qaqs.band
+                } : null
+            }
+        };
+    },
+
     buildExportFilename(workerReport, scoreType, ext) {
         const name = reSlugify(workerReport.name || workerReport.workerId);
         const mode = workerReport.mode === 'B' ? 'window' : 'lifetime';
@@ -649,11 +901,22 @@ const RatingEngine = {
         return 'rating-' + name + '-' + scoreType + '-' + mode + '-' + date + '.' + ext;
     },
 
+    buildDiagnosticsFilename(workerReport) {
+        const name = reSlugify(workerReport.name || workerReport.workerId);
+        const mode = workerReport.mode === 'B' ? 'window' : 'lifetime';
+        const date = (workerReport.exportDate || new Date().toISOString().slice(0, 10));
+        return 'rating-' + name + '-diagnostics-' + mode + '-' + date + '.json';
+    },
+
     serializeJson(report) {
         return JSON.stringify(report, null, 2);
     },
 
-    serializeMarkdown(workerReport, warnings) {
+    serializeDiagnosticsJson(report) {
+        return JSON.stringify(report, null, 2);
+    },
+
+    serializeMarkdown(workerReport) {
         const lines = [];
         lines.push('# Worker Rating Report');
         lines.push('');
@@ -667,14 +930,8 @@ const RatingEngine = {
         } else {
             lines.push('- **Window:** All time');
         }
-        lines.push('- **Engine version:** ' + RE_VERSION);
+        lines.push('- **Engine version:** ' + (workerReport.engineVersion || RE_VERSION));
         lines.push('');
-
-        if (warnings && warnings.length) {
-            lines.push('## Warnings');
-            for (const w of warnings) lines.push('- ' + w);
-            lines.push('');
-        }
 
         const renderScoreBlock = (title, block) => {
             if (!block) return;
@@ -726,7 +983,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1634,6 +1634,7 @@ const searchOutputMethods = {
                 }
                 item.task.promptVersions = hist.promptVersions || [];
                 item.task.allFeedback = hist.allFeedback || [];
+                item.task.systemFeedbackIdRemap = remap;
                 this._applyTaskShellFromEnrichment(item.task, hist);
                 if (hist.initialCreationTimeSeconds != null) {
                     item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
@@ -5834,6 +5835,7 @@ const searchOutputMethods = {
                     }
                     item.task.promptVersions = hist.promptVersions || [];
                     item.task.allFeedback = hist.allFeedback || [];
+                    item.task.systemFeedbackIdRemap = remap;
                     this._applyTaskShellFromEnrichment(item.task, hist);
                     if (hist.initialCreationTimeSeconds != null) {
                         item.task.initialCreationTimeSeconds = hist.initialCreationTimeSeconds;
@@ -8512,6 +8514,7 @@ const searchOutputMethods = {
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
             + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export JSON</button>'
             + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export MD</button>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>'
             + '</div>'
             + '</div>';
     },
@@ -8601,24 +8604,43 @@ const searchOutputMethods = {
             Logger.warn('search-output: rating export skipped — worker not found ' + workerId);
             return;
         }
-        const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
-        const exportPayload = {
+        const exportDate = new Date().toISOString().slice(0, 10);
+        const scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
+        const workerExport = {
             ...worker,
             computedAt: report.computedAt,
             engineVersion: report.version,
-            warnings
+            exportDate
         };
-        const scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
-        exportPayload.exportDate = new Date().toISOString().slice(0, 10);
+
+        if (format === 'diagnostics') {
+            if (typeof engine.buildDiagnosticsReport !== 'function') {
+                Logger.warn('search-output: diagnostics export skipped — engine method missing');
+                return;
+            }
+            const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
+            const cachedItems = this._state.cachedItems || [];
+            const diagnostics = engine.buildDiagnosticsReport(workerExport, {
+                cachedItems,
+                committed: this._state.committed || {},
+                warnings,
+                unhydratedCount: cachedItems.filter((item) => item && item.hydrated !== true).length
+            });
+            const json = engine.serializeDiagnosticsJson(diagnostics);
+            const filename = engine.buildDiagnosticsFilename(workerExport);
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            Logger.log('search-output: rating diagnostics exported — ' + filename);
+            return;
+        }
 
         if (format === 'json') {
-            const json = engine.serializeJson(exportPayload);
+            const json = engine.serializeJson(workerExport);
             const filename = engine.buildExportFilename(worker, scoreType, 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
             Logger.log('search-output: rating JSON exported — ' + filename);
             return;
         }
-        const md = engine.serializeMarkdown(exportPayload, warnings);
+        const md = engine.serializeMarkdown(workerExport);
         const mdName = engine.buildExportFilename(worker, scoreType, 'md');
         this._downloadTextFile(mdName, md, 'text/markdown;charset=utf-8');
         Logger.log('search-output: rating MD exported — ' + mdName);
@@ -11690,7 +11712,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.38',
+    _version: '4.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
