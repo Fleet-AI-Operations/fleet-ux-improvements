@@ -8529,6 +8529,9 @@ const searchOutputMethods = {
         const name = worker.name || worker.workerId;
         const twqsHtml = this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs);
         const qaqsHtml = this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs);
+        const diagnosticsBtnHtml = Context.isDevBranch
+            ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>')
+            : '';
         const box = this._panelBoxStyle();
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(name) + '</div>'
@@ -8538,7 +8541,7 @@ const searchOutputMethods = {
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
             + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export JSON</button>'
             + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export MD</button>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>'
+            + diagnosticsBtnHtml
             + '</div>'
             + '</div>';
     },
@@ -11736,7 +11739,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.42',
+    _version: '4.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
