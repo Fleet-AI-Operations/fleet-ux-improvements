@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.11';
+const RE_VERSION = '1.12';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -14,18 +14,18 @@ const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
 
 const RE_TWQS_AXES = [
-    { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.35 },
-    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.15 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
-    { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.15 },
-    { id: 'consistency', label: 'Consistency', weight: 0.15 }
+    { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
+    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.25 },
+    { id: 'consistency', label: 'Consistency', weight: 0.15 },
+    { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.10 },
+    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.10 }
 ];
 
 const RE_QAQS_AXES = [
     { id: 'feedbackResolution', label: 'Comprehensiveness', weight: 0.50 },
     { id: 'reviewCallAccuracy', label: 'Dispute Defense', weight: 0.20 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.25 },
-    { id: 'consistency', label: 'Consistency', weight: 0.05 }
+    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
+    { id: 'consistency', label: 'Consistency', weight: 0.10 }
 ];
 
 const RE_BANDS = [
@@ -1093,7 +1093,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.11',
+    _version: '1.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
