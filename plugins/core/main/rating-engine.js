@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.13';
+const RE_VERSION = '1.14';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -380,6 +380,58 @@ function reFormatPct(score) {
     const lib = reLib();
     if (lib && typeof lib.formatPercent === 'function') return lib.formatPercent(score * 100);
     return (Math.round(score * 1000) / 10).toFixed(1);
+}
+
+function rePctOneDecimal(fraction) {
+    if (fraction == null || !Number.isFinite(fraction)) return null;
+    return Math.round(fraction * 1000) / 10;
+}
+
+function reAxisExportRow(axis) {
+    const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
+    return {
+        id: String((axis && axis.id) || ''),
+        label: String((axis && axis.label) || ''),
+        baseWeightPct: rePctOneDecimal(axis && axis.baseWeight),
+        effectiveWeightPct: defined ? rePctOneDecimal(axis.effectiveWeight) : 0,
+        subScorePct: defined ? rePctOneDecimal(axis.score) : null,
+        defined
+    };
+}
+
+function reSortedAxesForExport(axes) {
+    return [...(axes || [])].sort((a, b) => {
+        const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
+        if (wDiff !== 0) return wDiff;
+        return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+}
+
+function reScoreBlockExport(block) {
+    if (!block) return null;
+    return {
+        score: block.score,
+        band: block.band,
+        confidence: block.confidence || null,
+        axes: reSortedAxesForExport(block.axes).map(reAxisExportRow)
+    };
+}
+
+function reWorkerJsonExport(workerReport) {
+    const src = workerReport || {};
+    return {
+        workerId: src.workerId,
+        name: src.name,
+        email: src.email || '',
+        mode: src.mode,
+        window: src.window || {},
+        computedAt: src.computedAt || null,
+        engineVersion: src.engineVersion || RE_VERSION,
+        exportDate: src.exportDate || null,
+        twqs: reScoreBlockExport(src.twqs),
+        qaqs: reScoreBlockExport(src.qaqs),
+        meta: src.meta || null
+    };
 }
 
 function reFieldAuditRow(entry, task, workerId) {
@@ -1018,7 +1070,7 @@ const RatingEngine = {
     },
 
     serializeJson(report) {
-        return JSON.stringify(report, null, 2);
+        return JSON.stringify(reWorkerJsonExport(report), null, 2);
     },
 
     serializeDiagnosticsJson(report) {
@@ -1092,7 +1144,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.13',
+    _version: '1.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
