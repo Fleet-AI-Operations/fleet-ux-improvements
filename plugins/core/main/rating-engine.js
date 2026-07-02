@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.7';
+const RE_VERSION = '1.9';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -259,6 +259,30 @@ function reTaskSeverityScore(task) {
     return RE_STATUS_SEVERITY_DEFAULT;
 }
 
+function reRevisionStatusWeight(task) {
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (!status) return 0.5;
+    if (status.includes('disputed')) return 0.7;
+    if (status.includes('production') || status.includes('discarded')
+        || status.includes('dismissed') || status.includes('staging')) return 1.0;
+    return 0.5;
+}
+
+function reCountApprovedDisputes(item) {
+    let n = 0;
+    for (const dispute of (item && item.disputes) || []) {
+        if (dispute.isApproved) n += 1;
+    }
+    return n;
+}
+
+function reEffectiveRevisionVersion(task, item) {
+    const vFinal = reFinalDisplayVersionNo(task);
+    const vEffective = vFinal - reCountApprovedDisputes(item);
+    if (vEffective <= 0) return null;
+    return vEffective;
+}
+
 function reFinalDisplayVersionNo(task) {
     const versions = (task && task.promptVersions) || [];
     if (!versions.length) return 1;
@@ -449,6 +473,9 @@ const RatingEngine = {
         const outcomeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0 };
         const statusCounts = {};
 
+        let revisionApprovedRoundsSubtracted = 0;
+        let revisionExcludedByDisputes = 0;
+
         for (const item of writerItems) {
             const task = item.task;
             const createdAt = reTaskTimestamp(task, item);
@@ -462,8 +489,19 @@ const RatingEngine = {
             const wk = reIsoWeekKey(createdAt);
             if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
-            const vFinal = reFinalDisplayVersionNo(task);
-            revisionEvents.push({ value: 1 / Math.max(1, vFinal), weight: w, iso: createdAt });
+            const approvedDisputeCount = reCountApprovedDisputes(item);
+            if (approvedDisputeCount > 0) revisionApprovedRoundsSubtracted += approvedDisputeCount;
+            const vEffective = reEffectiveRevisionVersion(task, item);
+            if (vEffective == null) {
+                revisionExcludedByDisputes += 1;
+            } else {
+                const revisionStatusW = reRevisionStatusWeight(task);
+                revisionEvents.push({
+                    value: 1 / vEffective,
+                    weight: w * revisionStatusW,
+                    iso: createdAt
+                });
+            }
 
             const ts = Date.parse(createdAt);
             if (!Number.isNaN(ts)) {
@@ -530,7 +568,11 @@ const RatingEngine = {
                     break;
                 case 'revisionEfficiency':
                     score = revisionPillar;
-                    raw = { revisionEventCount: revisionEvents.length };
+                    raw = {
+                        revisionEventCount: revisionEvents.length,
+                        approvedDisputeRoundsSubtracted: revisionApprovedRoundsSubtracted,
+                        revisionExcludedByDisputes
+                    };
                     break;
                 case 'srReviewIntegrity':
                     score = srScore;
@@ -1051,7 +1093,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.7',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
