@@ -1,10 +1,8 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.4';
+const RE_VERSION = '1.5';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
-const RE_TRAILING_WEEKS = 26;
-const RE_TRAILING_WEEKS_MS = RE_TRAILING_WEEKS * 7 * RE_MS_PER_DAY;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
 
@@ -152,17 +150,34 @@ function reCoefficientOfVariation(values) {
     return Math.min(1, Math.sqrt(variance) / mean);
 }
 
-function reConsistencyFromWeekly(weeklyScores) {
-    if (!weeklyScores || weeklyScores.length < 2) {
-        return { defined: false, score: null, activeWeeks: weeklyScores ? weeklyScores.length : 0 };
+function reWeekKeysInSpan(startMs, endMs) {
+    const keys = new Set();
+    if (startMs == null || endMs == null || Number.isNaN(startMs) || Number.isNaN(endMs)) return keys;
+    const from = Math.min(startMs, endMs);
+    const to = Math.max(startMs, endMs);
+    for (let t = from; t <= to; t += RE_MS_PER_DAY * 7) {
+        const key = reIsoWeekKey(new Date(t).toISOString());
+        if (key) keys.add(key);
     }
-    const stability = 1 - reCoefficientOfVariation(weeklyScores);
-    const floorScore = Math.min(...weeklyScores);
-    return {
-        defined: true,
-        score: Math.max(0, Math.min(1, 0.6 * stability + 0.4 * floorScore)),
-        activeWeeks: weeklyScores.length
-    };
+    const endKey = reIsoWeekKey(new Date(to).toISOString());
+    if (endKey) keys.add(endKey);
+    return keys;
+}
+
+// Activity-cadence consistency: rewards steady week-to-week presence (coverage
+// of weeks worked across the span) plus even volume when active. Outcome-agnostic.
+function reActivityConsistency(weeklyCounts, firstActivityMs, spanEndMs) {
+    const activeWeeks = weeklyCounts ? weeklyCounts.size : 0;
+    if (activeWeeks < 2) {
+        return { defined: false, score: null, activeWeeks, totalWeeks: activeWeeks };
+    }
+    const spanKeys = reWeekKeysInSpan(firstActivityMs, spanEndMs);
+    const totalWeeks = Math.max(spanKeys.size, activeWeeks);
+    const coverage = totalWeeks > 0 ? Math.min(1, activeWeeks / totalWeeks) : 0;
+    const counts = [...weeklyCounts.values()];
+    const evenness = 1 - Math.min(1, reCoefficientOfVariation(counts));
+    const score = Math.max(0, Math.min(1, 0.6 * coverage + 0.4 * evenness));
+    return { defined: true, score, activeWeeks, totalWeeks };
 }
 
 function reResolveWeightingMode(committed) {
@@ -197,12 +212,6 @@ function reEventWeight(isoTs, mode, nowMs, window) {
     }
     const ageDays = Math.max(0, (nowMs - ts) / RE_MS_PER_DAY);
     return Math.exp(-ageDays / RE_HALFLIFE_DAYS);
-}
-
-function reInTrailingWeeks(isoTs, nowMs) {
-    const ts = Date.parse(isoTs);
-    if (Number.isNaN(ts)) return false;
-    return (nowMs - ts) <= RE_TRAILING_WEEKS_MS;
 }
 
 function reWeightedMean(pairs) {
@@ -327,7 +336,7 @@ function rePillarOmitReason(pillar) {
         case 'disputeOutcomes':
             return 'No resolved disputes in scope';
         case 'consistency':
-            return 'Fewer than 2 active calendar weeks in trailing window';
+            return 'Fewer than 2 active calendar weeks of activity in scope';
         default:
             return 'Pillar undefined';
     }
@@ -439,7 +448,7 @@ const RatingEngine = {
         let flagDenom = 0;
         let disputeGood = 0;
         let disputeDenom = 0;
-        const weeklySeverity = new Map();
+        const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
         const outcomeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0 };
@@ -452,13 +461,8 @@ const RatingEngine = {
 
             const severity = reTaskSeverityScore(task);
             severityEvents.push({ value: severity, weight: w, iso: createdAt });
-            if (reInTrailingWeeks(createdAt, nowMs)) {
-                const wk = reIsoWeekKey(createdAt);
-                if (wk) {
-                    if (!weeklySeverity.has(wk)) weeklySeverity.set(wk, []);
-                    weeklySeverity.get(wk).push({ value: severity, weight: w });
-                }
-            }
+            const wk = reIsoWeekKey(createdAt);
+            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
             const vFinal = reFinalDisplayVersionNo(task);
             revisionEvents.push({ value: 1 / Math.max(1, vFinal), weight: w, iso: createdAt });
@@ -512,12 +516,10 @@ const RatingEngine = {
             disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
         }
 
-        const weeklySeverityMeans = [];
-        for (const [, entries] of weeklySeverity) {
-            const mean = reWeightedMean(entries);
-            if (mean != null) weeklySeverityMeans.push(mean);
-        }
-        const consistencyResult = reConsistencyFromWeekly(weeklySeverityMeans);
+        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
+            ? Date.parse(window.beforeIso)
+            : nowMs;
+        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
 
         const pillars = RE_TWQS_PILLARS.map((def) => {
             let score = null;
@@ -544,7 +546,7 @@ const RatingEngine = {
                 case 'consistency':
                     defined = consistencyResult.defined;
                     score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks };
+                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
                     break;
                 default:
                     break;
@@ -594,7 +596,7 @@ const RatingEngine = {
         let flagDenom = 0;
         let disputeGood = 0;
         let disputeDenom = 0;
-        const weeklyResolution = new Map();
+        const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
 
@@ -610,6 +612,9 @@ const RatingEngine = {
                 if ((nowMs - ts) <= RE_CONFIDENCE_WINDOW_MS) count90d += 1;
             }
 
+            const wk = reIsoWeekKey(createdAt);
+            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
+
             const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
             if (episode.returnType === 'returned' && reIsProductionTask(task)) {
                 returnEpisodes.push({
@@ -618,13 +623,6 @@ const RatingEngine = {
                     iso: createdAt,
                     rounds: episode.rounds
                 });
-                if (reInTrailingWeeks(createdAt, nowMs)) {
-                    const wk = reIsoWeekKey(createdAt);
-                    if (wk) {
-                        if (!weeklyResolution.has(wk)) weeklyResolution.set(wk, []);
-                        weeklyResolution.get(wk).push({ value: episode.episodeScore, weight: w });
-                    }
-                }
             }
         }
 
@@ -673,12 +671,10 @@ const RatingEngine = {
             ? 1 - reShrunkRate(flagBad, flagDenom, 20)
             : reShrunkRate(0, 0, 20);
 
-        const weeklyResolutionMeans = [];
-        for (const [, entries] of weeklyResolution) {
-            const mean = reWeightedMean(entries);
-            if (mean != null) weeklyResolutionMeans.push(mean);
-        }
-        const consistencyResult = reConsistencyFromWeekly(weeklyResolutionMeans);
+        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
+            ? Date.parse(window.beforeIso)
+            : nowMs;
+        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
 
         const roundsList = returnEpisodes.map((e) => e.rounds).filter((r) => r != null && r > 0);
         const oneRoundCount = returnEpisodes.filter((e) => e.rounds === 1).length;
@@ -705,7 +701,7 @@ const RatingEngine = {
                 case 'consistency':
                     defined = consistencyResult.defined;
                     score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks };
+                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
                     break;
                 default:
                     break;
@@ -1014,7 +1010,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
