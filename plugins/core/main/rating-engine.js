@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.1';
+const RE_VERSION = '1.2';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_TRAILING_WEEKS = 26;
@@ -17,6 +17,7 @@ const RE_SEVERITY_SCORES = {
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
+const RE_PRODUCTION_STATUS_MATCH = 'production';
 
 const RE_TWQS_PILLARS = [
     { id: 'acceptanceSeverity', label: 'Acceptance / Outcome Severity', weight: 0.35 },
@@ -55,6 +56,10 @@ function reTaskTimestamp(task, item) {
 
 function reIdsEqual(a, b) {
     return String(a || '').trim() === String(b || '').trim();
+}
+
+function reIsProductionTask(task) {
+    return String((task && task.status) || '').toLowerCase().includes(RE_PRODUCTION_STATUS_MATCH);
 }
 
 function reResolveFeedbackId(id, remap) {
@@ -580,7 +585,7 @@ const RatingEngine = {
             }
 
             const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned') {
+            if (episode.returnType === 'returned' && reIsProductionTask(task)) {
                 returnEpisodes.push({
                     value: episode.episodeScore,
                     weight: w,
@@ -774,7 +779,9 @@ const RatingEngine = {
                     feedbackAt: episode.createdAt || null,
                     roundsToAccept: episode.rounds,
                     episodeScore: episode.episodeScore,
-                    subsequentReviewerIds: episode.subsequentReviewerIds
+                    subsequentReviewerIds: episode.subsequentReviewerIds,
+                    taskStatus: String((task && task.status) || '') || null,
+                    countedInResolution: reIsProductionTask(task)
                 });
             }
         }
@@ -983,7 +990,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
