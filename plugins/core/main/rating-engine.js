@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.10';
+const RE_VERSION = '1.11';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -13,7 +13,7 @@ const RE_QAQS_SR_PENALTY_BLEND = 0.75;
 const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
 
-const RE_TWQS_PILLARS = [
+const RE_TWQS_AXES = [
     { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.35 },
     { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.15 },
     { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
@@ -21,7 +21,7 @@ const RE_TWQS_PILLARS = [
     { id: 'consistency', label: 'Consistency', weight: 0.15 }
 ];
 
-const RE_QAQS_PILLARS = [
+const RE_QAQS_AXES = [
     { id: 'feedbackResolution', label: 'Comprehensiveness', weight: 0.50 },
     { id: 'reviewCallAccuracy', label: 'Dispute Defense', weight: 0.20 },
     { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.25 },
@@ -222,14 +222,14 @@ function reWeightedMean(pairs) {
     return total / wSum;
 }
 
-function reCombinePillars(pillarDefs) {
-    const defined = pillarDefs.filter((p) => p.defined !== false && p.score != null && Number.isFinite(p.score));
+function reCombineAxes(axisDefs) {
+    const defined = axisDefs.filter((p) => p.defined !== false && p.score != null && Number.isFinite(p.score));
     if (defined.length === 0) {
-        return { score: null, band: '—', pillars: pillarDefs };
+        return { score: null, band: '—', axes: axisDefs };
     }
     const baseSum = defined.reduce((s, p) => s + p.baseWeight, 0);
     let composite = 0;
-    for (const p of pillarDefs) {
+    for (const p of axisDefs) {
         if (p.defined === false || p.score == null || !Number.isFinite(p.score)) {
             p.effectiveWeight = 0;
             continue;
@@ -238,7 +238,7 @@ function reCombinePillars(pillarDefs) {
         composite += p.score * p.effectiveWeight;
     }
     const score = Math.round(composite * 1000) / 10;
-    return { score, band: reBandLabel(score), pillars: pillarDefs };
+    return { score, band: reBandLabel(score), axes: axisDefs };
 }
 
 function reHumanFeedbackChronological(task) {
@@ -346,9 +346,9 @@ function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
     return { createdAt, weight: w, returnType: rt, episodeScore, rounds, subsequentReviewerIds };
 }
 
-function rePillarOmitReason(pillar) {
-    if (!pillar || pillar.defined !== false) return null;
-    switch (pillar.id) {
+function reAxisOmitReason(axis) {
+    if (!axis || axis.defined !== false) return null;
+    switch (axis.id) {
         case 'feedbackResolution':
             return 'No return episodes by this QA in scope';
         case 'reviewCallAccuracy':
@@ -357,7 +357,7 @@ function rePillarOmitReason(pillar) {
         case 'consistency':
             return 'Fewer than 2 active calendar weeks of activity in scope';
         default:
-            return 'Pillar undefined';
+            return 'Axis undefined';
     }
 }
 
@@ -539,7 +539,7 @@ const RatingEngine = {
             : 0.5;
 
         const revisionScore = reWeightedMean(revisionEvents);
-        const revisionPillar = revisionScore != null ? revisionScore : 0.5;
+        const revisionAxisScore = revisionScore != null ? revisionScore : 0.5;
 
         const srScore = flagDenom > 0
             ? 1 - reShrunkRate(flagBad, flagDenom, 20)
@@ -557,7 +557,7 @@ const RatingEngine = {
             : nowMs;
         const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
 
-        const pillars = RE_TWQS_PILLARS.map((def) => {
+        const axes = RE_TWQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
@@ -567,7 +567,7 @@ const RatingEngine = {
                     raw = { severityMean, eventCount: severityEvents.length, statusCounts, outcomeCounts };
                     break;
                 case 'revisionEfficiency':
-                    score = revisionPillar;
+                    score = revisionAxisScore;
                     raw = {
                         revisionEventCount: revisionEvents.length,
                         approvedDisputeRoundsSubtracted: revisionApprovedRoundsSubtracted,
@@ -601,7 +601,7 @@ const RatingEngine = {
             };
         });
 
-        const combined = reCombinePillars(pillars);
+        const combined = reCombineAxes(axes);
         const tenureDays = earliestTs != null
             ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
             : null;
@@ -736,7 +736,7 @@ const RatingEngine = {
         const roundsList = returnEpisodes.map((e) => e.rounds).filter((r) => r != null && r > 0);
         const oneRoundCount = returnEpisodes.filter((e) => e.rounds === 1).length;
 
-        const pillars = RE_QAQS_PILLARS.map((def) => {
+        const axes = RE_QAQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
@@ -780,7 +780,7 @@ const RatingEngine = {
             };
         });
 
-        const combined = reCombinePillars(pillars);
+        const combined = reCombineAxes(axes);
         const tenureDays = earliestTs != null
             ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
             : null;
@@ -934,20 +934,20 @@ const RatingEngine = {
             }
         }
 
-        const qaqsPillarDebug = (workerReport.qaqs && workerReport.qaqs.pillars || []).map((p) => ({
+        const qaqsAxisDebug = (workerReport.qaqs && workerReport.qaqs.axes || []).map((p) => ({
             id: p.id,
             label: p.label,
             defined: p.defined !== false,
-            whyOmitted: rePillarOmitReason(p),
+            whyOmitted: reAxisOmitReason(p),
             score: p.score,
             raw: p.raw || {}
         }));
 
-        const twqsPillarDebug = (workerReport.twqs && workerReport.twqs.pillars || []).map((p) => ({
+        const twqsAxisDebug = (workerReport.twqs && workerReport.twqs.axes || []).map((p) => ({
             id: p.id,
             label: p.label,
             defined: p.defined !== false,
-            whyOmitted: rePillarOmitReason(p),
+            whyOmitted: reAxisOmitReason(p),
             score: p.score,
             raw: p.raw || {}
         }));
@@ -985,11 +985,11 @@ const RatingEngine = {
                 disputesInScope,
                 flagsInScope,
                 flagsRaisedInScope,
-                pillarDebug: qaqsPillarDebug
+                axisDebug: qaqsAxisDebug
             },
             twqs: workerReport.twqs ? {
                 writerItemCount: this._writerItems(workerId, cachedItems).length,
-                pillarDebug: twqsPillarDebug
+                axisDebug: twqsAxisDebug
             } : null,
             scores: {
                 twqs: workerReport.twqs ? {
@@ -1050,9 +1050,9 @@ const RatingEngine = {
             lines.push('**Score:** ' + block.score + ' / 100 · ' + block.band);
             lines.push('**Confidence:** ' + (block.confidence && block.confidence.label));
             lines.push('');
-            lines.push('| Pillar | Sub-score | Weight |');
+            lines.push('| Axis | Sub-score | Weight |');
             lines.push('| --- | ---: | ---: |');
-            for (const p of block.pillars || []) {
+            for (const p of block.axes || []) {
                 const wt = p.effectiveWeight != null
                     ? (Math.round(p.effectiveWeight * 1000) / 10) + '%'
                     : '—';
@@ -1093,7 +1093,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

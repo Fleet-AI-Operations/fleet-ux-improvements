@@ -8494,13 +8494,13 @@ const searchOutputMethods = {
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
-        const sortedPillars = [...(block.pillars || [])].sort((a, b) => {
+        const sortedAxes = [...(block.axes || [])].sort((a, b) => {
             const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
             if (wDiff !== 0) return wDiff;
             return String(a.label || '').localeCompare(String(b.label || ''));
         });
-        let pillarsHtml = '';
-        for (const p of sortedPillars) {
+        let axesHtml = '';
+        for (const p of sortedAxes) {
             const omitted = p.defined === false || p.score == null;
             const pct = omitted ? 0 : Math.round((p.score || 0) * 100);
             const wt = p.effectiveWeight != null ? Math.round(p.effectiveWeight * 1000) / 10 : null;
@@ -8509,7 +8509,7 @@ const searchOutputMethods = {
                 : ('<div style="flex: 1; height: 6px; background: color-mix(in srgb, var(--muted-foreground, #64748b) 20%, transparent); border-radius: 3px; overflow: hidden;"><div style="width: ' + pct + '%; height: 100%; background: var(--brand, var(--primary, #2563eb));"></div></div>'
                 + '<span style="font-size: 10px; min-width: 36px; text-align: right;">' + dashEscHtml(String(pct)) + '%</span>'
                 + (wt != null ? '<span style="font-size: 10px; min-width: 32px; text-align: right; color: var(--muted-foreground, #64748b);">' + wt + '%</span>' : ''));
-            pillarsHtml += '<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px;">'
+            axesHtml += '<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px;">'
                 + '<span style="flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + dashEscHtml(p.label) + '">' + dashEscHtml(p.label) + '</span>'
                 + bar
                 + '</div>';
@@ -8521,7 +8521,7 @@ const searchOutputMethods = {
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
-            + pillarsHtml
+            + axesHtml
             + '</div>';
     },
 
@@ -11736,7 +11736,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.41',
+    _version: '4.42',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
