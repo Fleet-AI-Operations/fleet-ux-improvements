@@ -47,6 +47,12 @@
       "log": false
     },
     {
+      "name": "rating-engine.js",
+      "version": "1.0",
+      "hash": "sha256-9a7b783a15995ddba224ce1761800858cb6bff7ca1f2cf32a8ffcd1d64604fd1",
+      "log": false
+    },
+    {
       "name": "dashboard-data.js",
       "version": "3.0",
       "hash": "sha256-34c35dbb0701ef969394732c5bffc0ed6ce471914aa7b7389c1c9965782c60d7",
@@ -66,8 +72,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.37",
-      "hash": "sha256-e0199fbf9b0a7284d45dad0a2f1633f5e73f0f4edbadd8e088ac3b297669beee",
+      "version": "4.38",
+      "hash": "sha256-92114f462a676563606c1a1ef2c0def3f622c0515d5197e43b0404fe73415983",
       "log": false
     },
     {
