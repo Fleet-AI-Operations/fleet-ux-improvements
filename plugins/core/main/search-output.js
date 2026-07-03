@@ -8528,6 +8528,7 @@ const searchOutputMethods = {
             return String(a.label || '').localeCompare(String(b.label || ''));
         });
         let axesHtml = '';
+        const showAxisWeights = Boolean(Context.isDevBranch);
         for (const p of sortedAxes) {
             const omitted = p.defined === false || p.score == null;
             const pct = omitted ? 0 : Math.round((p.score || 0) * 100);
@@ -8536,7 +8537,7 @@ const searchOutputMethods = {
                 ? '<span style="font-size: 10px; color: var(--muted-foreground, #64748b);">omitted</span>'
                 : ('<div style="flex: 1; height: 6px; background: color-mix(in srgb, var(--muted-foreground, #64748b) 20%, transparent); border-radius: 3px; overflow: hidden;"><div style="width: ' + pct + '%; height: 100%; background: var(--brand, var(--primary, #2563eb));"></div></div>'
                 + '<span style="font-size: 10px; min-width: 36px; text-align: right;">' + dashEscHtml(String(pct)) + '%</span>'
-                + (wt != null ? '<span style="font-size: 10px; min-width: 32px; text-align: right; color: var(--muted-foreground, #64748b);">' + wt + '%</span>' : ''));
+                + (showAxisWeights && wt != null ? '<span style="font-size: 10px; min-width: 32px; text-align: right; color: var(--muted-foreground, #64748b);">' + wt + '%</span>' : ''));
             axesHtml += '<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px;">'
                 + '<span style="flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + dashEscHtml(p.label) + '">' + dashEscHtml(p.label) + '</span>'
                 + bar
@@ -11788,7 +11789,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.45',
+    _version: '4.46',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
