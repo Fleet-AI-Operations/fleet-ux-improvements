@@ -1,36 +1,31 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.1';
+const RE_VERSION = '1.14';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
-const RE_TRAILING_WEEKS = 26;
-const RE_TRAILING_WEEKS_MS = RE_TRAILING_WEEKS * 7 * RE_MS_PER_DAY;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
-
-const RE_SEVERITY_SCORES = {
-    accepted: 1.0,
-    returned: 0.7,
-    escalated: 0.3,
-    bugged: 0.0
-};
+const RE_STATUS_SEVERITY_DEFAULT = 0.5;
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
+const RE_QAQS_SR_PENALTY_BLEND = 0.75;
+const RE_QAQS_SR_RAISED_BLEND = 0.25;
+const RE_PRODUCTION_STATUS_MATCH = 'production';
 
-const RE_TWQS_PILLARS = [
-    { id: 'acceptanceSeverity', label: 'Acceptance / Outcome Severity', weight: 0.35 },
-    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.15 },
-    { id: 'srReviewIntegrity', label: 'Sr-Review Integrity', weight: 0.20 },
-    { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.15 },
-    { id: 'consistency', label: 'Consistency', weight: 0.15 }
+const RE_TWQS_AXES = [
+    { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
+    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.25 },
+    { id: 'consistency', label: 'Consistency', weight: 0.15 },
+    { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.10 },
+    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.10 }
 ];
 
-const RE_QAQS_PILLARS = [
-    { id: 'feedbackResolution', label: 'Feedback Resolution Efficiency', weight: 0.50 },
-    { id: 'reviewCallAccuracy', label: 'Review-Call Accuracy (Dispute Defense)', weight: 0.20 },
-    { id: 'srReviewIntegrity', label: 'Sr-Review Integrity', weight: 0.25 },
-    { id: 'consistency', label: 'Consistency', weight: 0.05 }
+const RE_QAQS_AXES = [
+    { id: 'feedbackResolution', label: 'Comprehensiveness', weight: 0.50 },
+    { id: 'reviewCallAccuracy', label: 'Dispute Defense', weight: 0.20 },
+    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
+    { id: 'consistency', label: 'Consistency', weight: 0.10 }
 ];
 
 const RE_BANDS = [
@@ -57,10 +52,40 @@ function reIdsEqual(a, b) {
     return String(a || '').trim() === String(b || '').trim();
 }
 
+function reIsProductionTask(task) {
+    return String((task && task.status) || '').toLowerCase().includes(RE_PRODUCTION_STATUS_MATCH);
+}
+
 function reResolveFeedbackId(id, remap) {
     const key = String(id || '').trim();
     if (!key) return '';
     return String((remap && remap[key]) || key);
+}
+
+function reFeedbackAtForResolvedId(task, feedbackId) {
+    const fid = String(feedbackId || '').trim();
+    if (!fid || !task) return '';
+    for (const entry of task.allFeedback || []) {
+        if (!reIsHumanFeedback(entry)) continue;
+        if (reIdsEqual(entry.id, fid)) return reFeedbackTimestamp(entry);
+    }
+    return '';
+}
+
+function reQaFlagPenalizesWorker(task, flag, workerId) {
+    const flaggerId = String((flag && flag.flaggerId) || '');
+    if (flaggerId && reIdsEqual(flaggerId, workerId)) return false;
+    const cutoff = String((flag && (flag.createdAt || flag.resolutionAt)) || '').trim();
+    let hasPrior = false;
+    let hasAny = false;
+    for (const entry of (task && task.allFeedback) || []) {
+        if (!reIsHumanFeedback(entry)) continue;
+        if (!reIdsEqual(entry.reviewer && entry.reviewer.id, workerId)) continue;
+        hasAny = true;
+        const ts = reFeedbackTimestamp(entry);
+        if (!cutoff || (ts && ts < cutoff)) hasPrior = true;
+    }
+    return cutoff ? hasPrior : hasAny;
 }
 
 function reReturnTypeOf(entry) {
@@ -121,17 +146,34 @@ function reCoefficientOfVariation(values) {
     return Math.min(1, Math.sqrt(variance) / mean);
 }
 
-function reConsistencyFromWeekly(weeklyScores) {
-    if (!weeklyScores || weeklyScores.length < 2) {
-        return { defined: false, score: null, activeWeeks: weeklyScores ? weeklyScores.length : 0 };
+function reWeekKeysInSpan(startMs, endMs) {
+    const keys = new Set();
+    if (startMs == null || endMs == null || Number.isNaN(startMs) || Number.isNaN(endMs)) return keys;
+    const from = Math.min(startMs, endMs);
+    const to = Math.max(startMs, endMs);
+    for (let t = from; t <= to; t += RE_MS_PER_DAY * 7) {
+        const key = reIsoWeekKey(new Date(t).toISOString());
+        if (key) keys.add(key);
     }
-    const stability = 1 - reCoefficientOfVariation(weeklyScores);
-    const floorScore = Math.min(...weeklyScores);
-    return {
-        defined: true,
-        score: Math.max(0, Math.min(1, 0.6 * stability + 0.4 * floorScore)),
-        activeWeeks: weeklyScores.length
-    };
+    const endKey = reIsoWeekKey(new Date(to).toISOString());
+    if (endKey) keys.add(endKey);
+    return keys;
+}
+
+// Activity-cadence consistency: rewards steady week-to-week presence (coverage
+// of weeks worked across the span) plus even volume when active. Outcome-agnostic.
+function reActivityConsistency(weeklyCounts, firstActivityMs, spanEndMs) {
+    const activeWeeks = weeklyCounts ? weeklyCounts.size : 0;
+    if (activeWeeks < 2) {
+        return { defined: false, score: null, activeWeeks, totalWeeks: activeWeeks };
+    }
+    const spanKeys = reWeekKeysInSpan(firstActivityMs, spanEndMs);
+    const totalWeeks = Math.max(spanKeys.size, activeWeeks);
+    const coverage = totalWeeks > 0 ? Math.min(1, activeWeeks / totalWeeks) : 0;
+    const counts = [...weeklyCounts.values()];
+    const evenness = 1 - Math.min(1, reCoefficientOfVariation(counts));
+    const score = Math.max(0, Math.min(1, 0.6 * coverage + 0.4 * evenness));
+    return { defined: true, score, activeWeeks, totalWeeks };
 }
 
 function reResolveWeightingMode(committed) {
@@ -168,12 +210,6 @@ function reEventWeight(isoTs, mode, nowMs, window) {
     return Math.exp(-ageDays / RE_HALFLIFE_DAYS);
 }
 
-function reInTrailingWeeks(isoTs, nowMs) {
-    const ts = Date.parse(isoTs);
-    if (Number.isNaN(ts)) return false;
-    return (nowMs - ts) <= RE_TRAILING_WEEKS_MS;
-}
-
 function reWeightedMean(pairs) {
     let wSum = 0;
     let total = 0;
@@ -186,14 +222,14 @@ function reWeightedMean(pairs) {
     return total / wSum;
 }
 
-function reCombinePillars(pillarDefs) {
-    const defined = pillarDefs.filter((p) => p.defined !== false && p.score != null && Number.isFinite(p.score));
+function reCombineAxes(axisDefs) {
+    const defined = axisDefs.filter((p) => p.defined !== false && p.score != null && Number.isFinite(p.score));
     if (defined.length === 0) {
-        return { score: null, band: '—', pillars: pillarDefs };
+        return { score: null, band: '—', axes: axisDefs };
     }
     const baseSum = defined.reduce((s, p) => s + p.baseWeight, 0);
     let composite = 0;
-    for (const p of pillarDefs) {
+    for (const p of axisDefs) {
         if (p.defined === false || p.score == null || !Number.isFinite(p.score)) {
             p.effectiveWeight = 0;
             continue;
@@ -202,7 +238,7 @@ function reCombinePillars(pillarDefs) {
         composite += p.score * p.effectiveWeight;
     }
     const score = Math.round(composite * 1000) / 10;
-    return { score, band: reBandLabel(score), pillars: pillarDefs };
+    return { score, band: reBandLabel(score), axes: axisDefs };
 }
 
 function reHumanFeedbackChronological(task) {
@@ -212,16 +248,39 @@ function reHumanFeedbackChronological(task) {
 }
 
 function reTaskSeverityScore(task) {
-    const feedback = reHumanFeedbackChronological(task);
-    if (!feedback.length) return 0.5;
-    let worst = 1.0;
-    for (const entry of feedback) {
-        const rt = reReturnTypeOf(entry);
-        if (!rt) continue;
-        const s = RE_SEVERITY_SCORES[rt];
-        if (s != null && s < worst) worst = s;
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (!status) return RE_STATUS_SEVERITY_DEFAULT;
+    if (status.includes('dismissed')) return 0.0;
+    if (status.includes('discarded')) return 0.3;
+    if (status.includes('bugged') || status.includes('escalated')) return 0.4;
+    if (status.includes('staging')) return 0.5;
+    if (status.includes('recovery')) return 0.7;
+    if (status.includes('production')) return 1.0;
+    return RE_STATUS_SEVERITY_DEFAULT;
+}
+
+function reRevisionStatusWeight(task) {
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (!status) return 0.5;
+    if (status.includes('disputed')) return 0.7;
+    if (status.includes('production') || status.includes('discarded')
+        || status.includes('dismissed') || status.includes('staging')) return 1.0;
+    return 0.5;
+}
+
+function reCountApprovedDisputes(item) {
+    let n = 0;
+    for (const dispute of (item && item.disputes) || []) {
+        if (dispute.isApproved) n += 1;
     }
-    return worst;
+    return n;
+}
+
+function reEffectiveRevisionVersion(task, item) {
+    const vFinal = reFinalDisplayVersionNo(task);
+    const vEffective = vFinal - reCountApprovedDisputes(item);
+    if (vEffective <= 0) return null;
+    return vEffective;
 }
 
 function reFinalDisplayVersionNo(task) {
@@ -287,18 +346,18 @@ function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
     return { createdAt, weight: w, returnType: rt, episodeScore, rounds, subsequentReviewerIds };
 }
 
-function rePillarOmitReason(pillar) {
-    if (!pillar || pillar.defined !== false) return null;
-    switch (pillar.id) {
+function reAxisOmitReason(axis) {
+    if (!axis || axis.defined !== false) return null;
+    switch (axis.id) {
         case 'feedbackResolution':
             return 'No return episodes by this QA in scope';
         case 'reviewCallAccuracy':
         case 'disputeOutcomes':
             return 'No resolved disputes in scope';
         case 'consistency':
-            return 'Fewer than 2 active calendar weeks in trailing window';
+            return 'Fewer than 2 active calendar weeks of activity in scope';
         default:
-            return 'Pillar undefined';
+            return 'Axis undefined';
     }
 }
 
@@ -321,6 +380,58 @@ function reFormatPct(score) {
     const lib = reLib();
     if (lib && typeof lib.formatPercent === 'function') return lib.formatPercent(score * 100);
     return (Math.round(score * 1000) / 10).toFixed(1);
+}
+
+function rePctOneDecimal(fraction) {
+    if (fraction == null || !Number.isFinite(fraction)) return null;
+    return Math.round(fraction * 1000) / 10;
+}
+
+function reAxisExportRow(axis) {
+    const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
+    return {
+        id: String((axis && axis.id) || ''),
+        label: String((axis && axis.label) || ''),
+        baseWeightPct: rePctOneDecimal(axis && axis.baseWeight),
+        effectiveWeightPct: defined ? rePctOneDecimal(axis.effectiveWeight) : 0,
+        subScorePct: defined ? rePctOneDecimal(axis.score) : null,
+        defined
+    };
+}
+
+function reSortedAxesForExport(axes) {
+    return [...(axes || [])].sort((a, b) => {
+        const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
+        if (wDiff !== 0) return wDiff;
+        return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+}
+
+function reScoreBlockExport(block) {
+    if (!block) return null;
+    return {
+        score: block.score,
+        band: block.band,
+        confidence: block.confidence || null,
+        axes: reSortedAxesForExport(block.axes).map(reAxisExportRow)
+    };
+}
+
+function reWorkerJsonExport(workerReport) {
+    const src = workerReport || {};
+    return {
+        workerId: src.workerId,
+        name: src.name,
+        email: src.email || '',
+        mode: src.mode,
+        window: src.window || {},
+        computedAt: src.computedAt || null,
+        engineVersion: src.engineVersion || RE_VERSION,
+        exportDate: src.exportDate || null,
+        twqs: reScoreBlockExport(src.twqs),
+        qaqs: reScoreBlockExport(src.qaqs),
+        meta: src.meta || null
+    };
 }
 
 function reFieldAuditRow(entry, task, workerId) {
@@ -370,8 +481,7 @@ const RatingEngine = {
                 qaqs,
                 meta: {
                     hydratedCount: hydratedItems.length,
-                    unhydratedCount,
-                    scoredItemIds: hydratedItems.map((it) => it.id)
+                    unhydratedCount
                 }
             };
         });
@@ -408,10 +518,14 @@ const RatingEngine = {
         let flagDenom = 0;
         let disputeGood = 0;
         let disputeDenom = 0;
-        const weeklySeverity = new Map();
+        const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
         const outcomeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0 };
+        const statusCounts = {};
+
+        let revisionApprovedRoundsSubtracted = 0;
+        let revisionExcludedByDisputes = 0;
 
         for (const item of writerItems) {
             const task = item.task;
@@ -421,16 +535,24 @@ const RatingEngine = {
 
             const severity = reTaskSeverityScore(task);
             severityEvents.push({ value: severity, weight: w, iso: createdAt });
-            if (reInTrailingWeeks(createdAt, nowMs)) {
-                const wk = reIsoWeekKey(createdAt);
-                if (wk) {
-                    if (!weeklySeverity.has(wk)) weeklySeverity.set(wk, []);
-                    weeklySeverity.get(wk).push({ value: severity, weight: w });
-                }
-            }
+            const statusKey = String((task && task.status) || '').trim() || '(missing)';
+            statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
+            const wk = reIsoWeekKey(createdAt);
+            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
-            const vFinal = reFinalDisplayVersionNo(task);
-            revisionEvents.push({ value: 1 / Math.max(1, vFinal), weight: w, iso: createdAt });
+            const approvedDisputeCount = reCountApprovedDisputes(item);
+            if (approvedDisputeCount > 0) revisionApprovedRoundsSubtracted += approvedDisputeCount;
+            const vEffective = reEffectiveRevisionVersion(task, item);
+            if (vEffective == null) {
+                revisionExcludedByDisputes += 1;
+            } else {
+                const revisionStatusW = reRevisionStatusWeight(task);
+                revisionEvents.push({
+                    value: 1 / vEffective,
+                    weight: w * revisionStatusW,
+                    iso: createdAt
+                });
+            }
 
             const ts = Date.parse(createdAt);
             if (!Number.isNaN(ts)) {
@@ -468,7 +590,7 @@ const RatingEngine = {
             : 0.5;
 
         const revisionScore = reWeightedMean(revisionEvents);
-        const revisionPillar = revisionScore != null ? revisionScore : 0.5;
+        const revisionAxisScore = revisionScore != null ? revisionScore : 0.5;
 
         const srScore = flagDenom > 0
             ? 1 - reShrunkRate(flagBad, flagDenom, 20)
@@ -481,25 +603,27 @@ const RatingEngine = {
             disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
         }
 
-        const weeklySeverityMeans = [];
-        for (const [, entries] of weeklySeverity) {
-            const mean = reWeightedMean(entries);
-            if (mean != null) weeklySeverityMeans.push(mean);
-        }
-        const consistencyResult = reConsistencyFromWeekly(weeklySeverityMeans);
+        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
+            ? Date.parse(window.beforeIso)
+            : nowMs;
+        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
 
-        const pillars = RE_TWQS_PILLARS.map((def) => {
+        const axes = RE_TWQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
             switch (def.id) {
                 case 'acceptanceSeverity':
                     score = acceptanceScore;
-                    raw = { severityMean, eventCount: severityEvents.length, outcomeCounts };
+                    raw = { severityMean, eventCount: severityEvents.length, statusCounts, outcomeCounts };
                     break;
                 case 'revisionEfficiency':
-                    score = revisionPillar;
-                    raw = { revisionEventCount: revisionEvents.length };
+                    score = revisionAxisScore;
+                    raw = {
+                        revisionEventCount: revisionEvents.length,
+                        approvedDisputeRoundsSubtracted: revisionApprovedRoundsSubtracted,
+                        revisionExcludedByDisputes
+                    };
                     break;
                 case 'srReviewIntegrity':
                     score = srScore;
@@ -513,7 +637,7 @@ const RatingEngine = {
                 case 'consistency':
                     defined = consistencyResult.defined;
                     score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks };
+                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
                     break;
                 default:
                     break;
@@ -528,7 +652,7 @@ const RatingEngine = {
             };
         });
 
-        const combined = reCombinePillars(pillars);
+        const combined = reCombineAxes(axes);
         const tenureDays = earliestTs != null
             ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
             : null;
@@ -561,9 +685,11 @@ const RatingEngine = {
         const returnEpisodes = [];
         let flagBad = 0;
         let flagDenom = 0;
+        let raisedGood = 0;
+        let raisedDenom = 0;
         let disputeGood = 0;
         let disputeDenom = 0;
-        const weeklyResolution = new Map();
+        const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
 
@@ -579,21 +705,17 @@ const RatingEngine = {
                 if ((nowMs - ts) <= RE_CONFIDENCE_WINDOW_MS) count90d += 1;
             }
 
+            const wk = reIsoWeekKey(createdAt);
+            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
+
             const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned') {
+            if (episode.returnType === 'returned' && reIsProductionTask(task)) {
                 returnEpisodes.push({
                     value: episode.episodeScore,
                     weight: w,
                     iso: createdAt,
                     rounds: episode.rounds
                 });
-                if (reInTrailingWeeks(createdAt, nowMs)) {
-                    const wk = reIsoWeekKey(createdAt);
-                    if (wk) {
-                        if (!weeklyResolution.has(wk)) weeklyResolution.set(wk, []);
-                        weeklyResolution.get(wk).push({ value: episode.episodeScore, weight: w });
-                    }
-                }
             }
         }
 
@@ -603,21 +725,30 @@ const RatingEngine = {
             const remap = task.systemFeedbackIdRemap || {};
 
             for (const flag of item.flags || []) {
-                if (!flag.isConfirmed || flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                const hasQaFeedback = (task.allFeedback || []).some((e) => {
-                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
-                });
-                if (!hasQaFeedback) continue;
-                const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                const fw = reEventWeight(flagTs, mode, nowMs, window);
-                if (fw > 0) flagBad += fw;
+                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
+
+                if (flag.isConfirmed && reQaFlagPenalizesWorker(task, flag, workerId)) {
+                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
+                    const fw = reEventWeight(flagTs, mode, nowMs, window);
+                    if (fw > 0) flagBad += fw;
+                }
+
+                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
+                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
+                    const fw = reEventWeight(flagTs, mode, nowMs, window);
+                    if (fw > 0) {
+                        raisedDenom += fw;
+                        if (flag.isConfirmed) raisedGood += fw;
+                    }
+                }
             }
 
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
                 const fid = reResolveFeedbackId(dispute.feedbackId, remap);
                 if (!fid || !feedbackIds.has(fid)) continue;
-                const dw = reEventWeight(dispute.resolutionAt, mode, nowMs, window);
+                const weightTs = reFeedbackAtForResolvedId(task, fid);
+                const dw = reEventWeight(weightTs, mode, nowMs, window);
                 if (dw <= 0) continue;
                 disputeDenom += dw;
                 if (dispute.isRejected) disputeGood += dw;
@@ -640,21 +771,23 @@ const RatingEngine = {
             disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
         }
 
-        const srScore = flagDenom > 0
+        const penaltyScore = flagDenom > 0
             ? 1 - reShrunkRate(flagBad, flagDenom, 20)
             : reShrunkRate(0, 0, 20);
+        const raisedScore = raisedDenom > 0
+            ? reShrunkRate(raisedGood, raisedDenom, 20)
+            : reShrunkRate(0, 0, 20);
+        const srScore = RE_QAQS_SR_PENALTY_BLEND * penaltyScore + RE_QAQS_SR_RAISED_BLEND * raisedScore;
 
-        const weeklyResolutionMeans = [];
-        for (const [, entries] of weeklyResolution) {
-            const mean = reWeightedMean(entries);
-            if (mean != null) weeklyResolutionMeans.push(mean);
-        }
-        const consistencyResult = reConsistencyFromWeekly(weeklyResolutionMeans);
+        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
+            ? Date.parse(window.beforeIso)
+            : nowMs;
+        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
 
         const roundsList = returnEpisodes.map((e) => e.rounds).filter((r) => r != null && r > 0);
         const oneRoundCount = returnEpisodes.filter((e) => e.rounds === 1).length;
 
-        const pillars = RE_QAQS_PILLARS.map((def) => {
+        const axes = RE_QAQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
@@ -671,12 +804,19 @@ const RatingEngine = {
                     break;
                 case 'srReviewIntegrity':
                     score = srScore;
-                    raw = { confirmedFlags: flagBad, feedbackWeight: flagDenom };
+                    raw = {
+                        confirmedFlags: flagBad,
+                        feedbackWeight: flagDenom,
+                        penaltyScore,
+                        raisedConfirmedWeight: raisedGood,
+                        raisedResolvedWeight: raisedDenom,
+                        raisedScore
+                    };
                     break;
                 case 'consistency':
                     defined = consistencyResult.defined;
                     score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks };
+                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
                     break;
                 default:
                     break;
@@ -691,7 +831,7 @@ const RatingEngine = {
             };
         });
 
-        const combined = reCombinePillars(pillars);
+        const combined = reCombineAxes(axes);
         const tenureDays = earliestTs != null
             ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
             : null;
@@ -713,6 +853,8 @@ const RatingEngine = {
                 returnEpisodes: returnEpisodes.length,
                 flagBad,
                 flagDenom,
+                raisedGood,
+                raisedDenom,
                 disputeGood,
                 disputeDenom
             }
@@ -774,7 +916,9 @@ const RatingEngine = {
                     feedbackAt: episode.createdAt || null,
                     roundsToAccept: episode.rounds,
                     episodeScore: episode.episodeScore,
-                    subsequentReviewerIds: episode.subsequentReviewerIds
+                    subsequentReviewerIds: episode.subsequentReviewerIds,
+                    taskStatus: String((task && task.status) || '') || null,
+                    countedInResolution: reIsProductionTask(task)
                 });
             }
         }
@@ -782,6 +926,7 @@ const RatingEngine = {
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
         const disputesInScope = [];
         const flagsInScope = [];
+        const flagsRaisedInScope = [];
 
         for (const item of cachedItems) {
             const task = item.task;
@@ -800,6 +945,7 @@ const RatingEngine = {
                     disputeId: String(dispute.id || ''),
                     feedbackId: rawFid,
                     resolvedFeedbackId: resolvedFid,
+                    feedbackAt: reFeedbackAtForResolvedId(task, resolvedFid) || null,
                     matchesWorker,
                     status: dispute.status || null,
                     resolutionAt: dispute.resolutionAt || null,
@@ -810,35 +956,49 @@ const RatingEngine = {
 
             for (const flag of item.flags || []) {
                 if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-                const hasQa = (task.allFeedback || []).some((e) => {
-                    return reIsHumanFeedback(e) && reIdsEqual(e.reviewer && e.reviewer.id, workerId);
-                });
-                if (!hasQa) continue;
-                flagsInScope.push({
-                    flagId: String(flag.id || ''),
-                    taskId: String(task.id || ''),
-                    reasonKey: flag.reasonKey,
-                    status: flag.status || null,
-                    isConfirmed: Boolean(flag.isConfirmed),
-                    resolutionAt: flag.resolutionAt || null
-                });
+
+                if (reQaFlagPenalizesWorker(task, flag, workerId) && flag.isConfirmed) {
+                    flagsInScope.push({
+                        flagId: String(flag.id || ''),
+                        taskId: String(task.id || ''),
+                        flaggerId: String(flag.flaggerId || '') || null,
+                        reasonKey: flag.reasonKey,
+                        status: flag.status || null,
+                        isConfirmed: Boolean(flag.isConfirmed),
+                        resolutionAt: flag.resolutionAt || null,
+                        attributedToWorker: true
+                    });
+                }
+
+                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
+                    flagsRaisedInScope.push({
+                        flagId: String(flag.id || ''),
+                        taskId: String(task.id || ''),
+                        reasonKey: flag.reasonKey,
+                        status: flag.status || null,
+                        isConfirmed: Boolean(flag.isConfirmed),
+                        isDismissed: Boolean(flag.isDismissed),
+                        resolutionAt: flag.resolutionAt || null,
+                        raisedByWorker: true
+                    });
+                }
             }
         }
 
-        const qaqsPillarDebug = (workerReport.qaqs && workerReport.qaqs.pillars || []).map((p) => ({
+        const qaqsAxisDebug = (workerReport.qaqs && workerReport.qaqs.axes || []).map((p) => ({
             id: p.id,
             label: p.label,
             defined: p.defined !== false,
-            whyOmitted: rePillarOmitReason(p),
+            whyOmitted: reAxisOmitReason(p),
             score: p.score,
             raw: p.raw || {}
         }));
 
-        const twqsPillarDebug = (workerReport.twqs && workerReport.twqs.pillars || []).map((p) => ({
+        const twqsAxisDebug = (workerReport.twqs && workerReport.twqs.axes || []).map((p) => ({
             id: p.id,
             label: p.label,
             defined: p.defined !== false,
-            whyOmitted: rePillarOmitReason(p),
+            whyOmitted: reAxisOmitReason(p),
             score: p.score,
             raw: p.raw || {}
         }));
@@ -875,11 +1035,12 @@ const RatingEngine = {
                 returnEpisodes: returnEpisodeDetails,
                 disputesInScope,
                 flagsInScope,
-                pillarDebug: qaqsPillarDebug
+                flagsRaisedInScope,
+                axisDebug: qaqsAxisDebug
             },
             twqs: workerReport.twqs ? {
                 writerItemCount: this._writerItems(workerId, cachedItems).length,
-                pillarDebug: twqsPillarDebug
+                axisDebug: twqsAxisDebug
             } : null,
             scores: {
                 twqs: workerReport.twqs ? {
@@ -909,7 +1070,7 @@ const RatingEngine = {
     },
 
     serializeJson(report) {
-        return JSON.stringify(report, null, 2);
+        return JSON.stringify(reWorkerJsonExport(report), null, 2);
     },
 
     serializeDiagnosticsJson(report) {
@@ -940,9 +1101,9 @@ const RatingEngine = {
             lines.push('**Score:** ' + block.score + ' / 100 · ' + block.band);
             lines.push('**Confidence:** ' + (block.confidence && block.confidence.label));
             lines.push('');
-            lines.push('| Pillar | Sub-score | Weight |');
+            lines.push('| Axis | Sub-score | Weight |');
             lines.push('| --- | ---: | ---: |');
-            for (const p of block.pillars || []) {
+            for (const p of block.axes || []) {
                 const wt = p.effectiveWeight != null
                     ? (Math.round(p.effectiveWeight * 1000) / 10) + '%'
                     : '—';
@@ -983,7 +1144,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.1',
+    _version: '1.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
