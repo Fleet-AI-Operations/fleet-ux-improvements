@@ -6841,7 +6841,7 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-ratings" style="display: ${leftTab === 'ratings' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
-                                <p style="${hint} margin: 0; line-height: 1.45;">Scores use the committed search window and hydrated result cards only — sidebar filters do not change ratings.</p>
+                                ${this._ratingsAboutSectionHtml()}
                                 <div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>
                                 <div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>
                             </div>
@@ -8492,6 +8492,88 @@ const searchOutputMethods = {
             };
         });
         return map;
+    },
+
+    _ratingsAboutAxisTableHtml(title, rows) {
+        const th = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
+        const td = 'padding: 4px 6px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
+        let body = '';
+        for (const row of rows) {
+            body += '<tr>'
+                + '<td style="' + td + '">' + dashEscHtml(row.label) + '</td>'
+                + '<td style="' + td + ' white-space: nowrap;">' + dashEscHtml(row.weight) + '</td>'
+                + '<td style="' + td + '">' + dashEscHtml(row.measures) + '</td>'
+                + '</tr>';
+        }
+        return '<div style="margin-top: 10px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35;">'
+            + '<thead><tr>'
+            + '<th style="' + th + '">Axis</th>'
+            + '<th style="' + th + '">Weight</th>'
+            + '<th style="' + th + '">Measures</th>'
+            + '</tr></thead>'
+            + '<tbody>' + body + '</tbody>'
+            + '</table>'
+            + '</div>';
+    },
+
+    _ratingsAboutSectionHtml() {
+        const box = this._panelBoxStyle();
+        const muted = 'color: var(--muted-foreground, #64748b);';
+        const twqsRows = [
+            { label: 'Task Outcomes', weight: '40%', measures: 'How far authored tasks progress in the lifecycle (production is ideal).' },
+            { label: 'Revision Efficiency', weight: '25%', measures: 'How few revision rounds their tasks needed before landing.' },
+            { label: 'Consistency', weight: '15%', measures: 'How steadily they worked, week to week, across the span.' },
+            { label: 'Dispute Outcomes', weight: '10%', measures: 'Share of their resolved disputes decided in their favor.' },
+            { label: 'Sr Review Integrity', weight: '10%', measures: 'Absence of confirmed senior-review flags on their tasks.' }
+        ];
+        const qaqsRows = [
+            { label: 'Comprehensiveness', weight: '50%', measures: 'When they return a task, it gets fixed and accepted on the next round rather than being returned again.' },
+            { label: 'Dispute Defense', weight: '20%', measures: 'Share of resolved disputes against their calls that were upheld.' },
+            { label: 'Sr Review Integrity', weight: '20%', measures: 'Absence of confirmed poor-feedback flags against them, plus accuracy of flags they raised.' },
+            { label: 'Consistency', weight: '10%', measures: 'How steadily they reviewed, week to week, across the span.' }
+        ];
+        return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
+            + '<summary style="font-size: 11px; line-height: 1.45; cursor: pointer; list-style: none; user-select: none; ' + muted + '">'
+            + '<strong style="color: var(--foreground, #0f172a);">About these ratings</strong>'
+            + ' — how the scores are built and what they include.'
+            + '</summary>'
+            + '<div style="margin-top: 10px; font-size: 11px; line-height: 1.45; color: var(--foreground, #0f172a);">'
+            + '<p style="margin: 0 0 8px;">Two independent scores per contributor, each on a <strong>0–100</strong> scale:</p>'
+            + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
+            + '<li><strong>Task Writer Quality Score</strong> — quality of the work they <strong>authored</strong>.</li>'
+            + '<li><strong>QA Quality Score</strong> — quality of the reviews they <strong>performed</strong>.</li>'
+            + '</ul>'
+            + '<p style="margin: 0 0 10px;">A person who does both jobs gets both scores. They are not blended into a single number.</p>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
+            + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
+            + '<li><strong>0–100, higher is better.</strong> Scores measure distance from an ideal benchmark, <strong>not</strong> a ranking against other people. ~80 means near-ideal, not &ldquo;above average.&rdquo;</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar next to each axis is its own sub-score (0–100%).</li>'
+            + '<li>An axis with no qualifying activity is <strong>omitted</strong>, and its weight is spread across the others.</li>'
+            + '<li>Every score carries a <strong>confidence</strong> badge based on how much recent activity it is built from.</li>'
+            + '</ul>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
+            + '<thead><tr>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Confidence</th>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Activity in the last 90 days</th>'
+            + '</tr></thead>'
+            + '<tbody>'
+            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Provisional</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">fewer than 10</td></tr>'
+            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Standard</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">10–49</td></tr>'
+            + '<tr><td style="padding: 4px 6px;">High confidence</td><td style="padding: 4px 6px;">50 or more</td></tr>'
+            + '</tbody></table>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">What counts toward a score</div>'
+            + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
+            + '<li>Scores use the <strong>committed search window</strong> and <strong>hydrated result cards only</strong> — sidebar filters do <strong>not</strong> change ratings.</li>'
+            + '<li>With no After/Before dates, all history counts, weighted toward recent activity. With a date range set, everything inside the window counts equally and nothing outside it does.</li>'
+            + '<li>Senior-review flags and disputes only move a score once they are <strong>resolved</strong>, and only in the direction the resolution supports. Pending or dismissed items stay neutral.</li>'
+            + '</ul>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">The axes</div>'
+            + this._ratingsAboutAxisTableHtml('Task Writer Quality Score', twqsRows)
+            + this._ratingsAboutAxisTableHtml('QA Quality Score', qaqsRows)
+            + '</div>'
+            + '</details>';
     },
 
     _ratingScoreBasisLine(block, basisKind) {
@@ -11789,7 +11871,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.46',
+    _version: '4.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
