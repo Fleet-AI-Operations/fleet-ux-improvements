@@ -8494,7 +8494,27 @@ const searchOutputMethods = {
         return map;
     },
 
-    _ratingScoreBlockHtml(title, block) {
+    _ratingScoreBasisLine(block, basisKind) {
+        const display = block && block.display;
+        if (!display) return '';
+        let count = null;
+        let singular = '';
+        let plural = '';
+        if (basisKind === 'tasks') {
+            count = display.submissionCount;
+            singular = 'task';
+            plural = 'tasks';
+        } else if (basisKind === 'feedbacks') {
+            count = display.feedbackRowCount;
+            singular = 'feedback';
+            plural = 'feedbacks';
+        }
+        if (count == null || !Number.isFinite(count)) return '';
+        const label = count === 1 ? singular : plural;
+        return 'Based on ' + count + ' ' + label;
+    },
+
+    _ratingScoreBlockHtml(title, block, basisKind) {
         if (!block || block.score == null) {
             return '';
         }
@@ -8523,6 +8543,7 @@ const searchOutputMethods = {
                 + '</div>';
         }
         const scoreDisplay = Math.round(block.score);
+        const basisLine = this._ratingScoreBasisLine(block, basisKind);
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
@@ -8530,6 +8551,9 @@ const searchOutputMethods = {
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
             + axesHtml
+            + (basisLine
+                ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
+                : '')
             + '</div>';
     },
 
@@ -8537,10 +8561,10 @@ const searchOutputMethods = {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
         const twqsHtml = types.showTwqs
-            ? this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs)
+            ? this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs, 'tasks')
             : '';
         const qaqsHtml = types.showQaqs
-            ? this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs)
+            ? this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs, 'feedbacks')
             : '';
         const diagnosticsBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>')
@@ -11764,7 +11788,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.44',
+    _version: '4.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
