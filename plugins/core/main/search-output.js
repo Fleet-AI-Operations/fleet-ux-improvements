@@ -286,7 +286,7 @@ function dashTimestampWithDurationHtml(iso, durationSeconds) {
     if (durationText) {
         parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
     }
-    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
 }
 
 function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds) {
@@ -5244,7 +5244,7 @@ const searchOutputMethods = {
             rowEl: this._q('#wf-dash-results-toolbar-row2'),
             rowDisplay: 'flex',
             pagerEl: pager,
-            pagerDisplay: 'inline-flex',
+            pagerDisplay: 'flex',
             rangeEl: this._q('#wf-dash-results-range-count'),
             rangeLabel: meta ? this._getResultsRangeLabel() : '',
             prevBtn: this._q('#wf-dash-results-prev'),
@@ -6511,7 +6511,7 @@ const searchOutputMethods = {
         const durationSec = (creationSec != null && Number.isFinite(Number(creationSec)))
             ? Number(creationSec)
             : null;
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">`
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">`
             + `<span style="${this._labelStyle()}">Created</span>`
             + dashTimestampWithDurationHtml(iso, durationSec)
             + '</span>';
@@ -6772,7 +6772,7 @@ const searchOutputMethods = {
     },
 
     _resultsHeaderRowStyle() {
-        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 0 0;';
+        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; width: 100%; padding: 8px 0 0;';
     },
 
     _resultsToolbarRow2Style() {
@@ -6793,7 +6793,7 @@ const searchOutputMethods = {
         const leftTab = this._state ? this._state.leftTab : 'search';
         const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
+                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
                             <div style="display: flex; gap: 0; min-width: 0;">
                                 <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
                                 <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
@@ -6954,12 +6954,12 @@ const searchOutputMethods = {
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="${this._resultsHeaderBarStyle()}">
                         <div style="${this._resultsHeaderRowStyle()}">
-                            <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 200px; flex-wrap: wrap;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
-                                <span id="wf-dash-results-status" style="${label} margin: 0;">Set search parameters on the left, then press Search.</span>
+                                <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0;">Set search parameters on the left, then press Search.</span>
                             </div>
-                            <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto;"></div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;">
+                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
                                 <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
@@ -6968,25 +6968,25 @@ const searchOutputMethods = {
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;">
-                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0;">
+                            <div id="wf-dash-results-pager-slot-kind" style="flex: 1 1 100%; min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap;">
+                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%;">
+                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 10rem; max-width: 14rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 10rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
                                         </select>
                                     </label>
-                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 18rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             ${this._dashSortSelectOptionsHtml(DASH_SORT_DEFAULT)}
                                         </select>
                                     </label>
-                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
                                         <span>Show</span>
-                                        <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-results-page-size" style="${input} width: auto; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -8364,10 +8364,10 @@ const searchOutputMethods = {
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
         const rightSection = (rightHtml || forceRight)
-            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">${rightHtml || ''}</div>`
+            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0;">${rightHtml || ''}</div>`
             : '';
-        return `<div style="display: flex; align-items: stretch; gap: 0; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
-            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; flex-shrink: 0;">${leftHtml}</div>`
+        return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 1 1 140px;">${leftHtml}</div>`
             + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
             + rightSection
             + `</div>`;
@@ -10239,7 +10239,7 @@ const searchOutputMethods = {
 
 
     _fieldGroupHtml(label, valueHtml) {
-        return `<div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
+        return `<div style="display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
     },
 
     _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
@@ -10266,7 +10266,7 @@ const searchOutputMethods = {
         if (ago) {
             parts.push(`<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">(${dashEscHtml(ago)})</span>`);
         }
-        return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">${parts.join('')}</span>`;
+        return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
     },
 
     _dashHighlightSegmentsHtml(text, query, caseSensitive, fuzzy, regex) {
@@ -10328,11 +10328,11 @@ const searchOutputMethods = {
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
             : '';
         const flagBtn = this._flagForSeniorReviewBtnHtml(task, itemId);
-        return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+        return `<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 220px;">
                         ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation', flagBtn))}
                     </div>
-                    <div style="flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; min-width: 0; margin-left: auto;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; min-width: 0; flex: 1 1 220px;">
                         ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
                         ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink)}
                         ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
@@ -11875,7 +11875,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
