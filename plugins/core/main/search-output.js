@@ -10336,8 +10336,10 @@ const searchOutputMethods = {
             : '';
         const flagBtn = this._flagForSeniorReviewBtnHtml(task, itemId);
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 220px;">
-                        ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation', flagBtn))}
+                    <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
+                        <div style="display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
+                            ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation', flagBtn, { nowrap: true }), { nowrap: true })}
+                        </div>
                     </div>
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
@@ -10371,13 +10373,15 @@ const searchOutputMethods = {
         return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${this._iconMicroBtnStyle()}">🚩</button>`;
     },
 
-    _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive) {
+    _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive, opts) {
         if (!name && !email) return this._dismissedBadgeHtml() + (extraAfterDeepDive || '');
+        const nowrap = Boolean((opts || {}).nowrap);
         const nameChip = name ? this._copyChipHtml(name) : '';
         const emailChip = email ? this._copyChipHtml(email) : '';
         const deepDive = this._contributorDeepDiveBtnHtml(name, email, id, historyKind);
         const link = this._extLinkHtml(dashFleetExpertUrl(id), linkTitle);
-        return `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0;">${nameChip}${emailChip}${deepDive}${extraAfterDeepDive || ''}${link}</span>`;
+        const wrapStyle = nowrap ? 'flex-wrap: nowrap; flex-shrink: 0;' : 'flex-wrap: wrap; max-width: 100%; min-width: 0;';
+        return `<span style="display: inline-flex; align-items: center; gap: 4px; ${wrapStyle}">${nameChip}${emailChip}${deepDive}${extraAfterDeepDive || ''}${link}</span>`;
     },
 
     _statusDisplayMeta(status) {
@@ -11884,7 +11888,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.8',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
