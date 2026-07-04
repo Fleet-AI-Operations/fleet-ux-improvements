@@ -6971,7 +6971,7 @@ const searchOutputMethods = {
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%;">
                                     <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 10rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
@@ -11888,7 +11888,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.9',
+    _version: '5.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
