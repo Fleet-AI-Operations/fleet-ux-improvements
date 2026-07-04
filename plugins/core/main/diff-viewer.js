@@ -9,7 +9,7 @@ const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
-const DV_SIMILARITIES_DEFAULT_MIN_WORDS = 3;
+const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_MAX_SLOTS = 6;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
@@ -127,12 +127,12 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
-function _dvSimilaritiesDefaultMinLength() {
-    return _dvState.granularity === 'word' ? DV_SIMILARITIES_DEFAULT_MIN_WORDS : null;
+function _dvModalityDefaultMinLength() {
+    return _dvState.granularity === 'word' ? DV_HIGHLIGHT_DEFAULT_MIN_WORDS : null;
 }
 
-function _dvApplySimilaritiesHighlightMinDefault() {
-    const def = _dvSimilaritiesDefaultMinLength();
+function _dvApplyModalityHighlightMinDefault() {
+    const def = _dvModalityDefaultMinLength();
     if (def != null) _dvState.highlightMinLength = def;
 }
 
@@ -229,9 +229,9 @@ function _dvRefreshHighlightLengthRange(modal) {
     } else {
         _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
         if (_dvState.highlightMinLength == null) {
-            const simDefault = _dvSimilaritiesDefaultMinLength();
-            _dvState.highlightMinLength = (_dvState.highlightModality === 'similarities' && simDefault != null)
-                ? Math.max(simDefault, globalMin)
+            const modalityDefault = _dvModalityDefaultMinLength();
+            _dvState.highlightMinLength = modalityDefault != null
+                ? Math.max(modalityDefault, globalMin)
                 : globalMin;
         } else if (_dvState.highlightMinLength < globalMin) {
             _dvState.highlightMinLength = globalMin;
@@ -2193,7 +2193,7 @@ function _dvAttachListeners(modal) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
                 _dvState.highlightModality = modality;
-                if (modality === 'similarities') _dvApplySimilaritiesHighlightMinDefault();
+                _dvApplyModalityHighlightMinDefault();
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
                 _dvRenderDiffs(modal);
@@ -3080,7 +3080,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.8',
+    _version: '2.9',
     phase: 'core',
     enabledByDefault: true,
 
