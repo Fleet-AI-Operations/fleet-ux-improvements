@@ -13,17 +13,17 @@ const SPIN_DURATION = '0.7s';
 const TAB_PULSE_MS = 600;
 
 const BTN_VARIANTS = {
-    primary: { fleet: 'fleet-btn--primary', legacy: 'wf-dash-btn--primary' },
-    secondary: { fleet: 'fleet-btn--secondary', legacy: 'wf-dash-btn--secondary' },
-    tertiary: { fleet: 'fleet-btn--tertiary', legacy: 'wf-dash-btn--basic' },
-    basic: { fleet: 'fleet-btn--tertiary', legacy: 'wf-dash-btn--basic' }
+    primary: 'wf-dash-btn--primary',
+    secondary: 'wf-dash-btn--secondary',
+    tertiary: 'wf-dash-btn--basic',
+    basic: 'wf-dash-btn--basic'
 };
 
 const BTN_SIZES = {
-    nav: { fleet: 'fleet-btn--nav', legacy: 'wf-dash-btn--nav' },
-    regular: { fleet: 'fleet-btn--regular', legacy: 'wf-dash-btn--regular' },
-    icon: { fleet: 'fleet-btn--icon', legacy: 'wf-dash-btn--icon' },
-    compact: { fleet: 'fleet-btn--compact', legacy: 'wf-dash-btn--compact' }
+    nav: 'wf-dash-btn--nav',
+    regular: 'wf-dash-btn--regular',
+    icon: 'wf-dash-btn--icon',
+    compact: 'wf-dash-btn--compact'
 };
 
 function fleetUiScopeStyleId(scopeSelector) {
@@ -36,16 +36,16 @@ function fleetUiScopeStyleId(scopeSelector) {
 
 function fleetUiBtnBaseCssLines(scopePrefix) {
     const p = scopePrefix ? scopePrefix + ' ' : '';
-    const btn = p + '.fleet-btn, ' + p + '.wf-dash-btn';
-    const nav = p + '.fleet-btn--nav, ' + p + '.wf-dash-btn--nav';
-    const regular = p + '.fleet-btn--regular, ' + p + '.wf-dash-btn--regular';
-    const compact = p + '.fleet-btn--compact, ' + p + '.wf-dash-btn--compact';
-    const icon = p + '.fleet-btn--icon, ' + p + '.wf-dash-btn--icon';
-    const full = p + '.fleet-btn--full, ' + p + '.wf-dash-btn--full';
-    const primary = p + '.fleet-btn--primary, ' + p + '.wf-dash-btn--primary';
-    const secondary = p + '.fleet-btn--secondary, ' + p + '.wf-dash-btn--secondary';
-    const tertiary = p + '.fleet-btn--tertiary, ' + p + '.wf-dash-btn--basic';
-    const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic, ' + p + '.wf-dash-header-btn.fleet-btn--tertiary';
+    const btn = p + '.wf-dash-btn';
+    const nav = p + '.wf-dash-btn--nav';
+    const regular = p + '.wf-dash-btn--regular';
+    const compact = p + '.wf-dash-btn--compact';
+    const icon = p + '.wf-dash-btn--icon';
+    const full = p + '.wf-dash-btn--full';
+    const primary = p + '.wf-dash-btn--primary';
+    const secondary = p + '.wf-dash-btn--secondary';
+    const tertiary = p + '.wf-dash-btn--basic';
+    const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic';
 
     return [
         btn + ' {',
@@ -172,8 +172,7 @@ function fleetUiGlobalCssText() {
         '#wf-dash-modal [data-wf-dash-tab].fleet-ui-tab--pulse,',
         '#wf-dash-modal [data-wf-dash-tab].wf-dash-tab--add-pulse {',
         '  animation: fleet-ui-tab-pulse ' + TAB_PULSE_MS + 'ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
-        '}',
-        ...fleetUiBtnBaseCssLines('')
+        '}'
     ].join('\n');
 }
 
@@ -307,9 +306,9 @@ async function fleetUiCopyWithFeedback(el, text, opts) {
 }
 
 function fleetUiBtnClass(variant, size) {
-    const v = BTN_VARIANTS[variant] || BTN_VARIANTS.tertiary;
+    const v = BTN_VARIANTS[variant] || BTN_VARIANTS.basic;
     const s = BTN_SIZES[size] || BTN_SIZES.nav;
-    return 'fleet-btn wf-dash-btn ' + v.fleet + ' ' + v.legacy + ' ' + s.fleet + ' ' + s.legacy;
+    return 'wf-dash-btn ' + v + ' ' + s;
 }
 
 function fleetUiSpinnerHtml(sizePx) {
@@ -336,7 +335,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

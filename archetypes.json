@@ -1,7 +1,7 @@
 {
   "version": "11.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.0",
+  "archetypesVersion": "13.1",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "2.0",
-      "hash": "sha256-6a7d6643b8c367ae575a4750873f17355d04cd439e184ec623fe88ca4b0af660",
+      "version": "2.1",
+      "hash": "sha256-090f2fd03151b2f6d2267c43262841aa97158a35875e4f1408774d3f1a59da11",
       "log": false
     },
     {
