@@ -21,6 +21,7 @@ const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
 const DASH_STATS_PANEL_MIN_WIDTH = 280;
 const DASH_STATS_PANEL_DEFAULT_WIDTH = 320;
 const DASH_STATS_PANEL_COLLAPSED_WIDTH = 44;
+const DASH_RESULTS_STATS_HANDLE_WIDTH = 18;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions', 'team-members-badges'];
 const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
@@ -80,7 +81,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1380,6 +1381,29 @@ const plugin = {
         return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(available, widthPx)));
     },
 
+    _clampResultsPanelWidthForDrag(root, widthPx, splitRight, statsHidden) {
+        if (!splitRight) {
+            return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, widthPx));
+        }
+        const splitRightW = splitRight.getBoundingClientRect().width;
+        const statsReserve = statsHidden ? DASH_STATS_PANEL_COLLAPSED_WIDTH : DASH_STATS_PANEL_MIN_WIDTH;
+        const maxResults = Math.max(
+            DASH_SIDE_PANEL_MIN_RESULTS_WIDTH,
+            splitRightW - DASH_RESULTS_STATS_HANDLE_WIDTH - statsReserve
+        );
+        return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxResults, widthPx)));
+    },
+
+    _maxResultsPanelWidthForDrag(splitRight, statsHidden) {
+        if (!splitRight) return DASH_SIDE_PANEL_MIN_RESULTS_WIDTH;
+        const splitRightW = splitRight.getBoundingClientRect().width;
+        const statsReserve = statsHidden ? DASH_STATS_PANEL_COLLAPSED_WIDTH : DASH_STATS_PANEL_MIN_WIDTH;
+        return Math.max(
+            DASH_SIDE_PANEL_MIN_RESULTS_WIDTH,
+            Math.round(splitRightW - DASH_RESULTS_STATS_HANDLE_WIDTH - statsReserve)
+        );
+    },
+
     _clampSidePanelWidth(root, widthPx) {
         const { basis, handleReserve, statsW } = this._splitRootMetrics(root);
         const viewportW = this._pageWindow().innerWidth || basis;
@@ -1461,7 +1485,7 @@ const plugin = {
         const splitRightW = splitRight ? splitRight.getBoundingClientRect().width : 0;
         const resultsCol = root.querySelector('[data-wf-dash-results-column]');
         const resultsW = resultsCol ? resultsCol.getBoundingClientRect().width : 0;
-        const handleW = 18;
+        const handleW = DASH_RESULTS_STATS_HANDLE_WIDTH;
         let clamped = pref;
         if (splitRightW > 0) {
             const maxStats = Math.max(DASH_STATS_PANEL_MIN_WIDTH, splitRightW - resultsW - handleW);
@@ -1789,15 +1813,13 @@ const plugin = {
             '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-sliver] {',
             '  display: flex !important;',
             '  flex-direction: column !important;',
-            '  align-items: center !important;',
+            '  align-items: flex-end !important;',
             '  justify-content: flex-start !important;',
             '  width: 100% !important;',
             '  height: 100% !important;',
             '  min-height: 100% !important;',
-            '  padding: 6px 2px !important;',
+            '  padding: 6px 2px 6px 0 !important;',
             '  box-sizing: border-box !important;',
-            '  background: var(--card, #ffffff) !important;',
-            '  border-left: 1px solid var(--border, #e2e8f0) !important;',
             '}',
             '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-toggle] {',
             '  writing-mode: vertical-rl !important;',
@@ -1806,14 +1828,6 @@ const plugin = {
             '  height: auto !important;',
             '  min-height: 3.5rem !important;',
             '  padding: 8px 4px !important;',
-            '}',
-            '[data-wf-dash-split-right][data-wf-dash-stats-collapsed="true"] [data-wf-dash-results-width-handle] {',
-            '  display: none !important;',
-            '  flex: 0 0 0 !important;',
-            '  width: 0 !important;',
-            '  min-width: 0 !important;',
-            '  overflow: hidden !important;',
-            '  pointer-events: none !important;',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -1866,16 +1880,20 @@ const plugin = {
             const colLeft = col.getBoundingClientRect().left;
             const splitRight = root.querySelector('[data-wf-dash-split-right]');
             const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+            const statsHidden = this._readStatsPanelHiddenPref();
             this._beginColResizeDrag(e, {
                 onMove: (ev) => {
-                    const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
+                    const next = this._clampResultsPanelWidthForDrag(root, ev.clientX - colLeft, splitRight, statsHidden);
                     col.style.flex = '0 0 auto';
                     col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
                     col.style.width = next + 'px';
                     col.style.maxWidth = next + 'px';
-                    if (statsCol && splitRight && !this._readStatsPanelHiddenPref()) {
+                    if (statsCol && splitRight && !statsHidden) {
                         const splitRightW = splitRight.getBoundingClientRect().width;
-                        const statsW = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(splitRightW - next - 18));
+                        const statsW = Math.max(
+                            DASH_STATS_PANEL_MIN_WIDTH,
+                            Math.round(splitRightW - next - DASH_RESULTS_STATS_HANDLE_WIDTH)
+                        );
                         statsCol.style.flex = '0 0 auto';
                         statsCol.style.width = statsW + 'px';
                         statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
@@ -1883,21 +1901,37 @@ const plugin = {
                     }
                 },
                 onUp: () => {
-                    const available = this._availableResultsPanelWidth(root);
-                    const finalWidth = this._clampResultsPanelMaxWidth(root, col.getBoundingClientRect().width);
-                    if (finalWidth >= available - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                    const finalWidth = this._clampResultsPanelWidthForDrag(
+                        root,
+                        col.getBoundingClientRect().width,
+                        splitRight,
+                        statsHidden
+                    );
+                    const maxResults = this._maxResultsPanelWidthForDrag(splitRight, statsHidden);
+                    if (finalWidth >= maxResults - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
                         this._writeResultsPanelMaxWidthPref(null);
                         this._applyResultsPanelMaxWidth(root);
                         Logger.log('dashboard: results panel max width cleared (full width)');
                     } else {
                         this._writeResultsPanelMaxWidthPref(finalWidth);
-                        this._applyResultsPanelMaxWidth(root);
+                        col.style.flex = '0 0 auto';
+                        col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
+                        col.style.width = finalWidth + 'px';
+                        col.style.maxWidth = finalWidth + 'px';
                         Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
                     }
-                    if (statsCol && splitRight && !this._readStatsPanelHiddenPref()) {
+                    if (statsCol && splitRight && !statsHidden) {
                         const splitRightW = splitRight.getBoundingClientRect().width;
-                        const statsW = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(splitRightW - finalWidth - 18));
+                        const resultsW = finalWidth >= maxResults - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX
+                            ? maxResults
+                            : finalWidth;
+                        const statsW = Math.max(
+                            DASH_STATS_PANEL_MIN_WIDTH,
+                            Math.round(splitRightW - resultsW - DASH_RESULTS_STATS_HANDLE_WIDTH)
+                        );
                         this._writeStatsPanelWidthPref(statsW);
+                        this._applyStatsPanelWidth(root);
+                    } else if (statsHidden) {
                         this._applyStatsPanelWidth(root);
                     }
                 }

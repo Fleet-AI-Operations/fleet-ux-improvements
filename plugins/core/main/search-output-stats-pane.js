@@ -15,9 +15,10 @@ function dashEscHtml(value) {
 
 const searchOutputStatsPaneMethods = {
     _statsPanelHtml() {
+        const box = this._panelBoxStyle();
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
-            + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">'
+            + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
             + '<div data-wf-dash-stats-header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); min-height: 36px;">'
             + '<span style="font-size: 12px; font-weight: 600;">Ratings</span>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
@@ -466,7 +467,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
