@@ -2304,7 +2304,15 @@ function _dvAttachListeners(modal) {
         const stashClear = e.target.closest('[data-dv-stash-clear]');
         if (stashClear && modal.contains(stashClear)) {
             e.stopPropagation();
-            _dvClearStash(modal);
+            const stashCount = _dvState.stash.length;
+            if (stashCount === 0) return;
+            const slotCount = _dvState.slots.length;
+            let msg = 'Clear ' + stashCount + ' stashed task' + (stashCount === 1 ? '' : 's');
+            if (slotCount > 0) {
+                msg += ' and remove ' + slotCount + ' comparison slot' + (slotCount === 1 ? '' : 's');
+            }
+            msg += '?';
+            if (confirm(msg)) _dvClearStash(modal);
             return;
         }
 
@@ -2993,7 +3001,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.6',
+    _version: '2.7',
     phase: 'core',
     enabledByDefault: true,
 
