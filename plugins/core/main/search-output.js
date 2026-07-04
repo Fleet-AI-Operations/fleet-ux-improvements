@@ -10509,10 +10509,10 @@ const searchOutputMethods = {
             </div>`;
         }).join('');
         const submittedHtml = qa.feedbackAt
-            ? this._fieldGroupHtml('Submitted', dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds))
+            ? dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds)
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Prompt Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
@@ -10621,7 +10621,7 @@ const searchOutputMethods = {
             ? this._dashQuotedHighlightedHtml(display.reason, hq, cs, fz, rx)
             : '—';
         const submittedHtml = display.submittedAt
-            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.submittedAt))
+            ? this._plainTimestampHtml(display.submittedAt)
             : '';
         const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
         let resolutionHtml = '';
@@ -10692,7 +10692,7 @@ const searchOutputMethods = {
         const border = blockStyle.border;
         const bg = blockStyle.background;
         const submittedHtml = display.createdAt
-            ? this._fieldGroupHtml('Submitted', this._plainTimestampHtml(display.createdAt))
+            ? this._plainTimestampHtml(display.createdAt)
             : '';
         const reasonLabel = display.reason || display.reasonKey || 'Unknown';
         const flaggerHtml = (display.flaggerId || display.flaggerName || display.flaggerEmail)
@@ -11881,7 +11881,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.0',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
