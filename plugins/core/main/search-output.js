@@ -6884,8 +6884,8 @@ const searchOutputMethods = {
                         </div>
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <div id="wf-dash-filter-kind-tab-wrap" style="display: none; padding-top: 14px;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+                                <div id="wf-dash-filter-kind-tab-wrap" style="display: none;">
                                     <div id="wf-dash-filter-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
                                 </div>
                                 <div>
@@ -11888,7 +11888,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
