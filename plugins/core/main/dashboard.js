@@ -11,11 +11,16 @@
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
 const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width';
+const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
+const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
 const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
 const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
+const DASH_STATS_PANEL_MIN_WIDTH = 280;
+const DASH_STATS_PANEL_DEFAULT_WIDTH = 320;
+const DASH_STATS_PANEL_COLLAPSED_WIDTH = 44;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions', 'team-members-badges'];
 const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
@@ -75,7 +80,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '8.1',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -142,7 +147,12 @@ const plugin = {
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
-            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
+            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey, statsHtml) =>
+                self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml),
+            readStatsPanelHiddenPref: () => self._readStatsPanelHiddenPref(),
+            writeStatsPanelHiddenPref: (hidden) => self._writeStatsPanelHiddenPref(hidden),
+            applyStatsPanelLayout: (root) => self._applyStatsPanelLayout(root),
+            scheduleSplitLayoutSync: () => self._scheduleSplitLayoutSync(),
             pagerChevronSvg: (dir) => self._pagerChevronSvg(dir),
             paginationMeta: (total, pageSize, pageHolder) => self._paginationMeta(total, pageSize, pageHolder),
             rangeLabel: (meta, options) => self._rangeLabel(meta, options),
@@ -1204,6 +1214,40 @@ const plugin = {
         }
     },
 
+    _readStatsPanelHiddenPref() {
+        try {
+            const raw = Storage.getData(DASH_STATS_PANEL_HIDDEN_STORAGE_KEY, null);
+            return raw === 'true';
+        } catch (_e) { /* fall through */ }
+        return false;
+    },
+
+    _writeStatsPanelHiddenPref(hidden) {
+        try {
+            Storage.setData(DASH_STATS_PANEL_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
+        } catch (e) {
+            Logger.warn('dashboard: failed to write stats panel hidden pref', e);
+        }
+    },
+
+    _readStatsPanelWidthPref() {
+        try {
+            const raw = Storage.getData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, null);
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n) && n >= DASH_STATS_PANEL_MIN_WIDTH) return n;
+        } catch (_e) { /* fall through */ }
+        return DASH_STATS_PANEL_DEFAULT_WIDTH;
+    },
+
+    _writeStatsPanelWidthPref(widthPx) {
+        try {
+            const clamped = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(widthPx));
+            Storage.setData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+        } catch (e) {
+            Logger.warn('dashboard: failed to write stats panel width pref', e);
+        }
+    },
+
     _splitPanelHandleStyle() {
         return 'flex-shrink: 0; width: 10px; margin: 0 4px; align-self: stretch; cursor: col-resize;'
             + ' border-radius: 4px; background: transparent; touch-action: none; box-sizing: border-box;'
@@ -1236,30 +1280,41 @@ const plugin = {
             + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
     },
 
-    _splitPanelRightHtml(rightHtml, scopeKey) {
+    _splitPanelStatsColumnStyle(widthPx) {
+        const w = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(widthPx || DASH_STATS_PANEL_DEFAULT_WIDTH));
+        return 'width: ' + w + 'px; min-width: ' + DASH_STATS_PANEL_MIN_WIDTH + 'px; flex-shrink: 0;'
+            + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
+    },
+
+    _splitPanelRightHtml(rightHtml, scopeKey, statsHtml) {
         if (scopeKey !== 'dashboard') {
             return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
                 + rightHtml + '</div>';
         }
+        const statsWidth = this._readStatsPanelWidthPref();
+        const statsBlock = statsHtml
+            ? ('<aside data-wf-dash-stats-column style="' + this._splitPanelStatsColumnStyle(statsWidth) + '">' + statsHtml + '</aside>')
+            : '';
         return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: row; overflow: hidden;">'
             + '<div data-wf-dash-results-column style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
             + rightHtml + '</div>'
             + this._resultsPanelWidthHandleHtml()
+            + statsBlock
             + '</div>';
     },
 
-    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
         const scope = scopeKey || 'dashboard';
         const width = this._readSidePanelWidthPref(scope);
         return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
-            + this._splitPanelRightHtml(rightHtml, scope)
+            + this._splitPanelRightHtml(rightHtml, scope, statsHtml)
             + '</section>';
     },
 
-    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
-        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey);
+    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
+        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml);
     },
 
     _splitPanelHandleReserve(scopeKey) {
@@ -1274,12 +1329,26 @@ const plugin = {
         const leftW = left ? left.getBoundingClientRect().width : DASH_SIDE_PANEL_MIN_WIDTH;
         const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
         const handleReserve = this._splitPanelHandleReserve(scope);
-        return { basis, scope, handleReserve, leftW };
+        const statsW = this._statsColumnEffectiveWidth(root);
+        return { basis, scope, handleReserve, leftW, statsW };
+    },
+
+    _statsColumnEffectiveWidth(root) {
+        if (!root) return 0;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return 0;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        if (!statsCol) return 0;
+        if (this._readStatsPanelHiddenPref()) return DASH_STATS_PANEL_COLLAPSED_WIDTH;
+        const measured = statsCol.getBoundingClientRect().width;
+        if (measured > 0) return measured;
+        return this._readStatsPanelWidthPref();
     },
 
     _scheduleSplitLayoutSync() {
         requestAnimationFrame(() => {
             this._applyAllSidePanelWidths();
+            this._applyAllStatsPanelLayouts();
             this._applyAllResultsPanelMaxWidths();
         });
     },
@@ -1302,8 +1371,8 @@ const plugin = {
     },
 
     _availableResultsPanelWidth(root) {
-        const { basis, handleReserve, leftW } = this._splitRootMetrics(root);
-        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve));
+        const { basis, handleReserve, leftW, statsW } = this._splitRootMetrics(root);
+        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve - statsW));
     },
 
     _clampResultsPanelMaxWidth(root, widthPx) {
@@ -1312,13 +1381,13 @@ const plugin = {
     },
 
     _clampSidePanelWidth(root, widthPx) {
-        const { basis, handleReserve } = this._splitRootMetrics(root);
+        const { basis, handleReserve, statsW } = this._splitRootMetrics(root);
         const viewportW = this._pageWindow().innerWidth || basis;
         const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
             DASH_SIDE_PANEL_MIN_WIDTH,
             Math.min(
-                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve,
+                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve - statsW,
                 viewportCap
             )
         );
@@ -1370,6 +1439,63 @@ const plugin = {
         if (!this._modal) return;
         this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
             this._applyResultsPanelMaxWidth(root);
+        });
+    },
+
+    _applyStatsPanelWidth(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        if (!statsCol) return;
+        const hidden = this._readStatsPanelHiddenPref();
+        if (hidden) {
+            statsCol.style.width = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.minWidth = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.maxWidth = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.flex = '0 0 auto';
+            return;
+        }
+        const pref = this._readStatsPanelWidthPref();
+        const splitRight = root.querySelector('[data-wf-dash-split-right]');
+        const splitRightW = splitRight ? splitRight.getBoundingClientRect().width : 0;
+        const resultsCol = root.querySelector('[data-wf-dash-results-column]');
+        const resultsW = resultsCol ? resultsCol.getBoundingClientRect().width : 0;
+        const handleW = 18;
+        let clamped = pref;
+        if (splitRightW > 0) {
+            const maxStats = Math.max(DASH_STATS_PANEL_MIN_WIDTH, splitRightW - resultsW - handleW);
+            clamped = Math.min(pref, maxStats);
+        }
+        clamped = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(clamped));
+        statsCol.style.flex = '0 0 auto';
+        statsCol.style.width = clamped + 'px';
+        statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
+        statsCol.style.maxWidth = clamped + 'px';
+    },
+
+    _applyStatsPanelLayout(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        const splitRight = root.querySelector('[data-wf-dash-split-right]');
+        if (!statsCol) return;
+        const hidden = this._readStatsPanelHiddenPref();
+        const collapsedVal = hidden ? 'true' : 'false';
+        statsCol.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
+        if (splitRight) splitRight.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
+        this._applyStatsPanelWidth(root);
+        this._applyResultsPanelMaxWidth(root);
+        if (typeof this._syncStatsPanelCollapseUi === 'function') {
+            this._syncStatsPanelCollapseUi();
+        }
+    },
+
+    _applyAllStatsPanelLayouts() {
+        if (!this._modal) return;
+        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+            this._applyStatsPanelLayout(root);
         });
     },
 
@@ -1646,6 +1772,48 @@ const plugin = {
             '[data-wf-dash-results-width-handle]:hover,',
             '[data-wf-dash-results-width-handle]:active {',
             '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] {',
+            '  flex: 0 0 ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  min-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  max-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  overflow: hidden !important;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-body] {',
+            '  display: none !important;',
+            '}',
+            '[data-wf-dash-stats-sliver] {',
+            '  display: none;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-sliver] {',
+            '  display: flex !important;',
+            '  flex-direction: column !important;',
+            '  align-items: center !important;',
+            '  justify-content: flex-start !important;',
+            '  width: 100% !important;',
+            '  height: 100% !important;',
+            '  min-height: 100% !important;',
+            '  padding: 6px 2px !important;',
+            '  box-sizing: border-box !important;',
+            '  background: var(--card, #ffffff) !important;',
+            '  border-left: 1px solid var(--border, #e2e8f0) !important;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-toggle] {',
+            '  writing-mode: vertical-rl !important;',
+            '  text-orientation: mixed !important;',
+            '  white-space: nowrap !important;',
+            '  height: auto !important;',
+            '  min-height: 3.5rem !important;',
+            '  padding: 8px 4px !important;',
+            '}',
+            '[data-wf-dash-split-right][data-wf-dash-stats-collapsed="true"] [data-wf-dash-results-width-handle] {',
+            '  display: none !important;',
+            '  flex: 0 0 0 !important;',
+            '  width: 0 !important;',
+            '  min-width: 0 !important;',
+            '  overflow: hidden !important;',
+            '  pointer-events: none !important;',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -1667,13 +1835,19 @@ const plugin = {
                 onMove: (ev) => {
                     const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
                     this._applySidePanelWidth(root, next);
-                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                    if (scope === 'dashboard') {
+                        this._applyStatsPanelWidth(root);
+                        this._applyResultsPanelMaxWidth(root);
+                    }
                 },
                 onUp: () => {
                     const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
                     this._writeSidePanelWidthPref(finalWidth, scope);
                     this._applySidePanelWidth(root, finalWidth);
-                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                    if (scope === 'dashboard') {
+                        this._applyStatsPanelWidth(root);
+                        this._applyResultsPanelMaxWidth(root);
+                    }
                     Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
                 }
             });
@@ -1690,6 +1864,8 @@ const plugin = {
             const col = root ? root.querySelector('[data-wf-dash-results-column]') : null;
             if (!root || !col) return;
             const colLeft = col.getBoundingClientRect().left;
+            const splitRight = root.querySelector('[data-wf-dash-split-right]');
+            const statsCol = root.querySelector('[data-wf-dash-stats-column]');
             this._beginColResizeDrag(e, {
                 onMove: (ev) => {
                     const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
@@ -1697,6 +1873,14 @@ const plugin = {
                     col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
                     col.style.width = next + 'px';
                     col.style.maxWidth = next + 'px';
+                    if (statsCol && splitRight && !this._readStatsPanelHiddenPref()) {
+                        const splitRightW = splitRight.getBoundingClientRect().width;
+                        const statsW = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(splitRightW - next - 18));
+                        statsCol.style.flex = '0 0 auto';
+                        statsCol.style.width = statsW + 'px';
+                        statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
+                        statsCol.style.maxWidth = statsW + 'px';
+                    }
                 },
                 onUp: () => {
                     const available = this._availableResultsPanelWidth(root);
@@ -1709,6 +1893,12 @@ const plugin = {
                         this._writeResultsPanelMaxWidthPref(finalWidth);
                         this._applyResultsPanelMaxWidth(root);
                         Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
+                    }
+                    if (statsCol && splitRight && !this._readStatsPanelHiddenPref()) {
+                        const splitRightW = splitRight.getBoundingClientRect().width;
+                        const statsW = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(splitRightW - finalWidth - 18));
+                        this._writeStatsPanelWidthPref(statsW);
+                        this._applyStatsPanelWidth(root);
                     }
                 }
             });

@@ -1240,7 +1240,7 @@ const searchOutputResultsPaneMethods = {
             el.style.display = 'none';
             el.innerHTML = '';
             this._syncVersionModeDropdownUi();
-            if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
+            this._renderRatingsPanel();
             return;
         }
         const label = this._labelStyle();
@@ -1253,7 +1253,7 @@ const searchOutputResultsPaneMethods = {
             + this._loadingSpinnerHtml(14).replace('<span class="fleet-ui-spinner"', '<span data-wf-dash-load-mark="1" class="fleet-ui-spinner"')
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
-        if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
+        this._renderRatingsPanel();
     },
 
     _syncDropExcludedUi() {

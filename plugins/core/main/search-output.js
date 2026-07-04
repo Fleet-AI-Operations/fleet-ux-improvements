@@ -1440,7 +1440,7 @@ const searchOutputCoreMethods = {
     _onPrefetchComplete(kind) {
         if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
         void this._reoverlayAllCachedItems().then(() => {
-            if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
+            this._renderRatingsPanel();
         });
     },
 
@@ -4314,7 +4314,12 @@ const searchOutputCoreMethods = {
     },
 
     _searchPanelHtml() {
-        return this._splitPanelSectionHtml(this._leftPanelHtml(), this._resultsPanelHtml());
+        return this._splitPanelSectionHtml(
+            this._leftPanelHtml(),
+            this._resultsPanelHtml(),
+            'dashboard',
+            this._statsPanelHtml()
+        );
     },
 };
 
@@ -4565,6 +4570,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._repositionOpenFlyouts();
             }, { passive: true });
         }
+        dash._applyStatsPanelLayoutOnOpen(modal);
     modal.addEventListener('click', (e) => {
             const exportBtn = e.target.closest('[data-wf-dash-rating-export]');
             if (exportBtn && modal.contains(exportBtn)) {
@@ -4955,7 +4961,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '6.0',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4975,6 +4981,7 @@ const plugin = {
             Object.assign(loader, searchOutputCoreMethods);
             if (Context.searchOutputLeftPaneMethods) Object.assign(loader, Context.searchOutputLeftPaneMethods);
             if (Context.searchOutputResultsPaneMethods) Object.assign(loader, Context.searchOutputResultsPaneMethods);
+            if (Context.searchOutputStatsPaneMethods) Object.assign(loader, Context.searchOutputStatsPaneMethods);
         } catch (e) {
             Logger.error('search-output: attach to dashboard loader failed', e);
             throw e;
@@ -5000,7 +5007,12 @@ const plugin = {
             onOpen(dash) {
                 void dash._doBootstrap();
                 dash._refreshCatalogDependentUi();
-                requestAnimationFrame(() => dash._applyAllSidePanelWidths());
+                requestAnimationFrame(() => {
+                    dash._applyAllSidePanelWidths();
+                    if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
+                        dash._applyStatsPanelLayoutOnOpen(dash._modal);
+                    }
+                });
             },
             onBuilt(modal, dash) {
                 dash._syncOutputToggleUi();
@@ -5019,9 +5031,17 @@ const plugin = {
                 dash._state.resultsPage = 0;
                 dash._syncResultsPageSizeUi();
                 dash._syncResultsPagerUi();
+                if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
+                    dash._applyStatsPanelLayoutOnOpen(modal);
+                }
             },
             onActivate(modal, dash) {
-                requestAnimationFrame(() => dash._applyAllSidePanelWidths());
+                requestAnimationFrame(() => {
+                    dash._applyAllSidePanelWidths();
+                    if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
+                        dash._applyStatsPanelLayoutOnOpen(modal);
+                    }
+                });
             }
         });
         if (state) state.registered = true;
