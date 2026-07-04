@@ -2290,7 +2290,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _btnResultsKindTabStyle(active, tabId, disabled) {
-        const base = 'padding: 0 10px; font-size: 11px; font-weight: 600; border-radius: 6px;';
+        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px;';
         if (disabled) {
             return base + ' border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.35; cursor: not-allowed;';
         }
@@ -5009,7 +5009,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
