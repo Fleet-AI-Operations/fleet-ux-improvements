@@ -11,6 +11,7 @@ const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_SIMILARITIES_DEFAULT_MIN_WORDS = 3;
 const DV_MAX_SLOTS = 6;
+const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
@@ -471,6 +472,10 @@ function _dvStashFind(taskId) {
 function _dvAddToStash(entry) {
     const idx = _dvStashFind(entry.taskId);
     if (idx < 0) {
+        if (_dvState.stash.length >= DV_MAX_STASH) {
+            Logger.warn('diff-viewer: stash full (' + DV_MAX_STASH + ') — cannot add ' + (entry.key || entry.taskId));
+            return false;
+        }
         _dvState.stash.push({
             taskId: entry.taskId,
             key: entry.key,
@@ -481,18 +486,19 @@ function _dvAddToStash(entry) {
         });
         _dvSaveStash();
         Logger.log('diff-viewer: stash add — ' + (entry.key || entry.taskId));
-    } else {
-        let changed = false;
-        if (entry.createdAt && !_dvState.stash[idx].createdAt) {
-            _dvState.stash[idx].createdAt = entry.createdAt;
-            changed = true;
-        }
-        if (entry.versionCount && entry.versionCount > (_dvState.stash[idx].versionCount || 0)) {
-            _dvState.stash[idx].versionCount = entry.versionCount;
-            changed = true;
-        }
-        if (changed) _dvSaveStash();
+        return true;
     }
+    let changed = false;
+    if (entry.createdAt && !_dvState.stash[idx].createdAt) {
+        _dvState.stash[idx].createdAt = entry.createdAt;
+        changed = true;
+    }
+    if (entry.versionCount && entry.versionCount > (_dvState.stash[idx].versionCount || 0)) {
+        _dvState.stash[idx].versionCount = entry.versionCount;
+        changed = true;
+    }
+    if (changed) _dvSaveStash();
+    return true;
 }
 
 function _dvClearStash(modal) {
@@ -549,9 +555,57 @@ function _dvNextLensIndex(taskId, promptVersions) {
 
 // ── Slot management ──
 
+async function _dvOverflowToStash(seed, modal) {
+    try {
+        let data;
+        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail)) {
+            data = {
+                taskId: seed.taskId,
+                key: seed.key || '',
+                authorName: seed.authorName || '',
+                authorEmail: seed.authorEmail || '',
+                createdAt: seed.createdAt || '',
+                promptVersions: null,
+                versionCount: seed.versionCount || 0
+            };
+        } else {
+            const lookup = seed.raw || seed.key || seed.taskId;
+            if (!lookup) throw new Error('No task identifier');
+            data = await _dvFetchTask(lookup);
+        }
+        const wasNew = _dvStashFind(data.taskId) < 0;
+        const added = _dvAddToStash({
+            taskId: data.taskId,
+            key: data.key,
+            authorName: data.authorName,
+            authorEmail: data.authorEmail,
+            createdAt: data.createdAt || '',
+            versionCount: (data.promptVersions || []).length || data.versionCount || 0
+        });
+        if (!added) {
+            if (modal) _dvSetSearchLoading(modal, false, 'Stash is full (max ' + DV_MAX_STASH + ' items)');
+            return;
+        }
+        if (modal && modal.isConnected) {
+            _dvRenderStash(modal);
+            _dvRenderStashChipStates(modal);
+            if (seed.raw) _dvSetSearchLoading(modal, false, null);
+        }
+        Logger.log('diff-viewer: slots full (' + DV_MAX_SLOTS + ') — '
+            + (wasNew ? 'stashed' : 'stash updated') + ' — ' + (data.key || data.taskId));
+    } catch (err) {
+        Logger.error('diff-viewer: overflow-to-stash failed', err);
+        if (modal) _dvSetSearchLoading(modal, false, String(err && err.message || err || 'Unknown error'));
+    }
+}
+
 function _dvAddSlot(seed, modal) {
     if (_dvState.slots.length >= DV_MAX_SLOTS) {
-        Logger.log('diff-viewer: max slots (' + DV_MAX_SLOTS + ') reached');
+        if (seed.fromStashChip) {
+            Logger.log('diff-viewer: cannot add slot — max ' + DV_MAX_SLOTS + ' reached; minimize or remove a slot first');
+            return;
+        }
+        void _dvOverflowToStash(seed, modal);
         return;
     }
     const slotId = ++_dvSlotSeq;
@@ -2239,7 +2293,8 @@ function _dvAttachListeners(modal) {
                     key: entry.key,
                     authorName: entry.authorName,
                     authorEmail: entry.authorEmail,
-                    createdAt: entry.createdAt || ''
+                    createdAt: entry.createdAt || '',
+                    fromStashChip: true
                 }, modal);
             }
             return;
@@ -2938,7 +2993,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2957,6 +3012,11 @@ const plugin = {
 
         // Load persisted stash
         _dvState.stash = _dvLoadStash();
+        if (_dvState.stash.length > DV_MAX_STASH) {
+            _dvState.stash = _dvState.stash.slice(0, DV_MAX_STASH);
+            _dvSaveStash();
+            Logger.warn('diff-viewer: stash trimmed to ' + DV_MAX_STASH + ' items on load');
+        }
 
         // Restore persisted granularity
         try {
