@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '2.8',
+    _version: '3.0',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -517,19 +517,7 @@ const plugin = {
         button.setAttribute('aria-label', 'Copy text');
 
         const pulseCopyFailure = () => {
-            if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
-            const prevT = button.style.transition;
-            button.style.transition = 'none';
-            button.style.backgroundColor = 'rgb(239, 68, 68)';
-            button.style.color = '#ffffff';
-            void button.offsetHeight;
-            button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            state.copyFeedbackTimeoutId = setTimeout(() => {
-                button.style.transition = prevT || '';
-                state.copyFeedbackTimeoutId = null;
-            }, 500);
+            if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
         };
         const handleCopy = () => {
             const container = button.closest('[data-qa-text-sanitizer="true"]');
@@ -546,15 +534,7 @@ const plugin = {
             }
             navigator.clipboard.writeText(text).then(() => {
                 Logger.log(`Text Sanitizer: Copied ${text.length} chars and cleared`);
-                if (state.copyFeedbackTimeoutId) clearTimeout(state.copyFeedbackTimeoutId);
-                button.style.transition = '';
-                button.style.backgroundColor = 'rgb(34, 197, 94)';
-                button.style.color = 'white';
-                state.copyFeedbackTimeoutId = setTimeout(() => {
-                    button.style.backgroundColor = '';
-                    button.style.color = '';
-                    state.copyFeedbackTimeoutId = null;
-                }, 1000);
+                if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
                 textarea.value = '';
                 if (opts && opts.onAfterClear) opts.onAfterClear();
             }).catch((err) => {

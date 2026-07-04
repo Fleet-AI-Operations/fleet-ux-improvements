@@ -85,7 +85,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.26',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -546,18 +546,15 @@ const plugin = {
     },
 
     _loadingSpinnerHtml(sizePx) {
-        const size = sizePx || 16;
-        return `<span aria-hidden="true" style="display: inline-block; width: ${size}px; height: ${size}px; border: 2px solid color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 22%, transparent); border-top-color: var(--brand, var(--primary, #2563eb)); border-radius: 50%; animation: wf-dash-spin 0.7s linear infinite; flex-shrink: 0;"></span>`;
+        return Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
+            ? Context.uiLib.spinnerHtml(sizePx)
+            : `<span aria-hidden="true" style="display: inline-block; width: ${sizePx || 16}px; height: ${sizePx || 16}px; border: 2px solid color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 22%, transparent); border-top-color: var(--brand, var(--primary, #2563eb)); border-radius: 50%; animation: fleet-ui-spin 0.7s linear infinite; flex-shrink: 0;"></span>`;
     },
 
     _ensureSpinnerKeyframes() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-spinner-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-spinner-style';
-        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }'
-            + ' @keyframes wf-dash-dots { 0%, 32% { content: \'.\'; } 33%, 65% { content: \'..\'; } 66%, 99% { content: \'...\'; } }'
-            + ' [data-wf-dash-dots]::after { display: inline; content: \'.\'; animation: wf-dash-dots 1.5s linear infinite; }';
-        this._modal.appendChild(style);
+        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+            Context.uiLib.ensureStyles();
+        }
     },
 
     _dashCloseIconSvg() {
@@ -1150,125 +1147,17 @@ const plugin = {
     },
 
     _dashBtnClass(variant, size) {
-        const variants = {
-            primary: 'wf-dash-btn--primary',
-            secondary: 'wf-dash-btn--secondary',
-            basic: 'wf-dash-btn--basic'
-        };
-        const sizes = {
-            nav: 'wf-dash-btn--nav',
-            regular: 'wf-dash-btn--regular',
-            icon: 'wf-dash-btn--icon',
-            compact: 'wf-dash-btn--compact'
-        };
-        const v = variants[variant] || variants.basic;
-        const s = sizes[size] || sizes.nav;
-        return 'wf-dash-btn ' + v + ' ' + s;
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
     },
 
     _ensureDashButtonStyles() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-btn-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-btn-style';
-        style.textContent = [
-            '#wf-dash-modal .wf-dash-btn {',
-            '  appearance: none;',
-            '  -webkit-appearance: none;',
-            '  box-sizing: border-box;',
-            '  margin: 0;',
-            '  font-family: inherit;',
-            '  font-weight: 600;',
-            '  border-radius: 6px;',
-            '  cursor: pointer;',
-            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
-            '  white-space: nowrap;',
-            '  display: inline-flex;',
-            '  align-items: center;',
-            '  justify-content: center;',
-            '  line-height: 1.4;',
-            '  text-decoration: none;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--nav {',
-            '  padding: 4px 10px;',
-            '  font-size: 11px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--regular {',
-            '  padding: 7px 14px;',
-            '  font-size: 12px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--compact {',
-            '  padding: 2px 10px;',
-            '  font-size: 11px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--icon {',
-            '  width: 26px;',
-            '  height: 26px;',
-            '  padding: 0;',
-            '  font-size: 13px;',
-            '  flex-shrink: 0;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--full {',
-            '  width: 100%;',
-            '  box-sizing: border-box;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--secondary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: #000;',
-            '  color: #fff;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
-            '  border-color: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--brand, var(--primary, #2563eb));',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic {',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--background, #fff);',
-            '  color: var(--muted-foreground, #64748b);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic:hover:not(:disabled) {',
-            '  background: var(--muted, #f1f5f9);',
-            '  border-color: var(--foreground, #0f172a);',
-            '  color: var(--foreground, #0f172a);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary:disabled,',
-            '#wf-dash-modal .wf-dash-btn--secondary:disabled {',
-            '  cursor: not-allowed;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--muted, #f1f5f9);',
-            '  color: var(--muted-foreground, #94a3b8);',
-            '  opacity: 0.85;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic:disabled {',
-            '  cursor: not-allowed;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--muted, #f1f5f9);',
-            '  color: var(--muted-foreground, #94a3b8);',
-            '  opacity: 0.85;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn:disabled[aria-busy="true"] {',
-            '  opacity: 0.65;',
-            '  cursor: wait;',
-            '}',
-            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic {',
-            '  color: var(--muted-foreground, #64748b);',
-            '}',
-            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic:hover:not(:disabled) {',
-            '  color: var(--foreground, #0f172a);',
-            '  border-color: var(--foreground, #0f172a);',
-            '}'
-        ].join('\n');
-        this._modal.appendChild(style);
+        if (!this._modal) return;
+        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+            Context.uiLib.ensureButtonStyles('#wf-dash-modal', this._modal);
+        }
     },
 
     _sidePanelWidthStorageKey(scopeKey) {

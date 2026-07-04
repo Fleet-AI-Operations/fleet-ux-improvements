@@ -3,16 +3,12 @@
 // Click copies each parameter label and value (e.g. "Total Paid: 0") to the clipboard with green 1s confirmation (label unchanged).
 
 const COPY_RESULT_PARAMS_MARKER = 'data-fleet-copy-result-params';
-const CONFIRMATION_MS = 1000;
-const FAILURE_PULSE_MS = 500;
-const GREEN_BG = 'rgb(34, 197, 94)';
-const FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
 const plugin = {
     id: 'copyResultParams',
     name: 'Copy Result Params and Inputs',
     description: 'Add a button under Your Answer that copies all parameter labels and values to the clipboard',
-    _version: '1.1',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -80,44 +76,15 @@ const plugin = {
     },
 
     clearCopyButtonFeedback(button) {
-        if (button._copyResultParamsTimeout) {
-            clearTimeout(button._copyResultParamsTimeout);
-            button._copyResultParamsTimeout = null;
-        }
-        if (button._copyResultParamsFailTimeout) {
-            clearTimeout(button._copyResultParamsFailTimeout);
-            button._copyResultParamsFailTimeout = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
+        if (Context.buttonFeedback) Context.buttonFeedback.clear(button);
     },
 
     showCopySuccessFlash(button) {
-        this.clearCopyButtonFeedback(button);
-        button.style.backgroundColor = GREEN_BG;
-        button.style.color = 'white';
-        button._copyResultParamsTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._copyResultParamsTimeout = null;
-        }, CONFIRMATION_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
     },
 
     showCopyFailurePulse(button) {
-        this.clearCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition = `background-color ${FAILURE_PULSE_MS}ms ease-out, color ${FAILURE_PULSE_MS}ms ease-out`;
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyResultParamsFailTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._copyResultParamsFailTimeout = null;
-        }, FAILURE_PULSE_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
     },
 
     createCopyButton(yourAnswerSection) {

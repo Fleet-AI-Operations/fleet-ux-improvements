@@ -174,9 +174,14 @@ function restoreVerifierScratchpadTabState(modal, state) {
 function verifierFetcherPanelHtml() {
     const dash = Context.dashboard;
     const loader = dash && dash._loader;
-    const btnClass = (variant, size) => (dash && typeof dash.dashBtnClass === 'function'
-        ? dash.dashBtnClass(variant, size)
-        : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
+    const btnClass = (variant, size) => {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return dash && typeof dash.dashBtnClass === 'function'
+            ? dash.dashBtnClass(variant, size)
+            : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+    };
     const inputStyle = loader && typeof loader._inputStyle === 'function'
         ? loader._inputStyle()
         : 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1); border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a); box-sizing: border-box;';
@@ -436,7 +441,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '2.4',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

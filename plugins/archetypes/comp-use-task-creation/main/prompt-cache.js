@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '3.5',
+    _version: '4.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -464,25 +464,22 @@ const plugin = {
             state.statusEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgb(34,197,94)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
         } else {
             state.statusEl.title = 'Saving prompt…';
-            state.statusEl.innerHTML = `<svg class="fleet-prompt-cache-spinner" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+            state.statusEl.innerHTML = Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
+                ? Context.uiLib.spinnerHtml(14)
+                : '<span class="fleet-ui-spinner" style="width:14px;height:14px;"></span>';
         }
     },
 
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     injectStyles() {
+        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+            Context.uiLib.ensureStyles();
+        }
         if (document.getElementById('fleet-prompt-cache-styles')) return;
         const style = document.createElement('style');
         style.id = 'fleet-prompt-cache-styles';
         style.textContent = `
-            @keyframes fleet-prompt-cache-spin {
-                from { transform: rotate(0deg); }
-                to   { transform: rotate(360deg); }
-            }
-            .fleet-prompt-cache-spinner {
-                animation: fleet-prompt-cache-spin 1s linear infinite;
-                display: block;
-            }
             .fleet-prompt-cache-restore-btn-wrap {
                 display: block;
                 width: 100%;

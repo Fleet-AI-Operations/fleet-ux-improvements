@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      10.4
+// @version      11.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '10.4';
+    const VERSION = '11.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -366,9 +366,11 @@
         }
 
         function flashSuccess(btn) {
-            if (btn._fosClipResetTimeout) {
-                clearTimeout(btn._fosClipResetTimeout);
+            if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+                Context.buttonFeedback.flashSuccess(btn);
+                return;
             }
+            if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
             btn.style.transition = '';
             btn.style.backgroundColor = 'rgb(34, 197, 94)';
             btn.style.color = '#ffffff';
@@ -380,9 +382,11 @@
         }
 
         function flashFailure(btn) {
-            if (btn._fosClipResetTimeout) {
-                clearTimeout(btn._fosClipResetTimeout);
+            if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+                Context.buttonFeedback.flashFailure(btn);
+                return;
             }
+            if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
             const prevT = btn.style.transition;
             btn.style.transition = 'none';
             btn.style.backgroundColor = 'rgb(239, 68, 68)';

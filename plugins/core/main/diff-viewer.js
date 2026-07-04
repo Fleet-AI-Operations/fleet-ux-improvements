@@ -1389,46 +1389,21 @@ async function _dvCopyText(text) {
 }
 
 function _dvFlashCopySuccess(el) {
-    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = 'rgb(34, 197, 94)';
-    el.style.color = '#ffffff';
-    el.style.borderColor = 'rgb(34, 197, 94)';
-    el._dvCopyTimeout = setTimeout(() => {
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        el.style.borderColor = prevBorder;
-        el.style.transition = prevTransition;
-        el._dvCopyTimeout = null;
-    }, 1000);
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+        Context.buttonFeedback.flashSuccess(el, { includeBorder: true });
+    }
 }
 
 function _dvFlashCopyFail(el) {
-    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = 'rgb(239, 68, 68)';
-    el.style.color = '#ffffff';
-    el.style.borderColor = 'rgb(239, 68, 68)';
-    void el.offsetWidth;
-    el.style.transition = 'background-color 500ms ease-out, color 500ms ease-out, border-color 500ms ease-out';
-    el._dvCopyTimeout = setTimeout(() => {
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        el.style.borderColor = prevBorder;
-        el.style.transition = prevTransition;
-        el._dvCopyTimeout = null;
-    }, 500);
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+        Context.buttonFeedback.flashFailure(el, { includeBorder: true });
+    }
 }
 
 async function _dvCopyWithFeedback(el, text, logLabel) {
+    if (Context.uiLib && typeof Context.uiLib.copyWithFeedback === 'function') {
+        return Context.uiLib.copyWithFeedback(el, text, { logLabel: logLabel || 'task key', includeBorder: true });
+    }
     const label = logLabel || 'task key';
     const value = String(text == null ? '' : text).trim();
     if (!value) {
@@ -2433,6 +2408,9 @@ function _dvAttachListeners(modal) {
 // ── Inject styles (card action + dv-specific) ──
 
 function _dvInjectStyles() {
+    if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+        Context.uiLib.ensureStyles();
+    }
     let style = document.getElementById('dv-styles');
     if (!style) {
         style = document.createElement('style');
@@ -2440,29 +2418,6 @@ function _dvInjectStyles() {
         document.head.appendChild(style);
     }
     style.textContent = [
-        '@keyframes dvDiffTabAddPulse {',
-        '  0% {',
-        '    background-color: transparent;',
-        '    box-shadow: inset 0 -2px 0 0 transparent;',
-        '    color: inherit;',
-        '    border-bottom-color: inherit;',
-        '  }',
-        '  12% {',
-        '    background-color: color-mix(in srgb, rgb(34, 197, 94) 30%, transparent);',
-        '    box-shadow: inset 0 -3px 0 0 rgb(34, 197, 94);',
-        '    color: rgb(34, 197, 94) !important;',
-        '    border-bottom-color: rgb(34, 197, 94) !important;',
-        '  }',
-        '  100% {',
-        '    background-color: transparent;',
-        '    box-shadow: inset 0 -2px 0 0 transparent;',
-        '    color: inherit;',
-        '    border-bottom-color: inherit;',
-        '  }',
-        '}',
-        '#wf-dash-modal [data-wf-dash-tab="diff-viewer"].wf-dash-tab--add-pulse {',
-        '  animation: dvDiffTabAddPulse 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
-        '}',
         '#wf-dash-modal .dv-universal-toggles {',
         '  display: flex;',
         '  flex-direction: row;',
@@ -2972,11 +2927,10 @@ function _dvFlashTabAdded() {
     if (!modal) return;
     const tab = modal.querySelector('[data-wf-dash-tab="diff-viewer"]');
     if (!tab) return;
-    tab.classList.remove('wf-dash-tab--add-pulse');
-    void tab.offsetWidth;
-    tab.classList.add('wf-dash-tab--add-pulse');
-    tab.addEventListener('animationend', () => tab.classList.remove('wf-dash-tab--add-pulse'), { once: true });
-    Logger.debug('diff-viewer: tab add pulse');
+    if (Context.uiLib && typeof Context.uiLib.flashTabSuccess === 'function') {
+        Context.uiLib.flashTabSuccess(tab);
+        Logger.debug('diff-viewer: tab add pulse');
+    }
 }
 
 function _dvOnFleetThemeChange() {
@@ -3080,7 +3034,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.9',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
 

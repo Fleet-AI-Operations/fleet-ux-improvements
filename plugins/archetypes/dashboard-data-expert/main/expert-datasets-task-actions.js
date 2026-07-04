@@ -7,10 +7,6 @@ const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const ROW_ENHANCED_ATTR = 'data-fleet-expert-datasets-enhanced';
 const COPY_BTN_ATTR = 'data-fleet-expert-datasets-copy';
 const OPEN_BTN_ATTR = 'data-fleet-expert-datasets-open';
-const COPY_SUCCESS_FLASH_MS = 300;
-const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
-const COPY_FAILURE_PULSE_MS = 500;
-const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const EXTERNAL_LINK_PATH_SNIPPET = 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6';
 
 const plugin = {
@@ -18,7 +14,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '1.5',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -217,53 +213,31 @@ const plugin = {
 
     _clearCopyFeedback(button) {
         if (!button) return;
-        if (button._copySuccessFlashTimeout) {
-            clearTimeout(button._copySuccessFlashTimeout);
-            button._copySuccessFlashTimeout = null;
-        }
-        if (button._copyFailurePulseTimeout) {
-            clearTimeout(button._copyFailurePulseTimeout);
-            button._copyFailurePulseTimeout = null;
-        }
         const target = this._copyFeedbackTarget(button);
-        if (target) {
-            target.style.transition = '';
-            target.style.backgroundColor = '';
+        if (Context.buttonFeedback) {
+            Context.buttonFeedback.clear(target);
+            Context.buttonFeedback.clear(button);
         }
-        button.style.color = '';
     },
 
     _showCopySuccessFlash(button) {
-        this._clearCopyFeedback(button);
         const target = this._copyFeedbackTarget(button);
-        target.style.transition =
-            'background-color ' + COPY_SUCCESS_FLASH_MS + 'ms ease-out, color ' + COPY_SUCCESS_FLASH_MS + 'ms ease-out';
-        target.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
-        button.style.color = '#ffffff';
-        button._copySuccessFlashTimeout = setTimeout(() => {
-            target.style.backgroundColor = '';
-            target.style.transition = '';
-            button.style.color = '';
-            button._copySuccessFlashTimeout = null;
-        }, COPY_SUCCESS_FLASH_MS);
+        if (Context.buttonFeedback) {
+            Context.buttonFeedback.flashSuccess(target, { restoreStyles: false });
+            button.style.color = '#ffffff';
+            const ms = Context.uiLib ? Context.uiLib.COPY_SUCCESS_MS : 1000;
+            setTimeout(() => { button.style.color = ''; }, ms);
+        }
     },
 
     _showCopyFailurePulse(button) {
-        this._clearCopyFeedback(button);
         const target = this._copyFeedbackTarget(button);
-        const prevTransition = target.style.transition;
-        target.style.transition = 'none';
-        target.style.backgroundColor = COPY_FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void target.offsetHeight;
-        target.style.transition =
-            'background-color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out, color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out';
-        target.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyFailurePulseTimeout = setTimeout(() => {
-            target.style.transition = prevTransition || '';
-            button._copyFailurePulseTimeout = null;
-        }, COPY_FAILURE_PULSE_MS);
+        if (Context.buttonFeedback) {
+            Context.buttonFeedback.flashFailure(target, { restoreStyles: false });
+            button.style.color = '#ffffff';
+            const ms = Context.uiLib ? Context.uiLib.COPY_FAILURE_MS : 500;
+            setTimeout(() => { button.style.color = ''; }, ms);
+        }
     },
 
     async _copyTextToClipboard(text) {

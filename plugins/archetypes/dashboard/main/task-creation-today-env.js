@@ -3,40 +3,17 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '3.2',
+    _version: '4.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
 
-    COPY_FEEDBACK_SUCCESS_MS: 1000,
-    COPY_FEEDBACK_FAILURE_MS: 500,
-
     flashCopyButtonSuccess(btn) {
-        if (btn._wfCopyResetTimeout) clearTimeout(btn._wfCopyResetTimeout);
-        btn.style.transition = '';
-        btn.style.backgroundColor = 'rgb(34, 197, 94)';
-        btn.style.color = '#ffffff';
-        btn._wfCopyResetTimeout = setTimeout(() => {
-            btn._wfCopyResetTimeout = null;
-            btn.style.backgroundColor = '';
-            btn.style.color = '';
-        }, this.COPY_FEEDBACK_SUCCESS_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(btn, { restoreStyles: false });
     },
 
     flashCopyButtonFailure(btn) {
-        if (btn._wfCopyResetTimeout) clearTimeout(btn._wfCopyResetTimeout);
-        const prevT = btn.style.transition;
-        btn.style.transition = 'none';
-        btn.style.backgroundColor = 'rgb(239, 68, 68)';
-        btn.style.color = '#ffffff';
-        void btn.offsetHeight;
-        btn.style.transition = `background-color ${this.COPY_FEEDBACK_FAILURE_MS}ms ease-out, color ${this.COPY_FEEDBACK_FAILURE_MS}ms ease-out`;
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        btn._wfCopyResetTimeout = setTimeout(() => {
-            btn.style.transition = prevT || '';
-            btn._wfCopyResetTimeout = null;
-        }, this.COPY_FEEDBACK_FAILURE_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(btn, { restoreStyles: false });
     },
 
     /** Month name (3-letter) to 1-based month index. */

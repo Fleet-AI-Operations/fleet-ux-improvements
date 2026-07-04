@@ -4827,7 +4827,7 @@ const searchOutputMethods = {
             return;
         }
         el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
-            + this._loadingSpinnerHtml(14).replace('<span aria-hidden="true"', '<span data-wf-dash-load-mark="1" aria-hidden="true"')
+            + this._loadingSpinnerHtml(14).replace('<span class="fleet-ui-spinner"', '<span data-wf-dash-load-mark="1" class="fleet-ui-spinner"')
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
         if (this._state.leftTab === 'ratings') this._renderRatingsPanel();
@@ -9886,8 +9886,8 @@ const searchOutputMethods = {
             return '<span data-wf-dash-load-mark="1" aria-hidden="true" style="flex-shrink: 0; width: 12px; text-align: center;">✅</span>';
         }
         return this._loadingSpinnerHtml(12).replace(
-            '<span aria-hidden="true"',
-            '<span data-wf-dash-load-mark="1" aria-hidden="true"'
+            '<span class="fleet-ui-spinner"',
+            '<span data-wf-dash-load-mark="1" class="fleet-ui-spinner"'
         );
     },
 
@@ -11232,51 +11232,15 @@ const searchOutputMethods = {
     },
 
     async _copyWithFeedback(el, text) {
-        const value = String(text == null ? '' : text).trim();
-        if (!value) { this._flashCopyFail(el); Logger.warn('dashboard: copy skipped (empty value)'); return false; }
-        const ok = await this._copyText(value);
-        if (ok) {
-            this._flashCopySuccess(el);
-            Logger.log('dashboard: copied ' + value.length + ' chars');
-        } else {
-            this._flashCopyFail(el);
-            Logger.warn('dashboard: copy failed');
+        if (Context.uiLib && typeof Context.uiLib.copyWithFeedback === 'function') {
+            return Context.uiLib.copyWithFeedback(el, text, { logLabel: 'value' });
         }
+        const value = String(text == null ? '' : text).trim();
+        if (!value) { Logger.warn('dashboard: copy skipped (empty value)'); return false; }
+        const ok = await this._copyText(value);
+        if (ok) Logger.log('dashboard: copied ' + value.length + ' chars');
+        else Logger.warn('dashboard: copy failed');
         return ok;
-    },
-
-    _flashCopySuccess(el) {
-        if (el._wfDashCopyTimeout) clearTimeout(el._wfDashCopyTimeout);
-        const prevBg = el.style.backgroundColor;
-        const prevColor = el.style.color;
-        const prevTransition = el.style.transition;
-        el.style.transition = 'none';
-        el.style.backgroundColor = 'rgb(34, 197, 94)';
-        el.style.color = '#ffffff';
-        el._wfDashCopyTimeout = setTimeout(() => {
-            el.style.backgroundColor = prevBg;
-            el.style.color = prevColor;
-            el.style.transition = prevTransition;
-            el._wfDashCopyTimeout = null;
-        }, 1000);
-    },
-
-    _flashCopyFail(el) {
-        if (el._wfDashCopyTimeout) clearTimeout(el._wfDashCopyTimeout);
-        const prevBg = el.style.backgroundColor;
-        const prevColor = el.style.color;
-        const prevTransition = el.style.transition;
-        el.style.transition = 'none';
-        el.style.backgroundColor = 'rgb(239, 68, 68)';
-        el.style.color = '#ffffff';
-        void el.offsetWidth;
-        el.style.transition = 'background-color 0.5s ease, color 0.5s ease';
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        el._wfDashCopyTimeout = setTimeout(() => {
-            el.style.transition = prevTransition;
-            el._wfDashCopyTimeout = null;
-        }, 500);
     }
 };
 
@@ -11917,7 +11881,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.50',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
