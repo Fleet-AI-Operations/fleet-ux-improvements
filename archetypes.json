@@ -1,7 +1,7 @@
 {
-  "version": "11.0",
+  "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.1",
+  "archetypesVersion": "13.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "2.1",
-      "hash": "sha256-090f2fd03151b2f6d2267c43262841aa97158a35875e4f1408774d3f1a59da11",
+      "version": "2.2",
+      "hash": "sha256-e3b17753995939785539f4dace3067d31b46189262c7d27d713737bd2eae7cc4",
       "log": false
     },
     {
@@ -168,8 +168,8 @@
         },
         {
           "name": "text-sanitizer.js",
-          "version": "4.0",
-          "hash": "sha256-4889f808d5a966b5ab0a4fd65d85e4b5b5c5fbb8cc9f0eb0a05d3ac5679f0b23",
+          "version": "4.1",
+          "hash": "sha256-8a3da292fbce5ec637307f4ee7cf00d463a046a9e32262d024d52ab818e28c18",
           "log": false
         },
         {
@@ -203,8 +203,8 @@
         },
         {
           "name": "text-sanitizer.js",
-          "version": "4.0",
-          "hash": "sha256-2a7efae72cc0f7e23d1313733d1b42e35cb1d40f2432007a413ccdf2a681e789",
+          "version": "4.1",
+          "hash": "sha256-3d30db5c470010c3d77b61a5d957cbda42a02d343f58312b7eb376194e3b788c",
           "log": false
         },
         {
@@ -358,8 +358,8 @@
         },
         {
           "name": "text-sanitizer.js",
-          "version": "3.0",
-          "hash": "sha256-c41984008cdf9e2238508fe259c7393bf4ebb43df37ceac196f482cb073a6fcd",
+          "version": "3.1",
+          "hash": "sha256-b28ff90a3a6102afb9a54340880c23dc3dd87de9f187860511bfd5b9131af84e",
           "log": false
         },
         {

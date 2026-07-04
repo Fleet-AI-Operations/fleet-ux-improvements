@@ -105,14 +105,13 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         promptMissingLogged: false,
         copyFeedbackTimeoutId: null,
-        executeFeedbackTimeoutId: null
     },
 
     onMutation(state, context) {
@@ -461,32 +460,6 @@ const plugin = {
         executeBtn.className = buttonClass;
         executeBtn.setAttribute('data-fleet-plugin', this.id);
         executeBtn.textContent = 'Execute';
-        const showExecuteSuccess = () => {
-            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
-            executeBtn.style.transition = '';
-            executeBtn.style.backgroundColor = 'rgb(34, 197, 94)';
-            executeBtn.style.color = 'white';
-            state.executeFeedbackTimeoutId = setTimeout(() => {
-                executeBtn.style.backgroundColor = '';
-                executeBtn.style.color = '';
-                state.executeFeedbackTimeoutId = null;
-            }, 1000);
-        };
-        const showExecuteFailure = () => {
-            if (state.executeFeedbackTimeoutId) clearTimeout(state.executeFeedbackTimeoutId);
-            const prevT = executeBtn.style.transition;
-            executeBtn.style.transition = 'none';
-            executeBtn.style.backgroundColor = 'rgb(239, 68, 68)';
-            executeBtn.style.color = '#ffffff';
-            void executeBtn.offsetHeight;
-            executeBtn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-            executeBtn.style.backgroundColor = '';
-            executeBtn.style.color = '';
-            state.executeFeedbackTimeoutId = setTimeout(() => {
-                executeBtn.style.transition = prevT || '';
-                state.executeFeedbackTimeoutId = null;
-            }, 500);
-        };
         const onExecute = () => {
             const id = select.value;
             const action = this.actions[id];
@@ -504,9 +477,9 @@ const plugin = {
                 ok = false;
             }
             if (ok) {
-                showExecuteSuccess();
-            } else {
-                showExecuteFailure();
+                if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(executeBtn, { restoreStyles: false });
+            } else if (Context.buttonFeedback) {
+                Context.buttonFeedback.flashFailure(executeBtn, { restoreStyles: false });
             }
         };
         CleanupRegistry.registerEventListener(executeBtn, 'click', onExecute);

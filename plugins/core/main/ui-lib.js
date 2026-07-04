@@ -4,13 +4,16 @@
 const FLEET_UI_STYLE_ID = 'fleet-ui-styles';
 const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
 
-const COPY_SUCCESS_MS = 1000;
-const COPY_FAILURE_MS = 500;
+const FLASH_PULSE_MS = 600;
+const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const COPY_SUCCESS_MS = FLASH_PULSE_MS;
+const COPY_FAILURE_MS = FLASH_PULSE_MS;
 const COPY_SUCCESS_BG = 'rgb(34, 197, 94)';
 const COPY_FAILURE_BG = 'rgb(239, 68, 68)';
-const COPY_FLASH_TEXT = '#ffffff';
 const SPIN_DURATION = '0.7s';
-const TAB_PULSE_MS = 600;
+const TAB_PULSE_MS = FLASH_PULSE_MS;
+const FLASH_CLASS_SUCCESS = 'fleet-ui-flash--success';
+const FLASH_CLASS_FAILURE = 'fleet-ui-flash--failure';
 
 const BTN_VARIANTS = {
     primary: 'wf-dash-btn--primary',
@@ -164,14 +167,33 @@ function fleetUiGlobalCssText() {
         '    border-bottom-color: inherit;',
         '  }',
         '}',
-        '@keyframes dvDiffTabAddPulse {',
-        '  0% { background-color: transparent; box-shadow: inset 0 -2px 0 0 transparent; color: inherit; border-bottom-color: inherit; }',
-        '  12% { background-color: color-mix(in srgb, ' + COPY_SUCCESS_BG + ' 30%, transparent); box-shadow: inset 0 -3px 0 0 ' + COPY_SUCCESS_BG + '; color: ' + COPY_SUCCESS_BG + ' !important; border-bottom-color: ' + COPY_SUCCESS_BG + ' !important; }',
-        '  100% { background-color: transparent; box-shadow: inset 0 -2px 0 0 transparent; color: inherit; border-bottom-color: inherit; }',
+        '@keyframes fleet-ui-flash-success {',
+        '  0% { background-color: transparent; color: inherit; border-color: inherit; }',
+        '  12% {',
+        '    background-color: color-mix(in srgb, ' + COPY_SUCCESS_BG + ' 30%, transparent);',
+        '    color: ' + COPY_SUCCESS_BG + ' !important;',
+        '    border-color: ' + COPY_SUCCESS_BG + ' !important;',
+        '  }',
+        '  100% { background-color: transparent; color: inherit; border-color: inherit; }',
+        '}',
+        '@keyframes fleet-ui-flash-failure {',
+        '  0% { background-color: transparent; color: inherit; border-color: inherit; }',
+        '  12% {',
+        '    background-color: color-mix(in srgb, ' + COPY_FAILURE_BG + ' 30%, transparent);',
+        '    color: ' + COPY_FAILURE_BG + ' !important;',
+        '    border-color: ' + COPY_FAILURE_BG + ' !important;',
+        '  }',
+        '  100% { background-color: transparent; color: inherit; border-color: inherit; }',
         '}',
         '#wf-dash-modal [data-wf-dash-tab].fleet-ui-tab--pulse,',
         '#wf-dash-modal [data-wf-dash-tab].wf-dash-tab--add-pulse {',
-        '  animation: fleet-ui-tab-pulse ' + TAB_PULSE_MS + 'ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
+        '  animation: fleet-ui-tab-pulse ' + FLASH_PULSE_MS + 'ms ' + FLASH_PULSE_EASING + ' 1;',
+        '}',
+        '.' + FLASH_CLASS_SUCCESS + ' {',
+        '  animation: fleet-ui-flash-success ' + FLASH_PULSE_MS + 'ms ' + FLASH_PULSE_EASING + ' 1;',
+        '}',
+        '.' + FLASH_CLASS_FAILURE + ' {',
+        '  animation: fleet-ui-flash-failure ' + FLASH_PULSE_MS + 'ms ' + FLASH_PULSE_EASING + ' 1;',
         '}'
     ].join('\n');
 }
@@ -182,78 +204,56 @@ function fleetUiClearCopyFeedback(el) {
         clearTimeout(el._fleetUiCopyTimeout);
         el._fleetUiCopyTimeout = null;
     }
+    if (el._fleetUiFlashEndHandler) {
+        el.removeEventListener('animationend', el._fleetUiFlashEndHandler);
+        el._fleetUiFlashEndHandler = null;
+    }
+    el.classList.remove(FLASH_CLASS_SUCCESS, FLASH_CLASS_FAILURE);
     el.style.transition = '';
     el.style.backgroundColor = '';
     el.style.color = '';
     el.style.borderColor = '';
 }
 
-function fleetUiFlashSuccess(el, opts) {
+function fleetUiFinishPulseFlash(el, className) {
+    if (!el) return;
+    if (el._fleetUiCopyTimeout) {
+        clearTimeout(el._fleetUiCopyTimeout);
+        el._fleetUiCopyTimeout = null;
+    }
+    if (el._fleetUiFlashEndHandler) {
+        el.removeEventListener('animationend', el._fleetUiFlashEndHandler);
+        el._fleetUiFlashEndHandler = null;
+    }
+    el.classList.remove(className);
+}
+
+function fleetUiRunPulseFlash(el, kind, opts) {
     if (!el) return;
     const options = opts || {};
-    const restoreStyles = options.restoreStyles !== false;
+    const isFailure = kind === 'failure';
+    const durationMs = isFailure
+        ? (options.failureMs != null ? options.failureMs : COPY_FAILURE_MS)
+        : (options.successMs != null ? options.successMs : COPY_SUCCESS_MS);
+    const className = isFailure ? FLASH_CLASS_FAILURE : FLASH_CLASS_SUCCESS;
     fleetUiClearCopyFeedback(el);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = COPY_SUCCESS_BG;
-    el.style.color = COPY_FLASH_TEXT;
-    if (options.includeBorder) {
-        el.style.borderColor = COPY_SUCCESS_BG;
-    }
-    el._fleetUiCopyTimeout = setTimeout(() => {
-        if (restoreStyles) {
-            el.style.backgroundColor = prevBg;
-            el.style.color = prevColor;
-            if (options.includeBorder) el.style.borderColor = prevBorder;
-            el.style.transition = prevTransition;
-        } else {
-            el.style.backgroundColor = '';
-            el.style.color = '';
-            if (options.includeBorder) el.style.borderColor = '';
-            el.style.transition = '';
-        }
-        el._fleetUiCopyTimeout = null;
-    }, options.successMs != null ? options.successMs : COPY_SUCCESS_MS);
+    void el.offsetWidth;
+    el.classList.add(className);
+    const finish = () => fleetUiFinishPulseFlash(el, className);
+    el._fleetUiFlashEndHandler = (e) => {
+        if (e.target !== el) return;
+        finish();
+    };
+    el.addEventListener('animationend', el._fleetUiFlashEndHandler);
+    el._fleetUiCopyTimeout = setTimeout(finish, durationMs + 100);
+}
+
+function fleetUiFlashSuccess(el, opts) {
+    fleetUiRunPulseFlash(el, 'success', opts);
 }
 
 function fleetUiFlashFailure(el, opts) {
-    if (!el) return;
-    const options = opts || {};
-    const restoreStyles = options.restoreStyles !== false;
-    const failureMs = options.failureMs != null ? options.failureMs : COPY_FAILURE_MS;
-    fleetUiClearCopyFeedback(el);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = COPY_FAILURE_BG;
-    el.style.color = COPY_FLASH_TEXT;
-    if (options.includeBorder) {
-        el.style.borderColor = COPY_FAILURE_BG;
-    }
-    void el.offsetWidth;
-    const transitionParts = ['background-color ' + failureMs + 'ms ease-out', 'color ' + failureMs + 'ms ease-out'];
-    if (options.includeBorder) {
-        transitionParts.push('border-color ' + failureMs + 'ms ease-out');
-    }
-    el.style.transition = transitionParts.join(', ');
-    if (restoreStyles) {
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        if (options.includeBorder) el.style.borderColor = prevBorder;
-    } else {
-        el.style.backgroundColor = '';
-        el.style.color = '';
-        if (options.includeBorder) el.style.borderColor = '';
-    }
-    el._fleetUiCopyTimeout = setTimeout(() => {
-        el.style.transition = restoreStyles ? (prevTransition || '') : '';
-        el._fleetUiCopyTimeout = null;
-    }, failureMs);
+    fleetUiRunPulseFlash(el, 'failure', opts);
 }
 
 async function fleetUiCopyText(text) {
@@ -335,7 +335,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -371,11 +371,12 @@ const plugin = {
         ensureStyles();
 
         Context.uiLib = {
+            FLASH_PULSE_MS,
+            FLASH_PULSE_EASING,
             COPY_SUCCESS_MS,
             COPY_FAILURE_MS,
             COPY_SUCCESS_BG,
             COPY_FAILURE_BG,
-            COPY_FLASH_TEXT,
             SPIN_DURATION,
             TAB_PULSE_MS,
 
