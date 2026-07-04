@@ -34,7 +34,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
-            + '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Coming Soon to Videocassette</p>'
+            + '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Coming Soon</p>'
             + '</div>'
             + '</div>';
     },
@@ -502,7 +502,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
