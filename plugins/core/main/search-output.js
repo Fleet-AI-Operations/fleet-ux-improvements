@@ -6511,7 +6511,7 @@ const searchOutputMethods = {
         const durationSec = (creationSec != null && Number.isFinite(Number(creationSec)))
             ? Number(creationSec)
             : null;
-        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">`
+        const inner = `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">`
             + `<span style="${this._labelStyle()}">Created</span>`
             + dashTimestampWithDurationHtml(iso, durationSec)
             + '</span>';
@@ -6538,7 +6538,6 @@ const searchOutputMethods = {
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
             noHorizontalPadding: true,
-            shrinkable: true,
             shellClass: 'wf-dash-card-key-tab'
         });
     },
@@ -11885,7 +11884,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.7',
+    _version: '5.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
