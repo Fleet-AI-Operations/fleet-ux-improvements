@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '2.4',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -296,30 +296,9 @@ const plugin = {
     },
     
     _flashJsonEditorToolButton(button, success) {
-        if (button._fleetJsonEdFlashT) clearTimeout(button._fleetJsonEdFlashT);
-        if (success) {
-            button.style.transition = '';
-            button.style.backgroundColor = 'rgb(34, 197, 94)';
-            button.style.color = '#ffffff';
-            button._fleetJsonEdFlashT = setTimeout(() => {
-                button.style.backgroundColor = '';
-                button.style.color = '';
-                button._fleetJsonEdFlashT = null;
-            }, 1000);
-        } else {
-            const prevT = button.style.transition;
-            button.style.transition = 'none';
-            button.style.backgroundColor = 'rgb(239, 68, 68)';
-            button.style.color = '#ffffff';
-            void button.offsetHeight;
-            button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._fleetJsonEdFlashT = setTimeout(() => {
-                button.style.transition = prevT || '';
-                button._fleetJsonEdFlashT = null;
-            }, 500);
-        }
+        if (!Context.buttonFeedback) return;
+        if (success) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
+        else Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
     },
 
     async copyResultAndOpenEditor(card, resultArea) {

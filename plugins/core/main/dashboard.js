@@ -11,31 +11,22 @@
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
 const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width';
+const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
+const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
 const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
 const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
 const DASH_SIDE_PANEL_MIN_WIDTH = 320;
 const DASH_SIDE_PANEL_MIN_RESULTS_WIDTH = 280;
+const DASH_STATS_PANEL_MIN_WIDTH = 280;
+const DASH_STATS_PANEL_DEFAULT_WIDTH = 320;
+const DASH_STATS_PANEL_COLLAPSED_WIDTH = 44;
+const DASH_RESULTS_STATS_HANDLE_WIDTH = 18;
 const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions', 'team-members-badges'];
 const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
-const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
-    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
-    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
-    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
-    { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
-    { scopeKey: 'filter-qa-helpfulness', optionsKey: 'qaHelpfulness', draftKey: 'qaHelpfulness' },
-    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
-    { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
-    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
-    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
-    { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
-    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
-    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
-];
 const DASH_MS_HOVER_OPEN_MS = 300;
 const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
@@ -61,8 +52,13 @@ function dashIsFlyoutMsKey(scopeKey) {
     return dashIsFilterMsKey(scopeKey) || dashIsSearchMsKey(scopeKey);
 }
 
+function dashFilterScopes() {
+    const lib = Context.dashboardLib;
+    return (lib && lib.filterScopes) || [];
+}
+
 function dashAllFlyoutMsKeys() {
-    return DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
+    return dashFilterScopes().map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
 }
 
 function dashLib() {
@@ -85,7 +81,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '6.26',
+    _version: '9.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -152,7 +148,12 @@ const plugin = {
             renderMsList: (scopeKey, items, emptyHint, preserveSelected, opts) =>
                 self._renderMsList(scopeKey, items, emptyHint, preserveSelected, opts),
             selectedMsValues: (scopeKey) => self._selectedFromList(scopeKey),
-            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey) => self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey),
+            splitPanelSectionHtml: (leftHtml, rightHtml, scopeKey, statsHtml) =>
+                self._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml),
+            readStatsPanelHiddenPref: () => self._readStatsPanelHiddenPref(),
+            writeStatsPanelHiddenPref: (hidden) => self._writeStatsPanelHiddenPref(hidden),
+            applyStatsPanelLayout: (root) => self._applyStatsPanelLayout(root),
+            scheduleSplitLayoutSync: () => self._scheduleSplitLayoutSync(),
             pagerChevronSvg: (dir) => self._pagerChevronSvg(dir),
             paginationMeta: (total, pageSize, pageHolder) => self._paginationMeta(total, pageSize, pageHolder),
             rangeLabel: (meta, options) => self._rangeLabel(meta, options),
@@ -236,6 +237,7 @@ const plugin = {
             resultsPage: 0,
             activeTab: 'search-output',
             leftTab: 'search',
+            statsTab: 'ratings',
             cachedItems: null,
             filteredItems: null,
             hasSearched: false,
@@ -546,18 +548,15 @@ const plugin = {
     },
 
     _loadingSpinnerHtml(sizePx) {
-        const size = sizePx || 16;
-        return `<span aria-hidden="true" style="display: inline-block; width: ${size}px; height: ${size}px; border: 2px solid color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 22%, transparent); border-top-color: var(--brand, var(--primary, #2563eb)); border-radius: 50%; animation: wf-dash-spin 0.7s linear infinite; flex-shrink: 0;"></span>`;
+        return Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
+            ? Context.uiLib.spinnerHtml(sizePx)
+            : `<span aria-hidden="true" style="display: inline-block; width: ${sizePx || 16}px; height: ${sizePx || 16}px; border: 2px solid color-mix(in srgb, var(--brand, var(--primary, #2563eb)) 22%, transparent); border-top-color: var(--brand, var(--primary, #2563eb)); border-radius: 50%; animation: fleet-ui-spin 0.7s linear infinite; flex-shrink: 0;"></span>`;
     },
 
     _ensureSpinnerKeyframes() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-spinner-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-spinner-style';
-        style.textContent = '@keyframes wf-dash-spin { to { transform: rotate(360deg); } }'
-            + ' @keyframes wf-dash-dots { 0%, 32% { content: \'.\'; } 33%, 65% { content: \'..\'; } 66%, 99% { content: \'...\'; } }'
-            + ' [data-wf-dash-dots]::after { display: inline; content: \'.\'; animation: wf-dash-dots 1.5s linear infinite; }';
-        this._modal.appendChild(style);
+        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+            Context.uiLib.ensureStyles();
+        }
     },
 
     _dashCloseIconSvg() {
@@ -853,9 +852,6 @@ const plugin = {
             '  overflow-x: hidden;',
             '  -webkit-overflow-scrolling: touch;',
             '}',
-            '#wf-dash-left-panel-filters > div > :first-child {',
-            '  margin-top: 14px;',
-            '}',
             '#wf-dash-modal [data-wf-dash-ms-dual-row][data-wf-dash-ms-filter-hidden="1"] {',
             '  display: none !important;',
             '}',
@@ -1150,125 +1146,17 @@ const plugin = {
     },
 
     _dashBtnClass(variant, size) {
-        const variants = {
-            primary: 'wf-dash-btn--primary',
-            secondary: 'wf-dash-btn--secondary',
-            basic: 'wf-dash-btn--basic'
-        };
-        const sizes = {
-            nav: 'wf-dash-btn--nav',
-            regular: 'wf-dash-btn--regular',
-            icon: 'wf-dash-btn--icon',
-            compact: 'wf-dash-btn--compact'
-        };
-        const v = variants[variant] || variants.basic;
-        const s = sizes[size] || sizes.nav;
-        return 'wf-dash-btn ' + v + ' ' + s;
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
     },
 
     _ensureDashButtonStyles() {
-        if (!this._modal || this._modal.querySelector('#wf-dash-btn-style')) return;
-        const style = this._pageWindow().document.createElement('style');
-        style.id = 'wf-dash-btn-style';
-        style.textContent = [
-            '#wf-dash-modal .wf-dash-btn {',
-            '  appearance: none;',
-            '  -webkit-appearance: none;',
-            '  box-sizing: border-box;',
-            '  margin: 0;',
-            '  font-family: inherit;',
-            '  font-weight: 600;',
-            '  border-radius: 6px;',
-            '  cursor: pointer;',
-            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
-            '  white-space: nowrap;',
-            '  display: inline-flex;',
-            '  align-items: center;',
-            '  justify-content: center;',
-            '  line-height: 1.4;',
-            '  text-decoration: none;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--nav {',
-            '  padding: 4px 10px;',
-            '  font-size: 11px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--regular {',
-            '  padding: 7px 14px;',
-            '  font-size: 12px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--compact {',
-            '  padding: 2px 10px;',
-            '  font-size: 11px;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--icon {',
-            '  width: 26px;',
-            '  height: 26px;',
-            '  padding: 0;',
-            '  font-size: 13px;',
-            '  flex-shrink: 0;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--full {',
-            '  width: 100%;',
-            '  box-sizing: border-box;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--secondary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: #000;',
-            '  color: #fff;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
-            '  border-color: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--brand, var(--primary, #2563eb));',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic {',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--background, #fff);',
-            '  color: var(--muted-foreground, #64748b);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic:hover:not(:disabled) {',
-            '  background: var(--muted, #f1f5f9);',
-            '  border-color: var(--foreground, #0f172a);',
-            '  color: var(--foreground, #0f172a);',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--primary:disabled,',
-            '#wf-dash-modal .wf-dash-btn--secondary:disabled {',
-            '  cursor: not-allowed;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--muted, #f1f5f9);',
-            '  color: var(--muted-foreground, #94a3b8);',
-            '  opacity: 0.85;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn--basic:disabled {',
-            '  cursor: not-allowed;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--muted, #f1f5f9);',
-            '  color: var(--muted-foreground, #94a3b8);',
-            '  opacity: 0.85;',
-            '}',
-            '#wf-dash-modal .wf-dash-btn:disabled[aria-busy="true"] {',
-            '  opacity: 0.65;',
-            '  cursor: wait;',
-            '}',
-            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic {',
-            '  color: var(--muted-foreground, #64748b);',
-            '}',
-            '#wf-dash-modal .wf-dash-header-btn.wf-dash-btn--basic:hover:not(:disabled) {',
-            '  color: var(--foreground, #0f172a);',
-            '  border-color: var(--foreground, #0f172a);',
-            '}'
-        ].join('\n');
-        this._modal.appendChild(style);
+        if (!this._modal) return;
+        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+            Context.uiLib.ensureButtonStyles('#wf-dash-modal', this._modal);
+        }
     },
 
     _sidePanelWidthStorageKey(scopeKey) {
@@ -1305,12 +1193,19 @@ const plugin = {
         }
     },
 
+    _parseResultsPanelMaxWidthPref(raw) {
+        if (raw == null || raw === '') return null;
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_RESULTS_WIDTH) return n;
+        return null;
+    },
+
     _readResultsPanelMaxWidthPref() {
         try {
-            const raw = Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null);
-            if (raw == null || raw === '') return null;
-            const n = parseInt(raw, 10);
-            if (Number.isFinite(n) && n >= DASH_SIDE_PANEL_MIN_RESULTS_WIDTH) return n;
+            const parsed = this._parseResultsPanelMaxWidthPref(
+                Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null)
+            );
+            if (parsed != null) return parsed;
         } catch (_e) { /* fall through */ }
         return null;
     },
@@ -1319,12 +1214,47 @@ const plugin = {
         try {
             if (widthPx == null) {
                 Storage.deleteData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+                Storage.deleteData('fleet-ux:dashboard-results-panel-max-width-stats-hidden');
                 return;
             }
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
             Storage.setData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
             Logger.warn('dashboard: failed to write results panel max width pref', e);
+        }
+    },
+
+    _readStatsPanelHiddenPref() {
+        try {
+            const raw = Storage.getData(DASH_STATS_PANEL_HIDDEN_STORAGE_KEY, null);
+            return raw === 'true';
+        } catch (_e) { /* fall through */ }
+        return false;
+    },
+
+    _writeStatsPanelHiddenPref(hidden) {
+        try {
+            Storage.setData(DASH_STATS_PANEL_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
+        } catch (e) {
+            Logger.warn('dashboard: failed to write stats panel hidden pref', e);
+        }
+    },
+
+    _readStatsPanelWidthPref() {
+        try {
+            const raw = Storage.getData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, null);
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n) && n >= DASH_STATS_PANEL_MIN_WIDTH) return n;
+        } catch (_e) { /* fall through */ }
+        return DASH_STATS_PANEL_DEFAULT_WIDTH;
+    },
+
+    _writeStatsPanelWidthPref(widthPx) {
+        try {
+            const clamped = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(widthPx));
+            Storage.setData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+        } catch (e) {
+            Logger.warn('dashboard: failed to write stats panel width pref', e);
         }
     },
 
@@ -1360,30 +1290,41 @@ const plugin = {
             + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
     },
 
-    _splitPanelRightHtml(rightHtml, scopeKey) {
+    _splitPanelStatsColumnStyle(widthPx) {
+        const w = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(widthPx || DASH_STATS_PANEL_DEFAULT_WIDTH));
+        return 'width: ' + w + 'px; min-width: ' + DASH_STATS_PANEL_MIN_WIDTH + 'px; flex-shrink: 0;'
+            + ' display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-sizing: border-box;';
+    },
+
+    _splitPanelRightHtml(rightHtml, scopeKey, statsHtml) {
         if (scopeKey !== 'dashboard') {
             return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
                 + rightHtml + '</div>';
         }
+        const statsWidth = this._readStatsPanelWidthPref();
+        const statsBlock = statsHtml
+            ? ('<aside data-wf-dash-stats-column style="' + this._splitPanelStatsColumnStyle(statsWidth) + '">' + statsHtml + '</aside>')
+            : '';
         return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: row; overflow: hidden;">'
             + '<div data-wf-dash-results-column style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
             + rightHtml + '</div>'
             + this._resultsPanelWidthHandleHtml()
+            + statsBlock
             + '</div>';
     },
 
-    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
+    _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
         const scope = scopeKey || 'dashboard';
         const width = this._readSidePanelWidthPref(scope);
         return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
-            + this._splitPanelRightHtml(rightHtml, scope)
+            + this._splitPanelRightHtml(rightHtml, scope, statsHtml)
             + '</section>';
     },
 
-    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey) {
-        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey);
+    splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
+        return this._splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml);
     },
 
     _splitPanelHandleReserve(scopeKey) {
@@ -1398,12 +1339,24 @@ const plugin = {
         const leftW = left ? left.getBoundingClientRect().width : DASH_SIDE_PANEL_MIN_WIDTH;
         const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
         const handleReserve = this._splitPanelHandleReserve(scope);
-        return { basis, scope, handleReserve, leftW };
+        const statsW = this._statsColumnEffectiveWidth(root);
+        return { basis, scope, handleReserve, leftW, statsW };
+    },
+
+    _statsColumnEffectiveWidth(root) {
+        if (!root) return 0;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return 0;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        if (!statsCol) return 0;
+        if (this._readStatsPanelHiddenPref()) return DASH_STATS_PANEL_COLLAPSED_WIDTH;
+        return DASH_STATS_PANEL_MIN_WIDTH;
     },
 
     _scheduleSplitLayoutSync() {
         requestAnimationFrame(() => {
             this._applyAllSidePanelWidths();
+            this._applyAllStatsPanelLayouts();
             this._applyAllResultsPanelMaxWidths();
         });
     },
@@ -1426,8 +1379,8 @@ const plugin = {
     },
 
     _availableResultsPanelWidth(root) {
-        const { basis, handleReserve, leftW } = this._splitRootMetrics(root);
-        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve));
+        const { basis, handleReserve, leftW, statsW } = this._splitRootMetrics(root);
+        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve - statsW));
     },
 
     _clampResultsPanelMaxWidth(root, widthPx) {
@@ -1435,14 +1388,37 @@ const plugin = {
         return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(available, widthPx)));
     },
 
+    _clampResultsPanelWidthForDrag(root, widthPx, splitRight, statsHidden) {
+        if (!splitRight) {
+            return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, widthPx));
+        }
+        const splitRightW = splitRight.getBoundingClientRect().width;
+        const statsReserve = statsHidden ? DASH_STATS_PANEL_COLLAPSED_WIDTH : DASH_STATS_PANEL_MIN_WIDTH;
+        const maxResults = Math.max(
+            DASH_SIDE_PANEL_MIN_RESULTS_WIDTH,
+            splitRightW - DASH_RESULTS_STATS_HANDLE_WIDTH - statsReserve
+        );
+        return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxResults, widthPx)));
+    },
+
+    _maxResultsPanelWidthForDrag(splitRight, statsHidden) {
+        if (!splitRight) return DASH_SIDE_PANEL_MIN_RESULTS_WIDTH;
+        const splitRightW = splitRight.getBoundingClientRect().width;
+        const statsReserve = statsHidden ? DASH_STATS_PANEL_COLLAPSED_WIDTH : DASH_STATS_PANEL_MIN_WIDTH;
+        return Math.max(
+            DASH_SIDE_PANEL_MIN_RESULTS_WIDTH,
+            Math.round(splitRightW - DASH_RESULTS_STATS_HANDLE_WIDTH - statsReserve)
+        );
+    },
+
     _clampSidePanelWidth(root, widthPx) {
-        const { basis, handleReserve } = this._splitRootMetrics(root);
+        const { basis, handleReserve, statsW } = this._splitRootMetrics(root);
         const viewportW = this._pageWindow().innerWidth || basis;
         const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
             DASH_SIDE_PANEL_MIN_WIDTH,
             Math.min(
-                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve,
+                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve - statsW,
                 viewportCap
             )
         );
@@ -1468,22 +1444,43 @@ const plugin = {
         });
     },
 
-    _applyResultsPanelMaxWidth(root) {
+    _clampSharedResultsPanelPrefToState(widthPx, splitRight, statsHidden) {
+        if (widthPx == null) return null;
+        const maxResults = this._maxResultsPanelWidthForDrag(splitRight, statsHidden);
+        return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxResults, widthPx)));
+    },
+
+    _applyResultsPanelMaxWidth(root, statsHiddenOverride) {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
         if (scope !== 'dashboard') return;
         const col = root.querySelector('[data-wf-dash-results-column]');
         if (!col) return;
+        const statsHidden = statsHiddenOverride != null
+            ? statsHiddenOverride
+            : this._readStatsPanelHiddenPref();
+        const splitRight = root.querySelector('[data-wf-dash-split-right]');
+        const maxResults = this._maxResultsPanelWidthForDrag(splitRight, statsHidden);
         const pref = this._readResultsPanelMaxWidthPref();
-        const available = this._availableResultsPanelWidth(root);
         if (!pref) {
+            if (!statsHidden && splitRight) {
+                const maxOpen = this._maxResultsPanelWidthForDrag(splitRight, false);
+                const currentW = col.getBoundingClientRect().width;
+                if (currentW > maxOpen + DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                    col.style.flex = '0 0 auto';
+                    col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
+                    col.style.width = maxOpen + 'px';
+                    col.style.maxWidth = maxOpen + 'px';
+                    return;
+                }
+            }
             col.style.flex = '1';
             col.style.minWidth = '0';
             col.style.width = '';
             col.style.maxWidth = '';
             return;
         }
-        const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(available, pref));
+        const clamped = this._clampSharedResultsPanelPrefToState(pref, splitRight, statsHidden);
         col.style.flex = '0 0 auto';
         col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
         col.style.width = clamped + 'px';
@@ -1494,6 +1491,58 @@ const plugin = {
         if (!this._modal) return;
         this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
             this._applyResultsPanelMaxWidth(root);
+        });
+    },
+
+    _applyStatsPanelWidth(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        if (!statsCol) return;
+        const hidden = this._readStatsPanelHiddenPref();
+        if (hidden) {
+            statsCol.style.width = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.minWidth = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.maxWidth = DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px';
+            statsCol.style.flex = '0 0 auto';
+            return;
+        }
+        statsCol.style.flex = '1 1 0';
+        statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
+        statsCol.style.width = '';
+        statsCol.style.maxWidth = '';
+    },
+
+    _applyStatsPanelLayout(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+        const splitRight = root.querySelector('[data-wf-dash-split-right]');
+        if (!statsCol) return;
+        const wasHidden = statsCol.getAttribute('data-wf-dash-stats-collapsed') === 'true';
+        const hidden = this._readStatsPanelHiddenPref();
+        const collapsedVal = hidden ? 'true' : 'false';
+        statsCol.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
+        if (splitRight) splitRight.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
+        this._applyResultsPanelMaxWidth(root, hidden);
+        this._applyStatsPanelWidth(root);
+        if (typeof this._syncStatsPanelCollapseUi === 'function') {
+            this._syncStatsPanelCollapseUi();
+        }
+        if (wasHidden && !hidden) {
+            requestAnimationFrame(() => {
+                this._applyResultsPanelMaxWidth(root, false);
+                this._applyStatsPanelWidth(root);
+            });
+        }
+    },
+
+    _applyAllStatsPanelLayouts() {
+        if (!this._modal) return;
+        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+            this._applyStatsPanelLayout(root);
         });
     },
 
@@ -1587,6 +1636,7 @@ const plugin = {
             '  align-items: flex-start;',
             '  justify-content: flex-end;',
             '  gap: 0.25rem;',
+            '  flex-wrap: wrap;',
             '  flex-shrink: 0;',
             '  margin-left: 6px;',
             '  pointer-events: auto;',
@@ -1655,25 +1705,33 @@ const plugin = {
             '  align-items: flex-end;',
             '  justify-content: space-between;',
             '  gap: 8px;',
+            '  flex-wrap: nowrap;',
             '  padding: 0 8px;',
             '  margin-bottom: 0;',
             '  padding-right: calc(10.5rem + 14px);',
             '  box-sizing: border-box;',
+            '  overflow: hidden;',
             '}',
             '#wf-dash-modal .wf-dash-card-tabs-left {',
             '  display: flex;',
             '  align-items: flex-end;',
             '  gap: 4px;',
             '  min-width: 0;',
-            '  flex: 1;',
-            '  overflow: hidden;',
+            '  flex: 1 1 auto;',
+            '  flex-wrap: nowrap;',
+            '  overflow-x: auto;',
+            '  overflow-y: hidden;',
+            '  -webkit-overflow-scrolling: touch;',
+            '}',
+            '#wf-dash-modal .wf-dash-card-tabs-left > * {',
+            '  flex-shrink: 0;',
             '}',
             '#wf-dash-modal .wf-dash-card-key-tab {',
-            '  flex: 0 1 auto;',
+            '  flex: 0 0 auto;',
             '  min-width: 0;',
-            '  max-width: 100%;',
+            '  max-width: none;',
             '  justify-content: flex-start;',
-            '  overflow: hidden;',
+            '  overflow: visible;',
             '}',
             '#wf-dash-modal .wf-dash-card-key-tab-inner {',
             '  display: inline-flex;',
@@ -1761,6 +1819,50 @@ const plugin = {
             '[data-wf-dash-results-width-handle]:hover,',
             '[data-wf-dash-results-width-handle]:active {',
             '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
+            '}',
+            '[data-wf-dash-split-right] {',
+            '  position: relative;',
+            '}',
+            '[data-wf-dash-split-right][data-wf-dash-stats-collapsed="true"] {',
+            '  padding-right: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px;',
+            '  box-sizing: border-box;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] {',
+            '  position: absolute !important;',
+            '  top: 0 !important;',
+            '  right: 0 !important;',
+            '  bottom: 0 !important;',
+            '  flex: 0 0 ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  min-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  max-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  overflow: hidden !important;',
+            '  z-index: 2;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-body] {',
+            '  display: none !important;',
+            '}',
+            '[data-wf-dash-stats-sliver] {',
+            '  display: none;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-sliver] {',
+            '  display: flex !important;',
+            '  flex-direction: column !important;',
+            '  align-items: flex-end !important;',
+            '  justify-content: flex-start !important;',
+            '  width: 100% !important;',
+            '  height: 100% !important;',
+            '  min-height: 100% !important;',
+            '  padding: 6px 2px 6px 0 !important;',
+            '  box-sizing: border-box !important;',
+            '}',
+            '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-toggle] {',
+            '  writing-mode: vertical-rl !important;',
+            '  text-orientation: mixed !important;',
+            '  white-space: nowrap !important;',
+            '  height: auto !important;',
+            '  min-height: 3.5rem !important;',
+            '  padding: 8px 4px !important;',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -1782,13 +1884,19 @@ const plugin = {
                 onMove: (ev) => {
                     const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
                     this._applySidePanelWidth(root, next);
-                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                    if (scope === 'dashboard') {
+                        this._applyStatsPanelWidth(root);
+                        this._applyResultsPanelMaxWidth(root);
+                    }
                 },
                 onUp: () => {
                     const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
                     this._writeSidePanelWidthPref(finalWidth, scope);
                     this._applySidePanelWidth(root, finalWidth);
-                    if (scope === 'dashboard') this._applyResultsPanelMaxWidth(root);
+                    if (scope === 'dashboard') {
+                        this._applyStatsPanelWidth(root);
+                        this._applyResultsPanelMaxWidth(root);
+                    }
                     Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
                 }
             });
@@ -1805,25 +1913,42 @@ const plugin = {
             const col = root ? root.querySelector('[data-wf-dash-results-column]') : null;
             if (!root || !col) return;
             const colLeft = col.getBoundingClientRect().left;
+            const splitRight = root.querySelector('[data-wf-dash-split-right]');
+            const statsCol = root.querySelector('[data-wf-dash-stats-column]');
+            const statsHidden = this._readStatsPanelHiddenPref();
+            let lastMoveX = e.clientX;
             this._beginColResizeDrag(e, {
                 onMove: (ev) => {
-                    const next = this._clampResultsPanelMaxWidth(root, ev.clientX - colLeft);
+                    lastMoveX = ev.clientX;
+                    const next = this._clampResultsPanelWidthForDrag(root, ev.clientX - colLeft, splitRight, statsHidden);
                     col.style.flex = '0 0 auto';
                     col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
                     col.style.width = next + 'px';
                     col.style.maxWidth = next + 'px';
+                    if (statsCol && !statsHidden) {
+                        statsCol.style.flex = '1 1 0';
+                        statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
+                        statsCol.style.width = '';
+                        statsCol.style.maxWidth = '';
+                    }
                 },
                 onUp: () => {
-                    const available = this._availableResultsPanelWidth(root);
-                    const finalWidth = this._clampResultsPanelMaxWidth(root, col.getBoundingClientRect().width);
-                    if (finalWidth >= available - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
-                        this._writeResultsPanelMaxWidthPref(null);
-                        this._applyResultsPanelMaxWidth(root);
-                        Logger.log('dashboard: results panel max width cleared (full width)');
+                    const rawIntent = Math.round(lastMoveX - colLeft);
+                    const maxClosed = this._maxResultsPanelWidthForDrag(splitRight, true);
+                    if (statsHidden && rawIntent >= maxClosed - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                        this._writeResultsPanelMaxWidthPref(maxClosed);
+                        this._applyResultsPanelMaxWidth(root, true);
+                        Logger.log('dashboard: results panel max width set to ' + maxClosed + 'px (hidden full width)');
                     } else {
-                        this._writeResultsPanelMaxWidthPref(finalWidth);
-                        this._applyResultsPanelMaxWidth(root);
-                        Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
+                        const sharedPref = Math.round(
+                            Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxClosed, rawIntent))
+                        );
+                        this._writeResultsPanelMaxWidthPref(sharedPref);
+                        this._applyResultsPanelMaxWidth(root, statsHidden);
+                        Logger.log('dashboard: results panel max width set to ' + sharedPref + 'px');
+                    }
+                    if (statsCol) {
+                        this._applyStatsPanelWidth(root);
                     }
                 }
             });
@@ -2391,13 +2516,13 @@ const plugin = {
     },
 
     _syncAllMsDropdowns(options) {
-        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+        const keys = dashFilterScopes().map((s) => s.scopeKey)
             .concat(DASH_SEARCH_MS_KEYS, ...DASH_TEAM_MEMBERS_MS_KEYS);
         for (const key of keys) this._syncMsDropdown(key, options);
     },
 
     _filterMsOpenKeys() {
-        return DASH_FILTER_SCOPES.map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
+        return dashFilterScopes().map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
     },
 
     _isPointerOverMsDropdown(scopeKey) {
@@ -2603,7 +2728,7 @@ const plugin = {
     _toggleFilterExpandAll() {
         const intent = this._state.filterExpandAllIntent === 'collapse' ? 'collapse' : 'expand';
         if (intent === 'expand') {
-            for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            for (const { scopeKey } of dashFilterScopes()) {
                 if (!this._filterScopeHasOptions(scopeKey)) continue;
                 this._state.msDropdownToggled[scopeKey] = true;
                 this._state.msDropdownOpen[scopeKey] = true;
@@ -2613,7 +2738,7 @@ const plugin = {
             this._state.filterExpandAllIntent = 'collapse';
             Logger.log('search-output: filter menus — expanded all');
         } else {
-            for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            for (const { scopeKey } of dashFilterScopes()) {
                 if (!this._state.msDropdownToggled[scopeKey]) continue;
                 delete this._state.msDropdownOpen[scopeKey];
                 delete this._state.msDropdownToggled[scopeKey];

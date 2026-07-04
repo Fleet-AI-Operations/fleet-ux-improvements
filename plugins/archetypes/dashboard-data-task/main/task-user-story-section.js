@@ -5,10 +5,6 @@ const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
 const PLUGIN_ID = 'task-user-story-section';
 const SECTION_LABEL = 'User Story';
 const VISIBLE_LINES_DEFAULT = 6;
-const COPY_SUCCESS_FLASH_MS = 1000;
-const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
-const COPY_FAILURE_PULSE_MS = 500;
-const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const COPY_BTN_CLASS =
     'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground h-7 text-xs pl-2 pr-2 py-1 gap-1.5';
 const COPY_ICON_SVG =
@@ -22,7 +18,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '1.5',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -192,46 +188,15 @@ const plugin = {
     },
 
     _clearCopyButtonFeedback(button) {
-        if (!button) return;
-        if (button._copySuccessFlashTimeout) {
-            clearTimeout(button._copySuccessFlashTimeout);
-            button._copySuccessFlashTimeout = null;
-        }
-        if (button._copyFailurePulseTimeout) {
-            clearTimeout(button._copyFailurePulseTimeout);
-            button._copyFailurePulseTimeout = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
+        if (Context.buttonFeedback) Context.buttonFeedback.clear(button);
     },
 
     _showCopySuccessFlash(button) {
-        this._clearCopyButtonFeedback(button);
-        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
-        button.style.color = '#ffffff';
-        button._copySuccessFlashTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._copySuccessFlashTimeout = null;
-        }, COPY_SUCCESS_FLASH_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
     },
 
     _showCopyFailurePulse(button) {
-        this._clearCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = COPY_FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition =
-            'background-color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out, color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out';
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyFailurePulseTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._copyFailurePulseTimeout = null;
-        }, COPY_FAILURE_PULSE_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
     },
 
     async _copyTextToClipboard(text) {

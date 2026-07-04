@@ -20,7 +20,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '2.2',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -38,30 +38,11 @@ const plugin = {
     },
 
     flashClipboardSuccess(btn) {
-        if (btn._fleetClipboardFbT) clearTimeout(btn._fleetClipboardFbT);
-        btn.style.backgroundColor = 'rgb(34, 197, 94)';
-        btn.style.color = '#ffffff';
-        btn._fleetClipboardFbT = setTimeout(() => {
-            btn.style.backgroundColor = '';
-            btn.style.color = '';
-            btn._fleetClipboardFbT = null;
-        }, 1000);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(btn, { restoreStyles: false });
     },
 
     flashClipboardFailure(btn) {
-        if (btn._fleetClipboardFbT) clearTimeout(btn._fleetClipboardFbT);
-        const prevT = btn.style.transition;
-        btn.style.transition = 'none';
-        btn.style.backgroundColor = 'rgb(239, 68, 68)';
-        btn.style.color = '#ffffff';
-        void btn.offsetHeight;
-        btn.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        btn._fleetClipboardFbT = setTimeout(() => {
-            btn.style.transition = prevT || '';
-            btn._fleetClipboardFbT = null;
-        }, 500);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(btn, { restoreStyles: false });
     },
 
     onMutation(state, context) {

@@ -9,7 +9,9 @@ const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
+const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_MAX_SLOTS = 6;
+const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
@@ -125,6 +127,15 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
+function _dvModalityDefaultMinLength() {
+    return _dvState.granularity === 'word' ? DV_HIGHLIGHT_DEFAULT_MIN_WORDS : null;
+}
+
+function _dvApplyModalityHighlightMinDefault() {
+    const def = _dvModalityDefaultMinLength();
+    if (def != null) _dvState.highlightMinLength = def;
+}
+
 function _dvEffectiveHighlightMinLength() {
     if (!_dvState.showHighlights) return 0;
     const range = _dvState.highlightLengthRange;
@@ -217,7 +228,12 @@ function _dvRefreshHighlightLengthRange(modal) {
         _dvState.highlightMinLength = null;
     } else {
         _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
-        if (_dvState.highlightMinLength == null || _dvState.highlightMinLength < globalMin) {
+        if (_dvState.highlightMinLength == null) {
+            const modalityDefault = _dvModalityDefaultMinLength();
+            _dvState.highlightMinLength = modalityDefault != null
+                ? Math.max(modalityDefault, globalMin)
+                : globalMin;
+        } else if (_dvState.highlightMinLength < globalMin) {
             _dvState.highlightMinLength = globalMin;
         } else if (_dvState.highlightMinLength > globalMax) {
             _dvState.highlightMinLength = globalMax;
@@ -456,6 +472,10 @@ function _dvStashFind(taskId) {
 function _dvAddToStash(entry) {
     const idx = _dvStashFind(entry.taskId);
     if (idx < 0) {
+        if (_dvState.stash.length >= DV_MAX_STASH) {
+            Logger.warn('diff-viewer: stash full (' + DV_MAX_STASH + ') — cannot add ' + (entry.key || entry.taskId));
+            return false;
+        }
         _dvState.stash.push({
             taskId: entry.taskId,
             key: entry.key,
@@ -466,18 +486,19 @@ function _dvAddToStash(entry) {
         });
         _dvSaveStash();
         Logger.log('diff-viewer: stash add — ' + (entry.key || entry.taskId));
-    } else {
-        let changed = false;
-        if (entry.createdAt && !_dvState.stash[idx].createdAt) {
-            _dvState.stash[idx].createdAt = entry.createdAt;
-            changed = true;
-        }
-        if (entry.versionCount && entry.versionCount > (_dvState.stash[idx].versionCount || 0)) {
-            _dvState.stash[idx].versionCount = entry.versionCount;
-            changed = true;
-        }
-        if (changed) _dvSaveStash();
+        return true;
     }
+    let changed = false;
+    if (entry.createdAt && !_dvState.stash[idx].createdAt) {
+        _dvState.stash[idx].createdAt = entry.createdAt;
+        changed = true;
+    }
+    if (entry.versionCount && entry.versionCount > (_dvState.stash[idx].versionCount || 0)) {
+        _dvState.stash[idx].versionCount = entry.versionCount;
+        changed = true;
+    }
+    if (changed) _dvSaveStash();
+    return true;
 }
 
 function _dvClearStash(modal) {
@@ -534,9 +555,57 @@ function _dvNextLensIndex(taskId, promptVersions) {
 
 // ── Slot management ──
 
+async function _dvOverflowToStash(seed, modal) {
+    try {
+        let data;
+        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail)) {
+            data = {
+                taskId: seed.taskId,
+                key: seed.key || '',
+                authorName: seed.authorName || '',
+                authorEmail: seed.authorEmail || '',
+                createdAt: seed.createdAt || '',
+                promptVersions: null,
+                versionCount: seed.versionCount || 0
+            };
+        } else {
+            const lookup = seed.raw || seed.key || seed.taskId;
+            if (!lookup) throw new Error('No task identifier');
+            data = await _dvFetchTask(lookup);
+        }
+        const wasNew = _dvStashFind(data.taskId) < 0;
+        const added = _dvAddToStash({
+            taskId: data.taskId,
+            key: data.key,
+            authorName: data.authorName,
+            authorEmail: data.authorEmail,
+            createdAt: data.createdAt || '',
+            versionCount: (data.promptVersions || []).length || data.versionCount || 0
+        });
+        if (!added) {
+            if (modal) _dvSetSearchLoading(modal, false, 'Stash is full (max ' + DV_MAX_STASH + ' items)');
+            return;
+        }
+        if (modal && modal.isConnected) {
+            _dvRenderStash(modal);
+            _dvRenderStashChipStates(modal);
+            if (seed.raw) _dvSetSearchLoading(modal, false, null);
+        }
+        Logger.log('diff-viewer: slots full (' + DV_MAX_SLOTS + ') — '
+            + (wasNew ? 'stashed' : 'stash updated') + ' — ' + (data.key || data.taskId));
+    } catch (err) {
+        Logger.error('diff-viewer: overflow-to-stash failed', err);
+        if (modal) _dvSetSearchLoading(modal, false, String(err && err.message || err || 'Unknown error'));
+    }
+}
+
 function _dvAddSlot(seed, modal) {
     if (_dvState.slots.length >= DV_MAX_SLOTS) {
-        Logger.log('diff-viewer: max slots (' + DV_MAX_SLOTS + ') reached');
+        if (seed.fromStashChip) {
+            Logger.log('diff-viewer: cannot add slot — max ' + DV_MAX_SLOTS + ' reached; minimize or remove a slot first');
+            return;
+        }
+        void _dvOverflowToStash(seed, modal);
         return;
     }
     const slotId = ++_dvSlotSeq;
@@ -1320,46 +1389,21 @@ async function _dvCopyText(text) {
 }
 
 function _dvFlashCopySuccess(el) {
-    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = 'rgb(34, 197, 94)';
-    el.style.color = '#ffffff';
-    el.style.borderColor = 'rgb(34, 197, 94)';
-    el._dvCopyTimeout = setTimeout(() => {
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        el.style.borderColor = prevBorder;
-        el.style.transition = prevTransition;
-        el._dvCopyTimeout = null;
-    }, 1000);
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+        Context.buttonFeedback.flashSuccess(el, { includeBorder: true });
+    }
 }
 
 function _dvFlashCopyFail(el) {
-    if (el._dvCopyTimeout) clearTimeout(el._dvCopyTimeout);
-    const prevBg = el.style.backgroundColor;
-    const prevColor = el.style.color;
-    const prevBorder = el.style.borderColor;
-    const prevTransition = el.style.transition;
-    el.style.transition = 'none';
-    el.style.backgroundColor = 'rgb(239, 68, 68)';
-    el.style.color = '#ffffff';
-    el.style.borderColor = 'rgb(239, 68, 68)';
-    void el.offsetWidth;
-    el.style.transition = 'background-color 500ms ease-out, color 500ms ease-out, border-color 500ms ease-out';
-    el._dvCopyTimeout = setTimeout(() => {
-        el.style.backgroundColor = prevBg;
-        el.style.color = prevColor;
-        el.style.borderColor = prevBorder;
-        el.style.transition = prevTransition;
-        el._dvCopyTimeout = null;
-    }, 500);
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+        Context.buttonFeedback.flashFailure(el, { includeBorder: true });
+    }
 }
 
 async function _dvCopyWithFeedback(el, text, logLabel) {
+    if (Context.uiLib && typeof Context.uiLib.copyWithFeedback === 'function') {
+        return Context.uiLib.copyWithFeedback(el, text, { logLabel: logLabel || 'task key', includeBorder: true });
+    }
     const label = logLabel || 'task key';
     const value = String(text == null ? '' : text).trim();
     if (!value) {
@@ -2124,6 +2168,7 @@ function _dvAttachListeners(modal) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
                 _dvState.highlightModality = modality;
+                _dvApplyModalityHighlightMinDefault();
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
                 _dvRenderDiffs(modal);
@@ -2223,7 +2268,8 @@ function _dvAttachListeners(modal) {
                     key: entry.key,
                     authorName: entry.authorName,
                     authorEmail: entry.authorEmail,
-                    createdAt: entry.createdAt || ''
+                    createdAt: entry.createdAt || '',
+                    fromStashChip: true
                 }, modal);
             }
             return;
@@ -2233,7 +2279,15 @@ function _dvAttachListeners(modal) {
         const stashClear = e.target.closest('[data-dv-stash-clear]');
         if (stashClear && modal.contains(stashClear)) {
             e.stopPropagation();
-            _dvClearStash(modal);
+            const stashCount = _dvState.stash.length;
+            if (stashCount === 0) return;
+            const slotCount = _dvState.slots.length;
+            let msg = 'Clear ' + stashCount + ' stashed task' + (stashCount === 1 ? '' : 's');
+            if (slotCount > 0) {
+                msg += ' and remove ' + slotCount + ' comparison slot' + (slotCount === 1 ? '' : 's');
+            }
+            msg += '?';
+            if (confirm(msg)) _dvClearStash(modal);
             return;
         }
 
@@ -2354,6 +2408,9 @@ function _dvAttachListeners(modal) {
 // ── Inject styles (card action + dv-specific) ──
 
 function _dvInjectStyles() {
+    if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+        Context.uiLib.ensureStyles();
+    }
     let style = document.getElementById('dv-styles');
     if (!style) {
         style = document.createElement('style');
@@ -2361,29 +2418,6 @@ function _dvInjectStyles() {
         document.head.appendChild(style);
     }
     style.textContent = [
-        '@keyframes dvDiffTabAddPulse {',
-        '  0% {',
-        '    background-color: transparent;',
-        '    box-shadow: inset 0 -2px 0 0 transparent;',
-        '    color: inherit;',
-        '    border-bottom-color: inherit;',
-        '  }',
-        '  12% {',
-        '    background-color: color-mix(in srgb, rgb(34, 197, 94) 30%, transparent);',
-        '    box-shadow: inset 0 -3px 0 0 rgb(34, 197, 94);',
-        '    color: rgb(34, 197, 94) !important;',
-        '    border-bottom-color: rgb(34, 197, 94) !important;',
-        '  }',
-        '  100% {',
-        '    background-color: transparent;',
-        '    box-shadow: inset 0 -2px 0 0 transparent;',
-        '    color: inherit;',
-        '    border-bottom-color: inherit;',
-        '  }',
-        '}',
-        '#wf-dash-modal [data-wf-dash-tab="diff-viewer"].wf-dash-tab--add-pulse {',
-        '  animation: dvDiffTabAddPulse 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;',
-        '}',
         '#wf-dash-modal .dv-universal-toggles {',
         '  display: flex;',
         '  flex-direction: row;',
@@ -2893,11 +2927,10 @@ function _dvFlashTabAdded() {
     if (!modal) return;
     const tab = modal.querySelector('[data-wf-dash-tab="diff-viewer"]');
     if (!tab) return;
-    tab.classList.remove('wf-dash-tab--add-pulse');
-    void tab.offsetWidth;
-    tab.classList.add('wf-dash-tab--add-pulse');
-    tab.addEventListener('animationend', () => tab.classList.remove('wf-dash-tab--add-pulse'), { once: true });
-    Logger.debug('diff-viewer: tab add pulse');
+    if (Context.uiLib && typeof Context.uiLib.flashTabSuccess === 'function') {
+        Context.uiLib.flashTabSuccess(tab);
+        Logger.debug('diff-viewer: tab add pulse');
+    }
 }
 
 function _dvOnFleetThemeChange() {
@@ -2910,10 +2943,89 @@ function _dvOnFleetThemeChange() {
 
 // ── Public API: Context.diffViewer ──
 
+function _dvStashEntryFromSeed(seed) {
+    return {
+        taskId: seed.taskId,
+        key: seed.key || '',
+        authorName: seed.authorName || '',
+        authorEmail: seed.authorEmail || '',
+        createdAt: seed.createdAt || '',
+        versionCount: seed.versionCount || 0
+    };
+}
+
 function _dvApiAddTask(seed) {
     // seed: { taskId, key, authorName, authorEmail } — always re-hydrated from PostgREST
     const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
     _dvAddSlot(seed, modal);
+}
+
+function _dvApiAddTasks(seeds) {
+    const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
+    const list = Array.isArray(seeds) ? seeds.filter((s) => s && s.taskId) : [];
+    if (!list.length) {
+        return { added: 0, skipped: 0, slotted: 0, stashedOnly: 0, stoppedByStashLimit: false };
+    }
+    let added = 0;
+    let slotted = 0;
+    let stashedOnly = 0;
+    let skipped = 0;
+    let stoppedByStashLimit = false;
+    const pendingHydrations = [];
+
+    for (let i = 0; i < list.length; i++) {
+        const seed = list[i];
+        const taskId = seed.taskId;
+        const inStash = _dvStashFind(taskId) >= 0;
+        if (!inStash && _dvState.stash.length >= DV_MAX_STASH) {
+            skipped = list.length - i;
+            stoppedByStashLimit = true;
+            break;
+        }
+        const stashEntry = _dvStashEntryFromSeed(seed);
+        if (_dvState.slots.length < DV_MAX_SLOTS) {
+            const slotId = ++_dvSlotSeq;
+            _dvState.slots.push({
+                slotId,
+                taskId,
+                key: stashEntry.key,
+                authorName: stashEntry.authorName,
+                authorEmail: stashEntry.authorEmail,
+                createdAt: stashEntry.createdAt,
+                promptVersions: null,
+                lensIndex: 0,
+                loading: true,
+                error: null
+            });
+            _dvAddToStash(stashEntry);
+            pendingHydrations.push({ slotId, seed });
+            slotted++;
+            added++;
+        } else {
+            const ok = _dvAddToStash(stashEntry);
+            if (!ok) {
+                skipped = list.length - i;
+                stoppedByStashLimit = true;
+                break;
+            }
+            stashedOnly++;
+            added++;
+        }
+    }
+
+    if (added > 0) {
+        if (modal) _dvRenderAll(modal);
+        for (const { slotId, seed } of pendingHydrations) {
+            void _dvHydrateSlot(slotId, seed, modal);
+        }
+        _dvFlashTabAdded();
+        Logger.log('diff-viewer: batch add — ' + added + ' task(s)'
+            + (slotted ? ', ' + slotted + ' slotted' : '')
+            + (stashedOnly ? ', ' + stashedOnly + ' stash-only' : '')
+            + (stoppedByStashLimit ? ', stash limit reached' : ''));
+    }
+
+    return { added, skipped, slotted, stashedOnly, stoppedByStashLimit };
 }
 
 // ── Plugin ──
@@ -2922,7 +3034,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.4',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2941,6 +3053,11 @@ const plugin = {
 
         // Load persisted stash
         _dvState.stash = _dvLoadStash();
+        if (_dvState.stash.length > DV_MAX_STASH) {
+            _dvState.stash = _dvState.stash.slice(0, DV_MAX_STASH);
+            _dvSaveStash();
+            Logger.warn('diff-viewer: stash trimmed to ' + DV_MAX_STASH + ' items on load');
+        }
 
         // Restore persisted granularity
         try {
@@ -2972,7 +3089,8 @@ const plugin = {
 
         // Expose public API
         Context.diffViewer = {
-            addTask: _dvApiAddTask
+            addTask: _dvApiAddTask,
+            addTasks: _dvApiAddTasks
         };
 
         // Register tab

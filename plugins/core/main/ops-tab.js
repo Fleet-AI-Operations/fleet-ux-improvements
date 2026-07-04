@@ -11,10 +11,6 @@ const OPS_TASK_KEY_RE = /task_[A-Za-z0-9_]+/;
 const OPS_VERIFIER_KEY_RE = /verifier-task_[A-Za-z0-9_.-]+/;
 const OPS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OPS_UUID_FIND_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-const COPY_SUCCESS_FLASH_MS = 1000;
-const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
-const COPY_FAILURE_PULSE_MS = 500;
-const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 const OPS_NO_RUNTIME_CONFIG_MESSAGE =
     'Supabase API config not yet discovered. Open a Fleet page that loads dashboard data, then retry.';
 const OPS_SECRETS_ENC_FILENAME_DEFAULT = 'ops-secrets.enc.json';
@@ -202,7 +198,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '8.15',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2851,6 +2847,9 @@ const plugin = {
     },
 
     _opsDashBtnClass(variant, size) {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
         const dash = Context.dashboard;
         if (dash && typeof dash.dashBtnClass === 'function') return dash.dashBtnClass(variant, size);
         return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
@@ -2876,77 +2875,19 @@ const plugin = {
     },
 
     _injectOpsSettingsButtonStyles() {
-        if (document.getElementById('wf-ops-settings-btn-style')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-ops-settings-btn-style';
-        style.textContent = [
-            '#wf-settings-modal .wf-dash-btn {',
-            '  appearance: none;',
-            '  -webkit-appearance: none;',
-            '  box-sizing: border-box;',
-            '  margin: 0;',
-            '  font-family: inherit;',
-            '  font-weight: 600;',
-            '  border-radius: 6px;',
-            '  cursor: pointer;',
-            '  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;',
-            '  white-space: nowrap;',
-            '  display: inline-flex;',
-            '  align-items: center;',
-            '  justify-content: center;',
-            '  line-height: 1.4;',
-            '  text-decoration: none;',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--regular {',
-            '  padding: 7px 14px;',
-            '  font-size: 12px;',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--nav {',
-            '  padding: 4px 10px;',
-            '  font-size: 11px;',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--full {',
-            '  width: 100%;',
-            '  box-sizing: border-box;',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--primary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--primary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-            '  color: var(--primary-foreground, #ffffff);',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--secondary {',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: #000;',
-            '  color: #fff;',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--secondary:hover:not(:disabled) {',
-            '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
-            '  border-color: var(--brand, var(--primary, #2563eb));',
-            '  color: var(--brand, var(--primary, #2563eb));',
-            '}',
-            '#wf-settings-modal .wf-dash-btn--primary:disabled,',
-            '#wf-settings-modal .wf-dash-btn--secondary:disabled {',
-            '  cursor: not-allowed;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  background: var(--muted, #f1f5f9);',
-            '  color: var(--muted-foreground, #94a3b8);',
-            '  opacity: 0.85;',
-            '}'
-        ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
+        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+            Context.uiLib.ensureButtonStyles('#wf-settings-modal');
+        }
     },
 
     _injectOpsSpinnerStyle() {
+        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+            Context.uiLib.ensureStyles();
+        }
         if (document.getElementById('wf-ops-spinner-style')) return;
         const style = document.createElement('style');
         style.id = 'wf-ops-spinner-style';
         style.textContent = [
-            '@keyframes wf-ops-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
             '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
@@ -3963,7 +3904,9 @@ const plugin = {
             dashLog.logApiClick('team-search', (query ? '"' + query + '" · ' : '') + allTeams.length + ' team(s)');
         }
 
-        const spinnerHtml = '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:wf-ops-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
+        const spinnerHtml = Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
+            ? Context.uiLib.spinnerHtml(10).replace('class="fleet-ui-spinner"', 'class="fleet-ui-spinner" style="vertical-align:middle;margin-right:5px;"')
+            : '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:fleet-ui-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
         this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
 
         const finishTeamSearch = (_teamLabel) => {
@@ -4222,45 +4165,21 @@ const plugin = {
     },
 
     _clearOpsCopyButtonFeedback(button) {
-        if (!button) return;
-        if (button._copySuccessFlashTimeout) {
-            clearTimeout(button._copySuccessFlashTimeout);
-            button._copySuccessFlashTimeout = null;
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.clear === 'function') {
+            Context.buttonFeedback.clear(button);
         }
-        if (button._copyFailurePulseTimeout) {
-            clearTimeout(button._copyFailurePulseTimeout);
-            button._copyFailurePulseTimeout = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
     },
 
     _showOpsCopySuccessFlash(button) {
-        this._clearOpsCopyButtonFeedback(button);
-        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
-        button.style.color = '#ffffff';
-        button._copySuccessFlashTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._copySuccessFlashTimeout = null;
-        }, COPY_SUCCESS_FLASH_MS);
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+            Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
+        }
     },
 
     _showOpsCopyFailurePulse(button) {
-        this._clearOpsCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = COPY_FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition = 'background-color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out, color ' + COPY_FAILURE_PULSE_MS + 'ms ease-out';
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyFailurePulseTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._copyFailurePulseTimeout = null;
-        }, COPY_FAILURE_PULSE_MS);
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
+        }
     },
 
     async _copyOpsTextToClipboard(text) {

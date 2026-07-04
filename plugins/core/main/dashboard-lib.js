@@ -54,6 +54,71 @@ const DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS = {
     gt_120: '> 120 minutes'
 };
 
+/** Shared filter sidebar scope keys (search-output + dashboard multiselect). */
+const DASH_LIB_FILTER_SCOPES = [
+    { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
+    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
+    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
+    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
+    { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
+    { scopeKey: 'filter-qa-helpfulness', optionsKey: 'qaHelpfulness', draftKey: 'qaHelpfulness' },
+    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
+    { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
+    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
+    { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
+    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
+    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
+];
+
+const DASH_LIB_SORT_DEFAULT = 'task_submitted:desc';
+const DASH_LIB_SORT_METRICS = [
+    { id: 'task_submitted', label: 'Task created' },
+    { id: 'task_revised', label: 'Task revised' },
+    { id: 'feedback_given', label: 'Feedback given' },
+    { id: 'dispute_submitted', label: 'Dispute submitted' },
+    { id: 'dispute_resolved', label: 'Dispute resolved' }
+];
+const DASH_LIB_SORT_OPTIONS = DASH_LIB_SORT_METRICS.flatMap((metric) => ([
+    { value: metric.id + ':desc', label: metric.label + ' (newest first)', sortMetric: metric.id, sortOrder: 'desc' },
+    { value: metric.id + ':asc', label: metric.label + ' (oldest first)', sortMetric: metric.id, sortOrder: 'asc' }
+]));
+
+/** Tab strip order when one task matches multiple output kinds. */
+const DASH_LIB_OUTPUT_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
+
+const DASH_LIB_MANUAL_FILTER_FIELDS = [
+    { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
+    { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
+    { id: 'dispute_resolution_time_minutes', label: 'Dispute Resolution Time Minutes', type: 'number', hydrateHint: true },
+    { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
+    { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
+];
+const DASH_LIB_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
+const DASH_LIB_MANUAL_FILTER_DEFAULT_COMPARATOR = 'gte';
+
+const DASH_LIB_RESULTS_MODE_HINTS = {
+    clear: 'Clears previous results and replaces with new search results.',
+    add: 'Adds new search results to previous ones (deduplicated).'
+};
+const DASH_LIB_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+const DASH_LIB_NONE_SELECTED_HINT = 'None selected = all.';
+
+function dashLibDefaultManualFilterStageRows() {
+    return DASH_LIB_MANUAL_FILTER_FIELDS.map((field) => ({
+        field: field.id,
+        comparator: DASH_LIB_MANUAL_FILTER_DEFAULT_COMPARATOR,
+        value: ''
+    }));
+}
+
+function dashLibManualFilterWordCount(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
 const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
 const DASH_LIB_VERIFIER_FAILURE_BADGE = 'Verifier Generation Error';
 const DASH_LIB_QA_REVISION_REQUESTED_EVENT_TYPE = 'qa.revision_requested';
@@ -450,7 +515,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '3.12',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -568,6 +633,21 @@ const plugin = {
             qaTextBlockLabel: bind(self._qaTextBlockLabel),
 
             projectDisplayLabel: dashLibProjectDisplayLabel,
+
+            filterScopes: DASH_LIB_FILTER_SCOPES,
+            sortDefault: DASH_LIB_SORT_DEFAULT,
+            sortMetrics: DASH_LIB_SORT_METRICS,
+            sortOptions: DASH_LIB_SORT_OPTIONS,
+            outputKindLabels: DASH_LIB_OUTPUT_KIND_LABELS,
+            outputKindMergeOrder: DASH_LIB_OUTPUT_KIND_MERGE_ORDER,
+            manualFilterFields: DASH_LIB_MANUAL_FILTER_FIELDS,
+            manualFilterDefaultField: DASH_LIB_MANUAL_FILTER_DEFAULT_FIELD,
+            manualFilterDefaultComparator: DASH_LIB_MANUAL_FILTER_DEFAULT_COMPARATOR,
+            defaultManualFilterStageRows: dashLibDefaultManualFilterStageRows,
+            manualFilterWordCount: dashLibManualFilterWordCount,
+            noneSelectedHint: DASH_LIB_NONE_SELECTED_HINT,
+            substringFilterHelp: DASH_LIB_SUBSTRING_FILTER_HELP,
+            resultsModeHints: DASH_LIB_RESULTS_MODE_HINTS,
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,

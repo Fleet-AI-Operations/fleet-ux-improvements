@@ -20,10 +20,6 @@ const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
 const COPY_PROMPT_SUBOPTION_ID = 'copy-prompt-button';
 const COPY_VERIFIER_OUTPUT_MARKER = 'data-fleet-revisions-copy-verifier';
 const COPY_VERIFIER_SUBOPTION_ID = 'copy-verifier-output-button';
-const COPY_SUCCESS_FLASH_MS = 1000;
-const COPY_SUCCESS_GREEN_BG = 'rgb(34, 197, 94)';
-const COPY_FAILURE_PULSE_MS = 500;
-const COPY_FAILURE_RED_BG = 'rgb(239, 68, 68)';
 
 const PROMPT_QUALITY_VALUES = ['Top 10%', 'Average', 'Bottom 10%'];
 const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
@@ -32,7 +28,7 @@ const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '6.2',
+    _version: '7.0',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -393,44 +389,15 @@ const plugin = {
     },
 
     clearRequestRevisionsCopyButtonFeedback(button) {
-        if (button._copySuccessFlashTimeout) {
-            clearTimeout(button._copySuccessFlashTimeout);
-            button._copySuccessFlashTimeout = null;
-        }
-        if (button._copyFailurePulseTimeout) {
-            clearTimeout(button._copyFailurePulseTimeout);
-            button._copyFailurePulseTimeout = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
+        if (Context.buttonFeedback) Context.buttonFeedback.clear(button);
     },
 
     showCopySuccessFlash(button) {
-        this.clearRequestRevisionsCopyButtonFeedback(button);
-        button.style.backgroundColor = COPY_SUCCESS_GREEN_BG;
-        button.style.color = '#ffffff';
-        button._copySuccessFlashTimeout = setTimeout(() => {
-            button.style.backgroundColor = '';
-            button.style.color = '';
-            button._copySuccessFlashTimeout = null;
-        }, COPY_SUCCESS_FLASH_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
     },
 
     showCopyFailurePulse(button) {
-        this.clearRequestRevisionsCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = COPY_FAILURE_RED_BG;
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition = `background-color ${COPY_FAILURE_PULSE_MS}ms ease-out, color ${COPY_FAILURE_PULSE_MS}ms ease-out`;
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._copyFailurePulseTimeout = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._copyFailurePulseTimeout = null;
-        }, COPY_FAILURE_PULSE_MS);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
     },
 
     handleCopyVerifierOutputClick(state, button) {

@@ -316,9 +316,14 @@ function teamMembersPanelHtml() {
     const label = dash && typeof dash.labelStyle === 'function' ? dash.labelStyle() : 'font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);';
     const hint = dash && typeof dash.hintStyle === 'function' ? dash.hintStyle() : 'font-size: 11px; color: var(--muted-foreground, #64748b);';
     const input = dash && typeof dash.inputStyle === 'function' ? dash.inputStyle() : 'padding: 8px 12px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--background, white); color: var(--foreground, #333); box-sizing: border-box;';
-    const btnClass = (variant, size) => (dash && typeof dash.dashBtnClass === 'function'
-        ? dash.dashBtnClass(variant, size)
-        : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
+    const btnClass = (variant, size) => {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return dash && typeof dash.dashBtnClass === 'function'
+            ? dash.dashBtnClass(variant, size)
+            : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+    };
     const pagerChevron = (dir) => (dash && typeof dash.pagerChevronSvg === 'function' ? dash.pagerChevronSvg(dir) : '');
 
     const leftHtml = `
@@ -494,7 +499,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '3.2',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

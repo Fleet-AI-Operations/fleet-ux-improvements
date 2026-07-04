@@ -28,7 +28,7 @@ const plugin = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '3.7',
+    _version: '4.0',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -622,46 +622,17 @@ const plugin = {
     },
 
     clearVerifierCopyButtonFeedback(button) {
-        if (button._fleetCopyFeedbackTimeoutId) {
-            clearTimeout(button._fleetCopyFeedbackTimeoutId);
-            button._fleetCopyFeedbackTimeoutId = null;
-        }
-        if (button._fleetCopyFailureTimeoutId) {
-            clearTimeout(button._fleetCopyFailureTimeoutId);
-            button._fleetCopyFailureTimeoutId = null;
-        }
-        button.style.transition = '';
-        button.style.backgroundColor = '';
-        button.style.color = '';
+        if (Context.buttonFeedback) Context.buttonFeedback.clear(button);
     },
 
     showVerifierCopyFailurePulse(button) {
-        this.clearVerifierCopyButtonFeedback(button);
-        const prevTransition = button.style.transition;
-        button.style.transition = 'none';
-        button.style.backgroundColor = 'rgb(239, 68, 68)';
-        button.style.color = '#ffffff';
-        void button.offsetHeight;
-        button.style.transition = 'background-color 500ms ease-out, color 500ms ease-out';
-        button.style.backgroundColor = '';
-        button.style.color = '';
-        button._fleetCopyFailureTimeoutId = setTimeout(() => {
-            button.style.transition = prevTransition || '';
-            button._fleetCopyFailureTimeoutId = null;
-        }, 500);
+        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
     },
 
     copyVerifierTextWithFeedback(button, text, logSuffix = '') {
         const showOk = () => {
             Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard${logSuffix}`);
-            this.clearVerifierCopyButtonFeedback(button);
-            button.style.backgroundColor = 'rgb(34, 197, 94)';
-            button.style.color = 'white';
-            button._fleetCopyFeedbackTimeoutId = setTimeout(() => {
-                button.style.backgroundColor = '';
-                button.style.color = '';
-                button._fleetCopyFeedbackTimeoutId = null;
-            }, 1000);
+            if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
         };
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
