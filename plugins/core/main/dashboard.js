@@ -81,7 +81,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1480,22 +1480,10 @@ const plugin = {
             statsCol.style.flex = '0 0 auto';
             return;
         }
-        const pref = this._readStatsPanelWidthPref();
-        const splitRight = root.querySelector('[data-wf-dash-split-right]');
-        const splitRightW = splitRight ? splitRight.getBoundingClientRect().width : 0;
-        const resultsCol = root.querySelector('[data-wf-dash-results-column]');
-        const resultsW = resultsCol ? resultsCol.getBoundingClientRect().width : 0;
-        const handleW = DASH_RESULTS_STATS_HANDLE_WIDTH;
-        let clamped = pref;
-        if (splitRightW > 0) {
-            const maxStats = Math.max(DASH_STATS_PANEL_MIN_WIDTH, splitRightW - resultsW - handleW);
-            clamped = Math.min(pref, maxStats);
-        }
-        clamped = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(clamped));
-        statsCol.style.flex = '0 0 auto';
-        statsCol.style.width = clamped + 'px';
+        statsCol.style.flex = '1 1 0';
         statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
-        statsCol.style.maxWidth = clamped + 'px';
+        statsCol.style.width = '';
+        statsCol.style.maxWidth = '';
     },
 
     _applyStatsPanelLayout(root) {
@@ -1509,8 +1497,8 @@ const plugin = {
         const collapsedVal = hidden ? 'true' : 'false';
         statsCol.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
         if (splitRight) splitRight.setAttribute('data-wf-dash-stats-collapsed', collapsedVal);
-        this._applyStatsPanelWidth(root);
         this._applyResultsPanelMaxWidth(root);
+        this._applyStatsPanelWidth(root);
         if (typeof this._syncStatsPanelCollapseUi === 'function') {
             this._syncStatsPanelCollapseUi();
         }
@@ -1797,12 +1785,24 @@ const plugin = {
             '[data-wf-dash-results-width-handle]:active {',
             '  background: color-mix(in srgb, var(--border, #e2e8f0) 55%, var(--brand, var(--primary, #2563eb)));',
             '}',
+            '[data-wf-dash-split-right] {',
+            '  position: relative;',
+            '}',
+            '[data-wf-dash-split-right][data-wf-dash-stats-collapsed="true"] {',
+            '  padding-right: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px;',
+            '  box-sizing: border-box;',
+            '}',
             '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] {',
+            '  position: absolute !important;',
+            '  top: 0 !important;',
+            '  right: 0 !important;',
+            '  bottom: 0 !important;',
             '  flex: 0 0 ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
             '  min-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
             '  max-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
             '  width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
             '  overflow: hidden !important;',
+            '  z-index: 2;',
             '}',
             '[data-wf-dash-stats-column][data-wf-dash-stats-collapsed="true"] [data-wf-dash-stats-body] {',
             '  display: none !important;',
@@ -1888,16 +1888,11 @@ const plugin = {
                     col.style.minWidth = DASH_SIDE_PANEL_MIN_RESULTS_WIDTH + 'px';
                     col.style.width = next + 'px';
                     col.style.maxWidth = next + 'px';
-                    if (statsCol && splitRight && !statsHidden) {
-                        const splitRightW = splitRight.getBoundingClientRect().width;
-                        const statsW = Math.max(
-                            DASH_STATS_PANEL_MIN_WIDTH,
-                            Math.round(splitRightW - next - DASH_RESULTS_STATS_HANDLE_WIDTH)
-                        );
-                        statsCol.style.flex = '0 0 auto';
-                        statsCol.style.width = statsW + 'px';
+                    if (statsCol && !statsHidden) {
+                        statsCol.style.flex = '1 1 0';
                         statsCol.style.minWidth = DASH_STATS_PANEL_MIN_WIDTH + 'px';
-                        statsCol.style.maxWidth = statsW + 'px';
+                        statsCol.style.width = '';
+                        statsCol.style.maxWidth = '';
                     }
                 },
                 onUp: () => {
@@ -1920,16 +1915,7 @@ const plugin = {
                         col.style.maxWidth = finalWidth + 'px';
                         Logger.log('dashboard: results panel max width set to ' + finalWidth + 'px');
                     }
-                    if (statsCol && splitRight && !statsHidden) {
-                        const splitRightW = splitRight.getBoundingClientRect().width;
-                        const resultsW = finalWidth >= maxResults - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX
-                            ? maxResults
-                            : finalWidth;
-                        const statsW = Math.max(
-                            DASH_STATS_PANEL_MIN_WIDTH,
-                            Math.round(splitRightW - resultsW - DASH_RESULTS_STATS_HANDLE_WIDTH)
-                        );
-                        this._writeStatsPanelWidthPref(statsW);
+                    if (statsCol && !statsHidden) {
                         this._applyStatsPanelWidth(root);
                     } else if (statsHidden) {
                         this._applyStatsPanelWidth(root);
