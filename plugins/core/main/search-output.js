@@ -4476,6 +4476,52 @@ const searchOutputMethods = {
         return ((item.kinds && item.kinds.length) ? item.kinds : [item.kind]).includes(kind);
     },
 
+    _countItemsByResultsKindTab(items, committed) {
+        const counts = {};
+        const kinds = this._committedSearchKinds(committed);
+        const list = items || [];
+        if (kinds.length <= 1) return counts;
+        counts.all = list.length;
+        for (const kind of kinds) {
+            counts[kind] = list.filter((it) => this._itemHasOutputKind(it, kind)).length;
+        }
+        return counts;
+    },
+
+    _kindsWithResults(counts, kinds) {
+        return kinds.filter((k) => (counts[k] || 0) > 0);
+    },
+
+    _isResultsKindTabDisabled(tabId, counts, committed) {
+        const kinds = this._committedSearchKinds(committed);
+        if (kinds.length <= 1) return false;
+        if (tabId === 'all') {
+            return this._kindsWithResults(counts, kinds).length <= 1;
+        }
+        return (counts[tabId] || 0) === 0;
+    },
+
+    _firstEnabledResultsKindTab(tabs, counts, committed) {
+        for (const tab of tabs) {
+            if (!this._isResultsKindTabDisabled(tab.id, counts, committed)) return tab.id;
+        }
+        return tabs[0] ? tabs[0].id : 'all';
+    },
+
+    _ensureValidResultsKindTab() {
+        const committed = this._state.committed;
+        const tabs = this._resultsKindTabsMeta(committed);
+        if (tabs.length <= 1 || !this._state.cachedItems) return false;
+        const counts = this._countItemsByResultsKindTab(this._state.cachedItems, committed);
+        const current = this._state.resultsKindTab || 'all';
+        if (!this._isResultsKindTabDisabled(current, counts, committed)) return false;
+        const next = this._firstEnabledResultsKindTab(tabs, counts, committed);
+        if (next === current) return false;
+        this._state.resultsKindTab = next;
+        Logger.log('dashboard: results kind tab — defaulted to ' + next);
+        return true;
+    },
+
     _filterItemsByResultsKindTab(items) {
         const committed = this._state.committed;
         const kinds = this._committedSearchKinds(committed);
@@ -4985,6 +5031,12 @@ const searchOutputMethods = {
             this._updateResultsKindTabsUi();
             this._syncResultsToolbarDerivedUi();
             return Promise.resolve(false);
+        }
+
+        if (this._ensureValidResultsKindTab()) {
+            resetPage = true;
+            reindexFilters = true;
+            if (filterSource === 'client') filterSource = 'tab-reset';
         }
 
         let bounds;
@@ -6274,11 +6326,14 @@ const searchOutputMethods = {
         if (tabs.length <= 1) {
             buttonsWrap.innerHTML = '';
         } else {
+            const counts = this._countItemsByResultsKindTab(this._state.cachedItems, committed);
             const activeTab = this._state.resultsKindTab || 'all';
             const tabButtons = tabs.map((tab) => {
                 const active = tab.id === activeTab;
-                const style = this._btnResultsKindTabStyle(active, tab.id);
-                return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}" style="${style}">${dashEscHtml(tab.label)}</button>`;
+                const disabled = this._isResultsKindTabDisabled(tab.id, counts, committed);
+                const style = this._btnResultsKindTabStyle(active, tab.id, disabled);
+                const disabledAttr = disabled ? ' disabled' : '';
+                return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}"${disabledAttr} style="${style}">${dashEscHtml(tab.label)}</button>`;
             }).join('');
             buttonsWrap.style.display = 'flex';
             buttonsWrap.style.flexWrap = 'wrap';
@@ -6287,6 +6342,7 @@ const searchOutputMethods = {
             buttonsWrap.innerHTML = tabButtons;
             buttonsWrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
                 btn.addEventListener('click', () => {
+                    if (btn.disabled) return;
                     this._state.resultsKindTab = btn.getAttribute('data-wf-dash-results-kind-tab') || 'all';
                     Logger.log('dashboard: results kind tab — ' + this._state.resultsKindTab);
                     this._updateResultsKindTabsUi();
@@ -6406,16 +6462,20 @@ const searchOutputMethods = {
         return base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
-    _btnResultsKindTabStyle(active, tabId) {
-        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+    _btnResultsKindTabStyle(active, tabId, disabled) {
+        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px;';
+        if (disabled) {
+            return base + ' border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.35; cursor: not-allowed;';
+        }
+        const interactive = base + ' cursor: pointer;';
         if (active) {
             if (tabId === 'all') {
-                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
+                return interactive + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
-            return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
+            return interactive + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
         }
-        return base + ' ' + DASH_TOGGLE_INACTIVE;
+        return interactive + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
     _taskInitialCreatedAt(task) {
@@ -11857,7 +11917,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.49',
+    _version: '4.50',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
