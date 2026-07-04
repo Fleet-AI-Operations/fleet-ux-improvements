@@ -1,7 +1,7 @@
 {
   "version": "10.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "12.92",
+  "archetypesVersion": "12.93",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -72,14 +72,14 @@
     },
     {
       "name": "search-output.js",
-      "version": "4.47",
-      "hash": "sha256-e4e8367c9aad8a8507464d6b5f28dd5cfcfdc32a87c8f8f4ae3492d096af67fe",
+      "version": "4.48",
+      "hash": "sha256-7a6bfa86231effc3f615a59cf5bac80025c9d7ed02338ade0be86d345d6f48fb",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "2.7",
-      "hash": "sha256-90098ddad5b1f469fb97ad8ed2b236e2aa995ca6eab9887573e828ec025eb3a3",
+      "version": "2.8",
+      "hash": "sha256-cc5317462145eaaf47cdaa2791e010558837d159dd66b572e9580d64eb4ef9ed",
       "log": false
     },
     {

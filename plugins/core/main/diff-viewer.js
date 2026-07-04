@@ -2989,10 +2989,89 @@ function _dvOnFleetThemeChange() {
 
 // ── Public API: Context.diffViewer ──
 
+function _dvStashEntryFromSeed(seed) {
+    return {
+        taskId: seed.taskId,
+        key: seed.key || '',
+        authorName: seed.authorName || '',
+        authorEmail: seed.authorEmail || '',
+        createdAt: seed.createdAt || '',
+        versionCount: seed.versionCount || 0
+    };
+}
+
 function _dvApiAddTask(seed) {
     // seed: { taskId, key, authorName, authorEmail } — always re-hydrated from PostgREST
     const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
     _dvAddSlot(seed, modal);
+}
+
+function _dvApiAddTasks(seeds) {
+    const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
+    const list = Array.isArray(seeds) ? seeds.filter((s) => s && s.taskId) : [];
+    if (!list.length) {
+        return { added: 0, skipped: 0, slotted: 0, stashedOnly: 0, stoppedByStashLimit: false };
+    }
+    let added = 0;
+    let slotted = 0;
+    let stashedOnly = 0;
+    let skipped = 0;
+    let stoppedByStashLimit = false;
+    const pendingHydrations = [];
+
+    for (let i = 0; i < list.length; i++) {
+        const seed = list[i];
+        const taskId = seed.taskId;
+        const inStash = _dvStashFind(taskId) >= 0;
+        if (!inStash && _dvState.stash.length >= DV_MAX_STASH) {
+            skipped = list.length - i;
+            stoppedByStashLimit = true;
+            break;
+        }
+        const stashEntry = _dvStashEntryFromSeed(seed);
+        if (_dvState.slots.length < DV_MAX_SLOTS) {
+            const slotId = ++_dvSlotSeq;
+            _dvState.slots.push({
+                slotId,
+                taskId,
+                key: stashEntry.key,
+                authorName: stashEntry.authorName,
+                authorEmail: stashEntry.authorEmail,
+                createdAt: stashEntry.createdAt,
+                promptVersions: null,
+                lensIndex: 0,
+                loading: true,
+                error: null
+            });
+            _dvAddToStash(stashEntry);
+            pendingHydrations.push({ slotId, seed });
+            slotted++;
+            added++;
+        } else {
+            const ok = _dvAddToStash(stashEntry);
+            if (!ok) {
+                skipped = list.length - i;
+                stoppedByStashLimit = true;
+                break;
+            }
+            stashedOnly++;
+            added++;
+        }
+    }
+
+    if (added > 0) {
+        if (modal) _dvRenderAll(modal);
+        for (const { slotId, seed } of pendingHydrations) {
+            void _dvHydrateSlot(slotId, seed, modal);
+        }
+        _dvFlashTabAdded();
+        Logger.log('diff-viewer: batch add — ' + added + ' task(s)'
+            + (slotted ? ', ' + slotted + ' slotted' : '')
+            + (stashedOnly ? ', ' + stashedOnly + ' stash-only' : '')
+            + (stoppedByStashLimit ? ', stash limit reached' : ''));
+    }
+
+    return { added, skipped, slotted, stashedOnly, stoppedByStashLimit };
 }
 
 // ── Plugin ──
@@ -3001,7 +3080,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '2.7',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3056,7 +3135,8 @@ const plugin = {
 
         // Expose public API
         Context.diffViewer = {
-            addTask: _dvApiAddTask
+            addTask: _dvApiAddTask,
+            addTasks: _dvApiAddTasks
         };
 
         // Register tab

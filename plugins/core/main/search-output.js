@@ -4712,8 +4712,18 @@ const searchOutputMethods = {
     _syncResultsToolbarDerivedUi() {
         this._syncResultsRangeCountUi();
         this._syncBulkHydrateUi();
+        this._syncDiffIncludedUi();
         this._syncDropExcludedUi();
         this._syncVersionModeDropdownUi();
+    },
+
+    _syncDiffIncludedUi() {
+        const viewItems = this._getViewItems();
+        const show = viewItems && viewItems.length > 0
+            && this._state.cachedItems !== null
+            && Context.diffViewer && typeof Context.diffViewer.addTasks === 'function';
+        const btn = this._q('#wf-dash-diff-included');
+        if (btn) btn.style.display = show ? '' : 'none';
     },
 
     _syncVersionModeDropdownUi() {
@@ -6516,14 +6526,43 @@ const searchOutputMethods = {
             Logger.warn('search-output: Add to Diff — Context.diffViewer not ready');
             return;
         }
-        const seed = {
+        const seed = this._diffSeedFromItem(item);
+        Context.diffViewer.addTask(seed);
+        Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
+    },
+
+    _diffSeedFromItem(item) {
+        return {
             taskId: item.task.id,
             key: item.task.key || '',
             authorName: (item.task.author && item.task.author.name) || '',
-            authorEmail: (item.task.author && item.task.author.email) || ''
+            authorEmail: (item.task.author && item.task.author.email) || '',
+            createdAt: item.task.createdAt || '',
+            versionCount: (item.task.promptVersions || []).length
         };
-        Context.diffViewer.addTask(seed);
-        Logger.log('search-output: added task to diff viewer — ' + (seed.key || seed.taskId));
+    },
+
+    _diffIncludedResults() {
+        const items = this._getViewItems() || [];
+        if (!items.length) return;
+        if (!Context.diffViewer || typeof Context.diffViewer.addTasks !== 'function') {
+            Logger.warn('search-output: Diff Included Results — Context.diffViewer not ready');
+            return;
+        }
+        const seeds = [];
+        for (const item of items) {
+            if (!item || !item.task || !item.task.id) continue;
+            seeds.push(this._diffSeedFromItem(item));
+        }
+        if (!seeds.length) {
+            Logger.warn('search-output: Diff Included Results — no tasks in view');
+            return;
+        }
+        const result = Context.diffViewer.addTasks(seeds);
+        Logger.log('search-output: Diff Included Results — ' + result.added + '/' + seeds.length + ' added'
+            + (result.slotted ? ', ' + result.slotted + ' slotted' : '')
+            + (result.stashedOnly ? ', ' + result.stashedOnly + ' stash-only' : '')
+            + (result.skipped ? ', ' + result.skipped + ' skipped (stash full)' : ''));
     },
 
     _autoGrowTextareaStyle() {
@@ -6867,6 +6906,7 @@ const searchOutputMethods = {
                             <div style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                 <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 0 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
+                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
@@ -11462,6 +11502,8 @@ function attachSearchOutputListeners(modal, dash) {
         }
         const dropIncluded = dash._q('#wf-dash-drop-included');
         if (dropIncluded) dropIncluded.addEventListener('click', () => dash._dropIncludedResults());
+        const diffIncluded = dash._q('#wf-dash-diff-included');
+        if (diffIncluded) diffIncluded.addEventListener('click', () => dash._diffIncludedResults());
         const dropExcluded = dash._q('#wf-dash-drop-excluded');
         if (dropExcluded) dropExcluded.addEventListener('click', () => dash._dropExcludedResults());
         const clearResults = dash._q('#wf-dash-clear-results');
@@ -11871,7 +11913,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '4.47',
+    _version: '4.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
