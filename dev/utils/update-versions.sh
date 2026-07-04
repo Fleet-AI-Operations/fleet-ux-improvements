@@ -17,7 +17,7 @@
 #   2. Collects _version from plugin .js files (core/main, core/dev, archetypes/*/main, archetypes/*/dev).
 #   3. Collects version (first line) from docs/settings-modal/*.md (information-tab.md, features-tab.md).
 #   4. Updates archetypes.json: version (only when fleet canonical is higher than current), corePlugins,
-#      devPlugins, settingsModalDocs, each archetype's plugins, each devArchetype's plugins.
+#      opsDashboardPlugins, devPlugins, settingsModalDocs, each archetype's plugins, each devArchetype's plugins.
 #   5. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
 #
 # Prerequisites: jq (must be on PATH). Can be run from anywhere inside the repo
@@ -288,6 +288,7 @@ jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
   | $a
   | .version = (if $v.fleet != "" then $v.fleet else .version end)
   | .corePlugins |= (map(.name as $n | .version = ($v.core[$n] // .version)))
+  | (.opsDashboardPlugins // []) |= (map(.name as $n | .version = ($v.core[$n] // .version)))
   | .devPlugins |= (map(.name as $n | .version = ($v.dev[$n] // .version)))
   | (.settingsModalDocs // []) |= (map(.name as $n | .version = ($v.settingsModal[$n] // .version)))
   | (.archetypes // []) |= (map(.id as $aid | .plugins |= (map(.name as $n | .version = ($v.plugins[$aid + "/main/" + $n] // .version)))))
@@ -327,6 +328,13 @@ enumerate_archetypes_changes() {
       echo "  $arch_name: devPlugins[\"$name\"].version: \"$o\" -> \"$n\""
     fi
   done < <(jq -r '.devPlugins[].name' "$old_path")
+  while IFS= read -r name; do
+    o="$(jq -r --arg n "$name" '(.opsDashboardPlugins // [])[] | select(.name==$n) | .version' "$old_path")"
+    n="$(jq -r --arg n "$name" '(.opsDashboardPlugins // [])[] | select(.name==$n) | .version' "$new_path")"
+    if [[ "$o" != "$n" ]]; then
+      echo "  $arch_name: opsDashboardPlugins[\"$name\"].version: \"$o\" -> \"$n\""
+    fi
+  done < <(jq -r '(.opsDashboardPlugins // [])[].name' "$old_path")
   while IFS= read -r name; do
     o="$(jq -r --arg n "$name" '(.settingsModalDocs // [])[] | select(.name==$n) | .version' "$old_path")"
     n="$(jq -r --arg n "$name" '(.settingsModalDocs // [])[] | select(.name==$n) | .version' "$new_path")"
