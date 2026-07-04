@@ -4559,6 +4559,9 @@ function attachSearchOutputListeners(modal, dash) {
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
         });
+        modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => dash._setStatsTab(btn.getAttribute('data-wf-dash-stats-tab')));
+        });
         const filterExpandAll = dash._q('#wf-dash-filter-expand-all');
         if (filterExpandAll) {
             filterExpandAll.addEventListener('click', () => dash._toggleFilterExpandAll());
@@ -4961,7 +4964,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

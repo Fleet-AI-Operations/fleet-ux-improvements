@@ -16,19 +16,54 @@ function dashEscHtml(value) {
 const searchOutputStatsPaneMethods = {
     _statsPanelHtml() {
         const box = this._panelBoxStyle();
+        const statsTab = this._state ? this._state.statsTab : 'ratings';
+        const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
             + '<div data-wf-dash-stats-header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); min-height: 36px;">'
-            + '<span style="font-size: 12px; font-weight: 600;">Ratings</span>'
+            + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Ratings and stats">'
+            + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
+            + '<button type="button" data-wf-dash-stats-tab="stats" style="' + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>'
+            + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
-            + '<div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;">'
+            + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
+            + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
+            + '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Coming Soon to Videocassette</p>'
+            + '</div>'
             + '</div>';
+    },
+
+    _statsTabStyle(active) {
+        const base = 'padding: 8px 12px; font-size: 12px; font-weight: 600; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: transparent;';
+        return active
+            ? base + ' color: var(--foreground, #0f172a); border-bottom-color: var(--brand, var(--primary, #2563eb));'
+            : base + ' color: var(--muted-foreground, #64748b);';
+    },
+
+    _setStatsTab(tab) {
+        this._state.statsTab = tab;
+        this._syncStatsTabUi();
+        Logger.log('search-output-stats-pane: stats tab ' + tab);
+    },
+
+    _syncStatsTabUi() {
+        const tab = this._state.statsTab || 'ratings';
+        const ratingsPanel = this._q('#wf-dash-stats-panel-ratings');
+        const statsPanel = this._q('#wf-dash-stats-panel-stats');
+        if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
+        if (statsPanel) statsPanel.style.display = tab === 'stats' ? 'flex' : 'none';
+        if (this._modal) {
+            this._modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
+                const active = btn.getAttribute('data-wf-dash-stats-tab') === tab;
+                btn.style.cssText = this._statsTabStyle(active);
+            });
+        }
     },
 
     _ensureStatsToggleButton(statsCol) {
@@ -467,7 +502,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
