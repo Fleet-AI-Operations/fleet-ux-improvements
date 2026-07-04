@@ -10238,8 +10238,16 @@ const searchOutputMethods = {
     },
 
 
-    _fieldGroupHtml(label, valueHtml) {
-        return `<div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; min-width: 0;">${this._labelSpan(label)}<span style="min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${valueHtml}</span></div>`;
+    _fieldGroupHtml(label, valueHtml, opts) {
+        const options = opts || {};
+        const nowrap = Boolean(options.nowrap);
+        const groupStyle = nowrap
+            ? 'display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap;'
+            : 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; min-width: 0;';
+        const valueStyle = nowrap
+            ? 'display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0;'
+            : 'min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;';
+        return `<div style="${groupStyle}">${this._labelSpan(label)}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
     _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
@@ -10332,10 +10340,12 @@ const searchOutputMethods = {
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 220px;">
                         ${this._fieldGroupHtml('Author', this._personChipsHtml(task.author.name, task.author.email, task.author.id, 'Open author in Fleet', 'task_creation', flagBtn))}
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; flex: 1 1 220px;">
-                        ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team))}
-                        ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink)}
-                        ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment))}
+                    <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
+                        <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
+                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment), { nowrap: true })}
+                            ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team), { nowrap: true })}
+                            ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink, { nowrap: true })}
+                        </div>
                     </div>
                 </div>`;
     },
@@ -11875,7 +11885,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.5',
+    _version: '5.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
