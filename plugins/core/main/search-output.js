@@ -6307,25 +6307,22 @@ const searchOutputMethods = {
     },
 
     _updateResultsKindTabsUi() {
-        const row2 = this._q('#wf-dash-results-toolbar-row2');
-        const buttonsWrap = this._q('#wf-dash-results-kind-tab-buttons');
-        if (!row2 || !buttonsWrap) return;
+        const wrap = this._q('#wf-dash-filter-kind-tab-wrap');
+        const buttonsWrap = this._q('#wf-dash-filter-kind-tab-buttons');
+        if (!wrap || !buttonsWrap) return;
         if (!this._resultsToolbarReady()) {
-            row2.style.display = 'none';
+            wrap.style.display = 'none';
             buttonsWrap.innerHTML = '';
             this._syncResultsRangeCountUi();
             return;
         }
-        row2.style.display = 'flex';
-        row2.style.alignItems = 'center';
-        row2.style.justifyContent = 'space-between';
-        row2.style.width = '100%';
-        row2.style.gap = '8px';
         const committed = this._state.committed;
         const tabs = this._resultsKindTabsMeta(committed);
         if (tabs.length <= 1) {
+            wrap.style.display = 'none';
             buttonsWrap.innerHTML = '';
         } else {
+            wrap.style.display = 'block';
             const counts = this._countItemsByResultsKindTab(this._state.cachedItems, committed);
             const activeTab = this._state.resultsKindTab || 'all';
             const tabButtons = tabs.map((tab) => {
@@ -6335,10 +6332,6 @@ const searchOutputMethods = {
                 const disabledAttr = disabled ? ' disabled' : '';
                 return `<button type="button" data-wf-dash-results-kind-tab="${dashEscHtml(tab.id)}"${disabledAttr} style="${style}">${dashEscHtml(tab.label)}</button>`;
             }).join('');
-            buttonsWrap.style.display = 'flex';
-            buttonsWrap.style.flexWrap = 'wrap';
-            buttonsWrap.style.gap = '6px';
-            buttonsWrap.style.minWidth = '0';
             buttonsWrap.innerHTML = tabButtons;
             buttonsWrap.querySelectorAll('[data-wf-dash-results-kind-tab]').forEach((btn) => {
                 btn.addEventListener('click', () => {
@@ -6783,7 +6776,7 @@ const searchOutputMethods = {
     },
 
     _resultsToolbarRow2Style() {
-        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: space-between; gap: 8px; width: 100%; flex-wrap: wrap;';
+        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; flex-wrap: wrap;';
     },
 
     _searchSectionStyle() {
@@ -6893,7 +6886,9 @@ const searchOutputMethods = {
 
                         <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <p style="${hint} margin: 0;">Refine loaded results. Substring and dropdown filters apply immediately unless RegEx is enabled on substring; manual filters use Apply.</p>
+                                <div id="wf-dash-filter-kind-tab-wrap" style="display: none; padding-top: 14px;">
+                                    <div id="wf-dash-filter-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                                </div>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(DASH_SUBSTRING_FILTER_HELP)}</p>
@@ -6973,8 +6968,7 @@ const searchOutputMethods = {
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1;"></div>
-                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0; margin-left: auto;">
+                            <div id="wf-dash-results-pager-slot-kind" style="flex-shrink: 0;">
                                 <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
                                     <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0;">
                                         <span>Version</span>
@@ -11881,7 +11875,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
