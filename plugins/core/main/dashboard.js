@@ -21,21 +21,6 @@ const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissio
 const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
-const DASH_FILTER_SCOPES = [
-    { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
-    { scopeKey: 'filter-statuses', optionsKey: 'statuses', draftKey: 'statuses' },
-    { scopeKey: 'filter-envs', optionsKey: 'envs', draftKey: 'envKeys' },
-    { scopeKey: 'filter-projects', optionsKey: 'projects', draftKey: 'projectIds' },
-    { scopeKey: 'filter-prompt-ratings', optionsKey: 'promptRatings', draftKey: 'promptRatings' },
-    { scopeKey: 'filter-qa-helpfulness', optionsKey: 'qaHelpfulness', draftKey: 'qaHelpfulness' },
-    { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
-    { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
-    { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
-    { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
-    { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
-    { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
-    { scopeKey: 'filter-teams', optionsKey: 'teams', draftKey: 'teamIds' }
-];
 const DASH_MS_HOVER_OPEN_MS = 300;
 const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
@@ -61,8 +46,13 @@ function dashIsFlyoutMsKey(scopeKey) {
     return dashIsFilterMsKey(scopeKey) || dashIsSearchMsKey(scopeKey);
 }
 
+function dashFilterScopes() {
+    const lib = Context.dashboardLib;
+    return (lib && lib.filterScopes) || [];
+}
+
 function dashAllFlyoutMsKeys() {
-    return DASH_FILTER_SCOPES.map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
+    return dashFilterScopes().map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
 }
 
 function dashLib() {
@@ -85,7 +75,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '7.2',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2289,13 +2279,13 @@ const plugin = {
     },
 
     _syncAllMsDropdowns(options) {
-        const keys = DASH_FILTER_SCOPES.map((s) => s.scopeKey)
+        const keys = dashFilterScopes().map((s) => s.scopeKey)
             .concat(DASH_SEARCH_MS_KEYS, ...DASH_TEAM_MEMBERS_MS_KEYS);
         for (const key of keys) this._syncMsDropdown(key, options);
     },
 
     _filterMsOpenKeys() {
-        return DASH_FILTER_SCOPES.map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
+        return dashFilterScopes().map((s) => s.scopeKey).filter((key) => this._isMsDropdownOpen(key));
     },
 
     _isPointerOverMsDropdown(scopeKey) {
@@ -2501,7 +2491,7 @@ const plugin = {
     _toggleFilterExpandAll() {
         const intent = this._state.filterExpandAllIntent === 'collapse' ? 'collapse' : 'expand';
         if (intent === 'expand') {
-            for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            for (const { scopeKey } of dashFilterScopes()) {
                 if (!this._filterScopeHasOptions(scopeKey)) continue;
                 this._state.msDropdownToggled[scopeKey] = true;
                 this._state.msDropdownOpen[scopeKey] = true;
@@ -2511,7 +2501,7 @@ const plugin = {
             this._state.filterExpandAllIntent = 'collapse';
             Logger.log('search-output: filter menus — expanded all');
         } else {
-            for (const { scopeKey } of DASH_FILTER_SCOPES) {
+            for (const { scopeKey } of dashFilterScopes()) {
                 if (!this._state.msDropdownToggled[scopeKey]) continue;
                 delete this._state.msDropdownOpen[scopeKey];
                 delete this._state.msDropdownToggled[scopeKey];
