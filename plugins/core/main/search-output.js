@@ -8364,10 +8364,10 @@ const searchOutputMethods = {
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
         const rightSection = (rightHtml || forceRight)
-            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0;">${rightHtml || ''}</div>`
+            ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
-            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 1 1 140px;">${leftHtml}</div>`
+            + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 0 1 auto; max-width: 100%;">${leftHtml}</div>`
             + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
             + rightSection
             + `</div>`;
@@ -11885,7 +11885,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab: bootstrap, search, hydrate, filters, results cards',
-    _version: '5.6',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
