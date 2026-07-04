@@ -11,7 +11,6 @@
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
 const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width';
-const DASH_RESULTS_PANEL_MAX_WIDTH_STATS_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width-stats-hidden';
 const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
 const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
@@ -82,7 +81,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1200,59 +1199,28 @@ const plugin = {
         return null;
     },
 
-    _resultsPanelMaxWidthStorageKey(statsHidden) {
-        return statsHidden
-            ? DASH_RESULTS_PANEL_MAX_WIDTH_STATS_HIDDEN_STORAGE_KEY
-            : DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY;
-    },
-
-    _readResultsPanelMaxWidthPrefForState(statsHidden) {
+    _readResultsPanelMaxWidthPref() {
         try {
-            const key = this._resultsPanelMaxWidthStorageKey(statsHidden);
-            const parsed = this._parseResultsPanelMaxWidthPref(Storage.getData(key, null));
+            const parsed = this._parseResultsPanelMaxWidthPref(
+                Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null)
+            );
             if (parsed != null) return parsed;
-            if (statsHidden) {
-                return this._parseResultsPanelMaxWidthPref(
-                    Storage.getData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, null)
-                );
-            }
         } catch (_e) { /* fall through */ }
         return null;
     },
 
-    _readResultsPanelMaxWidthPref() {
-        return this._readResultsPanelMaxWidthPrefForState(false);
-    },
-
-    _writeResultsPanelMaxWidthPrefForState(widthPx, statsHidden) {
+    _writeResultsPanelMaxWidthPref(widthPx) {
         try {
-            const key = this._resultsPanelMaxWidthStorageKey(statsHidden);
             if (widthPx == null) {
-                Storage.deleteData(key);
+                Storage.deleteData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY);
+                Storage.deleteData('fleet-ux:dashboard-results-panel-max-width-stats-hidden');
                 return;
             }
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
-            Storage.setData(key, String(clamped));
+            Storage.setData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write results panel max width pref (' + (statsHidden ? 'hidden' : 'open') + ')', e);
+            Logger.warn('dashboard: failed to write results panel max width pref', e);
         }
-    },
-
-    _writeResultsPanelMaxWidthPref(widthPx) {
-        this._writeResultsPanelMaxWidthPrefForState(widthPx, false);
-    },
-
-    _writeResultsPanelMaxWidthPrefs(openPx, closedPx) {
-        if (openPx == null && closedPx == null) {
-            this._writeResultsPanelMaxWidthPrefForState(null, false);
-            this._writeResultsPanelMaxWidthPrefForState(null, true);
-            return;
-        }
-        this._writeResultsPanelMaxWidthPrefForState(openPx, false);
-        this._writeResultsPanelMaxWidthPrefForState(
-            closedPx != null ? closedPx : openPx,
-            true
-        );
     },
 
     _readStatsPanelHiddenPref() {
@@ -1482,7 +1450,7 @@ const plugin = {
         const col = root.querySelector('[data-wf-dash-results-column]');
         if (!col) return;
         const statsHidden = this._readStatsPanelHiddenPref();
-        const pref = this._readResultsPanelMaxWidthPrefForState(statsHidden);
+        const pref = this._readResultsPanelMaxWidthPref();
         const splitRight = root.querySelector('[data-wf-dash-split-right]');
         const maxResults = this._maxResultsPanelWidthForDrag(splitRight, statsHidden);
         if (!pref) {
@@ -1939,45 +1907,18 @@ const plugin = {
                 },
                 onUp: () => {
                     const rawIntent = Math.round(lastMoveX - colLeft);
-                    const maxOpen = this._maxResultsPanelWidthForDrag(splitRight, false);
                     const maxClosed = this._maxResultsPanelWidthForDrag(splitRight, true);
-                    if (!statsHidden && rawIntent >= maxOpen - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
-                        const openPref = maxOpen;
-                        const closedPref = rawIntent > maxOpen
-                            ? Math.round(
-                                Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxClosed, rawIntent))
-                            )
-                            : maxOpen;
-                        this._writeResultsPanelMaxWidthPrefs(openPref, closedPref);
-                        this._applyResultsPanelMaxWidth(root);
-                        Logger.log(
-                            'dashboard: results panel max width open=' + openPref + 'px closed=' + closedPref + 'px (stats min boundary)'
-                        );
-                    } else if (statsHidden && rawIntent >= maxClosed - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
-                        this._writeResultsPanelMaxWidthPrefs(null, null);
+                    if (statsHidden && rawIntent >= maxClosed - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
+                        this._writeResultsPanelMaxWidthPref(null);
                         this._applyResultsPanelMaxWidth(root);
                         Logger.log('dashboard: results panel max width cleared (full width)');
                     } else {
-                        let openPref;
-                        let closedPref;
-                        if (rawIntent > maxOpen) {
-                            openPref = maxOpen;
-                            closedPref = Math.round(
-                                Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxClosed, rawIntent))
-                            );
-                        } else {
-                            const maxForState = statsHidden ? maxClosed : maxOpen;
-                            const shared = Math.round(
-                                Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxForState, rawIntent))
-                            );
-                            openPref = shared;
-                            closedPref = shared;
-                        }
-                        this._writeResultsPanelMaxWidthPrefs(openPref, closedPref);
-                        this._applyResultsPanelMaxWidth(root);
-                        Logger.log(
-                            'dashboard: results panel max width open=' + openPref + 'px closed=' + closedPref + 'px'
+                        const sharedPref = Math.round(
+                            Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxClosed, rawIntent))
                         );
+                        this._writeResultsPanelMaxWidthPref(sharedPref);
+                        this._applyResultsPanelMaxWidth(root);
+                        Logger.log('dashboard: results panel max width set to ' + sharedPref + 'px');
                     }
                     if (statsCol) {
                         this._applyStatsPanelWidth(root);
