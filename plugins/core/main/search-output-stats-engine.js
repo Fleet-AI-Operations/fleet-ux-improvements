@@ -30,6 +30,13 @@ const STATS_DYNAMIC_DIMENSION = {
     label: 'Unique task versions'
 };
 
+const STATS_TIME_GROUP_DIMENSIONS = [
+    { key: 'taskCreatedYear', granularity: 'year', label: 'Task created (year)' },
+    { key: 'taskCreatedMonth', granularity: 'month', label: 'Task created (month)' },
+    { key: 'taskCreatedWeek', granularity: 'week', label: 'Task created (week)' },
+    { key: 'taskCreatedDay', granularity: 'day', label: 'Task created (day)' }
+];
+
 const STATS_METRIC_LABELS = {
     count: 'Count of results',
     prompt_version_count: 'Unique task versions'
@@ -287,6 +294,102 @@ function statsDimensionLabel(scopeKey, resolveScopeLabel) {
     return scopeKey;
 }
 
+function statsItemTaskCreatedMs(item) {
+    const task = item && item.task;
+    if (!task || !task.createdAt) return null;
+    const ms = Date.parse(String(task.createdAt));
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function statsUtcDateParts(ms) {
+    const d = new Date(ms);
+    return {
+        y: d.getUTCFullYear(),
+        m: d.getUTCMonth() + 1,
+        d: d.getUTCDate()
+    };
+}
+
+function statsTimeBucketId(granularity, ms) {
+    const { y, m, d } = statsUtcDateParts(ms);
+    if (granularity === 'year') return String(y);
+    if (granularity === 'month') return y + '-' + String(m).padStart(2, '0');
+    if (granularity === 'day') {
+        return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    if (granularity === 'week') {
+        const tmp = new Date(Date.UTC(y, m - 1, d));
+        const dow = tmp.getUTCDay() || 7;
+        tmp.setUTCDate(tmp.getUTCDate() + 4 - dow);
+        const weekYear = tmp.getUTCFullYear();
+        const yearStart = new Date(Date.UTC(weekYear, 0, 1));
+        const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+        return weekYear + '-W' + String(weekNo).padStart(2, '0');
+    }
+    return '';
+}
+
+function statsTimeBucketLabel(granularity, bucketId) {
+    if (!bucketId) return bucketId;
+    if (granularity === 'year') return bucketId;
+    if (granularity === 'month') {
+        const parts = bucketId.split('-');
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+    }
+    if (granularity === 'day') {
+        const parts = bucketId.split('-').map(Number);
+        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+    }
+    if (granularity === 'week') {
+        const match = /^(\d{4})-W(\d{2})$/.exec(bucketId);
+        if (!match) return bucketId;
+        const weekYear = Number(match[1]);
+        const weekNo = Number(match[2]);
+        const jan4 = new Date(Date.UTC(weekYear, 0, 4));
+        const jan4Dow = jan4.getUTCDay() || 7;
+        const monday = new Date(jan4);
+        monday.setUTCDate(jan4.getUTCDate() - jan4Dow + 1 + (weekNo - 1) * 7);
+        const monLabel = monday.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+        return 'Week of ' + monLabel;
+    }
+    return bucketId;
+}
+
+function statsBuildTimeDimensionOptions(items, granularity) {
+    const ids = new Set();
+    for (const item of items || []) {
+        const ms = statsItemTaskCreatedMs(item);
+        if (ms == null) continue;
+        const id = statsTimeBucketId(granularity, ms);
+        if (id) ids.add(id);
+    }
+    return [...ids].sort().map((id) => ({
+        id,
+        label: statsTimeBucketLabel(granularity, id)
+    }));
+}
+
+function statsTimeGroupGranularity(dimKey) {
+    const def = STATS_TIME_GROUP_DIMENSIONS.find((d) => d.key === dimKey);
+    return def ? def.granularity : null;
+}
+
 function statsBuildPromptVersionCountOptions(items, getVersionCount) {
     const counts = new Set();
     if (typeof getVersionCount === 'function') {
@@ -345,8 +448,14 @@ function statsGetDimensionValues(item, dimKey, lib, ctx) {
             if (n == null || !Number.isFinite(n) || n <= 0) return [];
             return [String(Math.round(n))];
         }
-        default:
-            return [];
+        default: {
+            const granularity = statsTimeGroupGranularity(dimKey);
+            if (!granularity) return [];
+            const ms = statsItemTaskCreatedMs(item);
+            if (ms == null) return [];
+            const id = statsTimeBucketId(granularity, ms);
+            return id ? [id] : [];
+        }
     }
 }
 
@@ -369,6 +478,18 @@ function statsBuildCatalog(ctx) {
             optionsKey: def.optionsKey,
             label,
             options: options.map((o) => ({ id: o.id, label: o.label || o.id }))
+        };
+        dimensions.push(dim);
+        dimensionByKey[def.key] = dim;
+    }
+
+    for (const def of STATS_TIME_GROUP_DIMENSIONS) {
+        const options = statsBuildTimeDimensionOptions(items, def.granularity);
+        if (!options.length) continue;
+        const dim = {
+            key: def.key,
+            label: def.label,
+            options
         };
         dimensions.push(dim);
         dimensionByKey[def.key] = dim;
@@ -458,10 +579,13 @@ function statsValidateChart(chart, catalog, items, ctx) {
         if (chart.groupBy === STATS_DYNAMIC_DIMENSION.key) {
             missing.push({ id: chart.groupBy, label: STATS_DYNAMIC_DIMENSION.label });
         } else {
+            const timeDef = STATS_TIME_GROUP_DIMENSIONS.find((d) => d.key === chart.groupBy);
             const def = STATS_DIMENSION_DEFS.find((d) => d.key === chart.groupBy);
-            const label = (ctx && typeof ctx.resolveScopeLabel === 'function' && def)
-                ? ctx.resolveScopeLabel(def.scopeKey)
-                : chart.groupBy;
+            const label = timeDef
+                ? timeDef.label
+                : (ctx && typeof ctx.resolveScopeLabel === 'function' && def)
+                    ? ctx.resolveScopeLabel(def.scopeKey)
+                    : chart.groupBy;
             missing.push({ id: chart.groupBy, label });
         }
     }
@@ -721,7 +845,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
