@@ -16,7 +16,7 @@ function dashEscHtml(value) {
 const searchOutputStatsPaneMethods = {
     _statsPanelHtml() {
         const box = this._panelBoxStyle();
-        const statsTab = this._state ? this._state.statsTab : 'ratings';
+        const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
@@ -207,7 +207,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _syncStatsToolbarUi() {
-        const tab = this._state.statsTab || 'ratings';
+        const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
         const buildBtn = this._q('[data-wf-dash-stats-build]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
@@ -252,7 +252,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _syncStatsScopeToggleUi() {
-        const tab = this._state.statsTab || 'ratings';
+        const tab = this._state.statsTab || 'stats';
         const useFiltered = this._state.statsUseFiltered !== false;
         const statsCol = this._q('[data-wf-dash-stats-column]');
         const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
@@ -541,7 +541,8 @@ const searchOutputStatsPaneMethods = {
                 data: ds.data,
                 borderColor: color,
                 backgroundColor: renderAs === 'line' ? color : color,
-                yAxisID
+                yAxisID,
+                order: renderAs === 'line' ? 1 : 0
             };
             if (renderAs === 'line') {
                 return Object.assign(base, { tension: 0.2, spanGaps: true, pointRadius: 3, fill: false });
@@ -874,7 +875,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     async _renderStatsPanel() {
-        if ((this._state.statsTab || 'ratings') !== 'stats') return;
+        if ((this._state.statsTab || 'stats') !== 'stats') return;
         if ((this._state.statsViewMode || 'dashboard') === 'builder') {
             this._renderStatsBuilder();
             return;
@@ -961,7 +962,7 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
-        if (this._state.statsRenderGen !== renderGen || (this._state.statsTab || 'ratings') !== 'stats') {
+        if (this._state.statsRenderGen !== renderGen || (this._state.statsTab || 'stats') !== 'stats') {
             return;
         }
 
@@ -1000,7 +1001,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _syncStatsTabUi() {
-        const tab = this._state.statsTab || 'ratings';
+        const tab = this._state.statsTab || 'stats';
         const ratingsPanel = this._q('#wf-dash-stats-panel-ratings');
         const statsPanel = this._q('#wf-dash-stats-panel-stats');
         if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
@@ -1452,7 +1453,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

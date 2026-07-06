@@ -1241,7 +1241,7 @@ const searchOutputResultsPaneMethods = {
             el.innerHTML = '';
             this._syncVersionModeDropdownUi();
             this._renderRatingsPanel();
-            if ((this._state.statsTab || 'ratings') === 'stats') {
+            if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
             }
             return;

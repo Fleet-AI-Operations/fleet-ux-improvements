@@ -1441,7 +1441,7 @@ const searchOutputCoreMethods = {
         if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
         void this._reoverlayAllCachedItems().then(() => {
             this._renderRatingsPanel();
-            if ((this._state.statsTab || 'ratings') === 'stats') {
+            if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
             }
         });
@@ -3869,7 +3869,7 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
-            if ((this._state.statsTab || 'ratings') === 'stats') {
+            if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
             }
         };
