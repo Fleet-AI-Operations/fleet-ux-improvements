@@ -34,9 +34,404 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
-            + '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Coming Soon</p>'
+            + this._statsChartsPanelContentHtml()
             + '</div>'
             + '</div>';
+    },
+
+    _statsChartsPanelContentHtml() {
+        const box = this._panelBoxStyle();
+        const card = box + ' padding: 12px; flex-shrink: 0;';
+        const heading = 'font-size: 12px; font-weight: 600; margin: 0 0 8px; color: var(--foreground, #0f172a);';
+        return ''
+            + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
+            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); flex-shrink: 0;"></div>'
+            + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
+            + '<div id="wf-dash-stats-charts" style="display: none; flex-direction: column; gap: 12px;">'
+            + '<div class="wf-dash-stats-chart-card" style="' + card + '">'
+            + '<div style="' + heading + '">Task status</div>'
+            + '<div style="position: relative; height: 220px; max-width: 100%;"><canvas id="wf-dash-stats-chart-status" aria-label="Task status distribution"></canvas></div>'
+            + '</div>'
+            + '<div class="wf-dash-stats-chart-card" style="' + card + '">'
+            + '<div style="' + heading + '">Avg time by environment (minutes)</div>'
+            + '<div style="position: relative; height: 240px; max-width: 100%;"><canvas id="wf-dash-stats-chart-env-timing" aria-label="Average v1 creation and QA time by environment"></canvas></div>'
+            + '</div>'
+            + '</div>';
+    },
+
+    _statsScopeSegmentStyle(active) {
+        if (typeof this._segmentBtnStyle === 'function') {
+            return this._segmentBtnStyle(active, 'depth');
+        }
+        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border, #e2e8f0); cursor: pointer; background: transparent;';
+        return active
+            ? base + ' color: var(--foreground, #0f172a); background: color-mix(in srgb, var(--brand, #2563eb) 12%, transparent); border-color: var(--brand, #2563eb);'
+            : base + ' color: var(--muted-foreground, #64748b);';
+    },
+
+    _ensureStatsScopeToggle(headerActions) {
+        if (!headerActions) return null;
+        let wrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.setAttribute('data-wf-dash-stats-scope-wrap', 'true');
+            wrap.style.cssText = 'display: inline-flex; align-items: center; gap: 0; margin-right: 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; overflow: hidden;';
+            wrap.innerHTML = ''
+                + '<button type="button" data-wf-dash-stats-scope="filtered" aria-pressed="true" style="' + this._statsScopeSegmentStyle(true) + '">Filtered</button>'
+                + '<button type="button" data-wf-dash-stats-scope="all" aria-pressed="false" style="' + this._statsScopeSegmentStyle(false) + '">All</button>';
+            headerActions.insertBefore(wrap, headerActions.firstChild);
+        }
+        return wrap;
+    },
+
+    _syncStatsScopeToggleUi() {
+        const tab = this._state.statsTab || 'ratings';
+        const useFiltered = this._state.statsUseFiltered !== false;
+        const statsCol = this._q('[data-wf-dash-stats-column]');
+        const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
+        if (!headerActions) return;
+        const wrap = this._ensureStatsScopeToggle(headerActions);
+        if (wrap) {
+            wrap.style.display = tab === 'stats' ? 'inline-flex' : 'none';
+            wrap.querySelectorAll('[data-wf-dash-stats-scope]').forEach((btn) => {
+                const scope = btn.getAttribute('data-wf-dash-stats-scope');
+                const active = scope === 'filtered' ? useFiltered : !useFiltered;
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                btn.style.cssText = this._statsScopeSegmentStyle(active);
+            });
+        }
+        const summaryEl = this._q('#wf-dash-stats-scope-summary');
+        if (summaryEl && tab === 'stats') {
+            const items = this._getStatsScopeItems();
+            const scopeLabel = useFiltered ? 'Filtered' : 'All';
+            summaryEl.textContent = items.length + ' item' + (items.length === 1 ? '' : 's') + ' · ' + scopeLabel;
+            summaryEl.style.display = this._state.hasSearched && this._state.cachedItems ? '' : 'none';
+        } else if (summaryEl) {
+            summaryEl.textContent = '';
+            summaryEl.style.display = 'none';
+        }
+    },
+
+    _setStatsScope(useFiltered) {
+        const next = Boolean(useFiltered);
+        if (this._state.statsUseFiltered === next) return;
+        this._state.statsUseFiltered = next;
+        Logger.log('search-output-stats-pane: stats scope ' + (next ? 'filtered' : 'all'));
+        this._syncStatsScopeToggleUi();
+        void this._renderStatsPanel();
+    },
+
+    _getStatsScopeItems() {
+        if (!this._state.cachedItems) return [];
+        if (this._state.statsUseFiltered !== false) {
+            return this._state.filteredItems || [];
+        }
+        return this._getFilterScopeItems();
+    },
+
+    _resolveEnvLabel(envKey) {
+        const key = String(envKey || '').trim();
+        if (!key) return '(unknown)';
+        const envs = (this._state.catalog && this._state.catalog.environments) || [];
+        const match = envs.find((e) => e && e.env_key === key);
+        return (match && match.name) || key;
+    },
+
+    _aggregateStatusCounts(items) {
+        const counts = new Map();
+        for (const item of items || []) {
+            const status = (item && item.task && item.task.status)
+                ? String(item.task.status)
+                : '(unknown)';
+            counts.set(status, (counts.get(status) || 0) + 1);
+        }
+        return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    },
+
+    _aggregateEnvTiming(items) {
+        const lib = Context.dashboardLib;
+        const buckets = new Map();
+        for (const item of items || []) {
+            const task = item && item.task;
+            if (!task) continue;
+            const envKey = task.envKey || task.environment || '';
+            if (!envKey) continue;
+            if (!buckets.has(envKey)) {
+                buckets.set(envKey, {
+                    envKey,
+                    label: this._resolveEnvLabel(envKey),
+                    v1: [],
+                    qa: []
+                });
+            }
+            const bucket = buckets.get(envKey);
+            if (lib && typeof lib.itemV1CreationTimeMinutes === 'function') {
+                const v1 = lib.itemV1CreationTimeMinutes(item);
+                if (v1 != null && Number.isFinite(v1)) bucket.v1.push(v1);
+            }
+            if (lib && typeof lib.itemQaTimeMinutes === 'function') {
+                const qa = lib.itemQaTimeMinutes(item);
+                if (qa != null && Number.isFinite(qa)) bucket.qa.push(qa);
+            }
+        }
+        return [...buckets.values()]
+            .sort((a, b) => a.label.localeCompare(b.label))
+            .map((row) => ({
+                label: row.label,
+                avgV1: row.v1.length > 0
+                    ? Math.round((row.v1.reduce((sum, v) => sum + v, 0) / row.v1.length) * 10) / 10
+                    : null,
+                avgQa: row.qa.length > 0
+                    ? Math.round((row.qa.reduce((sum, v) => sum + v, 0) / row.qa.length) * 10) / 10
+                    : null
+            }));
+    },
+
+    _getStatsHydrationWarnings(items) {
+        const list = items || [];
+        if (list.length === 0) return [];
+        const unhydratedCount = list.filter((item) => item && item.hydrated !== true).length;
+        const warnings = [];
+        if (unhydratedCount > 0) {
+            warnings.push(unhydratedCount + ' of ' + list.length + ' result cards not fully hydrated — timing chart uses hydrated cards only');
+        }
+        if (this._state.hydrateFetchActive) {
+            warnings.push('Per-card deep hydrate in progress — timing chart may update when complete');
+        }
+        return warnings;
+    },
+
+    _statsResolvedColor(cssVar, fallback) {
+        const host = this._q('[data-wf-dash-stats-body]') || document.documentElement;
+        const span = document.createElement('span');
+        span.style.color = 'var(' + cssVar + ', ' + fallback + ')';
+        host.appendChild(span);
+        const color = getComputedStyle(span).color;
+        span.remove();
+        return color || fallback;
+    },
+
+    _statsChartTheme() {
+        return {
+            foreground: this._statsResolvedColor('--foreground', '#0f172a'),
+            muted: this._statsResolvedColor('--muted-foreground', '#64748b'),
+            border: this._statsResolvedColor('--border', '#e2e8f0'),
+            brand: this._statsResolvedColor('--brand', '#2563eb'),
+            brandAlt: this._statsResolvedColor('--primary', '#16a34a')
+        };
+    },
+
+    _statsPiePalette() {
+        return ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#7c3aed', '#0891b2', '#db2777', '#64748b', '#ea580c', '#4f46e5'];
+    },
+
+    _destroyStatsCharts() {
+        const charts = this._state.statsCharts;
+        if (!charts) return;
+        if (charts.status) {
+            try { charts.status.destroy(); } catch (_e) { /* ignore */ }
+        }
+        if (charts.envTiming) {
+            try { charts.envTiming.destroy(); } catch (_e) { /* ignore */ }
+        }
+        this._state.statsCharts = null;
+    },
+
+    _renderStatsWarnings(warnings) {
+        const warnEl = this._q('#wf-dash-stats-warnings');
+        if (!warnEl) return;
+        if (warnings.length) {
+            warnEl.style.display = 'flex';
+            warnEl.innerHTML = warnings.map((w) =>
+                '<div style="font-size: 11px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, #f59e0b 12%, var(--card, #fff)); color: var(--foreground, #0f172a); border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border, #e2e8f0));">' + dashEscHtml(w) + '</div>'
+            ).join('');
+        } else {
+            warnEl.style.display = 'none';
+            warnEl.innerHTML = '';
+        }
+    },
+
+    _renderStatsFallbackText(statusRows, envRows) {
+        const chartsEl = this._q('#wf-dash-stats-charts');
+        if (!chartsEl) return;
+        let extra = '';
+        if (statusRows.length) {
+            extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>Status counts:</strong> '
+                + dashEscHtml(statusRows.map(([s, c]) => s + ' (' + c + ')').join(', '))
+                + '</div>';
+        }
+        if (envRows.length) {
+            extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>Env timing (min):</strong> '
+                + dashEscHtml(envRows.map((r) => r.label
+                    + ' — v1 ' + (r.avgV1 != null ? r.avgV1 : 'n/a')
+                    + ', QA ' + (r.avgQa != null ? r.avgQa : 'n/a')).join('; '))
+                + '</div>';
+        }
+        const existing = chartsEl.querySelector('[data-wf-dash-stats-fallback]');
+        if (existing) existing.remove();
+        if (extra) {
+            const div = document.createElement('div');
+            div.setAttribute('data-wf-dash-stats-fallback', 'true');
+            div.style.cssText = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+            div.innerHTML = extra;
+            chartsEl.appendChild(div);
+        }
+    },
+
+    async _renderStatsPanel() {
+        if ((this._state.statsTab || 'ratings') !== 'stats') return;
+
+        const emptyEl = this._q('#wf-dash-stats-empty');
+        const chartsEl = this._q('#wf-dash-stats-charts');
+        if (!emptyEl || !chartsEl) return;
+
+        this._syncStatsScopeToggleUi();
+        this._destroyStatsCharts();
+
+        const fallbackEl = chartsEl.querySelector('[data-wf-dash-stats-fallback]');
+        if (fallbackEl) fallbackEl.remove();
+
+        if (!this._state.hasSearched || !this._state.cachedItems) {
+            emptyEl.style.display = '';
+            emptyEl.textContent = 'Run a search to load results.';
+            chartsEl.style.display = 'none';
+            this._renderStatsWarnings([]);
+            return;
+        }
+
+        const items = this._getStatsScopeItems();
+        const warnings = this._getStatsHydrationWarnings(items);
+        this._renderStatsWarnings(warnings);
+
+        if (items.length === 0) {
+            emptyEl.style.display = '';
+            emptyEl.textContent = 'No results in this scope.';
+            chartsEl.style.display = 'none';
+            return;
+        }
+
+        emptyEl.style.display = 'none';
+        chartsEl.style.display = 'flex';
+
+        const statusRows = this._aggregateStatusCounts(items);
+        const hydratedItems = items.filter((item) => item && item.hydrated === true);
+        const envRows = this._aggregateEnvTiming(hydratedItems);
+
+        const renderGen = (this._state.statsRenderGen || 0) + 1;
+        this._state.statsRenderGen = renderGen;
+
+        const chartApi = Context.chartJs;
+        if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
+            this._renderStatsWarnings([...warnings, 'Chart.js loader not available. Reload the page and try again.']);
+            this._renderStatsFallbackText(statusRows, envRows);
+            Logger.warn('search-output-stats-pane: stats render skipped — chart-js not loaded');
+            return;
+        }
+
+        let Chart;
+        try {
+            Chart = await chartApi.ensureLoaded();
+        } catch (e) {
+            this._renderStatsWarnings([...warnings, 'Chart.js failed to load — showing text summary only.']);
+            this._renderStatsFallbackText(statusRows, envRows);
+            Logger.warn('search-output-stats-pane: Chart.js load failed', e);
+            return;
+        }
+
+        if (this._state.statsRenderGen !== renderGen || (this._state.statsTab || 'ratings') !== 'stats') {
+            return;
+        }
+
+        const theme = this._statsChartTheme();
+        const palette = this._statsPiePalette();
+        const statusCanvas = this._q('#wf-dash-stats-chart-status');
+        const envCanvas = this._q('#wf-dash-stats-chart-env-timing');
+        const charts = {};
+
+        if (statusCanvas && statusRows.length > 0) {
+            charts.status = new Chart(statusCanvas, {
+                type: 'pie',
+                data: {
+                    labels: statusRows.map(([status]) => status),
+                    datasets: [{
+                        data: statusRows.map(([, count]) => count),
+                        backgroundColor: statusRows.map((_, i) => palette[i % palette.length]),
+                        borderColor: 'transparent'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        if (envCanvas && envRows.length > 0) {
+            const envLabels = envRows.map((row) => row.label);
+            charts.envTiming = new Chart(envCanvas, {
+                type: 'line',
+                data: {
+                    labels: envLabels,
+                    datasets: [
+                        {
+                            label: 'Avg v1 creation (min)',
+                            data: envRows.map((row) => row.avgV1),
+                            borderColor: theme.brand,
+                            backgroundColor: theme.brand,
+                            tension: 0.2,
+                            spanGaps: true,
+                            pointRadius: 3
+                        },
+                        {
+                            label: 'Avg QA time (min)',
+                            data: envRows.map((row) => row.avgQa),
+                            borderColor: theme.brandAlt,
+                            backgroundColor: theme.brandAlt,
+                            tension: 0.2,
+                            spanGaps: true,
+                            pointRadius: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
+                            grid: { color: theme.border }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: theme.muted, font: { size: 10 } },
+                            grid: { color: theme.border },
+                            title: {
+                                display: true,
+                                text: 'Minutes',
+                                color: theme.muted,
+                                font: { size: 10 }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        this._state.statsCharts = charts;
+        Logger.log('search-output-stats-pane: stats charts rendered — ' + items.length + ' item(s), '
+            + statusRows.length + ' status bucket(s), ' + envRows.length + ' environment(s)');
     },
 
     _statsTabStyle(active) {
@@ -50,6 +445,9 @@ const searchOutputStatsPaneMethods = {
         this._state.statsTab = tab;
         this._syncStatsTabUi();
         Logger.log('search-output-stats-pane: stats tab ' + tab);
+        if (tab === 'stats') {
+            void this._renderStatsPanel();
+        }
     },
 
     _syncStatsTabUi() {
@@ -64,6 +462,7 @@ const searchOutputStatsPaneMethods = {
                 btn.style.cssText = this._statsTabStyle(active);
             });
         }
+        this._syncStatsScopeToggleUi();
     },
 
     _ensureStatsToggleButton(statsCol) {
@@ -122,9 +521,11 @@ const searchOutputStatsPaneMethods = {
         const dashApi = Context.dashboard;
         if (root && dashApi && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
+            this._syncStatsScopeToggleUi();
             return;
         }
         this._syncStatsPanelCollapseUi();
+        this._syncStatsScopeToggleUi();
     },
 
     _ratingSearchScoreTypes(committed) {
@@ -502,7 +903,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '1.3',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

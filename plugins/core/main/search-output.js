@@ -1441,6 +1441,9 @@ const searchOutputCoreMethods = {
         if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
         void this._reoverlayAllCachedItems().then(() => {
             this._renderRatingsPanel();
+            if ((this._state.statsTab || 'ratings') === 'stats') {
+                void this._renderStatsPanel();
+            }
         });
     },
 
@@ -3866,6 +3869,9 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
+            if ((this._state.statsTab || 'ratings') === 'stats') {
+                void this._renderStatsPanel();
+            }
         };
 
         if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
@@ -4575,6 +4581,12 @@ function attachSearchOutputListeners(modal, dash) {
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
     modal.addEventListener('click', (e) => {
+            const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
+            if (statsScopeBtn && modal.contains(statsScopeBtn)) {
+                const scope = statsScopeBtn.getAttribute('data-wf-dash-stats-scope');
+                dash._setStatsScope(scope !== 'all');
+                return;
+            }
             const exportBtn = e.target.closest('[data-wf-dash-rating-export]');
             if (exportBtn && modal.contains(exportBtn)) {
                 const workerId = exportBtn.getAttribute('data-wf-dash-rating-worker');
@@ -4964,7 +4976,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.1',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
