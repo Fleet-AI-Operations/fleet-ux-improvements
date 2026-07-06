@@ -4587,6 +4587,46 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._setStatsScope(scope !== 'all');
                 return;
             }
+            const statsBuildBtn = e.target.closest('[data-wf-dash-stats-build]');
+            if (statsBuildBtn && modal.contains(statsBuildBtn)) {
+                if ((dash._state.statsViewMode || 'dashboard') === 'builder') {
+                    dash._closeStatsBuilder();
+                } else {
+                    dash._openStatsBuilder(null);
+                }
+                return;
+            }
+            const statsDeleteBtn = e.target.closest('[data-wf-dash-stats-chart-delete]');
+            if (statsDeleteBtn && modal.contains(statsDeleteBtn)) {
+                dash._deleteStatsChart(statsDeleteBtn.getAttribute('data-wf-dash-stats-chart-delete'));
+                return;
+            }
+            const statsEditBtn = e.target.closest('[data-wf-dash-stats-chart-edit]');
+            if (statsEditBtn && modal.contains(statsEditBtn)) {
+                dash._openStatsBuilder(statsEditBtn.getAttribute('data-wf-dash-stats-chart-edit'));
+                return;
+            }
+            const statsBuilderSave = e.target.closest('[data-wf-dash-stats-builder-save]');
+            if (statsBuilderSave && modal.contains(statsBuilderSave)) {
+                dash._syncStatsBuilderDraftFromForm();
+                dash._saveStatsBuilderDraft();
+                return;
+            }
+            const statsBuilderCancel = e.target.closest('[data-wf-dash-stats-builder-cancel]');
+            if (statsBuilderCancel && modal.contains(statsBuilderCancel)) {
+                dash._closeStatsBuilder();
+                return;
+            }
+            const statsSeriesAdd = e.target.closest('[data-wf-dash-stats-series-add]');
+            if (statsSeriesAdd && modal.contains(statsSeriesAdd)) {
+                dash._addStatsBuilderSeriesRow();
+                return;
+            }
+            const statsSeriesRemove = e.target.closest('[data-wf-dash-stats-series-remove]');
+            if (statsSeriesRemove && modal.contains(statsSeriesRemove)) {
+                dash._removeStatsBuilderSeriesRow(statsSeriesRemove.getAttribute('data-wf-dash-stats-series-remove'));
+                return;
+            }
             const exportBtn = e.target.closest('[data-wf-dash-rating-export]');
             if (exportBtn && modal.contains(exportBtn)) {
                 const workerId = exportBtn.getAttribute('data-wf-dash-rating-worker');
@@ -4903,6 +4943,13 @@ function attachSearchOutputListeners(modal, dash) {
             }
     });
         modal.addEventListener('change', (e) => {
+            const statsDraftField = e.target.closest('[data-wf-dash-stats-draft]');
+            if (statsDraftField && modal.contains(statsDraftField)) {
+                const field = statsDraftField.getAttribute('data-wf-dash-stats-draft');
+                dash._syncStatsBuilderDraftFromForm();
+                if (field === 'type') dash._onStatsBuilderTypeChange();
+                return;
+            }
             const sel = e.target;
             if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
             const itemId = sel.getAttribute('data-item-id');
@@ -4976,7 +5023,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.2',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
