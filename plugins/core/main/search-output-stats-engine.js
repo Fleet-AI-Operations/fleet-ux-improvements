@@ -1,7 +1,7 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 3;
+const STATS_LAYOUT_SCHEMA_VERSION = 4;
 
 const STATS_TASK_POINT_CAP = 500;
 
@@ -52,14 +52,25 @@ const STATS_AGGREGATIONS = [
 
 const STATS_SCORECARD_GROUP_BY = '__scope__';
 
+const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
+
 const STATS_CHART_TYPE_META = {
     scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true, needsBarLayout: true },
-    line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
+    barLine: {
+        id: 'barLine',
+        label: 'Bar/Line',
+        minSeries: 1,
+        maxSeries: 4,
+        allowCountAxis: true,
+        needsRenderAs: true,
+        needsDualAxis: true,
+        needsBarLayout: true,
+        needsLineAreaLayout: true,
+        needsOrientation: true
+    },
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
-    combo: { id: 'combo', label: 'Bar + line', minSeries: 2, maxSeries: 4, allowCountAxis: true, needsRenderAs: true, needsDualAxis: true, needsBarLayout: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
     bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true }
 };
@@ -77,7 +88,13 @@ function statsNewChartId() {
     return 'chart-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
 }
 
+function statsLegacyChartType(type) {
+    const t = type != null ? String(type) : '';
+    return STATS_LEGACY_BAR_LINE_TYPES.has(t) ? t : null;
+}
+
 function statsNormalizeChartType(type) {
+    if (STATS_LEGACY_BAR_LINE_TYPES.has(type)) return 'barLine';
     return STATS_CHART_TYPE_META[type] ? type : 'pie';
 }
 
@@ -89,6 +106,18 @@ function statsNormalizeBarLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'grouped';
 }
 
+function statsNormalizeLineStyle(raw) {
+    return raw === 'shaded' ? 'shaded' : 'line';
+}
+
+function statsNormalizeOrientation(raw) {
+    return raw === 'horizontal' ? 'horizontal' : 'vertical';
+}
+
+function statsNormalizeLineAreaLayout(raw) {
+    return raw === 'stacked' ? 'stacked' : 'origin';
+}
+
 function statsNormalizeSegmentBy(raw, groupBy) {
     const v = raw != null ? String(raw).trim() : '';
     if (!v || v === groupBy) return null;
@@ -96,9 +125,9 @@ function statsNormalizeSegmentBy(raw, groupBy) {
 }
 
 function statsSeriesAllowsSegment(chartType, seriesEntry) {
-    if (chartType === 'bar') return true;
-    if (chartType === 'combo') return seriesEntry.renderAs !== 'line';
-    return false;
+    const type = statsNormalizeChartType(chartType);
+    if (type !== 'barLine') return false;
+    return seriesEntry.renderAs !== 'line';
 }
 
 function statsSeriesSegmentBy(seriesEntry, chartType) {
@@ -130,7 +159,8 @@ function statsNormalizeYAxis(value) {
 }
 
 function statsDefaultSeriesYAxis(chartType, seriesIndex, renderAs) {
-    if (chartType === 'combo') {
+    const type = statsNormalizeChartType(chartType);
+    if (type === 'barLine') {
         return renderAs === 'line' ? 'y1' : 'y';
     }
     return seriesIndex === 0 ? 'y' : 'y';
@@ -189,9 +219,11 @@ function statsFilterItemsForChart(items, chart, ctx) {
     return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
 }
 
-function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy) {
+function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySourceType) {
     const meta = statsGetChartTypeMeta(chartType);
-    const renderAs = s.renderAs === 'line' ? 'line' : 'bar';
+    let renderAs = s.renderAs === 'line' ? 'line' : 'bar';
+    if (legacySourceType === 'line') renderAs = 'line';
+    else if (legacySourceType === 'bar') renderAs = 'bar';
     const entry = {
         metricId: String(s.metricId || 'count'),
         agg: String(s.agg || 'count'),
@@ -205,6 +237,9 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy) {
             ? statsNormalizeYAxis(s.yAxis)
             : statsDefaultSeriesYAxis(chartType, seriesIndex || 0, meta.needsRenderAs ? renderAs : null);
     }
+    if (renderAs === 'line' && meta.needsLineAreaLayout) {
+        entry.lineStyle = statsNormalizeLineStyle(s.lineStyle);
+    }
     if (statsSeriesAllowsSegment(chartType, entry)) {
         const segmentRaw = s.segmentBy != null ? s.segmentBy : s.splitBy;
         entry.segmentBy = statsNormalizeSegmentBy(segmentRaw, groupBy);
@@ -213,6 +248,7 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy) {
 }
 
 function statsNormalizeChartEntry(c) {
+    const legacySourceType = statsLegacyChartType(c.type);
     const type = statsNormalizeChartType(c.type);
     const meta = statsGetChartTypeMeta(type);
     const groupBy = meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy);
@@ -221,12 +257,12 @@ function statsNormalizeChartEntry(c) {
         const src = legacySegmentBy && i === 0 && !s.segmentBy && !s.splitBy
             ? Object.assign({}, s, { segmentBy: legacySegmentBy })
             : s;
-        return statsNormalizeSeriesEntry(src, type, i, groupBy);
+        return statsNormalizeSeriesEntry(src, type, i, groupBy, legacySourceType);
     });
     if (series.length > meta.maxSeries) series = series.slice(0, meta.maxSeries);
     if (series.length < meta.minSeries && meta.minSeries > 0) {
         while (series.length < meta.minSeries) {
-            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length, groupBy));
+            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length, groupBy, legacySourceType));
         }
     }
     const chart = {
@@ -245,6 +281,12 @@ function statsNormalizeChartEntry(c) {
     }
     if (meta.needsBarLayout) {
         chart.barLayout = statsNormalizeBarLayout(c.barLayout);
+    }
+    if (meta.needsOrientation) {
+        chart.orientation = statsNormalizeOrientation(c.orientation);
+    }
+    if (meta.needsLineAreaLayout) {
+        chart.lineAreaLayout = statsNormalizeLineAreaLayout(c.lineAreaLayout);
     }
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -266,11 +308,13 @@ function statsDefaultLayout() {
             {
                 id: statsNewChartId(),
                 title: 'Avg time by environment (minutes)',
-                type: 'line',
+                type: 'barLine',
                 groupBy: 'envKeys',
+                orientation: 'vertical',
+                lineAreaLayout: 'origin',
                 series: [
-                    { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)', yAxis: 'y' },
-                    { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)', yAxis: 'y1' }
+                    { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y' },
+                    { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y1' }
                 ],
                 height: 240,
                 presetKey: 'env-timing'
@@ -648,14 +692,6 @@ function statsValidateChart(chart, catalog, items, ctx) {
         missing.push({ id: 'series', label: 'Chart series' });
     }
 
-    if (type === 'combo' && series.length >= 2) {
-        const hasBar = series.some((s) => s.renderAs !== 'line');
-        const hasLine = series.some((s) => s.renderAs === 'line');
-        if (!hasBar || !hasLine) {
-            missing.push({ id: 'renderAs', label: 'Bar and line series' });
-        }
-    }
-
     for (let i = 0; i < series.length; i += 1) {
         const s = series[i];
         const segmentBy = statsSeriesAllowsSegment(type, s)
@@ -797,6 +833,7 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
             metricId: seriesEntry.metricId,
             agg: seriesEntry.agg,
             renderAs: seriesEntry.renderAs,
+            lineStyle: seriesEntry.lineStyle,
             yAxis: seriesEntry.yAxis,
             segmentSeries: true
         });
@@ -887,6 +924,7 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             metricId: s.metricId,
             agg: s.agg,
             renderAs: s.renderAs,
+            lineStyle: s.lineStyle,
             yAxis: s.yAxis
         });
     }
@@ -896,10 +934,10 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
 
 function statsCountBarDatasets(chart, catalog) {
     const type = statsNormalizeChartType(chart.type);
-    if (type !== 'bar' && type !== 'combo') return 0;
+    if (type !== 'barLine') return 0;
     let count = 0;
     for (const s of chart.series || []) {
-        if (type === 'combo' && s.renderAs === 'line') continue;
+        if (s.renderAs === 'line') continue;
         const segmentBy = statsSeriesAllowsSegment(type, s)
             ? statsNormalizeSegmentBy(s.segmentBy, chart.groupBy)
             : null;
@@ -909,6 +947,16 @@ function statsCountBarDatasets(chart, catalog) {
         }
         const segmentDim = statsFindDimension(catalog, segmentBy);
         count += segmentDim && segmentDim.options.length ? segmentDim.options.length : 1;
+    }
+    return count;
+}
+
+function statsCountShadedLineDatasets(chart) {
+    const type = statsNormalizeChartType(chart.type);
+    if (type !== 'barLine') return 0;
+    let count = 0;
+    for (const s of chart.series || []) {
+        if (s.renderAs === 'line' && s.lineStyle === 'shaded') count += 1;
     }
     return count;
 }
@@ -1016,6 +1064,8 @@ function statsDefaultBuilderDraft(catalog) {
         height: 220,
         pointMode: 'bucket',
         barLayout: 'grouped',
+        orientation: 'vertical',
+        lineAreaLayout: 'origin',
         presetKey: null,
         chartFilters: statsEmptyChartFilters()
     };
@@ -1025,7 +1075,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '3.4',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1063,6 +1113,7 @@ const plugin = {
             sanitizeExportSlug: (text) => statsSanitizeExportSlug(text),
             exportDateSlug: () => statsExportDateSlug(),
             countBarDatasets: (chart, catalog) => statsCountBarDatasets(chart, catalog),
+            countShadedLineDatasets: (chart) => statsCountShadedLineDatasets(chart),
             seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
         };
         if (state) state.registered = true;

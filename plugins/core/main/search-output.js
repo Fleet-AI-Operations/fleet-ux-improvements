@@ -4972,6 +4972,10 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._syncStatsBuilderDraftFromForm();
                 if (field === 'type') dash._onStatsBuilderTypeChange();
                 else if (field === 'series-render') dash._onStatsBuilderSeriesRenderChange();
+                else if (field === 'series-lineStyle') {
+                    dash._syncStatsBuilderDraftFromForm();
+                    void dash._renderStatsBuilder();
+                }
                 else if (field === 'groupBy' || field === 'series-segment') dash._onStatsBuilderDimensionChange();
                 else dash._scheduleStatsBuilderPreview();
                 return;
@@ -5055,7 +5059,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.10',
+    _version: '7.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

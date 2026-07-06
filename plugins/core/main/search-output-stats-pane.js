@@ -142,6 +142,23 @@ const searchOutputStatsPaneMethods = {
         this._setStatsViewMode('dashboard');
     },
 
+    _statsNormalizeChartType(type) {
+        if (type === 'bar' || type === 'line' || type === 'combo') return 'barLine';
+        return type;
+    },
+
+    _statsIsBarLineChart(chart) {
+        return this._statsNormalizeChartType(chart && chart.type) === 'barLine';
+    },
+
+    _statsValueAxisId(chart, yAxis) {
+        const valueScale = yAxis === 'y1' ? 'y1' : 'y';
+        if (chart.orientation === 'horizontal') {
+            return valueScale === 'y1' ? 'x1' : 'x';
+        }
+        return valueScale;
+    },
+
     _draftToChartObject(draft, engine) {
         const engineMeta = engine.getChartTypeMeta(draft.type);
         const chart = {
@@ -161,6 +178,9 @@ const searchOutputStatsPaneMethods = {
                 if (engineMeta.needsDualAxis) {
                     entry.yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
                 }
+                if (entry.renderAs === 'line' && engineMeta.needsLineAreaLayout) {
+                    entry.lineStyle = s.lineStyle === 'shaded' ? 'shaded' : 'line';
+                }
                 if (engine.seriesAllowsSegment && engine.seriesAllowsSegment(draft.type, entry)) {
                     if (s.segmentBy) entry.segmentBy = s.segmentBy;
                 }
@@ -175,6 +195,12 @@ const searchOutputStatsPaneMethods = {
         }
         if (engineMeta.needsBarLayout) {
             chart.barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
+        }
+        if (engineMeta.needsOrientation) {
+            chart.orientation = draft.orientation === 'horizontal' ? 'horizontal' : 'vertical';
+        }
+        if (engineMeta.needsLineAreaLayout) {
+            chart.lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
         }
         return chart;
     },
@@ -778,13 +804,13 @@ const searchOutputStatsPaneMethods = {
                 z: 1
             },
             grid: {
-                color: theme.muted,
+                color: theme.border,
                 circular: true,
                 lineWidth: 1,
                 z: -1
             },
             angleLines: {
-                color: theme.muted,
+                color: theme.border,
                 lineWidth: 1
             },
             pointLabels: {
@@ -873,26 +899,85 @@ const searchOutputStatsPaneMethods = {
         return {
             responsive: true,
             maintainAspectRatio: false,
+            indexAxis: this._statsIsBarLineChart(chart) && chart.orientation === 'horizontal' ? 'y' : 'x',
             scales: this._statsCartesianScales(chart, theme),
             plugins: { legend: baseLegend }
         };
     },
 
     _statsCartesianScales(chart, theme) {
+        if (this._statsIsBarLineChart(chart)) {
+            const horizontal = chart.orientation === 'horizontal';
+            const hasBarDatasets = (chart.series || []).some((s) => s.renderAs !== 'line');
+            const hasShadedLineDatasets = (chart.series || []).some((s) => s.renderAs === 'line' && s.lineStyle === 'shaded');
+            const barStacked = chart.barLayout === 'stacked' && hasBarDatasets;
+            const lineStacked = chart.lineAreaLayout === 'stacked' && hasShadedLineDatasets;
+            const stacked = barStacked || lineStacked;
+            const useY1 = (chart.series || []).some((s) => s.yAxis === 'y1');
+            if (horizontal) {
+                const scales = {
+                    y: {
+                        stacked,
+                        ticks: { color: theme.muted, font: { size: 10 } },
+                        grid: { color: theme.border }
+                    },
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        beginAtZero: true,
+                        stacked,
+                        ticks: { color: theme.muted, font: { size: 10 } },
+                        grid: { color: theme.border }
+                    }
+                };
+                if (useY1) {
+                    scales.x1 = {
+                        type: 'linear',
+                        position: 'top',
+                        beginAtZero: true,
+                        ticks: { color: theme.brandAlt, font: { size: 10 } },
+                        grid: { drawOnChartArea: false }
+                    };
+                }
+                return scales;
+            }
+            const scales = {
+                x: {
+                    stacked,
+                    ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
+                    grid: { color: theme.border }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    stacked,
+                    ticks: { color: theme.muted, font: { size: 10 } },
+                    grid: { color: theme.border }
+                }
+            };
+            if (useY1) {
+                scales.y1 = {
+                    type: 'linear',
+                    position: 'right',
+                    beginAtZero: true,
+                    ticks: { color: theme.brandAlt, font: { size: 10 } },
+                    grid: { drawOnChartArea: false }
+                };
+            }
+            return scales;
+        }
         const useY1 = (chart.series || []).some((s) => s.yAxis === 'y1');
-        const stacked = chart.barLayout === 'stacked'
-            && (chart.type === 'bar' || chart.type === 'combo');
         const scales = {
             x: {
-                stacked,
-                ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
+                type: 'linear',
+                beginAtZero: true,
+                ticks: { color: theme.muted, font: { size: 10 } },
                 grid: { color: theme.border }
             },
             y: {
                 type: 'linear',
-                position: 'left',
                 beginAtZero: true,
-                stacked,
                 ticks: { color: theme.muted, font: { size: 10 } },
                 grid: { color: theme.border }
             }
@@ -970,34 +1055,63 @@ const searchOutputStatsPaneMethods = {
             };
         }
 
-        const chartJsType = type === 'combo' ? 'bar' : (type === 'bar' ? 'bar' : 'line');
-        const barStacked = chart.barLayout === 'stacked' && (type === 'bar' || type === 'combo');
+        if (!this._statsIsBarLineChart(chart)) {
+            return {
+                type: 'line',
+                data: { labels: aggData.labels, datasets: [] },
+                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
+            };
+        }
+
+        const horizontal = chart.orientation === 'horizontal';
+        const hasBarDatasets = (aggData.datasets || []).some((ds) => ds.renderAs !== 'line');
+        const hasShadedLineDatasets = (aggData.datasets || []).some((ds) => ds.renderAs === 'line' && ds.lineStyle === 'shaded');
+        const barStacked = chart.barLayout === 'stacked' && hasBarDatasets;
+        const lineStacked = chart.lineAreaLayout === 'stacked' && hasShadedLineDatasets;
         const datasets = (aggData.datasets || []).map((ds, i) => {
             const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
-            const renderAs = type === 'combo'
-                ? (ds.renderAs === 'line' ? 'line' : 'bar')
-                : chartJsType;
-            const yAxisID = ds.yAxis === 'y1' ? 'y1' : 'y';
+            const renderAs = ds.renderAs === 'line' ? 'line' : 'bar';
+            const valueScale = ds.yAxis === 'y1' ? 'y1' : 'y';
+            const valueAxisID = this._statsValueAxisId(chart, ds.yAxis);
             const base = {
                 type: renderAs,
                 label: ds.label,
                 data: ds.data,
                 borderColor: color,
-                backgroundColor: renderAs === 'line' ? color : color,
-                yAxisID,
-                // Chart.js: higher order draws first (behind); lower order draws on top.
+                backgroundColor: color,
                 order: renderAs === 'line' ? 1 : 2
             };
+            if (horizontal) {
+                base.xAxisID = valueAxisID;
+            } else {
+                base.yAxisID = valueScale;
+            }
             if (renderAs === 'bar' && barStacked) {
-                base.stack = yAxisID;
+                base.stack = 'bar-' + valueScale;
             }
             if (renderAs === 'line') {
-                return Object.assign(base, { tension: 0.2, spanGaps: true, pointRadius: 3, fill: false });
+                const shaded = ds.lineStyle === 'shaded';
+                const lineOpts = {
+                    tension: 0.2,
+                    spanGaps: true,
+                    pointRadius: 3,
+                    fill: shaded,
+                    borderColor: color
+                };
+                if (shaded) {
+                    lineOpts.backgroundColor = color + '40';
+                } else {
+                    lineOpts.fill = false;
+                }
+                if (shaded && lineStacked) {
+                    lineOpts.stack = 'line-' + valueScale;
+                }
+                return Object.assign(base, lineOpts);
             }
             return base;
         });
         return {
-            type: chartJsType,
+            type: 'bar',
             data: { labels: aggData.labels, datasets },
             options: this._buildChartJsOptions(chart, theme, chartJsCtx)
         };
@@ -1212,6 +1326,14 @@ const searchOutputStatsPaneMethods = {
                     + '<option value="line"' + (s.renderAs === 'line' ? ' selected' : '') + '>Line</option>'
                     + '</select></div>')
                 : '';
+            const lineStyle = s.lineStyle === 'shaded' ? 'shaded' : 'line';
+            const lineStyleHtml = typeMeta.needsLineAreaLayout && s.renderAs === 'line'
+                ? ('<div style="flex: 0 0 100px;"><div style="' + fieldLabel + '">Line style</div>'
+                    + '<select data-wf-dash-stats-draft="series-lineStyle" data-series-idx="' + i + '" style="' + inputStyle + '">'
+                    + '<option value="line"' + (lineStyle !== 'shaded' ? ' selected' : '') + '>Line</option>'
+                    + '<option value="shaded"' + (lineStyle === 'shaded' ? ' selected' : '') + '>Shaded</option>'
+                    + '</select></div>')
+                : '';
             const yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
             const yAxisHtml = typeMeta.needsDualAxis
                 ? ('<div style="flex: 0 0 90px;"><div style="' + fieldLabel + '">Y axis</div>'
@@ -1246,6 +1368,7 @@ const searchOutputStatsPaneMethods = {
                         + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>')
                     : '')
                 + renderAsHtml
+                + lineStyleHtml
                 + yAxisHtml
                 + (showRemove
                     ? '<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 6px 8px;">×</button>'
@@ -1272,6 +1395,27 @@ const searchOutputStatsPaneMethods = {
                 + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.</div>'
                 + '</div>')
             : '';
+        const orientation = draft.orientation === 'horizontal' ? 'horizontal' : 'vertical';
+        const orientationRow = typeMeta.needsOrientation
+            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Orientation</div>'
+                + '<select data-wf-dash-stats-draft="orientation" style="' + inputStyle + '">'
+                + '<option value="vertical"' + (orientation !== 'horizontal' ? ' selected' : '') + '>Vertical</option>'
+                + '<option value="horizontal"' + (orientation === 'horizontal' ? ' selected' : '') + '>Horizontal</option>'
+                + '</select></div>')
+            : '';
+        const shadedLineCount = engine.countShadedLineDatasets
+            ? engine.countShadedLineDatasets(draft)
+            : 0;
+        const lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
+        const lineAreaLayoutRow = typeMeta.needsLineAreaLayout && shadedLineCount >= 2
+            ? ('<div style="flex: 1; min-width: 180px;"><div style="' + fieldLabel + '">Shaded area layout</div>'
+                + '<select data-wf-dash-stats-draft="lineAreaLayout" style="' + inputStyle + '">'
+                + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
+                + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
+                + '</select>'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Stacked shaded areas sum per group without overlapping fills.</div>'
+                + '</div>')
+            : '';
         const lib = Context.dashboardLib;
         const filterScopes = (lib && lib.filterScopes) || [];
         let chartFiltersHtml = '';
@@ -1291,6 +1435,8 @@ const searchOutputStatsPaneMethods = {
             + '<select data-wf-dash-stats-draft="type" style="' + inputStyle + '">' + typeOpts + '</select></div>'
             + groupByRow
             + barLayoutRow
+            + orientationRow
+            + lineAreaLayoutRow
             + pointModeHtml
             + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Height</div>'
             + '<select data-wf-dash-stats-draft="height" style="' + inputStyle + '">' + heightOpts + '</select></div>'
@@ -1318,13 +1464,19 @@ const searchOutputStatsPaneMethods = {
         const typeEl = this._q('[data-wf-dash-stats-draft="type"]');
         const groupEl = this._q('[data-wf-dash-stats-draft="groupBy"]');
         const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
+        const orientationEl = this._q('[data-wf-dash-stats-draft="orientation"]');
+        const lineAreaLayoutEl = this._q('[data-wf-dash-stats-draft="lineAreaLayout"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
         if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
-        else if (draft.type !== 'bar' && draft.type !== 'combo') draft.barLayout = 'grouped';
+        else if (this._statsNormalizeChartType(draft.type) !== 'barLine') draft.barLayout = 'grouped';
+        if (orientationEl) draft.orientation = orientationEl.value === 'horizontal' ? 'horizontal' : 'vertical';
+        else if (this._statsNormalizeChartType(draft.type) !== 'barLine') draft.orientation = 'vertical';
+        if (lineAreaLayoutEl) draft.lineAreaLayout = lineAreaLayoutEl.value === 'stacked' ? 'stacked' : 'origin';
+        else if (this._statsNormalizeChartType(draft.type) !== 'barLine') draft.lineAreaLayout = 'origin';
         if (heightEl) draft.height = Number(heightEl.value) || 220;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
@@ -1333,6 +1485,7 @@ const searchOutputStatsPaneMethods = {
             const aggEl = row.querySelector('[data-wf-dash-stats-draft="series-agg"]');
             const labelEl = row.querySelector('[data-wf-dash-stats-draft="series-label"]');
             const renderEl = row.querySelector('[data-wf-dash-stats-draft="series-render"]');
+            const lineStyleEl = row.querySelector('[data-wf-dash-stats-draft="series-lineStyle"]');
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
             if (!metricEl || !aggEl) return;
@@ -1342,6 +1495,7 @@ const searchOutputStatsPaneMethods = {
                 label: labelEl ? labelEl.value : ''
             };
             if (renderEl) entry.renderAs = renderEl.value === 'line' ? 'line' : 'bar';
+            if (lineStyleEl) entry.lineStyle = lineStyleEl.value === 'shaded' ? 'shaded' : 'line';
             if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
             if (segmentEl) entry.segmentBy = segmentEl.value || null;
             series.push(entry);
@@ -1380,12 +1534,15 @@ const searchOutputStatsPaneMethods = {
                     agg: 'avg',
                     label: '',
                     renderAs: draft.series.length === 0 ? 'bar' : 'line',
+                    lineStyle: 'line',
                     yAxis: draft.series.length === 0 ? 'y' : 'y1'
                 });
             }
             if (meta.needsRenderAs) {
                 draft.series.forEach((s, i) => {
                     if (!s.renderAs) s.renderAs = i === 0 ? 'bar' : 'line';
+                    if (s.renderAs === 'line' && !s.lineStyle) s.lineStyle = 'line';
+                    if (s.renderAs !== 'line') s.lineStyle = 'line';
                     if (meta.needsDualAxis && s.yAxis == null) {
                         s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
                     }
@@ -1415,6 +1572,12 @@ const searchOutputStatsPaneMethods = {
             }
             if (!meta.needsBarLayout) {
                 draft.barLayout = 'grouped';
+            }
+            if (!meta.needsOrientation) {
+                draft.orientation = 'vertical';
+            }
+            if (!meta.needsLineAreaLayout) {
+                draft.lineAreaLayout = 'origin';
             }
         }
         void this._renderStatsBuilder();
@@ -1453,6 +1616,7 @@ const searchOutputStatsPaneMethods = {
             agg: firstNumeric ? 'avg' : 'count',
             label: '',
             renderAs: draft.series.length === 0 ? 'bar' : 'line',
+            lineStyle: 'line',
             yAxis: 'y'
         });
         void this._renderStatsBuilder();
@@ -1471,10 +1635,15 @@ const searchOutputStatsPaneMethods = {
     _onStatsBuilderSeriesRenderChange() {
         this._syncStatsBuilderDraftFromForm();
         const draft = this._state.statsBuilderDraft;
-        if (!draft || draft.type !== 'combo') return;
+        if (!draft || this._statsNormalizeChartType(draft.type) !== 'barLine') return;
         draft.series.forEach((s) => {
             s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
-            if (s.renderAs === 'line') s.segmentBy = null;
+            if (s.renderAs === 'line') {
+                s.segmentBy = null;
+                if (!s.lineStyle) s.lineStyle = 'line';
+            } else {
+                s.lineStyle = 'line';
+            }
         });
         void this._renderStatsBuilder();
     },
@@ -2130,7 +2299,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.14',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
