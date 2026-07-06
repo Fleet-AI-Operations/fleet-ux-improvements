@@ -61,6 +61,16 @@ function dashAllFlyoutMsKeys() {
     return dashFilterScopes().map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
 }
 
+function dashStatsChartFilterMsKeys(modal) {
+    if (!modal) return [];
+    const keys = [];
+    modal.querySelectorAll('[data-wf-dash-ms-wrap]').forEach((wrap) => {
+        const key = wrap.getAttribute('data-wf-dash-ms-wrap');
+        if (key && key.startsWith('stats-chart-filter-')) keys.push(key);
+    });
+    return keys;
+}
+
 function dashLib() {
     return Context.dashboardLib;
 }
@@ -81,7 +91,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.10',
+    _version: '9.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2524,6 +2534,9 @@ const plugin = {
     _syncAllMsDropdowns(options) {
         const keys = dashFilterScopes().map((s) => s.scopeKey)
             .concat(DASH_SEARCH_MS_KEYS, ...DASH_TEAM_MEMBERS_MS_KEYS);
+        if (this._modal) {
+            keys.push(...dashStatsChartFilterMsKeys(this._modal));
+        }
         for (const key of keys) this._syncMsDropdown(key, options);
     },
 
