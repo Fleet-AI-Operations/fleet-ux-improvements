@@ -1257,9 +1257,6 @@ const searchOutputResultsPaneMethods = {
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
         this._renderRatingsPanel();
-        if ((this._state.statsTab || 'ratings') === 'stats') {
-            void this._renderStatsPanel();
-        }
     },
 
     _syncDropExcludedUi() {
@@ -5015,7 +5012,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

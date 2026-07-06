@@ -59,14 +59,9 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _statsScopeSegmentStyle(active) {
-        if (typeof this._segmentBtnStyle === 'function') {
-            return this._segmentBtnStyle(active, 'depth');
-        }
-        const base = 'padding: 4px 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border, #e2e8f0); cursor: pointer; background: transparent;';
-        return active
-            ? base + ' color: var(--foreground, #0f172a); background: color-mix(in srgb, var(--brand, #2563eb) 12%, transparent); border-color: var(--brand, #2563eb);'
-            : base + ' color: var(--muted-foreground, #64748b);';
+    _statsScopeSegBtn(scope, label, active, divider) {
+        const divCls = divider ? ' dv-seg-btn--divider' : '';
+        return '<button type="button" data-wf-dash-stats-scope="' + dashEscHtml(scope) + '" class="dv-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
     },
 
     _ensureStatsScopeToggle(headerActions) {
@@ -75,10 +70,10 @@ const searchOutputStatsPaneMethods = {
         if (!wrap) {
             wrap = document.createElement('div');
             wrap.setAttribute('data-wf-dash-stats-scope-wrap', 'true');
-            wrap.style.cssText = 'display: inline-flex; align-items: center; gap: 0; margin-right: 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; overflow: hidden;';
-            wrap.innerHTML = ''
-                + '<button type="button" data-wf-dash-stats-scope="filtered" aria-pressed="true" style="' + this._statsScopeSegmentStyle(true) + '">Filtered</button>'
-                + '<button type="button" data-wf-dash-stats-scope="all" aria-pressed="false" style="' + this._statsScopeSegmentStyle(false) + '">All</button>';
+            wrap.className = 'dv-seg-group';
+            wrap.style.cssText = 'margin-right: 8px;';
+            wrap.innerHTML = this._statsScopeSegBtn('filtered', 'Filtered', true, true)
+                + this._statsScopeSegBtn('all', 'All', false, false);
             headerActions.insertBefore(wrap, headerActions.firstChild);
         }
         return wrap;
@@ -97,7 +92,6 @@ const searchOutputStatsPaneMethods = {
                 const scope = btn.getAttribute('data-wf-dash-stats-scope');
                 const active = scope === 'filtered' ? useFiltered : !useFiltered;
                 btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-                btn.style.cssText = this._statsScopeSegmentStyle(active);
             });
         }
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
@@ -119,6 +113,26 @@ const searchOutputStatsPaneMethods = {
         Logger.log('search-output-stats-pane: stats scope ' + (next ? 'filtered' : 'all'));
         this._syncStatsScopeToggleUi();
         void this._renderStatsPanel();
+    },
+
+    _isStatsHydrationBlocking() {
+        if (typeof this._isTasksHydratingActive === 'function' && this._isTasksHydratingActive()) {
+            return true;
+        }
+        if (this._state.hydrateFetchActive) return true;
+        if (this._state.pageHydrateScheduled || this._state.pageHydratePending) return true;
+        const phase = String(this._state.searchLoadPhase || '').toLowerCase();
+        return phase.includes('hydrat');
+    },
+
+    _statsHydrationWaitHtml() {
+        const label = typeof this._labelStyle === 'function' ? this._labelStyle() : '';
+        const spinner = typeof this._loadingSpinnerHtml === 'function'
+            ? this._loadingSpinnerHtml(14)
+            : '';
+        return '<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; ' + label + '">'
+            + spinner
+            + '<span>Hydrating results…</span></span>';
     },
 
     _getStatsScopeItems() {
@@ -286,14 +300,22 @@ const searchOutputStatsPaneMethods = {
         if (!emptyEl || !chartsEl) return;
 
         this._syncStatsScopeToggleUi();
-        this._destroyStatsCharts();
 
         const fallbackEl = chartsEl.querySelector('[data-wf-dash-stats-fallback]');
         if (fallbackEl) fallbackEl.remove();
 
         if (!this._state.hasSearched || !this._state.cachedItems) {
+            this._destroyStatsCharts();
             emptyEl.style.display = '';
             emptyEl.textContent = 'Run a search to load results.';
+            chartsEl.style.display = 'none';
+            this._renderStatsWarnings([]);
+            return;
+        }
+
+        if (this._isStatsHydrationBlocking()) {
+            emptyEl.style.display = '';
+            emptyEl.innerHTML = this._statsHydrationWaitHtml();
             chartsEl.style.display = 'none';
             this._renderStatsWarnings([]);
             return;
@@ -304,6 +326,7 @@ const searchOutputStatsPaneMethods = {
         this._renderStatsWarnings(warnings);
 
         if (items.length === 0) {
+            this._destroyStatsCharts();
             emptyEl.style.display = '';
             emptyEl.textContent = 'No results in this scope.';
             chartsEl.style.display = 'none';
@@ -312,6 +335,7 @@ const searchOutputStatsPaneMethods = {
 
         emptyEl.style.display = 'none';
         chartsEl.style.display = 'flex';
+        this._destroyStatsCharts();
 
         const statusRows = this._aggregateStatusCounts(items);
         const hydratedItems = items.filter((item) => item && item.hydrated === true);
@@ -903,7 +927,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
