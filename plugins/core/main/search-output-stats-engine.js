@@ -127,7 +127,10 @@ function statsNormalizeSegmentBy(raw, groupBy) {
 function statsSeriesAllowsSegment(chartType, seriesEntry) {
     const type = statsNormalizeChartType(chartType);
     if (type !== 'barLine') return false;
-    return seriesEntry.renderAs !== 'line';
+    if (seriesEntry.renderAs === 'line') {
+        return seriesEntry.lineStyle === 'shaded';
+    }
+    return true;
 }
 
 function statsSeriesSegmentBy(seriesEntry, chartType) {
@@ -951,12 +954,21 @@ function statsCountBarDatasets(chart, catalog) {
     return count;
 }
 
-function statsCountShadedLineDatasets(chart) {
+function statsCountShadedLineDatasets(chart, catalog) {
     const type = statsNormalizeChartType(chart.type);
     if (type !== 'barLine') return 0;
     let count = 0;
     for (const s of chart.series || []) {
-        if (s.renderAs === 'line' && s.lineStyle === 'shaded') count += 1;
+        if (s.renderAs !== 'line' || s.lineStyle !== 'shaded') continue;
+        const segmentBy = statsSeriesAllowsSegment(type, s)
+            ? statsNormalizeSegmentBy(s.segmentBy, chart.groupBy)
+            : null;
+        if (!segmentBy) {
+            count += 1;
+            continue;
+        }
+        const segmentDim = statsFindDimension(catalog, segmentBy);
+        count += segmentDim && segmentDim.options.length ? segmentDim.options.length : 1;
     }
     return count;
 }
@@ -1075,7 +1087,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1113,7 +1125,7 @@ const plugin = {
             sanitizeExportSlug: (text) => statsSanitizeExportSlug(text),
             exportDateSlug: () => statsExportDateSlug(),
             countBarDatasets: (chart, catalog) => statsCountBarDatasets(chart, catalog),
-            countShadedLineDatasets: (chart) => statsCountShadedLineDatasets(chart),
+            countShadedLineDatasets: (chart, catalog) => statsCountShadedLineDatasets(chart, catalog),
             seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
         };
         if (state) state.registered = true;

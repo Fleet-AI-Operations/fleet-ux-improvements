@@ -1373,7 +1373,11 @@ const searchOutputStatsPaneMethods = {
                     + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
                         '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
                     ).join('')
-                    + '</select></div>')
+                    + '</select>'
+                    + (s.renderAs === 'line' && s.lineStyle === 'shaded'
+                        ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Split one shaded metric into stackable areas.</div>'
+                        : '')
+                    + '</div>')
                 : '';
             const showSeriesLabel = !typeMeta.skipGroupBy;
             const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
@@ -1424,7 +1428,7 @@ const searchOutputStatsPaneMethods = {
                 + '</select></div>')
             : '';
         const shadedLineCount = engine.countShadedLineDatasets
-            ? engine.countShadedLineDatasets(draft)
+            ? engine.countShadedLineDatasets(draft, catalog)
             : 0;
         const lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
         const lineAreaLayoutRow = typeMeta.needsLineAreaLayout && shadedLineCount >= 2
@@ -1433,7 +1437,7 @@ const searchOutputStatsPaneMethods = {
                 + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
                 + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
                 + '</select>'
-                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Stacked shaded areas sum per group without overlapping fills.</div>'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Use with multiple shaded series or one shaded series with Segment by. Stacked areas sum per group without overlapping fills.</div>'
                 + '</div>')
             : '';
         const lib = Context.dashboardLib;
@@ -1659,10 +1663,22 @@ const searchOutputStatsPaneMethods = {
         draft.series.forEach((s) => {
             s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
             if (s.renderAs === 'line') {
-                s.segmentBy = null;
                 if (!s.lineStyle) s.lineStyle = 'line';
+                if (s.lineStyle !== 'shaded') s.segmentBy = null;
             } else {
                 s.lineStyle = 'line';
+            }
+        });
+        void this._renderStatsBuilder();
+    },
+
+    _onStatsBuilderLineStyleChange() {
+        this._syncStatsBuilderDraftFromForm();
+        const draft = this._state.statsBuilderDraft;
+        if (!draft) return;
+        draft.series.forEach((s) => {
+            if (s.renderAs === 'line' && s.lineStyle !== 'shaded') {
+                s.segmentBy = null;
             }
         });
         void this._renderStatsBuilder();
@@ -2319,7 +2335,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
