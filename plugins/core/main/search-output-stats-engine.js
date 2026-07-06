@@ -42,11 +42,11 @@ const STATS_AGGREGATIONS = [
 
 const STATS_CHART_TYPE_META = {
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true },
-    line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true },
+    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
+    line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
-    combo: { id: 'combo', label: 'Bar + line', minSeries: 2, maxSeries: 4, allowCountAxis: true, needsRenderAs: true },
+    combo: { id: 'combo', label: 'Bar + line', minSeries: 2, maxSeries: 4, allowCountAxis: true, needsRenderAs: true, needsDualAxis: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
     bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true }
 };
@@ -75,15 +75,32 @@ function statsNormalizePointMode(mode) {
     return mode === 'task' ? 'task' : 'bucket';
 }
 
-function statsNormalizeSeriesEntry(s, chartType) {
+function statsNormalizeYAxis(value) {
+    return value === 'y1' ? 'y1' : 'y';
+}
+
+function statsDefaultSeriesYAxis(chartType, seriesIndex, renderAs) {
+    if (chartType === 'combo') {
+        return renderAs === 'line' ? 'y1' : 'y';
+    }
+    return seriesIndex === 0 ? 'y' : 'y';
+}
+
+function statsNormalizeSeriesEntry(s, chartType, seriesIndex) {
     const meta = statsGetChartTypeMeta(chartType);
+    const renderAs = s.renderAs === 'line' ? 'line' : 'bar';
     const entry = {
         metricId: String(s.metricId || 'count'),
         agg: String(s.agg || 'count'),
         label: s.label != null ? String(s.label) : ''
     };
     if (meta.needsRenderAs) {
-        entry.renderAs = s.renderAs === 'line' ? 'line' : 'bar';
+        entry.renderAs = renderAs;
+    }
+    if (meta.needsDualAxis) {
+        entry.yAxis = s.yAxis != null
+            ? statsNormalizeYAxis(s.yAxis)
+            : statsDefaultSeriesYAxis(chartType, seriesIndex || 0, meta.needsRenderAs ? renderAs : null);
     }
     return entry;
 }
@@ -91,11 +108,11 @@ function statsNormalizeSeriesEntry(s, chartType) {
 function statsNormalizeChartEntry(c) {
     const type = statsNormalizeChartType(c.type);
     const meta = statsGetChartTypeMeta(type);
-    let series = (c.series || []).map((s) => statsNormalizeSeriesEntry(s, type));
+    let series = (c.series || []).map((s, i) => statsNormalizeSeriesEntry(s, type, i));
     if (series.length > meta.maxSeries) series = series.slice(0, meta.maxSeries);
     if (series.length < meta.minSeries && meta.minSeries > 0) {
         while (series.length < meta.minSeries) {
-            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type));
+            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length));
         }
     }
     const chart = {
@@ -132,8 +149,8 @@ function statsDefaultLayout() {
                 type: 'line',
                 groupBy: 'envKeys',
                 series: [
-                    { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)' },
-                    { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)' }
+                    { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)', yAxis: 'y' },
+                    { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)', yAxis: 'y1' }
                 ],
                 height: 240,
                 presetKey: 'env-timing'
@@ -468,6 +485,10 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
     return { labels, datasets };
 }
 
+function statsChartUsesSecondaryY(chart) {
+    return (chart.series || []).some((s) => s.yAxis === 'y1');
+}
+
 function statsAggregatePointChart(chart, items, catalog, ctx) {
     const lib = Context.dashboardLib;
     const getMetricValue = ctx && ctx.getMetricValue;
@@ -537,7 +558,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

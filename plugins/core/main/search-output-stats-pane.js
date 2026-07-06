@@ -160,6 +160,9 @@ const searchOutputStatsPaneMethods = {
                 if (engineMeta && engineMeta.needsRenderAs) {
                     entry.renderAs = s.renderAs === 'line' ? 'line' : 'bar';
                 }
+                if (engineMeta && engineMeta.needsDualAxis) {
+                    entry.yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
+                }
                 return entry;
             }),
             height: Number(draft.height) || 220,
@@ -433,19 +436,36 @@ const searchOutputStatsPaneMethods = {
         return {
             responsive: true,
             maintainAspectRatio: false,
-            scales: {
-                x: {
-                    ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
-                    grid: { color: theme.border }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: theme.muted, font: { size: 10 } },
-                    grid: { color: theme.border }
-                }
-            },
+            scales: this._statsCartesianScales(chart, theme),
             plugins: { legend: baseLegend }
         };
+    },
+
+    _statsCartesianScales(chart, theme) {
+        const useY1 = (chart.series || []).some((s) => s.yAxis === 'y1');
+        const scales = {
+            x: {
+                ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
+                grid: { color: theme.border }
+            },
+            y: {
+                type: 'linear',
+                position: 'left',
+                beginAtZero: true,
+                ticks: { color: theme.muted, font: { size: 10 } },
+                grid: { color: theme.border }
+            }
+        };
+        if (useY1) {
+            scales.y1 = {
+                type: 'linear',
+                position: 'right',
+                beginAtZero: true,
+                ticks: { color: theme.brandAlt, font: { size: 10 } },
+                grid: { drawOnChartArea: false }
+            };
+        }
+        return scales;
     },
 
     _buildChartJsConfig(chart, aggData, theme) {
@@ -514,12 +534,14 @@ const searchOutputStatsPaneMethods = {
             const renderAs = type === 'combo'
                 ? (seriesEntry.renderAs === 'line' ? 'line' : 'bar')
                 : chartJsType;
+            const yAxisID = seriesEntry.yAxis === 'y1' ? 'y1' : 'y';
             const base = {
                 type: renderAs,
                 label: ds.label,
                 data: ds.data,
                 borderColor: color,
-                backgroundColor: renderAs === 'line' ? color : color
+                backgroundColor: renderAs === 'line' ? color : color,
+                yAxisID
             };
             if (renderAs === 'line') {
                 return Object.assign(base, { tension: 0.2, spanGaps: true, pointRadius: 3, fill: false });
@@ -626,6 +648,14 @@ const searchOutputStatsPaneMethods = {
                     + '<option value="line"' + (s.renderAs === 'line' ? ' selected' : '') + '>Line</option>'
                     + '</select></div>')
                 : '';
+            const yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
+            const yAxisHtml = typeMeta.needsDualAxis
+                ? ('<div style="flex: 0 0 90px;"><div style="' + fieldLabel + '">Y axis</div>'
+                    + '<select data-wf-dash-stats-draft="series-yaxis" data-series-idx="' + i + '" style="' + inputStyle + '">'
+                    + '<option value="y"' + (yAxis === 'y' ? ' selected' : '') + '>Left</option>'
+                    + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
+                    + '</select></div>')
+                : '';
             const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
             seriesHtml += '<div data-wf-dash-stats-series-row="' + i + '" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px;">'
                 + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Metric</div>'
@@ -635,6 +665,7 @@ const searchOutputStatsPaneMethods = {
                 + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Series label</div>'
                 + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>'
                 + renderAsHtml
+                + yAxisHtml
                 + (showRemove
                     ? '<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 6px 8px;">×</button>'
                     : '')
@@ -684,6 +715,7 @@ const searchOutputStatsPaneMethods = {
             const aggEl = row.querySelector('[data-wf-dash-stats-draft="series-agg"]');
             const labelEl = row.querySelector('[data-wf-dash-stats-draft="series-label"]');
             const renderEl = row.querySelector('[data-wf-dash-stats-draft="series-render"]');
+            const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             if (!metricEl || !aggEl) return;
             const entry = {
                 metricId: metricEl.value,
@@ -691,6 +723,7 @@ const searchOutputStatsPaneMethods = {
                 label: labelEl ? labelEl.value : ''
             };
             if (renderEl) entry.renderAs = renderEl.value === 'line' ? 'line' : 'bar';
+            if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
             series.push(entry);
         });
         if (series.length) draft.series = series;
@@ -725,12 +758,20 @@ const searchOutputStatsPaneMethods = {
                     metricId: pick,
                     agg: 'avg',
                     label: '',
-                    renderAs: draft.series.length === 0 ? 'bar' : 'line'
+                    renderAs: draft.series.length === 0 ? 'bar' : 'line',
+                    yAxis: draft.series.length === 0 ? 'y' : 'y1'
                 });
             }
             if (meta.needsRenderAs) {
                 draft.series.forEach((s, i) => {
                     if (!s.renderAs) s.renderAs = i === 0 ? 'bar' : 'line';
+                    if (meta.needsDualAxis && s.yAxis == null) {
+                        s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
+                    }
+                });
+            } else if (meta.needsDualAxis) {
+                draft.series.forEach((s, i) => {
+                    if (s.yAxis == null) s.yAxis = i === 0 ? 'y' : 'y';
                 });
             }
             if (meta.needsPointMode && !draft.pointMode) {
@@ -758,7 +799,8 @@ const searchOutputStatsPaneMethods = {
             metricId: firstNumeric ? firstNumeric.id : 'count',
             agg: firstNumeric ? 'avg' : 'count',
             label: '',
-            renderAs: draft.series.length === 0 ? 'bar' : 'line'
+            renderAs: draft.series.length === 0 ? 'bar' : 'line',
+            yAxis: 'y'
         });
         void this._renderStatsBuilder();
     },
@@ -770,6 +812,16 @@ const searchOutputStatsPaneMethods = {
         const i = Number(idx);
         if (!Number.isFinite(i) || i < 0 || i >= draft.series.length) return;
         draft.series.splice(i, 1);
+        void this._renderStatsBuilder();
+    },
+
+    _onStatsBuilderSeriesRenderChange() {
+        this._syncStatsBuilderDraftFromForm();
+        const draft = this._state.statsBuilderDraft;
+        if (!draft || draft.type !== 'combo') return;
+        draft.series.forEach((s) => {
+            s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
+        });
         void this._renderStatsBuilder();
     },
 
@@ -1400,7 +1452,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
