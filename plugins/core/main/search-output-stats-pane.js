@@ -125,16 +125,6 @@ const searchOutputStatsPaneMethods = {
         return phase.includes('hydrat');
     },
 
-    _statsHydrationWaitHtml() {
-        const label = typeof this._labelStyle === 'function' ? this._labelStyle() : '';
-        const spinner = typeof this._loadingSpinnerHtml === 'function'
-            ? this._loadingSpinnerHtml(14)
-            : '';
-        return '<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; ' + label + '">'
-            + spinner
-            + '<span>Hydrating results…</span></span>';
-    },
-
     _getStatsScopeItems() {
         if (!this._state.cachedItems) return [];
         if (this._state.statsUseFiltered !== false) {
@@ -315,7 +305,7 @@ const searchOutputStatsPaneMethods = {
 
         if (this._isStatsHydrationBlocking()) {
             emptyEl.style.display = '';
-            emptyEl.innerHTML = this._statsHydrationWaitHtml();
+            emptyEl.textContent = 'Charts will load once hydration is complete';
             chartsEl.style.display = 'none';
             this._renderStatsWarnings([]);
             return;
@@ -927,7 +917,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
