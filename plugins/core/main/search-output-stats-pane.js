@@ -44,7 +44,10 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-toolbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; min-height: 28px;">'
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;"></div>'
+            + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">'
+            + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export dashboard</button>'
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
+            + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
@@ -219,12 +222,16 @@ const searchOutputStatsPaneMethods = {
         const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
         const buildBtn = this._q('[data-wf-dash-stats-build]');
+        const exportDashBtn = this._q('[data-wf-dash-stats-export-dashboard]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
         const builderEl = this._q('#wf-dash-stats-builder');
         const mode = this._state.statsViewMode || 'dashboard';
         if (toolbar) toolbar.style.display = tab === 'stats' ? 'flex' : 'none';
         if (buildBtn) {
             buildBtn.textContent = mode === 'builder' ? 'Back to dashboard' : 'Build Chart';
+        }
+        if (exportDashBtn) {
+            exportDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
         }
         if (dashEl) dashEl.style.display = (tab === 'stats' && mode === 'dashboard') ? 'flex' : 'none';
         if (builderEl) builderEl.style.display = (tab === 'stats' && mode === 'builder') ? 'flex' : 'none';
@@ -486,6 +493,7 @@ const searchOutputStatsPaneMethods = {
             + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" title="Drag to reorder" style="cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1;">⠿</span>'
             + '<div style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + dashEscHtml(chart.title) + '</div>'
             + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Edit</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export</button>'
             + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" title="Delete chart" aria-label="Delete chart" style="border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px;">×</button>'
             + '</div>'
             + filterSubtitle
@@ -746,6 +754,120 @@ const searchOutputStatsPaneMethods = {
         }
     },
 
+    _showStatsBuilderImportError(message) {
+        const el = this._q('#wf-dash-stats-builder-validation');
+        if (!el) return;
+        el.style.display = '';
+        el.textContent = message;
+    },
+
+    _ensureStatsImportFileInput() {
+        if (!this._modal) return null;
+        let input = this._q('#wf-dash-stats-import-file');
+        if (!input) {
+            input = document.createElement('input');
+            input.type = 'file';
+            input.id = 'wf-dash-stats-import-file';
+            input.accept = 'application/json,.json';
+            input.style.display = 'none';
+            input.addEventListener('change', (e) => {
+                this._handleStatsImportFile(e);
+            });
+            this._modal.appendChild(input);
+        }
+        return input;
+    },
+
+    _exportStatsDashboard() {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.exportLayoutObject !== 'function') {
+            Logger.warn('search-output-stats-pane: dashboard export skipped — stats engine unavailable');
+            return;
+        }
+        const layout = this._ensureStatsLayout();
+        const payload = engine.exportLayoutObject(layout);
+        const date = typeof engine.exportDateSlug === 'function' ? engine.exportDateSlug() : 'export';
+        const filename = 'fleet-stats-dashboard-' + date + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+        Logger.log('search-output-stats-pane: dashboard exported — ' + payload.charts.length + ' chart(s)');
+    },
+
+    _exportStatsChart(chartId) {
+        const engine = Context.statsEngine;
+        if (!engine || !chartId || typeof engine.exportChartObject !== 'function') {
+            Logger.warn('search-output-stats-pane: chart export skipped — missing chart or engine');
+            return;
+        }
+        const layout = this._ensureStatsLayout();
+        const chart = layout.charts.find((c) => c.id === chartId);
+        if (!chart) {
+            Logger.warn('search-output-stats-pane: chart export skipped — chart not found ' + chartId);
+            return;
+        }
+        const payload = engine.exportChartObject(chart);
+        const slug = typeof engine.sanitizeExportSlug === 'function'
+            ? engine.sanitizeExportSlug(chart.title)
+            : 'chart';
+        const date = typeof engine.exportDateSlug === 'function' ? engine.exportDateSlug() : 'export';
+        const filename = 'fleet-stats-chart-' + slug + '-' + date + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+        Logger.log('search-output-stats-pane: chart exported — ' + (chart.title || chartId));
+    },
+
+    _triggerStatsImportJson() {
+        const input = this._ensureStatsImportFileInput();
+        if (!input) return;
+        input.value = '';
+        input.click();
+    },
+
+    _handleStatsImportFile(event) {
+        const engine = Context.statsEngine;
+        const file = event && event.target && event.target.files && event.target.files[0];
+        if (!file || !engine || typeof engine.parseImportPayload !== 'function') return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(String(reader.result || ''));
+                const payload = engine.parseImportPayload(parsed);
+                if (!payload || !payload.charts || !payload.charts.length) {
+                    this._showStatsBuilderImportError('Import failed — expected a chart object or dashboard with a charts array');
+                    Logger.warn('search-output-stats-pane: stats import rejected — invalid payload');
+                    return;
+                }
+                const layout = this._ensureStatsLayout();
+                let added = 0;
+                for (const raw of payload.charts) {
+                    const chart = typeof engine.prepareImportedChart === 'function'
+                        ? engine.prepareImportedChart(raw)
+                        : null;
+                    if (!chart) continue;
+                    layout.charts.push(chart);
+                    added += 1;
+                }
+                if (!added) {
+                    this._showStatsBuilderImportError('Import failed — no valid charts found in JSON');
+                    Logger.warn('search-output-stats-pane: stats import rejected — no valid charts');
+                    return;
+                }
+                this._persistStatsLayout();
+                this._renderStatsBuilderValidation(null);
+                Logger.log('search-output-stats-pane: imported ' + added + ' chart(s) from ' + payload.kind);
+                this._closeStatsBuilder();
+            } catch (e) {
+                this._showStatsBuilderImportError('Import failed — invalid JSON');
+                Logger.warn('search-output-stats-pane: stats import parse failed', e);
+            }
+        };
+        reader.onerror = () => {
+            this._showStatsBuilderImportError('Import failed — could not read file');
+            Logger.warn('search-output-stats-pane: stats import file read failed');
+        };
+        reader.readAsText(file);
+    },
+
     _renderStatsBuilder() {
         const el = this._q('#wf-dash-stats-builder');
         if (!el) return;
@@ -866,6 +988,7 @@ const searchOutputStatsPaneMethods = {
             + '</details>'
             + '<div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">'
             + '<button type="button" data-wf-dash-stats-builder-cancel="1" class="' + this._dashBtnClass('basic', 'nav') + '">Cancel</button>'
+            + '<button type="button" data-wf-dash-stats-builder-import="1" class="' + this._dashBtnClass('basic', 'nav') + '">Import JSON</button>'
             + '<button type="button" data-wf-dash-stats-builder-save="1" class="' + this._dashBtnClass('primary', 'nav') + '">Save chart</button>'
             + '</div>'
             + '</div>';
@@ -1662,7 +1785,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

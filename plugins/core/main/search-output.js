@@ -4606,6 +4606,16 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._openStatsBuilder(statsEditBtn.getAttribute('data-wf-dash-stats-chart-edit'));
                 return;
             }
+            const statsExportChartBtn = e.target.closest('[data-wf-dash-stats-chart-export]');
+            if (statsExportChartBtn && modal.contains(statsExportChartBtn)) {
+                dash._exportStatsChart(statsExportChartBtn.getAttribute('data-wf-dash-stats-chart-export'));
+                return;
+            }
+            const statsExportDashboardBtn = e.target.closest('[data-wf-dash-stats-export-dashboard]');
+            if (statsExportDashboardBtn && modal.contains(statsExportDashboardBtn)) {
+                dash._exportStatsDashboard();
+                return;
+            }
             const statsBuilderSave = e.target.closest('[data-wf-dash-stats-builder-save]');
             if (statsBuilderSave && modal.contains(statsBuilderSave)) {
                 dash._syncStatsBuilderDraftFromForm();
@@ -4615,6 +4625,11 @@ function attachSearchOutputListeners(modal, dash) {
             const statsBuilderCancel = e.target.closest('[data-wf-dash-stats-builder-cancel]');
             if (statsBuilderCancel && modal.contains(statsBuilderCancel)) {
                 dash._closeStatsBuilder();
+                return;
+            }
+            const statsBuilderImport = e.target.closest('[data-wf-dash-stats-builder-import]');
+            if (statsBuilderImport && modal.contains(statsBuilderImport)) {
+                dash._triggerStatsImportJson();
                 return;
             }
             const statsSeriesAdd = e.target.closest('[data-wf-dash-stats-series-add]');
@@ -5032,7 +5047,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.6',
+    _version: '7.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

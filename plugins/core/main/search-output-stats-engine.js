@@ -233,6 +233,53 @@ function statsNormalizeLayout(raw) {
     return { schemaVersion: STATS_LAYOUT_SCHEMA_VERSION, charts };
 }
 
+function statsIsImportableChartShape(c) {
+    return Boolean(
+        c && typeof c === 'object' && c.type && Array.isArray(c.series) && c.series.length > 0
+        && c.groupBy != null && String(c.groupBy)
+    );
+}
+
+function statsParseImportPayload(parsed) {
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (Array.isArray(parsed.charts)) {
+        const charts = parsed.charts.filter(statsIsImportableChartShape);
+        if (!charts.length) return null;
+        return { kind: 'dashboard', charts };
+    }
+    if (statsIsImportableChartShape(parsed)) {
+        return { kind: 'chart', charts: [parsed] };
+    }
+    return null;
+}
+
+function statsPrepareImportedChart(raw) {
+    if (!statsIsImportableChartShape(raw)) return null;
+    return statsNormalizeChartEntry(Object.assign({}, raw, { id: statsNewChartId() }));
+}
+
+function statsExportLayoutObject(layout) {
+    const normalized = statsNormalizeLayout(layout);
+    return {
+        schemaVersion: normalized.schemaVersion,
+        charts: normalized.charts.map((chart) => JSON.parse(JSON.stringify(chart)))
+    };
+}
+
+function statsExportChartObject(chart) {
+    const normalized = statsNormalizeChartEntry(Object.assign({}, chart, { id: chart && chart.id ? chart.id : statsNewChartId() }));
+    return JSON.parse(JSON.stringify(normalized));
+}
+
+function statsSanitizeExportSlug(text) {
+    const slug = String(text || 'chart').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return slug || 'chart';
+}
+
+function statsExportDateSlug() {
+    return new Date().toISOString().slice(0, 10);
+}
+
 function statsDimensionLabel(scopeKey, resolveScopeLabel) {
     if (typeof resolveScopeLabel === 'function') {
         return resolveScopeLabel(scopeKey);
@@ -674,7 +721,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -704,7 +751,13 @@ const plugin = {
             chartTypes: () => STATS_CHART_TYPES.slice(),
             aggregations: () => STATS_AGGREGATIONS.slice(),
             heightPresets: () => STATS_HEIGHT_PRESETS.slice(),
-            taskPointCap: STATS_TASK_POINT_CAP
+            taskPointCap: STATS_TASK_POINT_CAP,
+            parseImportPayload: (parsed) => statsParseImportPayload(parsed),
+            prepareImportedChart: (raw) => statsPrepareImportedChart(raw),
+            exportLayoutObject: (layout) => statsExportLayoutObject(layout),
+            exportChartObject: (chart) => statsExportChartObject(chart),
+            sanitizeExportSlug: (text) => statsSanitizeExportSlug(text),
+            exportDateSlug: () => statsExportDateSlug()
         };
         if (state) state.registered = true;
         Logger.log('search-output-stats-engine: registered (Context.statsEngine)');
