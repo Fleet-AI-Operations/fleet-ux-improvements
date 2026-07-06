@@ -432,22 +432,34 @@ const searchOutputStatsPaneMethods = {
         const draft = this._state.statsBuilderDraft;
         const engine = Context.statsEngine;
         if (!draft || !engine) {
-            if (statusEl) statusEl.textContent = 'Stats engine not loaded.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Stats engine not loaded.';
+            }
             return;
         }
 
         if (!this._state.hasSearched || !this._state.cachedItems) {
-            if (statusEl) statusEl.textContent = 'Run a search to preview charts.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Run a search to preview charts.';
+            }
             return;
         }
         if (this._isStatsHydrationBlocking()) {
-            if (statusEl) statusEl.textContent = 'Preview will load once hydration is complete.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Preview will load once hydration is complete.';
+            }
             return;
         }
 
         const items = this._getStatsScopeItems();
         if (!items.length) {
-            if (statusEl) statusEl.textContent = 'No results in this scope.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'No results in this scope.';
+            }
             return;
         }
 
@@ -460,9 +472,13 @@ const searchOutputStatsPaneMethods = {
         wrapEl.style.height = previewHeight + 'px';
 
         if (statusEl) {
-            statusEl.textContent = validation.ok
-                ? 'Live preview'
-                : ('Preview issue: ' + (validation.missing[0] && (validation.missing[0].label || validation.missing[0].id)));
+            if (validation.ok) {
+                statusEl.textContent = '';
+                statusEl.style.display = 'none';
+            } else {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Preview issue: ' + (validation.missing[0] && (validation.missing[0].label || validation.missing[0].id));
+            }
         }
 
         if (!validation.ok) {
@@ -474,7 +490,10 @@ const searchOutputStatsPaneMethods = {
 
         const aggData = engine.aggregateChart(chart, items, catalog, ctx);
         if (!this._statsChartHasRenderableData(chart, aggData)) {
-            if (statusEl) statusEl.textContent = 'No data to preview for these settings.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'No data to preview for these settings.';
+            }
             if (canvas) canvas.style.display = 'none';
             if (scorecardEl) scorecardEl.style.display = 'none';
             return;
@@ -507,7 +526,10 @@ const searchOutputStatsPaneMethods = {
 
         const chartApi = Context.chartJs;
         if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
-            if (statusEl) statusEl.textContent = 'Chart.js not available.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Chart.js not available.';
+            }
             return;
         }
 
@@ -523,7 +545,10 @@ const searchOutputStatsPaneMethods = {
             this._state.statsBuilderPreviewChart = new Chart(canvas, config);
         } catch (e) {
             Logger.warn('search-output-stats-pane: builder preview failed', e);
-            if (statusEl) statusEl.textContent = 'Preview failed to render.';
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Preview failed to render.';
+            }
         }
     },
 
@@ -534,7 +559,7 @@ const searchOutputStatsPaneMethods = {
             el.innerHTML = '<div id="wf-dash-stats-builder-form"></div>'
                 + '<div id="wf-dash-stats-builder-preview" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
                 + '<div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">Preview</div>'
-                + '<div id="wf-dash-stats-builder-preview-status" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-height: 16px;"></div>'
+                + '<div id="wf-dash-stats-builder-preview-status" style="display: none; font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
                 + '<div id="wf-dash-stats-builder-preview-wrap" style="position: relative; width: 100%; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); padding: 8px; box-sizing: border-box;">'
                 + '<div id="wf-dash-stats-builder-preview-scorecard" style="display: none; height: 100%;"></div>'
                 + '<canvas id="wf-dash-stats-builder-preview-canvas" style="display: block; width: 100%; height: 100%;"></canvas>'
@@ -2105,7 +2130,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.13',
+    _version: '4.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
