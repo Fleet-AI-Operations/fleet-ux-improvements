@@ -3851,11 +3851,64 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
+            const committed = s.committed;
+            if (committed.accumulatedResults) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const tabs = this._resultsKindTabsMeta(committed);
+                const activeTab = s.resultsKindTab || 'all';
+                let tabNote = '';
+                if (tabs.length > 1 && activeTab !== 'all') {
+                    const activeMeta = tabs.find((t) => t.id === activeTab);
+                    if (activeMeta) tabNote = ' in ' + activeMeta.label;
+                }
+                const countLabel = s.filteredItems.length === scopeTotal
+                    ? s.filteredItems.length + ' result(s)' + tabNote
+                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — accumulated results</span>`;
+                return;
+            }
+            if (committed.retrieveMode) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const countLabel = s.filteredItems.length === scopeTotal
+                    ? s.filteredItems.length + ' result(s)'
+                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
+                return;
+            }
+            const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
+                ? committed.authorLabels.join(', ')
+                : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
             const scopeTotal = this._getFilterScopeItems().length;
+            const tabs = this._resultsKindTabsMeta(committed);
+            const activeTab = s.resultsKindTab || 'all';
+            let tabNote = '';
+            if (tabs.length > 1 && activeTab !== 'all') {
+                const activeMeta = tabs.find((t) => t.id === activeTab);
+                if (activeMeta) tabNote = ' in ' + activeMeta.label;
+            }
             const countLabel = s.filteredItems.length === scopeTotal
-                ? s.filteredItems.length + ' result(s)'
-                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)}</span>`;
+                ? s.filteredItems.length + ' result(s)' + tabNote
+                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
+            const modes = [];
+            if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
+            if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
+            if (committed.includeDisputes) modes.push({ kind: 'dispute', label: 'disputes' });
+            if (committed.includeSeniorReview) modes.push({ kind: 'senior_review', label: 'Sr Review' });
+            const modeHtml = modes.map((mode, index) => {
+                const cfg = DASH_OUTPUT_KIND_CONFIG[mode.kind];
+                const hl = cfg ? cfg.textHighlight : '';
+                return (index > 0 ? ' + ' : '') + `<span style="${hl}">${dashEscHtml(mode.label)}</span>`;
+            }).join('');
+            const disputesNote = s.disputesBulkIncomplete
+                ? ' · disputes list may be incomplete (narrow date range)'
+                : '';
+            const flagsNote = s.flagsBulkIncomplete
+                ? ' · Sr Review list may be incomplete (narrow date range)'
+                : '';
+            const prefetchLoadingNote = this._prefetchLoadingActive()
+                ? ' · loading prefetch caches…'
+                : '';
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
             return;
         }
         el.textContent = '';
@@ -5012,7 +5065,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.4',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
