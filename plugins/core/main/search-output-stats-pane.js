@@ -534,17 +534,52 @@ const searchOutputStatsPaneMethods = {
         return (aggData.points && aggData.points.length) || (aggData.labels && aggData.labels.length);
     },
 
-    _buildChartJsOptions(chart, theme) {
+    _statsCircularLegendPosition(width, labelCount) {
+        const w = Number(width) || 0;
+        const n = Number(labelCount) || 0;
+        return w >= 280 && n >= 3 ? 'right' : 'bottom';
+    },
+
+    _statsCircularChartLegend(theme, labelCount, containerWidth) {
+        const position = this._statsCircularLegendPosition(containerWidth, labelCount);
+        return {
+            position,
+            align: position === 'right' ? 'start' : 'center',
+            labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
+        };
+    },
+
+    _statsApplyCircularLegendPosition(chart, width) {
+        if (!chart || !chart.options || !chart.options.plugins) return;
+        const legend = chart.options.plugins.legend;
+        if (!legend) return;
+        const labelCount = (chart.data && chart.data.labels) ? chart.data.labels.length : 0;
+        const next = this._statsCircularLegendPosition(width, labelCount);
+        if (legend.position === next) return;
+        legend.position = next;
+        legend.align = next === 'right' ? 'start' : 'center';
+        chart.update('none');
+    },
+
+    _buildChartJsOptions(chart, theme, chartJsCtx) {
+        const dash = this;
+        const labelCount = (chartJsCtx && chartJsCtx.labelCount) || 0;
+        const containerWidth = (chartJsCtx && chartJsCtx.containerWidth) || 0;
         const baseLegend = {
             position: 'bottom',
             labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
+        };
+        const circularLegend = this._statsCircularChartLegend(theme, labelCount, containerWidth);
+        const circularOnResize = (chart, size) => {
+            dash._statsApplyCircularLegendPosition(chart, size.width);
         };
         const type = chart.type;
         if (type === 'pie' || type === 'polarArea') {
             return {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: baseLegend }
+                plugins: { legend: circularLegend },
+                onResize: circularOnResize
             };
         }
         if (type === 'radar') {
@@ -559,7 +594,8 @@ const searchOutputStatsPaneMethods = {
                         pointLabels: { color: theme.foreground, font: { size: 10 } }
                     }
                 },
-                plugins: { legend: baseLegend }
+                plugins: { legend: circularLegend },
+                onResize: circularOnResize
             };
         }
         if (type === 'scatter' || type === 'bubble') {
@@ -630,9 +666,11 @@ const searchOutputStatsPaneMethods = {
         return scales;
     },
 
-    _buildChartJsConfig(chart, aggData, theme) {
+    _buildChartJsConfig(chart, aggData, theme, containerWidth) {
         const palette = this._statsPiePalette();
         const type = chart.type;
+        const labelCount = (aggData.labels || []).length;
+        const chartJsCtx = { labelCount, containerWidth: containerWidth || 0 };
 
         if (type === 'scatter' || type === 'bubble') {
             const points = aggData.points || [];
@@ -649,7 +687,7 @@ const searchOutputStatsPaneMethods = {
                         borderColor: theme.brand
                     }]
                 },
-                options: this._buildChartJsOptions(chart, theme)
+                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
             };
         }
 
@@ -666,7 +704,7 @@ const searchOutputStatsPaneMethods = {
                         borderColor: 'transparent'
                     }]
                 },
-                options: this._buildChartJsOptions(chart, theme)
+                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
             };
         }
 
@@ -685,7 +723,7 @@ const searchOutputStatsPaneMethods = {
             return {
                 type: 'radar',
                 data: { labels: aggData.labels, datasets },
-                options: this._buildChartJsOptions(chart, theme)
+                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
             };
         }
 
@@ -715,7 +753,7 @@ const searchOutputStatsPaneMethods = {
         return {
             type: chartJsType,
             data: { labels: aggData.labels, datasets },
-            options: this._buildChartJsOptions(chart, theme)
+            options: this._buildChartJsOptions(chart, theme, chartJsCtx)
         };
     },
 
@@ -1308,7 +1346,8 @@ const searchOutputStatsPaneMethods = {
             if (!canvas) continue;
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
             if (!this._statsChartHasRenderableData(chart, aggData)) continue;
-            const config = this._buildChartJsConfig(chart, aggData, theme);
+            const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
+            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth);
             charts[chart.id] = new Chart(canvas, config);
             rendered += 1;
         }
@@ -1785,7 +1824,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.6',
+    _version: '4.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
