@@ -29,6 +29,7 @@ const STATS_DYNAMIC_DIMENSION = {
 };
 
 const STATS_METRIC_LABELS = {
+    count: 'Count of results',
     prompt_version_count: 'Unique task versions'
 };
 
@@ -145,7 +146,7 @@ function statsDefaultLayout() {
                 title: 'Task status',
                 type: 'pie',
                 groupBy: 'statuses',
-                series: [{ metricId: 'count', agg: 'count', label: 'Count' }],
+                series: [{ metricId: 'count', agg: 'count', label: '' }],
                 height: 220,
                 presetKey: 'status'
             },
@@ -282,7 +283,12 @@ function statsBuildCatalog(ctx) {
         dimensionByKey[dim.key] = dim;
     }
 
-    const metrics = [{ id: 'count', label: 'Count', type: 'count', requiresHydration: false }];
+    const metrics = [{
+        id: 'count',
+        label: STATS_METRIC_LABELS.count,
+        type: 'count',
+        requiresHydration: false
+    }];
     const manualFields = (lib && lib.manualFilterFields) || [];
     for (const field of manualFields) {
         let sampleCount = 0;
@@ -551,7 +557,7 @@ function statsAggregateScorecard(chart, items, catalog, ctx) {
         return {
             value: (items || []).length,
             label: metricLabel,
-            subtitle: 'Count · ' + metricLabel,
+            subtitle: 'Count of results',
             labels: [],
             datasets: []
         };
@@ -589,7 +595,7 @@ function statsDefaultBuilderDraft(catalog) {
         title: '',
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
-        series: [{ metricId: 'count', agg: 'count', label: 'Count' }],
+        series: [{ metricId: 'count', agg: 'count', label: '' }],
         height: 220,
         pointMode: 'bucket',
         presetKey: null
@@ -600,7 +606,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

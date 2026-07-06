@@ -526,7 +526,7 @@ const searchOutputStatsPaneMethods = {
         }
 
         if (type === 'pie' || type === 'polarArea') {
-            const ds = (aggData.datasets || [])[0] || { label: 'Count', data: [] };
+            const ds = (aggData.datasets || [])[0] || { label: 'Count of results', data: [] };
             return {
                 type: type === 'polarArea' ? 'polarArea' : 'pie',
                 data: {
