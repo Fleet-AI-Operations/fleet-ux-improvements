@@ -40,7 +40,10 @@ const STATS_AGGREGATIONS = [
     { id: 'max', label: 'Max' }
 ];
 
+const STATS_SCORECARD_GROUP_BY = '__scope__';
+
 const STATS_CHART_TYPE_META = {
+    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
     line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
@@ -54,6 +57,7 @@ const STATS_CHART_TYPE_META = {
 const STATS_CHART_TYPES = Object.values(STATS_CHART_TYPE_META);
 
 const STATS_HEIGHT_PRESETS = [
+    { id: 140, label: 'Scorecard (140px)' },
     { id: 180, label: 'Compact (180px)' },
     { id: 220, label: 'Default (220px)' },
     { id: 280, label: 'Tall (280px)' }
@@ -119,9 +123,11 @@ function statsNormalizeChartEntry(c) {
         id: String(c.id),
         title: String(c.title || 'Chart'),
         type,
-        groupBy: String(c.groupBy),
+        groupBy: meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy),
         series,
-        height: Number.isFinite(Number(c.height)) ? Number(c.height) : 220,
+        height: Number.isFinite(Number(c.height))
+            ? Number(c.height)
+            : (meta.defaultHeight || 220),
         presetKey: c.presetKey != null ? String(c.presetKey) : null
     };
     if (meta.needsPointMode) {
@@ -339,7 +345,7 @@ function statsValidateChart(chart, catalog, items, ctx) {
     const dim = statsFindDimension(catalog, chart.groupBy);
     const series = chart.series || [];
 
-    if (!dim) {
+    if (!meta.skipGroupBy && !dim) {
         if (chart.groupBy === STATS_DYNAMIC_DIMENSION.key) {
             missing.push({ id: chart.groupBy, label: STATS_DYNAMIC_DIMENSION.label });
         } else {
@@ -532,8 +538,44 @@ function statsAggregatePointChart(chart, items, catalog, ctx) {
     return { labels: [], datasets: [], points };
 }
 
+function statsAggregateScorecard(chart, items, catalog, ctx) {
+    const s = (chart.series || [])[0];
+    if (!s) return { value: null, label: '', subtitle: '', labels: [], datasets: [] };
+    const getMetricValue = ctx && ctx.getMetricValue;
+    const aggDef = STATS_AGGREGATIONS.find((a) => a.id === s.agg);
+    const metric = statsFindMetric(catalog, s.metricId);
+    const metricLabel = s.label || (metric && metric.label) || s.metricId;
+    const subtitle = (aggDef && aggDef.label ? aggDef.label : s.agg) + ' · ' + metricLabel;
+
+    if (s.metricId === 'count' && s.agg === 'count') {
+        return {
+            value: (items || []).length,
+            label: metricLabel,
+            subtitle: 'Count · ' + metricLabel,
+            labels: [],
+            datasets: []
+        };
+    }
+
+    const values = [];
+    for (const item of items || []) {
+        const v = statsSeriesMetricValue(item, s, getMetricValue);
+        if (v != null && Number.isFinite(v)) values.push(v);
+    }
+    return {
+        value: statsApplyAgg(values, s.agg),
+        label: metricLabel,
+        subtitle,
+        labels: [],
+        datasets: []
+    };
+}
+
 function statsAggregateChart(chart, items, catalog, ctx) {
     const type = statsNormalizeChartType(chart.type);
+    if (type === 'scorecard') {
+        return statsAggregateScorecard(chart, items, catalog, ctx);
+    }
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, items, catalog, ctx);
     }
@@ -558,7 +600,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

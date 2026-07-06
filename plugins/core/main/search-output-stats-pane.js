@@ -358,6 +358,10 @@ const searchOutputStatsPaneMethods = {
                 + '<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">Missing parameter: ' + dashEscHtml(missingLabel) + '</span></div>')
             : '';
         const canvasOpacity = disabled ? ' opacity: 0.35; pointer-events: none;' : '';
+        const isScorecard = chart.type === 'scorecard';
+        const bodyContent = isScorecard
+            ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
+            : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
         return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" style="' + box + ' padding: 10px 12px; flex-shrink: 0; position: relative;">'
             + '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">'
             + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" title="Drag to reorder" style="cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1;">⠿</span>'
@@ -367,9 +371,39 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
             + overlay
-            + '<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>'
+            + bodyContent
             + '</div>'
             + '</div>';
+    },
+
+    _formatStatsScorecardValue(value) {
+        if (value == null || !Number.isFinite(value)) return '—';
+        if (Math.abs(value - Math.round(value)) < 0.05) {
+            return Math.round(value).toLocaleString();
+        }
+        return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    },
+
+    _renderStatsScorecardEl(chart, aggData) {
+        const el = this._q('[data-wf-dash-stats-scorecard="' + chart.id + '"]');
+        if (!el) return;
+        const theme = this._statsChartTheme();
+        const valueText = this._formatStatsScorecardValue(aggData.value);
+        const subtitle = aggData.subtitle || aggData.label || '';
+        el.innerHTML = '<div style="font-size: 32px; font-weight: 700; line-height: 1.1; color: ' + theme.foreground + '; letter-spacing: -0.02em;">'
+            + dashEscHtml(valueText)
+            + '</div>'
+            + (subtitle
+                ? '<div style="font-size: 11px; color: ' + theme.muted + '; margin-top: 6px; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+                    + dashEscHtml(subtitle) + '</div>'
+                : '');
+    },
+
+    _statsChartHasRenderableData(chart, aggData) {
+        if (chart.type === 'scorecard') {
+            return aggData.value != null && Number.isFinite(aggData.value);
+        }
+        return (aggData.points && aggData.points.length) || (aggData.labels && aggData.labels.length);
     },
 
     _buildChartJsOptions(chart, theme) {
@@ -657,14 +691,17 @@ const searchOutputStatsPaneMethods = {
                     + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
                     + '</select></div>')
                 : '';
+            const showSeriesLabel = !typeMeta.skipGroupBy;
             const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
             seriesHtml += '<div data-wf-dash-stats-series-row="' + i + '" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px;">'
                 + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Metric</div>'
                 + '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + inputStyle + '">' + metricOpts + '</select></div>'
                 + '<div style="flex: 0 0 100px;"><div style="' + fieldLabel + '">Aggregation</div>'
                 + '<select data-wf-dash-stats-draft="series-agg" data-series-idx="' + i + '" style="' + inputStyle + '">' + aggOpts + '</select></div>'
-                + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Series label</div>'
-                + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>'
+                + (showSeriesLabel
+                    ? ('<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Series label</div>'
+                        + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>')
+                    : '')
                 + renderAsHtml
                 + yAxisHtml
                 + (showRemove
@@ -675,6 +712,10 @@ const searchOutputStatsPaneMethods = {
         const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
             ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
             : '';
+        const groupByRow = typeMeta.skipGroupBy
+            ? ''
+            : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
+                + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
         el.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 10px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
             + '<div><div style="' + fieldLabel + '">Title</div>'
@@ -682,13 +723,12 @@ const searchOutputStatsPaneMethods = {
             + '<div style="display: flex; gap: 8px; flex-wrap: wrap;">'
             + '<div style="flex: 1; min-width: 100px;"><div style="' + fieldLabel + '">Chart type</div>'
             + '<select data-wf-dash-stats-draft="type" style="' + inputStyle + '">' + typeOpts + '</select></div>'
-            + '<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
-            + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>'
+            + groupByRow
             + pointModeHtml
             + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Height</div>'
             + '<select data-wf-dash-stats-draft="height" style="' + inputStyle + '">' + heightOpts + '</select></div>'
             + '</div>'
-            + '<div><div style="' + fieldLabel + '">Series</div>' + seriesHtml + seriesActions + '</div>'
+            + '<div><div style="' + fieldLabel + '">' + (typeMeta.skipGroupBy ? 'Metric' : 'Series') + '</div>' + seriesHtml + seriesActions + '</div>'
             + '<div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">'
             + '<button type="button" data-wf-dash-stats-builder-cancel="1" class="' + this._dashBtnClass('basic', 'nav') + '">Cancel</button>'
             + '<button type="button" data-wf-dash-stats-builder-save="1" class="' + this._dashBtnClass('primary', 'nav') + '">Save chart</button>'
@@ -778,6 +818,14 @@ const searchOutputStatsPaneMethods = {
             if (meta.needsPointMode && !draft.pointMode) {
                 draft.pointMode = 'bucket';
             }
+            if (meta.skipGroupBy) {
+                draft.groupBy = '__scope__';
+                draft.series = (draft.series || []).slice(0, 1);
+                if (!draft.series.length) {
+                    draft.series = [{ metricId: 'count', agg: 'count', label: '' }];
+                }
+                if (!draft.height || draft.height > 180) draft.height = 140;
+            }
         }
         void this._renderStatsBuilder();
     },
@@ -847,6 +895,14 @@ const searchOutputStatsPaneMethods = {
         let extra = '';
         for (const chart of (layout && layout.charts) || []) {
             const agg = engine.aggregateChart(chart, items, catalog, ctx);
+            if (chart.type === 'scorecard') {
+                if (agg.value != null && Number.isFinite(agg.value)) {
+                    extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
+                        + dashEscHtml(String(agg.value)) + (agg.subtitle ? ' (' + dashEscHtml(agg.subtitle) + ')' : '')
+                        + '</div>';
+                }
+                continue;
+            }
             const pointCount = (agg.points || []).length;
             const labelCount = (agg.labels || []).length;
             if (!pointCount && !labelCount) continue;
@@ -945,6 +1001,24 @@ const searchOutputStatsPaneMethods = {
         const renderGen = (this._state.statsRenderGen || 0) + 1;
         this._state.statsRenderGen = renderGen;
 
+        let rendered = 0;
+        for (const { chart, validation } of validations) {
+            if (!validation.ok || chart.type !== 'scorecard') continue;
+            const aggData = engine.aggregateChart(chart, items, catalog, ctx);
+            if (!this._statsChartHasRenderableData(chart, aggData)) continue;
+            this._renderStatsScorecardEl(chart, aggData);
+            rendered += 1;
+        }
+
+        const canvasCharts = validations.filter(({ chart, validation }) => validation.ok && chart.type !== 'scorecard');
+        if (!canvasCharts.length) {
+            this._state.statsCharts = {};
+            if (rendered > 0) {
+                Logger.log('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
+            }
+            return;
+        }
+
         const chartApi = Context.chartJs;
         if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
             this._renderStatsWarnings([...warnings, 'Chart.js loader not available. Reload the page and try again.']);
@@ -968,14 +1042,11 @@ const searchOutputStatsPaneMethods = {
 
         const theme = this._statsChartTheme();
         const charts = {};
-        let rendered = 0;
-        for (const { chart, validation } of validations) {
-            if (!validation.ok) continue;
+        for (const { chart, validation } of canvasCharts) {
             const canvas = this._q('#wf-dash-stats-canvas-' + chart.id);
             if (!canvas) continue;
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
-            const hasData = (aggData.points && aggData.points.length) || (aggData.labels && aggData.labels.length);
-            if (!hasData) continue;
+            if (!this._statsChartHasRenderableData(chart, aggData)) continue;
             const config = this._buildChartJsConfig(chart, aggData, theme);
             charts[chart.id] = new Chart(canvas, config);
             rendered += 1;
@@ -1453,7 +1524,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
