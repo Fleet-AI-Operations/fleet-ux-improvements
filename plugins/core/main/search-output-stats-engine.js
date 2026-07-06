@@ -55,7 +55,7 @@ const STATS_SCORECARD_GROUP_BY = '__scope__';
 const STATS_CHART_TYPE_META = {
     scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true, needsBarLayout: true, needsSplitBy: true },
+    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true, needsBarLayout: true },
     line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
@@ -89,10 +89,28 @@ function statsNormalizeBarLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'grouped';
 }
 
-function statsNormalizeSplitBy(raw, groupBy) {
+function statsNormalizeSegmentBy(raw, groupBy) {
     const v = raw != null ? String(raw).trim() : '';
     if (!v || v === groupBy) return null;
     return v;
+}
+
+function statsSeriesAllowsSegment(chartType, seriesEntry) {
+    if (chartType === 'bar') return true;
+    if (chartType === 'combo') return seriesEntry.renderAs !== 'line';
+    return false;
+}
+
+function statsSeriesSegmentBy(seriesEntry, chartType) {
+    if (!statsSeriesAllowsSegment(chartType, seriesEntry)) return null;
+    return statsNormalizeSegmentBy(seriesEntry.segmentBy, null);
+}
+
+function statsSegmentByDimensionLabel(dimKey) {
+    const timeDef = STATS_TIME_GROUP_DIMENSIONS.find((d) => d.key === dimKey);
+    if (timeDef) return timeDef.label;
+    if (dimKey === STATS_DYNAMIC_DIMENSION.key) return STATS_DYNAMIC_DIMENSION.label;
+    return dimKey;
 }
 
 function statsSplitRowHasData(row) {
@@ -101,13 +119,6 @@ function statsSplitRowHasData(row) {
         if (vals && vals.length) return true;
     }
     return false;
-}
-
-function statsSplitByDimensionLabel(dimKey) {
-    const timeDef = STATS_TIME_GROUP_DIMENSIONS.find((d) => d.key === dimKey);
-    if (timeDef) return timeDef.label;
-    if (dimKey === STATS_DYNAMIC_DIMENSION.key) return STATS_DYNAMIC_DIMENSION.label;
-    return dimKey;
 }
 
 function statsNormalizePointMode(mode) {
@@ -178,7 +189,7 @@ function statsFilterItemsForChart(items, chart, ctx) {
     return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
 }
 
-function statsNormalizeSeriesEntry(s, chartType, seriesIndex) {
+function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy) {
     const meta = statsGetChartTypeMeta(chartType);
     const renderAs = s.renderAs === 'line' ? 'line' : 'bar';
     const entry = {
@@ -194,24 +205,35 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex) {
             ? statsNormalizeYAxis(s.yAxis)
             : statsDefaultSeriesYAxis(chartType, seriesIndex || 0, meta.needsRenderAs ? renderAs : null);
     }
+    if (statsSeriesAllowsSegment(chartType, entry)) {
+        const segmentRaw = s.segmentBy != null ? s.segmentBy : s.splitBy;
+        entry.segmentBy = statsNormalizeSegmentBy(segmentRaw, groupBy);
+    }
     return entry;
 }
 
 function statsNormalizeChartEntry(c) {
     const type = statsNormalizeChartType(c.type);
     const meta = statsGetChartTypeMeta(type);
-    let series = (c.series || []).map((s, i) => statsNormalizeSeriesEntry(s, type, i));
+    const groupBy = meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy);
+    const legacySegmentBy = c.splitBy != null ? statsNormalizeSegmentBy(c.splitBy, groupBy) : null;
+    let series = (c.series || []).map((s, i) => {
+        const src = legacySegmentBy && i === 0 && !s.segmentBy && !s.splitBy
+            ? Object.assign({}, s, { segmentBy: legacySegmentBy })
+            : s;
+        return statsNormalizeSeriesEntry(src, type, i, groupBy);
+    });
     if (series.length > meta.maxSeries) series = series.slice(0, meta.maxSeries);
     if (series.length < meta.minSeries && meta.minSeries > 0) {
         while (series.length < meta.minSeries) {
-            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length));
+            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length, groupBy));
         }
     }
     const chart = {
         id: String(c.id),
         title: String(c.title || 'Chart'),
         type,
-        groupBy: meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy),
+        groupBy,
         series,
         height: Number.isFinite(Number(c.height))
             ? Number(c.height)
@@ -223,9 +245,6 @@ function statsNormalizeChartEntry(c) {
     }
     if (meta.needsBarLayout) {
         chart.barLayout = statsNormalizeBarLayout(c.barLayout);
-    }
-    if (meta.needsSplitBy) {
-        chart.splitBy = statsNormalizeSplitBy(c.splitBy, chart.groupBy);
     }
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -637,17 +656,19 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
-    if (meta.needsSplitBy && chart.splitBy) {
-        if (chart.splitBy === chart.groupBy) {
-            missing.push({ id: 'splitBy', label: 'Split by (must differ from group by)' });
-        } else {
-            const splitDim = statsFindDimension(catalog, chart.splitBy);
-            if (!splitDim) {
-                missing.push({ id: chart.splitBy, label: statsSplitByDimensionLabel(chart.splitBy) });
-            }
+    for (let i = 0; i < series.length; i += 1) {
+        const s = series[i];
+        const segmentBy = statsSeriesAllowsSegment(type, s)
+            ? statsNormalizeSegmentBy(s.segmentBy, chart.groupBy)
+            : null;
+        if (!segmentBy) continue;
+        if (segmentBy === chart.groupBy) {
+            missing.push({ id: 'segmentBy', label: 'Segment by (must differ from group by)' });
+            continue;
         }
-        if (series.length !== 1) {
-            missing.push({ id: 'splitBy', label: 'Single series when split by is set' });
+        const segmentDim = statsFindDimension(catalog, segmentBy);
+        if (!segmentDim) {
+            missing.push({ id: segmentBy, label: statsSegmentByDimensionLabel(segmentBy) });
         }
     }
 
@@ -708,6 +729,88 @@ function statsApplyAgg(values, agg) {
     return nums.length;
 }
 
+function statsPushSeriesValue(bucket, seriesEntry, item, getMetricValue) {
+    if (seriesEntry.metricId === 'count' && seriesEntry.agg === 'count') {
+        bucket.push(1);
+    } else if (typeof getMetricValue === 'function') {
+        const v = getMetricValue(item, seriesEntry.metricId);
+        if (v != null && Number.isFinite(v)) bucket.push(v);
+    }
+}
+
+function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog) {
+    const splitOrder = segmentDim.options.map((o) => o.id);
+    const splitLabelById = new Map(segmentDim.options.map((o) => [o.id, o.label]));
+    const unknownKey = '__unknown__';
+    const matrix = new Map();
+    const isCount = seriesEntry.metricId === 'count' && seriesEntry.agg === 'count';
+    const getMetricValue = ctx && ctx.getMetricValue;
+
+    const ensureCell = (pk, sk) => {
+        if (!matrix.has(pk)) matrix.set(pk, new Map());
+        const row = matrix.get(pk);
+        if (!row.has(sk)) row.set(sk, []);
+        return row.get(sk);
+    };
+
+    for (const item of items || []) {
+        const pKeys = statsGetDimensionValues(item, chart.groupBy, lib, ctx);
+        const sKeys = statsGetDimensionValues(item, segmentBy, lib, ctx);
+        const pkList = pKeys.length ? pKeys : [unknownKey];
+        const skList = sKeys.length ? sKeys : [unknownKey];
+        for (const pk of pkList) {
+            for (const sk of skList) {
+                const cell = ensureCell(pk, sk);
+                statsPushSeriesValue(cell, seriesEntry, item, getMetricValue);
+            }
+        }
+    }
+
+    const splitKeysSeen = new Set();
+    for (const pk of keysOut) {
+        const row = matrix.get(pk);
+        if (!row) continue;
+        for (const [sk, vals] of row.entries()) {
+            if (vals && vals.length) splitKeysSeen.add(sk);
+        }
+    }
+
+    const metric = statsFindMetric(catalog, seriesEntry.metricId);
+    const seriesLabel = seriesEntry.label || (metric && metric.label) || seriesEntry.metricId;
+    const datasets = [];
+    const pushSegmentDataset = (sk, segmentLabel) => {
+        if (!splitKeysSeen.has(sk)) return;
+        const data = keysOut.map((pk) => {
+            const row = matrix.get(pk);
+            const cell = row && row.get(sk);
+            if (!cell || !cell.length) {
+                return isCount ? 0 : null;
+            }
+            return statsApplyAgg(cell, seriesEntry.agg);
+        });
+        const label = seriesEntry.label
+            ? seriesLabel + ' · ' + (segmentLabel || sk)
+            : (segmentLabel || sk);
+        datasets.push({
+            label,
+            data,
+            metricId: seriesEntry.metricId,
+            agg: seriesEntry.agg,
+            renderAs: seriesEntry.renderAs,
+            yAxis: seriesEntry.yAxis,
+            segmentSeries: true
+        });
+    };
+
+    for (const sk of splitOrder) {
+        pushSegmentDataset(sk, splitLabelById.get(sk) || sk);
+    }
+    if (splitKeysSeen.has(unknownKey)) {
+        pushSegmentDataset(unknownKey, '(unknown)');
+    }
+    return datasets;
+}
+
 function statsAggregateCategorical(chart, items, catalog, ctx) {
     const lib = Context.dashboardLib;
     const dim = statsFindDimension(catalog, chart.groupBy);
@@ -715,12 +818,13 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
 
     const optionOrder = dim.options.map((o) => o.id);
     const labelById = new Map(dim.options.map((o) => [o.id, o.label]));
+    const seriesList = chart.series || [];
     const buckets = new Map();
     for (const id of optionOrder) {
-        buckets.set(id, { counts: [], series: (chart.series || []).map(() => []) });
+        buckets.set(id, { counts: [], series: seriesList.map(() => []) });
     }
     const unknownKey = '__unknown__';
-    buckets.set(unknownKey, { counts: [], series: (chart.series || []).map(() => []) });
+    buckets.set(unknownKey, { counts: [], series: seriesList.map(() => []) });
 
     const getMetricValue = ctx && ctx.getMetricValue;
     for (const item of items || []) {
@@ -728,17 +832,12 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         const keys = values.length ? values : [unknownKey];
         for (const key of keys) {
             if (!buckets.has(key)) {
-                buckets.set(key, { counts: [], series: (chart.series || []).map(() => []) });
+                buckets.set(key, { counts: [], series: seriesList.map(() => []) });
             }
             const bucket = buckets.get(key);
             bucket.counts.push(1);
-            (chart.series || []).forEach((s, i) => {
-                if (s.metricId === 'count' && s.agg === 'count') {
-                    bucket.series[i].push(1);
-                } else if (typeof getMetricValue === 'function') {
-                    const v = getMetricValue(item, s.metricId);
-                    if (v != null && Number.isFinite(v)) bucket.series[i].push(v);
-                }
+            seriesList.forEach((s, i) => {
+                statsPushSeriesValue(bucket.series[i], s, item, getMetricValue);
             });
         }
     }
@@ -756,7 +855,22 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         keysOut.push(unknownKey);
     }
 
-    const datasets = (chart.series || []).map((s, si) => {
+    const datasets = [];
+    const chartType = statsNormalizeChartType(chart.type);
+    for (let si = 0; si < seriesList.length; si += 1) {
+        const s = seriesList[si];
+        const segmentBy = statsSeriesAllowsSegment(chartType, s)
+            ? statsNormalizeSegmentBy(s.segmentBy, chart.groupBy)
+            : null;
+        if (segmentBy) {
+            const segmentDim = statsFindDimension(catalog, segmentBy);
+            if (segmentDim) {
+                datasets.push(...statsBuildSegmentedSeriesDatasets(
+                    s, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
+                ));
+            }
+            continue;
+        }
         const data = keysOut.map((key) => {
             const bucket = buckets.get(key);
             if (!bucket) return null;
@@ -767,113 +881,36 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         });
         const metric = statsFindMetric(catalog, s.metricId);
         const label = s.label || (metric && metric.label) || s.metricId;
-        return {
+        datasets.push({
             label,
             data,
             metricId: s.metricId,
             agg: s.agg,
-            renderAs: s.renderAs
-        };
-    });
+            renderAs: s.renderAs,
+            yAxis: s.yAxis
+        });
+    }
 
     return { labels, datasets };
 }
 
-function statsAggregateSplitBar(chart, items, catalog, ctx) {
-    const lib = Context.dashboardLib;
-    const primaryDim = statsFindDimension(catalog, chart.groupBy);
-    const splitDim = statsFindDimension(catalog, chart.splitBy);
-    if (!primaryDim || !splitDim) return { labels: [], datasets: [] };
-
-    const seriesEntry = (chart.series || [])[0];
-    if (!seriesEntry) return { labels: [], datasets: [] };
-
-    const primaryOrder = primaryDim.options.map((o) => o.id);
-    const splitOrder = splitDim.options.map((o) => o.id);
-    const primaryLabelById = new Map(primaryDim.options.map((o) => [o.id, o.label]));
-    const splitLabelById = new Map(splitDim.options.map((o) => [o.id, o.label]));
-    const unknownKey = '__unknown__';
-    const matrix = new Map();
-    const isCount = seriesEntry.metricId === 'count' && seriesEntry.agg === 'count';
-    const getMetricValue = ctx && ctx.getMetricValue;
-
-    const ensureCell = (pk, sk) => {
-        if (!matrix.has(pk)) matrix.set(pk, new Map());
-        const row = matrix.get(pk);
-        if (!row.has(sk)) row.set(sk, []);
-        return row.get(sk);
-    };
-
-    for (const item of items || []) {
-        const pKeys = statsGetDimensionValues(item, chart.groupBy, lib, ctx);
-        const sKeys = statsGetDimensionValues(item, chart.splitBy, lib, ctx);
-        const pkList = pKeys.length ? pKeys : [unknownKey];
-        const skList = sKeys.length ? sKeys : [unknownKey];
-        for (const pk of pkList) {
-            for (const sk of skList) {
-                const cell = ensureCell(pk, sk);
-                if (isCount) {
-                    cell.push(1);
-                } else if (typeof getMetricValue === 'function') {
-                    const v = getMetricValue(item, seriesEntry.metricId);
-                    if (v != null && Number.isFinite(v)) cell.push(v);
-                }
-            }
+function statsCountBarDatasets(chart, catalog) {
+    const type = statsNormalizeChartType(chart.type);
+    if (type !== 'bar' && type !== 'combo') return 0;
+    let count = 0;
+    for (const s of chart.series || []) {
+        if (type === 'combo' && s.renderAs === 'line') continue;
+        const segmentBy = statsSeriesAllowsSegment(type, s)
+            ? statsNormalizeSegmentBy(s.segmentBy, chart.groupBy)
+            : null;
+        if (!segmentBy) {
+            count += 1;
+            continue;
         }
+        const segmentDim = statsFindDimension(catalog, segmentBy);
+        count += segmentDim && segmentDim.options.length ? segmentDim.options.length : 1;
     }
-
-    const primaryKeysOut = [];
-    const labels = [];
-    for (const pk of primaryOrder) {
-        if (!statsSplitRowHasData(matrix.get(pk))) continue;
-        primaryKeysOut.push(pk);
-        labels.push(primaryLabelById.get(pk) || pk);
-    }
-    if (statsSplitRowHasData(matrix.get(unknownKey))) {
-        primaryKeysOut.push(unknownKey);
-        labels.push('(unknown)');
-    }
-
-    const splitKeysSeen = new Set();
-    for (const pk of primaryKeysOut) {
-        const row = matrix.get(pk);
-        if (!row) continue;
-        for (const [sk, vals] of row.entries()) {
-            if (vals && vals.length) splitKeysSeen.add(sk);
-        }
-    }
-
-    const datasets = [];
-    const pushSplitDataset = (sk, label) => {
-        if (!splitKeysSeen.has(sk)) return;
-        const data = primaryKeysOut.map((pk) => {
-            const row = matrix.get(pk);
-            const cell = row && row.get(sk);
-            if (!cell || !cell.length) {
-                return isCount ? 0 : null;
-            }
-            return statsApplyAgg(cell, seriesEntry.agg);
-        });
-        const metric = statsFindMetric(catalog, seriesEntry.metricId);
-        const seriesLabel = seriesEntry.label || (metric && metric.label) || seriesEntry.metricId;
-        datasets.push({
-            label: label || sk,
-            data,
-            metricId: seriesEntry.metricId,
-            agg: seriesEntry.agg,
-            splitSeries: true,
-            seriesLabel
-        });
-    };
-
-    for (const sk of splitOrder) {
-        pushSplitDataset(sk, splitLabelById.get(sk) || sk);
-    }
-    if (splitKeysSeen.has(unknownKey)) {
-        pushSplitDataset(unknownKey, '(unknown)');
-    }
-
-    return { labels, datasets };
+    return count;
 }
 
 function statsChartUsesSecondaryY(chart) {
@@ -965,9 +1002,6 @@ function statsAggregateChart(chart, items, catalog, ctx) {
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
-    if (chart.splitBy) {
-        return statsAggregateSplitBar(chart, scopedItems, catalog, ctx);
-    }
     return statsAggregateCategorical(chart, scopedItems, catalog, ctx);
 }
 
@@ -982,7 +1016,6 @@ function statsDefaultBuilderDraft(catalog) {
         height: 220,
         pointMode: 'bucket',
         barLayout: 'grouped',
-        splitBy: null,
         presetKey: null,
         chartFilters: statsEmptyChartFilters()
     };
@@ -992,7 +1025,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1028,7 +1061,9 @@ const plugin = {
             exportLayoutObject: (layout) => statsExportLayoutObject(layout),
             exportChartObject: (chart) => statsExportChartObject(chart),
             sanitizeExportSlug: (text) => statsSanitizeExportSlug(text),
-            exportDateSlug: () => statsExportDateSlug()
+            exportDateSlug: () => statsExportDateSlug(),
+            countBarDatasets: (chart, catalog) => statsCountBarDatasets(chart, catalog),
+            seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
         };
         if (state) state.registered = true;
         Logger.log('search-output-stats-engine: registered (Context.statsEngine)');

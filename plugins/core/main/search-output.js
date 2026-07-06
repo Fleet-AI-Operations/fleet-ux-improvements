@@ -4972,7 +4972,8 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._syncStatsBuilderDraftFromForm();
                 if (field === 'type') dash._onStatsBuilderTypeChange();
                 else if (field === 'series-render') dash._onStatsBuilderSeriesRenderChange();
-                else if (field === 'groupBy' || field === 'splitBy') dash._onStatsBuilderDimensionChange();
+                else if (field === 'groupBy' || field === 'series-segment') dash._onStatsBuilderDimensionChange();
+                else dash._scheduleStatsBuilderPreview();
                 return;
             }
             const sel = e.target;
@@ -4986,6 +4987,12 @@ function attachSearchOutputListeners(modal, dash) {
             dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
+            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"]');
+            if (statsDraftInput && modal.contains(statsDraftInput)) {
+                dash._syncStatsBuilderDraftFromForm();
+                dash._debounceStatsBuilderPreview();
+                return;
+            }
             const ta = e.target.closest('[data-wf-dash-qa-review-input]');
             if (ta && modal.contains(ta)) {
                 const fid = ta.getAttribute('data-wf-dash-feedback-id');
@@ -5048,7 +5055,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.9',
+    _version: '7.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

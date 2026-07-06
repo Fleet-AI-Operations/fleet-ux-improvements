@@ -106,6 +106,7 @@ const searchOutputStatsPaneMethods = {
         this._state.statsViewMode = next;
         this._syncStatsToolbarUi();
         if (next === 'dashboard') {
+            this._destroyStatsBuilderPreview();
             this._state.statsBuilderDraft = null;
             this._state.statsBuilderEditId = null;
             void this._renderStatsPanel();
@@ -141,24 +142,11 @@ const searchOutputStatsPaneMethods = {
         this._setStatsViewMode('dashboard');
     },
 
-    _saveStatsBuilderDraft() {
-        const engine = Context.statsEngine;
-        const draft = this._state.statsBuilderDraft;
-        if (!engine || !draft) return;
-        this._syncStatsBuilderDraftFromForm();
-        const items = this._getStatsScopeItems();
-        const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
-        const validation = engine.validateChart(draft, catalog, items, this._statsCatalogCtx(items));
-        if (!validation.ok) {
-            Logger.warn('search-output-stats-pane: builder save blocked — missing ' + (validation.missing[0] && validation.missing[0].label));
-            this._renderStatsBuilderValidation(validation.missing);
-            return;
-        }
-        const layout = this._ensureStatsLayout();
-        const engineMeta = engine.getChartTypeMeta ? engine.getChartTypeMeta(draft.type) : null;
+    _draftToChartObject(draft, engine) {
+        const engineMeta = engine.getChartTypeMeta(draft.type);
         const chart = {
-            id: draft.id || engine.newChartId(),
-            title: String(draft.title || 'Chart').trim() || 'Chart',
+            id: draft.id || '__preview__',
+            title: String(draft.title || 'Preview').trim() || 'Preview',
             type: draft.type || 'pie',
             groupBy: draft.groupBy,
             series: (draft.series || []).map((s) => {
@@ -167,26 +155,47 @@ const searchOutputStatsPaneMethods = {
                     agg: s.agg,
                     label: s.label || ''
                 };
-                if (engineMeta && engineMeta.needsRenderAs) {
+                if (engineMeta.needsRenderAs) {
                     entry.renderAs = s.renderAs === 'line' ? 'line' : 'bar';
                 }
-                if (engineMeta && engineMeta.needsDualAxis) {
+                if (engineMeta.needsDualAxis) {
                     entry.yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
+                }
+                if (engine.seriesAllowsSegment && engine.seriesAllowsSegment(draft.type, entry)) {
+                    if (s.segmentBy) entry.segmentBy = s.segmentBy;
                 }
                 return entry;
             }),
             height: Number(draft.height) || 220,
-            presetKey: draft.presetKey || null
+            presetKey: draft.presetKey || null,
+            chartFilters: draft.chartFilters || {}
         };
-        if (engineMeta && engineMeta.needsPointMode) {
+        if (engineMeta.needsPointMode) {
             chart.pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
         }
-        if (engineMeta && engineMeta.needsBarLayout) {
+        if (engineMeta.needsBarLayout) {
             chart.barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
         }
-        if (engineMeta && engineMeta.needsSplitBy && draft.splitBy) {
-            chart.splitBy = draft.splitBy;
+        return chart;
+    },
+
+    _saveStatsBuilderDraft() {
+        const engine = Context.statsEngine;
+        const draft = this._state.statsBuilderDraft;
+        if (!engine || !draft) return;
+        this._syncStatsBuilderDraftFromForm();
+        const items = this._getStatsScopeItems();
+        const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
+        const chart = this._draftToChartObject(draft, engine);
+        const validation = engine.validateChart(chart, catalog, items, this._statsCatalogCtx(items));
+        if (!validation.ok) {
+            Logger.warn('search-output-stats-pane: builder save blocked — missing ' + (validation.missing[0] && validation.missing[0].label));
+            this._renderStatsBuilderValidation(validation.missing);
+            return;
         }
+        const layout = this._ensureStatsLayout();
+        chart.id = draft.id || engine.newChartId();
+        chart.title = String(draft.title || 'Chart').trim() || 'Chart';
         const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         chart.chartFilters = engine.normalizeChartFilters
             ? engine.normalizeChartFilters(draft.chartFilters, listBounds)
@@ -376,6 +385,165 @@ const searchOutputStatsPaneMethods = {
         this._state.statsCharts = null;
     },
 
+    _destroyStatsBuilderPreview() {
+        const ch = this._state.statsBuilderPreviewChart;
+        if (ch) {
+            try {
+                ch.destroy();
+            } catch (_e) { /* ignore */ }
+            this._state.statsBuilderPreviewChart = null;
+        }
+        const scorecardEl = this._q('#wf-dash-stats-builder-preview-scorecard');
+        if (scorecardEl) scorecardEl.innerHTML = '';
+    },
+
+    _scheduleStatsBuilderPreview() {
+        if (this._state.statsBuilderPreviewTimer) {
+            clearTimeout(this._state.statsBuilderPreviewTimer);
+        }
+        this._state.statsBuilderPreviewTimer = setTimeout(() => {
+            this._state.statsBuilderPreviewTimer = null;
+            void this._renderStatsBuilderPreview();
+        }, 0);
+    },
+
+    _debounceStatsBuilderPreview() {
+        if (this._state.statsBuilderPreviewDebounce) {
+            clearTimeout(this._state.statsBuilderPreviewDebounce);
+        }
+        this._state.statsBuilderPreviewDebounce = setTimeout(() => {
+            this._state.statsBuilderPreviewDebounce = null;
+            void this._renderStatsBuilderPreview();
+        }, 300);
+    },
+
+    async _renderStatsBuilderPreview() {
+        const gen = (this._state.statsBuilderPreviewGen || 0) + 1;
+        this._state.statsBuilderPreviewGen = gen;
+
+        const statusEl = this._q('#wf-dash-stats-builder-preview-status');
+        const wrapEl = this._q('#wf-dash-stats-builder-preview-wrap');
+        const canvas = this._q('#wf-dash-stats-builder-preview-canvas');
+        const scorecardEl = this._q('#wf-dash-stats-builder-preview-scorecard');
+        if (!wrapEl) return;
+
+        this._destroyStatsBuilderPreview();
+
+        const draft = this._state.statsBuilderDraft;
+        const engine = Context.statsEngine;
+        if (!draft || !engine) {
+            if (statusEl) statusEl.textContent = 'Stats engine not loaded.';
+            return;
+        }
+
+        if (!this._state.hasSearched || !this._state.cachedItems) {
+            if (statusEl) statusEl.textContent = 'Run a search to preview charts.';
+            return;
+        }
+        if (this._isStatsHydrationBlocking()) {
+            if (statusEl) statusEl.textContent = 'Preview will load once hydration is complete.';
+            return;
+        }
+
+        const items = this._getStatsScopeItems();
+        if (!items.length) {
+            if (statusEl) statusEl.textContent = 'No results in this scope.';
+            return;
+        }
+
+        const ctx = this._statsCatalogCtx(items);
+        const catalog = engine.buildCatalog(ctx);
+        const chart = this._draftToChartObject(draft, engine);
+        const validation = engine.validateChart(chart, catalog, items, ctx);
+
+        const previewHeight = Number(draft.height) || 220;
+        wrapEl.style.height = previewHeight + 'px';
+
+        if (statusEl) {
+            statusEl.textContent = validation.ok
+                ? 'Live preview'
+                : ('Preview issue: ' + (validation.missing[0] && (validation.missing[0].label || validation.missing[0].id)));
+        }
+
+        if (!validation.ok) {
+            if (canvas) canvas.style.display = 'none';
+            if (scorecardEl) scorecardEl.style.display = 'none';
+            return;
+        }
+        if (this._state.statsBuilderPreviewGen !== gen) return;
+
+        const aggData = engine.aggregateChart(chart, items, catalog, ctx);
+        if (!this._statsChartHasRenderableData(chart, aggData)) {
+            if (statusEl) statusEl.textContent = 'No data to preview for these settings.';
+            if (canvas) canvas.style.display = 'none';
+            if (scorecardEl) scorecardEl.style.display = 'none';
+            return;
+        }
+
+        if (chart.type === 'scorecard') {
+            if (canvas) canvas.style.display = 'none';
+            if (scorecardEl) {
+                const theme = this._statsChartTheme();
+                const valueText = this._formatStatsScorecardValue(aggData.value);
+                const subtitle = aggData.subtitle || aggData.label || '';
+                scorecardEl.style.display = 'flex';
+                scorecardEl.style.flexDirection = 'column';
+                scorecardEl.style.alignItems = 'center';
+                scorecardEl.style.justifyContent = 'center';
+                scorecardEl.style.height = '100%';
+                scorecardEl.innerHTML = '<div style="font-size: 32px; font-weight: 700; line-height: 1.1; color: ' + theme.foreground + '; letter-spacing: -0.02em;">'
+                    + dashEscHtml(valueText)
+                    + '</div>'
+                    + (subtitle
+                        ? '<div style="font-size: 11px; color: ' + theme.muted + '; margin-top: 6px; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+                            + dashEscHtml(subtitle) + '</div>'
+                        : '');
+            }
+            return;
+        }
+
+        if (scorecardEl) scorecardEl.style.display = 'none';
+        if (canvas) canvas.style.display = 'block';
+
+        const chartApi = Context.chartJs;
+        if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
+            if (statusEl) statusEl.textContent = 'Chart.js not available.';
+            return;
+        }
+
+        try {
+            const Chart = await chartApi.ensureLoaded();
+            if (this._state.statsBuilderPreviewGen !== gen
+                || (this._state.statsViewMode || 'dashboard') !== 'builder') {
+                return;
+            }
+            const theme = this._statsChartTheme();
+            const containerWidth = wrapEl.clientWidth || 0;
+            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth);
+            this._state.statsBuilderPreviewChart = new Chart(canvas, config);
+        } catch (e) {
+            Logger.warn('search-output-stats-pane: builder preview failed', e);
+            if (statusEl) statusEl.textContent = 'Preview failed to render.';
+        }
+    },
+
+    _ensureStatsBuilderShell() {
+        const el = this._q('#wf-dash-stats-builder');
+        if (!el) return null;
+        if (!el.querySelector('#wf-dash-stats-builder-form')) {
+            el.innerHTML = '<div id="wf-dash-stats-builder-form"></div>'
+                + '<div id="wf-dash-stats-builder-preview" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
+                + '<div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">Preview</div>'
+                + '<div id="wf-dash-stats-builder-preview-status" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-height: 16px;"></div>'
+                + '<div id="wf-dash-stats-builder-preview-wrap" style="position: relative; width: 100%; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); padding: 8px; box-sizing: border-box;">'
+                + '<div id="wf-dash-stats-builder-preview-scorecard" style="display: none; height: 100%;"></div>'
+                + '<canvas id="wf-dash-stats-builder-preview-canvas" style="display: block; width: 100%; height: 100%;"></canvas>'
+                + '</div>'
+                + '</div>';
+        }
+        return el.querySelector('#wf-dash-stats-builder-form');
+    },
+
     _statsChartFilterScopeKey(draftKey) {
         return 'stats-chart-filter-' + draftKey;
     },
@@ -447,6 +615,7 @@ const searchOutputStatsPaneMethods = {
         this._syncStatsChartFiltersFromForm();
         this._updateMsCount(scopeKey);
         this._syncMsDropdown(scopeKey);
+        this._scheduleStatsBuilderPreview();
     },
 
     _statsChartFilterSummary(chart) {
@@ -747,11 +916,10 @@ const searchOutputStatsPaneMethods = {
         const barStacked = chart.barLayout === 'stacked' && (type === 'bar' || type === 'combo');
         const datasets = (aggData.datasets || []).map((ds, i) => {
             const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
-            const seriesEntry = (chart.series || [])[i] || {};
             const renderAs = type === 'combo'
-                ? (seriesEntry.renderAs === 'line' ? 'line' : 'bar')
+                ? (ds.renderAs === 'line' ? 'line' : 'bar')
                 : chartJsType;
-            const yAxisID = seriesEntry.yAxis === 'y1' ? 'y1' : 'y';
+            const yAxisID = ds.yAxis === 'y1' ? 'y1' : 'y';
             const base = {
                 type: renderAs,
                 label: ds.label,
@@ -940,6 +1108,8 @@ const searchOutputStatsPaneMethods = {
             el.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Charts will load once hydration is complete</p>';
             return;
         }
+        const formEl = this._ensureStatsBuilderShell();
+        if (!formEl) return;
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
         const box = this._panelBoxStyle();
@@ -992,6 +1162,19 @@ const searchOutputStatsPaneMethods = {
                     + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
                     + '</select></div>')
                 : '';
+            const segmentBy = s.segmentBy || '';
+            const showSegmentBy = engine.seriesAllowsSegment
+                ? engine.seriesAllowsSegment(draft.type, s)
+                : false;
+            const segmentByHtml = showSegmentBy
+                ? ('<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Segment by</div>'
+                    + '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + inputStyle + '">'
+                    + '<option value="">None</option>'
+                    + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
+                        '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
+                    ).join('')
+                    + '</select></div>')
+                : '';
             const showSeriesLabel = !typeMeta.skipGroupBy;
             const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
             seriesHtml += '<div data-wf-dash-stats-series-row="' + i + '" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px;">'
@@ -999,6 +1182,7 @@ const searchOutputStatsPaneMethods = {
                 + '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + inputStyle + '">' + metricOpts + '</select></div>'
                 + '<div style="flex: 0 0 100px;"><div style="' + fieldLabel + '">Aggregation</div>'
                 + '<select data-wf-dash-stats-draft="series-agg" data-series-idx="' + i + '" style="' + inputStyle + '">' + aggOpts + '</select></div>'
+                + segmentByHtml
                 + (showSeriesLabel
                     ? ('<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Series label</div>'
                         + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>')
@@ -1010,33 +1194,25 @@ const searchOutputStatsPaneMethods = {
                     : '')
                 + '</div>';
         }
-        const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
-        const splitBy = draft.splitBy || '';
-        const splitByOpts = catalog.dimensions
-            .filter((d) => d.key !== draft.groupBy)
-            .map((d) =>
-                '<option value="' + dashEscHtml(d.key) + '"' + (splitBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
-            ).join('');
-        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries && !draft.splitBy
+        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
             ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
             : '';
         const groupByRow = typeMeta.skipGroupBy
             ? ''
             : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
                 + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
-        const splitByRow = typeMeta.needsSplitBy
-            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Split by</div>'
-                + '<select data-wf-dash-stats-draft="splitBy" style="' + inputStyle + '">'
-                + '<option value="">None (use series)</option>'
-                + splitByOpts
-                + '</select></div>')
-            : '';
-        const barLayoutRow = typeMeta.needsBarLayout
-            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Bar layout</div>'
+        const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
+        const barDatasetCount = engine.countBarDatasets
+            ? engine.countBarDatasets(draft, catalog)
+            : 0;
+        const barLayoutRow = typeMeta.needsBarLayout && barDatasetCount >= 2
+            ? ('<div style="flex: 1; min-width: 160px;"><div style="' + fieldLabel + '">Bar layout</div>'
                 + '<select data-wf-dash-stats-draft="barLayout" style="' + inputStyle + '">'
                 + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
                 + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
-                + '</select></div>')
+                + '</select>'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.</div>'
+                + '</div>')
             : '';
         const lib = Context.dashboardLib;
         const filterScopes = (lib && lib.filterScopes) || [];
@@ -1048,7 +1224,7 @@ const searchOutputStatsPaneMethods = {
                 : draftKey;
             chartFiltersHtml += this._multiSelectHtml(chartScopeKey, label, 'No options in scope', false);
         }
-        el.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 10px;">'
+        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 10px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
             + '<div><div style="' + fieldLabel + '">Title</div>'
             + '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + inputStyle + '"></div>'
@@ -1056,7 +1232,6 @@ const searchOutputStatsPaneMethods = {
             + '<div style="flex: 1; min-width: 100px;"><div style="' + fieldLabel + '">Chart type</div>'
             + '<select data-wf-dash-stats-draft="type" style="' + inputStyle + '">' + typeOpts + '</select></div>'
             + groupByRow
-            + splitByRow
             + barLayoutRow
             + pointModeHtml
             + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Height</div>'
@@ -1075,6 +1250,7 @@ const searchOutputStatsPaneMethods = {
         this._ensureStatsBuilderChartFilters(draft);
         this._renderStatsChartFilterLists(draft);
         this._renderStatsBuilderValidation(null);
+        this._scheduleStatsBuilderPreview();
     },
 
     _syncStatsBuilderDraftFromForm() {
@@ -1083,17 +1259,14 @@ const searchOutputStatsPaneMethods = {
         const titleEl = this._q('[data-wf-dash-stats-draft="title"]');
         const typeEl = this._q('[data-wf-dash-stats-draft="type"]');
         const groupEl = this._q('[data-wf-dash-stats-draft="groupBy"]');
-        const splitEl = this._q('[data-wf-dash-stats-draft="splitBy"]');
         const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
-        if (splitEl) draft.splitBy = splitEl.value || null;
-        else draft.splitBy = null;
         if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
-        else draft.barLayout = 'grouped';
+        else if (draft.type !== 'bar' && draft.type !== 'combo') draft.barLayout = 'grouped';
         if (heightEl) draft.height = Number(heightEl.value) || 220;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
@@ -1103,6 +1276,7 @@ const searchOutputStatsPaneMethods = {
             const labelEl = row.querySelector('[data-wf-dash-stats-draft="series-label"]');
             const renderEl = row.querySelector('[data-wf-dash-stats-draft="series-render"]');
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
+            const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
             if (!metricEl || !aggEl) return;
             const entry = {
                 metricId: metricEl.value,
@@ -1111,6 +1285,7 @@ const searchOutputStatsPaneMethods = {
             };
             if (renderEl) entry.renderAs = renderEl.value === 'line' ? 'line' : 'bar';
             if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
+            if (segmentEl) entry.segmentBy = segmentEl.value || null;
             series.push(entry);
         });
         if (series.length) draft.series = series;
@@ -1173,8 +1348,12 @@ const searchOutputStatsPaneMethods = {
                 }
                 if (!draft.height || draft.height > 180) draft.height = 140;
             }
-            if (!meta.needsSplitBy) {
-                draft.splitBy = null;
+            if (draft.series && engine.seriesAllowsSegment) {
+                draft.series.forEach((s) => {
+                    if (!engine.seriesAllowsSegment(draft.type, s)) {
+                        s.segmentBy = null;
+                    }
+                });
             }
             if (!meta.needsBarLayout) {
                 draft.barLayout = 'grouped';
@@ -1187,11 +1366,12 @@ const searchOutputStatsPaneMethods = {
         const draft = this._state.statsBuilderDraft;
         if (!draft) return;
         this._syncStatsBuilderDraftFromForm();
-        if (draft.splitBy && draft.splitBy === draft.groupBy) {
-            draft.splitBy = null;
-        }
-        if (draft.splitBy && draft.series && draft.series.length > 1) {
-            draft.series = draft.series.slice(0, 1);
+        if (draft.series) {
+            draft.series.forEach((s) => {
+                if (s.segmentBy && s.segmentBy === draft.groupBy) {
+                    s.segmentBy = null;
+                }
+            });
         }
         void this._renderStatsBuilder();
     },
@@ -1236,6 +1416,7 @@ const searchOutputStatsPaneMethods = {
         if (!draft || draft.type !== 'combo') return;
         draft.series.forEach((s) => {
             s.yAxis = s.renderAs === 'line' ? 'y1' : 'y';
+            if (s.renderAs === 'line') s.segmentBy = null;
         });
         void this._renderStatsBuilder();
     },
@@ -1891,7 +2072,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.11',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
