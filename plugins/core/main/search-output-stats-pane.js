@@ -22,19 +22,19 @@ const searchOutputStatsPaneMethods = {
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
             + '<div data-wf-dash-stats-header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); min-height: 36px;">'
-            + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Ratings and stats">'
-            + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
+            + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Stats and ratings">'
             + '<button type="button" data-wf-dash-stats-tab="stats" style="' + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>'
+            + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
+            + '</div>'
+            + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
+            + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
-            + '</div>'
-            + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
-            + this._statsChartsPanelContentHtml()
             + '</div>'
             + '</div>';
     },
@@ -1888,7 +1888,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
