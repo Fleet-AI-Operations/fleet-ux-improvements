@@ -576,7 +576,8 @@ const searchOutputStatsPaneMethods = {
                 borderColor: color,
                 backgroundColor: renderAs === 'line' ? color : color,
                 yAxisID,
-                order: renderAs === 'line' ? 1 : 0
+                // Chart.js: higher order draws first (behind); lower order draws on top.
+                order: renderAs === 'line' ? 1 : 2
             };
             if (renderAs === 'line') {
                 return Object.assign(base, { tension: 0.2, spanGaps: true, pointRadius: 3, fill: false });
@@ -1524,7 +1525,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
