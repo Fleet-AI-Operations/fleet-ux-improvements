@@ -134,6 +134,7 @@ const searchOutputStatsPaneMethods = {
             this._ensureStatsBuilderChartFilters(this._state.statsBuilderDraft);
         }
         this._setStatsViewMode('builder');
+        void this._renderStatsBuilder();
     },
 
     _closeStatsBuilder() {
@@ -1009,13 +1010,6 @@ const searchOutputStatsPaneMethods = {
                     : '')
                 + '</div>';
         }
-        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries && !splitBy
-            ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
-            : '';
-        const groupByRow = typeMeta.skipGroupBy
-            ? ''
-            : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
-                + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
         const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
         const splitBy = draft.splitBy || '';
         const splitByOpts = catalog.dimensions
@@ -1023,6 +1017,13 @@ const searchOutputStatsPaneMethods = {
             .map((d) =>
                 '<option value="' + dashEscHtml(d.key) + '"' + (splitBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
             ).join('');
+        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries && !draft.splitBy
+            ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
+            : '';
+        const groupByRow = typeMeta.skipGroupBy
+            ? ''
+            : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
+                + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
         const splitByRow = typeMeta.needsSplitBy
             ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Split by</div>'
                 + '<select data-wf-dash-stats-draft="splitBy" style="' + inputStyle + '">'
@@ -1090,7 +1091,9 @@ const searchOutputStatsPaneMethods = {
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
         if (splitEl) draft.splitBy = splitEl.value || null;
+        else draft.splitBy = null;
         if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
+        else draft.barLayout = 'grouped';
         if (heightEl) draft.height = Number(heightEl.value) || 220;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
@@ -1888,7 +1891,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.10',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
