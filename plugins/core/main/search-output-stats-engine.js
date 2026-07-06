@@ -55,11 +55,11 @@ const STATS_SCORECARD_GROUP_BY = '__scope__';
 const STATS_CHART_TYPE_META = {
     scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
+    bar: { id: 'bar', label: 'Bar', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true, needsBarLayout: true, needsSplitBy: true },
     line: { id: 'line', label: 'Line', minSeries: 1, maxSeries: 4, allowCountAxis: true, needsDualAxis: true },
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
-    combo: { id: 'combo', label: 'Bar + line', minSeries: 2, maxSeries: 4, allowCountAxis: true, needsRenderAs: true, needsDualAxis: true },
+    combo: { id: 'combo', label: 'Bar + line', minSeries: 2, maxSeries: 4, allowCountAxis: true, needsRenderAs: true, needsDualAxis: true, needsBarLayout: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
     bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true }
 };
@@ -83,6 +83,31 @@ function statsNormalizeChartType(type) {
 
 function statsGetChartTypeMeta(type) {
     return STATS_CHART_TYPE_META[statsNormalizeChartType(type)] || STATS_CHART_TYPE_META.pie;
+}
+
+function statsNormalizeBarLayout(raw) {
+    return raw === 'stacked' ? 'stacked' : 'grouped';
+}
+
+function statsNormalizeSplitBy(raw, groupBy) {
+    const v = raw != null ? String(raw).trim() : '';
+    if (!v || v === groupBy) return null;
+    return v;
+}
+
+function statsSplitRowHasData(row) {
+    if (!row) return false;
+    for (const vals of row.values()) {
+        if (vals && vals.length) return true;
+    }
+    return false;
+}
+
+function statsSplitByDimensionLabel(dimKey) {
+    const timeDef = STATS_TIME_GROUP_DIMENSIONS.find((d) => d.key === dimKey);
+    if (timeDef) return timeDef.label;
+    if (dimKey === STATS_DYNAMIC_DIMENSION.key) return STATS_DYNAMIC_DIMENSION.label;
+    return dimKey;
 }
 
 function statsNormalizePointMode(mode) {
@@ -195,6 +220,12 @@ function statsNormalizeChartEntry(c) {
     };
     if (meta.needsPointMode) {
         chart.pointMode = statsNormalizePointMode(c.pointMode);
+    }
+    if (meta.needsBarLayout) {
+        chart.barLayout = statsNormalizeBarLayout(c.barLayout);
+    }
+    if (meta.needsSplitBy) {
+        chart.splitBy = statsNormalizeSplitBy(c.splitBy, chart.groupBy);
     }
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -606,6 +637,20 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (meta.needsSplitBy && chart.splitBy) {
+        if (chart.splitBy === chart.groupBy) {
+            missing.push({ id: 'splitBy', label: 'Split by (must differ from group by)' });
+        } else {
+            const splitDim = statsFindDimension(catalog, chart.splitBy);
+            if (!splitDim) {
+                missing.push({ id: chart.splitBy, label: statsSplitByDimensionLabel(chart.splitBy) });
+            }
+        }
+        if (series.length !== 1) {
+            missing.push({ id: 'splitBy', label: 'Single series when split by is set' });
+        }
+    }
+
     if (type === 'scatter' || type === 'bubble') {
         for (const s of series) {
             if (s.metricId === 'count') {
@@ -734,6 +779,103 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
     return { labels, datasets };
 }
 
+function statsAggregateSplitBar(chart, items, catalog, ctx) {
+    const lib = Context.dashboardLib;
+    const primaryDim = statsFindDimension(catalog, chart.groupBy);
+    const splitDim = statsFindDimension(catalog, chart.splitBy);
+    if (!primaryDim || !splitDim) return { labels: [], datasets: [] };
+
+    const seriesEntry = (chart.series || [])[0];
+    if (!seriesEntry) return { labels: [], datasets: [] };
+
+    const primaryOrder = primaryDim.options.map((o) => o.id);
+    const splitOrder = splitDim.options.map((o) => o.id);
+    const primaryLabelById = new Map(primaryDim.options.map((o) => [o.id, o.label]));
+    const splitLabelById = new Map(splitDim.options.map((o) => [o.id, o.label]));
+    const unknownKey = '__unknown__';
+    const matrix = new Map();
+    const isCount = seriesEntry.metricId === 'count' && seriesEntry.agg === 'count';
+    const getMetricValue = ctx && ctx.getMetricValue;
+
+    const ensureCell = (pk, sk) => {
+        if (!matrix.has(pk)) matrix.set(pk, new Map());
+        const row = matrix.get(pk);
+        if (!row.has(sk)) row.set(sk, []);
+        return row.get(sk);
+    };
+
+    for (const item of items || []) {
+        const pKeys = statsGetDimensionValues(item, chart.groupBy, lib, ctx);
+        const sKeys = statsGetDimensionValues(item, chart.splitBy, lib, ctx);
+        const pkList = pKeys.length ? pKeys : [unknownKey];
+        const skList = sKeys.length ? sKeys : [unknownKey];
+        for (const pk of pkList) {
+            for (const sk of skList) {
+                const cell = ensureCell(pk, sk);
+                if (isCount) {
+                    cell.push(1);
+                } else if (typeof getMetricValue === 'function') {
+                    const v = getMetricValue(item, seriesEntry.metricId);
+                    if (v != null && Number.isFinite(v)) cell.push(v);
+                }
+            }
+        }
+    }
+
+    const primaryKeysOut = [];
+    const labels = [];
+    for (const pk of primaryOrder) {
+        if (!statsSplitRowHasData(matrix.get(pk))) continue;
+        primaryKeysOut.push(pk);
+        labels.push(primaryLabelById.get(pk) || pk);
+    }
+    if (statsSplitRowHasData(matrix.get(unknownKey))) {
+        primaryKeysOut.push(unknownKey);
+        labels.push('(unknown)');
+    }
+
+    const splitKeysSeen = new Set();
+    for (const pk of primaryKeysOut) {
+        const row = matrix.get(pk);
+        if (!row) continue;
+        for (const [sk, vals] of row.entries()) {
+            if (vals && vals.length) splitKeysSeen.add(sk);
+        }
+    }
+
+    const datasets = [];
+    const pushSplitDataset = (sk, label) => {
+        if (!splitKeysSeen.has(sk)) return;
+        const data = primaryKeysOut.map((pk) => {
+            const row = matrix.get(pk);
+            const cell = row && row.get(sk);
+            if (!cell || !cell.length) {
+                return isCount ? 0 : null;
+            }
+            return statsApplyAgg(cell, seriesEntry.agg);
+        });
+        const metric = statsFindMetric(catalog, seriesEntry.metricId);
+        const seriesLabel = seriesEntry.label || (metric && metric.label) || seriesEntry.metricId;
+        datasets.push({
+            label: label || sk,
+            data,
+            metricId: seriesEntry.metricId,
+            agg: seriesEntry.agg,
+            splitSeries: true,
+            seriesLabel
+        });
+    };
+
+    for (const sk of splitOrder) {
+        pushSplitDataset(sk, splitLabelById.get(sk) || sk);
+    }
+    if (splitKeysSeen.has(unknownKey)) {
+        pushSplitDataset(unknownKey, '(unknown)');
+    }
+
+    return { labels, datasets };
+}
+
 function statsChartUsesSecondaryY(chart) {
     return (chart.series || []).some((s) => s.yAxis === 'y1');
 }
@@ -823,6 +965,9 @@ function statsAggregateChart(chart, items, catalog, ctx) {
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
+    if (chart.splitBy) {
+        return statsAggregateSplitBar(chart, scopedItems, catalog, ctx);
+    }
     return statsAggregateCategorical(chart, scopedItems, catalog, ctx);
 }
 
@@ -836,6 +981,8 @@ function statsDefaultBuilderDraft(catalog) {
         series: [{ metricId: 'count', agg: 'count', label: '' }],
         height: 220,
         pointMode: 'bucket',
+        barLayout: 'grouped',
+        splitBy: null,
         presetKey: null,
         chartFilters: statsEmptyChartFilters()
     };
@@ -845,7 +992,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

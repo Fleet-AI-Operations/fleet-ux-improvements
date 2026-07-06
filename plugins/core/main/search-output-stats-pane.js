@@ -180,6 +180,12 @@ const searchOutputStatsPaneMethods = {
         if (engineMeta && engineMeta.needsPointMode) {
             chart.pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
         }
+        if (engineMeta && engineMeta.needsBarLayout) {
+            chart.barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
+        }
+        if (engineMeta && engineMeta.needsSplitBy && draft.splitBy) {
+            chart.splitBy = draft.splitBy;
+        }
         const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         chart.chartFilters = engine.normalizeChartFilters
             ? engine.normalizeChartFilters(draft.chartFilters, listBounds)
@@ -646,8 +652,11 @@ const searchOutputStatsPaneMethods = {
 
     _statsCartesianScales(chart, theme) {
         const useY1 = (chart.series || []).some((s) => s.yAxis === 'y1');
+        const stacked = chart.barLayout === 'stacked'
+            && (chart.type === 'bar' || chart.type === 'combo');
         const scales = {
             x: {
+                stacked,
                 ticks: { color: theme.muted, font: { size: 10 }, maxRotation: 45, minRotation: 0 },
                 grid: { color: theme.border }
             },
@@ -655,6 +664,7 @@ const searchOutputStatsPaneMethods = {
                 type: 'linear',
                 position: 'left',
                 beginAtZero: true,
+                stacked,
                 ticks: { color: theme.muted, font: { size: 10 } },
                 grid: { color: theme.border }
             }
@@ -733,6 +743,7 @@ const searchOutputStatsPaneMethods = {
         }
 
         const chartJsType = type === 'combo' ? 'bar' : (type === 'bar' ? 'bar' : 'line');
+        const barStacked = chart.barLayout === 'stacked' && (type === 'bar' || type === 'combo');
         const datasets = (aggData.datasets || []).map((ds, i) => {
             const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
             const seriesEntry = (chart.series || [])[i] || {};
@@ -750,6 +761,9 @@ const searchOutputStatsPaneMethods = {
                 // Chart.js: higher order draws first (behind); lower order draws on top.
                 order: renderAs === 'line' ? 1 : 2
             };
+            if (renderAs === 'bar' && barStacked) {
+                base.stack = yAxisID;
+            }
             if (renderAs === 'line') {
                 return Object.assign(base, { tension: 0.2, spanGaps: true, pointRadius: 3, fill: false });
             }
@@ -995,13 +1009,34 @@ const searchOutputStatsPaneMethods = {
                     : '')
                 + '</div>';
         }
-        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
+        const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries && !splitBy
             ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
             : '';
         const groupByRow = typeMeta.skipGroupBy
             ? ''
             : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
                 + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
+        const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
+        const splitBy = draft.splitBy || '';
+        const splitByOpts = catalog.dimensions
+            .filter((d) => d.key !== draft.groupBy)
+            .map((d) =>
+                '<option value="' + dashEscHtml(d.key) + '"' + (splitBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
+            ).join('');
+        const splitByRow = typeMeta.needsSplitBy
+            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Split by</div>'
+                + '<select data-wf-dash-stats-draft="splitBy" style="' + inputStyle + '">'
+                + '<option value="">None (use series)</option>'
+                + splitByOpts
+                + '</select></div>')
+            : '';
+        const barLayoutRow = typeMeta.needsBarLayout
+            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Bar layout</div>'
+                + '<select data-wf-dash-stats-draft="barLayout" style="' + inputStyle + '">'
+                + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
+                + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
+                + '</select></div>')
+            : '';
         const lib = Context.dashboardLib;
         const filterScopes = (lib && lib.filterScopes) || [];
         let chartFiltersHtml = '';
@@ -1020,6 +1055,8 @@ const searchOutputStatsPaneMethods = {
             + '<div style="flex: 1; min-width: 100px;"><div style="' + fieldLabel + '">Chart type</div>'
             + '<select data-wf-dash-stats-draft="type" style="' + inputStyle + '">' + typeOpts + '</select></div>'
             + groupByRow
+            + splitByRow
+            + barLayoutRow
             + pointModeHtml
             + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Height</div>'
             + '<select data-wf-dash-stats-draft="height" style="' + inputStyle + '">' + heightOpts + '</select></div>'
@@ -1045,11 +1082,15 @@ const searchOutputStatsPaneMethods = {
         const titleEl = this._q('[data-wf-dash-stats-draft="title"]');
         const typeEl = this._q('[data-wf-dash-stats-draft="type"]');
         const groupEl = this._q('[data-wf-dash-stats-draft="groupBy"]');
+        const splitEl = this._q('[data-wf-dash-stats-draft="splitBy"]');
+        const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
+        if (splitEl) draft.splitBy = splitEl.value || null;
+        if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
         if (heightEl) draft.height = Number(heightEl.value) || 220;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
@@ -1129,6 +1170,25 @@ const searchOutputStatsPaneMethods = {
                 }
                 if (!draft.height || draft.height > 180) draft.height = 140;
             }
+            if (!meta.needsSplitBy) {
+                draft.splitBy = null;
+            }
+            if (!meta.needsBarLayout) {
+                draft.barLayout = 'grouped';
+            }
+        }
+        void this._renderStatsBuilder();
+    },
+
+    _onStatsBuilderDimensionChange() {
+        const draft = this._state.statsBuilderDraft;
+        if (!draft) return;
+        this._syncStatsBuilderDraftFromForm();
+        if (draft.splitBy && draft.splitBy === draft.groupBy) {
+            draft.splitBy = null;
+        }
+        if (draft.splitBy && draft.series && draft.series.length > 1) {
+            draft.series = draft.series.slice(0, 1);
         }
         void this._renderStatsBuilder();
     },
@@ -1828,7 +1888,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
