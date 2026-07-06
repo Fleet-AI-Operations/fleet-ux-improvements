@@ -386,6 +386,26 @@ const searchOutputStatsPaneMethods = {
         return color || fallback;
     },
 
+    _statsColorWithAlpha(color, alpha) {
+        const a = Number.isFinite(Number(alpha)) ? Math.max(0, Math.min(1, Number(alpha))) : 0.25;
+        const c = color != null ? String(color).trim() : '';
+        if (!c) return 'rgba(100, 116, 139, ' + a + ')';
+        const rgbMatch = c.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+        if (rgbMatch) {
+            return 'rgba(' + rgbMatch[1] + ', ' + rgbMatch[2] + ', ' + rgbMatch[3] + ', ' + a + ')';
+        }
+        if (/^#[0-9a-f]{8}$/i.test(c)) return c;
+        if (/^#[0-9a-f]{6}$/i.test(c)) {
+            const hexAlpha = Math.round(a * 255).toString(16).padStart(2, '0');
+            return c + hexAlpha;
+        }
+        if (/^#[0-9a-f]{3}$/i.test(c)) {
+            const hexAlpha = Math.round(a * 255).toString(16).padStart(2, '0');
+            return '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] + hexAlpha;
+        }
+        return c;
+    },
+
     _statsChartTheme() {
         return {
             foreground: this._statsResolvedColor('--foreground', '#0f172a'),
@@ -1043,7 +1063,7 @@ const searchOutputStatsPaneMethods = {
                     label: ds.label,
                     data: ds.data,
                     borderColor: color,
-                    backgroundColor: color + '33',
+                    backgroundColor: this._statsColorWithAlpha(color, 0.2),
                     pointBackgroundColor: color,
                     pointBorderColor: color
                 };
@@ -1099,7 +1119,7 @@ const searchOutputStatsPaneMethods = {
                     borderColor: color
                 };
                 if (shaded) {
-                    lineOpts.backgroundColor = color + '40';
+                    lineOpts.backgroundColor = this._statsColorWithAlpha(color, 0.25);
                 } else {
                     lineOpts.fill = false;
                 }
@@ -2299,7 +2319,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
