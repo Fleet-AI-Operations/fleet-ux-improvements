@@ -78,6 +78,7 @@ const searchOutputStatsPaneMethods = {
         const dash = this;
         return {
             filterListOptions: this._state.filterListOptions || {},
+            listBounds: this._listBoundsFromOptions(this._state.filterListOptions || {}),
             items: items || [],
             helpfulnessUi: this._state.helpfulnessUi || {},
             currentUserId: typeof this._dashGetCurrentUserId === 'function' ? this._dashGetCurrentUserId() : '',
@@ -125,6 +126,9 @@ const searchOutputStatsPaneMethods = {
             this._state.statsBuilderDraft = engine ? engine.defaultBuilderDraft(catalog) : null;
             this._state.statsBuilderEditId = null;
         }
+        if (this._state.statsBuilderDraft) {
+            this._ensureStatsBuilderChartFilters(this._state.statsBuilderDraft);
+        }
         this._setStatsViewMode('builder');
     },
 
@@ -136,6 +140,7 @@ const searchOutputStatsPaneMethods = {
         const engine = Context.statsEngine;
         const draft = this._state.statsBuilderDraft;
         if (!engine || !draft) return;
+        this._syncStatsBuilderDraftFromForm();
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
         const validation = engine.validateChart(draft, catalog, items, this._statsCatalogCtx(items));
@@ -171,6 +176,10 @@ const searchOutputStatsPaneMethods = {
         if (engineMeta && engineMeta.needsPointMode) {
             chart.pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
         }
+        const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        chart.chartFilters = engine.normalizeChartFilters
+            ? engine.normalizeChartFilters(draft.chartFilters, listBounds)
+            : (draft.chartFilters || {});
         const editId = this._state.statsBuilderEditId;
         if (editId) {
             const idx = layout.charts.findIndex((c) => c.id === editId);
@@ -348,17 +357,127 @@ const searchOutputStatsPaneMethods = {
         this._state.statsCharts = null;
     },
 
+    _statsChartFilterScopeKey(draftKey) {
+        return 'stats-chart-filter-' + draftKey;
+    },
+
+    _statsChartFilterDraftKey(scopeKey) {
+        return String(scopeKey || '').replace(/^stats-chart-filter-/, '');
+    },
+
+    _ensureStatsBuilderChartFilters(draft) {
+        const engine = Context.statsEngine;
+        const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        if (engine && typeof engine.normalizeChartFilters === 'function') {
+            draft.chartFilters = engine.normalizeChartFilters(draft.chartFilters, listBounds);
+        } else if (!draft.chartFilters) {
+            draft.chartFilters = engine && typeof engine.emptyChartFilters === 'function'
+                ? engine.emptyChartFilters()
+                : {};
+        }
+        return draft.chartFilters;
+    },
+
+    _syncStatsChartFiltersFromForm() {
+        const draft = this._state.statsBuilderDraft;
+        if (!draft) return;
+        const lib = Context.dashboardLib;
+        const scopes = (lib && lib.filterScopes) || [];
+        const chartFilters = this._ensureStatsBuilderChartFilters(draft);
+        for (const { draftKey } of scopes) {
+            const scopeKey = this._statsChartFilterScopeKey(draftKey);
+            chartFilters[draftKey] = this._selectedFromList(scopeKey);
+        }
+    },
+
+    _renderStatsChartFilterLists(draft) {
+        const engine = Context.statsEngine;
+        const lib = Context.dashboardLib;
+        const scopes = (lib && lib.filterScopes) || [];
+        const options = this._state.filterListOptions || {};
+        const chartFilters = this._ensureStatsBuilderChartFilters(draft);
+        for (const { scopeKey, optionsKey, draftKey } of scopes) {
+            const chartScopeKey = this._statsChartFilterScopeKey(draftKey);
+            const itemsEl = this._msItemsEl(chartScopeKey);
+            const wrap = this._filterScopeWrapEl(chartScopeKey) || this._msWrapEl(chartScopeKey);
+            if (!itemsEl) continue;
+            const optionItems = options[optionsKey] || [];
+            if (optionItems.length === 0) {
+                if (wrap) wrap.style.display = 'none';
+                continue;
+            }
+            if (wrap) wrap.style.display = '';
+            const scopeLabel = typeof this._filterScopeLabel === 'function'
+                ? this._filterScopeLabel(scopeKey)
+                : draftKey;
+            const emptyHint = 'No ' + scopeLabel.toLowerCase() + ' in scope';
+            itemsEl.innerHTML = this._multiSelectItemsHtml(
+                chartScopeKey, optionItems, emptyHint, false, false
+            );
+            const selected = new Set(chartFilters[draftKey] || []);
+            itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                cb.checked = selected.has(cb.value);
+            });
+            this._updateMsCount(chartScopeKey);
+            this._syncMsDropdown(chartScopeKey);
+        }
+    },
+
+    _onStatsChartFilterMsChange(scopeKey) {
+        if ((this._state.statsViewMode || 'dashboard') !== 'builder') return;
+        this._syncStatsChartFiltersFromForm();
+        this._updateMsCount(scopeKey);
+        this._syncMsDropdown(scopeKey);
+    },
+
+    _statsChartFilterSummary(chart) {
+        const engine = Context.statsEngine;
+        const lib = Context.dashboardLib;
+        const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
+        const chartFilters = engine && typeof engine.normalizeChartFilters === 'function'
+            ? engine.normalizeChartFilters(chart && chart.chartFilters, listBounds)
+            : ((chart && chart.chartFilters) || {});
+        if (!engine || typeof engine.chartFiltersActive !== 'function'
+            || !engine.chartFiltersActive(chartFilters, listBounds)) {
+            return '';
+        }
+        const options = this._state.filterListOptions || {};
+        const scopes = (lib && lib.filterScopes) || [];
+        const parts = [];
+        for (const { scopeKey, optionsKey, draftKey } of scopes) {
+            const selected = chartFilters[draftKey] || [];
+            if (!selected.length) continue;
+            const optionList = options[optionsKey] || [];
+            const labelById = new Map(optionList.map((o) => [o.id, o.label || o.id]));
+            const scopeLabel = typeof this._filterScopeLabel === 'function'
+                ? this._filterScopeLabel(scopeKey)
+                : draftKey;
+            const valueLabels = selected.map((id) => labelById.get(id) || id);
+            parts.push(scopeLabel + ': ' + valueLabels.join(', '));
+        }
+        return parts.join(' · ');
+    },
+
     _statsChartCardHtml(chart, validation) {
         const box = this._panelBoxStyle();
         const height = Number(chart.height) || 220;
         const disabled = validation && !validation.ok;
-        const missingLabel = disabled && validation.missing[0] ? validation.missing[0].label : '';
+        const missingEntry = disabled && validation.missing[0] ? validation.missing[0] : null;
+        const missingLabel = missingEntry ? missingEntry.label : '';
+        const overlayMessage = missingEntry && missingEntry.id === 'chartFilters'
+            ? dashEscHtml(missingLabel)
+            : ('Missing parameter: ' + dashEscHtml(missingLabel));
         const overlay = disabled
             ? ('<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--card, #fff) 72%, transparent); z-index: 2; padding: 12px; text-align: center;">'
-                + '<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">Missing parameter: ' + dashEscHtml(missingLabel) + '</span></div>')
+                + '<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">' + overlayMessage + '</span></div>')
             : '';
         const canvasOpacity = disabled ? ' opacity: 0.35; pointer-events: none;' : '';
         const isScorecard = chart.type === 'scorecard';
+        const filterSummary = this._statsChartFilterSummary(chart);
+        const filterSubtitle = filterSummary
+            ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin: -4px 0 8px 22px; line-height: 1.35;">'
+                + dashEscHtml(filterSummary) + '</div>')
+            : '';
         const bodyContent = isScorecard
             ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
             : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
@@ -369,6 +488,7 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Edit</button>'
             + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" title="Delete chart" aria-label="Delete chart" style="border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px;">×</button>'
             + '</div>'
+            + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
             + overlay
             + bodyContent
@@ -717,6 +837,16 @@ const searchOutputStatsPaneMethods = {
             ? ''
             : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
                 + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
+        const lib = Context.dashboardLib;
+        const filterScopes = (lib && lib.filterScopes) || [];
+        let chartFiltersHtml = '';
+        for (const { scopeKey, draftKey } of filterScopes) {
+            const chartScopeKey = this._statsChartFilterScopeKey(draftKey);
+            const label = typeof this._filterScopeLabel === 'function'
+                ? this._filterScopeLabel(scopeKey)
+                : draftKey;
+            chartFiltersHtml += this._multiSelectHtml(chartScopeKey, label, 'No options in scope', false);
+        }
         el.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 10px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
             + '<div><div style="' + fieldLabel + '">Title</div>'
@@ -730,11 +860,17 @@ const searchOutputStatsPaneMethods = {
             + '<select data-wf-dash-stats-draft="height" style="' + inputStyle + '">' + heightOpts + '</select></div>'
             + '</div>'
             + '<div><div style="' + fieldLabel + '">' + (typeMeta.skipGroupBy ? 'Metric' : 'Series') + '</div>' + seriesHtml + seriesActions + '</div>'
+            + '<details style="margin-top: 2px;">'
+            + '<summary style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); cursor: pointer; user-select: none;">Result filters (optional)</summary>'
+            + '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">' + chartFiltersHtml + '</div>'
+            + '</details>'
             + '<div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">'
             + '<button type="button" data-wf-dash-stats-builder-cancel="1" class="' + this._dashBtnClass('basic', 'nav') + '">Cancel</button>'
             + '<button type="button" data-wf-dash-stats-builder-save="1" class="' + this._dashBtnClass('primary', 'nav') + '">Save chart</button>'
             + '</div>'
             + '</div>';
+        this._ensureStatsBuilderChartFilters(draft);
+        this._renderStatsChartFilterLists(draft);
         this._renderStatsBuilderValidation(null);
     },
 
@@ -769,6 +905,7 @@ const searchOutputStatsPaneMethods = {
             series.push(entry);
         });
         if (series.length) draft.series = series;
+        this._syncStatsChartFiltersFromForm();
     },
 
     _onStatsBuilderTypeChange() {
@@ -1525,7 +1662,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.4',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

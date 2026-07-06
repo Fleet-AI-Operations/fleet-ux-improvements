@@ -4943,6 +4943,14 @@ function attachSearchOutputListeners(modal, dash) {
             }
     });
         modal.addEventListener('change', (e) => {
+            const statsFilterCb = e.target;
+            if (statsFilterCb && statsFilterCb.type === 'checkbox') {
+                const statsMsKey = statsFilterCb.getAttribute('data-wf-dash-ms');
+                if (statsMsKey && statsMsKey.startsWith('stats-chart-filter-') && modal.contains(statsFilterCb)) {
+                    dash._onStatsChartFilterMsChange(statsMsKey);
+                    return;
+                }
+            }
             const statsDraftField = e.target.closest('[data-wf-dash-stats-draft]');
             if (statsDraftField && modal.contains(statsDraftField)) {
                 const field = statsDraftField.getAttribute('data-wf-dash-stats-draft');
@@ -5024,7 +5032,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.5',
+    _version: '7.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

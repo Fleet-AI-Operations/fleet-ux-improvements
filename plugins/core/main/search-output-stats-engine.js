@@ -1,7 +1,7 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 2;
+const STATS_LAYOUT_SCHEMA_VERSION = 3;
 
 const STATS_TASK_POINT_CAP = 500;
 
@@ -20,6 +20,8 @@ const STATS_DIMENSION_DEFS = [
     { key: 'qaTimeMinutes', optionsKey: 'qaTimeMinutes', scopeKey: 'filter-qa-time', kind: 'item-bucket' },
     { key: 'disputeResolutionTimeMinutes', optionsKey: 'disputeResolutionTimeMinutes', scopeKey: 'filter-dispute-resolution-time', kind: 'item-bucket' }
 ];
+
+const STATS_CHART_FILTER_KEYS = STATS_DIMENSION_DEFS.map((d) => d.key);
 
 const STATS_DYNAMIC_DIMENSION = {
     key: 'promptVersionCount',
@@ -91,6 +93,59 @@ function statsDefaultSeriesYAxis(chartType, seriesIndex, renderAs) {
     return seriesIndex === 0 ? 'y' : 'y';
 }
 
+function statsEmptyChartFilters() {
+    return Object.fromEntries(STATS_CHART_FILTER_KEYS.map((key) => [key, []]));
+}
+
+function statsNormalizeChartFilters(raw, listBounds) {
+    const bounds = listBounds || {};
+    const out = statsEmptyChartFilters();
+    const src = raw && typeof raw === 'object' ? raw : {};
+    for (const key of STATS_CHART_FILTER_KEYS) {
+        const boundIds = new Set(bounds[key] || []);
+        const selected = Array.isArray(src[key]) ? src[key] : [];
+        out[key] = selected
+            .map((id) => String(id))
+            .filter((id) => !boundIds.size || boundIds.has(id));
+    }
+    return out;
+}
+
+function statsChartFiltersActive(chartFilters, listBounds) {
+    const lib = Context.dashboardLib;
+    const isUnrestricted = lib && typeof lib.isDimensionUnrestricted === 'function'
+        ? lib.isDimensionUnrestricted.bind(lib)
+        : null;
+    if (!isUnrestricted) return false;
+    const filters = chartFilters || {};
+    const bounds = listBounds || {};
+    for (const key of STATS_CHART_FILTER_KEYS) {
+        const selected = filters[key] || [];
+        const optionCount = (bounds[key] || []).length;
+        if (selected.length > 0 && !isUnrestricted(selected, optionCount)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function statsFilterItemsForChart(items, chart, ctx) {
+    const listBounds = (ctx && ctx.listBounds) || {};
+    const chartFilters = statsNormalizeChartFilters(chart && chart.chartFilters, listBounds);
+    if (!statsChartFiltersActive(chartFilters, listBounds)) {
+        return items || [];
+    }
+    const lib = Context.dashboardLib;
+    if (!lib || typeof lib.applyClientWorkerOutputFilters !== 'function') {
+        return items || [];
+    }
+    const sortContext = {
+        helpfulnessUi: (ctx && ctx.helpfulnessUi) || {},
+        currentUserId: (ctx && ctx.currentUserId) || ''
+    };
+    return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
+}
+
 function statsNormalizeSeriesEntry(s, chartType, seriesIndex) {
     const meta = statsGetChartTypeMeta(chartType);
     const renderAs = s.renderAs === 'line' ? 'line' : 'bar';
@@ -134,6 +189,7 @@ function statsNormalizeChartEntry(c) {
     if (meta.needsPointMode) {
         chart.pointMode = statsNormalizePointMode(c.pointMode);
     }
+    chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
 }
 
@@ -411,6 +467,16 @@ function statsValidateChart(chart, catalog, items, ctx) {
     if (missing.length > 0) {
         return { ok: false, missing };
     }
+
+    const listBounds = (ctx && ctx.listBounds) || {};
+    const chartFilters = statsNormalizeChartFilters(chart.chartFilters, listBounds);
+    if (statsChartFiltersActive(chartFilters, listBounds)) {
+        const scoped = statsFilterItemsForChart(items, Object.assign({}, chart, { chartFilters }), ctx);
+        if (!scoped.length) {
+            return { ok: false, missing: [{ id: 'chartFilters', label: 'No results match chart filters' }] };
+        }
+    }
+
     return { ok: true, missing: [] };
 }
 
@@ -578,14 +644,15 @@ function statsAggregateScorecard(chart, items, catalog, ctx) {
 }
 
 function statsAggregateChart(chart, items, catalog, ctx) {
+    const scopedItems = statsFilterItemsForChart(items, chart, ctx);
     const type = statsNormalizeChartType(chart.type);
     if (type === 'scorecard') {
-        return statsAggregateScorecard(chart, items, catalog, ctx);
+        return statsAggregateScorecard(chart, scopedItems, catalog, ctx);
     }
     if (type === 'scatter' || type === 'bubble') {
-        return statsAggregatePointChart(chart, items, catalog, ctx);
+        return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
-    return statsAggregateCategorical(chart, items, catalog, ctx);
+    return statsAggregateCategorical(chart, scopedItems, catalog, ctx);
 }
 
 function statsDefaultBuilderDraft(catalog) {
@@ -598,7 +665,8 @@ function statsDefaultBuilderDraft(catalog) {
         series: [{ metricId: 'count', agg: 'count', label: '' }],
         height: 220,
         pointMode: 'bucket',
-        presetKey: null
+        presetKey: null,
+        chartFilters: statsEmptyChartFilters()
     };
 }
 
@@ -606,7 +674,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '2.3',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -628,6 +696,9 @@ const plugin = {
             validateChart: (chart, catalog, items, ctx) => statsValidateChart(chart, catalog, items, ctx),
             aggregateChart: (chart, items, catalog, ctx) => statsAggregateChart(chart, items, catalog, ctx),
             defaultBuilderDraft: (catalog) => statsDefaultBuilderDraft(catalog),
+            emptyChartFilters: () => statsEmptyChartFilters(),
+            normalizeChartFilters: (raw, listBounds) => statsNormalizeChartFilters(raw, listBounds),
+            chartFiltersActive: (chartFilters, listBounds) => statsChartFiltersActive(chartFilters, listBounds),
             getChartTypeMeta: (type) => statsGetChartTypeMeta(type),
             aggregationsForChartType: (type) => statsAggregationsForChartType(type),
             chartTypes: () => STATS_CHART_TYPES.slice(),
