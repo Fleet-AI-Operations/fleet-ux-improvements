@@ -742,6 +742,33 @@ const searchOutputStatsPaneMethods = {
         chart.update('none');
     },
 
+    _statsRadialScale(theme) {
+        return {
+            beginAtZero: true,
+            ticks: {
+                color: theme.foreground,
+                font: { size: 10 },
+                showLabelBackdrop: false,
+                backdropColor: 'transparent',
+                z: 1
+            },
+            grid: {
+                color: theme.muted,
+                circular: true,
+                lineWidth: 1,
+                z: -1
+            },
+            angleLines: {
+                color: theme.muted,
+                lineWidth: 1
+            },
+            pointLabels: {
+                color: theme.foreground,
+                font: { size: 10 }
+            }
+        };
+    },
+
     _buildChartJsOptions(chart, theme, chartJsCtx) {
         const dash = this;
         const labelCount = (chartJsCtx && chartJsCtx.labelCount) || 0;
@@ -755,10 +782,21 @@ const searchOutputStatsPaneMethods = {
             dash._statsApplyCircularLegendPosition(chart, size.width);
         };
         const type = chart.type;
-        if (type === 'pie' || type === 'polarArea') {
+        if (type === 'pie') {
             return {
                 responsive: true,
                 maintainAspectRatio: false,
+                plugins: { legend: circularLegend },
+                onResize: circularOnResize
+            };
+        }
+        if (type === 'polarArea') {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: this._statsRadialScale(theme)
+                },
                 plugins: { legend: circularLegend },
                 onResize: circularOnResize
             };
@@ -768,12 +806,7 @@ const searchOutputStatsPaneMethods = {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    r: {
-                        beginAtZero: true,
-                        ticks: { color: theme.muted, font: { size: 10 }, backdropColor: 'transparent' },
-                        grid: { color: theme.border },
-                        pointLabels: { color: theme.foreground, font: { size: 10 } }
-                    }
+                    r: this._statsRadialScale(theme)
                 },
                 plugins: { legend: circularLegend },
                 onResize: circularOnResize
@@ -2072,7 +2105,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '4.12',
+    _version: '4.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
