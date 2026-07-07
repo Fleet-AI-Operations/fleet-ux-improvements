@@ -54,7 +54,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
             + '<div id="wf-dash-stats-chart-list" data-wf-dash-stats-chart-list="1" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px;"></div>'
             + '</div>'
-            + '<div id="wf-dash-stats-builder" style="display: none; flex-direction: column; gap: 12px; flex-shrink: 0;"></div>';
+            + '<div id="wf-dash-stats-builder" style="display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden;"></div>';
     },
 
     _ensureStatsLayout() {
@@ -269,6 +269,7 @@ const searchOutputStatsPaneMethods = {
         const importJsonBtn = this._q('[data-wf-dash-stats-import-json]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
         const builderEl = this._q('#wf-dash-stats-builder');
+        const panelStats = this._q('#wf-dash-stats-panel-stats');
         const mode = this._state.statsViewMode || 'dashboard';
         if (toolbar) toolbar.style.display = tab === 'stats' ? 'flex' : 'none';
         if (buildBtn) {
@@ -281,7 +282,18 @@ const searchOutputStatsPaneMethods = {
             importJsonBtn.style.display = (tab === 'stats' && mode === 'builder') ? '' : 'none';
         }
         if (dashEl) dashEl.style.display = (tab === 'stats' && mode === 'dashboard') ? 'flex' : 'none';
-        if (builderEl) builderEl.style.display = (tab === 'stats' && mode === 'builder') ? 'flex' : 'none';
+        if (builderEl) {
+            builderEl.style.display = (tab === 'stats' && mode === 'builder') ? 'flex' : 'none';
+        }
+        if (panelStats && tab === 'stats') {
+            if (mode === 'builder') {
+                panelStats.style.overflowY = 'hidden';
+                panelStats.style.overflowX = 'hidden';
+            } else {
+                panelStats.style.overflowY = 'auto';
+                panelStats.style.overflowX = 'auto';
+            }
+        }
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
         if (summaryEl && tab === 'stats' && mode === 'dashboard') {
             const items = this._getStatsScopeItems();
@@ -601,9 +613,11 @@ const searchOutputStatsPaneMethods = {
     _ensureStatsBuilderShell() {
         const el = this._q('#wf-dash-stats-builder');
         if (!el) return null;
-        if (!el.querySelector('#wf-dash-stats-builder-form')) {
-            el.innerHTML = '<div id="wf-dash-stats-builder-form"></div>'
-                + '<div id="wf-dash-stats-builder-preview" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
+        if (!el.querySelector('#wf-dash-stats-builder-scroll')) {
+            el.innerHTML = '<div id="wf-dash-stats-builder-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 4px;">'
+                + '<div id="wf-dash-stats-builder-form"></div>'
+                + '</div>'
+                + '<div id="wf-dash-stats-builder-preview" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 0; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #fff); box-shadow: 0 -6px 16px color-mix(in srgb, var(--foreground, #0f172a) 5%, transparent);">'
                 + '<div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">Preview</div>'
                 + '<div id="wf-dash-stats-builder-preview-status" style="display: none; font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
                 + '<div id="wf-dash-stats-builder-preview-wrap" style="position: relative; width: 100%; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); padding: 8px; box-sizing: border-box;">'
@@ -1321,7 +1335,7 @@ const searchOutputStatsPaneMethods = {
             fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
             inputStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
             hintStyle: 'font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;',
-            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: color-mix(in srgb, var(--muted, #64748b) 8%, var(--card, #fff));',
+            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--muted, #f1f5f9);',
             grid2: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;',
             grid3: 'display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;',
             sectionLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;'
@@ -2448,7 +2462,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.5',
+    _version: '5.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
