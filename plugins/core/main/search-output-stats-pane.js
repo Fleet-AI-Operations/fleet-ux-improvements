@@ -1,6 +1,7 @@
 // search-output-stats-pane.js — Worker Output Search stats pane (Ratings)
 
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
+const STATS_LINE_BORDER_WIDTH = 2.25;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -1195,6 +1196,7 @@ const searchOutputStatsPaneMethods = {
                         fill: false,
                         borderColor: outlineColor,
                         backgroundColor: outlineColor,
+                        borderWidth: STATS_LINE_BORDER_WIDTH,
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3
@@ -1221,6 +1223,7 @@ const searchOutputStatsPaneMethods = {
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3,
+                        borderWidth: STATS_LINE_BORDER_WIDTH,
                         borderColor: color,
                         statsSeriesKey: seriesKey
                     }));
@@ -1230,6 +1233,7 @@ const searchOutputStatsPaneMethods = {
                     tension: 0.2,
                     spanGaps: true,
                     pointRadius: 3,
+                    borderWidth: STATS_LINE_BORDER_WIDTH,
                     fill: shaded,
                     borderColor: color
                 };
@@ -2666,7 +2670,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.16',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
