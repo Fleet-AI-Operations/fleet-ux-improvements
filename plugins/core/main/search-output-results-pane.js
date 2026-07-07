@@ -326,6 +326,7 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Export JSON</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
+                                <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
@@ -364,6 +365,68 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
+    },
+
+    _ensureResultsToggleButton() {
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        let btn = root ? root.querySelector('[data-wf-dash-results-toggle]') : null;
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.setAttribute('data-wf-dash-results-toggle', 'true');
+            btn.className = this._dashBtnClass('basic', 'nav');
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._toggleResultsPanelHidden();
+            });
+        }
+        return btn;
+    },
+
+    _syncResultsPanelCollapseUi() {
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        if (!root) return;
+        const dashApi = Context.dashboard;
+        const hidden = dashApi && typeof dashApi.readResultsPanelHiddenPref === 'function'
+            ? dashApi.readResultsPanelHiddenPref()
+            : false;
+        const btn = this._ensureResultsToggleButton();
+        const headerActions = root.querySelector('[data-wf-dash-results-header-actions]');
+        const sliver = root.querySelector('[data-wf-dash-results-collapse-sliver]');
+        btn.textContent = hidden ? 'Unhide' : 'Hide';
+        btn.title = hidden ? 'Show the results panel' : 'Hide the results panel';
+        if (hidden) {
+            if (sliver && btn.parentElement !== sliver) sliver.appendChild(btn);
+        } else if (headerActions && btn.parentElement !== headerActions) {
+            headerActions.appendChild(btn);
+        }
+    },
+
+    _toggleResultsPanelHidden() {
+        const dashApi = Context.dashboard;
+        if (!dashApi || typeof dashApi.readResultsPanelHiddenPref !== 'function') return;
+        const next = !dashApi.readResultsPanelHiddenPref();
+        dashApi.writeResultsPanelHiddenPref(next);
+        Logger.log('search-output-results-pane: results panel ' + (next ? 'hidden' : 'shown'));
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
+            dashApi.applyResultsPanelLayout(root);
+        } else {
+            this._syncResultsPanelCollapseUi();
+        }
+        if (typeof dashApi.scheduleSplitLayoutSync === 'function') {
+            dashApi.scheduleSplitLayoutSync();
+        }
+    },
+
+    _applyResultsPanelLayoutOnOpen(modal) {
+        const root = modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const dashApi = Context.dashboard;
+        if (root && dashApi && typeof dashApi.applyResultsPanelLayout === 'function') {
+            dashApi.applyResultsPanelLayout(root);
+            return;
+        }
+        this._syncResultsPanelCollapseUi();
     },
 
     _patchCardsForDisputeId(disputeId) {
@@ -5138,7 +5201,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.9',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

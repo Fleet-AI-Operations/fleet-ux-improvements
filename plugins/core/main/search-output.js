@@ -4528,6 +4528,7 @@ function attachSearchOutputListeners(modal, dash) {
             }, { passive: true });
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
+        dash._applyResultsPanelLayoutOnOpen(modal);
     modal.addEventListener('click', (e) => {
             const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
             if (statsScopeBtn && modal.contains(statsScopeBtn)) {
@@ -5057,7 +5058,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.18',
+    _version: '7.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5108,6 +5109,9 @@ const plugin = {
                     if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                         dash._applyStatsPanelLayoutOnOpen(dash._modal);
                     }
+                    if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                        dash._applyResultsPanelLayoutOnOpen(dash._modal);
+                    }
                 });
             },
             onBuilt(modal, dash) {
@@ -5130,12 +5134,18 @@ const plugin = {
                 if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                     dash._applyStatsPanelLayoutOnOpen(modal);
                 }
+                if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                    dash._applyResultsPanelLayoutOnOpen(modal);
+                }
             },
             onActivate(modal, dash) {
                 requestAnimationFrame(() => {
                     dash._applyAllSidePanelWidths();
                     if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                         dash._applyStatsPanelLayoutOnOpen(modal);
+                    }
+                    if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                        dash._applyResultsPanelLayoutOnOpen(modal);
                     }
                 });
             }
