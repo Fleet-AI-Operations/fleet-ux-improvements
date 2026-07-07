@@ -1119,7 +1119,7 @@ const searchOutputStatsPaneMethods = {
                     return Object.assign(base, {
                         order: 3,
                         fill: true,
-                        backgroundColor: this._statsColorWithAlpha(color, 0.25),
+                        backgroundColor: color,
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
@@ -1147,7 +1147,9 @@ const searchOutputStatsPaneMethods = {
                     borderColor: color
                 };
                 if (shaded) {
-                    lineOpts.backgroundColor = this._statsColorWithAlpha(color, 0.25);
+                    lineOpts.backgroundColor = lineStacked
+                        ? color
+                        : this._statsColorWithAlpha(color, 0.25);
                 } else {
                     lineOpts.fill = false;
                 }
@@ -2359,7 +2361,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
