@@ -929,9 +929,13 @@ const searchOutputStatsPaneMethods = {
         if (this._statsIsBarLineChart(chart)) {
             const horizontal = chart.orientation === 'horizontal';
             const hasBarDatasets = (chart.series || []).some((s) => s.renderAs !== 'line');
-            const hasShadedLineDatasets = (chart.series || []).some((s) => s.renderAs === 'line' && s.lineStyle === 'shaded');
+            const hasSegmentedShaded = (chart.series || []).some((s) =>
+                s.renderAs === 'line' && s.lineStyle === 'shaded' && s.segmentBy);
+            const hasMultiSeriesShaded = (chart.series || []).some((s) =>
+                s.renderAs === 'line' && s.lineStyle === 'shaded' && !s.segmentBy);
             const barStacked = chart.barLayout === 'stacked' && hasBarDatasets;
-            const lineStacked = chart.lineAreaLayout === 'stacked' && hasShadedLineDatasets;
+            const lineStacked = hasSegmentedShaded
+                || (chart.lineAreaLayout === 'stacked' && hasMultiSeriesShaded);
             const stacked = barStacked || lineStacked;
             const useY1 = (chart.series || []).some((s) => s.yAxis === 'y1');
             if (horizontal) {
@@ -1085,7 +1089,8 @@ const searchOutputStatsPaneMethods = {
 
         const horizontal = chart.orientation === 'horizontal';
         const hasBarDatasets = (aggData.datasets || []).some((ds) => ds.renderAs !== 'line');
-        const hasShadedLineDatasets = (aggData.datasets || []).some((ds) => ds.renderAs === 'line' && ds.lineStyle === 'shaded');
+        const hasShadedLineDatasets = (aggData.datasets || []).some((ds) =>
+            ds.renderAs === 'line' && ds.lineStyle === 'shaded' && !ds.segmentFillOnly);
         const barStacked = chart.barLayout === 'stacked' && hasBarDatasets;
         const lineStacked = chart.lineAreaLayout === 'stacked' && hasShadedLineDatasets;
         const datasets = (aggData.datasets || []).map((ds, i) => {
@@ -1110,6 +1115,29 @@ const searchOutputStatsPaneMethods = {
                 base.stack = 'bar-' + valueScale;
             }
             if (renderAs === 'line') {
+                if (ds.segmentFillOnly) {
+                    return Object.assign(base, {
+                        order: 3,
+                        fill: true,
+                        backgroundColor: this._statsColorWithAlpha(color, 0.25),
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        stack: 'line-' + valueScale
+                    });
+                }
+                if (ds.segmentOutline) {
+                    const outlineColor = theme.foreground;
+                    return Object.assign(base, {
+                        order: 1,
+                        fill: false,
+                        borderColor: outlineColor,
+                        backgroundColor: outlineColor,
+                        tension: 0.2,
+                        spanGaps: true,
+                        pointRadius: 3
+                    });
+                }
                 const shaded = ds.lineStyle === 'shaded';
                 const lineOpts = {
                     tension: 0.2,
@@ -1373,11 +1401,7 @@ const searchOutputStatsPaneMethods = {
                     + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
                         '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
                     ).join('')
-                    + '</select>'
-                    + (s.renderAs === 'line' && s.lineStyle === 'shaded'
-                        ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Split one shaded metric into stackable areas.</div>'
-                        : '')
-                    + '</div>')
+                    + '</select></div>')
                 : '';
             const showSeriesLabel = !typeMeta.skipGroupBy;
             const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
@@ -1437,7 +1461,7 @@ const searchOutputStatsPaneMethods = {
                 + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
                 + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
                 + '</select>'
-                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Use with multiple shaded series or one shaded series with Segment by. Stacked areas sum per group without overlapping fills.</div>'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Segment splits stack automatically. Use this for multiple shaded series without Segment by.</div>'
                 + '</div>')
             : '';
         const lib = Context.dashboardLib;
@@ -2335,7 +2359,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

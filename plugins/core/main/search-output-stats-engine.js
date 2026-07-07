@@ -905,9 +905,38 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         if (segmentBy) {
             const segmentDim = statsFindDimension(catalog, segmentBy);
             if (segmentDim) {
-                datasets.push(...statsBuildSegmentedSeriesDatasets(
+                const segmentDatasets = statsBuildSegmentedSeriesDatasets(
                     s, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
-                ));
+                );
+                if (s.lineStyle === 'shaded') {
+                    segmentDatasets.forEach((ds) => {
+                        ds.segmentFillOnly = true;
+                    });
+                    const metric = statsFindMetric(catalog, s.metricId);
+                    const seriesLabel = s.label || (metric && metric.label) || s.metricId;
+                    const outlineData = keysOut.map((key) => {
+                        const bucket = buckets.get(key);
+                        if (!bucket) return null;
+                        if (s.metricId === 'count' && s.agg === 'count') {
+                            return bucket.counts.length;
+                        }
+                        return statsApplyAgg(bucket.series[si], s.agg);
+                    });
+                    datasets.push(...segmentDatasets);
+                    datasets.push({
+                        label: seriesLabel,
+                        data: outlineData,
+                        metricId: s.metricId,
+                        agg: s.agg,
+                        renderAs: 'line',
+                        lineStyle: 'line',
+                        yAxis: s.yAxis,
+                        segmentOutline: true,
+                        segmentSeries: true
+                    });
+                } else {
+                    datasets.push(...segmentDatasets);
+                }
             }
             continue;
         }
@@ -1087,7 +1116,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
