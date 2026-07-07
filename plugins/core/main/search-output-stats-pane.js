@@ -43,14 +43,14 @@ const searchOutputStatsPaneMethods = {
     _statsChartsPanelContentHtml() {
         return ''
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
-            + '<div id="wf-dash-stats-toolbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; min-height: 28px;">'
-            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;"></div>'
-            + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">'
-            + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset</button>'
-            + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export settings</button>'
-            + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export image</button>'
-            + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
-            + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
+            + '<div id="wf-dash-stats-toolbar" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-shrink: 0;">'
+            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; padding-top: 2px;"></div>'
+            + '<div style="display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex-shrink: 0; min-width: 120px;">'
+            + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="width: 100%;">Reset</button>'
+            + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="width: 100%;">Export settings</button>'
+            + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="width: 100%;">Export image</button>'
+            + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="width: 100%;">Import JSON</button>'
+            + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="width: 100%;">Build Chart</button>'
             + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
@@ -1012,7 +1012,36 @@ const searchOutputStatsPaneMethods = {
             plugins: {
                 legend: this._statsIsBarLineChart(chart)
                     ? this._statsBarLineLegendOptions(baseLegend)
-                    : baseLegend
+                    : baseLegend,
+                tooltip: this._statsIsBarLineChart(chart)
+                    ? this._statsBarLineTooltipOptions()
+                    : undefined
+            }
+        };
+    },
+
+    _statsBarLineTooltipOptions() {
+        const dash = this;
+        return {
+            callbacks: {
+                filter: (item) => {
+                    const ds = item.chart.data.datasets[item.datasetIndex];
+                    return !(ds && ds.statsSpreadBand);
+                },
+                label: (ctx) => {
+                    const ds = ctx.dataset || {};
+                    const horizontal = ctx.chart.options.indexAxis === 'y';
+                    const rawVal = horizontal ? ctx.parsed.x : ctx.parsed.y;
+                    let text = (ds.label || '') + ': ' + dash._formatStatsScorecardValue(rawVal);
+                    const idx = ctx.dataIndex;
+                    if (Array.isArray(ds.statsSpreadLow) && Array.isArray(ds.statsSpreadHigh)
+                        && ds.statsSpreadLow[idx] != null && ds.statsSpreadHigh[idx] != null
+                        && Number.isFinite(ds.statsSpreadLow[idx]) && Number.isFinite(ds.statsSpreadHigh[idx])) {
+                        text += ' (±σ ' + dash._formatStatsScorecardValue(ds.statsSpreadLow[idx])
+                            + '–' + dash._formatStatsScorecardValue(ds.statsSpreadHigh[idx]) + ')';
+                    }
+                    return text;
+                }
             }
         };
     },
@@ -1200,10 +1229,79 @@ const searchOutputStatsPaneMethods = {
                 backgroundColor: color,
                 order: renderAs === 'line' ? 1 : 2
             }, axisBinding);
+            const hasSpreadBand = ds.spread === 'stddevBand'
+                && Array.isArray(ds.spreadLow)
+                && Array.isArray(ds.spreadHigh);
+            const spreadKey = 'spread-' + i;
+
+            if (renderAs === 'bar' && hasSpreadBand) {
+                const bandData = ds.spreadLow.map((lo, idx) => {
+                    const hi = ds.spreadHigh[idx];
+                    if (lo == null || hi == null || !Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+                    return [lo, hi];
+                });
+                chartDatasets.push(Object.assign({}, base, {
+                    type: 'bar',
+                    data: bandData,
+                    backgroundColor: this._statsColorWithAlpha(color, 0.2),
+                    borderColor: this._statsColorWithAlpha(color, 0.35),
+                    borderWidth: 1,
+                    order: 3,
+                    statsLegendHidden: true,
+                    statsSpreadBand: true,
+                    statsSeriesKey: spreadKey
+                }));
+                chartDatasets.push(Object.assign({}, base, {
+                    statsSpreadLow: ds.spreadLow,
+                    statsSpreadHigh: ds.spreadHigh
+                }));
+                return;
+            }
+
             if (renderAs === 'bar' && barStacked) {
                 base.stack = 'bar-' + valueScale;
             }
             if (renderAs === 'line') {
+                if (hasSpreadBand) {
+                    chartDatasets.push(Object.assign({}, base, {
+                        type: 'line',
+                        data: ds.spreadLow,
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        spanGaps: true,
+                        order: 4,
+                        statsLegendHidden: true,
+                        statsSpreadBand: true,
+                        statsSpreadLowLayer: true,
+                        statsSeriesKey: spreadKey
+                    }));
+                    chartDatasets.push(Object.assign({}, base, {
+                        type: 'line',
+                        data: ds.spreadHigh,
+                        fill: '-1',
+                        backgroundColor: this._statsColorWithAlpha(color, 0.2),
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        spanGaps: true,
+                        order: 3,
+                        statsLegendHidden: true,
+                        statsSpreadBand: true,
+                        statsSeriesKey: spreadKey
+                    }));
+                    chartDatasets.push(Object.assign({}, base, {
+                        type: 'line',
+                        tension: 0.2,
+                        spanGaps: true,
+                        pointRadius: 3,
+                        fill: false,
+                        order: 1,
+                        statsSpreadLow: ds.spreadLow,
+                        statsSpreadHigh: ds.spreadHigh
+                    }));
+                    return;
+                }
                 if (ds.segmentFillOnly) {
                     chartDatasets.push(Object.assign({}, base, {
                         order: 3,
@@ -1855,7 +1953,21 @@ const searchOutputStatsPaneMethods = {
                 + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
                 + '</select>',
                 { styles });
-            row3Html = '<div style="' + styles.grid3 + '; margin-top: 8px;">' + renderField + lineStyleField + yAxisField + '</div>';
+            const spread = s.spread === 'stddevBand' ? 'stddevBand' : 'none';
+            const spreadDisabled = s.agg !== 'avg' || !!(s.segmentBy);
+            const spreadCtl = this._statsBuilderControlState(spreadDisabled);
+            const spreadField = this._statsBuilderField('Spread',
+                '<select data-wf-dash-stats-draft="series-spread" data-series-idx="' + i + '" style="' + spreadCtl.style + '"' + spreadCtl.attr + '>'
+                + '<option value="none"' + (spread === 'none' ? ' selected' : '') + '>None</option>'
+                + '<option value="stddevBand"' + (spread === 'stddevBand' ? ' selected' : '') + '>±1 std dev</option>'
+                + '</select>',
+                {
+                    styles,
+                    disabled: spreadDisabled,
+                    hint: 'Shows mean ± 1 sample std dev per category. Requires Average aggregation.'
+                });
+            row3Html = '<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px;">'
+                + renderField + lineStyleField + yAxisField + spreadField + '</div>';
         }
 
         const removeBtn = showRemove
@@ -1997,6 +2109,7 @@ const searchOutputStatsPaneMethods = {
             const lineStyleEl = row.querySelector('[data-wf-dash-stats-draft="series-lineStyle"]');
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
+            const spreadEl = row.querySelector('[data-wf-dash-stats-draft="series-spread"]');
             if (!metricEl || !aggEl) return;
             const entry = {
                 metricId: metricEl.value,
@@ -2007,6 +2120,7 @@ const searchOutputStatsPaneMethods = {
             if (lineStyleEl) entry.lineStyle = lineStyleEl.value === 'shaded' ? 'shaded' : 'line';
             if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
             if (segmentEl) entry.segmentBy = segmentEl.value || null;
+            if (spreadEl) entry.spread = spreadEl.value === 'stddevBand' ? 'stddevBand' : 'none';
             series.push(entry);
         });
         if (series.length) draft.series = series;
@@ -2079,6 +2193,9 @@ const searchOutputStatsPaneMethods = {
                 draft.series.forEach((s) => {
                     if (!engine.seriesAllowsSegment(draft.type, s)) {
                         s.segmentBy = null;
+                    }
+                    if (s.agg !== 'avg' || s.segmentBy) {
+                        s.spread = 'none';
                     }
                 });
             }
@@ -2234,7 +2351,16 @@ const searchOutputStatsPaneMethods = {
             }
             extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
                 + dashEscHtml(agg.labels.map((l, i) => {
-                    const vals = (agg.datasets || []).map((d) => d.label + ' ' + (d.data[i] != null ? d.data[i] : 'n/a')).join(', ');
+                    const vals = (agg.datasets || []).map((d) => {
+                        const v = d.data[i] != null ? d.data[i] : 'n/a';
+                        let text = d.label + ' ' + v;
+                        if (d.spread === 'stddevBand'
+                            && Array.isArray(d.spreadLow) && Array.isArray(d.spreadHigh)
+                            && d.spreadLow[i] != null && d.spreadHigh[i] != null) {
+                            text += ' (±σ ' + d.spreadLow[i] + '–' + d.spreadHigh[i] + ')';
+                        }
+                        return text;
+                    }).join(', ');
                     return l + ' (' + vals + ')';
                 }).join('; '))
                 + '</div>';
@@ -3188,7 +3314,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.20',
+    _version: '5.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

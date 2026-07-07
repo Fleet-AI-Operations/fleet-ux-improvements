@@ -51,7 +51,8 @@ const STATS_AGGREGATIONS = [
     { id: 'min', label: 'Min' },
     { id: 'max', label: 'Max' },
     { id: 'median', label: 'Median' },
-    { id: 'mode', label: 'Mode' }
+    { id: 'mode', label: 'Mode' },
+    { id: 'stddev', label: 'Std dev' }
 ];
 
 const STATS_SCORECARD_GROUP_BY = '__scope__';
@@ -128,6 +129,17 @@ function statsNormalizeOrientation(raw) {
 
 function statsNormalizeLineAreaLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'origin';
+}
+
+function statsNormalizeSpread(raw) {
+    return raw === 'stddevBand' ? 'stddevBand' : 'none';
+}
+
+function statsSeriesSpreadAllowed(chartType, seriesEntry) {
+    if (statsNormalizeChartType(chartType) !== 'barLine') return false;
+    if (String(seriesEntry.agg || '') !== 'avg') return false;
+    if (seriesEntry.segmentBy) return false;
+    return true;
 }
 
 function statsNormalizeCategorySort(raw, seriesCount) {
@@ -268,6 +280,11 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySou
     if (statsSeriesAllowsSegment(chartType, entry)) {
         const segmentRaw = s.segmentBy != null ? s.segmentBy : s.splitBy;
         entry.segmentBy = statsNormalizeSegmentBy(segmentRaw, groupBy);
+    }
+    if (meta.needsRenderAs) {
+        entry.spread = statsSeriesSpreadAllowed(chartType, entry)
+            ? statsNormalizeSpread(s.spread)
+            : 'none';
     }
     return entry;
 }
@@ -786,7 +803,25 @@ function statsApplyAgg(values, agg) {
         }
         return bestVal;
     }
+    if (agg === 'stddev') {
+        if (nums.length < 2) return null;
+        const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+        const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (nums.length - 1);
+        return Math.round(Math.sqrt(variance) * 10) / 10;
+    }
     return nums.length;
+}
+
+function statsComputeSpreadBand(values) {
+    const nums = (values || []).filter((v) => v != null && Number.isFinite(v));
+    if (nums.length < 2) return { low: null, high: null };
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (nums.length - 1);
+    const stddev = Math.sqrt(variance);
+    return {
+        low: Math.round((mean - stddev) * 10) / 10,
+        high: Math.round((mean + stddev) * 10) / 10
+    };
 }
 
 function statsPushSeriesValue(bucket, seriesEntry, item, getMetricValue) {
@@ -913,9 +948,16 @@ function statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, serie
     const orderMap = indexed.map((x) => x.originalIndex);
     return {
         labels: indexed.map((x) => x.label),
-        datasets: datasets.map((ds) => Object.assign({}, ds, {
-            data: orderMap.map((oldIdx) => ds.data[oldIdx])
-        }))
+        datasets: datasets.map((ds) => {
+            const next = Object.assign({}, ds, {
+                data: orderMap.map((oldIdx) => ds.data[oldIdx])
+            });
+            if (Array.isArray(ds.spreadLow)) {
+                next.spreadLow = orderMap.map((oldIdx) => ds.spreadLow[oldIdx]);
+                next.spreadHigh = orderMap.map((oldIdx) => ds.spreadHigh[oldIdx]);
+            }
+            return next;
+        })
     };
 }
 
@@ -1016,9 +1058,24 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             }
             return statsApplyAgg(bucket.series[si], s.agg);
         });
+        const spreadEnabled = s.spread === 'stddevBand' && s.agg === 'avg';
+        let spreadLow = null;
+        let spreadHigh = null;
+        if (spreadEnabled) {
+            spreadLow = keysOut.map((key) => {
+                const bucket = buckets.get(key);
+                if (!bucket) return null;
+                return statsComputeSpreadBand(bucket.series[si]).low;
+            });
+            spreadHigh = keysOut.map((key) => {
+                const bucket = buckets.get(key);
+                if (!bucket) return null;
+                return statsComputeSpreadBand(bucket.series[si]).high;
+            });
+        }
         const metric = statsFindMetric(catalog, s.metricId);
         const label = s.label || (metric && metric.label) || s.metricId;
-        datasets.push({
+        const datasetEntry = {
             label,
             data,
             metricId: s.metricId,
@@ -1026,7 +1083,13 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             renderAs: s.renderAs,
             lineStyle: s.lineStyle,
             yAxis: s.yAxis
-        });
+        };
+        if (spreadEnabled) {
+            datasetEntry.spread = 'stddevBand';
+            datasetEntry.spreadLow = spreadLow;
+            datasetEntry.spreadHigh = spreadHigh;
+        }
+        datasets.push(datasetEntry);
     }
 
     const sorted = statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, seriesList);
@@ -1186,7 +1249,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.7',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
