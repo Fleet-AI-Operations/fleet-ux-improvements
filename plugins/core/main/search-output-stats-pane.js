@@ -3,6 +3,7 @@
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
 const STATS_SCORECARD_ROW_GAP_PX = 12;
+const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -818,6 +819,23 @@ const searchOutputStatsPaneMethods = {
         return parts.join(' · ');
     },
 
+    _statsChartCardHeaderHtml(chart) {
+        const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        return ''
+            + '<div class="wf-dash-stats-chart-header">'
+            + '<div class="wf-dash-stats-chart-header-title">'
+            + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-drag" title="Drag to reorder" aria-hidden="true">⠿</span>'
+            + '<div class="wf-dash-stats-chart-header-text">' + dashEscHtml(chart.title) + '</div>'
+            + '</div>'
+            + '<div class="wf-dash-stats-chart-header-actions">'
+            + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Edit</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
+            + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-delete" title="Delete chart" aria-label="Delete chart">×</button>'
+            + '</div>'
+            + '</div>';
+    },
+
     _statsChartCardHtml(chart, validation, inScorecardRow) {
         const box = this._panelBoxStyle();
         const height = this._statsResolvedChartHeight(chart);
@@ -845,14 +863,7 @@ const searchOutputStatsPaneMethods = {
             ? ('flex: 1 1 ' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px; min-width: min(' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
         return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
-            + '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">'
-            + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" title="Drag to reorder" style="cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1;">⠿</span>'
-            + '<div style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + dashEscHtml(chart.title) + '</div>'
-            + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Edit</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export settings</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export image</button>'
-            + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" title="Delete chart" aria-label="Delete chart" style="border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px;">×</button>'
-            + '</div>'
+            + this._statsChartCardHeaderHtml(chart)
             + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
             + overlay
@@ -1539,6 +1550,78 @@ const searchOutputStatsPaneMethods = {
             dragId = null;
         });
         listEl.addEventListener('pointercancel', () => { dragId = null; });
+    },
+
+    _ensureStatsChartCardStyles() {
+        if (typeof document === 'undefined') return;
+        if (document.getElementById(STATS_CHART_CARD_STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = STATS_CHART_CARD_STYLE_ID;
+        style.textContent = ''
+            + '.wf-dash-stats-chart-card { container-type: inline-size; }'
+            + '.wf-dash-stats-chart-header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 6px; margin-bottom: 8px; }'
+            + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; }'
+            + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
+            + '.wf-dash-stats-chart-drag { cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
+            + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }'
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
+            + '@container (max-width: 260px) {'
+            + '.wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
+            + '.wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
+            + '}';
+        document.head.appendChild(style);
+    },
+
+    _syncStatsChartCardHeader(card) {
+        const header = card && card.querySelector('.wf-dash-stats-chart-header');
+        const titleRow = card && card.querySelector('.wf-dash-stats-chart-header-title');
+        const actions = card && card.querySelector('.wf-dash-stats-chart-header-actions');
+        if (!header || !titleRow || !actions) return;
+        header.classList.remove('wf-dash-stats-chart-header--actions-wrap', 'wf-dash-stats-chart-header--actions-stack');
+        let actionsNaturalWidth = 0;
+        actions.querySelectorAll('button').forEach((btn, index) => {
+            actionsNaturalWidth += btn.offsetWidth + (index > 0 ? 6 : 0);
+        });
+        const needsWrap = titleRow.scrollWidth + actionsNaturalWidth + 8 > header.clientWidth + 1;
+        if (needsWrap) {
+            header.classList.add('wf-dash-stats-chart-header--actions-wrap');
+        }
+        void header.offsetHeight;
+        if (actionsNaturalWidth > actions.clientWidth + 1) {
+            header.classList.add('wf-dash-stats-chart-header--actions-stack');
+        }
+    },
+
+    _syncAllStatsChartCardHeaders(listEl) {
+        if (!listEl) return;
+        listEl.querySelectorAll('.wf-dash-stats-chart-card').forEach((card) => {
+            this._syncStatsChartCardHeader(card);
+        });
+    },
+
+    _teardownStatsChartHeaderLayout() {
+        const ro = this._state && this._state.statsChartHeaderRo;
+        if (!ro) return;
+        ro.disconnect();
+        this._state.statsChartHeaderRo = null;
+    },
+
+    _attachStatsChartHeaderLayout(listEl) {
+        this._ensureStatsChartCardStyles();
+        this._teardownStatsChartHeaderLayout();
+        if (!listEl) return;
+        const dash = this;
+        const sync = () => dash._syncAllStatsChartCardHeaders(listEl);
+        sync();
+        if (typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => sync());
+        this._state.statsChartHeaderRo = ro;
+        ro.observe(listEl);
+        listEl.querySelectorAll('.wf-dash-stats-chart-card').forEach((card) => ro.observe(card));
     },
 
     _renderStatsBuilderValidation(missing) {
@@ -2719,6 +2802,7 @@ const searchOutputStatsPaneMethods = {
         }
         listEl.innerHTML = this._statsBuildChartListHtml(validations);
         this._attachStatsChartReorder(listEl);
+        this._attachStatsChartHeaderLayout(listEl);
 
         const renderGen = (this._state.statsRenderGen || 0) + 1;
         this._state.statsRenderGen = renderGen;
@@ -3831,7 +3915,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.27',
+    _version: '5.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3842,6 +3926,7 @@ const plugin = {
             return;
         }
         Context.searchOutputStatsPaneMethods = searchOutputStatsPaneMethods;
+        searchOutputStatsPaneMethods._ensureStatsChartCardStyles();
         if (state) state.registered = true;
         Logger.log('search-output-stats-pane: registered (Context.searchOutputStatsPaneMethods)');
     }
