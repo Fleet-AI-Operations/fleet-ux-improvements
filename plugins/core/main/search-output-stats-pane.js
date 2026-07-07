@@ -45,6 +45,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-stats-toolbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; min-height: 28px;">'
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;"></div>'
             + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">'
+            + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset dashboard</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export dashboard</button>'
             + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
@@ -268,6 +269,7 @@ const searchOutputStatsPaneMethods = {
         const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
         const buildBtn = this._q('[data-wf-dash-stats-build]');
+        const resetDashBtn = this._q('[data-wf-dash-stats-reset-dashboard]');
         const exportDashBtn = this._q('[data-wf-dash-stats-export-dashboard]');
         const importJsonBtn = this._q('[data-wf-dash-stats-import-json]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
@@ -277,6 +279,9 @@ const searchOutputStatsPaneMethods = {
         if (toolbar) toolbar.style.display = tab === 'stats' ? 'flex' : 'none';
         if (buildBtn) {
             buildBtn.textContent = mode === 'builder' ? 'Back to dashboard' : 'Build Chart';
+        }
+        if (resetDashBtn) {
+            resetDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
         }
         if (exportDashBtn) {
             exportDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
@@ -1296,6 +1301,23 @@ const searchOutputStatsPaneMethods = {
             this._modal.appendChild(input);
         }
         return input;
+    },
+
+    _resetStatsDashboard() {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.defaultLayout !== 'function') {
+            Logger.warn('search-output-stats-pane: dashboard reset skipped — stats engine unavailable');
+            return;
+        }
+        const confirmed = confirm(
+            'Reset dashboard to the default layout? All custom charts will be removed. This cannot be undone.'
+        );
+        if (!confirmed) return;
+        this._state.statsLayout = engine.defaultLayout();
+        this._persistStatsLayout();
+        this._state.statsPanelDirty = false;
+        void this._renderStatsPanel();
+        Logger.log('search-output-stats-pane: dashboard reset to default — ' + this._state.statsLayout.charts.length + ' chart(s)');
     },
 
     _exportStatsDashboard() {
@@ -2623,7 +2645,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.13',
+    _version: '5.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
