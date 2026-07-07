@@ -186,7 +186,7 @@ const searchOutputStatsPaneMethods = {
                 }
                 return entry;
             }),
-            height: Number(draft.height) || 220,
+            height: Number(draft.height) || 260,
             presetKey: draft.presetKey || null,
             chartFilters: draft.chartFilters || {}
         };
@@ -529,7 +529,7 @@ const searchOutputStatsPaneMethods = {
         const chart = this._draftToChartObject(draft, engine);
         const validation = engine.validateChart(chart, catalog, items, ctx);
 
-        const previewHeight = Number(draft.height) || 220;
+        const previewHeight = Number(draft.height) || 260;
         wrapEl.style.height = previewHeight + 'px';
 
         if (statusEl) {
@@ -736,7 +736,7 @@ const searchOutputStatsPaneMethods = {
 
     _statsChartCardHtml(chart, validation) {
         const box = this._panelBoxStyle();
-        const height = Number(chart.height) || 220;
+        const height = Number(chart.height) || 260;
         const disabled = validation && !validation.ok;
         const missingEntry = disabled && validation.missing[0] ? validation.missing[0] : null;
         const missingLabel = missingEntry ? missingEntry.label : '';
@@ -1743,7 +1743,7 @@ const searchOutputStatsPaneMethods = {
         } else if (this._statsNormalizeChartType(draft.type) !== 'barLine') {
             draft.categorySort = null;
         }
-        if (heightEl) draft.height = Number(heightEl.value) || 220;
+        if (heightEl) draft.height = Number(heightEl.value) || 260;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
@@ -2599,7 +2599,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.11',
+    _version: '5.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

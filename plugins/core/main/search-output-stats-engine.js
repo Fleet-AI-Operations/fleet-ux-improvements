@@ -78,10 +78,10 @@ const STATS_CHART_TYPE_META = {
 const STATS_CHART_TYPES = Object.values(STATS_CHART_TYPE_META);
 
 const STATS_HEIGHT_PRESETS = [
-    { id: 140, label: 'Scorecard (140px)' },
-    { id: 180, label: 'Compact (180px)' },
-    { id: 220, label: 'Default (220px)' },
-    { id: 280, label: 'Tall (280px)' }
+    { id: 140, label: 'Scorecard' },
+    { id: 200, label: 'Compact' },
+    { id: 260, label: 'Default' },
+    { id: 320, label: 'Tall' }
 ];
 
 function statsNewChartId() {
@@ -286,7 +286,7 @@ function statsNormalizeChartEntry(c) {
         series,
         height: Number.isFinite(Number(c.height))
             ? Number(c.height)
-            : (meta.defaultHeight || 220),
+            : (meta.defaultHeight || 260),
         presetKey: c.presetKey != null ? String(c.presetKey) : null
     };
     if (meta.needsPointMode) {
@@ -318,7 +318,7 @@ function statsDefaultLayout() {
                 type: 'pie',
                 groupBy: 'statuses',
                 series: [{ metricId: 'count', agg: 'count', label: '' }],
-                height: 220,
+                height: 260,
                 presetKey: 'status'
             },
             {
@@ -332,7 +332,7 @@ function statsDefaultLayout() {
                     { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y' },
                     { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y1' }
                 ],
-                height: 240,
+                height: 320,
                 presetKey: 'env-timing'
             }
         ]
@@ -1163,7 +1163,7 @@ function statsDefaultBuilderDraft(catalog) {
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
         series: [{ metricId: 'count', agg: 'count', label: '' }],
-        height: 220,
+        height: 260,
         pointMode: 'bucket',
         barLayout: 'grouped',
         orientation: 'vertical',
@@ -1178,7 +1178,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
