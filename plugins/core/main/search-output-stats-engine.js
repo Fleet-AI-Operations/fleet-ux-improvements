@@ -3,6 +3,8 @@
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
 const STATS_LAYOUT_SCHEMA_VERSION = 5;
 
+const STATS_DEFAULT_LAYOUT_JSON = '{"schemaVersion":5,"charts":[{"id":"chart-mr9if575-n0g8zx2","title":"Current Task Status","type":"pie","groupBy":"statuses","series":[{"metricId":"count","agg":"count","label":"Count"}],"height":220,"presetKey":"status","chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9l3yl0-ne9fwit","title":"Return Reasons","type":"polarArea","groupBy":"taskIssues","series":[{"metricId":"count","agg":"count","label":""}],"height":140,"presetKey":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":["returned"],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9mmfih-7eeey9y","title":"Avg # Task Versions/Workflow Time vs Environment","type":"barLine","groupBy":"envKeys","series":[{"metricId":"prompt_version_count","agg":"avg","label":"Avg Task Versions","renderAs":"bar","yAxis":"y","segmentBy":null},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"Avg v1 Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"},{"metricId":"qa_time_minutes","agg":"avg","label":"Avg QA Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"}],"height":280,"presetKey":null,"barLayout":"grouped","orientation":"vertical","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9n8ud7-liveetc","title":"Count of Tasks by Env vs Current Status","type":"barLine","groupBy":"envKeys","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"horizontal","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9y70g0-qrk1ewp","title":"Tasks by Week and Status vs Avg v1 Creation Time","type":"barLine","groupBy":"taskCreatedWeek","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"","renderAs":"line","yAxis":"y1","lineStyle":"shaded","segmentBy":null}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"vertical","lineAreaLayout":"origin","categorySort":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}}]}';
+
 const STATS_TASK_POINT_CAP = 500;
 
 const STATS_DIMENSION_DEFS = [
@@ -311,34 +313,7 @@ function statsNormalizeChartEntry(c) {
 }
 
 function statsDefaultLayout() {
-    return {
-        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
-        charts: [
-            {
-                id: statsNewChartId(),
-                title: 'Task status',
-                type: 'pie',
-                groupBy: 'statuses',
-                series: [{ metricId: 'count', agg: 'count', label: '' }],
-                height: 260,
-                presetKey: 'status'
-            },
-            {
-                id: statsNewChartId(),
-                title: 'Avg time by environment (minutes)',
-                type: 'barLine',
-                groupBy: 'envKeys',
-                orientation: 'vertical',
-                lineAreaLayout: 'origin',
-                series: [
-                    { metricId: 'v1_creation_time_minutes', agg: 'avg', label: 'Avg v1 creation (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y' },
-                    { metricId: 'qa_time_minutes', agg: 'avg', label: 'Avg QA time (min)', renderAs: 'line', lineStyle: 'line', yAxis: 'y1' }
-                ],
-                height: 320,
-                presetKey: 'env-timing'
-            }
-        ]
-    };
+    return statsNormalizeLayout(JSON.parse(STATS_DEFAULT_LAYOUT_JSON));
 }
 
 function statsNormalizeLayout(raw) {
@@ -1200,7 +1175,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

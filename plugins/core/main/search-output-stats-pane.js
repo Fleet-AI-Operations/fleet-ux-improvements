@@ -47,7 +47,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export dashboard</button>'
             + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
-            + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
+            + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
             + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
@@ -2004,12 +2004,27 @@ const searchOutputStatsPaneMethods = {
         }
     },
 
+    _isStatsPanelOpen() {
+        if ((this._state.statsViewMode || 'dashboard') === 'builder') return true;
+        if ((this._state.statsTab || 'stats') !== 'stats') return false;
+        const dashApi = Context.dashboard;
+        if (dashApi && typeof dashApi.readStatsPanelHiddenPref === 'function') {
+            return !dashApi.readStatsPanelHiddenPref();
+        }
+        return true;
+    },
+
     async _renderStatsPanel() {
         if ((this._state.statsTab || 'stats') !== 'stats') return;
         if ((this._state.statsViewMode || 'dashboard') === 'builder') {
             this._renderStatsBuilder();
             return;
         }
+        if (!this._isStatsPanelOpen()) {
+            this._state.statsPanelDirty = true;
+            return;
+        }
+        this._state.statsPanelDirty = false;
 
         const emptyEl = this._q('#wf-dash-stats-empty');
         const dashEl = this._q('#wf-dash-stats-dashboard');
@@ -2210,6 +2225,9 @@ const searchOutputStatsPaneMethods = {
         if (typeof dashApi.scheduleSplitLayoutSync === 'function') {
             dashApi.scheduleSplitLayoutSync();
         }
+        if (!next && this._state.statsPanelDirty) {
+            void this._renderStatsPanel();
+        }
     },
 
     _applyStatsPanelLayoutOnOpen(modal) {
@@ -2218,10 +2236,16 @@ const searchOutputStatsPaneMethods = {
         if (root && dashApi && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
             this._syncStatsScopeToggleUi();
+            if (this._isStatsPanelOpen() && this._state.statsPanelDirty) {
+                void this._renderStatsPanel();
+            }
             return;
         }
         this._syncStatsPanelCollapseUi();
         this._syncStatsScopeToggleUi();
+        if (this._isStatsPanelOpen() && this._state.statsPanelDirty) {
+            void this._renderStatsPanel();
+        }
     },
 
     _ratingSearchScoreTypes(committed) {
@@ -2599,7 +2623,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.12',
+    _version: '5.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
