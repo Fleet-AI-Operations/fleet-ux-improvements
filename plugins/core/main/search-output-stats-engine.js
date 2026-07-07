@@ -77,7 +77,17 @@ const STATS_CHART_TYPE_META = {
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
-    bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true }
+    bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true },
+    histogram: {
+        id: 'histogram',
+        label: 'Histogram',
+        minSeries: 1,
+        maxSeries: 1,
+        allowCountAxis: false,
+        skipGroupBy: true,
+        skipAggregation: true,
+        defaultHeight: 220
+    }
 };
 
 const STATS_CHART_TYPES = Object.values(STATS_CHART_TYPE_META);
@@ -741,6 +751,15 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (type === 'histogram') {
+        for (const s of series) {
+            if (s.metricId === 'count') {
+                missing.push({ id: 'count', label: 'Numeric metric' });
+                break;
+            }
+        }
+    }
+
     for (const s of series) {
         if (s.metricId === 'count') {
             if (!meta.allowCountAxis && s.agg === 'count') {
@@ -771,7 +790,140 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (type === 'histogram' && missing.length === 0) {
+        const scoped = statsFilterItemsForChart(items, chart, ctx);
+        const agg = statsAggregateHistogram(chart, scoped, catalog, ctx);
+        if (!agg.labels.length) {
+            return { ok: false, missing: [{ id: 'histogram', label: 'No metric values to bin' }] };
+        }
+    }
+
     return { ok: true, missing: [] };
+}
+
+const STATS_HISTOGRAM_INTEGER_METRICS = new Set([
+    'prompt_version_count',
+    'rejection_issue_count'
+]);
+
+const STATS_HISTOGRAM_TIME_METRICS = new Set([
+    'v1_creation_time_minutes',
+    'qa_time_minutes',
+    'dispute_resolution_time_minutes'
+]);
+
+function statsHistogramBinMode(metricId) {
+    if (STATS_HISTOGRAM_INTEGER_METRICS.has(metricId)) return 'integer';
+    if (STATS_HISTOGRAM_TIME_METRICS.has(metricId)) return 'time';
+    return 'auto';
+}
+
+function statsHistogramIntegerLabel(metricId, value) {
+    if (metricId === 'prompt_version_count') {
+        return value === 1 ? '1 version' : value + ' versions';
+    }
+    return String(value);
+}
+
+function statsBuildHistogramIntegerBins(values, metricId) {
+    if (!values.length) return { labels: [], counts: [] };
+    const intVals = values.map((v) => Math.round(v));
+    const min = Math.min(...intVals);
+    const max = Math.max(...intVals);
+    const labels = [];
+    const counts = [];
+    for (let i = min; i <= max; i += 1) {
+        labels.push(statsHistogramIntegerLabel(metricId, i));
+        counts.push(intVals.filter((v) => v === i).length);
+    }
+    return { labels, counts };
+}
+
+function statsBuildHistogramTimeBins(values, lib) {
+    const order = (lib && lib.V1_CREATION_TIME_BUCKET_ORDER) || [];
+    const labelMap = (lib && lib.V1_CREATION_TIME_BUCKET_LABELS) || {};
+    const bucketFn = lib && lib.v1CreationTimeBucketId;
+    if (!order.length || typeof bucketFn !== 'function') {
+        return { labels: [], counts: [] };
+    }
+    const countsById = new Map(order.map((id) => [id, 0]));
+    for (const v of values) {
+        const id = bucketFn(v);
+        if (id && countsById.has(id)) {
+            countsById.set(id, countsById.get(id) + 1);
+        }
+    }
+    const labels = [];
+    const counts = [];
+    for (const id of order) {
+        labels.push(labelMap[id] || id);
+        counts.push(countsById.get(id) || 0);
+    }
+    return { labels, counts };
+}
+
+function statsBuildHistogramAutoBins(values) {
+    if (!values.length) return { labels: [], counts: [] };
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) {
+        const rounded = Math.round(min);
+        return { labels: [String(rounded)], counts: [values.length] };
+    }
+    const n = values.length;
+    const binCount = Math.min(12, Math.max(2, Math.ceil(Math.log2(n) + 1)));
+    const range = max - min;
+    const width = range / binCount;
+    const labels = [];
+    const counts = new Array(binCount).fill(0);
+    for (let b = 0; b < binCount; b += 1) {
+        const lo = min + b * width;
+        const hi = b === binCount - 1 ? max : min + (b + 1) * width;
+        const loR = Math.floor(lo);
+        const hiR = b === binCount - 1 ? Math.ceil(max) : Math.floor(hi) - 1;
+        labels.push(loR + '–' + (hiR < loR ? loR : hiR));
+    }
+    for (const v of values) {
+        let idx = Math.floor((v - min) / width);
+        if (idx >= binCount) idx = binCount - 1;
+        if (idx < 0) idx = 0;
+        counts[idx] += 1;
+    }
+    return { labels, counts };
+}
+
+function statsAggregateHistogram(chart, items, catalog, ctx) {
+    const s = (chart.series || [])[0];
+    if (!s) return { labels: [], datasets: [] };
+    const getMetricValue = ctx && ctx.getMetricValue;
+    const metric = statsFindMetric(catalog, s.metricId);
+    const metricLabel = s.label || (metric && metric.label) || s.metricId;
+    const values = [];
+    for (const item of items || []) {
+        const v = statsSeriesMetricValue(item, s, getMetricValue);
+        if (v != null && Number.isFinite(v)) values.push(v);
+    }
+    if (!values.length) return { labels: [], datasets: [] };
+
+    const lib = Context.dashboardLib;
+    const mode = statsHistogramBinMode(s.metricId);
+    let binResult;
+    if (mode === 'integer') {
+        binResult = statsBuildHistogramIntegerBins(values, s.metricId);
+    } else if (mode === 'time') {
+        binResult = statsBuildHistogramTimeBins(values, lib);
+    } else {
+        binResult = statsBuildHistogramAutoBins(values);
+    }
+
+    return {
+        labels: binResult.labels,
+        datasets: [{
+            label: metricLabel,
+            data: binResult.counts,
+            metricId: s.metricId
+        }]
+    };
 }
 
 function statsApplyAgg(values, agg) {
@@ -1220,6 +1372,9 @@ function statsAggregateChart(chart, items, catalog, ctx) {
     if (type === 'scorecard') {
         return statsAggregateScorecard(chart, scopedItems, catalog, ctx);
     }
+    if (type === 'histogram') {
+        return statsAggregateHistogram(chart, scopedItems, catalog, ctx);
+    }
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
@@ -1249,7 +1404,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

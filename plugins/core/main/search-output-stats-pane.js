@@ -1222,6 +1222,60 @@ const searchOutputStatsPaneMethods = {
             };
         }
 
+        if (type === 'histogram') {
+            const ds = (aggData.datasets || [])[0] || { label: '', data: [] };
+            const labelCount = (aggData.labels || []).length;
+            return {
+                type: 'bar',
+                data: {
+                    labels: aggData.labels,
+                    datasets: [{
+                        label: ds.label,
+                        data: ds.data,
+                        backgroundColor: theme.brand,
+                        borderColor: theme.brand
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: theme.muted,
+                                font: { size: 10 },
+                                maxRotation: labelCount > 6 ? 45 : 0,
+                                minRotation: 0
+                            },
+                            grid: { color: theme.border }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: theme.muted,
+                                font: { size: 10 },
+                                precision: 0
+                            },
+                            grid: { color: theme.border }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => (items[0] && items[0].label) || '',
+                                label: (ctx) => {
+                                    const count = ctx.parsed.y;
+                                    if (count == null || !Number.isFinite(count)) return '';
+                                    return count === 1 ? '1 task' : count + ' tasks';
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
         if (type === 'radar') {
             const datasets = (aggData.datasets || []).map((ds, i) => {
                 const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
@@ -1923,7 +1977,10 @@ const searchOutputStatsPaneMethods = {
 
     _statsBuilderSeriesCard(i, s, ctx) {
         const { draft, catalog, typeMeta, engine, aggList, styles, seriesCount, maxSeries, minSeries } = ctx;
-        const metricOpts = catalog.metrics.map((m) =>
+        const metricList = typeMeta.skipAggregation
+            ? catalog.metrics.filter((m) => m.id !== 'count')
+            : catalog.metrics;
+        const metricOpts = metricList.map((m) =>
             '<option value="' + dashEscHtml(m.id) + '"' + (s.metricId === m.id ? ' selected' : '') + '>' + dashEscHtml(m.label) + '</option>'
         ).join('');
         const aggOpts = aggList.map((a) =>
@@ -1957,6 +2014,8 @@ const searchOutputStatsPaneMethods = {
                 + '</select>',
                 { styles, disabled: segmentDisabled });
             row1Html = '<div style="' + styles.grid3 + '">' + metricField + aggField + segmentField + '</div>';
+        } else if (typeMeta.skipAggregation) {
+            row1Html = '<div>' + metricField + '</div>';
         } else {
             row1Html = '<div style="' + styles.grid2 + '">' + metricField + aggField + '</div>';
         }
@@ -2222,12 +2281,21 @@ const searchOutputStatsPaneMethods = {
             if (meta.skipGroupBy) {
                 draft.groupBy = '__scope__';
                 draft.series = (draft.series || []).slice(0, 1);
-                if (!draft.series.length) {
+                if (draft.type === 'histogram') {
+                    const numeric = (catalog.metrics || []).filter((m) => m.id !== 'count');
+                    const pick = (numeric[0] && numeric[0].id) || 'prompt_version_count';
+                    if (!draft.series.length) {
+                        draft.series = [{ metricId: pick, agg: 'count', label: '' }];
+                    } else if (draft.series[0].metricId === 'count') {
+                        draft.series[0].metricId = pick;
+                        draft.series[0].agg = 'count';
+                    }
+                } else if (!draft.series.length) {
                     draft.series = [{ metricId: 'count', agg: 'count', label: '' }];
                 }
-                const scorecardDefault = meta.defaultHeight || this._statsChartHeightConfig().default;
-                if (!draft.height || draft.height > scorecardDefault + 80) {
-                    draft.height = this._statsNormalizeChartHeight(scorecardDefault);
+                const skipGroupDefault = meta.defaultHeight || this._statsChartHeightConfig().default;
+                if (!draft.height || (draft.type === 'scorecard' && draft.height > skipGroupDefault + 80)) {
+                    draft.height = this._statsNormalizeChartHeight(skipGroupDefault);
                 }
             }
             if (draft.series && engine.seriesAllowsSegment) {
@@ -2392,6 +2460,10 @@ const searchOutputStatsPaneMethods = {
             }
             extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
                 + dashEscHtml(agg.labels.map((l, i) => {
+                    const count = (agg.datasets || [])[0] && agg.datasets[0].data[i];
+                    if (chart.type === 'histogram') {
+                        return l + ' (' + (count != null ? count : 'n/a') + ')';
+                    }
                     const vals = (agg.datasets || []).map((d) => {
                         const v = d.data[i] != null ? d.data[i] : 'n/a';
                         let text = d.label + ' ' + v;
@@ -3611,7 +3683,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.24',
+    _version: '5.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
