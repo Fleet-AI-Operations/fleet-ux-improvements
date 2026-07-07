@@ -1,7 +1,7 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 4;
+const STATS_LAYOUT_SCHEMA_VERSION = 5;
 
 const STATS_TASK_POINT_CAP = 500;
 
@@ -116,6 +116,16 @@ function statsNormalizeOrientation(raw) {
 
 function statsNormalizeLineAreaLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'origin';
+}
+
+function statsNormalizeCategorySort(raw, seriesCount) {
+    if (!raw || typeof raw !== 'object') return null;
+    const seriesIndex = Number(raw.seriesIndex);
+    if (!Number.isInteger(seriesIndex) || seriesIndex < 0 || seriesIndex >= seriesCount) return null;
+    return {
+        seriesIndex,
+        direction: raw.direction === 'desc' ? 'desc' : 'asc'
+    };
 }
 
 function statsNormalizeSegmentBy(raw, groupBy) {
@@ -290,6 +300,9 @@ function statsNormalizeChartEntry(c) {
     }
     if (meta.needsLineAreaLayout) {
         chart.lineAreaLayout = statsNormalizeLineAreaLayout(c.lineAreaLayout);
+    }
+    if (meta.needsBarLayout) {
+        chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
     }
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -851,6 +864,53 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
     return datasets;
 }
 
+function statsBucketSeriesValue(bucket, seriesEntry, seriesIndex) {
+    if (!bucket) return null;
+    if (seriesEntry.metricId === 'count' && seriesEntry.agg === 'count') {
+        return bucket.counts.length;
+    }
+    const v = statsApplyAgg(bucket.series[seriesIndex], seriesEntry.agg);
+    return v != null && Number.isFinite(v) ? v : null;
+}
+
+function statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, seriesList) {
+    if (statsNormalizeChartType(chart.type) !== 'barLine') {
+        return { labels, datasets };
+    }
+    const categorySort = statsNormalizeCategorySort(chart.categorySort, seriesList.length);
+    if (!categorySort) {
+        return { labels, datasets };
+    }
+    const seriesEntry = seriesList[categorySort.seriesIndex];
+    if (!seriesEntry) {
+        return { labels, datasets };
+    }
+    const indexed = keysOut.map((key, originalIndex) => ({
+        key,
+        originalIndex,
+        label: labels[originalIndex],
+        value: statsBucketSeriesValue(buckets.get(key), seriesEntry, categorySort.seriesIndex)
+    }));
+    indexed.sort((a, b) => {
+        const aValid = a.value != null && Number.isFinite(a.value);
+        const bValid = b.value != null && Number.isFinite(b.value);
+        if (!aValid && !bValid) return a.originalIndex - b.originalIndex;
+        if (!aValid) return 1;
+        if (!bValid) return -1;
+        if (a.value !== b.value) {
+            return categorySort.direction === 'desc' ? b.value - a.value : a.value - b.value;
+        }
+        return a.originalIndex - b.originalIndex;
+    });
+    const orderMap = indexed.map((x) => x.originalIndex);
+    return {
+        labels: indexed.map((x) => x.label),
+        datasets: datasets.map((ds) => Object.assign({}, ds, {
+            data: orderMap.map((oldIdx) => ds.data[oldIdx])
+        }))
+    };
+}
+
 function statsAggregateCategorical(chart, items, catalog, ctx) {
     const lib = Context.dashboardLib;
     const dim = statsFindDimension(catalog, chart.groupBy);
@@ -961,7 +1021,8 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         });
     }
 
-    return { labels, datasets };
+    const sorted = statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, seriesList);
+    return { labels: sorted.labels, datasets: sorted.datasets };
 }
 
 function statsCountBarDatasets(chart, catalog) {
@@ -1107,6 +1168,7 @@ function statsDefaultBuilderDraft(catalog) {
         barLayout: 'grouped',
         orientation: 'vertical',
         lineAreaLayout: 'origin',
+        categorySort: null,
         presetKey: null,
         chartFilters: statsEmptyChartFilters()
     };
@@ -1116,7 +1178,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1156,6 +1218,7 @@ const plugin = {
             countBarDatasets: (chart, catalog) => statsCountBarDatasets(chart, catalog),
             countShadedLineDatasets: (chart, catalog) => statsCountShadedLineDatasets(chart, catalog),
             seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
+            normalizeCategorySort: (raw, seriesCount) => statsNormalizeCategorySort(raw, seriesCount),
         };
         if (state) state.registered = true;
         Logger.log('search-output-stats-engine: registered (Context.statsEngine)');

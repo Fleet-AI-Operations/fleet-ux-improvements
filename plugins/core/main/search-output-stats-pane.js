@@ -202,6 +202,9 @@ const searchOutputStatsPaneMethods = {
         if (engineMeta.needsLineAreaLayout) {
             chart.lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
         }
+        if (engineMeta.needsBarLayout && engine.normalizeCategorySort) {
+            chart.categorySort = engine.normalizeCategorySort(draft.categorySort, chart.series.length);
+        }
         return chart;
     },
 
@@ -1330,6 +1333,29 @@ const searchOutputStatsPaneMethods = {
         reader.readAsText(file);
     },
 
+    _statsCategorySortSelectValue(categorySort) {
+        if (!categorySort) return '';
+        return categorySort.seriesIndex + ':' + categorySort.direction;
+    },
+
+    _statsParseCategorySortSelectValue(value) {
+        if (!value) return null;
+        const parts = String(value).split(':');
+        if (parts.length !== 2) return null;
+        const seriesIndex = parseInt(parts[0], 10);
+        if (!Number.isFinite(seriesIndex)) return null;
+        return {
+            seriesIndex,
+            direction: parts[1] === 'desc' ? 'desc' : 'asc'
+        };
+    },
+
+    _statsSeriesSortLabel(s, seriesIndex, catalog) {
+        if (s.label) return s.label;
+        const metric = (catalog.metrics || []).find((m) => m.id === s.metricId);
+        return (metric && metric.label) || s.metricId || ('Series ' + (seriesIndex + 1));
+    },
+
     _statsBuilderFieldStyles() {
         return {
             fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
@@ -1410,11 +1436,7 @@ const searchOutputStatsPaneMethods = {
                 + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
                 + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
                 + '</select>',
-                {
-                    styles,
-                    disabled: barLayoutDisabled,
-                    hint: 'Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.'
-                })
+                { styles, disabled: barLayoutDisabled })
             : '';
         const lineAreaLayoutDisabled = shadedLineCount < 2;
         const lineAreaLayoutCtl = this._statsBuilderControlState(lineAreaLayoutDisabled);
@@ -1424,13 +1446,28 @@ const searchOutputStatsPaneMethods = {
                 + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
                 + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
                 + '</select>',
-                {
-                    styles,
-                    disabled: lineAreaLayoutDisabled,
-                    hint: 'Segment splits stack automatically. Use this for multiple shaded series without Segment by.'
-                })
+                { styles, disabled: lineAreaLayoutDisabled })
             : '';
-        const layoutCells = [orientationField, barLayoutField, lineAreaLayoutField].filter(Boolean);
+        const categorySortValue = this._statsCategorySortSelectValue(draft.categorySort);
+        let categorySortOpts = '<option value="">Group by order</option>';
+        if (typeMeta.needsBarLayout) {
+            const seriesList = draft.series && draft.series.length ? draft.series : [];
+            for (let si = 0; si < seriesList.length; si += 1) {
+                const seriesLabel = this._statsSeriesSortLabel(seriesList[si], si, catalog);
+                const ascVal = si + ':asc';
+                const descVal = si + ':desc';
+                categorySortOpts += '<option value="' + ascVal + '"' + (categorySortValue === ascVal ? ' selected' : '') + '>'
+                    + dashEscHtml(seriesLabel) + ' (asc)</option>';
+                categorySortOpts += '<option value="' + descVal + '"' + (categorySortValue === descVal ? ' selected' : '') + '>'
+                    + dashEscHtml(seriesLabel) + ' (desc)</option>';
+            }
+        }
+        const categorySortField = typeMeta.needsBarLayout
+            ? this._statsBuilderField('Category sort',
+                '<select data-wf-dash-stats-draft="categorySort" style="' + styles.inputStyle + '">' + categorySortOpts + '</select>',
+                { styles })
+            : '';
+        const layoutCells = [orientationField, barLayoutField, lineAreaLayoutField, categorySortField].filter(Boolean);
         let layoutOptionsHtml = '';
         if (layoutCells.length) {
             const layoutGridStyle = layoutCells.length >= 3 ? styles.grid3 : styles.grid2;
@@ -1634,6 +1671,7 @@ const searchOutputStatsPaneMethods = {
         const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
         const orientationEl = this._q('[data-wf-dash-stats-draft="orientation"]');
         const lineAreaLayoutEl = this._q('[data-wf-dash-stats-draft="lineAreaLayout"]');
+        const categorySortEl = this._q('[data-wf-dash-stats-draft="categorySort"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
@@ -1645,6 +1683,11 @@ const searchOutputStatsPaneMethods = {
         else if (this._statsNormalizeChartType(draft.type) !== 'barLine') draft.orientation = 'vertical';
         if (lineAreaLayoutEl) draft.lineAreaLayout = lineAreaLayoutEl.value === 'stacked' ? 'stacked' : 'origin';
         else if (this._statsNormalizeChartType(draft.type) !== 'barLine') draft.lineAreaLayout = 'origin';
+        if (categorySortEl) {
+            draft.categorySort = this._statsParseCategorySortSelectValue(categorySortEl.value);
+        } else if (this._statsNormalizeChartType(draft.type) !== 'barLine') {
+            draft.categorySort = null;
+        }
         if (heightEl) draft.height = Number(heightEl.value) || 220;
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
@@ -1747,6 +1790,14 @@ const searchOutputStatsPaneMethods = {
             if (!meta.needsLineAreaLayout) {
                 draft.lineAreaLayout = 'origin';
             }
+            if (!meta.needsBarLayout) {
+                draft.categorySort = null;
+            } else if (draft.categorySort && engine.normalizeCategorySort) {
+                draft.categorySort = engine.normalizeCategorySort(
+                    draft.categorySort,
+                    (draft.series && draft.series.length) || 0
+                );
+            }
         }
         void this._renderStatsBuilder();
     },
@@ -1797,6 +1848,20 @@ const searchOutputStatsPaneMethods = {
         const i = Number(idx);
         if (!Number.isFinite(i) || i < 0 || i >= draft.series.length) return;
         draft.series.splice(i, 1);
+        const engine = Context.statsEngine;
+        if (draft.categorySort) {
+            if (draft.categorySort.seriesIndex === i) {
+                draft.categorySort = null;
+            } else if (draft.categorySort.seriesIndex > i) {
+                draft.categorySort = {
+                    seriesIndex: draft.categorySort.seriesIndex - 1,
+                    direction: draft.categorySort.direction
+                };
+            }
+            if (engine && engine.normalizeCategorySort) {
+                draft.categorySort = engine.normalizeCategorySort(draft.categorySort, draft.series.length);
+            }
+        }
         void this._renderStatsBuilder();
     },
 
@@ -2479,7 +2544,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.8',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
