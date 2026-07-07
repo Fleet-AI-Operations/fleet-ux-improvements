@@ -1441,6 +1441,9 @@ const searchOutputCoreMethods = {
         if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
         void this._reoverlayAllCachedItems().then(() => {
             this._renderRatingsPanel();
+            if ((this._state.statsTab || 'stats') === 'stats') {
+                void this._renderStatsPanel();
+            }
         });
     },
 
@@ -3866,6 +3869,9 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
+            if ((this._state.statsTab || 'stats') === 'stats') {
+                void this._renderStatsPanel();
+            }
         };
 
         if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
@@ -4575,6 +4581,72 @@ function attachSearchOutputListeners(modal, dash) {
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
     modal.addEventListener('click', (e) => {
+            const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
+            if (statsScopeBtn && modal.contains(statsScopeBtn)) {
+                const scope = statsScopeBtn.getAttribute('data-wf-dash-stats-scope');
+                dash._setStatsScope(scope !== 'all');
+                return;
+            }
+            const statsBuildBtn = e.target.closest('[data-wf-dash-stats-build]');
+            if (statsBuildBtn && modal.contains(statsBuildBtn)) {
+                if ((dash._state.statsViewMode || 'dashboard') === 'builder') {
+                    dash._closeStatsBuilder();
+                } else {
+                    dash._openStatsBuilder(null);
+                }
+                return;
+            }
+            const statsDeleteBtn = e.target.closest('[data-wf-dash-stats-chart-delete]');
+            if (statsDeleteBtn && modal.contains(statsDeleteBtn)) {
+                dash._deleteStatsChart(statsDeleteBtn.getAttribute('data-wf-dash-stats-chart-delete'));
+                return;
+            }
+            const statsEditBtn = e.target.closest('[data-wf-dash-stats-chart-edit]');
+            if (statsEditBtn && modal.contains(statsEditBtn)) {
+                dash._openStatsBuilder(statsEditBtn.getAttribute('data-wf-dash-stats-chart-edit'));
+                return;
+            }
+            const statsExportChartBtn = e.target.closest('[data-wf-dash-stats-chart-export]');
+            if (statsExportChartBtn && modal.contains(statsExportChartBtn)) {
+                dash._exportStatsChart(statsExportChartBtn.getAttribute('data-wf-dash-stats-chart-export'));
+                return;
+            }
+            const statsResetDashboardBtn = e.target.closest('[data-wf-dash-stats-reset-dashboard]');
+            if (statsResetDashboardBtn && modal.contains(statsResetDashboardBtn)) {
+                dash._resetStatsDashboard();
+                return;
+            }
+            const statsExportDashboardBtn = e.target.closest('[data-wf-dash-stats-export-dashboard]');
+            if (statsExportDashboardBtn && modal.contains(statsExportDashboardBtn)) {
+                dash._exportStatsDashboard();
+                return;
+            }
+            const statsImportJsonBtn = e.target.closest('[data-wf-dash-stats-import-json]');
+            if (statsImportJsonBtn && modal.contains(statsImportJsonBtn)) {
+                dash._triggerStatsImportJson();
+                return;
+            }
+            const statsBuilderSave = e.target.closest('[data-wf-dash-stats-builder-save]');
+            if (statsBuilderSave && modal.contains(statsBuilderSave)) {
+                dash._syncStatsBuilderDraftFromForm();
+                dash._saveStatsBuilderDraft();
+                return;
+            }
+            const statsBuilderCancel = e.target.closest('[data-wf-dash-stats-builder-cancel]');
+            if (statsBuilderCancel && modal.contains(statsBuilderCancel)) {
+                dash._closeStatsBuilder();
+                return;
+            }
+            const statsSeriesAdd = e.target.closest('[data-wf-dash-stats-series-add]');
+            if (statsSeriesAdd && modal.contains(statsSeriesAdd)) {
+                dash._addStatsBuilderSeriesRow();
+                return;
+            }
+            const statsSeriesRemove = e.target.closest('[data-wf-dash-stats-series-remove]');
+            if (statsSeriesRemove && modal.contains(statsSeriesRemove)) {
+                dash._removeStatsBuilderSeriesRow(statsSeriesRemove.getAttribute('data-wf-dash-stats-series-remove'));
+                return;
+            }
             const exportBtn = e.target.closest('[data-wf-dash-rating-export]');
             if (exportBtn && modal.contains(exportBtn)) {
                 const workerId = exportBtn.getAttribute('data-wf-dash-rating-worker');
@@ -4891,6 +4963,25 @@ function attachSearchOutputListeners(modal, dash) {
             }
     });
         modal.addEventListener('change', (e) => {
+            const statsFilterCb = e.target;
+            if (statsFilterCb && statsFilterCb.type === 'checkbox') {
+                const statsMsKey = statsFilterCb.getAttribute('data-wf-dash-ms');
+                if (statsMsKey && statsMsKey.startsWith('stats-chart-filter-') && modal.contains(statsFilterCb)) {
+                    dash._onStatsChartFilterMsChange(statsMsKey);
+                    return;
+                }
+            }
+            const statsDraftField = e.target.closest('[data-wf-dash-stats-draft]');
+            if (statsDraftField && modal.contains(statsDraftField)) {
+                const field = statsDraftField.getAttribute('data-wf-dash-stats-draft');
+                dash._syncStatsBuilderDraftFromForm();
+                if (field === 'type') dash._onStatsBuilderTypeChange();
+                else if (field === 'series-render') dash._onStatsBuilderSeriesRenderChange();
+                else if (field === 'series-lineStyle') dash._onStatsBuilderLineStyleChange();
+                else if (field === 'groupBy' || field === 'series-segment') dash._onStatsBuilderDimensionChange();
+                else dash._scheduleStatsBuilderPreview();
+                return;
+            }
             const sel = e.target;
             if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
             const itemId = sel.getAttribute('data-item-id');
@@ -4902,6 +4993,12 @@ function attachSearchOutputListeners(modal, dash) {
             dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
+            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"]');
+            if (statsDraftInput && modal.contains(statsDraftInput)) {
+                dash._syncStatsBuilderDraftFromForm();
+                dash._debounceStatsBuilderPreview();
+                return;
+            }
             const ta = e.target.closest('[data-wf-dash-qa-review-input]');
             if (ta && modal.contains(ta)) {
                 const fid = ta.getAttribute('data-wf-dash-feedback-id');
@@ -4964,7 +5061,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.1',
+    _version: '7.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
