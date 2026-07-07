@@ -863,7 +863,15 @@ const searchOutputStatsPaneMethods = {
         const containerWidth = (chartJsCtx && chartJsCtx.containerWidth) || 0;
         const baseLegend = {
             position: 'bottom',
-            labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
+            labels: {
+                color: theme.foreground,
+                boxWidth: 12,
+                font: { size: 10 },
+                filter: (item, chartData) => {
+                    const ds = chartData.datasets[item.datasetIndex];
+                    return !(ds && ds.statsLegendHidden);
+                }
+            }
         };
         const circularLegend = this._statsCircularChartLegend(theme, labelCount, containerWidth);
         const circularOnResize = (chart, size) => {
@@ -1110,30 +1118,27 @@ const searchOutputStatsPaneMethods = {
             ds.renderAs === 'line' && ds.lineStyle === 'shaded' && !ds.segmentFillOnly);
         const barStacked = chart.barLayout === 'stacked' && hasBarDatasets;
         const lineStacked = chart.lineAreaLayout === 'stacked' && hasShadedLineDatasets;
-        const datasets = (aggData.datasets || []).map((ds, i) => {
+        const chartDatasets = [];
+        (aggData.datasets || []).forEach((ds, i) => {
             const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
             const renderAs = ds.renderAs === 'line' ? 'line' : 'bar';
             const valueScale = ds.yAxis === 'y1' ? 'y1' : 'y';
             const valueAxisID = this._statsValueAxisId(chart, ds.yAxis);
-            const base = {
+            const axisBinding = horizontal ? { xAxisID: valueAxisID } : { yAxisID: valueScale };
+            const base = Object.assign({
                 type: renderAs,
                 label: ds.label,
                 data: ds.data,
                 borderColor: color,
                 backgroundColor: color,
                 order: renderAs === 'line' ? 1 : 2
-            };
-            if (horizontal) {
-                base.xAxisID = valueAxisID;
-            } else {
-                base.yAxisID = valueScale;
-            }
+            }, axisBinding);
             if (renderAs === 'bar' && barStacked) {
                 base.stack = 'bar-' + valueScale;
             }
             if (renderAs === 'line') {
                 if (ds.segmentFillOnly) {
-                    return Object.assign(base, {
+                    chartDatasets.push(Object.assign({}, base, {
                         order: 3,
                         fill: true,
                         backgroundColor: color,
@@ -1141,11 +1146,12 @@ const searchOutputStatsPaneMethods = {
                         pointRadius: 0,
                         pointHoverRadius: 0,
                         stack: 'line-' + valueScale
-                    });
+                    }));
+                    return;
                 }
                 if (ds.segmentOutline) {
                     const outlineColor = theme.foreground;
-                    return Object.assign(base, {
+                    chartDatasets.push(Object.assign({}, base, {
                         order: 1,
                         fill: false,
                         borderColor: outlineColor,
@@ -1153,9 +1159,30 @@ const searchOutputStatsPaneMethods = {
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3
-                    });
+                    }));
+                    return;
                 }
                 const shaded = ds.lineStyle === 'shaded';
+                if (shaded && !lineStacked) {
+                    chartDatasets.push(Object.assign({}, base, {
+                        order: 3,
+                        fill: true,
+                        backgroundColor: this._statsColorWithAlpha(color, 0.25),
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        statsLegendHidden: true
+                    }));
+                    chartDatasets.push(Object.assign({}, base, {
+                        order: 1,
+                        fill: false,
+                        tension: 0.2,
+                        spanGaps: true,
+                        pointRadius: 3,
+                        borderColor: color
+                    }));
+                    return;
+                }
                 const lineOpts = {
                     tension: 0.2,
                     spanGaps: true,
@@ -1164,22 +1191,21 @@ const searchOutputStatsPaneMethods = {
                     borderColor: color
                 };
                 if (shaded) {
-                    lineOpts.backgroundColor = lineStacked
-                        ? color
-                        : this._statsColorWithAlpha(color, 0.25);
+                    lineOpts.backgroundColor = color;
                 } else {
                     lineOpts.fill = false;
                 }
                 if (shaded && lineStacked) {
                     lineOpts.stack = 'line-' + valueScale;
                 }
-                return Object.assign(base, lineOpts);
+                chartDatasets.push(Object.assign({}, base, lineOpts));
+                return;
             }
-            return base;
+            chartDatasets.push(base);
         });
         return {
             type: 'bar',
-            data: { labels: aggData.labels, datasets },
+            data: { labels: aggData.labels, datasets: chartDatasets },
             options: this._buildChartJsOptions(chart, theme, chartJsCtx)
         };
     },
@@ -2544,7 +2570,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.9',
+    _version: '5.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
