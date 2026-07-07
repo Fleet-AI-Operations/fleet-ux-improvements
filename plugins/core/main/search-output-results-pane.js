@@ -325,6 +325,7 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
+                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Export JSON</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                             </div>
                         </div>
@@ -1183,7 +1184,100 @@ const searchOutputResultsPaneMethods = {
         this._syncBulkHydrateUi();
         this._syncDiffIncludedUi();
         this._syncDropExcludedUi();
+        this._syncTaskExportUi();
         this._syncVersionModeDropdownUi();
+    },
+
+    _dashExportDateSlug() {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.exportDateSlug === 'function') return engine.exportDateSlug();
+        return new Date().toISOString().slice(0, 10);
+    },
+
+    _cloneJsonSafe(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            Logger.error('search-output-results-pane: JSON clone failed', e);
+            return null;
+        }
+    },
+
+    _buildTaskCardsExportPayload(items) {
+        const committed = this._state.committed || {};
+        const applied = this._state.appliedFilters || null;
+        const clonedItems = (items || [])
+            .map((item) => this._cloneJsonSafe(item))
+            .filter(Boolean);
+        return {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            search: {
+                authorCount: committed.authorCount,
+                authorLabels: committed.authorLabels,
+                ratingsEveryone: committed.ratingsEveryone,
+                includeTaskCreation: committed.includeTaskCreation,
+                includeQa: committed.includeQa,
+                includeDisputes: committed.includeDisputes,
+                includeSeniorReview: committed.includeSeniorReview,
+                afterLocal: committed.afterLocal,
+                beforeLocal: committed.beforeLocal,
+                searchKinds: committed.searchKinds,
+                retrieveMode: committed.retrieveMode,
+                retrieveLabel: committed.retrieveLabel
+            },
+            view: {
+                resultsKindTab: this._state.resultsKindTab || 'all',
+                versionMode: this._state.versionMode,
+                sortMetric: applied && applied.sortMetric,
+                sortOrder: applied && applied.sortOrder,
+                manualFilters: applied && applied.manualFilters,
+                manualAndOr: applied && applied.manualAndOr,
+                filteredCount: clonedItems.length,
+                cachedCount: (this._state.cachedItems || []).length,
+                scopeCount: this._getFilterScopeItems().length
+            },
+            items: clonedItems
+        };
+    },
+
+    _syncTaskExportUi() {
+        const btn = this._q('#wf-dash-export-tasks-json');
+        if (!btn) return;
+        if (!Context.isDevBranch) {
+            btn.style.display = 'none';
+            return;
+        }
+        const viewItems = this._getViewItems();
+        const show = Boolean(this._state.hasSearched)
+            && this._state.cachedItems !== null
+            && viewItems
+            && viewItems.length > 0
+            && !this._state.loading;
+        btn.style.display = show ? '' : 'none';
+        btn.disabled = !show;
+    },
+
+    _exportFilteredTasksJson() {
+        if (!Context.isDevBranch) {
+            Logger.warn('search-output-results-pane: task export skipped — not a dev build');
+            return;
+        }
+        const items = this._getViewItems();
+        if (!items || items.length === 0) {
+            Logger.warn('search-output-results-pane: task export skipped — no filtered items');
+            return;
+        }
+        const payload = this._buildTaskCardsExportPayload(items);
+        const filename = 'fleet-task-cards-' + this._dashExportDateSlug() + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        if (typeof this._downloadTextFile === 'function') {
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+        } else {
+            Logger.error('search-output-results-pane: task export failed — download helper unavailable');
+            return;
+        }
+        Logger.log('search-output-results-pane: task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
     },
 
     _syncDiffIncludedUi() {
@@ -5067,7 +5161,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

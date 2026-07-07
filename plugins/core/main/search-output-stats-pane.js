@@ -2625,6 +2625,9 @@ const searchOutputStatsPaneMethods = {
 
     _ratingsToolbarHtml() {
         const inputStyle = this._inputStyle() + ' font-size: 11px; padding: 4px 8px; min-width: 0;';
+        const devExportBtn = Context.isDevBranch
+            ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
+            : '';
         return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">'
             + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">'
@@ -2634,6 +2637,7 @@ const searchOutputStatsPaneMethods = {
             + 'Sort <select data-wf-dash-ratings-sort="1" style="' + inputStyle + ' cursor: pointer;"></select></label>'
             + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; flex: 1; min-width: 140px;">'
             + 'Name <input type="text" data-wf-dash-ratings-name-filter="1" placeholder="Filter by name…" autocomplete="off" style="' + inputStyle + ' flex: 1; min-width: 100px;"></label>'
+            + devExportBtn
             + '</div>'
             + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
             + '</div>';
@@ -2665,6 +2669,10 @@ const searchOutputStatsPaneMethods = {
                 nameInput.value = this._state.ratingsNameFilter || '';
             }
             nameInput.disabled = !hasReport;
+        }
+        const bulkExportBtn = toolbar.querySelector('[data-wf-dash-ratings-export-bulk]');
+        if (bulkExportBtn) {
+            bulkExportBtn.disabled = !hasReport || visibleCount === 0;
         }
         const summary = this._q('#wf-dash-ratings-summary');
         if (summary) {
@@ -3012,6 +3020,73 @@ const searchOutputStatsPaneMethods = {
         }
     },
 
+    _buildRatingsBulkExportPayload(visibleWorkers) {
+        const engine = Context.ratingEngine;
+        const report = this._state.ratingsReport;
+        const committed = this._state.committed || {};
+        const scoreTypes = this._ratingSearchScoreTypes(committed);
+        const exportDate = new Date().toISOString().slice(0, 10);
+        const workers = (visibleWorkers || []).map((worker) => {
+            const workerExport = {
+                ...worker,
+                twqs: scoreTypes.showTwqs ? worker.twqs : null,
+                qaqs: scoreTypes.showQaqs ? worker.qaqs : null,
+                computedAt: report.computedAt,
+                engineVersion: report.version,
+                exportDate
+            };
+            if (engine && typeof engine.serializeJson === 'function') {
+                return JSON.parse(engine.serializeJson(workerExport));
+            }
+            return workerExport;
+        });
+        return {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            computedAt: report.computedAt,
+            engineVersion: report.version,
+            mode: report.mode,
+            window: report.window || {},
+            scope: {
+                label: this._ratingsScopeLabel(),
+                hideProvisional: Boolean(this._state.ratingsHideProvisional),
+                nameFilter: this._state.ratingsNameFilter || '',
+                sortKey: this._state.ratingsSortKey,
+                visibleCount: workers.length,
+                totalCount: (report.workers || []).length
+            },
+            workers
+        };
+    },
+
+    _exportFilteredRatingsJson() {
+        if (!Context.isDevBranch) {
+            Logger.warn('search-output-stats-pane: ratings bulk export skipped — not a dev build');
+            return;
+        }
+        const report = this._state.ratingsReport;
+        if (!report || !report.workers) {
+            Logger.warn('search-output-stats-pane: ratings bulk export skipped — no report');
+            return;
+        }
+        const committed = this._state.committed || {};
+        const scoreTypes = this._ratingSearchScoreTypes(committed);
+        const visibleWorkers = this._applyRatingsViewFilters(report.workers, scoreTypes);
+        if (visibleWorkers.length === 0) {
+            Logger.warn('search-output-stats-pane: ratings bulk export skipped — no visible workers');
+            return;
+        }
+        const payload = this._buildRatingsBulkExportPayload(visibleWorkers);
+        const engine = Context.statsEngine;
+        const date = engine && typeof engine.exportDateSlug === 'function'
+            ? engine.exportDateSlug()
+            : new Date().toISOString().slice(0, 10);
+        const filename = 'fleet-ratings-' + date + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+        Logger.log('search-output-stats-pane: ratings bulk exported — ' + payload.workers.length + ' worker(s) · ' + filename);
+    },
+
     _handleRatingExport(workerId, format) {
         const engine = Context.ratingEngine;
         const report = this._state.ratingsReport;
@@ -3081,7 +3156,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.18',
+    _version: '5.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -4647,6 +4647,16 @@ function attachSearchOutputListeners(modal, dash) {
                 if (workerId && format) dash._handleRatingExport(workerId, format);
                 return;
             }
+            const ratingsBulkExportBtn = e.target.closest('[data-wf-dash-ratings-export-bulk]');
+            if (ratingsBulkExportBtn && modal.contains(ratingsBulkExportBtn)) {
+                dash._exportFilteredRatingsJson();
+                return;
+            }
+            const taskExportBtn = e.target.closest('#wf-dash-export-tasks-json');
+            if (taskExportBtn && modal.contains(taskExportBtn)) {
+                dash._exportFilteredTasksJson();
+                return;
+            }
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
             if (stopSearchBtn && modal.contains(stopSearchBtn)) {
                 dash._requestStopSearchFetches();
@@ -5072,7 +5082,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.16',
+    _version: '7.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
