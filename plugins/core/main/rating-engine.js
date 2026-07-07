@@ -1,17 +1,29 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.14';
+const RE_VERSION = '1.15';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
-const RE_STATUS_SEVERITY_DEFAULT = 0.5;
+const RE_STATUS_SEVERITY_DEFAULT = 0.4;
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
 const RE_QAQS_SR_PENALTY_BLEND = 0.75;
 const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
+
+// Shrinkage / spread — negative outcomes weighted more heavily (engine 1.15 retune).
+const RE_ACCEPTANCE_SHRINK_C = 5;
+const RE_ACCEPTANCE_SHRINK_PRIOR = 0.45;
+const RE_DISPUTE_SHRINK_C = 10;
+const RE_SR_SHRINK_C = 15;
+const RE_SR_PENALTY_PRIOR = 0.6;
+const RE_REVISION_EFF_EXPONENT = 1.25;
+const RE_QAQS_RESOLUTION_SHRINK_C = 5;
+const RE_QAQS_RESOLUTION_SHRINK_PRIOR = 0.55;
+const RE_RETURN_EPISODE_EXPONENT = 1.3;
+const RE_AXIS_SPREAD_EXPONENT = 1.18;
 
 const RE_TWQS_AXES = [
     { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
@@ -117,9 +129,13 @@ function reIsoWeekKey(iso) {
     return utc.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
 }
 
-function reShrunkRate(k, n, C) {
-    const prior = 0.5;
+function reShrunkRate(k, n, C, prior = 0.5) {
     return (k + C * prior) / (n + C);
+}
+
+function reSpreadAxisScore(score) {
+    if (score == null || !Number.isFinite(score)) return score;
+    return Math.pow(score, RE_AXIS_SPREAD_EXPONENT);
 }
 
 function reBandLabel(score) {
@@ -251,10 +267,10 @@ function reTaskSeverityScore(task) {
     const status = String((task && task.status) || '').toLowerCase().trim();
     if (!status) return RE_STATUS_SEVERITY_DEFAULT;
     if (status.includes('dismissed')) return 0.0;
-    if (status.includes('discarded')) return 0.3;
-    if (status.includes('bugged') || status.includes('escalated')) return 0.4;
-    if (status.includes('staging')) return 0.5;
-    if (status.includes('recovery')) return 0.7;
+    if (status.includes('discarded')) return 0.15;
+    if (status.includes('bugged') || status.includes('escalated')) return 0.2;
+    if (status.includes('staging')) return 0.35;
+    if (status.includes('recovery')) return 0.55;
     if (status.includes('production')) return 1.0;
     return RE_STATUS_SEVERITY_DEFAULT;
 }
@@ -262,10 +278,10 @@ function reTaskSeverityScore(task) {
 function reRevisionStatusWeight(task) {
     const status = String((task && task.status) || '').toLowerCase().trim();
     if (!status) return 0.5;
-    if (status.includes('disputed')) return 0.7;
+    if (status.includes('disputed')) return 0.55;
     if (status.includes('production') || status.includes('discarded')
         || status.includes('dismissed') || status.includes('staging')) return 1.0;
-    return 0.5;
+    return 0.4;
 }
 
 function reCountApprovedDisputes(item) {
@@ -336,7 +352,7 @@ function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
             const nextRt = reReturnTypeOf(next);
             if (nextRt === 'accepted') {
                 accepted = true;
-                episodeScore = 1 / rounds;
+                episodeScore = 1 / Math.pow(rounds, RE_RETURN_EPISODE_EXPONENT);
                 break;
             }
             if (nextRt === 'bugged' || nextRt === 'escalated') break;
@@ -548,7 +564,7 @@ const RatingEngine = {
             } else {
                 const revisionStatusW = reRevisionStatusWeight(task);
                 revisionEvents.push({
-                    value: 1 / vEffective,
+                    value: 1 / Math.pow(vEffective, RE_REVISION_EFF_EXPONENT),
                     weight: w * revisionStatusW,
                     iso: createdAt
                 });
@@ -586,21 +602,22 @@ const RatingEngine = {
         const wSumSeverity = severityEvents.reduce((s, e) => s + e.weight, 0);
         const severityMean = reWeightedMean(severityEvents);
         const acceptanceScore = severityMean != null && wSumSeverity > 0
-            ? (severityMean * wSumSeverity + 8 * 0.5) / (wSumSeverity + 8)
+            ? (severityMean * wSumSeverity + RE_ACCEPTANCE_SHRINK_C * RE_ACCEPTANCE_SHRINK_PRIOR)
+                / (wSumSeverity + RE_ACCEPTANCE_SHRINK_C)
             : 0.5;
 
         const revisionScore = reWeightedMean(revisionEvents);
         const revisionAxisScore = revisionScore != null ? revisionScore : 0.5;
 
         const srScore = flagDenom > 0
-            ? 1 - reShrunkRate(flagBad, flagDenom, 20)
-            : reShrunkRate(0, 0, 20);
+            ? 1 - reShrunkRate(flagBad, flagDenom, RE_SR_SHRINK_C, RE_SR_PENALTY_PRIOR)
+            : 0.5;
 
         let disputeScore = null;
         let disputeDefined = false;
         if (disputeDenom > 0) {
             disputeDefined = true;
-            disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
+            disputeScore = reShrunkRate(disputeGood, disputeDenom, RE_DISPUTE_SHRINK_C);
         }
 
         const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
@@ -646,7 +663,7 @@ const RatingEngine = {
                 id: def.id,
                 label: def.label,
                 baseWeight: def.weight,
-                score,
+                score: defined && score != null ? reSpreadAxisScore(score) : score,
                 defined,
                 raw
             };
@@ -761,22 +778,25 @@ const RatingEngine = {
             resolutionDefined = true;
             const mean = reWeightedMean(returnEpisodes);
             const n = returnEpisodes.length;
-            resolutionScore = mean != null ? (mean * n + 8 * 1.0) / (n + 8) : null;
+            resolutionScore = mean != null
+                ? (mean * n + RE_QAQS_RESOLUTION_SHRINK_C * RE_QAQS_RESOLUTION_SHRINK_PRIOR)
+                    / (n + RE_QAQS_RESOLUTION_SHRINK_C)
+                : null;
         }
 
         let disputeScore = null;
         let disputeDefined = false;
         if (disputeDenom > 0) {
             disputeDefined = true;
-            disputeScore = reShrunkRate(disputeGood, disputeDenom, 15);
+            disputeScore = reShrunkRate(disputeGood, disputeDenom, RE_DISPUTE_SHRINK_C);
         }
 
         const penaltyScore = flagDenom > 0
-            ? 1 - reShrunkRate(flagBad, flagDenom, 20)
-            : reShrunkRate(0, 0, 20);
+            ? 1 - reShrunkRate(flagBad, flagDenom, RE_SR_SHRINK_C, RE_SR_PENALTY_PRIOR)
+            : 0.5;
         const raisedScore = raisedDenom > 0
-            ? reShrunkRate(raisedGood, raisedDenom, 20)
-            : reShrunkRate(0, 0, 20);
+            ? reShrunkRate(raisedGood, raisedDenom, RE_SR_SHRINK_C)
+            : 0.5;
         const srScore = RE_QAQS_SR_PENALTY_BLEND * penaltyScore + RE_QAQS_SR_RAISED_BLEND * raisedScore;
 
         const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
@@ -825,7 +845,7 @@ const RatingEngine = {
                 id: def.id,
                 label: def.label,
                 baseWeight: def.weight,
-                score,
+                score: defined && score != null ? reSpreadAxisScore(score) : score,
                 defined,
                 raw
             };
@@ -1144,7 +1164,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.14',
+    _version: '1.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
