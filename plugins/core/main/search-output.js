@@ -5014,7 +5014,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._renderRatingsPanel({ recompute: false });
                 return;
             }
-            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"]');
+            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"], [data-wf-dash-stats-draft="height"]');
             if (statsDraftInput && modal.contains(statsDraftInput)) {
                 dash._syncStatsBuilderDraftFromForm();
                 dash._debounceStatsBuilderPreview();

@@ -59,7 +59,7 @@ const STATS_SCORECARD_GROUP_BY = '__scope__';
 const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
 
 const STATS_CHART_TYPE_META = {
-    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
+    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     barLine: {
         id: 'barLine',
@@ -81,12 +81,20 @@ const STATS_CHART_TYPE_META = {
 
 const STATS_CHART_TYPES = Object.values(STATS_CHART_TYPE_META);
 
-const STATS_HEIGHT_PRESETS = [
-    { id: 140, label: 'Scorecard' },
-    { id: 200, label: 'Compact' },
-    { id: 260, label: 'Default' },
-    { id: 320, label: 'Tall' }
-];
+const STATS_CHART_HEIGHT_MIN = 80;
+const STATS_CHART_HEIGHT_MAX = 600;
+const STATS_CHART_HEIGHT_STEP = 40;
+const STATS_CHART_HEIGHT_DEFAULT = 200;
+
+function statsNormalizeChartHeight(raw, fallback) {
+    const defaultFallback = Number.isFinite(Number(fallback))
+        ? Number(fallback)
+        : STATS_CHART_HEIGHT_DEFAULT;
+    let height = Number(raw);
+    if (!Number.isFinite(height)) height = defaultFallback;
+    height = Math.min(STATS_CHART_HEIGHT_MAX, Math.max(STATS_CHART_HEIGHT_MIN, height));
+    return Math.round(height / STATS_CHART_HEIGHT_STEP) * STATS_CHART_HEIGHT_STEP;
+}
 
 function statsNewChartId() {
     return 'chart-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
@@ -288,9 +296,7 @@ function statsNormalizeChartEntry(c) {
         type,
         groupBy,
         series,
-        height: Number.isFinite(Number(c.height))
-            ? Number(c.height)
-            : (meta.defaultHeight || 260),
+        height: statsNormalizeChartHeight(c.height, meta.defaultHeight || STATS_CHART_HEIGHT_DEFAULT),
         presetKey: c.presetKey != null ? String(c.presetKey) : null
     };
     if (meta.needsPointMode) {
@@ -625,7 +631,12 @@ function statsBuildCatalog(ctx) {
         aggregations: STATS_AGGREGATIONS,
         chartTypes: STATS_CHART_TYPES,
         chartTypeMeta: STATS_CHART_TYPE_META,
-        heightPresets: STATS_HEIGHT_PRESETS
+        chartHeight: {
+            min: STATS_CHART_HEIGHT_MIN,
+            max: STATS_CHART_HEIGHT_MAX,
+            step: STATS_CHART_HEIGHT_STEP,
+            default: STATS_CHART_HEIGHT_DEFAULT
+        }
     };
 }
 
@@ -1160,7 +1171,7 @@ function statsDefaultBuilderDraft(catalog) {
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
         series: [{ metricId: 'count', agg: 'count', label: '' }],
-        height: 260,
+        height: STATS_CHART_HEIGHT_DEFAULT,
         pointMode: 'bucket',
         barLayout: 'grouped',
         orientation: 'vertical',
@@ -1175,7 +1186,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.6',
+    _version: '4.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1204,7 +1215,11 @@ const plugin = {
             aggregationsForChartType: (type) => statsAggregationsForChartType(type),
             chartTypes: () => STATS_CHART_TYPES.slice(),
             aggregations: () => STATS_AGGREGATIONS.slice(),
-            heightPresets: () => STATS_HEIGHT_PRESETS.slice(),
+            chartHeightMin: () => STATS_CHART_HEIGHT_MIN,
+            chartHeightMax: () => STATS_CHART_HEIGHT_MAX,
+            chartHeightStep: () => STATS_CHART_HEIGHT_STEP,
+            chartHeightDefault: () => STATS_CHART_HEIGHT_DEFAULT,
+            normalizeChartHeight: (raw, fallback) => statsNormalizeChartHeight(raw, fallback),
             taskPointCap: STATS_TASK_POINT_CAP,
             parseImportPayload: (parsed) => statsParseImportPayload(parsed),
             prepareImportedChart: (raw) => statsPrepareImportedChart(raw),

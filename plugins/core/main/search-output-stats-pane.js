@@ -189,7 +189,7 @@ const searchOutputStatsPaneMethods = {
                 }
                 return entry;
             }),
-            height: Number(draft.height) || 260,
+            height: this._statsResolvedChartHeight(draft),
             presetKey: draft.presetKey || null,
             chartFilters: draft.chartFilters || {}
         };
@@ -445,6 +445,33 @@ const searchOutputStatsPaneMethods = {
         };
     },
 
+    _statsChartHeightConfig() {
+        const engine = Context.statsEngine;
+        return {
+            min: engine && typeof engine.chartHeightMin === 'function' ? engine.chartHeightMin() : 80,
+            max: engine && typeof engine.chartHeightMax === 'function' ? engine.chartHeightMax() : 600,
+            step: engine && typeof engine.chartHeightStep === 'function' ? engine.chartHeightStep() : 40,
+            default: engine && typeof engine.chartHeightDefault === 'function' ? engine.chartHeightDefault() : 200
+        };
+    },
+
+    _statsNormalizeChartHeight(raw, fallback) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.normalizeChartHeight === 'function') {
+            return engine.normalizeChartHeight(raw, fallback);
+        }
+        const cfg = this._statsChartHeightConfig();
+        let height = Number(raw);
+        if (!Number.isFinite(height)) height = Number(fallback);
+        if (!Number.isFinite(height)) height = cfg.default;
+        height = Math.min(cfg.max, Math.max(cfg.min, height));
+        return Math.round(height / cfg.step) * cfg.step;
+    },
+
+    _statsResolvedChartHeight(chartOrDraft, fallback) {
+        return this._statsNormalizeChartHeight(chartOrDraft && chartOrDraft.height, fallback);
+    },
+
     _statsPiePalette() {
         return ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#7c3aed', '#0891b2', '#db2777', '#64748b', '#ea580c', '#4f46e5'];
     },
@@ -543,7 +570,7 @@ const searchOutputStatsPaneMethods = {
         const chart = this._draftToChartObject(draft, engine);
         const validation = engine.validateChart(chart, catalog, items, ctx);
 
-        const previewHeight = Number(draft.height) || 260;
+        const previewHeight = this._statsResolvedChartHeight(draft);
         wrapEl.style.height = previewHeight + 'px';
 
         if (statusEl) {
@@ -750,7 +777,7 @@ const searchOutputStatsPaneMethods = {
 
     _statsChartCardHtml(chart, validation) {
         const box = this._panelBoxStyle();
-        const height = Number(chart.height) || 260;
+        const height = this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
         const missingEntry = disabled && validation.missing[0] ? validation.missing[0] : null;
         const missingLabel = missingEntry ? missingEntry.label : '';
@@ -1404,7 +1431,7 @@ const searchOutputStatsPaneMethods = {
         const el = this._q('[data-wf-dash-stats-scorecard="' + chart.id + '"]');
         if (!el || !String(el.textContent || '').trim()) return null;
         const theme = this._statsChartTheme();
-        const height = Number(chart.height) || 260;
+        const height = this._statsResolvedChartHeight(chart);
         const width = el.parentElement && el.parentElement.clientWidth > 0
             ? el.parentElement.clientWidth
             : 480;
@@ -1664,9 +1691,6 @@ const searchOutputStatsPaneMethods = {
         const typeOpts = catalog.chartTypes.map((t) =>
             '<option value="' + dashEscHtml(t.id) + '"' + (draft.type === t.id ? ' selected' : '') + '>' + dashEscHtml(t.label) + '</option>'
         ).join('');
-        const heightOpts = catalog.heightPresets.map((h) =>
-            '<option value="' + h.id + '"' + (Number(draft.height) === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
-        ).join('');
         const chartTypeField = this._statsBuilderField('Chart type',
             '<select data-wf-dash-stats-draft="type" style="' + styles.inputStyle + '">' + typeOpts + '</select>',
             { styles });
@@ -1675,9 +1699,11 @@ const searchOutputStatsPaneMethods = {
             : this._statsBuilderField('Group by',
                 '<select data-wf-dash-stats-draft="groupBy" style="' + styles.inputStyle + '">' + dimOpts + '</select>',
                 { styles });
-        const heightField = this._statsBuilderField('Height',
-            '<select data-wf-dash-stats-draft="height" style="' + styles.inputStyle + '">' + heightOpts + '</select>',
-            { styles });
+        const heightCfg = catalog.chartHeight || this._statsChartHeightConfig();
+        const heightValue = this._statsNormalizeChartHeight(draft.height, heightCfg.default);
+        const heightField = this._statsBuilderField('Height (px)',
+            '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputStyle + '">',
+            { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step });
         const chartSettingsCells = [chartTypeField, groupByField, heightField].filter(Boolean);
         const chartColCount = chartSettingsCells.length;
         const chartGridStyle = chartColCount === 3 ? styles.grid3 : styles.grid2;
@@ -1957,7 +1983,10 @@ const searchOutputStatsPaneMethods = {
         } else if (this._statsNormalizeChartType(draft.type) !== 'barLine') {
             draft.categorySort = null;
         }
-        if (heightEl) draft.height = Number(heightEl.value) || 260;
+        if (heightEl) {
+            draft.height = this._statsNormalizeChartHeight(heightEl.value, draft.height);
+            heightEl.value = String(draft.height);
+        }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
@@ -2041,7 +2070,10 @@ const searchOutputStatsPaneMethods = {
                 if (!draft.series.length) {
                     draft.series = [{ metricId: 'count', agg: 'count', label: '' }];
                 }
-                if (!draft.height || draft.height > 180) draft.height = 140;
+                const scorecardDefault = meta.defaultHeight || this._statsChartHeightConfig().default;
+                if (!draft.height || draft.height > scorecardDefault + 80) {
+                    draft.height = this._statsNormalizeChartHeight(scorecardDefault);
+                }
             }
             if (draft.series && engine.seriesAllowsSegment) {
                 draft.series.forEach((s) => {
@@ -3156,7 +3188,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.19',
+    _version: '5.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
