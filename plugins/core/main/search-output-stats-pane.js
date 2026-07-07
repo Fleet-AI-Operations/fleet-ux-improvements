@@ -617,7 +617,7 @@ const searchOutputStatsPaneMethods = {
             el.innerHTML = '<div id="wf-dash-stats-builder-scroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 4px;">'
                 + '<div id="wf-dash-stats-builder-form"></div>'
                 + '</div>'
-                + '<div id="wf-dash-stats-builder-preview" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 0; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #fff); box-shadow: 0 -6px 16px color-mix(in srgb, var(--foreground, #0f172a) 5%, transparent);">'
+                + '<div id="wf-dash-stats-builder-preview" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 0; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #fff);">'
                 + '<div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">Preview</div>'
                 + '<div id="wf-dash-stats-builder-preview-status" style="display: none; font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
                 + '<div id="wf-dash-stats-builder-preview-wrap" style="position: relative; width: 100%; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); padding: 8px; box-sizing: border-box;">'
@@ -2479,7 +2479,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.7',
+    _version: '5.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
