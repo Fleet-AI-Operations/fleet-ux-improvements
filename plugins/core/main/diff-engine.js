@@ -81,7 +81,7 @@ function _deHighlightStyles() {
     const removeBg = dark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.3)';
     const addBg = dark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
     const equalBg = 'rgba(250,215,50,0.4)';
-    const span = 'border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
+    const span = 'white-space:pre-wrap;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;';
     _deCachedHighlightDark = dark;
     _deCachedHighlightStyles = {
         remove: `background-color:${removeBg};${span}`,
@@ -333,7 +333,12 @@ function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranular
 }
 
 function _deEqualSpanHtml(text) {
-    return `<span class="dv-diff-equal">${_deEscHtml(text)}</span>`;
+    return `<span class="dv-diff-equal" style="white-space:pre-wrap;">${_deEscHtml(text)}</span>`;
+}
+
+function _deJoinGroupValues(values, effectiveGranularity) {
+    if (effectiveGranularity === 'line') return values.join('\n');
+    return values.join('');
 }
 
 function _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity) {
@@ -359,8 +364,9 @@ function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, re
     const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const groups = _deGroupConsecutive(diff, includeTypes, highlightType);
     let html = '';
-    groups.forEach((group) => {
-        const text = group.values.join('');
+    groups.forEach((group, gi) => {
+        if (gi > 0 && effectiveGranularity === 'line') html += '\n';
+        const text = _deJoinGroupValues(group.values, effectiveGranularity);
         if (_deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength)) {
             html += _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity);
         } else {
@@ -401,7 +407,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
