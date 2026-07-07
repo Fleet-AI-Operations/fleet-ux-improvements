@@ -3974,7 +3974,6 @@ const searchOutputCoreMethods = {
             const hydratedItems = (this._state.cachedItems || []).filter(
                 (it) => taskIdSet.has(it.task.id) && !it.hydrated
             );
-            const feedbackIdsToLoad = [];
             for (const item of this._state.cachedItems || []) {
                 if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
@@ -3992,17 +3991,9 @@ const searchOutputCoreMethods = {
                     } else {
                         delete item.task.initialCreationTimeSeconds;
                     }
-                    for (const entry of hist.allFeedback || []) {
-                        if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
-                            feedbackIdsToLoad.push(entry.id);
-                        }
-                    }
                     if (item.selectedFeedbackId) {
                         const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                         if (entry && entry.display) item.qaFeedback = entry.display;
-                        if (entry && entry.display && this._shouldShowHelpfulness(entry.display, item.selectedFeedbackId)) {
-                            feedbackIdsToLoad.push(item.selectedFeedbackId);
-                        }
                     }
                 }
                 item.hydrated = true;
@@ -4020,16 +4011,6 @@ const searchOutputCoreMethods = {
                 }
             } catch (e) {
                 Logger.warn('search-output: dispute/flag overlay failed', e);
-            }
-            const uniqueFeedbackIds = [...new Set(feedbackIdsToLoad.map((id) => String(id).trim()).filter(Boolean))];
-            if (uniqueFeedbackIds.length > 0) {
-                try {
-                    await this._fetchHelpfulnessRatingsBatch(uniqueFeedbackIds);
-                    for (const id of uniqueFeedbackIds) this._patchHelpfulnessBlock(id);
-                    this._refreshHelpfulnessFilterUi();
-                } catch (e) {
-                    Logger.warn('search-output: helpfulness hydration failed', e);
-                }
             }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
@@ -5061,7 +5042,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.13',
+    _version: '7.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
