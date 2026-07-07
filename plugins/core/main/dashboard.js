@@ -28,6 +28,8 @@ const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-m
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_MS_HOVER_OPEN_MS = 300;
+const DASH_TASK_CARD_BG = '#121212';
+const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
 const DASH_MS_FLYOUT_WIDTH = 'min(280px, 42vw)';
@@ -97,7 +99,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.12',
+    _version: '9.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -154,6 +156,7 @@ const plugin = {
             copyChipHtml: (text) => self._copyChipHtml(text),
             personChipsHtml: (name, email, id, linkTitle) => self._personChipsHtml(name, email, id, linkTitle),
             panelBoxStyle: () => self._panelBoxStyle(),
+            taskCardBoxStyle: () => self._taskCardBoxStyle(),
             labelStyle: () => self._labelStyle(),
             hintStyle: () => self._hintStyle(),
             inputStyle: () => self._inputStyle(),
@@ -1020,6 +1023,10 @@ const plugin = {
 
     _panelBoxStyle() {
         return 'border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--card, #ffffff);';
+    },
+
+    _taskCardBoxStyle() {
+        return 'border: ' + DASH_CARD_BORDER + '; border-radius: 10px; background: ' + DASH_TASK_CARD_BG + ';';
     },
 
     _labelStyle() {
