@@ -1334,6 +1334,7 @@ const searchOutputStatsPaneMethods = {
         return {
             fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
             inputStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            inputDisabledStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a); opacity: 0.55; cursor: not-allowed;',
             hintStyle: 'font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;',
             cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--muted, #f1f5f9);',
             grid2: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;',
@@ -1342,12 +1343,22 @@ const searchOutputStatsPaneMethods = {
         };
     },
 
+    _statsBuilderControlState(disabled) {
+        const styles = this._statsBuilderFieldStyles();
+        return {
+            attr: disabled ? ' disabled' : '',
+            style: disabled ? styles.inputDisabledStyle : styles.inputStyle,
+            fieldOpacity: disabled ? ' opacity: 0.65;' : ''
+        };
+    },
+
     _statsBuilderField(label, innerHtml, opts) {
         opts = opts || {};
         const styles = opts.styles || this._statsBuilderFieldStyles();
         const spanStyle = opts.span ? ('grid-column: span ' + opts.span + ';') : '';
+        const fieldOpacity = opts.disabled ? ' opacity: 0.65;' : '';
         const hint = opts.hint ? ('<div style="' + styles.hintStyle + '">' + opts.hint + '</div>') : '';
-        return '<div style="' + spanStyle + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
+        return '<div style="' + spanStyle + fieldOpacity + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
             + innerHtml + hint + '</div>';
     },
 
@@ -1391,25 +1402,31 @@ const searchOutputStatsPaneMethods = {
                 + '</select>',
                 { styles })
             : '';
-        const barLayoutField = typeMeta.needsBarLayout && barDatasetCount >= 2
+        const barLayoutDisabled = barDatasetCount < 2;
+        const barLayoutCtl = this._statsBuilderControlState(barLayoutDisabled);
+        const barLayoutField = typeMeta.needsBarLayout
             ? this._statsBuilderField('Bar layout',
-                '<select data-wf-dash-stats-draft="barLayout" style="' + styles.inputStyle + '">'
+                '<select data-wf-dash-stats-draft="barLayout" style="' + barLayoutCtl.style + '"' + barLayoutCtl.attr + '>'
                 + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
                 + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
                 + '</select>',
                 {
                     styles,
+                    disabled: barLayoutDisabled,
                     hint: 'Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.'
                 })
             : '';
-        const lineAreaLayoutField = typeMeta.needsLineAreaLayout && shadedLineCount >= 2
+        const lineAreaLayoutDisabled = shadedLineCount < 2;
+        const lineAreaLayoutCtl = this._statsBuilderControlState(lineAreaLayoutDisabled);
+        const lineAreaLayoutField = typeMeta.needsLineAreaLayout
             ? this._statsBuilderField('Shaded area layout',
-                '<select data-wf-dash-stats-draft="lineAreaLayout" style="' + styles.inputStyle + '">'
+                '<select data-wf-dash-stats-draft="lineAreaLayout" style="' + lineAreaLayoutCtl.style + '"' + lineAreaLayoutCtl.attr + '>'
                 + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
                 + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
                 + '</select>',
                 {
                     styles,
+                    disabled: lineAreaLayoutDisabled,
                     hint: 'Segment splits stack automatically. Use this for multiple shaded series without Segment by.'
                 })
             : '';
@@ -1441,7 +1458,7 @@ const searchOutputStatsPaneMethods = {
         const aggOpts = aggList.map((a) =>
             '<option value="' + dashEscHtml(a.id) + '"' + (s.agg === a.id ? ' selected' : '') + '>' + dashEscHtml(a.label) + '</option>'
         ).join('');
-        const showSegmentBy = engine.seriesAllowsSegment
+        const segmentAllowed = engine.seriesAllowsSegment
             ? engine.seriesAllowsSegment(draft.type, s)
             : false;
         const showSeriesLabel = !typeMeta.skipGroupBy;
@@ -1456,16 +1473,18 @@ const searchOutputStatsPaneMethods = {
             { styles });
 
         let row1Html = '';
-        if (showSegmentBy) {
+        if (typeMeta.needsRenderAs) {
             const segmentBy = s.segmentBy || '';
+            const segmentDisabled = !segmentAllowed;
+            const segmentCtl = this._statsBuilderControlState(segmentDisabled);
             const segmentField = this._statsBuilderField('Segment by',
-                '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
+                '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + segmentCtl.style + '"' + segmentCtl.attr + '>'
                 + '<option value="">None</option>'
                 + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
                     '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
                 ).join('')
                 + '</select>',
-                { styles });
+                { styles, disabled: segmentDisabled });
             row1Html = '<div style="' + styles.grid3 + '">' + metricField + aggField + segmentField + '</div>';
         } else {
             row1Html = '<div style="' + styles.grid2 + '">' + metricField + aggField + '</div>';
@@ -1484,29 +1503,27 @@ const searchOutputStatsPaneMethods = {
         if (typeMeta.needsRenderAs) {
             const lineStyle = s.lineStyle === 'shaded' ? 'shaded' : 'line';
             const yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
+            const lineStyleDisabled = s.renderAs !== 'line';
+            const lineStyleCtl = this._statsBuilderControlState(lineStyleDisabled);
             const renderField = this._statsBuilderField('Render as',
                 '<select data-wf-dash-stats-draft="series-render" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
                 + '<option value="bar"' + (s.renderAs !== 'line' ? ' selected' : '') + '>Bar</option>'
                 + '<option value="line"' + (s.renderAs === 'line' ? ' selected' : '') + '>Line</option>'
                 + '</select>',
                 { styles });
+            const lineStyleField = this._statsBuilderField('Line style',
+                '<select data-wf-dash-stats-draft="series-lineStyle" data-series-idx="' + i + '" style="' + lineStyleCtl.style + '"' + lineStyleCtl.attr + '>'
+                + '<option value="line"' + (lineStyle !== 'shaded' ? ' selected' : '') + '>Line</option>'
+                + '<option value="shaded"' + (lineStyle === 'shaded' ? ' selected' : '') + '>Shaded</option>'
+                + '</select>',
+                { styles, disabled: lineStyleDisabled });
             const yAxisField = this._statsBuilderField('Y axis',
                 '<select data-wf-dash-stats-draft="series-yaxis" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
                 + '<option value="y"' + (yAxis === 'y' ? ' selected' : '') + '>Left</option>'
                 + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
                 + '</select>',
                 { styles });
-            if (s.renderAs === 'line') {
-                const lineStyleField = this._statsBuilderField('Line style',
-                    '<select data-wf-dash-stats-draft="series-lineStyle" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
-                    + '<option value="line"' + (lineStyle !== 'shaded' ? ' selected' : '') + '>Line</option>'
-                    + '<option value="shaded"' + (lineStyle === 'shaded' ? ' selected' : '') + '>Shaded</option>'
-                    + '</select>',
-                    { styles });
-                row3Html = '<div style="' + styles.grid3 + '; margin-top: 8px;">' + renderField + lineStyleField + yAxisField + '</div>';
-            } else {
-                row3Html = '<div style="' + styles.grid2 + '; margin-top: 8px;">' + renderField + yAxisField + '</div>';
-            }
+            row3Html = '<div style="' + styles.grid3 + '; margin-top: 8px;">' + renderField + lineStyleField + yAxisField + '</div>';
         }
 
         const removeBtn = showRemove
@@ -2462,7 +2479,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.6',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
