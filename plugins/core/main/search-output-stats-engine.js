@@ -47,7 +47,9 @@ const STATS_AGGREGATIONS = [
     { id: 'avg', label: 'Average' },
     { id: 'sum', label: 'Sum' },
     { id: 'min', label: 'Min' },
-    { id: 'max', label: 'Max' }
+    { id: 'max', label: 'Max' },
+    { id: 'median', label: 'Median' },
+    { id: 'mode', label: 'Mode' }
 ];
 
 const STATS_SCORECARD_GROUP_BY = '__scope__';
@@ -778,6 +780,26 @@ function statsApplyAgg(values, agg) {
     if (agg === 'avg') return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
     if (agg === 'min') return Math.min(...nums);
     if (agg === 'max') return Math.max(...nums);
+    if (agg === 'median') {
+        const sorted = nums.slice().sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        if (sorted.length % 2 === 1) return sorted[mid];
+        return Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 10) / 10;
+    }
+    if (agg === 'mode') {
+        const freq = new Map();
+        let bestVal = nums[0];
+        let bestCount = 0;
+        for (const n of nums) {
+            const c = (freq.get(n) || 0) + 1;
+            freq.set(n, c);
+            if (c > bestCount || (c === bestCount && n < bestVal)) {
+                bestCount = c;
+                bestVal = n;
+            }
+        }
+        return bestVal;
+    }
     return nums.length;
 }
 
@@ -1178,7 +1200,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.4',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
