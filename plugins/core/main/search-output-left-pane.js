@@ -31,6 +31,8 @@ const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
 const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DASH_EVERYONE_AUTHOR_TOKEN_ID = '__everyone__';
+const DASH_EVERYONE_AUTHOR_LABEL = '@everyone';
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
 const DASH_TASKS_PAGE_SIZE = 100;
@@ -350,7 +352,7 @@ const searchOutputLeftPaneMethods = {
                                         </div>
                                         <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
                                         <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
-                                        <div style="${hint} margin-top: 4px;">Empty = all workers.</div>
+                                        <div style="${hint} margin-top: 4px;">Empty = all workers. ${dashEscHtml(DASH_EVERYONE_AUTHOR_LABEL)} — bulk ratings for everyone in results.</div>
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
@@ -715,10 +717,40 @@ const searchOutputLeftPaneMethods = {
 
     _maybeSwitchToAllTimeForContributor() {
         if (this._state.timeFilterUserPicked) return;
+        if (this._hasEveryoneAuthorToken()) return;
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = 'all-time';
         this._applyQuickDatePreset('all-time');
         Logger.log('search-output: contributor resolved — quick range switched to All Time');
+    },
+
+    _isEveryoneAuthorQuery(query) {
+        return String(query || '').trim().toLowerCase() === DASH_EVERYONE_AUTHOR_LABEL.toLowerCase();
+    },
+
+    _isEveryoneAuthorToken(person) {
+        return String(person && person.id || '') === DASH_EVERYONE_AUTHOR_TOKEN_ID;
+    },
+
+    _hasEveryoneAuthorToken() {
+        return (this._state.draftTokens || []).some((t) => this._isEveryoneAuthorToken(t));
+    },
+
+    _namedAuthorTokenCount() {
+        return (this._state.draftTokens || []).filter((t) => !this._isEveryoneAuthorToken(t)).length;
+    },
+
+    _addEveryoneAuthorToken() {
+        this._state.draftTokens = [{
+            id: DASH_EVERYONE_AUTHOR_TOKEN_ID,
+            full_name: DASH_EVERYONE_AUTHOR_LABEL,
+            email: ''
+        }];
+        this._hideAuthorCandidates();
+        this._setAuthorError('');
+        this._renderAuthorTokens();
+        this._validateRangeUi();
+        Logger.log('search-output: @everyone author token added — bulk ratings mode');
     },
 
     _btnToggleStyle(active, colorKind) {
@@ -838,6 +870,14 @@ const searchOutputLeftPaneMethods = {
         const query = (raw || '').trim();
         if (!query) return 'empty';
         const tokens = this._state.draftTokens;
+        if (this._isEveryoneAuthorQuery(query)) {
+            if (!this._hasEveryoneAuthorToken()) {
+                this._addEveryoneAuthorToken();
+            }
+            const input = this._q('#wf-dash-author-input');
+            if (input) input.value = '';
+            return 'resolved';
+        }
         if (tokens.some((t) => t.full_name === query || t.email === query || t.id === query)) {
             const input = this._q('#wf-dash-author-input');
             if (input) input.value = '';
@@ -940,6 +980,10 @@ const searchOutputLeftPaneMethods = {
     },
 
     _addAuthorToken(person) {
+        if (this._isEveryoneAuthorToken(person)) return;
+        if (this._hasEveryoneAuthorToken()) {
+            this._state.draftTokens = this._state.draftTokens.filter((t) => !this._isEveryoneAuthorToken(t));
+        }
         if (this._state.draftTokens.some((t) => t.id === person.id)) return;
         this._state.draftTokens.push(person);
         this._hideAuthorCandidates();
@@ -1449,7 +1493,7 @@ const searchOutputLeftPaneMethods = {
         const quickPreset = ((this._q('#wf-dash-quick-range') || {}).value || '');
         const isAllTime = quickPreset === 'all-time';
         const isUniversal = lib.isUniversalSearchParams({
-            authorCount: this._state.draftTokens.length,
+            authorCount: this._namedAuthorTokenCount(),
             searchTeamIds: this._selectedFromList('search-teams'),
             searchProjectIds: this._selectedFromList('search-projects'),
             searchEnvKeys: this._selectedFromList('search-envs')
@@ -1821,12 +1865,17 @@ const searchOutputLeftPaneMethods = {
                 return;
             }
 
-            const authorIds = this._state.draftTokens.map((t) => t.id);
-            const authorLabels = this._state.draftTokens.map((t) => this._personDisplayLabel(t));
+            const everyoneMode = this._hasEveryoneAuthorToken();
+            const namedTokens = this._state.draftTokens.filter((t) => !this._isEveryoneAuthorToken(t));
+            const authorIds = namedTokens.map((t) => t.id);
+            const authorLabels = everyoneMode
+                ? [DASH_EVERYONE_AUTHOR_LABEL]
+                : namedTokens.map((t) => this._personDisplayLabel(t));
             const searchCommitted = {
                 authorIds,
                 authorCount: authorIds.length,
                 authorLabels,
+                ratingsEveryone: everyoneMode,
                 includeTaskCreation: includeTasks,
                 includeQa,
                 includeDisputes,
@@ -2061,7 +2110,9 @@ const searchOutputLeftPaneMethods = {
         if (!committed) return '';
         if (committed.retrieveMode) return 'task: ' + (committed.retrieveLabel || '');
         const parts = [];
-        if (committed.authorLabels && committed.authorLabels.length > 0) {
+        if (committed.ratingsEveryone) {
+            parts.push('contributors: ' + DASH_EVERYONE_AUTHOR_LABEL);
+        } else if (committed.authorLabels && committed.authorLabels.length > 0) {
             parts.push('contributors: ' + committed.authorLabels.join(', '));
         } else {
             parts.push('all contributors');
@@ -2138,7 +2189,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

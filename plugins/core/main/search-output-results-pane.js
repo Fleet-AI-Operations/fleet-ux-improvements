@@ -3875,9 +3875,11 @@ const searchOutputResultsPaneMethods = {
                 el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
                 return;
             }
-            const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
-                ? committed.authorLabels.join(', ')
-                : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
+            const authorLabel = committed.ratingsEveryone
+                ? '@everyone'
+                : (committed.authorLabels && committed.authorLabels.length > 0
+                    ? committed.authorLabels.join(', ')
+                    : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors'));
             const scopeTotal = this._getFilterScopeItems().length;
             const tabs = this._resultsKindTabsMeta(committed);
             const activeTab = s.resultsKindTab || 'all';
@@ -5065,7 +5067,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

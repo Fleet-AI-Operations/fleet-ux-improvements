@@ -2313,16 +2313,67 @@ const searchOutputStatsPaneMethods = {
         return warnings;
     },
 
-    _buildRatingWorkerProfiles() {
+    _collectRatingWorkerIdsFromItems(cachedItems, committed) {
+        const c = committed || {};
+        const includeTw = Boolean(c.includeTaskCreation);
+        const includeQa = Boolean(c.includeQa);
+        const ids = new Set();
+        for (const item of cachedItems || []) {
+            if (!item || item.hydrated !== true) continue;
+            const task = item.task;
+            if (!task) continue;
+            if (includeTw && task.author && task.author.id) ids.add(task.author.id);
+            if (includeQa) {
+                for (const entry of task.allFeedback || []) {
+                    if (entry.reviewer && entry.reviewer.id) ids.add(entry.reviewer.id);
+                }
+            }
+        }
+        return [...ids].sort();
+    },
+
+    _buildRatingWorkerProfiles(authorIds) {
         const committed = this._state.committed || {};
-        const ids = committed.authorIds || [];
+        const ids = authorIds || committed.authorIds || [];
         const labels = committed.authorLabels || [];
-        const tokens = this._state.draftTokens || [];
+        const tokens = (this._state.draftTokens || []).filter((t) => String(t.id || '') !== '__everyone__');
         const map = {};
+        if (committed.ratingsEveryone) {
+            const contributors = (this._state.filterListOptions || {}).contributors || [];
+            for (const c of contributors) {
+                if (c && c.id) {
+                    map[c.id] = {
+                        name: c.name || c.label || c.id,
+                        email: c.email || ''
+                    };
+                }
+            }
+            for (const item of this._state.cachedItems || []) {
+                if (!item || item.hydrated !== true) continue;
+                const task = item.task;
+                if (!task) continue;
+                if (task.author && task.author.id && !map[task.author.id]) {
+                    map[task.author.id] = {
+                        name: String(task.author.name || '').trim() || task.author.id,
+                        email: String(task.author.email || '').trim()
+                    };
+                }
+                for (const entry of task.allFeedback || []) {
+                    const reviewer = entry.reviewer;
+                    if (reviewer && reviewer.id && !map[reviewer.id]) {
+                        map[reviewer.id] = {
+                            name: String(reviewer.name || '').trim() || reviewer.id,
+                            email: String(reviewer.email || '').trim()
+                        };
+                    }
+                }
+            }
+        }
         ids.forEach((id, i) => {
+            if (map[id]) return;
             const tok = tokens.find((t) => t.id === id);
             map[id] = {
-                name: (tok && (tok.name || tok.label)) || labels[i] || id,
+                name: (tok && (tok.full_name || tok.name || tok.label)) || labels[i] || id,
                 email: (tok && tok.email) || ''
             };
         });
@@ -2508,6 +2559,7 @@ const searchOutputStatsPaneMethods = {
 
         const committed = this._state.committed || {};
         const authorCount = committed.authorCount != null ? committed.authorCount : (committed.authorIds || []).length;
+        const everyoneMode = Boolean(committed.ratingsEveryone);
         const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
 
         if (warnEl) {
@@ -2528,8 +2580,8 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
-        if (authorCount === 0) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors to generate ratings.</p>';
+        if (!everyoneMode && authorCount === 0) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors, or use @everyone for bulk ratings.</p>';
             this._state.ratingsReport = null;
             return;
         }
@@ -2541,10 +2593,20 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
+        let effectiveCommitted = committed;
+        if (everyoneMode) {
+            const derivedIds = this._collectRatingWorkerIdsFromItems(this._state.cachedItems, committed);
+            effectiveCommitted = {
+                ...committed,
+                authorIds: derivedIds,
+                authorCount: derivedIds.length
+            };
+        }
+
         const report = engine.compute({
             cachedItems: this._state.cachedItems,
-            committed,
-            workerProfiles: this._buildRatingWorkerProfiles()
+            committed: effectiveCommitted,
+            workerProfiles: this._buildRatingWorkerProfiles(effectiveCommitted.authorIds)
         });
         this._state.ratingsReport = report;
 
@@ -2556,7 +2618,7 @@ const searchOutputStatsPaneMethods = {
         }
 
         cardsEl.innerHTML = report.workers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
-        Logger.log('search-output: ratings rendered — ' + report.workers.length + ' worker card(s)');
+        Logger.log('search-output: ratings rendered — ' + report.workers.length + ' worker card(s)' + (everyoneMode ? ' (@everyone)' : ''));
     },
 
     _downloadTextFile(filename, content, mime) {
@@ -2645,7 +2707,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.14',
+    _version: '5.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
