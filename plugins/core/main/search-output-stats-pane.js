@@ -1465,6 +1465,20 @@ const searchOutputStatsPaneMethods = {
             + innerHtml + hint + '</div>';
     },
 
+    _statsBuilderHeightOptions(draft, catalog) {
+        const height = Number(draft.height) || 260;
+        const presets = catalog.heightPresets || [];
+        const presetIds = new Set(presets.map((h) => h.id));
+        let opts = '';
+        if (!presetIds.has(height)) {
+            opts += '<option value="' + height + '" selected>' + height + '</option>';
+        }
+        opts += presets.map((h) =>
+            '<option value="' + h.id + '"' + (height === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
+        ).join('');
+        return opts;
+    },
+
     _statsBuilderChartSettingsRows(draft, catalog, typeMeta, engine, styles) {
         const dimOpts = catalog.dimensions.map((d) =>
             '<option value="' + dashEscHtml(d.key) + '"' + (draft.groupBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
@@ -1472,9 +1486,7 @@ const searchOutputStatsPaneMethods = {
         const typeOpts = catalog.chartTypes.map((t) =>
             '<option value="' + dashEscHtml(t.id) + '"' + (draft.type === t.id ? ' selected' : '') + '>' + dashEscHtml(t.label) + '</option>'
         ).join('');
-        const heightOpts = catalog.heightPresets.map((h) =>
-            '<option value="' + h.id + '"' + (Number(draft.height) === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
-        ).join('');
+        const heightOpts = this._statsBuilderHeightOptions(draft, catalog);
         const chartTypeField = this._statsBuilderField('Chart type',
             '<select data-wf-dash-stats-draft="type" style="' + styles.inputStyle + '">' + typeOpts + '</select>',
             { styles });
@@ -2645,7 +2657,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.14',
+    _version: '5.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
