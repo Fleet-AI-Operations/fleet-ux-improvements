@@ -1,7 +1,7 @@
 {
   "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.78",
+  "archetypesVersion": "13.79",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -72,8 +72,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "9.12",
-      "hash": "sha256-d56c295d4ae1148b7b647e8defcecdc5df265c62ff5f22cd5a04c17cf6ff5046",
+      "version": "9.13",
+      "hash": "sha256-0421d34fcaa548abe6cf46ad94f4dfccea47179cf1bb86d8800d4487f901e988",
       "log": false
     },
     {
@@ -102,14 +102,14 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "5.15",
-      "hash": "sha256-fc1d70ff3de44e91c536a6d86e4685c65b91976b51763a9aaae3a2639c063bc2",
+      "version": "5.16",
+      "hash": "sha256-beb1a0f5ac19b717e302ce34dfa853de546c45376639490a482073215eb13374",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "7.14",
-      "hash": "sha256-e735e35fea3eb01ef24bb73de5a7bed2c2335dfe2acd1e2bba04a647a6d62dab",
+      "version": "7.15",
+      "hash": "sha256-7ad153d081f7fa8a897fc9f01241928ac61bb9496f7efcfd8e58a9a66ad7074d",
       "log": false
     },
     {

@@ -3871,6 +3871,8 @@ const searchOutputCoreMethods = {
             this._validateRangeUi();
             if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
+            } else if ((this._state.statsTab || 'stats') === 'ratings') {
+                this._renderRatingsPanel();
             }
         };
 
@@ -4944,6 +4946,18 @@ function attachSearchOutputListeners(modal, dash) {
             }
     });
         modal.addEventListener('change', (e) => {
+            const ratingsHideProv = e.target.closest('[data-wf-dash-ratings-hide-provisional]');
+            if (ratingsHideProv && modal.contains(ratingsHideProv)) {
+                dash._state.ratingsHideProvisional = ratingsHideProv.checked;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
+            const ratingsSort = e.target.closest('[data-wf-dash-ratings-sort]');
+            if (ratingsSort && modal.contains(ratingsSort)) {
+                dash._state.ratingsSortKey = ratingsSort.value;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
             const statsFilterCb = e.target;
             if (statsFilterCb && statsFilterCb.type === 'checkbox') {
                 const statsMsKey = statsFilterCb.getAttribute('data-wf-dash-ms');
@@ -4974,6 +4988,12 @@ function attachSearchOutputListeners(modal, dash) {
             dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
+            const ratingsNameFilter = e.target.closest('[data-wf-dash-ratings-name-filter]');
+            if (ratingsNameFilter && modal.contains(ratingsNameFilter)) {
+                dash._state.ratingsNameFilter = ratingsNameFilter.value;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
             const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"]');
             if (statsDraftInput && modal.contains(statsDraftInput)) {
                 dash._syncStatsBuilderDraftFromForm();
@@ -5042,7 +5062,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.14',
+    _version: '7.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

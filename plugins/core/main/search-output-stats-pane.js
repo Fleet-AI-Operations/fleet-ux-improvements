@@ -34,6 +34,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
+            + this._ratingsToolbarHtml()
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '</div>';
@@ -342,7 +343,7 @@ const searchOutputStatsPaneMethods = {
         if (!headerActions) return;
         const wrap = this._ensureStatsScopeToggle(headerActions);
         if (wrap) {
-            wrap.style.display = tab === 'stats' ? 'inline-flex' : 'none';
+            wrap.style.display = (tab === 'stats' || tab === 'ratings') ? 'inline-flex' : 'none';
             wrap.querySelectorAll('[data-wf-dash-stats-scope]').forEach((btn) => {
                 const scope = btn.getAttribute('data-wf-dash-stats-scope');
                 const active = scope === 'filtered' ? useFiltered : !useFiltered;
@@ -362,6 +363,9 @@ const searchOutputStatsPaneMethods = {
         Logger.log('search-output-stats-pane: stats scope ' + (next ? 'filtered' : 'all'));
         this._syncStatsScopeToggleUi();
         void this._renderStatsPanel();
+        if ((this._state.statsTab || 'stats') === 'ratings') {
+            this._renderRatingsPanel();
+        }
     },
 
     _isStatsHydrationBlocking() {
@@ -2180,6 +2184,8 @@ const searchOutputStatsPaneMethods = {
         Logger.log('search-output-stats-pane: stats tab ' + tab);
         if (tab === 'stats') {
             void this._renderStatsPanel();
+        } else if (tab === 'ratings') {
+            this._renderRatingsPanel();
         }
     },
 
@@ -2300,7 +2306,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _getRatingsHydrationWarnings() {
-        const items = this._state.cachedItems || [];
+        const items = this._getRatingsScopeItems();
         if (items.length === 0) return [];
         const unhydratedCount = items.filter((item) => item && item.hydrated !== true).length;
         const warnings = [];
@@ -2311,6 +2317,173 @@ const searchOutputStatsPaneMethods = {
             warnings.push('Per-card deep hydrate in progress — ratings may update when complete');
         }
         return warnings;
+    },
+
+    _getRatingsScopeItems() {
+        return this._getStatsScopeItems();
+    },
+
+    _ratingsScopeLabel() {
+        return this._state.statsUseFiltered !== false ? 'Filtered' : 'All';
+    },
+
+    _ratingsSortOptions(committed) {
+        const scoreTypes = this._ratingSearchScoreTypes(committed);
+        const opts = [{ id: 'name-asc', label: 'Name A→Z' }];
+        if (scoreTypes.showTwqs) {
+            opts.push({ id: 'twqs-desc', label: 'TWQS high→low' });
+            opts.push({ id: 'twqs-asc', label: 'TWQS low→high' });
+        }
+        if (scoreTypes.showQaqs) {
+            opts.push({ id: 'qaqs-desc', label: 'QAQS high→low' });
+            opts.push({ id: 'qaqs-asc', label: 'QAQS low→high' });
+        }
+        return opts;
+    },
+
+    _defaultRatingsSortKey(committed) {
+        const c = committed || {};
+        if (c.includeTaskCreation) return 'twqs-desc';
+        if (c.includeQa) return 'qaqs-desc';
+        return 'name-asc';
+    },
+
+    _ensureRatingsSortKey(committed) {
+        const options = this._ratingsSortOptions(committed);
+        const validIds = new Set(options.map((o) => o.id));
+        if (!this._state.ratingsSortKey || !validIds.has(this._state.ratingsSortKey)) {
+            this._state.ratingsSortKey = this._defaultRatingsSortKey(committed);
+        }
+    },
+
+    _ratingVisibleScoreBlocks(worker, scoreTypes) {
+        const blocks = [];
+        if (scoreTypes.showTwqs && worker.twqs) blocks.push(worker.twqs);
+        if (scoreTypes.showQaqs && worker.qaqs) blocks.push(worker.qaqs);
+        return blocks;
+    },
+
+    _ratingWorkerIsProvisionalOnly(worker, scoreTypes) {
+        const blocks = this._ratingVisibleScoreBlocks(worker, scoreTypes);
+        if (blocks.length === 0) return true;
+        return blocks.every((b) => b.confidence && b.confidence.tier === 'provisional');
+    },
+
+    _ratingWorkerSortValue(worker, sortKey) {
+        if (sortKey === 'twqs-desc' || sortKey === 'twqs-asc') {
+            const s = worker.twqs && worker.twqs.score;
+            return Number.isFinite(s) ? s : null;
+        }
+        if (sortKey === 'qaqs-desc' || sortKey === 'qaqs-asc') {
+            const s = worker.qaqs && worker.qaqs.score;
+            return Number.isFinite(s) ? s : null;
+        }
+        return null;
+    },
+
+    _applyRatingsViewFilters(workers, scoreTypes) {
+        let list = [...(workers || [])];
+        if (this._state.ratingsHideProvisional) {
+            list = list.filter((w) => !this._ratingWorkerIsProvisionalOnly(w, scoreTypes));
+        }
+        const nameQ = String(this._state.ratingsNameFilter || '').trim().toLowerCase();
+        if (nameQ) {
+            list = list.filter((w) => {
+                const hay = ((w.name || '') + ' ' + (w.email || '')).toLowerCase();
+                return hay.includes(nameQ);
+            });
+        }
+        const sortKey = this._state.ratingsSortKey || 'name-asc';
+        if (sortKey === 'name-asc') {
+            list.sort((a, b) => String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || '')));
+        } else {
+            const desc = sortKey.endsWith('-desc');
+            list.sort((a, b) => {
+                const va = this._ratingWorkerSortValue(a, sortKey);
+                const vb = this._ratingWorkerSortValue(b, sortKey);
+                const aMissing = va == null || !Number.isFinite(va);
+                const bMissing = vb == null || !Number.isFinite(vb);
+                if (aMissing && bMissing) {
+                    return String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || ''));
+                }
+                if (aMissing) return 1;
+                if (bMissing) return -1;
+                const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                if (cmp !== 0) return desc ? -cmp : cmp;
+                return String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || ''));
+            });
+        }
+        return list;
+    },
+
+    _computeRatingsReport(scopeItems, committed) {
+        const everyoneMode = Boolean(committed.ratingsEveryone);
+        let effectiveCommitted = committed;
+        if (everyoneMode) {
+            const derivedIds = this._collectRatingWorkerIdsFromItems(scopeItems, committed);
+            effectiveCommitted = {
+                ...committed,
+                authorIds: derivedIds,
+                authorCount: derivedIds.length
+            };
+        }
+        const engine = Context.ratingEngine;
+        return engine.compute({
+            cachedItems: scopeItems,
+            committed: effectiveCommitted,
+            workerProfiles: this._buildRatingWorkerProfiles(effectiveCommitted.authorIds, scopeItems)
+        });
+    },
+
+    _ratingsToolbarHtml() {
+        const inputStyle = this._inputStyle() + ' font-size: 11px; padding: 4px 8px; min-width: 0;';
+        return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
+            + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">'
+            + '<input type="checkbox" data-wf-dash-ratings-hide-provisional="1" style="margin: 0;">'
+            + 'Hide provisional</label>'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap;">'
+            + 'Sort <select data-wf-dash-ratings-sort="1" style="' + inputStyle + ' cursor: pointer;"></select></label>'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; flex: 1; min-width: 140px;">'
+            + 'Name <input type="text" data-wf-dash-ratings-name-filter="1" placeholder="Filter by name…" autocomplete="off" style="' + inputStyle + ' flex: 1; min-width: 100px;"></label>'
+            + '</div>'
+            + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
+            + '</div>';
+    },
+
+    _syncRatingsToolbarUi(visibleCount, totalCount) {
+        const toolbar = this._q('#wf-dash-ratings-toolbar');
+        if (!toolbar) return;
+        const committed = this._state.committed || {};
+        const hasReport = totalCount > 0;
+        this._ensureRatingsSortKey(committed);
+        const hideCb = toolbar.querySelector('[data-wf-dash-ratings-hide-provisional]');
+        if (hideCb) {
+            hideCb.checked = Boolean(this._state.ratingsHideProvisional);
+            hideCb.disabled = !hasReport;
+        }
+        const sortSel = toolbar.querySelector('[data-wf-dash-ratings-sort]');
+        if (sortSel) {
+            const options = this._ratingsSortOptions(committed);
+            const current = this._state.ratingsSortKey;
+            sortSel.innerHTML = options.map((o) =>
+                '<option value="' + dashEscHtml(o.id) + '"' + (o.id === current ? ' selected' : '') + '>' + dashEscHtml(o.label) + '</option>'
+            ).join('');
+            sortSel.disabled = !hasReport;
+        }
+        const nameInput = toolbar.querySelector('[data-wf-dash-ratings-name-filter]');
+        if (nameInput) {
+            if (nameInput !== document.activeElement) {
+                nameInput.value = this._state.ratingsNameFilter || '';
+            }
+            nameInput.disabled = !hasReport;
+        }
+        const summary = this._q('#wf-dash-ratings-summary');
+        if (summary) {
+            summary.textContent = hasReport
+                ? ('Showing ' + visibleCount + ' of ' + totalCount + ' · ' + this._ratingsScopeLabel())
+                : '';
+        }
     },
 
     _collectRatingWorkerIdsFromItems(cachedItems, committed) {
@@ -2332,11 +2505,12 @@ const searchOutputStatsPaneMethods = {
         return [...ids].sort();
     },
 
-    _buildRatingWorkerProfiles(authorIds) {
+    _buildRatingWorkerProfiles(authorIds, scopeItems) {
         const committed = this._state.committed || {};
         const ids = authorIds || committed.authorIds || [];
         const labels = committed.authorLabels || [];
         const tokens = (this._state.draftTokens || []).filter((t) => String(t.id || '') !== '__everyone__');
+        const itemSource = scopeItems || this._getRatingsScopeItems() || this._state.cachedItems || [];
         const map = {};
         if (committed.ratingsEveryone) {
             const contributors = (this._state.filterListOptions || {}).contributors || [];
@@ -2348,7 +2522,7 @@ const searchOutputStatsPaneMethods = {
                     };
                 }
             }
-            for (const item of this._state.cachedItems || []) {
+            for (const item of itemSource) {
                 if (!item || item.hydrated !== true) continue;
                 const task = item.task;
                 if (!task) continue;
@@ -2451,7 +2625,7 @@ const searchOutputStatsPaneMethods = {
             + '</tbody></table>'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">What counts toward a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li>Scores use the <strong>committed search window</strong> and <strong>hydrated result cards only</strong> — sidebar filters do <strong>not</strong> change ratings.</li>'
+            + '<li>Scores use the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>. Use the shared <strong>Filtered / All</strong> toggle (same as Stats): <strong>Filtered</strong> respects sidebar filters; <strong>All</strong> uses every result in the current results-kind tab.</li>'
             + '<li>With no After/Before dates, all history counts, weighted toward recent activity. With a date range set, everything inside the window counts equally and nothing outside it does.</li>'
             + '<li>Senior-review flags and disputes only move a score once they are <strong>resolved</strong>, and only in the direction the resolution supports. Pending or dismissed items stay neutral.</li>'
             + '</ul>'
@@ -2552,7 +2726,9 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _renderRatingsPanel() {
+    _renderRatingsPanel(options) {
+        const opts = options || {};
+        const recompute = opts.recompute !== false;
         const cardsEl = this._q('#wf-dash-ratings-cards');
         const warnEl = this._q('#wf-dash-ratings-warnings');
         if (!cardsEl) return;
@@ -2577,12 +2753,14 @@ const searchOutputStatsPaneMethods = {
         if (!this._state.hasSearched || !this._state.cachedItems) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Run a search to load results.</p>';
             this._state.ratingsReport = null;
+            this._syncRatingsToolbarUi(0, 0);
             return;
         }
 
         if (!everyoneMode && authorCount === 0) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors, or use @everyone for bulk ratings.</p>';
             this._state.ratingsReport = null;
+            this._syncRatingsToolbarUi(0, 0);
             return;
         }
 
@@ -2590,35 +2768,43 @@ const searchOutputStatsPaneMethods = {
         if (!engine || typeof engine.compute !== 'function') {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">Rating engine not loaded. Reload the page and try again.</p>';
             this._state.ratingsReport = null;
+            this._syncRatingsToolbarUi(0, 0);
             return;
         }
-
-        let effectiveCommitted = committed;
-        if (everyoneMode) {
-            const derivedIds = this._collectRatingWorkerIdsFromItems(this._state.cachedItems, committed);
-            effectiveCommitted = {
-                ...committed,
-                authorIds: derivedIds,
-                authorCount: derivedIds.length
-            };
-        }
-
-        const report = engine.compute({
-            cachedItems: this._state.cachedItems,
-            committed: effectiveCommitted,
-            workerProfiles: this._buildRatingWorkerProfiles(effectiveCommitted.authorIds)
-        });
-        this._state.ratingsReport = report;
 
         const scoreTypes = this._ratingSearchScoreTypes(committed);
+        this._ensureRatingsSortKey(committed);
 
-        if (!report.workers || report.workers.length === 0) {
+        if (recompute || !this._state.ratingsReport) {
+            const scopeItems = this._getRatingsScopeItems();
+            const report = this._computeRatingsReport(scopeItems, committed);
+            this._state.ratingsReport = report;
+            const scopeLabel = this._ratingsScopeLabel();
+            const workerCount = (report.workers || []).length;
+            Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
+                + (everyoneMode ? ' (@everyone)' : ''));
+        }
+
+        const report = this._state.ratingsReport;
+        const allWorkers = (report && report.workers) || [];
+
+        if (allWorkers.length === 0) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No contributor ratings available.</p>';
+            this._syncRatingsToolbarUi(0, 0);
             return;
         }
 
-        cardsEl.innerHTML = report.workers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
-        Logger.log('search-output: ratings rendered — ' + report.workers.length + ' worker card(s)' + (everyoneMode ? ' (@everyone)' : ''));
+        const visibleWorkers = this._applyRatingsViewFilters(allWorkers, scoreTypes);
+        this._syncRatingsToolbarUi(visibleWorkers.length, allWorkers.length);
+
+        if (visibleWorkers.length === 0) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No ratings match the current filters.</p>';
+            Logger.log('search-output: ratings view — showing 0 of ' + allWorkers.length);
+            return;
+        }
+
+        cardsEl.innerHTML = visibleWorkers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
+        Logger.log('search-output: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
     },
 
     _downloadTextFile(filename, content, mime) {
@@ -2707,7 +2893,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.15',
+    _version: '5.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
