@@ -1597,6 +1597,38 @@ const searchOutputStatsPaneMethods = {
         return prefix + '-' + safeSlug + '-' + date + '.png';
     },
 
+    _statsExportPixelRatio() {
+        return 2;
+    },
+
+    _statsChartBodyContainer(chart) {
+        const card = this._q('.wf-dash-stats-chart-card[data-chart-id="' + chart.id + '"]');
+        if (!card) return null;
+        const scorecard = card.querySelector('[data-wf-dash-stats-scorecard="' + chart.id + '"]');
+        if (scorecard && scorecard.parentElement) return scorecard.parentElement;
+        const canvas = card.querySelector('#wf-dash-stats-canvas-' + chart.id);
+        if (canvas && canvas.parentElement) return canvas.parentElement;
+        return null;
+    },
+
+    _statsChartBodyCssWidth(chart) {
+        const container = this._statsChartBodyContainer(chart);
+        return container && container.clientWidth > 0 ? container.clientWidth : 0;
+    },
+
+    _statsDashboardExportCssWidth() {
+        const layout = this._ensureStatsLayout();
+        let max = 0;
+        for (const chart of layout.charts) {
+            const width = this._statsChartBodyCssWidth(chart);
+            if (width > max) max = width;
+        }
+        if (max > 0) return max;
+        const list = this._q('#wf-dash-stats-chart-list');
+        if (list && list.clientWidth > 0) return Math.max(320, list.clientWidth - 24);
+        return 480;
+    },
+
     _downloadDataUrl(filename, dataUrl) {
         try {
             const a = document.createElement('a');
@@ -1620,15 +1652,15 @@ const searchOutputStatsPaneMethods = {
         });
     },
 
-    _getStatsScorecardBodyDataUrl(chart) {
+    _getStatsScorecardBodyDataUrl(chart, exportCssWidth) {
         const el = this._q('[data-wf-dash-stats-scorecard="' + chart.id + '"]');
         if (!el || !String(el.textContent || '').trim()) return null;
         const theme = this._statsChartTheme();
         const height = this._statsResolvedChartHeight(chart);
-        const width = el.parentElement && el.parentElement.clientWidth > 0
-            ? el.parentElement.clientWidth
-            : 480;
-        const scale = 2;
+        const width = exportCssWidth
+            || this._statsChartBodyCssWidth(chart)
+            || 480;
+        const scale = this._statsExportPixelRatio();
         const canvas = document.createElement('canvas');
         canvas.width = width * scale;
         canvas.height = height * scale;
@@ -1653,17 +1685,28 @@ const searchOutputStatsPaneMethods = {
         return canvas.toDataURL('image/png');
     },
 
-    _getStatsChartBodyDataUrl(chart) {
+    _getStatsChartBodyDataUrl(chart, exportCssWidth) {
         if (chart.type === 'scorecard') {
-            return this._getStatsScorecardBodyDataUrl(chart);
+            return this._getStatsScorecardBodyDataUrl(chart, exportCssWidth);
         }
         const inst = this._state.statsCharts && this._state.statsCharts[chart.id];
         if (!inst || typeof inst.toBase64Image !== 'function') return null;
-        return inst.toBase64Image('image/png', 2);
+        const cssWidth = exportCssWidth || this._statsChartBodyCssWidth(chart);
+        if (cssWidth > 0 && typeof inst.resize === 'function') {
+            const currentWidth = inst.width
+                || (inst.canvas ? inst.canvas.width / this._statsExportPixelRatio() : 0);
+            if (Math.abs(currentWidth - cssWidth) > 2) {
+                inst.resize(cssWidth, null);
+            }
+        } else if (typeof inst.resize === 'function') {
+            inst.resize();
+        }
+        return inst.toBase64Image('image/png', this._statsExportPixelRatio());
     },
 
-    async _composeStatsChartImage(chart) {
-        const bodyDataUrl = this._getStatsChartBodyDataUrl(chart);
+    async _composeStatsChartImage(chart, exportCssWidth) {
+        const bodyCssWidth = exportCssWidth || this._statsChartBodyCssWidth(chart) || 480;
+        const bodyDataUrl = this._getStatsChartBodyDataUrl(chart, bodyCssWidth);
         if (!bodyDataUrl) return null;
         let bodyImg;
         try {
@@ -1679,9 +1722,14 @@ const searchOutputStatsPaneMethods = {
         const filterSummary = this._statsChartFilterSummary(chart);
         const filterLineHeight = filterSummary ? 16 : 0;
         const gapAfterHeader = 8;
-        const width = Math.max(bodyImg.width, 320);
+        const pixelRatio = this._statsExportPixelRatio();
+        const targetBodyWidth = Math.max(Math.round(bodyCssWidth * pixelRatio), 320 * pixelRatio);
+        const bodyDrawHeight = bodyImg.width > 0
+            ? Math.max(1, Math.round(bodyImg.height * (targetBodyWidth / bodyImg.width)))
+            : bodyImg.height;
+        const width = targetBodyWidth;
         const headerHeight = topPad + titleLineHeight + (filterSummary ? 4 + filterLineHeight : 0) + gapAfterHeader;
-        const height = headerHeight + bodyImg.height + topPad;
+        const height = headerHeight + bodyDrawHeight + topPad;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -1701,8 +1749,7 @@ const searchOutputStatsPaneMethods = {
             ctx.font = '10px system-ui, -apple-system, sans-serif';
             ctx.fillText(filterSummary, horizontalPad + 10, topPad + titleLineHeight + 4, width - horizontalPad * 2 - 10);
         }
-        const bodyX = Math.max(0, Math.floor((width - bodyImg.width) / 2));
-        ctx.drawImage(bodyImg, bodyX, headerHeight);
+        ctx.drawImage(bodyImg, 0, headerHeight, targetBodyWidth, bodyDrawHeight);
         return canvas.toDataURL('image/png');
     },
 
@@ -1714,7 +1761,7 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: chart image export skipped — chart not found ' + chartIdStr);
             return;
         }
-        const dataUrl = await this._composeStatsChartImage(chart);
+        const dataUrl = await this._composeStatsChartImage(chart, this._statsChartBodyCssWidth(chart) || undefined);
         if (!dataUrl) {
             Logger.warn('search-output-stats-pane: chart image export skipped — chart not rendered ' + chartIdStr);
             return;
@@ -1730,9 +1777,10 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: dashboard image export skipped — no charts');
             return;
         }
+        const exportCssWidth = this._statsDashboardExportCssWidth();
         const chartImages = [];
         for (const chart of layout.charts) {
-            const dataUrl = await this._composeStatsChartImage(chart);
+            const dataUrl = await this._composeStatsChartImage(chart, exportCssWidth);
             if (dataUrl) chartImages.push(dataUrl);
         }
         if (!chartImages.length) {
@@ -1761,8 +1809,7 @@ const searchOutputStatsPaneMethods = {
         ctx.fillRect(0, 0, width, height);
         let y = 0;
         for (const img of imgs) {
-            const x = Math.floor((width - img.width) / 2);
-            ctx.drawImage(img, x, y);
+            ctx.drawImage(img, 0, y);
             y += img.height + gap;
         }
         const filename = this._statsExportImageFilename('fleet-stats-dashboard', 'dashboard');
@@ -3683,7 +3730,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.25',
+    _version: '5.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
