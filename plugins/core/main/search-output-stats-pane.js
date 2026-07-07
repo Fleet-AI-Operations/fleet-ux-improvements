@@ -1316,6 +1316,200 @@ const searchOutputStatsPaneMethods = {
         reader.readAsText(file);
     },
 
+    _statsBuilderFieldStyles() {
+        return {
+            fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
+            inputStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            hintStyle: 'font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;',
+            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: color-mix(in srgb, var(--muted, #64748b) 8%, var(--card, #fff));',
+            grid2: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;',
+            grid3: 'display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;',
+            sectionLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;'
+        };
+    },
+
+    _statsBuilderField(label, innerHtml, opts) {
+        opts = opts || {};
+        const styles = opts.styles || this._statsBuilderFieldStyles();
+        const spanStyle = opts.span ? ('grid-column: span ' + opts.span + ';') : '';
+        const hint = opts.hint ? ('<div style="' + styles.hintStyle + '">' + opts.hint + '</div>') : '';
+        return '<div style="' + spanStyle + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
+            + innerHtml + hint + '</div>';
+    },
+
+    _statsBuilderChartSettingsRows(draft, catalog, typeMeta, engine, styles) {
+        const dimOpts = catalog.dimensions.map((d) =>
+            '<option value="' + dashEscHtml(d.key) + '"' + (draft.groupBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
+        ).join('');
+        const typeOpts = catalog.chartTypes.map((t) =>
+            '<option value="' + dashEscHtml(t.id) + '"' + (draft.type === t.id ? ' selected' : '') + '>' + dashEscHtml(t.label) + '</option>'
+        ).join('');
+        const heightOpts = catalog.heightPresets.map((h) =>
+            '<option value="' + h.id + '"' + (Number(draft.height) === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
+        ).join('');
+        const chartTypeField = this._statsBuilderField('Chart type',
+            '<select data-wf-dash-stats-draft="type" style="' + styles.inputStyle + '">' + typeOpts + '</select>',
+            { styles });
+        const groupByField = typeMeta.skipGroupBy
+            ? ''
+            : this._statsBuilderField('Group by',
+                '<select data-wf-dash-stats-draft="groupBy" style="' + styles.inputStyle + '">' + dimOpts + '</select>',
+                { styles });
+        const heightField = this._statsBuilderField('Height',
+            '<select data-wf-dash-stats-draft="height" style="' + styles.inputStyle + '">' + heightOpts + '</select>',
+            { styles });
+        const chartSettingsCells = [chartTypeField, groupByField, heightField].filter(Boolean);
+        const chartColCount = chartSettingsCells.length;
+        const chartGridStyle = chartColCount === 3 ? styles.grid3 : styles.grid2;
+        const chartSettingsHtml = '<div style="' + chartGridStyle + '">' + chartSettingsCells.join('') + '</div>';
+
+        const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
+        const barDatasetCount = engine.countBarDatasets ? engine.countBarDatasets(draft, catalog) : 0;
+        const orientation = draft.orientation === 'horizontal' ? 'horizontal' : 'vertical';
+        const shadedLineCount = engine.countShadedLineDatasets ? engine.countShadedLineDatasets(draft, catalog) : 0;
+        const lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
+
+        const orientationField = typeMeta.needsOrientation
+            ? this._statsBuilderField('Orientation',
+                '<select data-wf-dash-stats-draft="orientation" style="' + styles.inputStyle + '">'
+                + '<option value="vertical"' + (orientation !== 'horizontal' ? ' selected' : '') + '>Vertical</option>'
+                + '<option value="horizontal"' + (orientation === 'horizontal' ? ' selected' : '') + '>Horizontal</option>'
+                + '</select>',
+                { styles })
+            : '';
+        const barLayoutField = typeMeta.needsBarLayout && barDatasetCount >= 2
+            ? this._statsBuilderField('Bar layout',
+                '<select data-wf-dash-stats-draft="barLayout" style="' + styles.inputStyle + '">'
+                + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
+                + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
+                + '</select>',
+                {
+                    styles,
+                    hint: 'Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.'
+                })
+            : '';
+        const lineAreaLayoutField = typeMeta.needsLineAreaLayout && shadedLineCount >= 2
+            ? this._statsBuilderField('Shaded area layout',
+                '<select data-wf-dash-stats-draft="lineAreaLayout" style="' + styles.inputStyle + '">'
+                + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
+                + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
+                + '</select>',
+                {
+                    styles,
+                    hint: 'Segment splits stack automatically. Use this for multiple shaded series without Segment by.'
+                })
+            : '';
+        const layoutCells = [orientationField, barLayoutField, lineAreaLayoutField].filter(Boolean);
+        let layoutOptionsHtml = '';
+        if (layoutCells.length) {
+            const layoutGridStyle = layoutCells.length >= 3 ? styles.grid3 : styles.grid2;
+            layoutOptionsHtml = '<div style="' + layoutGridStyle + '">' + layoutCells.join('') + '</div>';
+        }
+
+        const pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
+        const pointModeHtml = typeMeta.needsPointMode
+            ? this._statsBuilderField('Point mode',
+                '<select data-wf-dash-stats-draft="pointMode" style="' + styles.inputStyle + '">'
+                + '<option value="bucket"' + (pointMode === 'bucket' ? ' selected' : '') + '>Per bucket</option>'
+                + '<option value="task"' + (pointMode === 'task' ? ' selected' : '') + '>Per task</option>'
+                + '</select>',
+                { styles })
+            : '';
+
+        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml };
+    },
+
+    _statsBuilderSeriesCard(i, s, ctx) {
+        const { draft, catalog, typeMeta, engine, aggList, styles, seriesCount, maxSeries, minSeries } = ctx;
+        const metricOpts = catalog.metrics.map((m) =>
+            '<option value="' + dashEscHtml(m.id) + '"' + (s.metricId === m.id ? ' selected' : '') + '>' + dashEscHtml(m.label) + '</option>'
+        ).join('');
+        const aggOpts = aggList.map((a) =>
+            '<option value="' + dashEscHtml(a.id) + '"' + (s.agg === a.id ? ' selected' : '') + '>' + dashEscHtml(a.label) + '</option>'
+        ).join('');
+        const showSegmentBy = engine.seriesAllowsSegment
+            ? engine.seriesAllowsSegment(draft.type, s)
+            : false;
+        const showSeriesLabel = !typeMeta.skipGroupBy;
+        const showRemove = maxSeries > 1 && seriesCount > minSeries;
+        const headerLabel = typeMeta.skipGroupBy ? 'Metric' : ('Series ' + (i + 1));
+
+        const metricField = this._statsBuilderField('Metric',
+            '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + styles.inputStyle + '">' + metricOpts + '</select>',
+            { styles });
+        const aggField = this._statsBuilderField('Aggregation',
+            '<select data-wf-dash-stats-draft="series-agg" data-series-idx="' + i + '" style="' + styles.inputStyle + '">' + aggOpts + '</select>',
+            { styles });
+
+        let row1Html = '';
+        if (showSegmentBy) {
+            const segmentBy = s.segmentBy || '';
+            const segmentField = this._statsBuilderField('Segment by',
+                '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
+                + '<option value="">None</option>'
+                + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
+                    '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
+                ).join('')
+                + '</select>',
+                { styles });
+            row1Html = '<div style="' + styles.grid3 + '">' + metricField + aggField + segmentField + '</div>';
+        } else {
+            row1Html = '<div style="' + styles.grid2 + '">' + metricField + aggField + '</div>';
+        }
+
+        let row2Html = '';
+        if (showSeriesLabel) {
+            row2Html = '<div style="margin-top: 8px;">'
+                + this._statsBuilderField('Series label',
+                    '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + styles.inputStyle + '">',
+                    { styles })
+                + '</div>';
+        }
+
+        let row3Html = '';
+        if (typeMeta.needsRenderAs) {
+            const lineStyle = s.lineStyle === 'shaded' ? 'shaded' : 'line';
+            const yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
+            const renderField = this._statsBuilderField('Render as',
+                '<select data-wf-dash-stats-draft="series-render" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
+                + '<option value="bar"' + (s.renderAs !== 'line' ? ' selected' : '') + '>Bar</option>'
+                + '<option value="line"' + (s.renderAs === 'line' ? ' selected' : '') + '>Line</option>'
+                + '</select>',
+                { styles });
+            const yAxisField = this._statsBuilderField('Y axis',
+                '<select data-wf-dash-stats-draft="series-yaxis" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
+                + '<option value="y"' + (yAxis === 'y' ? ' selected' : '') + '>Left</option>'
+                + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
+                + '</select>',
+                { styles });
+            if (s.renderAs === 'line') {
+                const lineStyleField = this._statsBuilderField('Line style',
+                    '<select data-wf-dash-stats-draft="series-lineStyle" data-series-idx="' + i + '" style="' + styles.inputStyle + '">'
+                    + '<option value="line"' + (lineStyle !== 'shaded' ? ' selected' : '') + '>Line</option>'
+                    + '<option value="shaded"' + (lineStyle === 'shaded' ? ' selected' : '') + '>Shaded</option>'
+                    + '</select>',
+                    { styles });
+                row3Html = '<div style="' + styles.grid3 + '; margin-top: 8px;">' + renderField + lineStyleField + yAxisField + '</div>';
+            } else {
+                row3Html = '<div style="' + styles.grid2 + '; margin-top: 8px;">' + renderField + yAxisField + '</div>';
+            }
+        }
+
+        const removeBtn = showRemove
+            ? ('<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 4px 8px;">×</button>')
+            : '';
+
+        return '<div data-wf-dash-stats-series-row="' + i + '" style="' + styles.cardStyle + '">'
+            + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">'
+            + '<div style="' + styles.sectionLabel + ' margin-bottom: 0;">' + headerLabel + '</div>'
+            + removeBtn
+            + '</div>'
+            + row1Html
+            + row2Html
+            + row3Html
+            + '</div>';
+    },
+
     _renderStatsBuilder() {
         const el = this._q('#wf-dash-stats-builder');
         if (!el) return;
@@ -1335,136 +1529,34 @@ const searchOutputStatsPaneMethods = {
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
         const box = this._panelBoxStyle();
-        const fieldLabel = 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;';
-        const inputStyle = 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);';
-        const dimOpts = catalog.dimensions.map((d) =>
-            '<option value="' + dashEscHtml(d.key) + '"' + (draft.groupBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
-        ).join('');
-        const typeOpts = catalog.chartTypes.map((t) =>
-            '<option value="' + dashEscHtml(t.id) + '"' + (draft.type === t.id ? ' selected' : '') + '>' + dashEscHtml(t.label) + '</option>'
-        ).join('');
-        const heightOpts = catalog.heightPresets.map((h) =>
-            '<option value="' + h.id + '"' + (Number(draft.height) === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
-        ).join('');
+        const styles = this._statsBuilderFieldStyles();
         const typeMeta = engine.getChartTypeMeta ? engine.getChartTypeMeta(draft.type) : { minSeries: 1, maxSeries: 4 };
         const aggList = engine.aggregationsForChartType
             ? engine.aggregationsForChartType(draft.type)
             : catalog.aggregations;
-        const pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
-        const pointModeHtml = typeMeta.needsPointMode
-            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Point mode</div>'
-                + '<select data-wf-dash-stats-draft="pointMode" style="' + inputStyle + '">'
-                + '<option value="bucket"' + (pointMode === 'bucket' ? ' selected' : '') + '>Per bucket</option>'
-                + '<option value="task"' + (pointMode === 'task' ? ' selected' : '') + '>Per task</option>'
-                + '</select></div>')
-            : '';
+        const chartSettings = this._statsBuilderChartSettingsRows(draft, catalog, typeMeta, engine, styles);
         const series = draft.series && draft.series.length ? draft.series : [{ metricId: 'count', agg: 'count', label: '' }];
         const maxSeries = typeMeta.maxSeries || 4;
+        const seriesCtx = {
+            draft,
+            catalog,
+            typeMeta,
+            engine,
+            aggList,
+            styles,
+            seriesCount: series.length,
+            maxSeries,
+            minSeries: typeMeta.minSeries || 1
+        };
         let seriesHtml = '';
         for (let i = 0; i < Math.min(series.length, maxSeries); i += 1) {
-            const s = series[i];
-            const metricOpts = catalog.metrics.map((m) =>
-                '<option value="' + dashEscHtml(m.id) + '"' + (s.metricId === m.id ? ' selected' : '') + '>' + dashEscHtml(m.label) + '</option>'
-            ).join('');
-            const aggOpts = aggList.map((a) =>
-                '<option value="' + dashEscHtml(a.id) + '"' + (s.agg === a.id ? ' selected' : '') + '>' + dashEscHtml(a.label) + '</option>'
-            ).join('');
-            const renderAsHtml = typeMeta.needsRenderAs
-                ? ('<div style="flex: 0 0 90px;"><div style="' + fieldLabel + '">Render as</div>'
-                    + '<select data-wf-dash-stats-draft="series-render" data-series-idx="' + i + '" style="' + inputStyle + '">'
-                    + '<option value="bar"' + (s.renderAs !== 'line' ? ' selected' : '') + '>Bar</option>'
-                    + '<option value="line"' + (s.renderAs === 'line' ? ' selected' : '') + '>Line</option>'
-                    + '</select></div>')
-                : '';
-            const lineStyle = s.lineStyle === 'shaded' ? 'shaded' : 'line';
-            const lineStyleHtml = typeMeta.needsLineAreaLayout && s.renderAs === 'line'
-                ? ('<div style="flex: 0 0 100px;"><div style="' + fieldLabel + '">Line style</div>'
-                    + '<select data-wf-dash-stats-draft="series-lineStyle" data-series-idx="' + i + '" style="' + inputStyle + '">'
-                    + '<option value="line"' + (lineStyle !== 'shaded' ? ' selected' : '') + '>Line</option>'
-                    + '<option value="shaded"' + (lineStyle === 'shaded' ? ' selected' : '') + '>Shaded</option>'
-                    + '</select></div>')
-                : '';
-            const yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
-            const yAxisHtml = typeMeta.needsDualAxis
-                ? ('<div style="flex: 0 0 90px;"><div style="' + fieldLabel + '">Y axis</div>'
-                    + '<select data-wf-dash-stats-draft="series-yaxis" data-series-idx="' + i + '" style="' + inputStyle + '">'
-                    + '<option value="y"' + (yAxis === 'y' ? ' selected' : '') + '>Left</option>'
-                    + '<option value="y1"' + (yAxis === 'y1' ? ' selected' : '') + '>Right</option>'
-                    + '</select></div>')
-                : '';
-            const segmentBy = s.segmentBy || '';
-            const showSegmentBy = engine.seriesAllowsSegment
-                ? engine.seriesAllowsSegment(draft.type, s)
-                : false;
-            const segmentByHtml = showSegmentBy
-                ? ('<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Segment by</div>'
-                    + '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + inputStyle + '">'
-                    + '<option value="">None</option>'
-                    + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
-                        '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
-                    ).join('')
-                    + '</select></div>')
-                : '';
-            const showSeriesLabel = !typeMeta.skipGroupBy;
-            const showRemove = maxSeries > 1 && series.length > typeMeta.minSeries;
-            seriesHtml += '<div data-wf-dash-stats-series-row="' + i + '" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px;">'
-                + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Metric</div>'
-                + '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + inputStyle + '">' + metricOpts + '</select></div>'
-                + '<div style="flex: 0 0 100px;"><div style="' + fieldLabel + '">Aggregation</div>'
-                + '<select data-wf-dash-stats-draft="series-agg" data-series-idx="' + i + '" style="' + inputStyle + '">' + aggOpts + '</select></div>'
-                + segmentByHtml
-                + (showSeriesLabel
-                    ? ('<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Series label</div>'
-                        + '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + inputStyle + '"></div>')
-                    : '')
-                + renderAsHtml
-                + lineStyleHtml
-                + yAxisHtml
-                + (showRemove
-                    ? '<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 6px 8px;">×</button>'
-                    : '')
-                + '</div>';
+            seriesHtml += this._statsBuilderSeriesCard(i, series[i], seriesCtx);
         }
+        const seriesStackHtml = seriesHtml
+            ? ('<div style="display: flex; flex-direction: column; gap: 10px;">' + seriesHtml + '</div>')
+            : '';
         const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
-            ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 2px;">Add series</button>'
-            : '';
-        const groupByRow = typeMeta.skipGroupBy
-            ? ''
-            : ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Group by</div>'
-                + '<select data-wf-dash-stats-draft="groupBy" style="' + inputStyle + '">' + dimOpts + '</select></div>');
-        const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
-        const barDatasetCount = engine.countBarDatasets
-            ? engine.countBarDatasets(draft, catalog)
-            : 0;
-        const barLayoutRow = typeMeta.needsBarLayout && barDatasetCount >= 2
-            ? ('<div style="flex: 1; min-width: 160px;"><div style="' + fieldLabel + '">Bar layout</div>'
-                + '<select data-wf-dash-stats-draft="barLayout" style="' + inputStyle + '">'
-                + '<option value="grouped"' + (barLayout !== 'stacked' ? ' selected' : '') + '>Grouped (side by side)</option>'
-                + '<option value="stacked"' + (barLayout === 'stacked' ? ' selected' : '') + '>Stacked</option>'
-                + '</select>'
-                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Grouped: bars side by side. Stacked: bars piled per group. Use Segment by on a series to split one metric into colored parts.</div>'
-                + '</div>')
-            : '';
-        const orientation = draft.orientation === 'horizontal' ? 'horizontal' : 'vertical';
-        const orientationRow = typeMeta.needsOrientation
-            ? ('<div style="flex: 1; min-width: 140px;"><div style="' + fieldLabel + '">Orientation</div>'
-                + '<select data-wf-dash-stats-draft="orientation" style="' + inputStyle + '">'
-                + '<option value="vertical"' + (orientation !== 'horizontal' ? ' selected' : '') + '>Vertical</option>'
-                + '<option value="horizontal"' + (orientation === 'horizontal' ? ' selected' : '') + '>Horizontal</option>'
-                + '</select></div>')
-            : '';
-        const shadedLineCount = engine.countShadedLineDatasets
-            ? engine.countShadedLineDatasets(draft, catalog)
-            : 0;
-        const lineAreaLayout = draft.lineAreaLayout === 'stacked' ? 'stacked' : 'origin';
-        const lineAreaLayoutRow = typeMeta.needsLineAreaLayout && shadedLineCount >= 2
-            ? ('<div style="flex: 1; min-width: 180px;"><div style="' + fieldLabel + '">Shaded area layout</div>'
-                + '<select data-wf-dash-stats-draft="lineAreaLayout" style="' + inputStyle + '">'
-                + '<option value="origin"' + (lineAreaLayout !== 'stacked' ? ' selected' : '') + '>Fill to origin</option>'
-                + '<option value="stacked"' + (lineAreaLayout === 'stacked' ? ' selected' : '') + '>Stacked (no overlap)</option>'
-                + '</select>'
-                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;">Segment splits stack automatically. Use this for multiple shaded series without Segment by.</div>'
-                + '</div>')
+            ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 8px;">Add series</button>'
             : '';
         const lib = Context.dashboardLib;
         const filterScopes = (lib && lib.filterScopes) || [];
@@ -1476,22 +1568,17 @@ const searchOutputStatsPaneMethods = {
                 : draftKey;
             chartFiltersHtml += this._multiSelectHtml(chartScopeKey, label, 'No options in scope', false);
         }
-        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 10px;">'
+        const seriesSectionLabel = typeMeta.skipGroupBy ? 'Metric' : 'Series';
+        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 12px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
-            + '<div><div style="' + fieldLabel + '">Title</div>'
-            + '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + inputStyle + '"></div>'
-            + '<div style="display: flex; gap: 8px; flex-wrap: wrap;">'
-            + '<div style="flex: 1; min-width: 100px;"><div style="' + fieldLabel + '">Chart type</div>'
-            + '<select data-wf-dash-stats-draft="type" style="' + inputStyle + '">' + typeOpts + '</select></div>'
-            + groupByRow
-            + barLayoutRow
-            + orientationRow
-            + lineAreaLayoutRow
-            + pointModeHtml
-            + '<div style="flex: 1; min-width: 120px;"><div style="' + fieldLabel + '">Height</div>'
-            + '<select data-wf-dash-stats-draft="height" style="' + inputStyle + '">' + heightOpts + '</select></div>'
-            + '</div>'
-            + '<div><div style="' + fieldLabel + '">' + (typeMeta.skipGroupBy ? 'Metric' : 'Series') + '</div>' + seriesHtml + seriesActions + '</div>'
+            + this._statsBuilderField('Title',
+                '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + styles.inputStyle + '">',
+                { styles })
+            + chartSettings.chartSettingsHtml
+            + chartSettings.layoutOptionsHtml
+            + chartSettings.pointModeHtml
+            + '<div><div style="' + styles.sectionLabel + '">' + seriesSectionLabel + '</div>'
+            + seriesStackHtml + seriesActions + '</div>'
             + '<details style="margin-top: 2px;">'
             + '<summary style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); cursor: pointer; user-select: none;">Result filters (optional)</summary>'
             + '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">' + chartFiltersHtml + '</div>'
@@ -2361,7 +2448,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
