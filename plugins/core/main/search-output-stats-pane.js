@@ -51,7 +51,7 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
             + '</div>'
             + '</div>'
-            + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
+            + '<div id="wf-dash-stats-empty" style="display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;"></div>'
             + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
             + '<div id="wf-dash-stats-chart-list" data-wf-dash-stats-chart-list="1" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px;"></div>'
             + '</div>'
@@ -265,6 +265,12 @@ const searchOutputStatsPaneMethods = {
         void this._renderStatsPanel();
     },
 
+    _statsDashboardHasChartData() {
+        if (!this._state.hasSearched || !this._state.cachedItems) return false;
+        if (this._isStatsHydrationBlocking()) return false;
+        return this._getStatsScopeItems().length > 0;
+    },
+
     _syncStatsToolbarUi() {
         const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
@@ -276,7 +282,10 @@ const searchOutputStatsPaneMethods = {
         const builderEl = this._q('#wf-dash-stats-builder');
         const panelStats = this._q('#wf-dash-stats-panel-stats');
         const mode = this._state.statsViewMode || 'dashboard';
-        if (toolbar) toolbar.style.display = tab === 'stats' ? 'flex' : 'none';
+        const showDashboardToolbar = tab === 'stats' && mode === 'dashboard' && this._statsDashboardHasChartData();
+        if (toolbar) {
+            toolbar.style.display = (tab === 'stats' && (mode === 'builder' || showDashboardToolbar)) ? 'flex' : 'none';
+        }
         if (buildBtn) {
             buildBtn.textContent = mode === 'builder' ? 'Back to dashboard' : 'Build Chart';
         }
@@ -2070,7 +2079,7 @@ const searchOutputStatsPaneMethods = {
 
         if (!this._state.hasSearched || !this._state.cachedItems) {
             this._destroyStatsCharts();
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'Run a search to load results.';
             dashEl.style.display = 'none';
             this._renderStatsWarnings([]);
@@ -2078,7 +2087,7 @@ const searchOutputStatsPaneMethods = {
         }
 
         if (this._isStatsHydrationBlocking()) {
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'Charts will load once hydration is complete';
             dashEl.style.display = 'none';
             this._renderStatsWarnings([]);
@@ -2091,7 +2100,7 @@ const searchOutputStatsPaneMethods = {
 
         if (items.length === 0) {
             this._destroyStatsCharts();
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'No results in this scope.';
             dashEl.style.display = 'none';
             return;
@@ -2657,7 +2666,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.15',
+    _version: '5.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
