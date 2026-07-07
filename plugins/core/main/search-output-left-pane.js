@@ -363,6 +363,7 @@ const searchOutputLeftPaneMethods = {
                                             <option value="yesterday">Yesterday</option>
                                             <option value="3d">Last 3 Days</option>
                                             <option value="7d">Last 7 Days</option>
+                                            <option value="30d">Last 30 Days</option>
                                             <option value="last-week">Last Calendar Week</option>
                                             <option value="this-month">This Month</option>
                                             <option value="last-month">Last Calendar Month</option>
@@ -2189,7 +2190,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
