@@ -17,7 +17,6 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
 const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
-const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
@@ -35,9 +34,9 @@ const DASH_EVERYONE_AUTHOR_TOKEN_ID = '__everyone__';
 const DASH_EVERYONE_AUTHOR_LABEL = '@everyone';
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
-const DASH_TASKS_PAGE_SIZE = 100;
-const DASH_QA_PAGE_SIZE = 100;
-const DASH_DISPUTES_PAGE_SIZE = 100;
+const DASH_TASKS_PAGE_SIZE = 250;
+const DASH_QA_PAGE_SIZE = 250;
+const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
@@ -2190,7 +2189,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

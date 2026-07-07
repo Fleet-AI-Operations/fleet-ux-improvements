@@ -17,7 +17,6 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
 const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
-const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
@@ -33,9 +32,9 @@ const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
-const DASH_TASKS_PAGE_SIZE = 100;
-const DASH_QA_PAGE_SIZE = 100;
-const DASH_DISPUTES_PAGE_SIZE = 100;
+const DASH_TASKS_PAGE_SIZE = 250;
+const DASH_QA_PAGE_SIZE = 250;
+const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
@@ -1319,12 +1318,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _isTasksHydratingActive() {
-        if (this._state.hydrateBulkActive || this._state.autoHydrateActive) return true;
-        const ui = this._state.hydrateUi || {};
-        for (const key of Object.keys(ui)) {
-            if (ui[key] && ui[key].status === 'loading') return true;
-        }
-        return false;
+        return Boolean(this._state.hydrateBulkActive || this._state.autoHydrateActive);
     },
 
     _syncResultsHydrateBannerUi() {
@@ -1630,15 +1624,6 @@ const searchOutputResultsPaneMethods = {
             }
         }
         return versions[versions.length - 1].displayVersionNo;
-    },
-
-    _getHydrateUi(itemId) {
-        const id = String(itemId || '');
-        if (!id) return { status: 'idle' };
-        if (!this._state.hydrateUi[id]) {
-            this._state.hydrateUi[id] = { status: 'idle' };
-        }
-        return this._state.hydrateUi[id];
     },
 
     _getUserStoryUi(itemId) {
@@ -4954,16 +4939,8 @@ const searchOutputResultsPaneMethods = {
             fuzzy: Boolean(item.highlightFuzzy),
             regex: Boolean(item.highlightRegex)
         });
-        const showHydrateTab = item.hydrated === false
-            && !(this._state.committed && this._state.committed.retrieveMode)
-            && !this._isTasksHydratingActive();
-        let hydrateTabHtml = '';
-        if (showHydrateTab) {
-            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
-        }
         const tabsRow = '<div class="wf-dash-card-tabs-row">'
                 + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
-                + hydrateTabHtml
                 + '</div>';
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
@@ -5161,7 +5138,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
