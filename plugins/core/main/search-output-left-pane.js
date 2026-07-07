@@ -1890,6 +1890,7 @@ const searchOutputLeftPaneMethods = {
                 ].filter(Boolean)
             };
             this._state.committed = searchCommitted;
+            this._state.ratingsFromResults = false;
             this._beginResultsLoad();
             this._state.searchStopRequested = false;
             this._resetSearchLoadLog();
@@ -2189,7 +2190,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

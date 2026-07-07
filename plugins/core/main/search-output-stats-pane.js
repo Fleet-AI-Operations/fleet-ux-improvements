@@ -340,6 +340,43 @@ const searchOutputStatsPaneMethods = {
         return wrap;
     },
 
+    _ensureRatingsGenerateButton(headerActions) {
+        if (!headerActions) return null;
+        let btn = headerActions.querySelector('[data-wf-dash-ratings-generate]');
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.setAttribute('data-wf-dash-ratings-generate', '1');
+            btn.className = this._dashBtnClass('secondary', 'nav');
+            btn.style.marginRight = '8px';
+            btn.textContent = 'Generate cards';
+            btn.title = 'Generate ratings cards for everyone in the current results';
+            const scopeWrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
+            if (scopeWrap && scopeWrap.nextSibling) {
+                headerActions.insertBefore(btn, scopeWrap.nextSibling);
+            } else {
+                headerActions.appendChild(btn);
+            }
+        }
+        return btn;
+    },
+
+    _syncRatingsGenerateButtonUi() {
+        const tab = this._state.statsTab || 'stats';
+        const statsCol = this._q('[data-wf-dash-stats-column]');
+        const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
+        if (!headerActions) return;
+        const btn = this._ensureRatingsGenerateButton(headerActions);
+        if (!btn) return;
+        const show = tab === 'ratings';
+        btn.style.display = show ? '' : 'none';
+        const canGenerate = show
+            && this._state.hasSearched
+            && Array.isArray(this._state.cachedItems)
+            && this._state.cachedItems.length > 0;
+        btn.disabled = !canGenerate;
+    },
+
     _syncStatsScopeToggleUi() {
         const tab = this._state.statsTab || 'stats';
         const useFiltered = this._state.statsUseFiltered !== false;
@@ -355,6 +392,7 @@ const searchOutputStatsPaneMethods = {
                 btn.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
         }
+        this._syncRatingsGenerateButtonUi();
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
         if (summaryEl && tab === 'stats') {
             this._syncStatsToolbarUi();
@@ -2675,7 +2713,7 @@ const searchOutputStatsPaneMethods = {
 
     _ratingsSortOptions(committed) {
         const scoreTypes = this._ratingSearchScoreTypes(committed);
-        const opts = [{ id: 'name-asc', label: 'Name A→Z' }];
+        const opts = [{ id: 'confidence-desc', label: 'Confidence high→low' }];
         if (scoreTypes.showTwqs) {
             opts.push({ id: 'twqs-desc', label: 'TWQS high→low' });
             opts.push({ id: 'twqs-asc', label: 'TWQS low→high' });
@@ -2684,14 +2722,57 @@ const searchOutputStatsPaneMethods = {
             opts.push({ id: 'qaqs-desc', label: 'QAQS high→low' });
             opts.push({ id: 'qaqs-asc', label: 'QAQS low→high' });
         }
+        opts.push({ id: 'name-asc', label: 'Name A→Z' });
         return opts;
     },
 
     _defaultRatingsSortKey(committed) {
-        const c = committed || {};
-        if (c.includeTaskCreation) return 'twqs-desc';
-        if (c.includeQa) return 'qaqs-desc';
-        return 'name-asc';
+        return 'confidence-desc';
+    },
+
+    _ratingsBulkWorkerMode(committed) {
+        return Boolean(committed && committed.ratingsEveryone) || Boolean(this._state.ratingsFromResults);
+    },
+
+    _generateRatingsFromResults() {
+        if (!this._state.hasSearched || !this._state.cachedItems || this._state.cachedItems.length === 0) {
+            Logger.warn('search-output-stats-pane: generate ratings skipped — no search results');
+            return;
+        }
+        this._state.ratingsFromResults = true;
+        this._state.ratingsSortKey = 'confidence-desc';
+        const scopeItems = this._getRatingsScopeItems();
+        const derivedIds = this._collectRatingWorkerIdsFromItems(scopeItems, this._state.committed || {});
+        Logger.log('search-output-stats-pane: ratings generated from results — ' + derivedIds.length + ' worker(s) · '
+            + this._ratingsScopeLabel());
+        this._renderRatingsPanel({ recompute: true });
+    },
+
+    _ratingConfidenceTierRank(tier) {
+        if (tier === 'high') return 3;
+        if (tier === 'standard') return 2;
+        if (tier === 'provisional') return 1;
+        return 0;
+    },
+
+    _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
+        const blocks = this._ratingVisibleScoreBlocks(worker, scoreTypes);
+        let bestTier = 0;
+        let bestTrailing = 0;
+        for (const block of blocks) {
+            const tier = block.confidence && block.confidence.tier;
+            const rank = this._ratingConfidenceTierRank(tier);
+            const display = block.display || {};
+            const trailing = Math.max(
+                Number(display.trailing90dSubmissions) || 0,
+                Number(display.trailing90dFeedbackRows) || 0
+            );
+            if (rank > bestTier || (rank === bestTier && trailing > bestTrailing)) {
+                bestTier = rank;
+                bestTrailing = trailing;
+            }
+        }
+        return bestTier * 100000 + bestTrailing;
     },
 
     _ensureRatingsSortKey(committed) {
@@ -2715,7 +2796,10 @@ const searchOutputStatsPaneMethods = {
         return blocks.every((b) => b.confidence && b.confidence.tier === 'provisional');
     },
 
-    _ratingWorkerSortValue(worker, sortKey) {
+    _ratingWorkerSortValue(worker, sortKey, scoreTypes) {
+        if (sortKey === 'confidence-desc' || sortKey === 'confidence-asc') {
+            return this._ratingWorkerConfidenceSortValue(worker, scoreTypes);
+        }
         if (sortKey === 'twqs-desc' || sortKey === 'twqs-asc') {
             const s = worker.twqs && worker.twqs.score;
             return Number.isFinite(s) ? s : null;
@@ -2725,6 +2809,10 @@ const searchOutputStatsPaneMethods = {
             return Number.isFinite(s) ? s : null;
         }
         return null;
+    },
+
+    _ratingWorkerSortName(a, b) {
+        return String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || ''));
     },
 
     _applyRatingsViewFilters(workers, scoreTypes) {
@@ -2739,33 +2827,31 @@ const searchOutputStatsPaneMethods = {
                 return hay.includes(nameQ);
             });
         }
-        const sortKey = this._state.ratingsSortKey || 'name-asc';
+        const sortKey = this._state.ratingsSortKey || 'confidence-desc';
         if (sortKey === 'name-asc') {
-            list.sort((a, b) => String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || '')));
+            list.sort((a, b) => this._ratingWorkerSortName(a, b));
         } else {
             const desc = sortKey.endsWith('-desc');
             list.sort((a, b) => {
-                const va = this._ratingWorkerSortValue(a, sortKey);
-                const vb = this._ratingWorkerSortValue(b, sortKey);
+                const va = this._ratingWorkerSortValue(a, sortKey, scoreTypes);
+                const vb = this._ratingWorkerSortValue(b, sortKey, scoreTypes);
                 const aMissing = va == null || !Number.isFinite(va);
                 const bMissing = vb == null || !Number.isFinite(vb);
-                if (aMissing && bMissing) {
-                    return String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || ''));
-                }
+                if (aMissing && bMissing) return this._ratingWorkerSortName(a, b);
                 if (aMissing) return 1;
                 if (bMissing) return -1;
                 const cmp = va < vb ? -1 : va > vb ? 1 : 0;
                 if (cmp !== 0) return desc ? -cmp : cmp;
-                return String(a.name || a.workerId || '').localeCompare(String(b.name || b.workerId || ''));
+                return this._ratingWorkerSortName(a, b);
             });
         }
         return list;
     },
 
     _computeRatingsReport(scopeItems, committed) {
-        const everyoneMode = Boolean(committed.ratingsEveryone);
+        const bulkMode = this._ratingsBulkWorkerMode(committed);
         let effectiveCommitted = committed;
-        if (everyoneMode) {
+        if (bulkMode) {
             const derivedIds = this._collectRatingWorkerIdsFromItems(scopeItems, committed);
             effectiveCommitted = {
                 ...committed,
@@ -2838,6 +2924,7 @@ const searchOutputStatsPaneMethods = {
                 ? ('Showing ' + visibleCount + ' of ' + totalCount + ' · ' + this._ratingsScopeLabel())
                 : '';
         }
+        this._syncRatingsGenerateButtonUi();
     },
 
     _collectRatingWorkerIdsFromItems(cachedItems, committed) {
@@ -2866,7 +2953,7 @@ const searchOutputStatsPaneMethods = {
         const tokens = (this._state.draftTokens || []).filter((t) => String(t.id || '') !== '__everyone__');
         const itemSource = scopeItems || this._getRatingsScopeItems() || this._state.cachedItems || [];
         const map = {};
-        if (committed.ratingsEveryone) {
+        if (this._ratingsBulkWorkerMode(committed)) {
             const contributors = (this._state.filterListOptions || {}).contributors || [];
             for (const c of contributors) {
                 if (c && c.id) {
@@ -3295,7 +3382,7 @@ const searchOutputStatsPaneMethods = {
 
         const committed = this._state.committed || {};
         const authorCount = committed.authorCount != null ? committed.authorCount : (committed.authorIds || []).length;
-        const everyoneMode = Boolean(committed.ratingsEveryone);
+        const bulkMode = this._ratingsBulkWorkerMode(committed);
         const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
 
         if (warnEl) {
@@ -3317,8 +3404,8 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
-        if (!everyoneMode && authorCount === 0) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors, or use @everyone for bulk ratings.</p>';
+        if (!bulkMode && authorCount === 0) {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors, use @everyone, or click <strong>Generate cards</strong> for everyone in the current results.</p>';
             this._state.ratingsReport = null;
             this._syncRatingsToolbarUi(0, 0);
             return;
@@ -3342,7 +3429,8 @@ const searchOutputStatsPaneMethods = {
             const scopeLabel = this._ratingsScopeLabel();
             const workerCount = (report.workers || []).length;
             Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
-                + (everyoneMode ? ' (@everyone)' : ''));
+                + (committed.ratingsEveryone ? ' (@everyone)' : '')
+                + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
         }
 
         const report = this._state.ratingsReport;

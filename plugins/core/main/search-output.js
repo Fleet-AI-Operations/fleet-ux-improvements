@@ -4535,6 +4535,11 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._setStatsScope(scope !== 'all');
                 return;
             }
+            const ratingsGenerateBtn = e.target.closest('[data-wf-dash-ratings-generate]');
+            if (ratingsGenerateBtn && modal.contains(ratingsGenerateBtn)) {
+                dash._generateRatingsFromResults();
+                return;
+            }
             const statsBuildBtn = e.target.closest('[data-wf-dash-stats-build]');
             if (statsBuildBtn && modal.contains(statsBuildBtn)) {
                 if ((dash._state.statsViewMode || 'dashboard') === 'builder') {
