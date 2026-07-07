@@ -4594,6 +4594,11 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._exportStatsChart(statsExportChartBtn.getAttribute('data-wf-dash-stats-chart-export'));
                 return;
             }
+            const statsExportChartImageBtn = e.target.closest('[data-wf-dash-stats-chart-export-image]');
+            if (statsExportChartImageBtn && modal.contains(statsExportChartImageBtn)) {
+                void dash._exportStatsChartImage(statsExportChartImageBtn.getAttribute('data-wf-dash-stats-chart-export-image'));
+                return;
+            }
             const statsResetDashboardBtn = e.target.closest('[data-wf-dash-stats-reset-dashboard]');
             if (statsResetDashboardBtn && modal.contains(statsResetDashboardBtn)) {
                 dash._resetStatsDashboard();
@@ -4602,6 +4607,11 @@ function attachSearchOutputListeners(modal, dash) {
             const statsExportDashboardBtn = e.target.closest('[data-wf-dash-stats-export-dashboard]');
             if (statsExportDashboardBtn && modal.contains(statsExportDashboardBtn)) {
                 dash._exportStatsDashboard();
+                return;
+            }
+            const statsExportDashboardImageBtn = e.target.closest('[data-wf-dash-stats-export-dashboard-image]');
+            if (statsExportDashboardImageBtn && modal.contains(statsExportDashboardImageBtn)) {
+                void dash._exportStatsDashboardImage();
                 return;
             }
             const statsImportJsonBtn = e.target.closest('[data-wf-dash-stats-import-json]');
@@ -5062,7 +5072,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.15',
+    _version: '7.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

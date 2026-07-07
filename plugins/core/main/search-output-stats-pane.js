@@ -47,7 +47,8 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;"></div>'
             + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">'
             + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset dashboard</button>'
-            + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export dashboard</button>'
+            + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export dashboard settings</button>'
+            + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export image</button>'
             + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
             + '</div>'
@@ -272,6 +273,7 @@ const searchOutputStatsPaneMethods = {
         const buildBtn = this._q('[data-wf-dash-stats-build]');
         const resetDashBtn = this._q('[data-wf-dash-stats-reset-dashboard]');
         const exportDashBtn = this._q('[data-wf-dash-stats-export-dashboard]');
+        const exportDashImageBtn = this._q('[data-wf-dash-stats-export-dashboard-image]');
         const importJsonBtn = this._q('[data-wf-dash-stats-import-json]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
         const builderEl = this._q('#wf-dash-stats-builder');
@@ -286,6 +288,9 @@ const searchOutputStatsPaneMethods = {
         }
         if (exportDashBtn) {
             exportDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
+        }
+        if (exportDashImageBtn) {
+            exportDashImageBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
         }
         if (importJsonBtn) {
             importJsonBtn.style.display = (tab === 'stats' && mode === 'builder') ? '' : 'none';
@@ -771,7 +776,8 @@ const searchOutputStatsPaneMethods = {
             + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" title="Drag to reorder" style="cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1;">⠿</span>'
             + '<div style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + dashEscHtml(chart.title) + '</div>'
             + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Edit</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export settings</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="padding: 2px 8px; font-size: 10px;">Export image</button>'
             + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" title="Delete chart" aria-label="Delete chart" style="border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px;">×</button>'
             + '</div>'
             + filterSubtitle
@@ -1360,6 +1366,188 @@ const searchOutputStatsPaneMethods = {
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
         Logger.log('search-output-stats-pane: chart exported — ' + (chart.title || chartId));
+    },
+
+    _statsExportImageFilename(prefix, slug) {
+        const engine = Context.statsEngine;
+        const safeSlug = engine && typeof engine.sanitizeExportSlug === 'function'
+            ? engine.sanitizeExportSlug(slug)
+            : 'export';
+        const date = engine && typeof engine.exportDateSlug === 'function' ? engine.exportDateSlug() : 'export';
+        return prefix + '-' + safeSlug + '-' + date + '.png';
+    },
+
+    _downloadDataUrl(filename, dataUrl) {
+        try {
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (e) {
+            Logger.error('search-output-stats-pane: image export download failed', e);
+        }
+    },
+
+    _loadStatsImage(dataUrl) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('stats image load failed'));
+            img.src = dataUrl;
+        });
+    },
+
+    _getStatsScorecardBodyDataUrl(chart) {
+        const el = this._q('[data-wf-dash-stats-scorecard="' + chart.id + '"]');
+        if (!el || !String(el.textContent || '').trim()) return null;
+        const theme = this._statsChartTheme();
+        const height = Number(chart.height) || 260;
+        const width = el.parentElement && el.parentElement.clientWidth > 0
+            ? el.parentElement.clientWidth
+            : 480;
+        const scale = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.scale(scale, scale);
+        ctx.fillStyle = this._statsResolvedColor('--card', '#ffffff');
+        ctx.fillRect(0, 0, width, height);
+        const valueDiv = el.children[0];
+        const subtitleDiv = el.children[1];
+        const valueText = valueDiv ? valueDiv.textContent : '—';
+        ctx.fillStyle = theme.foreground;
+        ctx.font = '700 32px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(valueText, width / 2, height / 2 - (subtitleDiv ? 10 : 0));
+        if (subtitleDiv && subtitleDiv.textContent) {
+            ctx.fillStyle = theme.muted;
+            ctx.font = '11px system-ui, -apple-system, sans-serif';
+            ctx.fillText(subtitleDiv.textContent, width / 2, height / 2 + 24);
+        }
+        return canvas.toDataURL('image/png');
+    },
+
+    _getStatsChartBodyDataUrl(chart) {
+        if (chart.type === 'scorecard') {
+            return this._getStatsScorecardBodyDataUrl(chart);
+        }
+        const inst = this._state.statsCharts && this._state.statsCharts[chart.id];
+        if (!inst || typeof inst.toBase64Image !== 'function') return null;
+        return inst.toBase64Image('image/png', 2);
+    },
+
+    async _composeStatsChartImage(chart) {
+        const bodyDataUrl = this._getStatsChartBodyDataUrl(chart);
+        if (!bodyDataUrl) return null;
+        let bodyImg;
+        try {
+            bodyImg = await this._loadStatsImage(bodyDataUrl);
+        } catch (e) {
+            Logger.warn('search-output-stats-pane: chart image compose failed — body load error', e);
+            return null;
+        }
+        const theme = this._statsChartTheme();
+        const horizontalPad = 12;
+        const topPad = 10;
+        const titleLineHeight = 18;
+        const filterSummary = this._statsChartFilterSummary(chart);
+        const filterLineHeight = filterSummary ? 16 : 0;
+        const gapAfterHeader = 8;
+        const width = Math.max(bodyImg.width, 320);
+        const headerHeight = topPad + titleLineHeight + (filterSummary ? 4 + filterLineHeight : 0) + gapAfterHeader;
+        const height = headerHeight + bodyImg.height + topPad;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = this._statsResolvedColor('--card', '#ffffff');
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = theme.border;
+        ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+        ctx.fillStyle = theme.foreground;
+        ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(chart.title || 'Chart', horizontalPad, topPad);
+        if (filterSummary) {
+            ctx.fillStyle = theme.muted;
+            ctx.font = '10px system-ui, -apple-system, sans-serif';
+            ctx.fillText(filterSummary, horizontalPad + 10, topPad + titleLineHeight + 4, width - horizontalPad * 2 - 10);
+        }
+        const bodyX = Math.max(0, Math.floor((width - bodyImg.width) / 2));
+        ctx.drawImage(bodyImg, bodyX, headerHeight);
+        return canvas.toDataURL('image/png');
+    },
+
+    async _exportStatsChartImage(chartId) {
+        const chartIdStr = String(chartId || '');
+        const layout = this._ensureStatsLayout();
+        const chart = layout.charts.find((c) => c.id === chartIdStr);
+        if (!chart) {
+            Logger.warn('search-output-stats-pane: chart image export skipped — chart not found ' + chartIdStr);
+            return;
+        }
+        const dataUrl = await this._composeStatsChartImage(chart);
+        if (!dataUrl) {
+            Logger.warn('search-output-stats-pane: chart image export skipped — chart not rendered ' + chartIdStr);
+            return;
+        }
+        const filename = this._statsExportImageFilename('fleet-stats-chart', chart.title || chartIdStr);
+        this._downloadDataUrl(filename, dataUrl);
+        Logger.log('search-output-stats-pane: chart image exported — ' + (chart.title || chartIdStr));
+    },
+
+    async _exportStatsDashboardImage() {
+        const layout = this._ensureStatsLayout();
+        if (!layout.charts.length) {
+            Logger.warn('search-output-stats-pane: dashboard image export skipped — no charts');
+            return;
+        }
+        const chartImages = [];
+        for (const chart of layout.charts) {
+            const dataUrl = await this._composeStatsChartImage(chart);
+            if (dataUrl) chartImages.push(dataUrl);
+        }
+        if (!chartImages.length) {
+            Logger.warn('search-output-stats-pane: dashboard image export skipped — no renderable charts');
+            return;
+        }
+        let imgs;
+        try {
+            imgs = await Promise.all(chartImages.map((url) => this._loadStatsImage(url)));
+        } catch (e) {
+            Logger.warn('search-output-stats-pane: dashboard image export failed — compose error', e);
+            return;
+        }
+        const gap = 12;
+        const width = Math.max(...imgs.map((img) => img.width));
+        const height = imgs.reduce((sum, img) => sum + img.height, 0) + gap * Math.max(0, imgs.length - 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            Logger.warn('search-output-stats-pane: dashboard image export failed — canvas unavailable');
+            return;
+        }
+        ctx.fillStyle = this._statsResolvedColor('--background', '#f8fafc');
+        ctx.fillRect(0, 0, width, height);
+        let y = 0;
+        for (const img of imgs) {
+            const x = Math.floor((width - img.width) / 2);
+            ctx.drawImage(img, x, y);
+            y += img.height + gap;
+        }
+        const filename = this._statsExportImageFilename('fleet-stats-dashboard', 'dashboard');
+        this._downloadDataUrl(filename, canvas.toDataURL('image/png'));
+        Logger.log('search-output-stats-pane: dashboard image exported — ' + imgs.length + ' chart(s)');
     },
 
     _triggerStatsImportJson() {
@@ -2893,7 +3081,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.16',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
