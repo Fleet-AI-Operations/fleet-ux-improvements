@@ -335,7 +335,8 @@ const searchOutputStatsPaneMethods = {
             wrap.style.cssText = 'margin-right: 8px;';
             wrap.innerHTML = this._statsScopeSegBtn('filtered', 'Filtered', true, true)
                 + this._statsScopeSegBtn('all', 'All', false, false);
-            headerActions.insertBefore(wrap, headerActions.firstChild);
+            const genBtn = headerActions.querySelector('[data-wf-dash-ratings-generate]');
+            headerActions.insertBefore(wrap, genBtn ? genBtn.nextSibling : headerActions.firstChild);
         }
         return wrap;
     },
@@ -352,10 +353,11 @@ const searchOutputStatsPaneMethods = {
             btn.textContent = 'Generate cards';
             btn.title = 'Generate ratings cards for everyone in the current results';
             const scopeWrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
-            if (scopeWrap && scopeWrap.nextSibling) {
-                headerActions.insertBefore(btn, scopeWrap.nextSibling);
-            } else {
-                headerActions.appendChild(btn);
+            headerActions.insertBefore(btn, scopeWrap || headerActions.firstChild);
+        } else {
+            const scopeWrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
+            if (scopeWrap && btn.nextSibling !== scopeWrap) {
+                headerActions.insertBefore(btn, scopeWrap);
             }
         }
         return btn;
@@ -383,6 +385,7 @@ const searchOutputStatsPaneMethods = {
         const statsCol = this._q('[data-wf-dash-stats-column]');
         const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
         if (!headerActions) return;
+        this._ensureRatingsGenerateButton(headerActions);
         const wrap = this._ensureStatsScopeToggle(headerActions);
         if (wrap) {
             wrap.style.display = (tab === 'stats' || tab === 'ratings') ? 'inline-flex' : 'none';
@@ -3608,7 +3611,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.23',
+    _version: '5.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
