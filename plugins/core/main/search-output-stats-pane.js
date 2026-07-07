@@ -1,6 +1,8 @@
 // search-output-stats-pane.js — Worker Output Search stats pane (Ratings)
 
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
+const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
+const STATS_SCORECARD_ROW_GAP_PX = 12;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -816,7 +818,7 @@ const searchOutputStatsPaneMethods = {
         return parts.join(' · ');
     },
 
-    _statsChartCardHtml(chart, validation) {
+    _statsChartCardHtml(chart, validation, inScorecardRow) {
         const box = this._panelBoxStyle();
         const height = this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
@@ -839,7 +841,10 @@ const searchOutputStatsPaneMethods = {
         const bodyContent = isScorecard
             ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
             : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
-        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" style="' + box + ' padding: 10px 12px; flex-shrink: 0; position: relative;">'
+        const cardLayout = inScorecardRow
+            ? ('flex: 1 1 ' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px; min-width: min(' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px, 100%); max-width: 100%; box-sizing: border-box;')
+            : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
+        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
             + '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">'
             + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" title="Drag to reorder" style="cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1;">⠿</span>'
             + '<div style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + dashEscHtml(chart.title) + '</div>'
@@ -854,6 +859,45 @@ const searchOutputStatsPaneMethods = {
             + bodyContent
             + '</div>'
             + '</div>';
+    },
+
+    _statsChartLayoutGroups(charts) {
+        const groups = [];
+        let scorecardCharts = null;
+        for (const chart of charts || []) {
+            if (chart.type === 'scorecard') {
+                if (!scorecardCharts) {
+                    scorecardCharts = [];
+                    groups.push({ kind: 'scorecard-row', charts: scorecardCharts });
+                }
+                scorecardCharts.push(chart);
+            } else {
+                scorecardCharts = null;
+                groups.push({ kind: 'chart', charts: [chart] });
+            }
+        }
+        return groups;
+    },
+
+    _statsBuildChartListHtml(validations) {
+        const byId = new Map(validations.map((entry) => [entry.chart.id, entry]));
+        const layout = this._ensureStatsLayout();
+        let html = '';
+        for (const group of this._statsChartLayoutGroups(layout.charts)) {
+            if (group.kind === 'scorecard-row') {
+                html += '<div class="wf-dash-stats-scorecard-row" data-wf-dash-stats-scorecard-row="1" style="display: flex; flex-wrap: wrap; gap: '
+                    + STATS_SCORECARD_ROW_GAP_PX + 'px; width: 100%; align-items: stretch; box-sizing: border-box;">';
+                for (const chart of group.charts) {
+                    const entry = byId.get(chart.id);
+                    if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, true);
+                }
+                html += '</div>';
+                continue;
+            }
+            const entry = byId.get(group.charts[0].id);
+            if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, false);
+        }
+        return html;
     },
 
     _formatStatsScorecardValue(value) {
@@ -1617,6 +1661,8 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsDashboardExportCssWidth() {
+        const list = this._q('#wf-dash-stats-chart-list');
+        if (list && list.clientWidth > 0) return Math.max(320, list.clientWidth);
         const layout = this._ensureStatsLayout();
         let max = 0;
         for (const chart of layout.charts) {
@@ -1624,8 +1670,6 @@ const searchOutputStatsPaneMethods = {
             if (width > max) max = width;
         }
         if (max > 0) return max;
-        const list = this._q('#wf-dash-stats-chart-list');
-        if (list && list.clientWidth > 0) return Math.max(320, list.clientWidth - 24);
         return 480;
     },
 
@@ -1753,6 +1797,69 @@ const searchOutputStatsPaneMethods = {
         return canvas.toDataURL('image/png');
     },
 
+    _composeStatsImageRow(imgs, gapCss) {
+        if (!imgs.length) return null;
+        const gapPx = Math.round(gapCss * this._statsExportPixelRatio());
+        const width = imgs.reduce((sum, img, index) => sum + img.width + (index > 0 ? gapPx : 0), 0);
+        const height = Math.max(...imgs.map((img) => img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = this._statsResolvedColor('--background', '#f8fafc');
+        ctx.fillRect(0, 0, width, height);
+        let x = 0;
+        for (const img of imgs) {
+            ctx.drawImage(img, x, 0);
+            x += img.width + gapPx;
+        }
+        return canvas.toDataURL('image/png');
+    },
+
+    async _composeStatsDashboardExportImages(layout, exportCssWidth) {
+        const groups = this._statsChartLayoutGroups(layout.charts);
+        const images = [];
+        for (const group of groups) {
+            if (group.kind === 'scorecard-row' && group.charts.length > 1) {
+                const cardWidth = Math.max(
+                    STATS_SCORECARD_ROW_MIN_WIDTH_PX,
+                    Math.floor((exportCssWidth - STATS_SCORECARD_ROW_GAP_PX * (group.charts.length - 1)) / group.charts.length)
+                );
+                const rowImgs = [];
+                for (const chart of group.charts) {
+                    const dataUrl = await this._composeStatsChartImage(chart, cardWidth);
+                    if (!dataUrl) continue;
+                    try {
+                        rowImgs.push(await this._loadStatsImage(dataUrl));
+                    } catch (e) {
+                        Logger.warn('search-output-stats-pane: dashboard image export row compose failed — chart load error', e);
+                    }
+                }
+                if (!rowImgs.length) continue;
+                if (rowImgs.length === 1) {
+                    images.push(rowImgs[0]);
+                } else {
+                    const rowDataUrl = this._composeStatsImageRow(rowImgs, STATS_SCORECARD_ROW_GAP_PX);
+                    if (rowDataUrl) {
+                        images.push(await this._loadStatsImage(rowDataUrl));
+                    }
+                }
+                continue;
+            }
+            for (const chart of group.charts) {
+                const dataUrl = await this._composeStatsChartImage(chart, exportCssWidth);
+                if (!dataUrl) continue;
+                try {
+                    images.push(await this._loadStatsImage(dataUrl));
+                } catch (e) {
+                    Logger.warn('search-output-stats-pane: dashboard image export compose failed — chart load error', e);
+                }
+            }
+        }
+        return images;
+    },
+
     async _exportStatsChartImage(chartId) {
         const chartIdStr = String(chartId || '');
         const layout = this._ensureStatsLayout();
@@ -1778,20 +1885,15 @@ const searchOutputStatsPaneMethods = {
             return;
         }
         const exportCssWidth = this._statsDashboardExportCssWidth();
-        const chartImages = [];
-        for (const chart of layout.charts) {
-            const dataUrl = await this._composeStatsChartImage(chart, exportCssWidth);
-            if (dataUrl) chartImages.push(dataUrl);
-        }
-        if (!chartImages.length) {
-            Logger.warn('search-output-stats-pane: dashboard image export skipped — no renderable charts');
-            return;
-        }
         let imgs;
         try {
-            imgs = await Promise.all(chartImages.map((url) => this._loadStatsImage(url)));
+            imgs = await this._composeStatsDashboardExportImages(layout, exportCssWidth);
         } catch (e) {
             Logger.warn('search-output-stats-pane: dashboard image export failed — compose error', e);
+            return;
+        }
+        if (!imgs.length) {
+            Logger.warn('search-output-stats-pane: dashboard image export skipped — no renderable charts');
             return;
         }
         const gap = 12;
@@ -2614,9 +2716,8 @@ const searchOutputStatsPaneMethods = {
         for (const chart of layout.charts) {
             const validation = engine.validateChart(chart, catalog, items, ctx);
             validations.push({ chart, validation });
-            cardsHtml += this._statsChartCardHtml(chart, validation);
         }
-        listEl.innerHTML = cardsHtml;
+        listEl.innerHTML = this._statsBuildChartListHtml(validations);
         this._attachStatsChartReorder(listEl);
 
         const renderGen = (this._state.statsRenderGen || 0) + 1;
@@ -3730,7 +3831,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.26',
+    _version: '5.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
