@@ -258,6 +258,7 @@ const plugin = {
             ratingsHideProvisional: false,
             ratingsSortKey: null,
             ratingsNameFilter: '',
+            ratingsExpandedWorkers: null,
             statsCharts: null,
             statsLayout: null,
             statsViewMode: 'dashboard',

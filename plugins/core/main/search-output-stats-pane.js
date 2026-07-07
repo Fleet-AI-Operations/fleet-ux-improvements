@@ -3010,7 +3010,136 @@ const searchOutputStatsPaneMethods = {
         return 'Based on ' + count + ' ' + label;
     },
 
-    _ratingScoreBlockHtml(title, block, basisKind) {
+    _ensureRatingsExpandedWorkers() {
+        if (!this._state.ratingsExpandedWorkers) {
+            this._state.ratingsExpandedWorkers = new Set();
+        }
+        return this._state.ratingsExpandedWorkers;
+    },
+
+    _isRatingWorkerExpanded(workerId) {
+        const set = this._ensureRatingsExpandedWorkers();
+        return set.has(String(workerId || '').trim());
+    },
+
+    _ratingPctOneDecimal(fraction) {
+        if (fraction == null || !Number.isFinite(fraction)) return null;
+        return Math.round(fraction * 1000) / 10;
+    },
+
+    _ratingSortedAxes(block) {
+        return [...((block && block.axes) || [])].sort((a, b) => {
+            const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
+            if (wDiff !== 0) return wDiff;
+            return String(a.label || '').localeCompare(String(b.label || ''));
+        });
+    },
+
+    _ratingAxisOmitReason(axis) {
+        if (!axis || axis.defined !== false) return null;
+        switch (axis.id) {
+            case 'feedbackResolution':
+                return 'No return episodes by this QA in scope';
+            case 'reviewCallAccuracy':
+            case 'disputeOutcomes':
+                return 'No resolved disputes in scope';
+            case 'consistency':
+                return 'Fewer than 2 active calendar weeks of activity in scope';
+            default:
+                return 'Axis undefined';
+        }
+    },
+
+    _ratingFormatStatusCounts(statusCounts, maxItems) {
+        if (!statusCounts || typeof statusCounts !== 'object') return '';
+        const cap = maxItems == null ? 4 : maxItems;
+        const entries = Object.entries(statusCounts)
+            .filter(([, n]) => Number(n) > 0)
+            .sort((a, b) => b[1] - a[1]);
+        if (!entries.length) return '';
+        const shown = entries.slice(0, cap).map(([k, n]) => k + ' ' + n);
+        const rest = entries.length - cap;
+        return shown.join(', ') + (rest > 0 ? ', +' + rest + ' more' : '');
+    },
+
+    _ratingAxisBreakdownLines(axis) {
+        if (!axis) return [];
+        if (axis.defined === false || axis.score == null) {
+            const reason = this._ratingAxisOmitReason(axis);
+            return reason ? [reason] : ['Axis omitted'];
+        }
+        const raw = axis.raw || {};
+        const lines = [];
+        switch (axis.id) {
+            case 'acceptanceSeverity': {
+                const meanPct = this._ratingPctOneDecimal(raw.severityMean);
+                if (meanPct != null) lines.push('Severity mean ' + meanPct + '%');
+                if (raw.eventCount != null) lines.push(raw.eventCount + ' task(s) scored');
+                const statusSummary = this._ratingFormatStatusCounts(raw.statusCounts);
+                if (statusSummary) lines.push(statusSummary);
+                break;
+            }
+            case 'revisionEfficiency': {
+                if (raw.revisionEventCount != null) {
+                    lines.push(raw.revisionEventCount + ' revision event(s)');
+                }
+                if (raw.revisionExcludedByDisputes > 0) {
+                    lines.push(raw.revisionExcludedByDisputes + ' task(s) excluded by approved disputes');
+                }
+                if (raw.approvedDisputeRoundsSubtracted > 0) {
+                    lines.push(raw.approvedDisputeRoundsSubtracted + ' dispute round(s) credited');
+                }
+                break;
+            }
+            case 'disputeOutcomes':
+            case 'reviewCallAccuracy': {
+                const good = raw.approvedWeight != null ? raw.approvedWeight : raw.upheldWeight;
+                const denom = raw.resolvedWeight;
+                if (good != null && denom != null && denom > 0) {
+                    const goodPct = this._ratingPctOneDecimal(good / denom);
+                    lines.push('Favorable ' + (goodPct != null ? goodPct + '%' : good) + ' of resolved weight');
+                } else if (denom != null) {
+                    lines.push('Resolved dispute weight ' + Math.round(denom * 10) / 10);
+                }
+                break;
+            }
+            case 'srReviewIntegrity': {
+                if (raw.confirmedNegativeFlags != null && raw.submissionWeight != null) {
+                    lines.push('Confirmed flags ' + Math.round(raw.confirmedNegativeFlags * 10) / 10
+                        + ' / submission weight ' + Math.round(raw.submissionWeight * 10) / 10);
+                } else if (raw.confirmedFlags != null && raw.feedbackWeight != null) {
+                    lines.push('Confirmed flags ' + Math.round(raw.confirmedFlags * 10) / 10
+                        + ' / feedback weight ' + Math.round(raw.feedbackWeight * 10) / 10);
+                }
+                if (raw.penaltyScore != null) {
+                    const penaltyPct = this._ratingPctOneDecimal(raw.penaltyScore);
+                    if (penaltyPct != null) lines.push('Penalty sub-score ' + penaltyPct + '%');
+                }
+                if (raw.raisedScore != null && raw.raisedResolvedWeight > 0) {
+                    const raisedPct = this._ratingPctOneDecimal(raw.raisedScore);
+                    if (raisedPct != null) lines.push('Raised-flag accuracy ' + raisedPct + '%');
+                }
+                break;
+            }
+            case 'feedbackResolution': {
+                if (raw.returnEpisodeCount != null) {
+                    lines.push(raw.returnEpisodeCount + ' return episode(s)');
+                }
+                break;
+            }
+            case 'consistency': {
+                if (raw.activeWeeks != null && raw.totalWeeks != null) {
+                    lines.push(raw.activeWeeks + ' active week(s) of ' + raw.totalWeeks);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return lines.length ? lines : ['No additional inputs recorded'];
+    },
+
+    _ratingScoreBlockCompactHtml(title, block, basisKind) {
         if (!block || block.score == null) {
             return '';
         }
@@ -3018,27 +3147,6 @@ const searchOutputStatsPaneMethods = {
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
-        const sortedAxes = [...(block.axes || [])].sort((a, b) => {
-            const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
-            if (wDiff !== 0) return wDiff;
-            return String(a.label || '').localeCompare(String(b.label || ''));
-        });
-        let axesHtml = '';
-        const showAxisWeights = Boolean(Context.isDevBranch);
-        for (const p of sortedAxes) {
-            const omitted = p.defined === false || p.score == null;
-            const pct = omitted ? 0 : Math.round((p.score || 0) * 100);
-            const wt = p.effectiveWeight != null ? Math.round(p.effectiveWeight * 1000) / 10 : null;
-            const bar = omitted
-                ? '<span style="font-size: 10px; color: var(--muted-foreground, #64748b);">omitted</span>'
-                : ('<div style="flex: 1; height: 6px; background: color-mix(in srgb, var(--muted-foreground, #64748b) 20%, transparent); border-radius: 3px; overflow: hidden;"><div style="width: ' + pct + '%; height: 100%; background: var(--brand, var(--primary, #2563eb));"></div></div>'
-                + '<span style="font-size: 10px; min-width: 36px; text-align: right;">' + dashEscHtml(String(pct)) + '%</span>'
-                + (showAxisWeights && wt != null ? '<span style="font-size: 10px; min-width: 32px; text-align: right; color: var(--muted-foreground, #64748b);">' + wt + '%</span>' : ''));
-            axesHtml += '<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px;">'
-                + '<span style="flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + dashEscHtml(p.label) + '">' + dashEscHtml(p.label) + '</span>'
-                + bar
-                + '</div>';
-        }
         const scoreDisplay = Math.round(block.score);
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         return '<div style="margin-top: 10px;">'
@@ -3047,34 +3155,132 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
-            + axesHtml
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
                 : '')
             + '</div>';
     },
 
+    _ratingScoreBlockDetailHtml(title, block) {
+        if (!block || block.score == null) {
+            return '';
+        }
+        const sortedAxes = this._ratingSortedAxes(block);
+        const thStyle = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
+        const tdStyle = 'padding: 4px 6px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 50%, transparent);';
+        const tdNum = tdStyle + ' text-align: right; white-space: nowrap;';
+        let rowsHtml = '';
+        const compositeTerms = [];
+        let compositeSum = 0;
+        for (const axis of sortedAxes) {
+            const omitted = axis.defined === false || axis.score == null;
+            const subPct = omitted ? null : this._ratingPctOneDecimal(axis.score);
+            const basePct = this._ratingPctOneDecimal(axis.baseWeight);
+            const effPct = omitted ? 0 : this._ratingPctOneDecimal(axis.effectiveWeight);
+            const breakdownLines = this._ratingAxisBreakdownLines(axis);
+            const breakdownHtml = breakdownLines.map((line) =>
+                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(line) + '</div>'
+            ).join('');
+            if (!omitted && subPct != null && effPct != null) {
+                compositeTerms.push(subPct + '×' + effPct + '%');
+                compositeSum += (axis.score || 0) * (axis.effectiveWeight || 0);
+            }
+            const effDisplay = omitted
+                ? '—'
+                : (String(effPct) + '%'
+                    + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
+                        ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
+                        : ''));
+            rowsHtml += '<tr>'
+                + '<td style="' + tdStyle + '">' + dashEscHtml(axis.label || axis.id || '') + breakdownHtml + '</td>'
+                + '<td style="' + tdNum + '">' + (omitted ? '<span style="color: var(--muted-foreground, #64748b);">omitted</span>' : dashEscHtml(String(subPct) + '%')) + '</td>'
+                + '<td style="' + tdNum + '">' + (basePct != null ? dashEscHtml(String(basePct) + '%') : '—') + '</td>'
+                + '<td style="' + tdNum + '">' + effDisplay + '</td>'
+                + '</tr>';
+        }
+        const compositeRounded = Math.round(compositeSum * 1000) / 10;
+        const compositeLine = compositeTerms.length
+            ? (dashEscHtml(String(compositeRounded)) + ' ≈ ' + dashEscHtml(compositeTerms.join(' + ')))
+            : '';
+        const display = block.display || {};
+        let contextLine = '';
+        if (display.trailing90dSubmissions != null) {
+            contextLine = 'Trailing 90d: ' + display.trailing90dSubmissions + ' submission(s)';
+        } else if (display.trailing90dFeedbackRows != null) {
+            contextLine = 'Trailing 90d: ' + display.trailing90dFeedbackRows + ' feedback row(s)';
+        }
+        if (display.tenureDays != null && Number.isFinite(display.tenureDays)) {
+            contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
+        }
+        return '<div style="margin-top: 12px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">'
+            + '<thead><tr>'
+            + '<th style="' + thStyle + '">Axis</th>'
+            + '<th style="' + thStyle + ' text-align: right;">Sub-score</th>'
+            + '<th style="' + thStyle + ' text-align: right;">Base wt</th>'
+            + '<th style="' + thStyle + ' text-align: right;">Effective wt</th>'
+            + '</tr></thead>'
+            + '<tbody>' + rowsHtml + '</tbody>'
+            + '</table>'
+            + (compositeLine
+                ? ('<div style="font-size: 10px; margin-top: 6px; color: var(--foreground, #0f172a);">' + compositeLine + '</div>')
+                : '')
+            + (contextLine
+                ? ('<div style="font-size: 10px; margin-top: 4px; color: var(--muted-foreground, #64748b);">' + dashEscHtml(contextLine) + '</div>')
+                : '')
+            + '</div>';
+    },
+
+    _ratingScoreBlockHtml(title, block, basisKind) {
+        return this._ratingScoreBlockCompactHtml(title, block, basisKind);
+    },
+
     _ratingWorkerCardHtml(worker, scoreTypes) {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
+        const workerId = String(worker.workerId || '').trim();
+        const expanded = this._isRatingWorkerExpanded(workerId);
         const twqsHtml = types.showTwqs
-            ? this._ratingScoreBlockHtml('Task Writer Quality Score', worker.twqs, 'tasks')
+            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', worker.twqs, 'tasks')
             : '';
         const qaqsHtml = types.showQaqs
-            ? this._ratingScoreBlockHtml('QA Quality Score', worker.qaqs, 'feedbacks')
+            ? this._ratingScoreBlockCompactHtml('QA Quality Score', worker.qaqs, 'feedbacks')
             : '';
+        let detailHtml = '';
+        if (expanded) {
+            const detailParts = [];
+            if (types.showTwqs && worker.twqs) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', worker.twqs));
+            }
+            if (types.showQaqs && worker.qaqs) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', worker.qaqs));
+            }
+            if (detailParts.length) {
+                detailHtml = '<div data-wf-dash-rating-detail="1" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border, #e2e8f0);">'
+                    + detailParts.join('')
+                    + '</div>';
+            }
+        }
         const diagnosticsBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export Diagnostics</button>')
+            ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const box = this._panelBoxStyle();
-        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '" style="' + box + ' padding: 12px;">'
-            + '<div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(name) + '</div>'
-            + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-bottom: 6px;">' + dashEscHtml(worker.email) + '</div>' : '')
+        const expandLabel = expanded ? 'Collapse' : 'Expand';
+        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
+            + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
+            + '<div style="min-width: 0;">'
+            + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
+            + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
+            + '</div>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
+            + '</div>'
             + twqsHtml
             + qaqsHtml
+            + detailHtml
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export JSON</button>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(worker.workerId) + '">Export MD</button>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
+            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
             + diagnosticsBtnHtml
             + '</div>'
             + '</div>';
@@ -3314,7 +3520,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.21',
+    _version: '5.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

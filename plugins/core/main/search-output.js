@@ -4647,6 +4647,19 @@ function attachSearchOutputListeners(modal, dash) {
                 if (workerId && format) dash._handleRatingExport(workerId, format);
                 return;
             }
+            const ratingExpandBtn = e.target.closest('[data-wf-dash-rating-expand]');
+            if (ratingExpandBtn && modal.contains(ratingExpandBtn)) {
+                const workerId = String(ratingExpandBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                if (workerId) {
+                    const expanded = dash._ensureRatingsExpandedWorkers();
+                    const nextExpanded = !expanded.has(workerId);
+                    if (nextExpanded) expanded.add(workerId);
+                    else expanded.delete(workerId);
+                    Logger.log('search-output: ratings card ' + (nextExpanded ? 'expanded' : 'collapsed') + ' — ' + workerId);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
             const ratingsBulkExportBtn = e.target.closest('[data-wf-dash-ratings-export-bulk]');
             if (ratingsBulkExportBtn && modal.contains(ratingsBulkExportBtn)) {
                 dash._exportFilteredRatingsJson();
