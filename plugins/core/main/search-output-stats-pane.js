@@ -857,6 +857,27 @@ const searchOutputStatsPaneMethods = {
         };
     },
 
+    _statsBarLineLegendOptions(baseLegend) {
+        return Object.assign({}, baseLegend, {
+            onClick: (e, legendItem, legend) => {
+                const chart = legend.chart;
+                const index = legendItem.datasetIndex;
+                if (index == null || index < 0) return;
+                const visible = chart.isDatasetVisible(index);
+                chart.setDatasetVisibility(index, !visible);
+                const ds = chart.data.datasets[index];
+                if (ds && ds.statsSeriesKey) {
+                    chart.data.datasets.forEach((d, i) => {
+                        if (i !== index && d.statsShadedFillLayer && d.statsSeriesKey === ds.statsSeriesKey) {
+                            chart.setDatasetVisibility(i, !visible);
+                        }
+                    });
+                }
+                chart.update();
+            }
+        });
+    },
+
     _buildChartJsOptions(chart, theme, chartJsCtx) {
         const dash = this;
         const labelCount = (chartJsCtx && chartJsCtx.labelCount) || 0;
@@ -946,7 +967,11 @@ const searchOutputStatsPaneMethods = {
             maintainAspectRatio: false,
             indexAxis: this._statsIsBarLineChart(chart) && chart.orientation === 'horizontal' ? 'y' : 'x',
             scales: this._statsCartesianScales(chart, theme),
-            plugins: { legend: baseLegend }
+            plugins: {
+                legend: this._statsIsBarLineChart(chart)
+                    ? this._statsBarLineLegendOptions(baseLegend)
+                    : baseLegend
+            }
         };
     },
 
@@ -1164,6 +1189,7 @@ const searchOutputStatsPaneMethods = {
                 }
                 const shaded = ds.lineStyle === 'shaded';
                 if (shaded && !lineStacked) {
+                    const seriesKey = 'shaded-' + i;
                     chartDatasets.push(Object.assign({}, base, {
                         order: 3,
                         fill: true,
@@ -1171,7 +1197,9 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
-                        statsLegendHidden: true
+                        statsLegendHidden: true,
+                        statsShadedFillLayer: true,
+                        statsSeriesKey: seriesKey
                     }));
                     chartDatasets.push(Object.assign({}, base, {
                         order: 1,
@@ -1179,7 +1207,8 @@ const searchOutputStatsPaneMethods = {
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3,
-                        borderColor: color
+                        borderColor: color,
+                        statsSeriesKey: seriesKey
                     }));
                     return;
                 }
@@ -2570,7 +2599,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
