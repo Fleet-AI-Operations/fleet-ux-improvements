@@ -1543,13 +1543,20 @@ const searchOutputStatsPaneMethods = {
             datasets.push({
                 type: 'bar',
                 label: metricLabel,
-                data: bins.map((b) => ({ x: b.x, y: b.y, label: b.label })),
+                grouped: false,
+                data: bins.map((b) => ({
+                    x: b.x,
+                    y: b.y,
+                    label: b.label
+                })),
                 backgroundColor: barColor,
                 borderColor: barColor,
                 borderWidth: 1,
                 order: 15,
-                barPercentage: 0.9,
-                categoryPercentage: 1
+                barThickness: 'flex',
+                categoryPercentage: 1,
+                barPercentage: 1,
+                inflateAmount: 0
             });
             datasets.push({
                 type: 'line',
@@ -1575,6 +1582,7 @@ const searchOutputStatsPaneMethods = {
                     scales: {
                         x: {
                             type: 'linear',
+                            offset: false,
                             min: Number.isFinite(xMin) ? xMin : undefined,
                             max: Number.isFinite(xMax) ? xMax : undefined,
                             title: this._statsScaleTitle(metricLabel, theme),
@@ -4280,7 +4288,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.33',
+    _version: '5.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

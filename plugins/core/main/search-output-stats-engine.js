@@ -886,19 +886,23 @@ function statsHistogramIntegerLabel(metricId, value) {
 }
 
 function statsBuildHistogramIntegerBins(values, metricId) {
-    if (!values.length) return { labels: [], counts: [], centers: [] };
+    if (!values.length) return { labels: [], counts: [], centers: [], lo: [], hi: [] };
     const intVals = values.map((v) => Math.round(v));
     const min = Math.min(...intVals);
     const max = Math.max(...intVals);
     const labels = [];
     const counts = [];
     const centers = [];
+    const lo = [];
+    const hi = [];
     for (let i = min; i <= max; i += 1) {
         labels.push(statsHistogramIntegerLabel(metricId, i));
         counts.push(intVals.filter((v) => v === i).length);
         centers.push(i);
+        lo.push(i - 0.5);
+        hi.push(i + 0.5);
     }
-    return { labels, counts, centers };
+    return { labels, counts, centers, lo, hi };
 }
 
 function statsBuildHistogramTimeBins(values, lib) {
@@ -925,12 +929,19 @@ function statsBuildHistogramTimeBins(values, lib) {
 }
 
 function statsBuildHistogramAutoBins(values) {
-    if (!values.length) return { labels: [], counts: [], centers: [] };
+    if (!values.length) return { labels: [], counts: [], centers: [], lo: [], hi: [] };
     const min = Math.min(...values);
     const max = Math.max(...values);
     if (min === max) {
         const rounded = Math.round(min);
-        return { labels: [String(rounded)], counts: [values.length], centers: [min] };
+        const pad = 0.5;
+        return {
+            labels: [String(rounded)],
+            counts: [values.length],
+            centers: [min],
+            lo: [min - pad],
+            hi: [min + pad]
+        };
     }
     const n = values.length;
     const binCount = Math.min(12, Math.max(2, Math.ceil(Math.log2(n) + 1)));
@@ -939,13 +950,17 @@ function statsBuildHistogramAutoBins(values) {
     const labels = [];
     const counts = new Array(binCount).fill(0);
     const centers = [];
+    const lo = [];
+    const hi = [];
     for (let b = 0; b < binCount; b += 1) {
-        const lo = min + b * width;
-        const hi = b === binCount - 1 ? max : min + (b + 1) * width;
-        const loR = Math.floor(lo);
-        const hiR = b === binCount - 1 ? Math.ceil(max) : Math.floor(hi) - 1;
+        const binLo = min + b * width;
+        const binHi = b === binCount - 1 ? max : min + (b + 1) * width;
+        const loR = Math.floor(binLo);
+        const hiR = b === binCount - 1 ? Math.ceil(max) : Math.floor(binHi) - 1;
         labels.push(loR + '–' + (hiR < loR ? loR : hiR));
-        centers.push((lo + hi) / 2);
+        centers.push((binLo + binHi) / 2);
+        lo.push(binLo);
+        hi.push(binHi);
     }
     for (const v of values) {
         let idx = Math.floor((v - min) / width);
@@ -953,7 +968,7 @@ function statsBuildHistogramAutoBins(values) {
         if (idx < 0) idx = 0;
         counts[idx] += 1;
     }
-    return { labels, counts, centers };
+    return { labels, counts, centers, lo, hi };
 }
 
 function statsAggregateHistogram(chart, items, catalog, ctx) {
@@ -1066,6 +1081,8 @@ function statsAggregateBellCurve(chart, items, catalog, ctx) {
 
     const bins = (binResult.labels || []).map((label, i) => ({
         x: binResult.centers[i],
+        lo: binResult.lo && binResult.lo[i] != null ? binResult.lo[i] : binResult.centers[i],
+        hi: binResult.hi && binResult.hi[i] != null ? binResult.hi[i] : binResult.centers[i],
         y: binResult.counts[i],
         label
     }));
@@ -1582,7 +1599,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.11',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
