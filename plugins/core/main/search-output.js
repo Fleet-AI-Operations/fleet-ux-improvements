@@ -4510,6 +4510,17 @@ function attachSearchOutputListeners(modal, dash) {
         const clearResults = dash._q('#wf-dash-clear-results');
         if (clearResults) clearResults.addEventListener('click', () => dash._clearResults());
 
+        const diveStart = dash._q('#wf-dash-dive-start');
+        if (diveStart) diveStart.addEventListener('click', () => { void dash._startDive(); });
+        const diveCancel = dash._q('#wf-dash-dive-cancel');
+        if (diveCancel) diveCancel.addEventListener('click', () => dash._cancelDive());
+        const diveContentCb = dash._q('#wf-dash-dive-include-content');
+        if (diveContentCb) {
+            diveContentCb.addEventListener('change', () => {
+                Logger.log('search-output-dive: include content — ' + (diveContentCb.checked ? 'on' : 'off'));
+            });
+        }
+
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
             btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
         });
@@ -5058,7 +5069,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.19',
+    _version: '7.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
