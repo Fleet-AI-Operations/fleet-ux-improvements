@@ -702,6 +702,15 @@ const searchOutputStatsPaneMethods = {
             const containerWidth = wrapEl.clientWidth || 0;
             const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
             this._state.statsBuilderPreviewChart = new Chart(canvas, config);
+            if (chart.type === 'bellCurve') {
+                this._renderBellCurveStatsSubtitle('builder', aggData);
+            } else {
+                const subEl = this._q('#wf-dash-stats-builder-preview-subtitle');
+                if (subEl) {
+                    subEl.textContent = '';
+                    subEl.style.display = 'none';
+                }
+            }
         } catch (e) {
             Logger.warn('search-output-stats-pane: builder preview failed', e);
             if (statusEl) {
@@ -725,6 +734,7 @@ const searchOutputStatsPaneMethods = {
                 + '<div id="wf-dash-stats-builder-preview-scorecard" style="display: none; height: 100%;"></div>'
                 + '<canvas id="wf-dash-stats-builder-preview-canvas" style="display: block; width: 100%; height: 100%;"></canvas>'
                 + '</div>'
+                + '<div id="wf-dash-stats-builder-preview-subtitle" style="display: none; font-size: 10px; color: var(--muted-foreground, #64748b); text-align: center; line-height: 1.35;"></div>'
                 + '</div>';
         }
         return el.querySelector('#wf-dash-stats-builder-form');
@@ -872,6 +882,9 @@ const searchOutputStatsPaneMethods = {
         const bodyContent = isScorecard
             ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
             : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
+        const bellSubtitle = chart.type === 'bellCurve'
+            ? ('<div data-wf-dash-stats-chart-subtitle="' + dashEscHtml(chart.id) + '" style="display: none; font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px; text-align: center; line-height: 1.35;"></div>')
+            : '';
         const cardLayout = inScorecardRow
             ? ('flex: 1 1 ' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px; min-width: min(' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
@@ -882,6 +895,7 @@ const searchOutputStatsPaneMethods = {
             + overlay
             + bodyContent
             + '</div>'
+            + bellSubtitle
             + '</div>';
     },
 
@@ -953,6 +967,9 @@ const searchOutputStatsPaneMethods = {
         if (series && series.agg === 'stddev') {
             return 'Std dev needs at least 2 values per group (or in scope for scorecard).';
         }
+        if (chart.type === 'bellCurve') {
+            return 'Need at least 2 metric values in scope to show a distribution.';
+        }
         if (series && catalog && catalog.metrics) {
             const metric = catalog.metrics.find((m) => m.id === series.metricId);
             if (metric && metric.requiresHydration && (metric.sampleCount || 0) === 0) {
@@ -960,6 +977,34 @@ const searchOutputStatsPaneMethods = {
             }
         }
         return 'No data to preview for these settings.';
+    },
+
+    _formatBellCurveStatsSubtitle(stats) {
+        if (!stats || stats.n == null || stats.mean == null || stats.stddev == null) return '';
+        const mu = this._formatStatsScorecardValue(stats.mean);
+        const sigma = this._formatStatsScorecardValue(stats.stddev);
+        const lo = this._formatStatsScorecardValue(stats.mean - stats.stddev);
+        const hi = this._formatStatsScorecardValue(stats.mean + stats.stddev);
+        return 'n = ' + stats.n + ' · μ = ' + mu + ' · σ = ' + sigma + ' · ±1σ = ' + lo + '–' + hi;
+    },
+
+    _statsBellBandFill(theme, opacity) {
+        const pct = Math.round(Math.min(100, Math.max(8, opacity * 100)));
+        return 'color-mix(in srgb, ' + theme.brand + ' ' + pct + '%, transparent)';
+    },
+
+    _renderBellCurveStatsSubtitle(chartId, aggData) {
+        const text = this._formatBellCurveStatsSubtitle(aggData && aggData.stats);
+        const el = this._q('[data-wf-dash-stats-chart-subtitle="' + chartId + '"]')
+            || this._q('#wf-dash-stats-builder-preview-subtitle');
+        if (!el) return;
+        if (text) {
+            el.textContent = text;
+            el.style.display = '';
+        } else {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
     },
 
     _statsPickHistogramMetric(catalog) {
@@ -1003,7 +1048,9 @@ const searchOutputStatsPaneMethods = {
         if (chart.type === 'scorecard') {
             return aggData.value != null && Number.isFinite(aggData.value);
         }
-        return (aggData.points && aggData.points.length) || (aggData.labels && aggData.labels.length);
+        return (aggData.points && aggData.points.length)
+            || (aggData.labels && aggData.labels.length)
+            || (aggData.bins && aggData.bins.length);
     },
 
     _statsCircularLegendPosition(width, labelCount) {
@@ -1460,6 +1507,114 @@ const searchOutputStatsPaneMethods = {
                                     const count = ctx.parsed.y;
                                     if (count == null || !Number.isFinite(count)) return '';
                                     return count === 1 ? '1 task' : count + ' tasks';
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        if (type === 'bellCurve') {
+            const dash = this;
+            const metricLabel = aggData.metricLabel
+                || this._statsResolveSeriesLabel((chart.series || [])[0], catalog);
+            const bins = aggData.bins || [];
+            const curve = aggData.curve || [];
+            const sigmaBands = aggData.sigmaBands || [];
+            const bandOpacities = [0.14, 0.22, 0.34];
+            const datasets = [];
+            sigmaBands.forEach((band, i) => {
+                datasets.push({
+                    type: 'line',
+                    label: '±' + band.level + 'σ (' + band.pct + '%)',
+                    data: band.points || [],
+                    borderColor: 'transparent',
+                    backgroundColor: this._statsBellBandFill(theme, bandOpacities[i] || 0.2),
+                    fill: 'origin',
+                    pointRadius: 0,
+                    tension: 0.35,
+                    order: i,
+                    statsBellBand: true
+                });
+            });
+            datasets.push({
+                type: 'bar',
+                label: metricLabel,
+                data: bins.map((b) => ({ x: b.x, y: b.y, label: b.label })),
+                backgroundColor: this._statsBellBandFill(theme, 0.55),
+                borderColor: theme.brand,
+                borderWidth: 1,
+                order: 3,
+                barPercentage: 0.9,
+                categoryPercentage: 1
+            });
+            datasets.push({
+                type: 'line',
+                label: 'Normal fit',
+                data: curve,
+                borderColor: theme.brand,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.35,
+                fill: false,
+                order: 4
+            });
+            const xMin = aggData.xMin;
+            const xMax = aggData.xMax;
+            return {
+                type: 'bar',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: Number.isFinite(xMin) ? xMin : undefined,
+                            max: Number.isFinite(xMax) ? xMax : undefined,
+                            title: this._statsScaleTitle(metricLabel, theme),
+                            ticks: {
+                                color: theme.muted,
+                                font: { size: 10 },
+                                maxTicksLimit: 8
+                            },
+                            grid: { color: theme.border }
+                        },
+                        y: {
+                            type: 'linear',
+                            beginAtZero: true,
+                            title: this._statsScaleTitle('Task count', theme),
+                            ticks: {
+                                color: theme.muted,
+                                font: { size: 10 },
+                                precision: 0
+                            },
+                            grid: { color: theme.border }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            filter: (item) => !item.dataset.statsBellBand,
+                            callbacks: {
+                                title: (items) => {
+                                    const raw = items[0] && items[0].raw;
+                                    if (raw && raw.label) return raw.label;
+                                    const x = items[0] && items[0].parsed && items[0].parsed.x;
+                                    return x != null && Number.isFinite(x)
+                                        ? dash._formatStatsScorecardValue(x)
+                                        : '';
+                                },
+                                label: (ctx) => {
+                                    const y = ctx.parsed.y;
+                                    if (y == null || !Number.isFinite(y)) return '';
+                                    if (ctx.dataset.type === 'bar') {
+                                        return y === 1 ? '1 task' : y + ' tasks';
+                                    }
+                                    return 'Density ' + dash._formatStatsScorecardValue(y);
                                 }
                             }
                         }
@@ -2412,7 +2567,7 @@ const searchOutputStatsPaneMethods = {
             const segmentField = this._statsBuilderField('Segment by',
                 '<select data-wf-dash-stats-draft="series-segment" data-series-idx="' + i + '" style="' + segmentCtl.style + '"' + segmentCtl.attr + '>'
                 + '<option value="">None</option>'
-                + catalog.dimensions.filter((d) => d.key !== draft.groupBy).map((d) =>
+                + catalog.dimensions.filter((d) => d.key !== draft.groupBy && d.key !== '__all__').map((d) =>
                     '<option value="' + dashEscHtml(d.key) + '"' + (segmentBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
                 ).join('')
                 + '</select>',
@@ -2692,7 +2847,7 @@ const searchOutputStatsPaneMethods = {
             if (meta.skipGroupBy) {
                 draft.groupBy = '__scope__';
                 draft.series = (draft.series || []).slice(0, 1);
-                if (draft.type === 'histogram') {
+                if (draft.type === 'histogram' || draft.type === 'bellCurve') {
                     const pick = this._statsPickHistogramMetric(catalog);
                     if (!draft.series.length) {
                         draft.series = [{ metricId: pick, agg: 'count', label: '' }];
@@ -2869,6 +3024,14 @@ const searchOutputStatsPaneMethods = {
                     extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
                         + dashEscHtml(hint) + '</div>';
                 }
+                continue;
+            }
+            if (chart.type === 'bellCurve' && (agg.bins || []).length) {
+                const statsLine = this._formatBellCurveStatsSubtitle(agg.stats);
+                extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
+                    + dashEscHtml(agg.bins.map((b) => b.label + ' (' + (b.y != null ? b.y : 'n/a') + ')').join('; '))
+                    + (statsLine ? ' — ' + dashEscHtml(statsLine) : '')
+                    + '</div>';
                 continue;
             }
             const pointCount = (agg.points || []).length;
@@ -3053,6 +3216,9 @@ const searchOutputStatsPaneMethods = {
             const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
             const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
             charts[chart.id] = new Chart(canvas, config);
+            if (chart.type === 'bellCurve') {
+                this._renderBellCurveStatsSubtitle(chart.id, aggData);
+            }
             rendered += 1;
         }
         this._state.statsCharts = charts;
@@ -4112,7 +4278,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.31',
+    _version: '5.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

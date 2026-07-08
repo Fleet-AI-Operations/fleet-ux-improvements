@@ -56,6 +56,7 @@ const STATS_AGGREGATIONS = [
 ];
 
 const STATS_SCORECARD_GROUP_BY = '__scope__';
+const STATS_ALL_GROUP_BY = '__all__';
 
 const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
 
@@ -87,6 +88,16 @@ const STATS_CHART_TYPE_META = {
         skipGroupBy: true,
         skipAggregation: true,
         defaultHeight: 220
+    },
+    bellCurve: {
+        id: 'bellCurve',
+        label: 'Bell curve',
+        minSeries: 1,
+        maxSeries: 1,
+        allowCountAxis: false,
+        skipGroupBy: true,
+        skipAggregation: true,
+        defaultHeight: 260
     }
 };
 
@@ -527,6 +538,9 @@ function statsBuildPromptVersionCountOptions(items, getVersionCount) {
 
 function statsGetDimensionValues(item, dimKey, lib, ctx) {
     const task = item && item.task;
+    if (dimKey === STATS_ALL_GROUP_BY) {
+        return task ? [STATS_ALL_GROUP_BY] : [];
+    }
     if (!task) return [];
     const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
     const currentUserId = (ctx && ctx.currentUserId) || '';
@@ -651,6 +665,14 @@ function statsBuildCatalog(ctx) {
         });
     }
 
+    const allDim = {
+        key: STATS_ALL_GROUP_BY,
+        label: 'All',
+        options: [{ id: STATS_ALL_GROUP_BY, label: 'All' }]
+    };
+    dimensions.unshift(allDim);
+    dimensionByKey[STATS_ALL_GROUP_BY] = allDim;
+
     return {
         dimensions,
         dimensionByKey,
@@ -689,6 +711,9 @@ function statsAggDataHasFiniteValues(chart, aggData) {
     const type = statsNormalizeChartType(chart && chart.type);
     if (type === 'scorecard') {
         return aggData.value != null && Number.isFinite(aggData.value);
+    }
+    if (type === 'bellCurve') {
+        return (aggData.bins || []).some((b) => b != null && Number.isFinite(b.y) && b.y > 0);
     }
     if ((aggData.points || []).some((p) => p != null && Number.isFinite(p.x) && Number.isFinite(p.y))) {
         return true;
@@ -768,7 +793,7 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
-    if (type === 'histogram') {
+    if (type === 'histogram' || type === 'bellCurve') {
         for (const s of series) {
             if (s.metricId === 'count') {
                 missing.push({ id: 'count', label: 'Numeric metric' });
@@ -818,6 +843,21 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (type === 'bellCurve' && missing.length === 0) {
+        const scoped = statsFilterItemsForChart(items, chart, ctx);
+        const agg = statsAggregateBellCurve(chart, scoped, catalog, ctx);
+        if (!agg.bins || !agg.bins.length) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'No metric values to chart' }] };
+        }
+        const n = agg.stats && agg.stats.n;
+        if (n == null || n < 2) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'Need at least 2 values for distribution' }] };
+        }
+        if (!agg.stats || !(agg.stats.stddev > 0)) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'Need variation in values (σ > 0)' }] };
+        }
+    }
+
     return { ok: true, missing: [] };
 }
 
@@ -846,17 +886,19 @@ function statsHistogramIntegerLabel(metricId, value) {
 }
 
 function statsBuildHistogramIntegerBins(values, metricId) {
-    if (!values.length) return { labels: [], counts: [] };
+    if (!values.length) return { labels: [], counts: [], centers: [] };
     const intVals = values.map((v) => Math.round(v));
     const min = Math.min(...intVals);
     const max = Math.max(...intVals);
     const labels = [];
     const counts = [];
+    const centers = [];
     for (let i = min; i <= max; i += 1) {
         labels.push(statsHistogramIntegerLabel(metricId, i));
         counts.push(intVals.filter((v) => v === i).length);
+        centers.push(i);
     }
-    return { labels, counts };
+    return { labels, counts, centers };
 }
 
 function statsBuildHistogramTimeBins(values, lib) {
@@ -883,12 +925,12 @@ function statsBuildHistogramTimeBins(values, lib) {
 }
 
 function statsBuildHistogramAutoBins(values) {
-    if (!values.length) return { labels: [], counts: [] };
+    if (!values.length) return { labels: [], counts: [], centers: [] };
     const min = Math.min(...values);
     const max = Math.max(...values);
     if (min === max) {
         const rounded = Math.round(min);
-        return { labels: [String(rounded)], counts: [values.length] };
+        return { labels: [String(rounded)], counts: [values.length], centers: [min] };
     }
     const n = values.length;
     const binCount = Math.min(12, Math.max(2, Math.ceil(Math.log2(n) + 1)));
@@ -896,12 +938,14 @@ function statsBuildHistogramAutoBins(values) {
     const width = range / binCount;
     const labels = [];
     const counts = new Array(binCount).fill(0);
+    const centers = [];
     for (let b = 0; b < binCount; b += 1) {
         const lo = min + b * width;
         const hi = b === binCount - 1 ? max : min + (b + 1) * width;
         const loR = Math.floor(lo);
         const hiR = b === binCount - 1 ? Math.ceil(max) : Math.floor(hi) - 1;
         labels.push(loR + '–' + (hiR < loR ? loR : hiR));
+        centers.push((lo + hi) / 2);
     }
     for (const v of values) {
         let idx = Math.floor((v - min) / width);
@@ -909,7 +953,7 @@ function statsBuildHistogramAutoBins(values) {
         if (idx < 0) idx = 0;
         counts[idx] += 1;
     }
-    return { labels, counts };
+    return { labels, counts, centers };
 }
 
 function statsAggregateHistogram(chart, items, catalog, ctx) {
@@ -943,6 +987,117 @@ function statsAggregateHistogram(chart, items, catalog, ctx) {
             data: binResult.counts,
             metricId: s.metricId
         }]
+    };
+}
+
+function statsComputeSampleMeanStddev(values) {
+    const nums = (values || []).filter((v) => v != null && Number.isFinite(v));
+    if (!nums.length) return { n: 0, mean: null, stddev: null };
+    const n = nums.length;
+    const mean = nums.reduce((a, b) => a + b, 0) / n;
+    if (n < 2) {
+        return { n, mean: Math.round(mean * 10) / 10, stddev: null };
+    }
+    const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (n - 1);
+    const stddev = Math.sqrt(variance);
+    return {
+        n,
+        mean: Math.round(mean * 10) / 10,
+        stddev: Math.round(stddev * 10) / 10
+    };
+}
+
+function statsNormalPdf(x, mean, stddev) {
+    if (!(stddev > 0)) return 0;
+    const z = (x - mean) / stddev;
+    return Math.exp(-0.5 * z * z) / (stddev * Math.sqrt(2 * Math.PI));
+}
+
+function statsBuildBellCurvePoints(mean, stddev, scale, spanSigma, steps) {
+    if (!(stddev > 0) || !(scale > 0)) return [];
+    const lo = mean - spanSigma * stddev;
+    const hi = mean + spanSigma * stddev;
+    const count = Math.max(2, steps || 80);
+    const points = [];
+    for (let i = 0; i <= count; i += 1) {
+        const x = lo + (hi - lo) * (i / count);
+        points.push({ x, y: statsNormalPdf(x, mean, stddev) * scale });
+    }
+    return points;
+}
+
+function statsBuildBellSigmaBandPoints(mean, stddev, scale, sigmaLevel, steps) {
+    if (!(stddev > 0) || !(scale > 0)) return [];
+    const lo = mean - sigmaLevel * stddev;
+    const hi = mean + sigmaLevel * stddev;
+    const count = Math.max(2, steps || 40);
+    const points = [];
+    for (let i = 0; i <= count; i += 1) {
+        const x = lo + (hi - lo) * (i / count);
+        points.push({ x, y: statsNormalPdf(x, mean, stddev) * scale });
+    }
+    return points;
+}
+
+function statsAggregateBellCurve(chart, items, catalog, ctx) {
+    const s = (chart.series || [])[0];
+    if (!s) {
+        return { bins: [], curve: [], sigmaBands: [], stats: { n: 0, mean: null, stddev: null }, metricLabel: '' };
+    }
+    const getMetricValue = ctx && ctx.getMetricValue;
+    const metric = statsFindMetric(catalog, s.metricId);
+    const metricLabel = s.label || (metric && metric.label) || s.metricId;
+    const values = [];
+    for (const item of items || []) {
+        const v = statsSeriesMetricValue(item, s, getMetricValue);
+        if (v != null && Number.isFinite(v)) values.push(v);
+    }
+    if (!values.length) {
+        return { bins: [], curve: [], sigmaBands: [], stats: { n: 0, mean: null, stddev: null }, metricLabel };
+    }
+
+    const mode = statsHistogramBinMode(s.metricId);
+    let binResult;
+    if (mode === 'integer') {
+        binResult = statsBuildHistogramIntegerBins(values, s.metricId);
+    } else {
+        binResult = statsBuildHistogramAutoBins(values);
+    }
+
+    const bins = (binResult.labels || []).map((label, i) => ({
+        x: binResult.centers[i],
+        y: binResult.counts[i],
+        label
+    }));
+
+    const sampleStats = statsComputeSampleMeanStddev(values);
+    const { n, mean, stddev } = sampleStats;
+    if (n < 2 || !(stddev > 0)) {
+        return { bins, curve: [], sigmaBands: [], stats: sampleStats, metricLabel };
+    }
+
+    const maxCount = Math.max(...binResult.counts);
+    let maxPdf = 0;
+    const pdfProbe = statsBuildBellCurvePoints(mean, stddev, 1, 3.5, 80);
+    for (const pt of pdfProbe) {
+        if (pt.y > maxPdf) maxPdf = pt.y;
+    }
+    const scale = maxPdf > 0 ? maxCount / maxPdf : 0;
+    const curve = statsBuildBellCurvePoints(mean, stddev, scale, 3.5, 80);
+    const sigmaBands = [
+        { level: 3, pct: 99.7, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 3, 40) },
+        { level: 2, pct: 95, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 2, 32) },
+        { level: 1, pct: 68, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 1, 24) }
+    ];
+
+    return {
+        bins,
+        curve,
+        sigmaBands,
+        stats: sampleStats,
+        metricLabel,
+        xMin: mean - 3.5 * stddev,
+        xMax: mean + 3.5 * stddev
     };
 }
 
@@ -1395,6 +1550,9 @@ function statsAggregateChart(chart, items, catalog, ctx) {
     if (type === 'histogram') {
         return statsAggregateHistogram(chart, scopedItems, catalog, ctx);
     }
+    if (type === 'bellCurve') {
+        return statsAggregateBellCurve(chart, scopedItems, catalog, ctx);
+    }
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
@@ -1424,7 +1582,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.10',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
