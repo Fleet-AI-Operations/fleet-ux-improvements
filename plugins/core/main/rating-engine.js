@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.16';
+const RE_VERSION = '2.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -9,22 +9,29 @@ const RE_STATUS_SEVERITY_DEFAULT = 0.4;
 const RE_DISCARDED_STALE_DAYS = 7;
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
-const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
-const RE_QAQS_SR_PENALTY_BLEND = 0.75;
-const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
 
-// Shrinkage / spread — priors calibrated from dive.db WPS baseline (rank-workers v1.1).
+// Shrinkage — TWQS priors calibrated from dive.db WPS baseline (rank-workers v1.1).
 const RE_ACCEPTANCE_SHRINK_C = 5;
 const RE_ACCEPTANCE_SHRINK_PRIOR = 0.79;
 const RE_DISPUTE_SHRINK_C = 10;
 const RE_SR_SHRINK_C = 15;
 const RE_SR_PENALTY_PRIOR = 0.68;
 const RE_REVISION_EFF_EXPONENT = 1.25;
-const RE_QAQS_RESOLUTION_SHRINK_C = 5;
-const RE_QAQS_RESOLUTION_SHRINK_PRIOR = 0.46;
-const RE_RETURN_EPISODE_EXPONENT = 1.3;
 const RE_AXIS_SPREAD_EXPONENT = 1.18;
+
+// Shrinkage — QAQS priors calibrated from dive.db QPS baseline (rank-qa v1.0,
+// 180-reviewer cohort with ≥ 50 feedback rows each).
+const RE_QAQS_RET_EFF_C           = 10;
+const RE_QAQS_RET_EFF_PRIOR       = 0.4401;
+const RE_QAQS_MC_AVOID_C          = 10;
+const RE_QAQS_MC_AVOID_PRIOR      = 1.0;
+const RE_QAQS_APPR_SOUND_C        = 5;
+const RE_QAQS_APPR_SOUND_PRIOR    = 0.9981;
+const RE_QAQS_DISPUTE_DEF_C       = 5;
+const RE_QAQS_DISPUTE_DEF_PRIOR   = 0.3263;
+const RE_QAQS_LABEL_DISC_C        = 5;
+const RE_QAQS_LABEL_DISC_PRIOR    = 0.1205;
 
 const RE_TWQS_AXES = [
     { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
@@ -35,10 +42,11 @@ const RE_TWQS_AXES = [
 ];
 
 const RE_QAQS_AXES = [
-    { id: 'feedbackResolution', label: 'Comprehensiveness', weight: 0.50 },
-    { id: 'reviewCallAccuracy', label: 'Dispute Defense', weight: 0.20 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
-    { id: 'consistency', label: 'Consistency', weight: 0.10 }
+    { id: 'returnEffectiveness',  label: 'Return Effectiveness',  weight: 0.35 },
+    { id: 'missedCatchAvoidance', label: 'Missed-Catch Avoidance', weight: 0.25 },
+    { id: 'approvalSoundness',    label: 'Approval Soundness',    weight: 0.15 },
+    { id: 'disputeDefense',       label: 'Dispute Defense',       weight: 0.15 },
+    { id: 'labelDiscrimination',  label: 'Label Discrimination',  weight: 0.10 },
 ];
 
 const RE_BANDS = [
@@ -83,22 +91,6 @@ function reFeedbackAtForResolvedId(task, feedbackId) {
         if (reIdsEqual(entry.id, fid)) return reFeedbackTimestamp(entry);
     }
     return '';
-}
-
-function reQaFlagPenalizesWorker(task, flag, workerId) {
-    const flaggerId = String((flag && flag.flaggerId) || '');
-    if (flaggerId && reIdsEqual(flaggerId, workerId)) return false;
-    const cutoff = String((flag && (flag.createdAt || flag.resolutionAt)) || '').trim();
-    let hasPrior = false;
-    let hasAny = false;
-    for (const entry of (task && task.allFeedback) || []) {
-        if (!reIsHumanFeedback(entry)) continue;
-        if (!reIdsEqual(entry.reviewer && entry.reviewer.id, workerId)) continue;
-        hasAny = true;
-        const ts = reFeedbackTimestamp(entry);
-        if (!cutoff || (ts && ts < cutoff)) hasPrior = true;
-    }
-    return cutoff ? hasPrior : hasAny;
 }
 
 function reReturnTypeOf(entry) {
@@ -341,46 +333,10 @@ function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
     return [...feedbackById.values()];
 }
 
-function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
-    const createdAt = reFeedbackTimestamp(entry);
-    const w = reEventWeight(createdAt, mode, nowMs, window);
-    const rt = reReturnTypeOf(entry);
-    if (rt !== 'returned') {
-        return { createdAt, weight: w, returnType: rt, episodeScore: null, rounds: null, subsequentReviewerIds: [] };
-    }
-    const allFb = reHumanFeedbackChronological(task);
-    const returnIdx = allFb.findIndex((e) => String(e.id) === String(entry.id));
-    let episodeScore = 0;
-    let rounds = null;
-    const subsequentReviewerIds = [];
-    if (returnIdx >= 0) {
-        rounds = 0;
-        let accepted = false;
-        for (let i = returnIdx + 1; i < allFb.length; i++) {
-            rounds += 1;
-            const next = allFb[i];
-            if (next.reviewer && next.reviewer.id) {
-                subsequentReviewerIds.push(String(next.reviewer.id));
-            }
-            const nextRt = reReturnTypeOf(next);
-            if (nextRt === 'accepted') {
-                accepted = true;
-                episodeScore = 1 / Math.pow(rounds, RE_RETURN_EPISODE_EXPONENT);
-                break;
-            }
-            if (nextRt === 'bugged' || nextRt === 'escalated') break;
-        }
-        if (!accepted && rounds > 0) episodeScore = 0;
-    }
-    return { createdAt, weight: w, returnType: rt, episodeScore, rounds, subsequentReviewerIds };
-}
-
 function reAxisOmitReason(axis) {
     if (!axis || axis.defined !== false) return null;
     switch (axis.id) {
-        case 'feedbackResolution':
-            return 'No return episodes by this QA in scope';
-        case 'reviewCallAccuracy':
+        case 'disputeDefense':
         case 'disputeOutcomes':
             return 'No resolved disputes in scope';
         case 'consistency':
@@ -714,23 +670,32 @@ const RatingEngine = {
         if (feedbackRows.length === 0) return null;
 
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
-        const returnEpisodes = [];
-        let flagBad = 0;
-        let flagDenom = 0;
-        let raisedGood = 0;
-        let raisedDenom = 0;
+
+        // Return effectiveness accumulators
+        let retEffNumer = 0;
+        let retEffDenom = 0;
+        // Approval soundness accumulators
+        let asGood = 0;
+        let asDenom = 0;
+        // Label discrimination accumulators
+        let ldNonStd = 0;
+        let ldDenom = 0;
+        // Dispute defense accumulators
         let disputeGood = 0;
         let disputeDenom = 0;
+
         const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
+
+        // Deduplicate tasks seen (for missed-catch avoidance pass)
+        const seenTaskIds = new Set();
 
         for (const { entry, task } of feedbackRows) {
             const createdAt = reFeedbackTimestamp(entry);
             const w = reEventWeight(createdAt, mode, nowMs, window);
             if (w <= 0) continue;
 
-            flagDenom += w;
             const ts = Date.parse(createdAt);
             if (!Number.isNaN(ts)) {
                 if (earliestTs == null || ts < earliestTs) earliestTs = ts;
@@ -740,41 +705,57 @@ const RatingEngine = {
             const wk = reIsoWeekKey(createdAt);
             if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
-            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned' && reIsProductionTask(task)) {
-                returnEpisodes.push({
-                    value: episode.episodeScore,
-                    weight: w,
-                    iso: createdAt,
-                    rounds: episode.rounds
-                });
+            if (task && task.id) seenTaskIds.add(String(task.id));
+
+            // Return effectiveness: negative feedback → task reached production?
+            if (!entry.isPositive) {
+                retEffDenom += 1;
+                if (reIsProductionTask(task)) retEffNumer += 1;
+            }
+
+            // Approval soundness: positive feedback on a now-terminal task → production?
+            if (entry.isPositive) {
+                const severity = reTaskOutcomeSeverity(task, null, nowMs);
+                if (severity != null) {
+                    asDenom += 1;
+                    if (reIsProductionTask(task)) asGood += 1;
+                }
+            }
+
+            // Label discrimination: non-Average score labels
+            const scoreLabel = String(
+                (entry && (entry.score || entry.scoreLabel || entry.qualityLabel)) || ''
+            ).trim();
+            if (scoreLabel === 'Average' || scoreLabel === 'Top 10%' || scoreLabel === 'Bottom 10%') {
+                ldDenom += 1;
+                if (scoreLabel !== 'Average') ldNonStd += 1;
             }
         }
 
+        // Missed-catch avoidance: per-task, first feedback positive + no later neg from another reviewer.
+        // Build a task map from what we have in the hydrated set.
+        let mcClean = 0;
+        let mcDenom = 0;
+        for (const item of hydratedItems) {
+            const task = item.task;
+            if (!task || !seenTaskIds.has(String(task.id))) continue;
+            const allHuman = reHumanFeedbackChronological(task);
+            if (!allHuman.length) continue;
+            const first = allHuman[0];
+            if (!first.isPositive) continue;
+            if (!reIdsEqual(first.reviewer && first.reviewer.id, workerId)) continue;
+            const laterNegByOther = allHuman.slice(1).some(
+                (e) => !e.isPositive && !reIdsEqual(e.reviewer && e.reviewer.id, workerId)
+            );
+            mcDenom += 1;
+            if (!laterNegByOther) mcClean += 1;
+        }
+
+        // Dispute defense: disputes on tasks where this QA was the respondent.
         for (const item of hydratedItems) {
             const task = item.task;
             if (!task) continue;
             const remap = task.systemFeedbackIdRemap || {};
-
-            for (const flag of item.flags || []) {
-                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-
-                if (flag.isConfirmed && reQaFlagPenalizesWorker(task, flag, workerId)) {
-                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                    const fw = reEventWeight(flagTs, mode, nowMs, window);
-                    if (fw > 0) flagBad += fw;
-                }
-
-                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
-                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                    const fw = reEventWeight(flagTs, mode, nowMs, window);
-                    if (fw > 0) {
-                        raisedDenom += fw;
-                        if (flag.isConfirmed) raisedGood += fw;
-                    }
-                }
-            }
-
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
                 const fid = reResolveFeedbackId(dispute.feedbackId, remap);
@@ -787,71 +768,51 @@ const RatingEngine = {
             }
         }
 
-        let resolutionScore = null;
-        let resolutionDefined = false;
-        if (returnEpisodes.length > 0) {
-            resolutionDefined = true;
-            const mean = reWeightedMean(returnEpisodes);
-            const n = returnEpisodes.length;
-            resolutionScore = mean != null
-                ? (mean * n + RE_QAQS_RESOLUTION_SHRINK_C * RE_QAQS_RESOLUTION_SHRINK_PRIOR)
-                    / (n + RE_QAQS_RESOLUTION_SHRINK_C)
-                : null;
-        }
+        // Shrunk scores
+        const retEffScore = reShrunkRate(retEffNumer, retEffDenom,
+            RE_QAQS_RET_EFF_C, RE_QAQS_RET_EFF_PRIOR);
+        const mcScore = reShrunkRate(mcClean, mcDenom,
+            RE_QAQS_MC_AVOID_C, RE_QAQS_MC_AVOID_PRIOR);
+        const asScore = reShrunkRate(asGood, asDenom,
+            RE_QAQS_APPR_SOUND_C, RE_QAQS_APPR_SOUND_PRIOR);
+        const ldScore = ldDenom > 0
+            ? reShrunkRate(ldNonStd, ldDenom, RE_QAQS_LABEL_DISC_C, RE_QAQS_LABEL_DISC_PRIOR)
+            : null;
 
-        let disputeScore = null;
-        let disputeDefined = false;
+        let dispScore = null;
+        let dispDefined = false;
         if (disputeDenom > 0) {
-            disputeDefined = true;
-            disputeScore = reShrunkRate(disputeGood, disputeDenom, RE_DISPUTE_SHRINK_C);
+            dispDefined = true;
+            dispScore = reShrunkRate(disputeGood, disputeDenom,
+                RE_QAQS_DISPUTE_DEF_C, RE_QAQS_DISPUTE_DEF_PRIOR);
         }
-
-        const penaltyScore = flagDenom > 0
-            ? 1 - reShrunkRate(flagBad, flagDenom, RE_SR_SHRINK_C, RE_SR_PENALTY_PRIOR)
-            : 0.5;
-        const raisedScore = raisedDenom > 0
-            ? reShrunkRate(raisedGood, raisedDenom, RE_SR_SHRINK_C)
-            : 0.5;
-        const srScore = RE_QAQS_SR_PENALTY_BLEND * penaltyScore + RE_QAQS_SR_RAISED_BLEND * raisedScore;
-
-        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
-            ? Date.parse(window.beforeIso)
-            : nowMs;
-        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
-
-        const roundsList = returnEpisodes.map((e) => e.rounds).filter((r) => r != null && r > 0);
-        const oneRoundCount = returnEpisodes.filter((e) => e.rounds === 1).length;
 
         const axes = RE_QAQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
             switch (def.id) {
-                case 'feedbackResolution':
-                    defined = resolutionDefined;
-                    score = resolutionDefined ? resolutionScore : null;
-                    raw = { returnEpisodeCount: returnEpisodes.length };
+                case 'returnEffectiveness':
+                    score = retEffScore;
+                    raw = { resolvedCount: retEffNumer, negFeedbackCount: retEffDenom };
                     break;
-                case 'reviewCallAccuracy':
-                    defined = disputeDefined;
-                    score = disputeDefined ? disputeScore : null;
+                case 'missedCatchAvoidance':
+                    score = mcScore;
+                    raw = { cleanCount: mcClean, firstPosTaskCount: mcDenom };
+                    break;
+                case 'approvalSoundness':
+                    score = asScore;
+                    raw = { productionCount: asGood, terminalPosCount: asDenom };
+                    break;
+                case 'disputeDefense':
+                    defined = dispDefined;
+                    score = dispDefined ? dispScore : null;
                     raw = { upheldWeight: disputeGood, resolvedWeight: disputeDenom };
                     break;
-                case 'srReviewIntegrity':
-                    score = srScore;
-                    raw = {
-                        confirmedFlags: flagBad,
-                        feedbackWeight: flagDenom,
-                        penaltyScore,
-                        raisedConfirmedWeight: raisedGood,
-                        raisedResolvedWeight: raisedDenom,
-                        raisedScore
-                    };
-                    break;
-                case 'consistency':
-                    defined = consistencyResult.defined;
-                    score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
+                case 'labelDiscrimination':
+                    defined = ldDenom > 0;
+                    score = ldDenom > 0 ? ldScore : null;
+                    raw = { nonStdCount: ldNonStd, scoredCount: ldDenom };
                     break;
                 default:
                     break;
@@ -878,18 +839,19 @@ const RatingEngine = {
                 feedbackRowCount: feedbackRows.length,
                 trailing90dFeedbackRows: count90d,
                 tenureDays,
-                returnEpisodeCount: returnEpisodes.length,
-                medianRoundsToAccept: reMedian(roundsList),
-                oneRoundPct: returnEpisodes.length
-                    ? Math.round((oneRoundCount / returnEpisodes.length) * 1000) / 10
-                    : null
+                negFeedbackCount: retEffDenom,
+                terminalPosCount: asDenom,
+                firstPosTaskCount: mcDenom
             },
             raw: {
-                returnEpisodes: returnEpisodes.length,
-                flagBad,
-                flagDenom,
-                raisedGood,
-                raisedDenom,
+                retEffNumer,
+                retEffDenom,
+                mcClean,
+                mcDenom,
+                asGood,
+                asDenom,
+                ldNonStd,
+                ldDenom,
                 disputeGood,
                 disputeDenom
             }
@@ -905,7 +867,6 @@ const RatingEngine = {
         const nowMs = Date.parse(workerReport.computedAt) || Date.now();
 
         const feedbackRows = reCollectQaqsFeedbackRows(workerId, cachedItems);
-        const feedbackRowsRaw = [];
         let feedbackRowsBeforeDedupe = 0;
         for (const item of cachedItems) {
             const task = item.task;
@@ -920,7 +881,6 @@ const RatingEngine = {
         const returnTypeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0, other: 0 };
         let timestampMissingCount = 0;
         let weightedFeedbackRows = 0;
-        const returnEpisodeDetails = [];
         const fieldAuditSamples = [];
         const seenAuditIds = new Set();
 
@@ -935,33 +895,17 @@ const RatingEngine = {
             else returnTypeCounts.other += 1;
 
             const audit = reFieldAuditRow(entry, task, workerId);
-            const isAnomalous = !audit.timestampResolvable || rt === 'returned';
+            const isAnomalous = !audit.timestampResolvable;
             if (fieldAuditSamples.length < RE_DIAG_SAMPLE_ROWS || isAnomalous) {
                 if (!seenAuditIds.has(audit.feedbackId)) {
                     seenAuditIds.add(audit.feedbackId);
                     fieldAuditSamples.push(audit);
                 }
             }
-
-            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned') {
-                returnEpisodeDetails.push({
-                    feedbackId: String(entry.id),
-                    taskId: String(task.id),
-                    feedbackAt: episode.createdAt || null,
-                    roundsToAccept: episode.rounds,
-                    episodeScore: episode.episodeScore,
-                    subsequentReviewerIds: episode.subsequentReviewerIds,
-                    taskStatus: String((task && task.status) || '') || null,
-                    countedInResolution: reIsProductionTask(task)
-                });
-            }
         }
 
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
         const disputesInScope = [];
-        const flagsInScope = [];
-        const flagsRaisedInScope = [];
 
         for (const item of cachedItems) {
             const task = item.task;
@@ -987,36 +931,6 @@ const RatingEngine = {
                     isRejected: Boolean(dispute.isRejected),
                     isApproved: Boolean(dispute.isApproved)
                 });
-            }
-
-            for (const flag of item.flags || []) {
-                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-
-                if (reQaFlagPenalizesWorker(task, flag, workerId) && flag.isConfirmed) {
-                    flagsInScope.push({
-                        flagId: String(flag.id || ''),
-                        taskId: String(task.id || ''),
-                        flaggerId: String(flag.flaggerId || '') || null,
-                        reasonKey: flag.reasonKey,
-                        status: flag.status || null,
-                        isConfirmed: Boolean(flag.isConfirmed),
-                        resolutionAt: flag.resolutionAt || null,
-                        attributedToWorker: true
-                    });
-                }
-
-                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
-                    flagsRaisedInScope.push({
-                        flagId: String(flag.id || ''),
-                        taskId: String(task.id || ''),
-                        reasonKey: flag.reasonKey,
-                        status: flag.status || null,
-                        isConfirmed: Boolean(flag.isConfirmed),
-                        isDismissed: Boolean(flag.isDismissed),
-                        resolutionAt: flag.resolutionAt || null,
-                        raisedByWorker: true
-                    });
-                }
             }
         }
 
@@ -1067,10 +981,7 @@ const RatingEngine = {
                 timestampMissingCount,
                 weightedFeedbackRows,
                 returnTypeCounts,
-                returnEpisodes: returnEpisodeDetails,
                 disputesInScope,
-                flagsInScope,
-                flagsRaisedInScope,
                 axisDebug: qaqsAxisDebug
             },
             twqs: workerReport.twqs ? {
@@ -1179,7 +1090,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.16',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
