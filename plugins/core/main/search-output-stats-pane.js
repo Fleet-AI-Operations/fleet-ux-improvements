@@ -171,7 +171,7 @@ const searchOutputStatsPaneMethods = {
             id: draft.id || '__preview__',
             title: String(draft.title || 'Preview').trim() || 'Preview',
             type: draft.type || 'pie',
-            groupBy: draft.groupBy,
+            groupBy: engineMeta.skipGroupBy ? '__scope__' : draft.groupBy,
             series: (draft.series || []).map((s) => {
                 const entry = {
                     metricId: s.metricId,
@@ -180,6 +180,7 @@ const searchOutputStatsPaneMethods = {
                 };
                 if (engineMeta.needsRenderAs) {
                     entry.renderAs = s.renderAs === 'line' ? 'line' : 'bar';
+                    if (s.spread === 'stddevBand') entry.spread = 'stddevBand';
                 }
                 if (engineMeta.needsDualAxis) {
                     entry.yAxis = s.yAxis === 'y1' ? 'y1' : 'y';
@@ -600,6 +601,8 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
+        this._syncStatsBuilderDraftFromForm();
+
         const items = this._getStatsScopeItems();
         if (!items.length) {
             if (statusEl) {
@@ -635,15 +638,6 @@ const searchOutputStatsPaneMethods = {
         if (this._state.statsBuilderPreviewGen !== gen) return;
 
         const aggData = engine.aggregateChart(chart, items, catalog, ctx);
-        if (!this._statsChartHasRenderableData(chart, aggData)) {
-            if (statusEl) {
-                statusEl.style.display = '';
-                statusEl.textContent = 'No data to preview for these settings.';
-            }
-            if (canvas) canvas.style.display = 'none';
-            if (scorecardEl) scorecardEl.style.display = 'none';
-            return;
-        }
 
         if (chart.type === 'scorecard') {
             if (canvas) canvas.style.display = 'none';
@@ -664,7 +658,26 @@ const searchOutputStatsPaneMethods = {
                             + dashEscHtml(subtitle) + '</div>'
                         : '');
             }
+            if (statusEl && !this._statsChartHasRenderableData(chart, aggData)) {
+                statusEl.style.display = '';
+                statusEl.textContent = this._statsChartEmptyMessage(chart, aggData, catalog);
+            }
             return;
+        }
+
+        if (!this._statsChartHasRenderableData(chart, aggData)) {
+            if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = this._statsChartEmptyMessage(chart, aggData, catalog);
+            }
+            if (canvas) canvas.style.display = 'none';
+            if (scorecardEl) scorecardEl.style.display = 'none';
+            return;
+        }
+
+        if (statusEl) {
+            statusEl.textContent = '';
+            statusEl.style.display = 'none';
         }
 
         if (scorecardEl) scorecardEl.style.display = 'none';
@@ -687,7 +700,7 @@ const searchOutputStatsPaneMethods = {
             }
             const theme = this._statsChartTheme();
             const containerWidth = wrapEl.clientWidth || 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth);
+            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
             this._state.statsBuilderPreviewChart = new Chart(canvas, config);
         } catch (e) {
             Logger.warn('search-output-stats-pane: builder preview failed', e);
@@ -911,6 +924,54 @@ const searchOutputStatsPaneMethods = {
         return html;
     },
 
+    _statsResolveSeriesLabel(s, catalog) {
+        if (!s) return '';
+        const custom = s.label != null ? String(s.label).trim() : '';
+        if (custom) return custom;
+        const metric = (catalog && catalog.metrics || []).find((m) => m.id === s.metricId);
+        return (metric && metric.label) || s.metricId || '';
+    },
+
+    _statsScaleTitle(text, theme) {
+        const label = text != null ? String(text).trim() : '';
+        if (!label) return undefined;
+        return {
+            display: true,
+            text: label,
+            color: theme.muted,
+            font: { size: 10 }
+        };
+    },
+
+    _statsChartEmptyMessage(chart, aggData, catalog) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.aggDataHasFiniteValues === 'function'
+            && engine.aggDataHasFiniteValues(chart, aggData)) {
+            return '';
+        }
+        const series = (chart.series || [])[0];
+        if (series && series.agg === 'stddev') {
+            return 'Std dev needs at least 2 values per group (or in scope for scorecard).';
+        }
+        if (series && catalog && catalog.metrics) {
+            const metric = catalog.metrics.find((m) => m.id === series.metricId);
+            if (metric && metric.requiresHydration && (metric.sampleCount || 0) === 0) {
+                return 'Metric needs hydrated cards — run deep hydrate or narrow scope.';
+            }
+        }
+        return 'No data to preview for these settings.';
+    },
+
+    _statsPickHistogramMetric(catalog) {
+        const numeric = (catalog.metrics || []).filter((m) => m.id !== 'count');
+        const withSamples = numeric.find((m) => (m.sampleCount || 0) > 0);
+        if (withSamples) return withSamples.id;
+        const timeIds = ['v1_creation_time_minutes', 'qa_time_minutes', 'dispute_resolution_time_minutes'];
+        const timePick = numeric.find((m) => timeIds.includes(m.id));
+        if (timePick) return timePick.id;
+        return (numeric[0] && numeric[0].id) || 'prompt_version_count';
+    },
+
     _formatStatsScorecardValue(value) {
         if (value == null || !Number.isFinite(value)) return '—';
         if (Math.abs(value - Math.round(value)) < 0.05) {
@@ -935,6 +996,10 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsChartHasRenderableData(chart, aggData) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.aggDataHasFiniteValues === 'function') {
+            return engine.aggDataHasFiniteValues(chart, aggData);
+        }
         if (chart.type === 'scorecard') {
             return aggData.value != null && Number.isFinite(aggData.value);
         }
@@ -1235,7 +1300,33 @@ const searchOutputStatsPaneMethods = {
         return scales;
     },
 
-    _buildChartJsConfig(chart, aggData, theme, containerWidth) {
+    _statsBarLineAxisTitles(chart, catalog) {
+        const dim = catalog && catalog.dimensionByKey && catalog.dimensionByKey[chart.groupBy];
+        const categoryTitle = (dim && dim.label) || '';
+        const series = chart.series || [];
+        const ySeries = series.find((s) => s.yAxis !== 'y1') || series[0];
+        const y1Series = series.find((s) => s.yAxis === 'y1');
+        const engine = Context.statsEngine;
+        const aggDefs = engine && typeof engine.aggregations === 'function' ? engine.aggregations() : [];
+        const aggLabel = (id) => {
+            const a = aggDefs.find((x) => x.id === id);
+            return a ? a.label : id;
+        };
+        const valueLabel = (s) => {
+            if (!s) return '';
+            const base = this._statsResolveSeriesLabel(s, catalog);
+            const agg = aggLabel(s.agg);
+            return agg && agg !== 'Count' ? agg + ' · ' + base : base;
+        };
+        return {
+            categoryTitle,
+            primaryTitle: valueLabel(ySeries),
+            secondaryTitle: y1Series ? valueLabel(y1Series) : ''
+        };
+    },
+
+    _buildChartJsConfig(chart, aggData, theme, containerWidth, catalog) {
+        const dash = this;
         const palette = this._statsPiePalette();
         const type = chart.type;
         const labelCount = (aggData.labels || []).length;
@@ -1245,18 +1336,61 @@ const searchOutputStatsPaneMethods = {
             const points = aggData.points || [];
             const s0 = (chart.series || [])[0] || {};
             const s1 = (chart.series || [])[1] || {};
-            const dsLabel = (s0.label || s0.metricId || 'X') + ' vs ' + (s1.label || s1.metricId || 'Y');
+            const s2 = (chart.series || [])[2] || {};
+            const xLabel = this._statsResolveSeriesLabel(s0, catalog);
+            const yLabel = this._statsResolveSeriesLabel(s1, catalog);
+            const rLabel = type === 'bubble' ? this._statsResolveSeriesLabel(s2, catalog) : '';
             return {
                 type: type === 'bubble' ? 'bubble' : 'scatter',
                 data: {
                     datasets: [{
-                        label: dsLabel,
+                        label: xLabel + ' vs ' + yLabel,
                         data: points.map((p) => ({ x: p.x, y: p.y, r: p.r, label: p.label })),
                         backgroundColor: theme.brand,
                         borderColor: theme.brand
                     }]
                 },
-                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            beginAtZero: true,
+                            title: this._statsScaleTitle(xLabel, theme),
+                            ticks: { color: theme.muted, font: { size: 10 } },
+                            grid: { color: theme.border }
+                        },
+                        y: {
+                            type: 'linear',
+                            beginAtZero: true,
+                            title: this._statsScaleTitle(yLabel, theme),
+                            ticks: { color: theme.muted, font: { size: 10 } },
+                            grid: { color: theme.border }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => {
+                                    const pt = items[0] && items[0].raw;
+                                    return (pt && pt.label) ? pt.label : '';
+                                },
+                                label: (ctx) => {
+                                    const pt = ctx.raw || {};
+                                    const x = dash._formatStatsScorecardValue(ctx.parsed.x);
+                                    const y = dash._formatStatsScorecardValue(ctx.parsed.y);
+                                    let text = xLabel + ': ' + x + ', ' + yLabel + ': ' + y;
+                                    if (type === 'bubble' && pt.r != null) {
+                                        text += ', ' + (rLabel || 'Size') + ': ' + Math.round(pt.r);
+                                    }
+                                    return text;
+                                }
+                            }
+                        }
+                    }
+                }
             };
         }
 
@@ -1279,7 +1413,8 @@ const searchOutputStatsPaneMethods = {
 
         if (type === 'histogram') {
             const ds = (aggData.datasets || [])[0] || { label: '', data: [] };
-            const labelCount = (aggData.labels || []).length;
+            const histLabelCount = (aggData.labels || []).length;
+            const metricLabel = ds.label || this._statsResolveSeriesLabel((chart.series || [])[0], catalog);
             return {
                 type: 'bar',
                 data: {
@@ -1296,16 +1431,18 @@ const searchOutputStatsPaneMethods = {
                     maintainAspectRatio: false,
                     scales: {
                         x: {
+                            title: this._statsScaleTitle(metricLabel, theme),
                             ticks: {
                                 color: theme.muted,
                                 font: { size: 10 },
-                                maxRotation: labelCount > 6 ? 45 : 0,
+                                maxRotation: histLabelCount > 6 ? 45 : 0,
                                 minRotation: 0
                             },
                             grid: { color: theme.border }
                         },
                         y: {
                             beginAtZero: true,
+                            title: this._statsScaleTitle('Task count', theme),
                             ticks: {
                                 color: theme.muted,
                                 font: { size: 10 },
@@ -1343,10 +1480,23 @@ const searchOutputStatsPaneMethods = {
                     pointBorderColor: color
                 };
             });
+            const circularLegend = this._statsCircularChartLegend(theme, labelCount, containerWidth || 0);
             return {
                 type: 'radar',
                 data: { labels: aggData.labels, datasets },
-                options: this._buildChartJsOptions(chart, theme, chartJsCtx)
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: this._statsRadialScale(theme)
+                    },
+                    plugins: {
+                        legend: datasets.length > 1 ? circularLegend : { display: false }
+                    },
+                    onResize: (chartInst, size) => {
+                        this._statsApplyCircularLegendPosition(chartInst, size.width);
+                    }
+                }
             };
         }
 
@@ -1460,7 +1610,8 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
-                        stack: 'line-' + valueScale
+                        stack: 'line-' + valueScale,
+                        statsLegendHidden: true
                     }));
                     return;
                 }
@@ -1522,11 +1673,35 @@ const searchOutputStatsPaneMethods = {
             }
             chartDatasets.push(base);
         });
-        return {
+        const barConfig = {
             type: 'bar',
             data: { labels: aggData.labels, datasets: chartDatasets },
             options: this._buildChartJsOptions(chart, theme, chartJsCtx)
         };
+        const axisTitles = this._statsBarLineAxisTitles(chart, catalog);
+        const barHorizontal = chart.orientation === 'horizontal';
+        const barScales = barConfig.options && barConfig.options.scales;
+        if (barScales) {
+            if (barHorizontal) {
+                if (barScales.y && axisTitles.categoryTitle) {
+                    barScales.y.title = this._statsScaleTitle(axisTitles.categoryTitle, theme);
+                }
+                if (barScales.x && axisTitles.primaryTitle) {
+                    barScales.x.title = this._statsScaleTitle(axisTitles.primaryTitle, theme);
+                }
+            } else {
+                if (barScales.x && axisTitles.categoryTitle) {
+                    barScales.x.title = this._statsScaleTitle(axisTitles.categoryTitle, theme);
+                }
+                if (barScales.y && axisTitles.primaryTitle) {
+                    barScales.y.title = this._statsScaleTitle(axisTitles.primaryTitle, theme);
+                }
+                if (barScales.y1 && axisTitles.secondaryTitle) {
+                    barScales.y1.title = this._statsScaleTitle(axisTitles.secondaryTitle, theme);
+                }
+            }
+        }
+        return barConfig;
     },
 
     _attachStatsChartReorder(listEl) {
@@ -2207,7 +2382,10 @@ const searchOutputStatsPaneMethods = {
         const metricOpts = metricList.map((m) =>
             '<option value="' + dashEscHtml(m.id) + '"' + (s.metricId === m.id ? ' selected' : '') + '>' + dashEscHtml(m.label) + '</option>'
         ).join('');
-        const aggOpts = aggList.map((a) =>
+        const aggListForSeries = s.metricId === 'count'
+            ? aggList.filter((a) => a.id === 'count')
+            : aggList;
+        const aggOpts = aggListForSeries.map((a) =>
             '<option value="' + dashEscHtml(a.id) + '"' + (s.agg === a.id ? ' selected' : '') + '>' + dashEscHtml(a.label) + '</option>'
         ).join('');
         const segmentAllowed = engine.seriesAllowsSegment
@@ -2215,11 +2393,13 @@ const searchOutputStatsPaneMethods = {
             : false;
         const showSeriesLabel = !typeMeta.skipGroupBy;
         const showRemove = maxSeries > 1 && seriesCount > minSeries;
-        const headerLabel = typeMeta.skipGroupBy ? 'Metric' : ('Series ' + (i + 1));
+        const showCardHeader = !typeMeta.skipGroupBy;
+        const headerLabel = 'Series ' + (i + 1);
 
-        const metricField = this._statsBuilderField('Metric',
-            '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + styles.inputStyle + '">' + metricOpts + '</select>',
-            { styles });
+        const metricSelect = '<select data-wf-dash-stats-draft="series-metric" data-series-idx="' + i + '" style="' + styles.inputStyle + '">' + metricOpts + '</select>';
+        const metricField = typeMeta.skipAggregation
+            ? metricSelect
+            : this._statsBuilderField('Metric', metricSelect, { styles });
         const aggField = this._statsBuilderField('Aggregation',
             '<select data-wf-dash-stats-draft="series-agg" data-series-idx="' + i + '" style="' + styles.inputStyle + '">' + aggOpts + '</select>',
             { styles });
@@ -2299,10 +2479,14 @@ const searchOutputStatsPaneMethods = {
             : '';
 
         return '<div data-wf-dash-stats-series-row="' + i + '" style="' + styles.cardStyle + '">'
-            + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">'
-            + '<div style="' + styles.sectionLabel + ' margin-bottom: 0;">' + headerLabel + '</div>'
-            + removeBtn
-            + '</div>'
+            + (showCardHeader
+                ? ('<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">'
+                    + '<div style="' + styles.sectionLabel + ' margin-bottom: 0;">' + headerLabel + '</div>'
+                    + removeBtn
+                    + '</div>')
+                : (showRemove
+                    ? ('<div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">' + removeBtn + '</div>')
+                    : ''))
             + row1Html
             + row2Html
             + row3Html
@@ -2425,6 +2609,7 @@ const searchOutputStatsPaneMethods = {
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         const series = [];
+        const draftSeries = draft.series || [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
             const metricEl = row.querySelector('[data-wf-dash-stats-draft="series-metric"]');
             const aggEl = row.querySelector('[data-wf-dash-stats-draft="series-agg"]');
@@ -2434,10 +2619,12 @@ const searchOutputStatsPaneMethods = {
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
             const spreadEl = row.querySelector('[data-wf-dash-stats-draft="series-spread"]');
-            if (!metricEl || !aggEl) return;
+            if (!metricEl) return;
+            const rowIdx = Number(row.getAttribute('data-wf-dash-stats-series-row'));
+            const prev = Number.isInteger(rowIdx) && rowIdx >= 0 ? draftSeries[rowIdx] : null;
             const entry = {
                 metricId: metricEl.value,
-                agg: aggEl.value,
+                agg: aggEl ? aggEl.value : ((prev && prev.agg) || 'count'),
                 label: labelEl ? labelEl.value : ''
             };
             if (renderEl) entry.renderAs = renderEl.value === 'line' ? 'line' : 'bar';
@@ -2506,13 +2693,17 @@ const searchOutputStatsPaneMethods = {
                 draft.groupBy = '__scope__';
                 draft.series = (draft.series || []).slice(0, 1);
                 if (draft.type === 'histogram') {
-                    const numeric = (catalog.metrics || []).filter((m) => m.id !== 'count');
-                    const pick = (numeric[0] && numeric[0].id) || 'prompt_version_count';
+                    const pick = this._statsPickHistogramMetric(catalog);
                     if (!draft.series.length) {
                         draft.series = [{ metricId: pick, agg: 'count', label: '' }];
                     } else if (draft.series[0].metricId === 'count') {
                         draft.series[0].metricId = pick;
                         draft.series[0].agg = 'count';
+                    } else {
+                        const metric = catalog.metrics.find((m) => m.id === draft.series[0].metricId);
+                        if (!metric || (metric.requiresHydration && (metric.sampleCount || 0) === 0)) {
+                            draft.series[0].metricId = pick;
+                        }
                     }
                 } else if (!draft.series.length) {
                     draft.series = [{ metricId: 'count', agg: 'count', label: '' }];
@@ -2666,10 +2857,17 @@ const searchOutputStatsPaneMethods = {
         for (const chart of (layout && layout.charts) || []) {
             const agg = engine.aggregateChart(chart, items, catalog, ctx);
             if (chart.type === 'scorecard') {
-                if (agg.value != null && Number.isFinite(agg.value)) {
+                extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
+                    + dashEscHtml(this._formatStatsScorecardValue(agg.value))
+                    + (agg.subtitle ? ' (' + dashEscHtml(agg.subtitle) + ')' : '')
+                    + '</div>';
+                continue;
+            }
+            if (!this._statsChartHasRenderableData(chart, agg)) {
+                const hint = this._statsChartEmptyMessage(chart, agg, catalog);
+                if (hint) {
                     extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
-                        + dashEscHtml(String(agg.value)) + (agg.subtitle ? ' (' + dashEscHtml(agg.subtitle) + ')' : '')
-                        + '</div>';
+                        + dashEscHtml(hint) + '</div>';
                 }
                 continue;
             }
@@ -2677,8 +2875,16 @@ const searchOutputStatsPaneMethods = {
             const labelCount = (agg.labels || []).length;
             if (!pointCount && !labelCount) continue;
             if (pointCount) {
+                const s0 = (chart.series || [])[0] || {};
+                const s1 = (chart.series || [])[1] || {};
+                const xLabel = this._statsResolveSeriesLabel(s0, catalog);
+                const yLabel = this._statsResolveSeriesLabel(s1, catalog);
                 extra += '<div style="font-size: 11px; margin-top: 8px;"><strong>' + dashEscHtml(chart.title) + ':</strong> '
-                    + dashEscHtml(agg.points.map((p) => (p.label || '') + ' (' + p.x + ', ' + p.y + ')').join('; '))
+                    + dashEscHtml(agg.points.map((p) => {
+                        const name = p.label ? p.label + ' ' : '';
+                        return name + '(' + xLabel + ' ' + this._formatStatsScorecardValue(p.x)
+                            + ', ' + yLabel + ' ' + this._formatStatsScorecardValue(p.y) + ')';
+                    }).join('; '))
                     + '</div>';
                 continue;
             }
@@ -2803,7 +3009,6 @@ const searchOutputStatsPaneMethods = {
         for (const { chart, validation } of validations) {
             if (!validation.ok || chart.type !== 'scorecard') continue;
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
-            if (!this._statsChartHasRenderableData(chart, aggData)) continue;
             this._renderStatsScorecardEl(chart, aggData);
             rendered += 1;
         }
@@ -2846,7 +3051,7 @@ const searchOutputStatsPaneMethods = {
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
             if (!this._statsChartHasRenderableData(chart, aggData)) continue;
             const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth);
+            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
             charts[chart.id] = new Chart(canvas, config);
             rendered += 1;
         }
@@ -3907,7 +4112,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.29',
+    _version: '5.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

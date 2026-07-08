@@ -677,8 +677,25 @@ function statsFindMetric(catalog, metricId) {
 
 function statsAggregationsForChartType(chartType) {
     const meta = statsGetChartTypeMeta(chartType);
-    if (meta.allowCountAxis) return STATS_AGGREGATIONS;
-    return STATS_AGGREGATIONS.filter((a) => a.id !== 'count');
+    const type = statsNormalizeChartType(chartType);
+    let aggs = meta.allowCountAxis ? STATS_AGGREGATIONS : STATS_AGGREGATIONS.filter((a) => a.id !== 'count');
+    if (type === 'pie' || type === 'polarArea') {
+        aggs = aggs.filter((a) => a.id !== 'stddev');
+    }
+    return aggs;
+}
+
+function statsAggDataHasFiniteValues(chart, aggData) {
+    const type = statsNormalizeChartType(chart && chart.type);
+    if (type === 'scorecard') {
+        return aggData.value != null && Number.isFinite(aggData.value);
+    }
+    if ((aggData.points || []).some((p) => p != null && Number.isFinite(p.x) && Number.isFinite(p.y))) {
+        return true;
+    }
+    return (aggData.datasets || []).some((ds) =>
+        (ds.data || []).some((v) => v != null && Number.isFinite(v))
+    );
 }
 
 function statsSeriesMetricValue(item, seriesEntry, getMetricValue) {
@@ -762,6 +779,9 @@ function statsValidateChart(chart, catalog, items, ctx) {
 
     for (const s of series) {
         if (s.metricId === 'count') {
+            if (s.agg !== 'count') {
+                missing.push({ id: 'count', label: 'Count metric requires Count aggregation' });
+            }
             if (!meta.allowCountAxis && s.agg === 'count') {
                 missing.push({ id: 'count', label: 'Numeric metric' });
             }
@@ -1404,7 +1424,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1431,6 +1451,7 @@ const plugin = {
             chartFiltersActive: (chartFilters, listBounds) => statsChartFiltersActive(chartFilters, listBounds),
             getChartTypeMeta: (type) => statsGetChartTypeMeta(type),
             aggregationsForChartType: (type) => statsAggregationsForChartType(type),
+            aggDataHasFiniteValues: (chart, aggData) => statsAggDataHasFiniteValues(chart, aggData),
             chartTypes: () => STATS_CHART_TYPES.slice(),
             aggregations: () => STATS_AGGREGATIONS.slice(),
             chartHeightMin: () => STATS_CHART_HEIGHT_MIN,
