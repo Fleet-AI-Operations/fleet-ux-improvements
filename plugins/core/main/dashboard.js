@@ -11,6 +11,7 @@
 
 const DASH_SIDE_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-side-panel-width';
 const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-max-width';
+const DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-hidden';
 const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
 const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
@@ -99,7 +100,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.13',
+    _version: '9.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -172,6 +173,9 @@ const plugin = {
             readStatsPanelHiddenPref: () => self._readStatsPanelHiddenPref(),
             writeStatsPanelHiddenPref: (hidden) => self._writeStatsPanelHiddenPref(hidden),
             applyStatsPanelLayout: (root) => self._applyStatsPanelLayout(root),
+            readResultsPanelHiddenPref: () => self._readResultsPanelHiddenPref(),
+            writeResultsPanelHiddenPref: (hidden) => self._writeResultsPanelHiddenPref(hidden),
+            applyResultsPanelLayout: (root) => self._applyResultsPanelLayout(root),
             scheduleSplitLayoutSync: () => self._scheduleSplitLayoutSync(),
             pagerChevronSvg: (dir) => self._pagerChevronSvg(dir),
             paginationMeta: (total, pageSize, pageHolder) => self._paginationMeta(total, pageSize, pageHolder),
@@ -258,6 +262,11 @@ const plugin = {
             leftTab: 'search',
             statsTab: 'stats',
             statsUseFiltered: true,
+            ratingsHideProvisional: false,
+            ratingsSortKey: null,
+            ratingsNameFilter: '',
+            ratingsExpandedWorkers: null,
+            ratingsFromResults: false,
             statsCharts: null,
             statsLayout: null,
             statsViewMode: 'dashboard',
@@ -1269,6 +1278,22 @@ const plugin = {
         }
     },
 
+    _readResultsPanelHiddenPref() {
+        try {
+            const raw = Storage.getData(DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY, null);
+            return raw === 'true';
+        } catch (_e) { /* fall through */ }
+        return false;
+    },
+
+    _writeResultsPanelHiddenPref(hidden) {
+        try {
+            Storage.setData(DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
+        } catch (e) {
+            Logger.warn('dashboard: failed to write results panel hidden pref', e);
+        }
+    },
+
     _readStatsPanelWidthPref() {
         try {
             const raw = Storage.getData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, null);
@@ -1313,6 +1338,10 @@ const plugin = {
             + ' style="' + this._splitPanelHandleStyle() + '">' + this._splitPanelHandleGripHtml() + '</div>';
     },
 
+    _resultsCollapseSliverHtml() {
+        return '<div data-wf-dash-results-collapse-sliver aria-hidden="true"></div>';
+    },
+
     _splitPanelAsideStyle(widthPx) {
         const w = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx || DASH_SIDE_PANEL_MIN_WIDTH));
         return 'width: ' + w + 'px; min-width: ' + DASH_SIDE_PANEL_MIN_WIDTH + 'px; flex-shrink: 0;'
@@ -1345,9 +1374,11 @@ const plugin = {
     _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
         const scope = scopeKey || 'dashboard';
         const width = this._readSidePanelWidthPref(scope);
+        const resultsSliver = scope === 'dashboard' ? this._resultsCollapseSliverHtml() : '';
         return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
+            + resultsSliver
             + this._splitPanelRightHtml(rightHtml, scope, statsHtml)
             + '</section>';
     },
@@ -1369,7 +1400,16 @@ const plugin = {
         const scope = root ? (root.getAttribute('data-wf-dash-split-scope') || 'dashboard') : 'dashboard';
         const handleReserve = this._splitPanelHandleReserve(scope);
         const statsW = this._statsColumnEffectiveWidth(root);
-        return { basis, scope, handleReserve, leftW, statsW };
+        const resultsSliverW = this._resultsSliverEffectiveWidth(root);
+        return { basis, scope, handleReserve, leftW, statsW, resultsSliverW };
+    },
+
+    _resultsSliverEffectiveWidth(root) {
+        if (!root) return 0;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return 0;
+        if (this._readResultsPanelHiddenPref()) return DASH_STATS_PANEL_COLLAPSED_WIDTH;
+        return 0;
     },
 
     _statsColumnEffectiveWidth(root) {
@@ -1385,6 +1425,7 @@ const plugin = {
     _scheduleSplitLayoutSync() {
         requestAnimationFrame(() => {
             this._applyAllSidePanelWidths();
+            this._applyAllResultsPanelLayouts();
             this._applyAllStatsPanelLayouts();
             this._applyAllResultsPanelMaxWidths();
         });
@@ -1408,8 +1449,11 @@ const plugin = {
     },
 
     _availableResultsPanelWidth(root) {
-        const { basis, handleReserve, leftW, statsW } = this._splitRootMetrics(root);
-        return Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(basis - leftW - handleReserve - statsW));
+        const { basis, handleReserve, leftW, statsW, resultsSliverW } = this._splitRootMetrics(root);
+        return Math.max(
+            DASH_SIDE_PANEL_MIN_RESULTS_WIDTH,
+            Math.round(basis - leftW - handleReserve - statsW - resultsSliverW)
+        );
     },
 
     _clampResultsPanelMaxWidth(root, widthPx) {
@@ -1441,13 +1485,13 @@ const plugin = {
     },
 
     _clampSidePanelWidth(root, widthPx) {
-        const { basis, handleReserve, statsW } = this._splitRootMetrics(root);
+        const { basis, handleReserve, statsW, resultsSliverW } = this._splitRootMetrics(root);
         const viewportW = this._pageWindow().innerWidth || basis;
         const viewportCap = Math.floor(viewportW * DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO);
         const max = Math.max(
             DASH_SIDE_PANEL_MIN_WIDTH,
             Math.min(
-                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve - statsW,
+                basis - DASH_SIDE_PANEL_MIN_RESULTS_WIDTH - handleReserve - statsW - resultsSliverW,
                 viewportCap
             )
         );
@@ -1483,6 +1527,7 @@ const plugin = {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
         if (scope !== 'dashboard') return;
+        if (this._readResultsPanelHiddenPref()) return;
         const col = root.querySelector('[data-wf-dash-results-column]');
         if (!col) return;
         const statsHidden = statsHiddenOverride != null
@@ -1572,6 +1617,40 @@ const plugin = {
         if (!this._modal) return;
         this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
             this._applyStatsPanelLayout(root);
+        });
+    },
+
+    _applyResultsPanelLayout(root) {
+        if (!root) return;
+        const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+        if (scope !== 'dashboard') return;
+        const splitRight = root.querySelector('[data-wf-dash-split-right]');
+        const sliver = root.querySelector('[data-wf-dash-results-collapse-sliver]');
+        const wasHidden = root.getAttribute('data-wf-dash-results-collapsed') === 'true';
+        const hidden = this._readResultsPanelHiddenPref();
+        const collapsedVal = hidden ? 'true' : 'false';
+        root.setAttribute('data-wf-dash-results-collapsed', collapsedVal);
+        if (splitRight) splitRight.setAttribute('data-wf-dash-results-collapsed', collapsedVal);
+        if (sliver) sliver.setAttribute('aria-hidden', hidden ? 'false' : 'true');
+        this._applyStatsPanelWidth(root);
+        if (!hidden) {
+            this._applyResultsPanelMaxWidth(root);
+        }
+        if (typeof this._syncResultsPanelCollapseUi === 'function') {
+            this._syncResultsPanelCollapseUi();
+        }
+        if (wasHidden && !hidden) {
+            requestAnimationFrame(() => {
+                this._applyResultsPanelMaxWidth(root);
+                this._applyStatsPanelWidth(root);
+            });
+        }
+    },
+
+    _applyAllResultsPanelLayouts() {
+        if (!this._modal) return;
+        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+            this._applyResultsPanelLayout(root);
         });
     },
 
@@ -1892,6 +1971,35 @@ const plugin = {
             '  height: auto !important;',
             '  min-height: 3.5rem !important;',
             '  padding: 8px 4px !important;',
+            '}',
+            '[data-wf-dash-results-collapse-sliver] {',
+            '  display: none;',
+            '}',
+            '[data-wf-dash-split-root][data-wf-dash-results-collapsed="true"] [data-wf-dash-results-collapse-sliver] {',
+            '  display: flex !important;',
+            '  flex-direction: column !important;',
+            '  align-items: flex-start !important;',
+            '  justify-content: flex-start !important;',
+            '  flex-shrink: 0 !important;',
+            '  width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  min-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  max-width: ' + DASH_STATS_PANEL_COLLAPSED_WIDTH + 'px !important;',
+            '  height: 100% !important;',
+            '  min-height: 100% !important;',
+            '  padding: 6px 0 6px 2px !important;',
+            '  box-sizing: border-box !important;',
+            '}',
+            '[data-wf-dash-split-root][data-wf-dash-results-collapsed="true"] [data-wf-dash-results-toggle] {',
+            '  writing-mode: vertical-rl !important;',
+            '  text-orientation: mixed !important;',
+            '  white-space: nowrap !important;',
+            '  height: auto !important;',
+            '  min-height: 3.5rem !important;',
+            '  padding: 8px 4px !important;',
+            '}',
+            '[data-wf-dash-split-root][data-wf-dash-results-collapsed="true"] [data-wf-dash-results-column],',
+            '[data-wf-dash-split-root][data-wf-dash-results-collapsed="true"] [data-wf-dash-results-width-handle] {',
+            '  display: none !important;',
             '}'
         ].join('\n');
         this._modal.appendChild(style);
@@ -1915,7 +2023,9 @@ const plugin = {
                     this._applySidePanelWidth(root, next);
                     if (scope === 'dashboard') {
                         this._applyStatsPanelWidth(root);
-                        this._applyResultsPanelMaxWidth(root);
+                        if (!this._readResultsPanelHiddenPref()) {
+                            this._applyResultsPanelMaxWidth(root);
+                        }
                     }
                 },
                 onUp: () => {
@@ -1924,7 +2034,9 @@ const plugin = {
                     this._applySidePanelWidth(root, finalWidth);
                     if (scope === 'dashboard') {
                         this._applyStatsPanelWidth(root);
-                        this._applyResultsPanelMaxWidth(root);
+                        if (!this._readResultsPanelHiddenPref()) {
+                            this._applyResultsPanelMaxWidth(root);
+                        }
                     }
                     Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
                 }
@@ -1941,6 +2053,7 @@ const plugin = {
             const root = handle.closest('[data-wf-dash-split-root]');
             const col = root ? root.querySelector('[data-wf-dash-results-column]') : null;
             if (!root || !col) return;
+            if (this._readResultsPanelHiddenPref()) return;
             const colLeft = col.getBoundingClientRect().left;
             const splitRight = root.querySelector('[data-wf-dash-split-right]');
             const statsCol = root.querySelector('[data-wf-dash-stats-column]');

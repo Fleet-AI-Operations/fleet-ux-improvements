@@ -17,7 +17,6 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
 const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
-const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
@@ -33,9 +32,9 @@ const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
-const DASH_TASKS_PAGE_SIZE = 100;
-const DASH_QA_PAGE_SIZE = 100;
-const DASH_DISPUTES_PAGE_SIZE = 100;
+const DASH_TASKS_PAGE_SIZE = 250;
+const DASH_QA_PAGE_SIZE = 250;
+const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
@@ -3871,6 +3870,8 @@ const searchOutputCoreMethods = {
             this._validateRangeUi();
             if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
+            } else if ((this._state.statsTab || 'stats') === 'ratings') {
+                this._renderRatingsPanel();
             }
         };
 
@@ -3974,7 +3975,6 @@ const searchOutputCoreMethods = {
             const hydratedItems = (this._state.cachedItems || []).filter(
                 (it) => taskIdSet.has(it.task.id) && !it.hydrated
             );
-            const feedbackIdsToLoad = [];
             for (const item of this._state.cachedItems || []) {
                 if (!taskIdSet.has(item.task.id) || item.hydrated) continue;
                 const hist = enrichment.get(item.task.id);
@@ -3992,17 +3992,9 @@ const searchOutputCoreMethods = {
                     } else {
                         delete item.task.initialCreationTimeSeconds;
                     }
-                    for (const entry of hist.allFeedback || []) {
-                        if (entry.id && entry.display && this._shouldShowHelpfulness(entry.display, entry.id)) {
-                            feedbackIdsToLoad.push(entry.id);
-                        }
-                    }
                     if (item.selectedFeedbackId) {
                         const entry = (item.task.allFeedback || []).find((f) => f.id === item.selectedFeedbackId);
                         if (entry && entry.display) item.qaFeedback = entry.display;
-                        if (entry && entry.display && this._shouldShowHelpfulness(entry.display, item.selectedFeedbackId)) {
-                            feedbackIdsToLoad.push(item.selectedFeedbackId);
-                        }
                     }
                 }
                 item.hydrated = true;
@@ -4020,16 +4012,6 @@ const searchOutputCoreMethods = {
                 }
             } catch (e) {
                 Logger.warn('search-output: dispute/flag overlay failed', e);
-            }
-            const uniqueFeedbackIds = [...new Set(feedbackIdsToLoad.map((id) => String(id).trim()).filter(Boolean))];
-            if (uniqueFeedbackIds.length > 0) {
-                try {
-                    await this._fetchHelpfulnessRatingsBatch(uniqueFeedbackIds);
-                    for (const id of uniqueFeedbackIds) this._patchHelpfulnessBlock(id);
-                    this._refreshHelpfulnessFilterUi();
-                } catch (e) {
-                    Logger.warn('search-output: helpfulness hydration failed', e);
-                }
             }
             Logger.log('dashboard: hydrated ' + updated + ' card(s)');
             return updated;
@@ -4116,40 +4098,6 @@ const searchOutputCoreMethods = {
         }
         Logger.log('dashboard: deep search hydrate complete — ' + hydratedTotal + ' card(s)');
         return hydratedTotal;
-    },
-
-    async _hydrateCard(itemId) {
-        const item = this._findCachedItem(itemId);
-        if (!item || item.hydrated) {
-            this._logDashApiSkip('hydrate-card', item && item.hydrated ? 'already hydrated' : 'item not found', String(itemId || ''));
-            return;
-        }
-        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            this._logDashApiSkip('hydrate-card', 'dashboardData not loaded', String(itemId || ''));
-            return;
-        }
-        const ui = this._getHydrateUi(itemId);
-        if (ui.status === 'loading') {
-            this._logDashApiSkip('hydrate-card', 'already loading', String(itemId || ''));
-            return;
-        }
-        this._logDashApiClick('hydrate-card', String(itemId || ''));
-        ui.status = 'loading';
-        this._patchTaskCard(itemId);
-        try {
-            await this._hydrateItems([item]);
-            this._onScopeDataEnriched();
-            this._patchTaskCard(itemId);
-            Logger.log('dashboard: card hydrated in place — ' + itemId);
-        } catch (err) {
-            if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('dashboard: card hydrate failed — ' + itemId, err);
-            }
-        } finally {
-            ui.status = 'idle';
-            this._patchTaskCard(itemId);
-            this._syncBulkHydrateUi();
-        }
     },
 
     async _prehydrateInitialBatchBeforeDisplay() {
@@ -4580,11 +4528,17 @@ function attachSearchOutputListeners(modal, dash) {
             }, { passive: true });
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
+        dash._applyResultsPanelLayoutOnOpen(modal);
     modal.addEventListener('click', (e) => {
             const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
             if (statsScopeBtn && modal.contains(statsScopeBtn)) {
                 const scope = statsScopeBtn.getAttribute('data-wf-dash-stats-scope');
                 dash._setStatsScope(scope !== 'all');
+                return;
+            }
+            const ratingsGenerateBtn = e.target.closest('[data-wf-dash-ratings-generate]');
+            if (ratingsGenerateBtn && modal.contains(ratingsGenerateBtn)) {
+                dash._generateRatingsFromResults();
                 return;
             }
             const statsBuildBtn = e.target.closest('[data-wf-dash-stats-build]');
@@ -4611,6 +4565,11 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._exportStatsChart(statsExportChartBtn.getAttribute('data-wf-dash-stats-chart-export'));
                 return;
             }
+            const statsExportChartImageBtn = e.target.closest('[data-wf-dash-stats-chart-export-image]');
+            if (statsExportChartImageBtn && modal.contains(statsExportChartImageBtn)) {
+                void dash._exportStatsChartImage(statsExportChartImageBtn.getAttribute('data-wf-dash-stats-chart-export-image'));
+                return;
+            }
             const statsResetDashboardBtn = e.target.closest('[data-wf-dash-stats-reset-dashboard]');
             if (statsResetDashboardBtn && modal.contains(statsResetDashboardBtn)) {
                 dash._resetStatsDashboard();
@@ -4619,6 +4578,11 @@ function attachSearchOutputListeners(modal, dash) {
             const statsExportDashboardBtn = e.target.closest('[data-wf-dash-stats-export-dashboard]');
             if (statsExportDashboardBtn && modal.contains(statsExportDashboardBtn)) {
                 dash._exportStatsDashboard();
+                return;
+            }
+            const statsExportDashboardImageBtn = e.target.closest('[data-wf-dash-stats-export-dashboard-image]');
+            if (statsExportDashboardImageBtn && modal.contains(statsExportDashboardImageBtn)) {
+                void dash._exportStatsDashboardImage();
                 return;
             }
             const statsImportJsonBtn = e.target.closest('[data-wf-dash-stats-import-json]');
@@ -4652,6 +4616,29 @@ function attachSearchOutputListeners(modal, dash) {
                 const workerId = exportBtn.getAttribute('data-wf-dash-rating-worker');
                 const format = exportBtn.getAttribute('data-wf-dash-rating-export');
                 if (workerId && format) dash._handleRatingExport(workerId, format);
+                return;
+            }
+            const ratingExpandBtn = e.target.closest('[data-wf-dash-rating-expand]');
+            if (ratingExpandBtn && modal.contains(ratingExpandBtn)) {
+                const workerId = String(ratingExpandBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                if (workerId) {
+                    const expanded = dash._ensureRatingsExpandedWorkers();
+                    const nextExpanded = !expanded.has(workerId);
+                    if (nextExpanded) expanded.add(workerId);
+                    else expanded.delete(workerId);
+                    Logger.log('search-output: ratings card ' + (nextExpanded ? 'expanded' : 'collapsed') + ' — ' + workerId);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
+            const ratingsBulkExportBtn = e.target.closest('[data-wf-dash-ratings-export-bulk]');
+            if (ratingsBulkExportBtn && modal.contains(ratingsBulkExportBtn)) {
+                dash._exportFilteredRatingsJson();
+                return;
+            }
+            const taskExportBtn = e.target.closest('#wf-dash-export-tasks-json');
+            if (taskExportBtn && modal.contains(taskExportBtn)) {
+                dash._exportFilteredTasksJson();
                 return;
             }
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
@@ -4925,14 +4912,6 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) dash._dropResultFromSearch(itemId);
                 return;
             }
-            const hydrateBtn = e.target.closest('[data-wf-dash-hydrate]');
-            if (hydrateBtn && modal.contains(hydrateBtn)) {
-                e.stopPropagation();
-                e.preventDefault();
-                const itemId = hydrateBtn.getAttribute('data-item-id');
-                if (itemId) void dash._hydrateCard(itemId);
-                return;
-            }
             const userStoryBtn = e.target.closest('[data-wf-dash-user-story]');
             if (userStoryBtn && modal.contains(userStoryBtn)) {
                 e.stopPropagation();
@@ -4963,6 +4942,18 @@ function attachSearchOutputListeners(modal, dash) {
             }
     });
         modal.addEventListener('change', (e) => {
+            const ratingsHideProv = e.target.closest('[data-wf-dash-ratings-hide-provisional]');
+            if (ratingsHideProv && modal.contains(ratingsHideProv)) {
+                dash._state.ratingsHideProvisional = ratingsHideProv.checked;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
+            const ratingsSort = e.target.closest('[data-wf-dash-ratings-sort]');
+            if (ratingsSort && modal.contains(ratingsSort)) {
+                dash._state.ratingsSortKey = ratingsSort.value;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
             const statsFilterCb = e.target;
             if (statsFilterCb && statsFilterCb.type === 'checkbox') {
                 const statsMsKey = statsFilterCb.getAttribute('data-wf-dash-ms');
@@ -4993,7 +4984,13 @@ function attachSearchOutputListeners(modal, dash) {
             dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
-            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"]');
+            const ratingsNameFilter = e.target.closest('[data-wf-dash-ratings-name-filter]');
+            if (ratingsNameFilter && modal.contains(ratingsNameFilter)) {
+                dash._state.ratingsNameFilter = ratingsNameFilter.value;
+                dash._renderRatingsPanel({ recompute: false });
+                return;
+            }
+            const statsDraftInput = e.target.closest('[data-wf-dash-stats-draft="title"], [data-wf-dash-stats-draft="series-label"], [data-wf-dash-stats-draft="height"]');
             if (statsDraftInput && modal.contains(statsDraftInput)) {
                 dash._syncStatsBuilderDraftFromForm();
                 dash._debounceStatsBuilderPreview();
@@ -5061,7 +5058,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.13',
+    _version: '7.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5112,6 +5109,9 @@ const plugin = {
                     if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                         dash._applyStatsPanelLayoutOnOpen(dash._modal);
                     }
+                    if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                        dash._applyResultsPanelLayoutOnOpen(dash._modal);
+                    }
                 });
             },
             onBuilt(modal, dash) {
@@ -5134,12 +5134,18 @@ const plugin = {
                 if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                     dash._applyStatsPanelLayoutOnOpen(modal);
                 }
+                if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                    dash._applyResultsPanelLayoutOnOpen(modal);
+                }
             },
             onActivate(modal, dash) {
                 requestAnimationFrame(() => {
                     dash._applyAllSidePanelWidths();
                     if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {
                         dash._applyStatsPanelLayoutOnOpen(modal);
+                    }
+                    if (typeof dash._applyResultsPanelLayoutOnOpen === 'function') {
+                        dash._applyResultsPanelLayoutOnOpen(modal);
                     }
                 });
             }

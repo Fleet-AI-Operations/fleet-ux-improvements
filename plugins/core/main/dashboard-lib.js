@@ -515,7 +515,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2141,6 +2141,11 @@ const plugin = {
                 const after = new Date(today);
                 after.setDate(after.getDate() - 7);
                 return { after, before: today, label: 'Last 7 Days' };
+            }
+            case '30d': {
+                const after = new Date(today);
+                after.setDate(after.getDate() - 30);
+                return { after, before: today, label: 'Last 30 Days' };
             }
             case 'last-week': {
                 const thisWeekStart = new Date(today);

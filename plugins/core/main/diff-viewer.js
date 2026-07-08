@@ -900,6 +900,7 @@ function _dvUpdateReelNavControls(slotIdx, modal) {
         const card = reelTrack.querySelector('.dv-reel-card[data-vi="' + lensIdx + '"]');
         const pre = card && card.querySelector('pre');
         if (pre) pre.setAttribute('data-dv-lens-pre', String(slotIdx));
+        _dvInvalidateLensPreCache(modal, slotIdx);
     }
 }
 
@@ -1697,13 +1698,22 @@ function _dvSlotPromptText(slot) {
     return (v && v.prompt) || '';
 }
 
+function _dvInvalidateLensPreCache(modal, idx) {
+    if (!modal || !modal._dvLensPreCache) return;
+    if (idx == null) modal._dvLensPreCache = null;
+    else delete modal._dvLensPreCache[idx];
+}
+
 function _dvGetLensPreRef(modal, idx) {
     if (!modal) return null;
+    const attr = 'data-dv-lens-pre';
+    const val = String(idx);
     if (modal._dvLensPreCache && modal._dvLensPreCache[idx]) {
         const cached = modal._dvLensPreCache[idx];
-        if (cached.isConnected) return cached;
+        if (cached.isConnected && cached.getAttribute(attr) === val) return cached;
+        delete modal._dvLensPreCache[idx];
     }
-    const el = modal.querySelector('[data-dv-lens-pre="' + idx + '"]');
+    const el = modal.querySelector('[' + attr + '="' + val + '"]');
     if (el) {
         if (!modal._dvLensPreCache) modal._dvLensPreCache = {};
         modal._dvLensPreCache[idx] = el;
@@ -2818,6 +2828,12 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-diff-equal {',
         '  color: var(--muted-foreground, #64748b);',
+        '  white-space: pre-wrap;',
+        '}',
+        '#wf-dash-modal .dv-reel-card pre span[style],',
+        '#wf-dash-modal #dv-free-base-diff span[style],',
+        '#wf-dash-modal #dv-free-compare-diff span[style] {',
+        '  white-space: pre-wrap;',
         '}',
         '#wf-dash-modal .dv-reel-card pre {',
         '  margin: 0;',
@@ -3034,7 +3050,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.0',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
 

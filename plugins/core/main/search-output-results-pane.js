@@ -17,7 +17,6 @@ const DASH_BOOTSTRAP_STORAGE_KEY = 'fleet-ux:dashboard-bootstrap';
 const DASH_RESULTS_MODE_STORAGE_KEY = 'fleet-ux:dashboard-results-mode';
 const DASH_INITIAL_HYDRATE_CAP = 500;
 const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
-const DASH_HYDRATE_TAB_BG = '#64748b';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
@@ -33,9 +32,9 @@ const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
-const DASH_TASKS_PAGE_SIZE = 100;
-const DASH_QA_PAGE_SIZE = 100;
-const DASH_DISPUTES_PAGE_SIZE = 100;
+const DASH_TASKS_PAGE_SIZE = 250;
+const DASH_QA_PAGE_SIZE = 250;
+const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
@@ -325,7 +324,9 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
+                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Export JSON</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
+                                <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
@@ -364,6 +365,68 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
+    },
+
+    _ensureResultsToggleButton() {
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        let btn = root ? root.querySelector('[data-wf-dash-results-toggle]') : null;
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.setAttribute('data-wf-dash-results-toggle', 'true');
+            btn.className = this._dashBtnClass('basic', 'nav');
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._toggleResultsPanelHidden();
+            });
+        }
+        return btn;
+    },
+
+    _syncResultsPanelCollapseUi() {
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        if (!root) return;
+        const dashApi = Context.dashboard;
+        const hidden = dashApi && typeof dashApi.readResultsPanelHiddenPref === 'function'
+            ? dashApi.readResultsPanelHiddenPref()
+            : false;
+        const btn = this._ensureResultsToggleButton();
+        const headerActions = root.querySelector('[data-wf-dash-results-header-actions]');
+        const sliver = root.querySelector('[data-wf-dash-results-collapse-sliver]');
+        btn.textContent = hidden ? 'Unhide' : 'Hide';
+        btn.title = hidden ? 'Show the results panel' : 'Hide the results panel';
+        if (hidden) {
+            if (sliver && btn.parentElement !== sliver) sliver.appendChild(btn);
+        } else if (headerActions && btn.parentElement !== headerActions) {
+            headerActions.appendChild(btn);
+        }
+    },
+
+    _toggleResultsPanelHidden() {
+        const dashApi = Context.dashboard;
+        if (!dashApi || typeof dashApi.readResultsPanelHiddenPref !== 'function') return;
+        const next = !dashApi.readResultsPanelHiddenPref();
+        dashApi.writeResultsPanelHiddenPref(next);
+        Logger.log('search-output-results-pane: results panel ' + (next ? 'hidden' : 'shown'));
+        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
+            dashApi.applyResultsPanelLayout(root);
+        } else {
+            this._syncResultsPanelCollapseUi();
+        }
+        if (typeof dashApi.scheduleSplitLayoutSync === 'function') {
+            dashApi.scheduleSplitLayoutSync();
+        }
+    },
+
+    _applyResultsPanelLayoutOnOpen(modal) {
+        const root = modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const dashApi = Context.dashboard;
+        if (root && dashApi && typeof dashApi.applyResultsPanelLayout === 'function') {
+            dashApi.applyResultsPanelLayout(root);
+            return;
+        }
+        this._syncResultsPanelCollapseUi();
     },
 
     _patchCardsForDisputeId(disputeId) {
@@ -1183,7 +1246,100 @@ const searchOutputResultsPaneMethods = {
         this._syncBulkHydrateUi();
         this._syncDiffIncludedUi();
         this._syncDropExcludedUi();
+        this._syncTaskExportUi();
         this._syncVersionModeDropdownUi();
+    },
+
+    _dashExportDateSlug() {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.exportDateSlug === 'function') return engine.exportDateSlug();
+        return new Date().toISOString().slice(0, 10);
+    },
+
+    _cloneJsonSafe(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            Logger.error('search-output-results-pane: JSON clone failed', e);
+            return null;
+        }
+    },
+
+    _buildTaskCardsExportPayload(items) {
+        const committed = this._state.committed || {};
+        const applied = this._state.appliedFilters || null;
+        const clonedItems = (items || [])
+            .map((item) => this._cloneJsonSafe(item))
+            .filter(Boolean);
+        return {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            search: {
+                authorCount: committed.authorCount,
+                authorLabels: committed.authorLabels,
+                ratingsEveryone: committed.ratingsEveryone,
+                includeTaskCreation: committed.includeTaskCreation,
+                includeQa: committed.includeQa,
+                includeDisputes: committed.includeDisputes,
+                includeSeniorReview: committed.includeSeniorReview,
+                afterLocal: committed.afterLocal,
+                beforeLocal: committed.beforeLocal,
+                searchKinds: committed.searchKinds,
+                retrieveMode: committed.retrieveMode,
+                retrieveLabel: committed.retrieveLabel
+            },
+            view: {
+                resultsKindTab: this._state.resultsKindTab || 'all',
+                versionMode: this._state.versionMode,
+                sortMetric: applied && applied.sortMetric,
+                sortOrder: applied && applied.sortOrder,
+                manualFilters: applied && applied.manualFilters,
+                manualAndOr: applied && applied.manualAndOr,
+                filteredCount: clonedItems.length,
+                cachedCount: (this._state.cachedItems || []).length,
+                scopeCount: this._getFilterScopeItems().length
+            },
+            items: clonedItems
+        };
+    },
+
+    _syncTaskExportUi() {
+        const btn = this._q('#wf-dash-export-tasks-json');
+        if (!btn) return;
+        if (!Context.isDevBranch) {
+            btn.style.display = 'none';
+            return;
+        }
+        const viewItems = this._getViewItems();
+        const show = Boolean(this._state.hasSearched)
+            && this._state.cachedItems !== null
+            && viewItems
+            && viewItems.length > 0
+            && !this._state.loading;
+        btn.style.display = show ? '' : 'none';
+        btn.disabled = !show;
+    },
+
+    _exportFilteredTasksJson() {
+        if (!Context.isDevBranch) {
+            Logger.warn('search-output-results-pane: task export skipped — not a dev build');
+            return;
+        }
+        const items = this._getViewItems();
+        if (!items || items.length === 0) {
+            Logger.warn('search-output-results-pane: task export skipped — no filtered items');
+            return;
+        }
+        const payload = this._buildTaskCardsExportPayload(items);
+        const filename = 'fleet-task-cards-' + this._dashExportDateSlug() + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        if (typeof this._downloadTextFile === 'function') {
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+        } else {
+            Logger.error('search-output-results-pane: task export failed — download helper unavailable');
+            return;
+        }
+        Logger.log('search-output-results-pane: task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
     },
 
     _syncDiffIncludedUi() {
@@ -1225,12 +1381,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _isTasksHydratingActive() {
-        if (this._state.hydrateBulkActive || this._state.autoHydrateActive) return true;
-        const ui = this._state.hydrateUi || {};
-        for (const key of Object.keys(ui)) {
-            if (ui[key] && ui[key].status === 'loading') return true;
-        }
-        return false;
+        return Boolean(this._state.hydrateBulkActive || this._state.autoHydrateActive);
     },
 
     _syncResultsHydrateBannerUi() {
@@ -1536,15 +1687,6 @@ const searchOutputResultsPaneMethods = {
             }
         }
         return versions[versions.length - 1].displayVersionNo;
-    },
-
-    _getHydrateUi(itemId) {
-        const id = String(itemId || '');
-        if (!id) return { status: 'idle' };
-        if (!this._state.hydrateUi[id]) {
-            this._state.hydrateUi[id] = { status: 'idle' };
-        }
-        return this._state.hydrateUi[id];
     },
 
     _getUserStoryUi(itemId) {
@@ -3875,9 +4017,11 @@ const searchOutputResultsPaneMethods = {
                 el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
                 return;
             }
-            const authorLabel = committed.authorLabels && committed.authorLabels.length > 0
-                ? committed.authorLabels.join(', ')
-                : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors');
+            const authorLabel = committed.ratingsEveryone
+                ? '@everyone'
+                : (committed.authorLabels && committed.authorLabels.length > 0
+                    ? committed.authorLabels.join(', ')
+                    : (committed.authorCount > 0 ? committed.authorCount + ' contributor(s)' : 'all contributors'));
             const scopeTotal = this._getFilterScopeItems().length;
             const tabs = this._resultsKindTabsMeta(committed);
             const activeTab = s.resultsKindTab || 'all';
@@ -4858,16 +5002,8 @@ const searchOutputResultsPaneMethods = {
             fuzzy: Boolean(item.highlightFuzzy),
             regex: Boolean(item.highlightRegex)
         });
-        const showHydrateTab = item.hydrated === false
-            && !(this._state.committed && this._state.committed.retrieveMode)
-            && !this._isTasksHydratingActive();
-        let hydrateTabHtml = '';
-        if (showHydrateTab) {
-            hydrateTabHtml = `<button type="button" data-wf-dash-hydrate="1" data-item-id="${dashEscHtml(itemId)}" style="flex-shrink: 0; min-width: 5.5rem; height: 24px; padding: 0 8px; font-size: 10px; font-weight: 600; border: none; border-radius: 6px 6px 0 0; background: ${DASH_HYDRATE_TAB_BG}; color: #fff; cursor: pointer;" title="Hydrate">Hydrate</button>`;
-        }
         const tabsRow = '<div class="wf-dash-card-tabs-row">'
                 + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
-                + hydrateTabHtml
                 + '</div>';
         const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
@@ -5065,7 +5201,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '1.6',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

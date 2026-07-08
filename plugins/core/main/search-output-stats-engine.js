@@ -51,15 +51,17 @@ const STATS_AGGREGATIONS = [
     { id: 'min', label: 'Min' },
     { id: 'max', label: 'Max' },
     { id: 'median', label: 'Median' },
-    { id: 'mode', label: 'Mode' }
+    { id: 'mode', label: 'Mode' },
+    { id: 'stddev', label: 'Std dev' }
 ];
 
 const STATS_SCORECARD_GROUP_BY = '__scope__';
+const STATS_ALL_GROUP_BY = '__all__';
 
 const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
 
 const STATS_CHART_TYPE_META = {
-    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 140 },
+    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120 },
     pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     barLine: {
         id: 'barLine',
@@ -76,17 +78,45 @@ const STATS_CHART_TYPE_META = {
     polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
     radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
-    bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true }
+    bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true },
+    histogram: {
+        id: 'histogram',
+        label: 'Histogram',
+        minSeries: 1,
+        maxSeries: 1,
+        allowCountAxis: false,
+        skipGroupBy: true,
+        skipAggregation: true,
+        defaultHeight: 220
+    },
+    bellCurve: {
+        id: 'bellCurve',
+        label: 'Bell curve',
+        minSeries: 1,
+        maxSeries: 1,
+        allowCountAxis: false,
+        skipGroupBy: true,
+        skipAggregation: true,
+        defaultHeight: 260
+    }
 };
 
 const STATS_CHART_TYPES = Object.values(STATS_CHART_TYPE_META);
 
-const STATS_HEIGHT_PRESETS = [
-    { id: 140, label: 'Scorecard' },
-    { id: 200, label: 'Compact' },
-    { id: 260, label: 'Default' },
-    { id: 320, label: 'Tall' }
-];
+const STATS_CHART_HEIGHT_MIN = 80;
+const STATS_CHART_HEIGHT_MAX = 600;
+const STATS_CHART_HEIGHT_STEP = 40;
+const STATS_CHART_HEIGHT_DEFAULT = 200;
+
+function statsNormalizeChartHeight(raw, fallback) {
+    const defaultFallback = Number.isFinite(Number(fallback))
+        ? Number(fallback)
+        : STATS_CHART_HEIGHT_DEFAULT;
+    let height = Number(raw);
+    if (!Number.isFinite(height)) height = defaultFallback;
+    height = Math.min(STATS_CHART_HEIGHT_MAX, Math.max(STATS_CHART_HEIGHT_MIN, height));
+    return Math.round(height / STATS_CHART_HEIGHT_STEP) * STATS_CHART_HEIGHT_STEP;
+}
 
 function statsNewChartId() {
     return 'chart-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
@@ -120,6 +150,17 @@ function statsNormalizeOrientation(raw) {
 
 function statsNormalizeLineAreaLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'origin';
+}
+
+function statsNormalizeSpread(raw) {
+    return raw === 'stddevBand' ? 'stddevBand' : 'none';
+}
+
+function statsSeriesSpreadAllowed(chartType, seriesEntry) {
+    if (statsNormalizeChartType(chartType) !== 'barLine') return false;
+    if (String(seriesEntry.agg || '') !== 'avg') return false;
+    if (seriesEntry.segmentBy) return false;
+    return true;
 }
 
 function statsNormalizeCategorySort(raw, seriesCount) {
@@ -261,6 +302,11 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySou
         const segmentRaw = s.segmentBy != null ? s.segmentBy : s.splitBy;
         entry.segmentBy = statsNormalizeSegmentBy(segmentRaw, groupBy);
     }
+    if (meta.needsRenderAs) {
+        entry.spread = statsSeriesSpreadAllowed(chartType, entry)
+            ? statsNormalizeSpread(s.spread)
+            : 'none';
+    }
     return entry;
 }
 
@@ -288,9 +334,7 @@ function statsNormalizeChartEntry(c) {
         type,
         groupBy,
         series,
-        height: Number.isFinite(Number(c.height))
-            ? Number(c.height)
-            : (meta.defaultHeight || 260),
+        height: statsNormalizeChartHeight(c.height, meta.defaultHeight || STATS_CHART_HEIGHT_DEFAULT),
         presetKey: c.presetKey != null ? String(c.presetKey) : null
     };
     if (meta.needsPointMode) {
@@ -494,6 +538,9 @@ function statsBuildPromptVersionCountOptions(items, getVersionCount) {
 
 function statsGetDimensionValues(item, dimKey, lib, ctx) {
     const task = item && item.task;
+    if (dimKey === STATS_ALL_GROUP_BY) {
+        return task ? [STATS_ALL_GROUP_BY] : [];
+    }
     if (!task) return [];
     const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
     const currentUserId = (ctx && ctx.currentUserId) || '';
@@ -618,6 +665,14 @@ function statsBuildCatalog(ctx) {
         });
     }
 
+    const allDim = {
+        key: STATS_ALL_GROUP_BY,
+        label: 'All',
+        options: [{ id: STATS_ALL_GROUP_BY, label: 'All' }]
+    };
+    dimensions.unshift(allDim);
+    dimensionByKey[STATS_ALL_GROUP_BY] = allDim;
+
     return {
         dimensions,
         dimensionByKey,
@@ -625,7 +680,12 @@ function statsBuildCatalog(ctx) {
         aggregations: STATS_AGGREGATIONS,
         chartTypes: STATS_CHART_TYPES,
         chartTypeMeta: STATS_CHART_TYPE_META,
-        heightPresets: STATS_HEIGHT_PRESETS
+        chartHeight: {
+            min: STATS_CHART_HEIGHT_MIN,
+            max: STATS_CHART_HEIGHT_MAX,
+            step: STATS_CHART_HEIGHT_STEP,
+            default: STATS_CHART_HEIGHT_DEFAULT
+        }
     };
 }
 
@@ -639,8 +699,28 @@ function statsFindMetric(catalog, metricId) {
 
 function statsAggregationsForChartType(chartType) {
     const meta = statsGetChartTypeMeta(chartType);
-    if (meta.allowCountAxis) return STATS_AGGREGATIONS;
-    return STATS_AGGREGATIONS.filter((a) => a.id !== 'count');
+    const type = statsNormalizeChartType(chartType);
+    let aggs = meta.allowCountAxis ? STATS_AGGREGATIONS : STATS_AGGREGATIONS.filter((a) => a.id !== 'count');
+    if (type === 'pie' || type === 'polarArea') {
+        aggs = aggs.filter((a) => a.id !== 'stddev');
+    }
+    return aggs;
+}
+
+function statsAggDataHasFiniteValues(chart, aggData) {
+    const type = statsNormalizeChartType(chart && chart.type);
+    if (type === 'scorecard') {
+        return aggData.value != null && Number.isFinite(aggData.value);
+    }
+    if (type === 'bellCurve') {
+        return (aggData.bins || []).some((b) => b != null && Number.isFinite(b.y) && b.y > 0);
+    }
+    if ((aggData.points || []).some((p) => p != null && Number.isFinite(p.x) && Number.isFinite(p.y))) {
+        return true;
+    }
+    return (aggData.datasets || []).some((ds) =>
+        (ds.data || []).some((v) => v != null && Number.isFinite(v))
+    );
 }
 
 function statsSeriesMetricValue(item, seriesEntry, getMetricValue) {
@@ -713,8 +793,20 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (type === 'histogram' || type === 'bellCurve') {
+        for (const s of series) {
+            if (s.metricId === 'count') {
+                missing.push({ id: 'count', label: 'Numeric metric' });
+                break;
+            }
+        }
+    }
+
     for (const s of series) {
         if (s.metricId === 'count') {
+            if (s.agg !== 'count') {
+                missing.push({ id: 'count', label: 'Count metric requires Count aggregation' });
+            }
             if (!meta.allowCountAxis && s.agg === 'count') {
                 missing.push({ id: 'count', label: 'Numeric metric' });
             }
@@ -743,7 +835,287 @@ function statsValidateChart(chart, catalog, items, ctx) {
         }
     }
 
+    if (type === 'histogram' && missing.length === 0) {
+        const scoped = statsFilterItemsForChart(items, chart, ctx);
+        const agg = statsAggregateHistogram(chart, scoped, catalog, ctx);
+        if (!agg.labels.length) {
+            return { ok: false, missing: [{ id: 'histogram', label: 'No metric values to bin' }] };
+        }
+    }
+
+    if (type === 'bellCurve' && missing.length === 0) {
+        const scoped = statsFilterItemsForChart(items, chart, ctx);
+        const agg = statsAggregateBellCurve(chart, scoped, catalog, ctx);
+        if (!agg.bins || !agg.bins.length) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'No metric values to chart' }] };
+        }
+        const n = agg.stats && agg.stats.n;
+        if (n == null || n < 2) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'Need at least 2 values for distribution' }] };
+        }
+        if (!agg.stats || !(agg.stats.stddev > 0)) {
+            return { ok: false, missing: [{ id: 'bellCurve', label: 'Need variation in values (σ > 0)' }] };
+        }
+    }
+
     return { ok: true, missing: [] };
+}
+
+const STATS_HISTOGRAM_INTEGER_METRICS = new Set([
+    'prompt_version_count',
+    'rejection_issue_count'
+]);
+
+const STATS_HISTOGRAM_TIME_METRICS = new Set([
+    'v1_creation_time_minutes',
+    'qa_time_minutes',
+    'dispute_resolution_time_minutes'
+]);
+
+function statsHistogramBinMode(metricId) {
+    if (STATS_HISTOGRAM_INTEGER_METRICS.has(metricId)) return 'integer';
+    if (STATS_HISTOGRAM_TIME_METRICS.has(metricId)) return 'time';
+    return 'auto';
+}
+
+function statsHistogramIntegerLabel(metricId, value) {
+    if (metricId === 'prompt_version_count') {
+        return value === 1 ? '1 version' : value + ' versions';
+    }
+    return String(value);
+}
+
+function statsBuildHistogramIntegerBins(values, metricId) {
+    if (!values.length) return { labels: [], counts: [], centers: [], lo: [], hi: [] };
+    const intVals = values.map((v) => Math.round(v));
+    const min = Math.min(...intVals);
+    const max = Math.max(...intVals);
+    const labels = [];
+    const counts = [];
+    const centers = [];
+    const lo = [];
+    const hi = [];
+    for (let i = min; i <= max; i += 1) {
+        labels.push(statsHistogramIntegerLabel(metricId, i));
+        counts.push(intVals.filter((v) => v === i).length);
+        centers.push(i);
+        lo.push(i - 0.5);
+        hi.push(i + 0.5);
+    }
+    return { labels, counts, centers, lo, hi };
+}
+
+function statsBuildHistogramTimeBins(values, lib) {
+    const order = (lib && lib.V1_CREATION_TIME_BUCKET_ORDER) || [];
+    const labelMap = (lib && lib.V1_CREATION_TIME_BUCKET_LABELS) || {};
+    const bucketFn = lib && lib.v1CreationTimeBucketId;
+    if (!order.length || typeof bucketFn !== 'function') {
+        return { labels: [], counts: [] };
+    }
+    const countsById = new Map(order.map((id) => [id, 0]));
+    for (const v of values) {
+        const id = bucketFn(v);
+        if (id && countsById.has(id)) {
+            countsById.set(id, countsById.get(id) + 1);
+        }
+    }
+    const labels = [];
+    const counts = [];
+    for (const id of order) {
+        labels.push(labelMap[id] || id);
+        counts.push(countsById.get(id) || 0);
+    }
+    return { labels, counts };
+}
+
+function statsBuildHistogramAutoBins(values) {
+    if (!values.length) return { labels: [], counts: [], centers: [], lo: [], hi: [] };
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) {
+        const rounded = Math.round(min);
+        const pad = 0.5;
+        return {
+            labels: [String(rounded)],
+            counts: [values.length],
+            centers: [min],
+            lo: [min - pad],
+            hi: [min + pad]
+        };
+    }
+    const n = values.length;
+    const binCount = Math.min(12, Math.max(2, Math.ceil(Math.log2(n) + 1)));
+    const range = max - min;
+    const width = range / binCount;
+    const labels = [];
+    const counts = new Array(binCount).fill(0);
+    const centers = [];
+    const lo = [];
+    const hi = [];
+    for (let b = 0; b < binCount; b += 1) {
+        const binLo = min + b * width;
+        const binHi = b === binCount - 1 ? max : min + (b + 1) * width;
+        const loR = Math.floor(binLo);
+        const hiR = b === binCount - 1 ? Math.ceil(max) : Math.floor(binHi) - 1;
+        labels.push(loR + '–' + (hiR < loR ? loR : hiR));
+        centers.push((binLo + binHi) / 2);
+        lo.push(binLo);
+        hi.push(binHi);
+    }
+    for (const v of values) {
+        let idx = Math.floor((v - min) / width);
+        if (idx >= binCount) idx = binCount - 1;
+        if (idx < 0) idx = 0;
+        counts[idx] += 1;
+    }
+    return { labels, counts, centers, lo, hi };
+}
+
+function statsAggregateHistogram(chart, items, catalog, ctx) {
+    const s = (chart.series || [])[0];
+    if (!s) return { labels: [], datasets: [] };
+    const getMetricValue = ctx && ctx.getMetricValue;
+    const metric = statsFindMetric(catalog, s.metricId);
+    const metricLabel = s.label || (metric && metric.label) || s.metricId;
+    const values = [];
+    for (const item of items || []) {
+        const v = statsSeriesMetricValue(item, s, getMetricValue);
+        if (v != null && Number.isFinite(v)) values.push(v);
+    }
+    if (!values.length) return { labels: [], datasets: [] };
+
+    const lib = Context.dashboardLib;
+    const mode = statsHistogramBinMode(s.metricId);
+    let binResult;
+    if (mode === 'integer') {
+        binResult = statsBuildHistogramIntegerBins(values, s.metricId);
+    } else if (mode === 'time') {
+        binResult = statsBuildHistogramTimeBins(values, lib);
+    } else {
+        binResult = statsBuildHistogramAutoBins(values);
+    }
+
+    return {
+        labels: binResult.labels,
+        datasets: [{
+            label: metricLabel,
+            data: binResult.counts,
+            metricId: s.metricId
+        }]
+    };
+}
+
+function statsComputeSampleMeanStddev(values) {
+    const nums = (values || []).filter((v) => v != null && Number.isFinite(v));
+    if (!nums.length) return { n: 0, mean: null, stddev: null };
+    const n = nums.length;
+    const mean = nums.reduce((a, b) => a + b, 0) / n;
+    if (n < 2) {
+        return { n, mean: Math.round(mean * 10) / 10, stddev: null };
+    }
+    const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (n - 1);
+    const stddev = Math.sqrt(variance);
+    return {
+        n,
+        mean: Math.round(mean * 10) / 10,
+        stddev: Math.round(stddev * 10) / 10
+    };
+}
+
+function statsNormalPdf(x, mean, stddev) {
+    if (!(stddev > 0)) return 0;
+    const z = (x - mean) / stddev;
+    return Math.exp(-0.5 * z * z) / (stddev * Math.sqrt(2 * Math.PI));
+}
+
+function statsBuildBellCurvePoints(mean, stddev, scale, spanSigma, steps) {
+    if (!(stddev > 0) || !(scale > 0)) return [];
+    const lo = mean - spanSigma * stddev;
+    const hi = mean + spanSigma * stddev;
+    const count = Math.max(2, steps || 80);
+    const points = [];
+    for (let i = 0; i <= count; i += 1) {
+        const x = lo + (hi - lo) * (i / count);
+        points.push({ x, y: statsNormalPdf(x, mean, stddev) * scale });
+    }
+    return points;
+}
+
+function statsBuildBellSigmaBandPoints(mean, stddev, scale, sigmaLevel, steps) {
+    if (!(stddev > 0) || !(scale > 0)) return [];
+    const lo = mean - sigmaLevel * stddev;
+    const hi = mean + sigmaLevel * stddev;
+    const count = Math.max(2, steps || 40);
+    const points = [];
+    for (let i = 0; i <= count; i += 1) {
+        const x = lo + (hi - lo) * (i / count);
+        points.push({ x, y: statsNormalPdf(x, mean, stddev) * scale });
+    }
+    return points;
+}
+
+function statsAggregateBellCurve(chart, items, catalog, ctx) {
+    const s = (chart.series || [])[0];
+    if (!s) {
+        return { bins: [], curve: [], sigmaBands: [], stats: { n: 0, mean: null, stddev: null }, metricLabel: '' };
+    }
+    const getMetricValue = ctx && ctx.getMetricValue;
+    const metric = statsFindMetric(catalog, s.metricId);
+    const metricLabel = s.label || (metric && metric.label) || s.metricId;
+    const values = [];
+    for (const item of items || []) {
+        const v = statsSeriesMetricValue(item, s, getMetricValue);
+        if (v != null && Number.isFinite(v)) values.push(v);
+    }
+    if (!values.length) {
+        return { bins: [], curve: [], sigmaBands: [], stats: { n: 0, mean: null, stddev: null }, metricLabel };
+    }
+
+    const mode = statsHistogramBinMode(s.metricId);
+    let binResult;
+    if (mode === 'integer') {
+        binResult = statsBuildHistogramIntegerBins(values, s.metricId);
+    } else {
+        binResult = statsBuildHistogramAutoBins(values);
+    }
+
+    const bins = (binResult.labels || []).map((label, i) => ({
+        x: binResult.centers[i],
+        lo: binResult.lo && binResult.lo[i] != null ? binResult.lo[i] : binResult.centers[i],
+        hi: binResult.hi && binResult.hi[i] != null ? binResult.hi[i] : binResult.centers[i],
+        y: binResult.counts[i],
+        label
+    }));
+
+    const sampleStats = statsComputeSampleMeanStddev(values);
+    const { n, mean, stddev } = sampleStats;
+    if (n < 2 || !(stddev > 0)) {
+        return { bins, curve: [], sigmaBands: [], stats: sampleStats, metricLabel };
+    }
+
+    const maxCount = Math.max(...binResult.counts);
+    let maxPdf = 0;
+    const pdfProbe = statsBuildBellCurvePoints(mean, stddev, 1, 3.5, 80);
+    for (const pt of pdfProbe) {
+        if (pt.y > maxPdf) maxPdf = pt.y;
+    }
+    const scale = maxPdf > 0 ? maxCount / maxPdf : 0;
+    const curve = statsBuildBellCurvePoints(mean, stddev, scale, 3.5, 80);
+    const sigmaBands = [
+        { level: 3, pct: 99.7, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 3, 40) },
+        { level: 2, pct: 95, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 2, 32) },
+        { level: 1, pct: 68, points: statsBuildBellSigmaBandPoints(mean, stddev, scale, 1, 24) }
+    ];
+
+    return {
+        bins,
+        curve,
+        sigmaBands,
+        stats: sampleStats,
+        metricLabel,
+        xMin: mean - 3.5 * stddev,
+        xMax: mean + 3.5 * stddev
+    };
 }
 
 function statsApplyAgg(values, agg) {
@@ -775,7 +1147,25 @@ function statsApplyAgg(values, agg) {
         }
         return bestVal;
     }
+    if (agg === 'stddev') {
+        if (nums.length < 2) return null;
+        const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+        const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (nums.length - 1);
+        return Math.round(Math.sqrt(variance) * 10) / 10;
+    }
     return nums.length;
+}
+
+function statsComputeSpreadBand(values) {
+    const nums = (values || []).filter((v) => v != null && Number.isFinite(v));
+    if (nums.length < 2) return { low: null, high: null };
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    const variance = nums.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (nums.length - 1);
+    const stddev = Math.sqrt(variance);
+    return {
+        low: Math.round((mean - stddev) * 10) / 10,
+        high: Math.round((mean + stddev) * 10) / 10
+    };
 }
 
 function statsPushSeriesValue(bucket, seriesEntry, item, getMetricValue) {
@@ -902,9 +1292,16 @@ function statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, serie
     const orderMap = indexed.map((x) => x.originalIndex);
     return {
         labels: indexed.map((x) => x.label),
-        datasets: datasets.map((ds) => Object.assign({}, ds, {
-            data: orderMap.map((oldIdx) => ds.data[oldIdx])
-        }))
+        datasets: datasets.map((ds) => {
+            const next = Object.assign({}, ds, {
+                data: orderMap.map((oldIdx) => ds.data[oldIdx])
+            });
+            if (Array.isArray(ds.spreadLow)) {
+                next.spreadLow = orderMap.map((oldIdx) => ds.spreadLow[oldIdx]);
+                next.spreadHigh = orderMap.map((oldIdx) => ds.spreadHigh[oldIdx]);
+            }
+            return next;
+        })
     };
 }
 
@@ -1005,9 +1402,24 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             }
             return statsApplyAgg(bucket.series[si], s.agg);
         });
+        const spreadEnabled = s.spread === 'stddevBand' && s.agg === 'avg';
+        let spreadLow = null;
+        let spreadHigh = null;
+        if (spreadEnabled) {
+            spreadLow = keysOut.map((key) => {
+                const bucket = buckets.get(key);
+                if (!bucket) return null;
+                return statsComputeSpreadBand(bucket.series[si]).low;
+            });
+            spreadHigh = keysOut.map((key) => {
+                const bucket = buckets.get(key);
+                if (!bucket) return null;
+                return statsComputeSpreadBand(bucket.series[si]).high;
+            });
+        }
         const metric = statsFindMetric(catalog, s.metricId);
         const label = s.label || (metric && metric.label) || s.metricId;
-        datasets.push({
+        const datasetEntry = {
             label,
             data,
             metricId: s.metricId,
@@ -1015,7 +1427,13 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             renderAs: s.renderAs,
             lineStyle: s.lineStyle,
             yAxis: s.yAxis
-        });
+        };
+        if (spreadEnabled) {
+            datasetEntry.spread = 'stddevBand';
+            datasetEntry.spreadLow = spreadLow;
+            datasetEntry.spreadHigh = spreadHigh;
+        }
+        datasets.push(datasetEntry);
     }
 
     const sorted = statsApplyCategorySort(labels, keysOut, datasets, chart, buckets, seriesList);
@@ -1146,6 +1564,12 @@ function statsAggregateChart(chart, items, catalog, ctx) {
     if (type === 'scorecard') {
         return statsAggregateScorecard(chart, scopedItems, catalog, ctx);
     }
+    if (type === 'histogram') {
+        return statsAggregateHistogram(chart, scopedItems, catalog, ctx);
+    }
+    if (type === 'bellCurve') {
+        return statsAggregateBellCurve(chart, scopedItems, catalog, ctx);
+    }
     if (type === 'scatter' || type === 'bubble') {
         return statsAggregatePointChart(chart, scopedItems, catalog, ctx);
     }
@@ -1160,7 +1584,7 @@ function statsDefaultBuilderDraft(catalog) {
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
         series: [{ metricId: 'count', agg: 'count', label: '' }],
-        height: 260,
+        height: STATS_CHART_HEIGHT_DEFAULT,
         pointMode: 'bucket',
         barLayout: 'grouped',
         orientation: 'vertical',
@@ -1175,7 +1599,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.6',
+    _version: '4.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1202,9 +1626,14 @@ const plugin = {
             chartFiltersActive: (chartFilters, listBounds) => statsChartFiltersActive(chartFilters, listBounds),
             getChartTypeMeta: (type) => statsGetChartTypeMeta(type),
             aggregationsForChartType: (type) => statsAggregationsForChartType(type),
+            aggDataHasFiniteValues: (chart, aggData) => statsAggDataHasFiniteValues(chart, aggData),
             chartTypes: () => STATS_CHART_TYPES.slice(),
             aggregations: () => STATS_AGGREGATIONS.slice(),
-            heightPresets: () => STATS_HEIGHT_PRESETS.slice(),
+            chartHeightMin: () => STATS_CHART_HEIGHT_MIN,
+            chartHeightMax: () => STATS_CHART_HEIGHT_MAX,
+            chartHeightStep: () => STATS_CHART_HEIGHT_STEP,
+            chartHeightDefault: () => STATS_CHART_HEIGHT_DEFAULT,
+            normalizeChartHeight: (raw, fallback) => statsNormalizeChartHeight(raw, fallback),
             taskPointCap: STATS_TASK_POINT_CAP,
             parseImportPayload: (parsed) => statsParseImportPayload(parsed),
             prepareImportedChart: (raw) => statsPrepareImportedChart(raw),
