@@ -988,9 +988,9 @@ const searchOutputStatsPaneMethods = {
         return 'n = ' + stats.n + ' · μ = ' + mu + ' · σ = ' + sigma + ' · ±1σ = ' + lo + '–' + hi;
     },
 
-    _statsBellBandFill(theme, opacity) {
+    _statsBellBandFill(color, opacity) {
         const pct = Math.round(Math.min(100, Math.max(8, opacity * 100)));
-        return 'color-mix(in srgb, ' + theme.brand + ' ' + pct + '%, transparent)';
+        return 'color-mix(in srgb, ' + color + ' ' + pct + '%, transparent)';
     },
 
     _renderBellCurveStatsSubtitle(chartId, aggData) {
@@ -1522,7 +1522,9 @@ const searchOutputStatsPaneMethods = {
             const bins = aggData.bins || [];
             const curve = aggData.curve || [];
             const sigmaBands = aggData.sigmaBands || [];
-            const bandOpacities = [0.14, 0.22, 0.34];
+            const bandColor = theme.brandAlt || theme.brand;
+            const barColor = theme.brand;
+            const bandOpacities = [0.2, 0.3, 0.42];
             const datasets = [];
             sigmaBands.forEach((band, i) => {
                 datasets.push({
@@ -1530,11 +1532,11 @@ const searchOutputStatsPaneMethods = {
                     label: '±' + band.level + 'σ (' + band.pct + '%)',
                     data: band.points || [],
                     borderColor: 'transparent',
-                    backgroundColor: this._statsBellBandFill(theme, bandOpacities[i] || 0.2),
+                    backgroundColor: this._statsBellBandFill(bandColor, bandOpacities[i] || 0.25),
                     fill: 'origin',
                     pointRadius: 0,
                     tension: 0.35,
-                    order: i,
+                    order: 30 - i,
                     statsBellBand: true
                 });
             });
@@ -1542,10 +1544,10 @@ const searchOutputStatsPaneMethods = {
                 type: 'bar',
                 label: metricLabel,
                 data: bins.map((b) => ({ x: b.x, y: b.y, label: b.label })),
-                backgroundColor: this._statsBellBandFill(theme, 0.55),
-                borderColor: theme.brand,
+                backgroundColor: barColor,
+                borderColor: barColor,
                 borderWidth: 1,
-                order: 3,
+                order: 15,
                 barPercentage: 0.9,
                 categoryPercentage: 1
             });
@@ -1553,13 +1555,13 @@ const searchOutputStatsPaneMethods = {
                 type: 'line',
                 label: 'Normal fit',
                 data: curve,
-                borderColor: theme.brand,
+                borderColor: barColor,
                 backgroundColor: 'transparent',
                 borderWidth: 2,
                 pointRadius: 0,
                 tension: 0.35,
                 fill: false,
-                order: 4
+                order: 1
             });
             const xMin = aggData.xMin;
             const xMax = aggData.xMax;
@@ -4278,7 +4280,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.32',
+    _version: '5.33',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
