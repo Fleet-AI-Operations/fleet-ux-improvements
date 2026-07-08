@@ -27,6 +27,7 @@ const DASH_SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 const DASH_TEAM_MEMBERS_MS_KEYS = ['team-members-teams', 'team-members-permissions', 'team-members-badges'];
 const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-members-permissions'];
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
+const DASH_DIVE_MS_KEYS = ['dive-envs', 'dive-projects', 'dive-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_MS_HOVER_OPEN_MS = 300;
 const DASH_TASK_CARD_BG = '#121212';
@@ -55,8 +56,13 @@ function dashIsStatsChartFilterMsKey(scopeKey) {
     return Boolean(scopeKey && scopeKey.startsWith('stats-chart-filter-'));
 }
 
+function dashIsDiveMsKey(scopeKey) {
+    return DASH_DIVE_MS_KEYS.includes(scopeKey);
+}
+
 function dashIsFlyoutMsKey(scopeKey) {
-    return dashIsFilterMsKey(scopeKey) || dashIsSearchMsKey(scopeKey) || dashIsStatsChartFilterMsKey(scopeKey);
+    return dashIsFilterMsKey(scopeKey) || dashIsSearchMsKey(scopeKey)
+        || dashIsDiveMsKey(scopeKey) || dashIsStatsChartFilterMsKey(scopeKey);
 }
 
 function dashFilterScopes() {
@@ -65,7 +71,7 @@ function dashFilterScopes() {
 }
 
 function dashAllFlyoutMsKeys(modal) {
-    const keys = dashFilterScopes().map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS);
+    const keys = dashFilterScopes().map((s) => s.scopeKey).concat(DASH_SEARCH_MS_KEYS).concat(DASH_DIVE_MS_KEYS);
     if (modal) keys.push(...dashStatsChartFilterMsKeys(modal));
     return keys;
 }
@@ -100,7 +106,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.14',
+    _version: '9.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2264,7 +2270,13 @@ const plugin = {
             }
             this._updateMsCount(msKey);
             if (msKey === 'search-teams') this._renderSearchProjectsList();
+            if (msKey === 'dive-teams' && typeof this._renderDiveProjectsList === 'function') {
+                this._renderDiveProjectsList();
+            }
             if (msKey.startsWith('search-')) this._validateRangeUi();
+            if (msKey.startsWith('dive-') && typeof this._validateDiveRangeUi === 'function') {
+                this._validateDiveRangeUi();
+            }
             if (dashIsTeamMembersMsKey(msKey) && typeof this._onTeamMemberMsChange === 'function') {
                 this._onTeamMemberMsChange(this._modal);
             }
@@ -2317,7 +2329,13 @@ const plugin = {
                 this._keepFilterMsDropdownOpen(key);
                 this._toggleMsBulkSelection(key);
                 if (key.startsWith('search-teams')) this._renderSearchProjectsList();
+                if (key.startsWith('dive-teams') && typeof this._renderDiveProjectsList === 'function') {
+                    this._renderDiveProjectsList();
+                }
                 if (key.startsWith('search-')) this._validateRangeUi();
+                if (key.startsWith('dive-') && typeof this._validateDiveRangeUi === 'function') {
+                    this._validateDiveRangeUi();
+                }
                 if (key.startsWith('filter-') && this._state.cachedItems) {
                     if (typeof this._updateFilterSelectionOrder === 'function') {
                         this._updateFilterSelectionOrder(key);
