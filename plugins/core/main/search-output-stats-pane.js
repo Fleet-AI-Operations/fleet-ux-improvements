@@ -1519,7 +1519,10 @@ const searchOutputStatsPaneMethods = {
             const dash = this;
             const metricLabel = aggData.metricLabel
                 || this._statsResolveSeriesLabel((chart.series || [])[0], catalog);
-            const bins = aggData.bins || [];
+            const bins = (aggData.bins || [])
+                .filter((b) => b != null && Number.isFinite(b.y) && b.y > 0)
+                .slice()
+                .sort((a, b) => a.x - b.x);
             const curve = aggData.curve || [];
             const sigmaBands = aggData.sigmaBands || [];
             const bandColor = theme.brandAlt || theme.brand;
@@ -1553,10 +1556,9 @@ const searchOutputStatsPaneMethods = {
                 borderColor: barColor,
                 borderWidth: 1,
                 order: 15,
-                barThickness: 'flex',
+                maxBarThickness: 28,
                 categoryPercentage: 1,
-                barPercentage: 1,
-                inflateAmount: 0
+                barPercentage: 1
             });
             datasets.push({
                 type: 'line',
@@ -1578,7 +1580,6 @@ const searchOutputStatsPaneMethods = {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    parsing: false,
                     scales: {
                         x: {
                             type: 'linear',
@@ -4288,7 +4289,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.34',
+    _version: '5.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
