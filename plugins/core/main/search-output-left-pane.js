@@ -472,7 +472,7 @@ const searchOutputLeftPaneMethods = {
                                     </p>
                                     <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
                                         <input type="checkbox" id="wf-dash-dive-include-content">
-                                        Include full content (prompts, QA notes, review text, dispute/flag bodies)
+                                        Include full content (prompts, notes to QA, QA review text, dispute/flag bodies)
                                     </label>
                                     <div style="${hint} margin: 0;">Default is metadata-only cards.</div>
                                     <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
@@ -2314,9 +2314,10 @@ const searchOutputLeftPaneMethods = {
             if (Object.prototype.hasOwnProperty.call(task, 'prompt')) task.prompt = '';
             if (Array.isArray(task.promptVersions)) {
                 for (const v of task.promptVersions) {
-                    if (v && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, 'prompt')) {
-                        v.prompt = '';
-                    }
+                    if (!v || typeof v !== 'object') continue;
+                    if (Object.prototype.hasOwnProperty.call(v, 'prompt')) v.prompt = '';
+                    if (Object.prototype.hasOwnProperty.call(v, 'resubmissionNotes')) v.resubmissionNotes = '';
+                    if (Object.prototype.hasOwnProperty.call(v, 'resubmission_notes')) v.resubmission_notes = '';
                 }
             }
             if (Array.isArray(task.allFeedback)) {
@@ -2651,7 +2652,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
