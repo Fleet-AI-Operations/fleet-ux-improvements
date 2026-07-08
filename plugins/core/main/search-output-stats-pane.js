@@ -4,6 +4,7 @@ const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags',
 const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
 const STATS_SCORECARD_ROW_GAP_PX = 12;
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
+const STATS_LINE_BORDER_WIDTH = 2.25;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -56,7 +57,7 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
             + '</div>'
             + '</div>'
-            + '<div id="wf-dash-stats-empty" style="display: none; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0; flex-shrink: 0;"></div>'
+            + '<div id="wf-dash-stats-empty" style="display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;"></div>'
             + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
             + '<div id="wf-dash-stats-chart-list" data-wf-dash-stats-chart-list="1" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px;"></div>'
             + '</div>'
@@ -271,6 +272,12 @@ const searchOutputStatsPaneMethods = {
         void this._renderStatsPanel();
     },
 
+    _statsDashboardHasChartData() {
+        if (!this._state.hasSearched || !this._state.cachedItems) return false;
+        if (this._isStatsHydrationBlocking()) return false;
+        return this._getStatsScopeItems().length > 0;
+    },
+
     _syncStatsToolbarUi() {
         const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
@@ -283,7 +290,10 @@ const searchOutputStatsPaneMethods = {
         const builderEl = this._q('#wf-dash-stats-builder');
         const panelStats = this._q('#wf-dash-stats-panel-stats');
         const mode = this._state.statsViewMode || 'dashboard';
-        if (toolbar) toolbar.style.display = tab === 'stats' ? 'flex' : 'none';
+        const showDashboardToolbar = tab === 'stats' && mode === 'dashboard' && this._statsDashboardHasChartData();
+        if (toolbar) {
+            toolbar.style.display = (tab === 'stats' && (mode === 'builder' || showDashboardToolbar)) ? 'flex' : 'none';
+        }
         if (buildBtn) {
             buildBtn.textContent = mode === 'builder' ? 'Back to dashboard' : 'Build Chart';
         }
@@ -1788,6 +1798,7 @@ const searchOutputStatsPaneMethods = {
                         fill: false,
                         borderColor: outlineColor,
                         backgroundColor: outlineColor,
+                        borderWidth: STATS_LINE_BORDER_WIDTH,
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3
@@ -1814,6 +1825,7 @@ const searchOutputStatsPaneMethods = {
                         tension: 0.2,
                         spanGaps: true,
                         pointRadius: 3,
+                        borderWidth: STATS_LINE_BORDER_WIDTH,
                         borderColor: color,
                         statsSeriesKey: seriesKey
                     }));
@@ -1823,6 +1835,7 @@ const searchOutputStatsPaneMethods = {
                     tension: 0.2,
                     spanGaps: true,
                     pointRadius: 3,
+                    borderWidth: STATS_LINE_BORDER_WIDTH,
                     fill: shaded,
                     borderColor: color
                 };
@@ -2442,6 +2455,20 @@ const searchOutputStatsPaneMethods = {
             + innerHtml + hint + '</div>';
     },
 
+    _statsBuilderHeightOptions(draft, catalog) {
+        const height = Number(draft.height) || 260;
+        const presets = catalog.heightPresets || [];
+        const presetIds = new Set(presets.map((h) => h.id));
+        let opts = '';
+        if (!presetIds.has(height)) {
+            opts += '<option value="' + height + '" selected>' + height + '</option>';
+        }
+        opts += presets.map((h) =>
+            '<option value="' + h.id + '"' + (height === h.id ? ' selected' : '') + '>' + dashEscHtml(h.label) + '</option>'
+        ).join('');
+        return opts;
+    },
+
     _statsBuilderChartSettingsRows(draft, catalog, typeMeta, engine, styles) {
         const dimOpts = catalog.dimensions.map((d) =>
             '<option value="' + dashEscHtml(d.key) + '"' + (draft.groupBy === d.key ? ' selected' : '') + '>' + dashEscHtml(d.label) + '</option>'
@@ -2677,7 +2704,9 @@ const searchOutputStatsPaneMethods = {
         if (!formEl) return;
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
-        const box = this._panelBoxStyle();
+        const box = typeof this._taskCardBoxStyle === 'function'
+            ? this._taskCardBoxStyle()
+            : this._panelBoxStyle();
         const styles = this._statsBuilderFieldStyles();
         const typeMeta = engine.getChartTypeMeta ? engine.getChartTypeMeta(draft.type) : { minSeries: 1, maxSeries: 4 };
         const aggList = engine.aggregationsForChartType
@@ -3125,7 +3154,7 @@ const searchOutputStatsPaneMethods = {
 
         if (!this._state.hasSearched || !this._state.cachedItems) {
             this._destroyStatsCharts();
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'Run a search to load results.';
             dashEl.style.display = 'none';
             this._renderStatsWarnings([]);
@@ -3133,7 +3162,7 @@ const searchOutputStatsPaneMethods = {
         }
 
         if (this._isStatsHydrationBlocking()) {
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'Charts will load once hydration is complete';
             dashEl.style.display = 'none';
             this._renderStatsWarnings([]);
@@ -3146,7 +3175,7 @@ const searchOutputStatsPaneMethods = {
 
         if (items.length === 0) {
             this._destroyStatsCharts();
-            emptyEl.style.display = '';
+            emptyEl.style.display = 'flex';
             emptyEl.textContent = 'No results in this scope.';
             dashEl.style.display = 'none';
             return;

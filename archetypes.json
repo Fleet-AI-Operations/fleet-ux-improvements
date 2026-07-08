@@ -73,7 +73,7 @@
     {
       "name": "dashboard.js",
       "version": "9.14",
-      "hash": "sha256-1539163c605fb770c84e6676c135b323aee39a3d64f1cc1328b22c5620095805",
+      "hash": "sha256-965f04f05cb9fe3e197ad5b2b820d69620de925f4b17a84bde529ec1b7ab47da",
       "log": false
     },
     {
@@ -103,7 +103,7 @@
     {
       "name": "search-output-stats-pane.js",
       "version": "5.35",
-      "hash": "sha256-9c136cfeca2f7f1a2758f9b941b85aa111bcbcd2e94a169684a8311ae6a8e8ba",
+      "hash": "sha256-c34334f0cb4ce2adfdfa381ade5255d4168cf504e8357c6ffd17df4f6270e4bf",
       "log": false
     },
     {
