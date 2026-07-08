@@ -1818,16 +1818,8 @@ const searchOutputStatsPaneMethods = {
         }
         const inst = this._state.statsCharts && this._state.statsCharts[chart.id];
         if (!inst || typeof inst.toBase64Image !== 'function') return null;
-        const cssWidth = exportCssWidth || this._statsChartBodyCssWidth(chart);
-        if (cssWidth > 0 && typeof inst.resize === 'function') {
-            const currentWidth = inst.width
-                || (inst.canvas ? inst.canvas.width / this._statsExportPixelRatio() : 0);
-            if (Math.abs(currentWidth - cssWidth) > 2) {
-                inst.resize(cssWidth, null);
-            }
-        } else if (typeof inst.resize === 'function') {
-            inst.resize();
-        }
+        // Capture the live chart at its on-screen size; compose scales the bitmap for export.
+        // Never call inst.resize() here — it mutates the visible dashboard canvas.
         return inst.toBase64Image('image/png', this._statsExportPixelRatio());
     },
 
@@ -3915,7 +3907,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.28',
+    _version: '5.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
