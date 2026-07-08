@@ -1,11 +1,12 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '1.15';
+const RE_VERSION = '1.16';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
 const RE_STATUS_SEVERITY_DEFAULT = 0.4;
+const RE_DISCARDED_STALE_DAYS = 7;
 
 const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
 const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
@@ -13,24 +14,24 @@ const RE_QAQS_SR_PENALTY_BLEND = 0.75;
 const RE_QAQS_SR_RAISED_BLEND = 0.25;
 const RE_PRODUCTION_STATUS_MATCH = 'production';
 
-// Shrinkage / spread — negative outcomes weighted more heavily (engine 1.15 retune).
+// Shrinkage / spread — priors calibrated from dive.db WPS baseline (rank-workers v1.1).
 const RE_ACCEPTANCE_SHRINK_C = 5;
-const RE_ACCEPTANCE_SHRINK_PRIOR = 0.45;
+const RE_ACCEPTANCE_SHRINK_PRIOR = 0.79;
 const RE_DISPUTE_SHRINK_C = 10;
 const RE_SR_SHRINK_C = 15;
-const RE_SR_PENALTY_PRIOR = 0.6;
+const RE_SR_PENALTY_PRIOR = 0.68;
 const RE_REVISION_EFF_EXPONENT = 1.25;
 const RE_QAQS_RESOLUTION_SHRINK_C = 5;
-const RE_QAQS_RESOLUTION_SHRINK_PRIOR = 0.55;
+const RE_QAQS_RESOLUTION_SHRINK_PRIOR = 0.46;
 const RE_RETURN_EPISODE_EXPONENT = 1.3;
 const RE_AXIS_SPREAD_EXPONENT = 1.18;
 
 const RE_TWQS_AXES = [
     { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
-    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.25 },
+    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.20 },
     { id: 'consistency', label: 'Consistency', weight: 0.15 },
     { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.10 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.10 }
+    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.15 }
 ];
 
 const RE_QAQS_AXES = [
@@ -41,10 +42,10 @@ const RE_QAQS_AXES = [
 ];
 
 const RE_BANDS = [
-    { min: 88, label: 'Excellent' },
-    { min: 72, label: 'Good' },
-    { min: 55, label: 'Average' },
-    { min: 38, label: 'Needs attention' },
+    { min: 80, label: 'Excellent' },
+    { min: 70, label: 'Good' },
+    { min: 58, label: 'Average' },
+    { min: 48, label: 'Needs attention' },
     { min: 0, label: 'Concerning' }
 ];
 
@@ -268,11 +269,23 @@ function reTaskSeverityScore(task) {
     if (!status) return RE_STATUS_SEVERITY_DEFAULT;
     if (status.includes('dismissed')) return 0.0;
     if (status.includes('discarded')) return 0.15;
-    if (status.includes('bugged') || status.includes('escalated')) return 0.2;
+    if (status.includes('bugged') || status.includes('escalated')) return 0.5;
     if (status.includes('staging')) return 0.35;
     if (status.includes('recovery')) return 0.55;
     if (status.includes('production')) return 1.0;
     return RE_STATUS_SEVERITY_DEFAULT;
+}
+
+function reTaskOutcomeSeverity(task, item, nowMs) {
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (status.includes('discarded')) {
+        const createdAt = reTaskTimestamp(task, item);
+        const ts = Date.parse(createdAt);
+        if (Number.isNaN(ts)) return null;
+        const ageDays = Math.max(0, (nowMs - ts) / RE_MS_PER_DAY);
+        if (ageDays < RE_DISCARDED_STALE_DAYS) return null;
+    }
+    return reTaskSeverityScore(task);
 }
 
 function reRevisionStatusWeight(task) {
@@ -549,10 +562,12 @@ const RatingEngine = {
             const w = reEventWeight(createdAt, mode, nowMs, window);
             if (w <= 0) continue;
 
-            const severity = reTaskSeverityScore(task);
-            severityEvents.push({ value: severity, weight: w, iso: createdAt });
-            const statusKey = String((task && task.status) || '').trim() || '(missing)';
-            statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
+            const severity = reTaskOutcomeSeverity(task, item, nowMs);
+            if (severity != null) {
+                severityEvents.push({ value: severity, weight: w, iso: createdAt });
+                const statusKey = String((task && task.status) || '').trim() || '(missing)';
+                statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
+            }
             const wk = reIsoWeekKey(createdAt);
             if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
@@ -1164,7 +1179,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.15',
+    _version: '1.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

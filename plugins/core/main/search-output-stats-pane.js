@@ -3936,6 +3936,42 @@ const searchOutputStatsPaneMethods = {
         return lines.length ? lines : ['No additional inputs recorded'];
     },
 
+    _ratingAxisBarHtml(axis, showDetail) {
+        if (!axis) return '';
+        const omitted = axis.defined === false || axis.score == null;
+        const label = axis.label || axis.id || '';
+        if (omitted) {
+            const reason = this._ratingAxisOmitReason(axis) || 'omitted';
+            return '<div style="margin-top: 6px;">'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b);">'
+                + dashEscHtml(label) + ' — ' + dashEscHtml(reason)
+                + '</div></div>';
+        }
+        const subPct = this._ratingPctOneDecimal(axis.score);
+        const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
+        const trackStyle = 'flex: 1; min-width: 48px; height: 6px; border-radius: 3px;'
+            + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 22%, transparent); overflow: hidden;';
+        const fillStyle = 'height: 100%; width: ' + fillPct + '%; border-radius: 3px;'
+            + ' background: color-mix(in srgb, var(--brand, #3b82f6) 70%, transparent);';
+        let html = '<div style="margin-top: 6px;">'
+            + '<div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">'
+            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+            + dashEscHtml(label) + '</span>'
+            + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
+            + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
+            + dashEscHtml(String(subPct) + '%') + '</span>'
+            + '</div>';
+        if (showDetail) {
+            const breakdownLines = this._ratingAxisBreakdownLines(axis);
+            html += breakdownLines.map((line) =>
+                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px; padding-left: 2px;">'
+                + dashEscHtml(line) + '</div>'
+            ).join('');
+        }
+        html += '</div>';
+        return html;
+    },
+
     _ratingScoreBlockCompactHtml(title, block, basisKind) {
         if (!block || block.score == null) {
             return '';
@@ -3946,6 +3982,9 @@ const searchOutputStatsPaneMethods = {
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
+        const axesHtml = this._ratingSortedAxes(block)
+            .map((axis) => this._ratingAxisBarHtml(axis, false))
+            .join('');
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
@@ -3955,6 +3994,7 @@ const searchOutputStatsPaneMethods = {
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
                 : '')
+            + (axesHtml ? '<div style="margin-top: 4px;">' + axesHtml + '</div>' : '')
             + '</div>';
     },
 
@@ -3974,10 +4014,6 @@ const searchOutputStatsPaneMethods = {
             const subPct = omitted ? null : this._ratingPctOneDecimal(axis.score);
             const basePct = this._ratingPctOneDecimal(axis.baseWeight);
             const effPct = omitted ? 0 : this._ratingPctOneDecimal(axis.effectiveWeight);
-            const breakdownLines = this._ratingAxisBreakdownLines(axis);
-            const breakdownHtml = breakdownLines.map((line) =>
-                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(line) + '</div>'
-            ).join('');
             if (!omitted && subPct != null && effPct != null) {
                 compositeTerms.push(subPct + '×' + effPct + '%');
                 compositeSum += (axis.score || 0) * (axis.effectiveWeight || 0);
@@ -3988,8 +4024,9 @@ const searchOutputStatsPaneMethods = {
                     + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
                         ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
                         : ''));
+            const axisCellHtml = this._ratingAxisBarHtml(axis, true);
             rowsHtml += '<tr>'
-                + '<td style="' + tdStyle + '">' + dashEscHtml(axis.label || axis.id || '') + breakdownHtml + '</td>'
+                + '<td style="' + tdStyle + '">' + axisCellHtml + '</td>'
                 + '<td style="' + tdNum + '">' + (omitted ? '<span style="color: var(--muted-foreground, #64748b);">omitted</span>' : dashEscHtml(String(subPct) + '%')) + '</td>'
                 + '<td style="' + tdNum + '">' + (basePct != null ? dashEscHtml(String(basePct) + '%') : '—') + '</td>'
                 + '<td style="' + tdNum + '">' + effDisplay + '</td>'
@@ -4318,7 +4355,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.35',
+    _version: '5.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
