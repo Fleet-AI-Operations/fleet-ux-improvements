@@ -472,7 +472,7 @@ const searchOutputLeftPaneMethods = {
                                     </p>
                                     <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
                                         <input type="checkbox" id="wf-dash-dive-include-content">
-                                        Include full content (prompts, notes to QA, QA review text, dispute/flag bodies)
+                                        Include full content (prompts, notes to QA, QA review text, dispute/flag bodies and resolution text)
                                     </label>
                                     <div style="${hint} margin: 0;">Default is metadata-only cards.</div>
                                     <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
@@ -2299,8 +2299,8 @@ const searchOutputLeftPaneMethods = {
     _stripDiveDisputeOrFlag(row) {
         if (!row || typeof row !== 'object') return;
         const drop = [
-            'content', 'note', 'resolution_note', 'resolution_reason', 'dispute_reason',
-            'reason', 'body', 'description'
+            'content', 'note', 'resolution_note', 'resolution_reason', 'resolutionReason',
+            'resolutionText', 'resolutionNote', 'dispute_reason', 'reason', 'body', 'description'
         ];
         for (const key of drop) {
             if (Object.prototype.hasOwnProperty.call(row, key)) delete row[key];
@@ -2652,7 +2652,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
