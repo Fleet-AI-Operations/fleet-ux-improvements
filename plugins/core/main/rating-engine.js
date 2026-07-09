@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '2.0';
+const RE_VERSION = '2.1';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -23,7 +23,7 @@ const RE_AXIS_SPREAD_EXPONENT = 1.18;
 // Shrinkage — QAQS priors calibrated from dive.db QPS baseline (rank-qa v1.0,
 // 180-reviewer cohort with ≥ 50 feedback rows each).
 const RE_QAQS_RET_EFF_C           = 10;
-const RE_QAQS_RET_EFF_PRIOR       = 0.4401;
+const RE_QAQS_RET_EFF_PRIOR       = 0.4894;
 const RE_QAQS_MC_AVOID_C          = 10;
 const RE_QAQS_MC_AVOID_PRIOR      = 1.0;
 const RE_QAQS_APPR_SOUND_C        = 5;
@@ -707,8 +707,10 @@ const RatingEngine = {
 
             if (task && task.id) seenTaskIds.add(String(task.id));
 
-            // Return effectiveness: negative feedback → task reached production?
-            if (!entry.isPositive) {
+            // Return effectiveness: negative feedback on terminal tasks → production?
+            // Skip tasks that are still in revision (fresh discarded) — we can't
+            // judge an outcome that hasn't settled yet.
+            if (!entry.isPositive && reTaskOutcomeSeverity(task, null, nowMs) !== null) {
                 retEffDenom += 1;
                 if (reIsProductionTask(task)) retEffNumer += 1;
             }
@@ -1090,7 +1092,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
