@@ -1,6 +1,6 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 
-const RE_VERSION = '2.1';
+const RE_VERSION = '3.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
@@ -20,14 +20,12 @@ const RE_SR_PENALTY_PRIOR = 0.68;
 const RE_REVISION_EFF_EXPONENT = 1.25;
 const RE_AXIS_SPREAD_EXPONENT = 1.18;
 
-// Shrinkage — QAQS priors calibrated from dive.db QPS baseline (rank-qa v1.0,
+// Shrinkage — QAQS priors calibrated from dive.db QPS baseline (rank-qa v2.0,
 // 180-reviewer cohort with ≥ 50 feedback rows each).
 const RE_QAQS_RET_EFF_C           = 10;
-const RE_QAQS_RET_EFF_PRIOR       = 0.4894;
-const RE_QAQS_MC_AVOID_C          = 10;
-const RE_QAQS_MC_AVOID_PRIOR      = 1.0;
-const RE_QAQS_APPR_SOUND_C        = 5;
-const RE_QAQS_APPR_SOUND_PRIOR    = 0.9981;
+const RE_QAQS_RET_EFF_PRIOR       = 0.4893;
+const RE_QAQS_RET_ACT_C           = 10;
+const RE_QAQS_RET_ACT_PRIOR       = 0.6891;
 const RE_QAQS_DISPUTE_DEF_C       = 5;
 const RE_QAQS_DISPUTE_DEF_PRIOR   = 0.3263;
 const RE_QAQS_LABEL_DISC_C        = 5;
@@ -42,11 +40,10 @@ const RE_TWQS_AXES = [
 ];
 
 const RE_QAQS_AXES = [
-    { id: 'returnEffectiveness',  label: 'Return Effectiveness',  weight: 0.35 },
-    { id: 'missedCatchAvoidance', label: 'Missed-Catch Avoidance', weight: 0.25 },
-    { id: 'approvalSoundness',    label: 'Approval Soundness',    weight: 0.15 },
-    { id: 'disputeDefense',       label: 'Dispute Defense',       weight: 0.15 },
-    { id: 'labelDiscrimination',  label: 'Label Discrimination',  weight: 0.10 },
+    { id: 'returnEffectiveness', label: 'Return Effectiveness', weight: 0.40 },
+    { id: 'returnActionability', label: 'Return Actionability', weight: 0.25 },
+    { id: 'disputeDefense',      label: 'Dispute Defense',      weight: 0.20 },
+    { id: 'labelDiscrimination', label: 'Label Discrimination', weight: 0.15 },
 ];
 
 const RE_BANDS = [
@@ -339,6 +336,8 @@ function reAxisOmitReason(axis) {
         case 'disputeDefense':
         case 'disputeOutcomes':
             return 'No resolved disputes in scope';
+        case 'returnActionability':
+            return 'No negative feedback on production tasks in scope';
         case 'consistency':
             return 'Fewer than 2 active calendar weeks of activity in scope';
         default:
@@ -674,9 +673,9 @@ const RatingEngine = {
         // Return effectiveness accumulators
         let retEffNumer = 0;
         let retEffDenom = 0;
-        // Approval soundness accumulators
-        let asGood = 0;
-        let asDenom = 0;
+        // Return actionability accumulators (one-round fix rate on production tasks)
+        let raOneRound = 0;
+        let raDenom = 0;
         // Label discrimination accumulators
         let ldNonStd = 0;
         let ldDenom = 0;
@@ -687,9 +686,6 @@ const RatingEngine = {
         const weeklyActivity = new Map();
         let count90d = 0;
         let earliestTs = null;
-
-        // Deduplicate tasks seen (for missed-catch avoidance pass)
-        const seenTaskIds = new Set();
 
         for (const { entry, task } of feedbackRows) {
             const createdAt = reFeedbackTimestamp(entry);
@@ -705,22 +701,21 @@ const RatingEngine = {
             const wk = reIsoWeekKey(createdAt);
             if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
 
-            if (task && task.id) seenTaskIds.add(String(task.id));
-
             // Return effectiveness: negative feedback on terminal tasks → production?
-            // Skip tasks that are still in revision (fresh discarded) — we can't
-            // judge an outcome that hasn't settled yet.
+            // Fresh discarded (< 7 days) is still in revision — exclude from denominator.
             if (!entry.isPositive && reTaskOutcomeSeverity(task, null, nowMs) !== null) {
                 retEffDenom += 1;
                 if (reIsProductionTask(task)) retEffNumer += 1;
             }
 
-            // Approval soundness: positive feedback on a now-terminal task → production?
-            if (entry.isPositive) {
-                const severity = reTaskOutcomeSeverity(task, null, nowMs);
-                if (severity != null) {
-                    asDenom += 1;
-                    if (reIsProductionTask(task)) asGood += 1;
+            // Return actionability: reviewer's neg feedback on production tasks →
+            // was the very next human feedback row a positive?
+            if (!entry.isPositive && reIsProductionTask(task)) {
+                raDenom += 1;
+                const allHuman = reHumanFeedbackChronological(task);
+                const idx = allHuman.findIndex((e) => String(e.id) === String(entry.id));
+                if (idx >= 0 && idx + 1 < allHuman.length && allHuman[idx + 1].isPositive) {
+                    raOneRound += 1;
                 }
             }
 
@@ -732,25 +727,6 @@ const RatingEngine = {
                 ldDenom += 1;
                 if (scoreLabel !== 'Average') ldNonStd += 1;
             }
-        }
-
-        // Missed-catch avoidance: per-task, first feedback positive + no later neg from another reviewer.
-        // Build a task map from what we have in the hydrated set.
-        let mcClean = 0;
-        let mcDenom = 0;
-        for (const item of hydratedItems) {
-            const task = item.task;
-            if (!task || !seenTaskIds.has(String(task.id))) continue;
-            const allHuman = reHumanFeedbackChronological(task);
-            if (!allHuman.length) continue;
-            const first = allHuman[0];
-            if (!first.isPositive) continue;
-            if (!reIdsEqual(first.reviewer && first.reviewer.id, workerId)) continue;
-            const laterNegByOther = allHuman.slice(1).some(
-                (e) => !e.isPositive && !reIdsEqual(e.reviewer && e.reviewer.id, workerId)
-            );
-            mcDenom += 1;
-            if (!laterNegByOther) mcClean += 1;
         }
 
         // Dispute defense: disputes on tasks where this QA was the respondent.
@@ -773,10 +749,9 @@ const RatingEngine = {
         // Shrunk scores
         const retEffScore = reShrunkRate(retEffNumer, retEffDenom,
             RE_QAQS_RET_EFF_C, RE_QAQS_RET_EFF_PRIOR);
-        const mcScore = reShrunkRate(mcClean, mcDenom,
-            RE_QAQS_MC_AVOID_C, RE_QAQS_MC_AVOID_PRIOR);
-        const asScore = reShrunkRate(asGood, asDenom,
-            RE_QAQS_APPR_SOUND_C, RE_QAQS_APPR_SOUND_PRIOR);
+        const raScore = raDenom > 0
+            ? reShrunkRate(raOneRound, raDenom, RE_QAQS_RET_ACT_C, RE_QAQS_RET_ACT_PRIOR)
+            : null;
         const ldScore = ldDenom > 0
             ? reShrunkRate(ldNonStd, ldDenom, RE_QAQS_LABEL_DISC_C, RE_QAQS_LABEL_DISC_PRIOR)
             : null;
@@ -798,13 +773,10 @@ const RatingEngine = {
                     score = retEffScore;
                     raw = { resolvedCount: retEffNumer, negFeedbackCount: retEffDenom };
                     break;
-                case 'missedCatchAvoidance':
-                    score = mcScore;
-                    raw = { cleanCount: mcClean, firstPosTaskCount: mcDenom };
-                    break;
-                case 'approvalSoundness':
-                    score = asScore;
-                    raw = { productionCount: asGood, terminalPosCount: asDenom };
+                case 'returnActionability':
+                    defined = raDenom > 0;
+                    score = raDenom > 0 ? raScore : null;
+                    raw = { oneRoundCount: raOneRound, negOnProductionCount: raDenom };
                     break;
                 case 'disputeDefense':
                     defined = dispDefined;
@@ -842,16 +814,13 @@ const RatingEngine = {
                 trailing90dFeedbackRows: count90d,
                 tenureDays,
                 negFeedbackCount: retEffDenom,
-                terminalPosCount: asDenom,
-                firstPosTaskCount: mcDenom
+                negOnProductionCount: raDenom
             },
             raw: {
                 retEffNumer,
                 retEffDenom,
-                mcClean,
-                mcDenom,
-                asGood,
-                asDenom,
+                raOneRound,
+                raDenom,
                 ldNonStd,
                 ldDenom,
                 disputeGood,
@@ -1092,7 +1061,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '2.1',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
